@@ -334,6 +334,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/widget-tokens", h.SupportInboxWidget.GetWidgetTokens)
 		})
 
+		// ---- Platform admin routes (audited before auth so denied attempts are logged) ----
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(middleware.AdminAuditLogger(jwtManager))
+			r.Use(middleware.RequireAuth(jwtManager))
+			r.Use(authorization.RequirePlatformAdmin)
+			r.Get("/webhook-events", h.AdminWebhookEvent.List)
+			r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
+			r.Get("/email-queue", h.AdminEmailQueue.List)
+		})
+
 		// ---- Protected routes ----
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
@@ -357,13 +367,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			// User notification settings (account-level, no workspace scope)
 			r.Get("/user/notification-settings", h.UserNotifSettings.Get)
 			r.Put("/user/notification-settings", h.UserNotifSettings.Update)
-
-			// Admin endpoints (JWT-protected, no workspace scope)
-			r.Route("/admin", func(r chi.Router) {
-				r.Get("/webhook-events", h.AdminWebhookEvent.List)
-				r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
-				r.Get("/email-queue", h.AdminEmailQueue.List)
-			})
 
 			// Organizations
 			r.Get("/organizations", h.Organization.List)
@@ -393,6 +396,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/my-role", h.Workspace.GetMyRole)
 				r.Get("/my-membership", h.Workspace.GetMyMembership)
 				r.Get("/me", h.Workspace.GetMe)
+				r.Patch("/me/support-task-preferences", h.Workspace.UpdateSupportTaskPreferences)
 				r.Get("/members", h.Workspace.ListMembers)
 				r.Get("/members/presence", h.Workspace.ListMemberPresence)
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)
@@ -410,7 +414,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/execute", h.PMImport.ExecuteShortcut)
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/api/preview", h.PMImport.PreviewShortcutAPI)
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/api/execute", h.PMImport.ExecuteShortcutAPI)
+				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status", h.PMImport.ListShortcutStatuses)
 				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status/{importId}", h.PMImport.ShortcutStatus)
+				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status/{importId}/detail", h.PMImport.ShortcutStatusDetail)
+				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/status/{importId}/cancel", h.PMImport.CancelShortcutImport)
+				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/status/{importId}/retry", h.PMImport.RetryShortcutImport)
 			})
 
 			// Settings — all routes require workspace access
@@ -665,8 +673,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/summary", h.SupportCoverage.GetSummary)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps", h.SupportCoverage.ListGaps)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/gaps/{gapId}", h.SupportCoverage.GetGap)
+						r.With(requirePerm(authorization.PermSupportEdit)).Post("/gaps/{gapId}/regenerate", h.SupportCoverage.RegenerateGap)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/gaps/{gapId}/status", h.SupportCoverage.UpdateGapStatus)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/gaps/{gapId}/reclassify", h.SupportCoverage.ReclassifyGap)
+						r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermDocsEdit)).Post("/gaps/{gapId}/add", h.SupportCoverage.AddDocumentToGap)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/gaps/{gapId}/merge", h.SupportCoverage.MergeGap)
 						r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermDocsEdit)).Post("/gaps/{gapId}/suggestions/article-draft", h.SupportCoverage.CreateArticleDraftSuggestion)
 						r.With(requirePerm(authorization.PermSupportEdit), requirePerm(authorization.PermDocsEdit)).Post("/gaps/{gapId}/suggestions/article-update", h.SupportCoverage.CreateArticleUpdateSuggestion)
@@ -824,6 +834,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/links", h.PMExternalLink.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/links/{id}", h.PMExternalLink.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/links/{id}", h.PMExternalLink.Delete)
+
+				// Generic entity external links — pm.read / pm.edit
+				r.With(requirePerm(authorization.PermPMRead)).Get("/entity-links/{entity_type}/{entity_id}", h.PMExternalLink.ListByEntity)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/entity-links/{entity_type}/{entity_id}", h.PMExternalLink.CreateForEntity)
 
 				// Automations — pm.admin.automations
 				r.With(requirePerm(authorization.PermPMRead)).Get("/automations", h.PMAutomation.List)
@@ -987,6 +1001,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content/markdown", h.Docs.SaveMarkdownContent)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/blocks", h.Docs.ListBlocks)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks", h.Docs.CreateBlock)
+				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/documents/{docId}/blocks/{blockId}", h.Docs.PatchBlock)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/reorder", h.Docs.ReorderBlocks)
+				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/documents/{docId}/blocks/{blockId}", h.Docs.DeleteBlock)
 
 				// Preview token — docs.read
 				r.With(requirePerm(authorization.PermDocsRead)).Post("/documents/{docId}/preview-token", h.Docs.GeneratePreviewToken)

@@ -24,9 +24,23 @@ export interface RouterContext {
   }
 }
 
-function requireAuth({ context }: { context: RouterContext }) {
+function clearLocalAuth() {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+  localStorage.removeItem('remember_me')
+}
+
+function requirePlatformAdmin({ context }: { context: RouterContext }) {
   if (!context.auth.loading && !context.auth.user && !context.auth.serverUnreachable) {
     throw redirect({ to: '/login' })
+  }
+  if (
+    !context.auth.loading &&
+    context.auth.user &&
+    (!context.auth.user.is_platform_admin || !context.auth.user.mfa_satisfied_in_token)
+  ) {
+    clearLocalAuth()
+    throw redirect({ to: '/forbidden' })
   }
 }
 
@@ -47,10 +61,16 @@ const loginRoute = createRoute({
   component: LoginRouteComponent,
 })
 
+const forbiddenRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/forbidden',
+  component: ForbiddenPage,
+})
+
 const authenticatedLayout = createRoute({
   getParentRoute: () => rootRoute,
   id: 'authenticated',
-  beforeLoad: requireAuth,
+  beforeLoad: requirePlatformAdmin,
   component: AppLayout,
 })
 
@@ -75,6 +95,7 @@ const emailQueueRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
+  forbiddenRoute,
   authenticatedLayout.addChildren([chatPlaygroundRoute, webhookEventsRoute, emailQueueRoute]),
 ])
 
@@ -124,6 +145,30 @@ function LoginRouteComponent() {
   }
 
   return <LoginPage />
+}
+
+function ForbiddenPage() {
+  const signOut = useAuthStore((state) => state.signOut)
+  const mainAppUrl = import.meta.env.VITE_MAIN_APP_URL || 'https://app.helpin.ai'
+
+  return (
+    <div className="flex min-h-screen items-center justify-center px-6">
+      <div className="w-full max-w-md border bg-card p-8">
+        <h1 className="text-xl font-semibold">Admin access required</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Use a Helpin platform admin account with a registered passkey.
+        </p>
+        <div className="mt-6 flex gap-3">
+          <Button asChild>
+            <a href={mainAppUrl}>Open main app</a>
+          </Button>
+          <Button variant="outline" onClick={signOut}>
+            Back to login
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function NotFoundComponent() {

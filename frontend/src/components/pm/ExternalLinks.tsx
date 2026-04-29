@@ -7,7 +7,8 @@ import type { ExternalLink } from '@/lib/pmTypes';
 
 interface ExternalLinksProps {
   workspaceId: string;
-  taskId: string;
+  entityType: 'task' | 'epic';
+  entityId: string;
 }
 
 function getHostname(url: string): string {
@@ -18,16 +19,16 @@ function getHostname(url: string): string {
   }
 }
 
-export function ExternalLinks({ workspaceId, taskId }: ExternalLinksProps) {
+export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLinksProps) {
   const [links, setLinks] = useState<ExternalLink[]>([]);
   const [newUrl, setNewUrl] = useState('');
   const [adding, setAdding] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
-    const { data } = await pmExternalLinkService.list(workspaceId, taskId);
+    const { data } = await pmExternalLinkService.listByEntity(workspaceId, entityType, entityId);
     setLinks(data ?? []);
-  }, [workspaceId, taskId]);
+  }, [workspaceId, entityType, entityId]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -35,23 +36,27 @@ export function ExternalLinks({ workspaceId, taskId }: ExternalLinksProps) {
   useEffect(() => {
     const handler = (e: Event) => {
       const d = (e as CustomEvent)?.detail;
-      if (d?.parent_id === taskId && d?.entity === 'external_link') reload();
+      if (d?.parent_id === entityId && d?.entity === 'external_link') reload();
     };
     window.addEventListener('task-child-updated', handler);
-    return () => window.removeEventListener('task-child-updated', handler);
-  }, [taskId, reload]);
+    window.addEventListener('epic-child-updated', handler);
+    return () => {
+      window.removeEventListener('task-child-updated', handler);
+      window.removeEventListener('epic-child-updated', handler);
+    };
+  }, [entityId, reload]);
 
   const handleAdd = useCallback(async () => {
     const url = newUrl.trim();
     if (!url) return;
     setAdding(true);
-    const { data, error } = await pmExternalLinkService.create(workspaceId, taskId, { url });
+    const { data, error } = await pmExternalLinkService.createForEntity(workspaceId, entityType, entityId, { url });
     setAdding(false);
     if (error || !data) return;
     setLinks((prev) => [...prev, data]);
     setNewUrl('');
     inputRef.current?.focus();
-  }, [workspaceId, taskId, newUrl]);
+  }, [workspaceId, entityType, entityId, newUrl]);
 
   const handleDelete = useCallback(
     async (id: string) => {

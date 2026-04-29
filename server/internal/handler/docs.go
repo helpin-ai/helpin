@@ -38,9 +38,22 @@ func writeDocsError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrDocsCrossWorkspace):
 		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrDocsDocumentLocked):
+		writeError(w, http.StatusForbidden, err.Error())
 	default:
 		slog.Error("unexpected docs error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
+	}
+}
+
+func writeDocsBlockMutationError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrDocsStaleBlockRevision):
+		writeError(w, http.StatusConflict, "block revision is stale")
+	case errors.Is(err, service.ErrDocsDocumentLocked):
+		writeError(w, http.StatusForbidden, err.Error())
+	default:
+		writeError(w, http.StatusBadRequest, err.Error())
 	}
 }
 
@@ -50,6 +63,7 @@ type DocsHandler struct {
 	collectionSvc        *service.DocsCollectionService
 	documentSvc          *service.DocsDocumentService
 	contentSvc           *service.DocsContentService
+	blockSvc             *service.DocsBlockService
 	versionSvc           *service.DocsVersionService
 	linkSvc              *service.DocsLinkService
 	helpcenterSvc        *service.DocsHelpcenterService
@@ -68,6 +82,7 @@ func NewDocsHandler(
 	collectionSvc *service.DocsCollectionService,
 	documentSvc *service.DocsDocumentService,
 	contentSvc *service.DocsContentService,
+	blockSvc *service.DocsBlockService,
 	versionSvc *service.DocsVersionService,
 	linkSvc *service.DocsLinkService,
 	helpcenterSvc *service.DocsHelpcenterService,
@@ -83,6 +98,7 @@ func NewDocsHandler(
 		collectionSvc:  collectionSvc,
 		documentSvc:    documentSvc,
 		contentSvc:     contentSvc,
+		blockSvc:       blockSvc,
 		versionSvc:     versionSvc,
 		linkSvc:        linkSvc,
 		helpcenterSvc:  helpcenterSvc,
@@ -733,6 +749,78 @@ func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, content)
 }
 
+func (h *DocsHandler) ListBlocks(w http.ResponseWriter, r *http.Request) {
+	blocks, err := h.blockSvc.List(r.Context(), chi.URLParam(r, "docId"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, blocks)
+}
+
+func (h *DocsHandler) PatchBlock(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	var req model.DocsBlockPatchRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	content, err := h.blockSvc.Patch(r.Context(), chi.URLParam(r, "docId"), chi.URLParam(r, "blockId"), req.Revision, req.Content, userID)
+	if err != nil {
+		writeDocsBlockMutationError(w, err)
+		return
+	}
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), chi.URLParam(r, "docId"), userID)
+	h.queueEmbeddingSync(r.Context(), chi.URLParam(r, "docId"))
+	writeJSON(w, http.StatusOK, content)
+}
+
+func (h *DocsHandler) CreateBlock(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	var req model.CreateDocsBlockRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	content, err := h.blockSvc.Create(r.Context(), chi.URLParam(r, "docId"), req.AfterBlockID, req.Content, userID)
+	if err != nil {
+		writeDocsBlockMutationError(w, err)
+		return
+	}
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), chi.URLParam(r, "docId"), userID)
+	h.queueEmbeddingSync(r.Context(), chi.URLParam(r, "docId"))
+	writeJSON(w, http.StatusCreated, content)
+}
+
+func (h *DocsHandler) ReorderBlocks(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	var req model.ReorderDocsBlocksRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	content, err := h.blockSvc.Reorder(r.Context(), chi.URLParam(r, "docId"), req.BlockIDs, userID)
+	if err != nil {
+		writeDocsBlockMutationError(w, err)
+		return
+	}
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), chi.URLParam(r, "docId"), userID)
+	h.queueEmbeddingSync(r.Context(), chi.URLParam(r, "docId"))
+	writeJSON(w, http.StatusOK, content)
+}
+
+func (h *DocsHandler) DeleteBlock(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	content, err := h.blockSvc.Delete(r.Context(), chi.URLParam(r, "docId"), chi.URLParam(r, "blockId"), userID)
+	if err != nil {
+		writeDocsBlockMutationError(w, err)
+		return
+	}
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), chi.URLParam(r, "docId"), userID)
+	h.queueEmbeddingSync(r.Context(), chi.URLParam(r, "docId"))
+	writeJSON(w, http.StatusOK, content)
+}
+
 // ─── Versions ───────────────────────────────────────────────────────────────
 
 func (h *DocsHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
@@ -808,7 +896,8 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 
 	// Accept optional slug for external publish.
 	var body struct {
-		Slug string `json:"slug"`
+		Slug             string          `json:"slug"`
+		PublishedContent json.RawMessage `json:"published_content"`
 	}
 	_ = decodeJSON(r, &body)
 
@@ -841,7 +930,7 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 	// Auto-publish externally if document is in an external-capable space.
 	pubSpace, _ := h.spaceSvc.GetUnfiltered(r.Context(), doc.SpaceID)
 	if pubSpace != nil && pubSpace.Type == model.SpaceTypeExternalCapable {
-		if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug); err != nil {
+		if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug, body.PublishedContent); err != nil {
 			slog.ErrorContext(r.Context(), "PublishExternally failed", "doc_id", docID, "error", err)
 			writeError(w, http.StatusInternalServerError, "Article published internally but failed to publish to help center: "+err.Error())
 			return
@@ -865,11 +954,12 @@ func (h *DocsHandler) PublishDocument(w http.ResponseWriter, r *http.Request) {
 func (h *DocsHandler) PublishExternally(w http.ResponseWriter, r *http.Request) {
 	docID := chi.URLParam(r, "docId")
 	var body struct {
-		Slug string `json:"slug"`
+		Slug             string          `json:"slug"`
+		PublishedContent json.RawMessage `json:"published_content"`
 	}
 	_ = decodeJSON(r, &body)
 
-	if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug); err != nil {
+	if err := h.helpcenterSvc.PublishExternally(r.Context(), docID, body.Slug, body.PublishedContent); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

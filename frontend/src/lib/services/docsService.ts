@@ -4,6 +4,7 @@ import type {
   DocsCollection,
   DocsDocument,
   DocsContent,
+  DocsBlock,
   DocsVersion,
   DocsLink,
   DocsHelpcenterConfig,
@@ -21,6 +22,8 @@ import type {
   CreateDocsDocumentRequest,
   UpdateDocsDocumentRequest,
   MoveDocsDocumentRequest,
+  PublishDocsDocumentRequest,
+  PublishDocsHelpcenterArticleTranslationRequest,
   SaveDocsContentRequest,
   CreateDocsVersionRequest,
   UpdateDocsVersionRequest,
@@ -98,8 +101,8 @@ export const docsService = {
     api.post<DocsDocument>(`/docs/documents/${docId}/unarchive${qs(wsId)}`),
   moveDocument: (wsId: string, docId: string, payload: MoveDocsDocumentRequest) =>
     api.post<DocsDocument>(`/docs/documents/${docId}/move${qs(wsId)}`, payload),
-  publishDocument: (wsId: string, docId: string, slug?: string) =>
-    api.post<DocsDocument>(`/docs/documents/${docId}/publish${qs(wsId)}`, slug ? { slug } : {}),
+  publishDocument: (wsId: string, docId: string, payload?: PublishDocsDocumentRequest) =>
+    api.post<DocsDocument>(`/docs/documents/${docId}/publish${qs(wsId)}`, payload ?? {}),
   unpublishDocument: (wsId: string, docId: string) =>
     api.post<DocsDocument>(`/docs/documents/${docId}/unpublish${qs(wsId)}`),
 
@@ -110,6 +113,16 @@ export const docsService = {
     api.put<DocsContent>(`/docs/documents/${docId}/content${qs(wsId)}`, payload),
   saveMarkdownContent: (wsId: string, docId: string, markdown: string) =>
     api.put<DocsContent>(`/docs/documents/${docId}/content/markdown${qs(wsId)}`, { markdown }),
+  listBlocks: (wsId: string, docId: string) =>
+    api.get<DocsBlock[]>(`/docs/documents/${docId}/blocks${qs(wsId)}`),
+  createBlock: (wsId: string, docId: string, payload: { after_block_id?: string; content: unknown }) =>
+    api.post<DocsContent>(`/docs/documents/${docId}/blocks${qs(wsId)}`, payload),
+  patchBlock: (wsId: string, docId: string, blockId: string, payload: { revision: number; content: unknown }) =>
+    api.patch<DocsContent>(`/docs/documents/${docId}/blocks/${blockId}${qs(wsId)}`, payload),
+  reorderBlocks: (wsId: string, docId: string, payload: { block_ids: string[] }) =>
+    api.post<DocsContent>(`/docs/documents/${docId}/blocks/reorder${qs(wsId)}`, payload),
+  deleteBlock: (wsId: string, docId: string, blockId: string) =>
+    api.del<DocsContent>(`/docs/documents/${docId}/blocks/${blockId}${qs(wsId)}`),
 
   // ── Versions ────────────────────────────────────────────────────────────
   listVersions: (wsId: string, docId: string) =>
@@ -134,8 +147,8 @@ export const docsService = {
     api.get<DocsLink[]>(`/docs/linked-docs/${objectType}/${objectId}${qs(wsId)}`),
 
   // ── External Publish ────────────────────────────────────────────────────
-  publishExternally: (wsId: string, docId: string, slug?: string) =>
-    api.post(`/docs/documents/${docId}/publish-external${qs(wsId)}`, slug ? { slug } : {}),
+  publishExternally: (wsId: string, docId: string, payload?: PublishDocsDocumentRequest) =>
+    api.post(`/docs/documents/${docId}/publish-external${qs(wsId)}`, payload ?? {}),
   unpublishExternally: (wsId: string, docId: string) =>
     api.post(`/docs/documents/${docId}/unpublish-external${qs(wsId)}`),
   updateArticleSlug: (wsId: string, docId: string, slug: string) =>
@@ -198,10 +211,13 @@ export const docsService = {
     api.put<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations${qs(wsId)}`, payload),
   generateArticleTranslation: (wsId: string, docId: string, locale: string) =>
     api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/generate${qs(wsId)}`),
-  publishArticleTranslation: (wsId: string, docId: string, locale: string, slug?: string) =>
+  publishArticleTranslation: (wsId: string, docId: string, payload: PublishDocsHelpcenterArticleTranslationRequest) =>
     api.post<DocsHelpcenterArticleTranslation>(
-      `/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/publish${qs(wsId)}`,
-      slug ? { slug } : undefined,
+      `/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(payload.locale)}/publish${qs(wsId)}`,
+      {
+        ...(payload.slug ? { slug: payload.slug } : {}),
+        ...(payload.published_content ? { published_content: payload.published_content } : {}),
+      },
     ),
   updateArticleTranslationSlug: (wsId: string, docId: string, locale: string, slug: string) =>
     api.post(

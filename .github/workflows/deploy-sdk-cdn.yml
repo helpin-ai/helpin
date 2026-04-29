@@ -71,6 +71,10 @@ jobs:
           name: sdk-dist
           path: dist
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
@@ -88,6 +92,10 @@ jobs:
         with:
           name: sdk-dist
           path: dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

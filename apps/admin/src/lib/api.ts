@@ -36,6 +36,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
 
         if (!retryResponse.ok) {
           const errorPayload = await retryResponse.json().catch(() => ({ error: retryResponse.statusText }))
+          if (retryResponse.status === 403 && path.startsWith('/admin/')) {
+            clearStoredSession()
+            window.location.href = '/admin/forbidden'
+          }
           return { data: null, error: errorPayload.error || retryResponse.statusText, status: retryResponse.status }
         }
 
@@ -46,9 +50,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
         return { data: await retryResponse.json(), error: null, status: retryResponse.status }
       }
 
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      localStorage.removeItem('remember_me')
+      clearStoredSession()
       stopTokenRefreshTimer()
       window.location.href = '/admin/login'
       return { data: null, error: 'Session expired', status: 401 }
@@ -56,6 +58,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
 
     if (!response.ok) {
       const errorPayload = await response.json().catch(() => ({ error: response.statusText }))
+      if (response.status === 403 && path.startsWith('/admin/')) {
+        clearStoredSession()
+        window.location.href = '/admin/forbidden'
+      }
       return { data: null, error: errorPayload.error || response.statusText, status: response.status }
     }
 
@@ -71,6 +77,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       isNetworkError: true,
     }
   }
+}
+
+function clearStoredSession(): void {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+  localStorage.removeItem('remember_me')
 }
 
 async function tryRefreshToken(): Promise<boolean> {

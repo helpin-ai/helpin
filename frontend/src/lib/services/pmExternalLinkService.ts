@@ -19,4 +19,10 @@ export const pmExternalLinkService = {
 
   remove: (workspaceId: string, id: string) =>
     api.del(`/pm/links/${id}?${qs(workspaceId)}`),
+
+  listByEntity: (workspaceId: string, entityType: string, entityId: string) =>
+    api.get<ExternalLink[]>(`/pm/entity-links/${entityType}/${entityId}?${qs(workspaceId)}`),
+
+  createForEntity: (workspaceId: string, entityType: string, entityId: string, payload: CreateExternalLinkRequest) =>
+    api.post<ExternalLink>(`/pm/entity-links/${entityType}/${entityId}?${qs(workspaceId)}`, payload),
 };

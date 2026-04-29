@@ -21,6 +21,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, model.APIError{Error: message})
 }
 
+func writeErrorCode(w http.ResponseWriter, status int, message, code string) {
+	writeJSON(w, status, model.APIError{Error: message, Code: code})
+}
+
 // decodeJSON decodes a JSON request body into the given target.
 func decodeJSON(r *http.Request, target interface{}) error {
 	defer r.Body.Close()

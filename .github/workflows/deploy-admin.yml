@@ -1,0 +1,91 @@
+# Deploy Admin Panel to Cloudflare Pages
+# Cloudflare Pages project:
+#   - helpin-admin (production): ctrl.helpin.ai
+# Required GitHub secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+name: Deploy Admin to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin/**"
+      - "frontend/src/index.css"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/deploy-admin.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  VITE_API_URL: https://api.helpin.ai/api
+  VITE_MAIN_APP_URL: https://app.helpin.ai
+
+jobs:
+  build:
+    name: Build Admin
+    runs-on: arc-runners-helpin-ai
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build admin app
+        run: pnpm --dir apps/admin run build
+
+      - name: Prepare Cloudflare Pages artifact
+        run: |
+          rm -rf admin-pages-dist
+          mkdir -p admin-pages-dist/admin
+          cp -R apps/admin/dist/. admin-pages-dist/admin/
+          printf '/ /admin/ 302\n/admin/* /admin/index.html 200\n' > admin-pages-dist/_redirects
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-pages-dist
+          path: admin-pages-dist
+
+  deploy-production:
+    name: Deploy to Production (ctrl.helpin.ai)
+    runs-on: arc-runners-helpin-ai
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: admin-pages-dist
+          path: dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Ensure Cloudflare Pages project exists
+        run: npx wrangler@3.114.1 pages project create helpin-admin --production-branch=main 2>/dev/null || true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '3.114.1'
+          command: pages deploy dist --project-name=helpin-admin --branch=main

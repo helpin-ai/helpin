@@ -11,6 +11,7 @@ import type { PasskeyAuthenticationResponse, PasskeyOptionsResponse } from '@/li
 type ApiResult<T> = {
   data: T | null
   error: string | null
+  code?: string
   status?: number
   cancelled?: boolean
 }
@@ -67,7 +68,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({ error: response.statusText }))
-      return { data: null, error: payload.error || response.statusText, status: response.status }
+      return { data: null, error: payload.error || response.statusText, code: payload.code, status: response.status }
     }
 
     return { data: await response.json(), error: null, status: response.status }
@@ -87,7 +88,7 @@ async function beginAuthentication(
     body: JSON.stringify(emailHint?.trim() ? { email_hint: emailHint.trim() } : {}),
   })
   if (optionsResult.error || !optionsResult.data) {
-    return { data: null, error: optionsResult.error || 'Failed to prepare passkey sign-in' }
+    return { data: null, error: optionsResult.error || 'Failed to prepare passkey sign-in', code: optionsResult.code }
   }
 
   try {

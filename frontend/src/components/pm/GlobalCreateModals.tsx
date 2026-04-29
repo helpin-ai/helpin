@@ -12,6 +12,9 @@ import {
   AttachmentIcon,
   Delete01Icon,
   Upload01Icon,
+  Link01Icon,
+  LinkSquare01Icon as ExternalLinkIcon,
+  PlusSignIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -39,6 +42,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { uploadToS3 } from '@/lib/api';
 import { gitService } from '@/lib/services/gitService';
 import { toast } from 'sonner';
@@ -78,7 +82,7 @@ import audioIcon from '@/assets/attachment/audio-icon.png';
 import videoIcon from '@/assets/attachment/video-icon.png';
 import defaultIcon from '@/assets/attachment/default-icon.png';
 
-const MAX_PENDING_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const MAX_PENDING_ATTACHMENT_SIZE = 50 * 1024 * 1024;
 
 function getFileExtension(filename: string): string {
   const parts = filename.split('.');
@@ -207,6 +211,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
   const [error, setError] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showAttachments, setShowAttachments] = useState(false);
+  const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [epicExternalLinks, setEpicExternalLinks] = useState<{ url: string }[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedTeam = useMemo(
@@ -311,6 +317,18 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
         }
       }
 
+      // Create external links after epic creation
+      if (data?.epic) {
+        const validLinks = epicExternalLinks.filter((l) => l.url.trim());
+        for (const el of validLinks) {
+          try {
+            await pmExternalLinkService.createForEntity(workspaceId, 'epic', data.epic.id, { url: el.url.trim() });
+          } catch {
+            // Non-blocking — epic already created
+          }
+        }
+      }
+
       if (data?.epic) {
         showEntityCreatedToast({
           entityLabel: 'Epic',
@@ -336,7 +354,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     }
   };
 
-  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || pendingFiles.length > 0;
+  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || pendingFiles.length > 0 || epicExternalLinks.some(l => l.url.trim());
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {
@@ -351,6 +369,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     void cleanupInlineDraftUploads();
     setPendingFiles([]);
     setShowAttachments(false);
+    setEpicExternalLinks([]);
+    setShowExternalLinks(false);
     onClose();
   };
 
@@ -389,7 +409,32 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 placeholder="Epic title"
               />
               <div className="mt-4">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
+                <TiptapEditor
+                  content={description}
+                  onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
+                  placeholder="Add a description (optional)..."
+                  className="border-transparent shadow-none"
+                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
+                  onUploadStateChange={setDescriptionPendingUploads}
+                  teams={mentionTeams}
+                  members={assignableMembers}
+                />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      showExternalLinks
+                        ? 'border-primary/30 bg-primary/10 text-primary'
+                        : 'border-border/60 text-muted-foreground hover:bg-accent'
+                    }`}
+                    onClick={() => setShowExternalLinks((v) => !v)}
+                  >
+                    <Link01Icon className="h-3 w-3" />
+                    External Links
+                    {epicExternalLinks.length > 0 && (
+                      <span className="text-[10px] opacity-70">({epicExternalLinks.length})</span>
+                    )}
+                  </button>
                   <button
                     type="button"
                     className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
@@ -406,16 +451,53 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     )}
                   </button>
                 </div>
-                <TiptapEditor
-                  content={description}
-                  onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
-                  placeholder="Add a description (optional)..."
-                  className="border-transparent shadow-none"
-                  uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
-                  onUploadStateChange={setDescriptionPendingUploads}
-                  teams={mentionTeams}
-                  members={assignableMembers}
-                />
+                {showExternalLinks && (
+                  <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                        <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                        External Links
+                        {epicExternalLinks.length > 0 && (
+                          <span className="text-xs text-muted-foreground font-normal">({epicExternalLinks.length})</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="px-4 py-2 space-y-1">
+                      {epicExternalLinks.map((link, idx) => (
+                        <div key={idx} className="group flex items-center gap-2">
+                          <ExternalLinkIcon className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                          <input
+                            type="url"
+                            value={link.url}
+                            autoFocus={idx === epicExternalLinks.length - 1 && link.url === ''}
+                            onChange={(e) => {
+                              const next = [...epicExternalLinks];
+                              next[idx] = { url: e.target.value };
+                              setEpicExternalLinks(next);
+                            }}
+                            placeholder="https://..."
+                            className="flex-1 bg-transparent text-sm py-1 outline-none placeholder:text-muted-foreground/50"
+                          />
+                          <button
+                            type="button"
+                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
+                            onClick={() => setEpicExternalLinks(epicExternalLinks.filter((_, i) => i !== idx))}
+                          >
+                            <Delete01Icon className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 cursor-pointer"
+                        onClick={() => setEpicExternalLinks([...epicExternalLinks, { url: '' }])}
+                      >
+                        <PlusSignIcon className="h-3 w-3" />
+                        Add link
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {showAttachments && (
                   <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
                     <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
@@ -483,7 +565,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                         onDrop={handleDrop}
                       >
                         <Upload01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Drop files or click to upload (max 10MB)</span>
+                        <span className="text-xs text-muted-foreground">Drop files or click to upload (max 50MB)</span>
                         <input
                           ref={fileInputRef}
                           type="file"

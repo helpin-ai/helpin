@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft01Icon, ArrowRight01Icon, Download04Icon, Loading01Icon, AttachmentIcon, Delete01Icon, Upload01Icon, Cancel01Icon } from '@/lib/icons';
+import { ArrowLeft01Icon, ArrowRight01Icon, Download04Icon, Loading01Icon, AttachmentIcon, Delete01Icon, Upload01Icon, Cancel01Icon, PlayCircleIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
@@ -37,7 +37,7 @@ interface AttachmentsProps {
   onUploadReady?: (upload: (files: FileList | File[]) => Promise<void>) => void;
 }
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -86,6 +86,11 @@ function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/') && !contentType.includes('svg');
 }
 
+function isVideoType(contentType: string, fileName: string): boolean {
+  if (contentType.startsWith('video/')) return true;
+  return ['mp4', 'mov', 'webm', 'mkv', 'wmv', 'avi', 'mpeg', 'mpg'].includes(getFileExtension(fileName));
+}
+
 export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment, onFilePickerReady, onUploadReady }: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -120,7 +125,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
 
       for (const file of fileArray) {
         if (file.size > MAX_SIZE) {
-          setError(`${file.name} exceeds 10MB limit`);
+          setError(`${file.name} exceeds 50MB limit`);
           continue;
         }
 
@@ -199,7 +204,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
   };
 
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
-  const imageAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type));
+  const previewAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type) || isVideoType(attachment.content_type, attachment.file_name));
 
   const hasAttachments = attachments.length > 0;
 
@@ -254,22 +259,36 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
           {attachments.map((entry) => {
             const isImage = isImageType(entry.attachment.content_type);
+            const isVideo = isVideoType(entry.attachment.content_type, entry.attachment.file_name);
             const ext = getFileExtension(entry.attachment.file_name);
+            const url = resolveUrl(entry);
             return (
               <div key={entry.attachment.id} className="group relative">
                 <button
                   type="button"
                   className="block w-full overflow-hidden rounded-lg border border-border/60 cursor-pointer transition-colors hover:border-border"
-                  onClick={() => isImage ? setPreviewEntry(entry) : window.open(resolveUrl(entry), '_blank')}
+                  onClick={() => (isImage || isVideo) ? setPreviewEntry(entry) : window.open(url, '_blank')}
                 >
                   {isImage ? (
                     <LoadingImage
-                      src={resolveUrl(entry)}
+                      src={url}
                       alt={entry.attachment.file_name}
                       containerClassName="block h-20 w-full overflow-hidden"
                       className="h-20 w-full object-cover transition-transform group-hover:scale-105"
                       loading="lazy"
                     />
+                  ) : isVideo ? (
+                    <div className="relative h-20 w-full overflow-hidden bg-black">
+                      <video
+                        src={url}
+                        preload="metadata"
+                        muted
+                        className="h-20 w-full object-cover opacity-80"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <PlayCircleIcon className="h-8 w-8 text-white drop-shadow" />
+                      </div>
+                    </div>
                   ) : (
                     <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
                       <img
@@ -289,7 +308,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                       variant="secondary"
                       size="icon"
                       className="h-6 w-6 bg-background/80 backdrop-blur-sm"
-                      onClick={(e) => { e.stopPropagation(); window.open(resolveUrl(entry), '_blank'); }}
+                      onClick={(e) => { e.stopPropagation(); window.open(url, '_blank'); }}
                     >
                       <Download04Icon className="h-3 w-3" />
                     </Button>
@@ -319,13 +338,15 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
         </div>
       )}
 
-      {/* Image preview lightbox */}
+      {/* Image/video preview lightbox */}
       {previewEntry && (() => {
-        const curIdx = imageAttachments.findIndex((e) => e.attachment.id === previewEntry.attachment.id);
+        const curIdx = previewAttachments.findIndex((e) => e.attachment.id === previewEntry.attachment.id);
         const hasPrev = curIdx > 0;
-        const hasNext = curIdx < imageAttachments.length - 1;
-        const goPrev = () => { if (hasPrev) setPreviewEntry(imageAttachments[curIdx - 1]); };
-        const goNext = () => { if (hasNext) setPreviewEntry(imageAttachments[curIdx + 1]); };
+        const hasNext = curIdx < previewAttachments.length - 1;
+        const goPrev = () => { if (hasPrev) setPreviewEntry(previewAttachments[curIdx - 1]); };
+        const goNext = () => { if (hasNext) setPreviewEntry(previewAttachments[curIdx + 1]); };
+        const previewUrl = resolveUrl(previewEntry);
+        const previewIsVideo = isVideoType(previewEntry.attachment.content_type, previewEntry.attachment.file_name);
 
         return (
           <div
@@ -369,18 +390,30 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
               </Button>
             )}
 
-            <LoadingImage
-              src={resolveUrl(previewEntry)}
-              alt={previewEntry.attachment.file_name}
-              containerClassName="max-h-[50vh] max-w-[60vw] overflow-hidden rounded-lg"
-              className="max-h-[50vh] max-w-[60vw] rounded-lg object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
+            {previewIsVideo ? (
+              <video
+                src={previewUrl}
+                controls
+                autoPlay
+                className="max-h-[70vh] max-w-[75vw] rounded-lg bg-black"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <a href={previewUrl} target="_blank" rel="noopener noreferrer">{previewEntry.attachment.file_name}</a>
+              </video>
+            ) : (
+              <LoadingImage
+                src={previewUrl}
+                alt={previewEntry.attachment.file_name}
+                containerClassName="max-h-[50vh] max-w-[60vw] overflow-hidden rounded-lg"
+                className="max-h-[50vh] max-w-[60vw] rounded-lg object-contain"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
             <div className="mt-3 flex items-center gap-2 text-white/80" onClick={(e) => e.stopPropagation()}>
               <span className="text-sm font-medium">{previewEntry.attachment.file_name}</span>
               <span className="text-xs text-white/50">{formatFileSize(previewEntry.attachment.file_size)}</span>
-              {imageAttachments.length > 1 && (
-                <span className="text-xs text-white/40">{curIdx + 1} / {imageAttachments.length}</span>
+              {previewAttachments.length > 1 && (
+                <span className="text-xs text-white/40">{curIdx + 1} / {previewAttachments.length}</span>
               )}
             </div>
           </div>

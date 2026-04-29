@@ -66,9 +66,8 @@ func EnsurePMChecklistItemsTaskColumn(db *gorm.DB) error {
 	if !hasStoryID {
 		return nil
 	}
-
 	hasTaskID := db.Migrator().HasColumn(tableName, "task_id")
-	if !hasTaskID {
+	if hasStoryID && !hasTaskID {
 		if err := db.Migrator().RenameColumn(tableName, "story_id", "task_id"); err != nil {
 			return fmt.Errorf("rename %s.story_id to task_id: %w", tableName, err)
 		}
@@ -84,8 +83,9 @@ func EnsurePMChecklistItemsTaskColumn(db *gorm.DB) error {
 	return nil
 }
 
-// EnsurePMExternalLinksTaskColumn reconciles legacy story_id drift on external
-// links so imports can write through the current task_id-based model.
+// EnsurePMExternalLinksTaskColumn reconciles legacy story_id drift and the
+// newer entity_type/entity_id columns so imports can write through the current
+// external-link model.
 func EnsurePMExternalLinksTaskColumn(db *gorm.DB) error {
 	tableName := model.PMExternalLink{}.TableName()
 	if !db.Migrator().HasTable(tableName) {
@@ -93,23 +93,34 @@ func EnsurePMExternalLinksTaskColumn(db *gorm.DB) error {
 	}
 
 	hasStoryID := db.Migrator().HasColumn(tableName, "story_id")
-	if !hasStoryID {
-		return nil
-	}
-
 	hasTaskID := db.Migrator().HasColumn(tableName, "task_id")
-	if !hasTaskID {
+	if hasStoryID && !hasTaskID {
 		if err := db.Migrator().RenameColumn(tableName, "story_id", "task_id"); err != nil {
 			return fmt.Errorf("rename %s.story_id to task_id: %w", tableName, err)
 		}
-		return nil
+	} else if hasStoryID {
+		if err := db.Exec(`UPDATE pm_external_links SET task_id = story_id WHERE task_id IS NULL AND story_id IS NOT NULL`).Error; err != nil {
+			return fmt.Errorf("backfill pm_external_links.task_id from story_id: %w", err)
+		}
+		if err := db.Exec(`ALTER TABLE pm_external_links DROP COLUMN story_id`).Error; err != nil {
+			return fmt.Errorf("drop legacy %s.story_id column: %w", tableName, err)
+		}
 	}
-
-	if err := db.Exec(`UPDATE pm_external_links SET task_id = story_id WHERE task_id IS NULL AND story_id IS NOT NULL`).Error; err != nil {
-		return fmt.Errorf("backfill pm_external_links.task_id from story_id: %w", err)
+	if !db.Migrator().HasColumn(tableName, "entity_type") {
+		if err := db.Migrator().AddColumn(&model.PMExternalLink{}, "EntityType"); err != nil {
+			return fmt.Errorf("add %s.entity_type column: %w", tableName, err)
+		}
 	}
-	if err := db.Exec(`ALTER TABLE pm_external_links DROP COLUMN story_id`).Error; err != nil {
-		return fmt.Errorf("drop legacy %s.story_id column: %w", tableName, err)
+	if !db.Migrator().HasColumn(tableName, "entity_id") {
+		if err := db.Migrator().AddColumn(&model.PMExternalLink{}, "EntityID"); err != nil {
+			return fmt.Errorf("add %s.entity_id column: %w", tableName, err)
+		}
+	}
+	if err := db.Exec(`UPDATE pm_external_links SET entity_type = COALESCE(NULLIF(entity_type, ''), 'task') WHERE entity_type IS NULL OR entity_type = ''`).Error; err != nil {
+		return fmt.Errorf("backfill pm_external_links.entity_type: %w", err)
+	}
+	if err := db.Exec(`UPDATE pm_external_links SET entity_id = task_id WHERE entity_id IS NULL AND task_id IS NOT NULL`).Error; err != nil {
+		return fmt.Errorf("backfill pm_external_links.entity_id from task_id: %w", err)
 	}
 	return nil
 }

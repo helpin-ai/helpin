@@ -169,6 +169,8 @@ export interface WorkspaceAccess {
     user_id: string;
     role: 'owner' | 'admin' | 'member' | 'viewer';
     status: string;
+    support_default_team_id?: string;
+    support_task_dialog_dismissed: boolean;
   };
   permissions: Permission[];
   team_memberships: {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,10 +18,17 @@ import {
   Loading01Icon,
   Mail01Icon,
   Cancel01Icon,
+  Bookmark01Icon,
+  Target02Icon,
+  StickyNote01Icon,
+  Layers01Icon,
+  ArrowReloadHorizontalIcon,
+  type IconComponent,
 } from '@/lib/icons';
 import { toast } from 'sonner';
 import {
   pmImportService,
+  type ShortcutImportDetailResponse,
   type ShortcutImportOptionsPayload,
   type ShortcutImportPreviewResponse,
   type ShortcutImportStatusResponse,
@@ -33,6 +40,7 @@ import type { MemberWithUser } from '@/lib/types';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { inviteService } from '@/lib/services/inviteService';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
+import { useDocsCollections, useDocsSpaces } from '@/hooks/queries/useDocs';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -87,7 +95,7 @@ type WizardStep = 0 | 1 | 2 | 3 | 4;
 
 const STEP_LABELS = ['Connect', 'Teams', 'Workflows', 'Users', 'Import'];
 
-const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Media', 'Comments'];
+const IMPORT_STEPS_API = ['API Enrichment', 'Teams', 'Workflows', 'Labels', 'Objectives', 'Epics', 'Sprints', 'Tasks', 'Media', 'Comments', 'Docs'];
 const LOOKBACK_OPTIONS = [
   { value: '0', label: 'All time' },
   { value: '3', label: 'Last 3 months' },
@@ -118,6 +126,8 @@ function formatImportStepLabel(step?: string | null) {
       return 'Media';
     case 'comments':
       return 'Comments';
+    case 'docs':
+      return 'Docs';
     case 'parse':
       return 'Preparing import';
     case 'completed':
@@ -125,6 +135,39 @@ function formatImportStepLabel(step?: string | null) {
     default:
       return step || 'unknown';
   }
+}
+
+function formatImportStatusLabel(status: ShortcutImportStatusResponse['status']) {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'scanning':
+      return 'Scanning';
+    case 'ready':
+      return 'Ready';
+    case 'processing':
+      return 'Processing';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    case 'canceled':
+      return 'Canceled';
+    default:
+      return status;
+  }
+}
+
+function formatImportDate(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
 }
 
 function normalizeImportName(value: string) {
@@ -196,6 +239,97 @@ function workflowStateMappingStats(states: WorkflowMapping['states']) {
   return { mapped, total: states.length };
 }
 
+// ─── Layout helpers ──────────────────────────────────────────────────
+
+function SectionHeader({
+  number,
+  title,
+  description,
+  action,
+}: {
+  number: number;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background text-xs font-medium text-foreground">
+        {number}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold leading-6">{title}</h3>
+          {action}
+        </div>
+        {description && (
+          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SectionBody({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn('pl-9', className)}>{children}</div>;
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{children}</Label>;
+}
+
+function ToggleCard({
+  icon: Icon,
+  title,
+  description,
+  active,
+  disabled,
+  onClick,
+}: {
+  icon: IconComponent;
+  title: string;
+  description: string;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'group relative flex flex-col items-start gap-2 rounded-md border bg-background p-3 text-left transition',
+        active
+          ? 'border-foreground ring-1 ring-foreground'
+          : 'border-border hover:border-foreground/40',
+        disabled && 'cursor-not-allowed opacity-60',
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-7 w-7 items-center justify-center rounded-md',
+          active ? 'bg-foreground text-background' : 'bg-muted text-foreground',
+        )}
+      >
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-sm font-medium leading-tight">{title}</div>
+        <div className="text-xs text-muted-foreground leading-snug">{description}</div>
+      </div>
+      <div
+        className={cn(
+          'absolute right-2 top-2 flex h-4 w-4 items-center justify-center rounded-full border',
+          active ? 'border-foreground bg-foreground text-background' : 'border-border bg-background',
+        )}
+      >
+        {active && <Tick01Icon className="h-3 w-3" />}
+      </div>
+    </button>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 
 interface ShortcutImportWizardProps {
@@ -205,6 +339,7 @@ interface ShortcutImportWizardProps {
 
 export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWizardProps) {
   const { teams: existingTeams } = useWorkspaceTeams(workspaceId);
+  const { data: docsSpaces = [], isFetched: docsSpacesFetched } = useDocsSpaces(workspaceId);
   const [step, setStep] = useState<WizardStep>(0);
   const [preview, setPreview] = useState<ShortcutImportPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -219,12 +354,19 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
   const [epicLookbackMonths, setEpicLookbackMonths] = useState('0');
   const [objectiveLookbackMonths, setObjectiveLookbackMonths] = useState('0');
   const [maxStories, setMaxStories] = useState('');
+  const [importDocs, setImportDocs] = useState(true);
+  const [docsSpaceId, setDocsSpaceId] = useState('');
+  const [docsCollectionId, setDocsCollectionId] = useState('');
+  const [docsLookbackMonths, setDocsLookbackMonths] = useState('0');
   const [scanProgress, setScanProgress] = useState<ShortcutScanProgress | null>(null);
   const [apiToken, setApiToken] = useState('');
   const [importStatus, setImportStatus] = useState<ShortcutImportStatusResponse | null>(null);
+  const [importHistory, setImportHistory] = useState<ShortcutImportStatusResponse[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scanIdRef = useRef<string | null>(null);
+  const { data: docsCollections = [] } = useDocsCollections(workspaceId, docsSpaceId);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -232,6 +374,34 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  const loadImportHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    const { data } = await pmImportService.listShortcutStatuses(workspaceId);
+    setHistoryLoading(false);
+    if (data) {
+      setImportHistory(data);
+    }
+  }, [workspaceId]);
+
+  useEffect(() => {
+    void loadImportHistory();
+  }, [loadImportHistory]);
+
+  useEffect(() => {
+    if (!docsSpaceId && docsSpaces.length > 0) {
+      setDocsSpaceId(docsSpaces[0].id);
+    }
+    if (docsSpacesFetched && docsSpaces.length === 0 && importDocs) {
+      setImportDocs(false);
+    }
+  }, [docsSpaceId, docsSpaces, docsSpacesFetched, importDocs]);
+
+  useEffect(() => {
+    if (docsCollectionId && !docsCollections.some((collection) => collection.id === docsCollectionId)) {
+      setDocsCollectionId('');
+    }
+  }, [docsCollectionId, docsCollections]);
 
   useEffect(() => {
     const handleProgress = (event: Event) => {
@@ -262,6 +432,10 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       epic_lookback_months: parsePositiveInt(epicLookbackMonths),
       objective_lookback_months: parsePositiveInt(objectiveLookbackMonths),
       max_stories: parsePositiveInt(maxStories),
+      import_docs: importDocs,
+      docs_space_id: importDocs ? docsSpaceId : undefined,
+      docs_collection_id: importDocs && docsCollectionId ? docsCollectionId : undefined,
+      docs_lookback_months: importDocs ? parsePositiveInt(docsLookbackMonths) : undefined,
     };
   }, [
     importArchived,
@@ -271,6 +445,10 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     epicLookbackMonths,
     objectiveLookbackMonths,
     maxStories,
+    importDocs,
+    docsSpaceId,
+    docsCollectionId,
+    docsLookbackMonths,
   ]);
 
   // ─── Step 0: API Preview ─────────────────────────────────────────
@@ -303,7 +481,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     setUserMappings(
       data.users.map((u) => ({
         email: u.email,
-        storyCount: 0,
+        storyCount: u.story_count ?? 0,
         matchedUserId: u.matched_user_id,
         matchedName: u.matched_name,
         shortcutName: u.shortcut_name || null,
@@ -471,8 +649,31 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
 
   // ─── Step 3: Execute ─────────────────────────────────────────────
 
+  const startImportStatusPolling = useCallback((importId: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    const poll = async () => {
+      const { data: status } = await pmImportService.getShortcutStatus(workspaceId, importId);
+      if (status) {
+        setImportStatus(status);
+        if (status.status === 'completed' || status.status === 'failed' || status.status === 'canceled') {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          setImporting(false);
+          void loadImportHistory();
+        }
+      }
+    };
+    setImporting(true);
+    void poll();
+    pollRef.current = setInterval(poll, 1500);
+  }, [loadImportHistory, workspaceId]);
+
   const handleStartImport = useCallback(async () => {
     if (!apiToken.trim()) return;
+    if (importDocs && !docsSpaceId) {
+      toast.error('Select a Helpin Docs space for Shortcut Docs');
+      return;
+    }
     setImporting(true);
 
     // Build user mappings: email → userId
@@ -516,20 +717,9 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
       setImporting(false);
       return;
     }
-
-    // Start polling
-    pollRef.current = setInterval(async () => {
-      const { data: status } = await pmImportService.getShortcutStatus(workspaceId, data.import_id);
-      if (status) {
-        setImportStatus(status);
-        if (status.status === 'completed' || status.status === 'failed') {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-          setImporting(false);
-        }
-      }
-    }, 1500);
-  }, [userMappings, teamMappings, workflowMappings, workspaceId, apiToken, importOptions]);
+    await loadImportHistory();
+    startImportStatusPolling(data.import_id);
+  }, [userMappings, teamMappings, workflowMappings, workspaceId, apiToken, importOptions, importDocs, docsSpaceId, loadImportHistory, startImportStatusPolling]);
 
   // ─── Navigation ──────────────────────────────────────────────────
 
@@ -548,40 +738,56 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
 
   // ─── Render ──────────────────────────────────────────────────────
 
+  const handleSelectHistory = (status: ShortcutImportStatusResponse) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+    setImporting(false);
+    setImportStatus(status);
+    setStep(4);
+    if (status.status === 'pending' || status.status === 'scanning' || status.status === 'processing') {
+      startImportStatusPolling(status.import_id);
+    }
+  };
+
+  const showHistoryTable = step === 0 && !preview && !previewLoading;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+    <Card className="overflow-hidden p-0">
       {/* Step indicator */}
-      <div className="flex items-center justify-center gap-2">
-        {STEP_LABELS.map((label, i) => (
-          <div key={label} className="flex items-center gap-2">
-            {i > 0 && <div className="h-px w-8 bg-border" />}
-            <div className="flex items-center gap-1.5">
-              <div
-                className={cn(
-                  'flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium',
-                  i < step
-                    ? 'bg-primary text-primary-foreground'
-                    : i === step
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground',
-                )}
-              >
-                {i < step ? <Tick01Icon className="h-3.5 w-3.5" /> : i + 1}
+      <div className="flex items-center gap-1.5 border-b px-5 py-3 text-xs">
+        {STEP_LABELS.map((label, i) => {
+          const isComplete = i < step;
+          const isActive = i === step;
+          return (
+            <div key={label} className="flex items-center gap-1.5">
+              {i > 0 && <div className={cn('h-px w-6', isComplete || isActive ? 'bg-foreground/40' : 'bg-border')} />}
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    'flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-medium',
+                    isComplete && 'border-foreground bg-foreground text-background',
+                    isActive && !isComplete && 'border-foreground bg-background text-foreground',
+                    !isComplete && !isActive && 'border-border bg-background text-muted-foreground',
+                  )}
+                >
+                  {isComplete ? <Tick01Icon className="h-3 w-3" /> : i + 1}
+                </div>
+                <span
+                  className={cn(
+                    isActive ? 'font-medium text-foreground' : 'text-muted-foreground',
+                  )}
+                >
+                  {label}
+                </span>
               </div>
-              <span
-                className={cn(
-                  'text-sm',
-                  i === step ? 'font-medium' : 'text-muted-foreground',
-                )}
-              >
-                {label}
-              </span>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Step content */}
+      <div className="px-5 py-5">
       {step === 0 && (
         <UploadStep
           preview={preview}
@@ -598,6 +804,12 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           epicLookbackMonths={epicLookbackMonths}
           objectiveLookbackMonths={objectiveLookbackMonths}
           maxStories={maxStories}
+          importDocs={importDocs}
+          docsSpaceId={docsSpaceId}
+          docsCollectionId={docsCollectionId}
+          docsLookbackMonths={docsLookbackMonths}
+          docsSpaces={docsSpaces}
+          docsCollections={docsCollections}
           onArchived={setImportArchived}
           onCompleted={setImportCompleted}
           onStoryDateField={setStoryDateField}
@@ -605,6 +817,13 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           onEpicLookbackMonths={setEpicLookbackMonths}
           onObjectiveLookbackMonths={setObjectiveLookbackMonths}
           onMaxStories={setMaxStories}
+          onImportDocs={setImportDocs}
+          onDocsSpaceId={(value) => {
+            setDocsSpaceId(value);
+            setDocsCollectionId('');
+          }}
+          onDocsCollectionId={setDocsCollectionId}
+          onDocsLookbackMonths={setDocsLookbackMonths}
           onAPIPreview={handleAPIPreview}
           onClear={() => {
             setPreview(null);
@@ -649,6 +868,9 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           userMappings={userMappings}
           importArchived={importArchived}
           importCompleted={importCompleted}
+          importDocs={importDocs}
+          docsSpaceName={docsSpaces.find((space) => space.id === docsSpaceId)?.name || ''}
+          docsCollectionName={docsCollections.find((collection) => collection.id === docsCollectionId)?.name || ''}
           onArchived={setImportArchived}
           onCompleted={setImportCompleted}
           importing={importing}
@@ -658,9 +880,11 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
         />
       )}
 
+      </div>
+
       {/* Navigation */}
       {!importing && importStatus?.status !== 'completed' && importStatus?.status !== 'failed' && (
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex justify-end gap-2 border-t bg-muted/20 px-5 py-3">
           {step > 0 && (
             <Button variant="outline" onClick={goBack}>
               Back
@@ -673,6 +897,17 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
           )}
         </div>
       )}
+    </Card>
+
+    {showHistoryTable && (
+      <ShortcutImportHistoryTable
+        workspaceId={workspaceId}
+        imports={importHistory}
+        loading={historyLoading}
+        onRefresh={loadImportHistory}
+        onSelect={handleSelectHistory}
+      />
+    )}
     </div>
   );
 }
@@ -692,6 +927,12 @@ function UploadStep({
   epicLookbackMonths,
   objectiveLookbackMonths,
   maxStories,
+  importDocs,
+  docsSpaceId,
+  docsCollectionId,
+  docsLookbackMonths,
+  docsSpaces,
+  docsCollections,
   onArchived,
   onCompleted,
   onStoryDateField,
@@ -699,6 +940,10 @@ function UploadStep({
   onEpicLookbackMonths,
   onObjectiveLookbackMonths,
   onMaxStories,
+  onImportDocs,
+  onDocsSpaceId,
+  onDocsCollectionId,
+  onDocsLookbackMonths,
   onAPIPreview,
   onClear,
 }: {
@@ -714,6 +959,12 @@ function UploadStep({
   epicLookbackMonths: string;
   objectiveLookbackMonths: string;
   maxStories: string;
+  importDocs: boolean;
+  docsSpaceId: string;
+  docsCollectionId: string;
+  docsLookbackMonths: string;
+  docsSpaces: { id: string; name: string }[];
+  docsCollections: { id: string; name: string }[];
   onArchived: (v: boolean) => void;
   onCompleted: (v: boolean) => void;
   onStoryDateField: (v: 'updated_at' | 'created_at') => void;
@@ -721,6 +972,10 @@ function UploadStep({
   onEpicLookbackMonths: (v: string) => void;
   onObjectiveLookbackMonths: (v: string) => void;
   onMaxStories: (v: string) => void;
+  onImportDocs: (v: boolean) => void;
+  onDocsSpaceId: (v: string) => void;
+  onDocsCollectionId: (v: string) => void;
+  onDocsLookbackMonths: (v: string) => void;
   onAPIPreview: () => void;
   onClear: () => void;
 }) {
@@ -744,103 +999,261 @@ function UploadStep({
   }
 
   if (!preview) {
+    const docsAvailable = docsSpaces.length > 0;
+    const resetFilters = () => {
+      onStoryDateField('updated_at');
+      onStoryLookbackMonths('6');
+      onEpicLookbackMonths('12');
+      onObjectiveLookbackMonths('12');
+      onMaxStories('');
+      onArchived(false);
+      onCompleted(true);
+    };
+
     return (
-      <div className="space-y-4">
-        <Card>
-          <CardContent className="px-4 py-3">
-            <div className="flex items-start gap-3">
-              <Key01Icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-              <div className="flex-1 space-y-2">
-                <div>
-                  <Label className="text-sm font-medium">Shortcut API Token</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Generate a token in Shortcut under Settings &rarr; API Tokens.
-                  </p>
-                </div>
-                <div className="flex max-w-xl gap-2">
-                  <Input
-                    type="password"
-                    placeholder="Shortcut API token"
-                    value={apiToken}
-                    onChange={(e) => onApiTokenChange(e.target.value)}
-                    autoComplete="off"
-                    data-1p-ignore
-                    data-lpignore="true"
-                    className="font-mono text-xs"
-                  />
-                  <Button type="button" onClick={onAPIPreview} disabled={!apiToken.trim()}>
-                    Connect
-                  </Button>
-                </div>
-                <div className="grid max-w-3xl gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Story date</Label>
-                    <Select value={storyDateField} onValueChange={(v) => onStoryDateField(v as 'updated_at' | 'created_at')}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="updated_at">Updated</SelectItem>
-                        <SelectItem value="created_at">Created</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Story window</Label>
-                    <Select value={storyLookbackMonths} onValueChange={onStoryLookbackMonths}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LOOKBACK_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
+      <div className="space-y-8">
+        {/* ─── Section 1: Connect ─────────────────────────────── */}
+        <section className="space-y-3">
+          <SectionHeader
+            number={1}
+            title="Connect to Shortcut"
+            description="Enter your Shortcut API token to connect to your workspace."
+          />
+          <SectionBody className="space-y-3">
+            <div className="flex max-w-xl gap-2">
+              <div className="relative flex-1">
+                <Key01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="password"
+                  placeholder="Shortcut API token"
+                  value={apiToken}
+                  onChange={(e) => onApiTokenChange(e.target.value)}
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  className="h-9 pl-8 font-mono text-xs"
+                />
+              </div>
+              <Button type="button" onClick={onAPIPreview} disabled={!apiToken.trim()} className="h-9">
+                Connect
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Find your token in Shortcut under{' '}
+              <span className="font-medium text-foreground">Settings → API Tokens</span>.
+            </p>
+            <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-background">
+                <div className="h-2 w-2 rounded-full bg-muted-foreground" />
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Not connected — enter a token and click Connect to get started.
+              </span>
+            </div>
+          </SectionBody>
+        </section>
+
+        {/* ─── Section 2: What to import ──────────────────────── */}
+        <section className="space-y-3">
+          <SectionHeader
+            number={2}
+            title="What do you want to import?"
+            description="Enter your token and click Connect to get started."
+          />
+          <SectionBody>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ToggleCard
+                icon={Bookmark01Icon}
+                title="Stories"
+                description="Tasks are story items"
+                active
+                onClick={() => undefined}
+              />
+              <ToggleCard
+                icon={Layers01Icon}
+                title="Epics"
+                description="Epics and larger initiatives"
+                active
+                onClick={() => undefined}
+              />
+              <ToggleCard
+                icon={Target02Icon}
+                title="Objectives"
+                description="Objectives and key results"
+                active
+                onClick={() => undefined}
+              />
+              <ToggleCard
+                icon={StickyNote01Icon}
+                title="Docs"
+                description="Documentation and notes"
+                active={importDocs}
+                disabled={!docsAvailable}
+                onClick={() => onImportDocs(!importDocs)}
+              />
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              You can import any combination of these.
+            </p>
+          </SectionBody>
+        </section>
+
+        {/* ─── Section 3: Filters ─────────────────────────────── */}
+        <section className="space-y-3">
+          <SectionHeader
+            number={3}
+            title="Filters"
+            description="Refine the results to import."
+            action={
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={resetFilters}
+                className="h-7 text-xs text-muted-foreground"
+              >
+                <ArrowReloadHorizontalIcon className="mr-1 h-3 w-3" />
+                Reset to defaults
+              </Button>
+            }
+          />
+          <SectionBody className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <FieldLabel>Date</FieldLabel>
+                <Select value={storyDateField} onValueChange={(v) => onStoryDateField(v as 'updated_at' | 'created_at')}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="updated_at">Updated</SelectItem>
+                    <SelectItem value="created_at">Created</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Story window</FieldLabel>
+                <Select value={storyLookbackMonths} onValueChange={onStoryLookbackMonths}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOOKBACK_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Epic window</FieldLabel>
+                <Select value={epicLookbackMonths} onValueChange={onEpicLookbackMonths}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOOKBACK_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <FieldLabel>Objective window</FieldLabel>
+                <Select value={objectiveLookbackMonths} onValueChange={onObjectiveLookbackMonths}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOOKBACK_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                <span className="text-xs">Include archived tasks</span>
+                <Switch checked={importArchived} onCheckedChange={onArchived} />
+              </label>
+              <label className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+                <span className="text-xs">Include completed tasks</span>
+                <Switch checked={importCompleted} onCheckedChange={onCompleted} />
+              </label>
+              <div className="space-y-1.5">
+                <FieldLabel>Limit results</FieldLabel>
+                <Input
+                  inputMode="numeric"
+                  min={1}
+                  placeholder="No limit"
+                  value={maxStories}
+                  onChange={(e) => onMaxStories(e.target.value.replace(/\D/g, ''))}
+                  className="h-9"
+                />
+              </div>
+            </div>
+          </SectionBody>
+        </section>
+
+        {/* ─── Section 4: Docs destination ──────────────────────── */}
+        {importDocs && (
+          <section className="space-y-3">
+            <SectionHeader
+              number={4}
+              title="Docs destination"
+              description="Choose where the imported docs will be created."
+            />
+            <SectionBody>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <FieldLabel>Docs space</FieldLabel>
+                  <Select value={docsSpaceId || 'none'} onValueChange={onDocsSpaceId} disabled={!docsAvailable}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Select space" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {docsSpaces.length === 0 ? (
+                        <SelectItem value="none" disabled>No spaces</SelectItem>
+                      ) : (
+                        docsSpaces.map((space) => (
+                          <SelectItem key={space.id} value={space.id}>
+                            {space.name}
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Epic window</Label>
-                    <Select value={epicLookbackMonths} onValueChange={onEpicLookbackMonths}>
-                      <SelectTrigger className="h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LOOKBACK_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Max stories</Label>
-                    <Input
-                      inputMode="numeric"
-                      min={1}
-                      placeholder="No limit"
-                      value={maxStories}
-                      onChange={(e) => onMaxStories(e.target.value.replace(/\D/g, ''))}
-                      className="h-8"
-                    />
-                  </div>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid max-w-xl gap-2 pt-1 sm:grid-cols-2">
-                  <label className="flex items-center justify-between rounded-md border px-3 py-2">
-                    <span className="text-xs">Archived tasks</span>
-                    <Switch checked={importArchived} onCheckedChange={onArchived} />
-                  </label>
-                  <label className="flex items-center justify-between rounded-md border px-3 py-2">
-                    <span className="text-xs">Completed tasks</span>
-                    <Switch checked={importCompleted} onCheckedChange={onCompleted} />
-                  </label>
+                <div className="space-y-1.5">
+                  <FieldLabel>Collection</FieldLabel>
+                  <Select
+                    value={docsCollectionId || 'root'}
+                    onValueChange={(value) => onDocsCollectionId(value === 'root' ? '' : value)}
+                    disabled={!docsSpaceId}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="root">Uncategorized</SelectItem>
+                      {docsCollections.map((collection) => (
+                        <SelectItem key={collection.id} value={collection.id}>
+                          {collection.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="max-w-[11rem] space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Objective window</Label>
-                  <Select value={objectiveLookbackMonths} onValueChange={onObjectiveLookbackMonths}>
-                    <SelectTrigger className="h-8">
+                <div className="space-y-1.5">
+                  <FieldLabel>Docs window</FieldLabel>
+                  <Select value={docsLookbackMonths} onValueChange={onDocsLookbackMonths}>
+                    <SelectTrigger className="h-9">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -853,9 +1266,9 @@ function UploadStep({
                   </Select>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </SectionBody>
+          </section>
+        )}
       </div>
     );
   }
@@ -867,6 +1280,7 @@ function UploadStep({
     { label: 'Objectives', value: s.objectives_count },
     { label: 'Sprints', value: s.sprints_count },
     { label: 'Labels', value: s.labels_count },
+    { label: 'Docs', value: s.docs_count },
     { label: 'Teams', value: s.teams_count },
     { label: 'Workflows', value: s.workflows_count },
     { label: 'Checklists', value: s.checklist_items_count },
@@ -876,33 +1290,35 @@ function UploadStep({
   const totalTasks = storyTypes.reduce((sum, [, v]) => sum + v, 0) || 1;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between rounded-md border bg-emerald-50/60 px-3 py-2 dark:bg-emerald-950/20">
         <div className="flex items-center gap-2">
-          <Tick01Icon className="h-4 w-4 text-green-500" />
-          <span className="text-sm font-medium truncate max-w-[300px]">
-            Shortcut API connected
-          </span>
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15">
+            <Tick01Icon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <span className="text-sm font-medium">Shortcut API connected</span>
+          <span className="text-xs text-muted-foreground">— preview ready</span>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClear}>
+        <Button variant="ghost" size="sm" onClick={onClear} className="h-7 text-xs">
           Reset
         </Button>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
         {statCards.map((c) => (
-          <Card key={c.label} className="py-3">
-            <CardContent className="px-4 py-0 text-center">
-              <p className="text-2xl font-bold">{c.value.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">{c.label}</p>
-            </CardContent>
-          </Card>
+          <div
+            key={c.label}
+            className="rounded-md border bg-background px-3 py-2 text-center"
+          >
+            <p className="text-lg font-semibold leading-tight">{c.value.toLocaleString()}</p>
+            <p className="mt-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">{c.label}</p>
+          </div>
         ))}
       </div>
 
       <div className="space-y-2">
-        <p className="text-sm font-medium">Tasks by Type</p>
-        <div className="flex h-3 w-1/2 overflow-hidden rounded-full">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Tasks by type</p>
+        <div className="flex h-2 w-full max-w-md overflow-hidden rounded-full bg-muted">
           {storyTypes.map(([type, count]) => (
             <div
               key={type}
@@ -912,13 +1328,13 @@ function UploadStep({
             />
           ))}
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
           {storyTypes.map(([type, count]) => (
             <div key={type} className="flex items-center gap-1.5">
               {TASK_TYPE_CONFIG[type as TaskType] ? (
-                <TaskTypeIcon taskType={type as TaskType} className="h-4 w-4 shrink-0" />
+                <TaskTypeIcon taskType={type as TaskType} className="h-3.5 w-3.5 shrink-0" />
               ) : (
-                <div className="h-2.5 w-2.5 rounded-full bg-muted-foreground" />
+                <div className="h-2 w-2 rounded-full bg-muted-foreground" />
               )}
               <span className="text-xs text-muted-foreground">
                 {type} <span className="font-medium text-foreground">{count.toLocaleString()}</span>
@@ -967,20 +1383,18 @@ function TeamStep({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold">Choose Destination Teams</h3>
-        <p className="text-sm text-muted-foreground">
-          Each Shortcut team or group can create a new Helpin team or map into an existing one.
-          New workflows will be created per destination team.
-        </p>
-      </div>
+      <SectionHeader
+        number={1}
+        title="Choose destination teams"
+        description="Each Shortcut team or group can create a new Helpin team or map into an existing one. New workflows will be created per destination team."
+      />
 
-      <Card>
+      <Card className="ml-9">
         <CardContent className="px-4 py-3">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-xs">Shortcut Team</TableHead>
+                <TableHead className="text-xs">Shortcut team</TableHead>
                 <TableHead className="text-xs">Destination</TableHead>
                 <TableHead className="text-xs">Team</TableHead>
                 <TableHead className="text-xs text-right">Stories</TableHead>
@@ -1061,14 +1475,13 @@ function WorkflowStep({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Map each Shortcut workflow into an existing Helpin workflow, then map Shortcut states to
-          Helpin states.
-        </p>
-      </div>
+      <SectionHeader
+        number={1}
+        title="Map workflows and states"
+        description="Map each Shortcut workflow into an existing Helpin workflow, then map Shortcut states to Helpin states."
+      />
       {existingWorkflows.length === 0 && (
-        <Card>
+        <Card className="ml-9">
           <CardContent className="px-4 py-3">
             <p className="text-sm text-muted-foreground">
               No Helpin workflows are available. Create the target workflow before starting the import.
@@ -1077,6 +1490,7 @@ function WorkflowStep({
         </Card>
       )}
 
+      <div className="ml-9 space-y-3">
       {workflowMappings.map((wf, wfIdx) => {
         const isValid = wf.existingWorkflowId !== '' && wf.states.every((s) => s.existingStateId !== '');
         const totalTasks = wf.states.reduce((sum, s) => sum + s.storyCount, 0);
@@ -1233,6 +1647,7 @@ function WorkflowStep({
           All workflows are ready. You can continue or expand to customize.
         </p>
       )}
+      </div>
     </div>
   );
 }
@@ -1261,33 +1676,36 @@ function UserStep({
 
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Match Shortcut users to Helpin workspace members. You can invite unmatched users so their
-          tasks are properly assigned.
-        </p>
-      </div>
+      <SectionHeader
+        number={1}
+        title="Match users"
+        description="Match Shortcut users to Helpin workspace members. You can invite unmatched users so their tasks are properly assigned."
+        action={
+          unmatchedCount > 0 ? (
+            <Button variant="outline" size="sm" onClick={onInviteAll} className="h-7 text-xs">
+              <Mail01Icon className="mr-1.5 h-3 w-3" />
+              Invite all unmatched ({unmatchedCount})
+            </Button>
+          ) : undefined
+        }
+      />
 
-      <div className="flex items-center justify-between">
-        <p className="text-sm">
+      <div className="ml-9 space-y-4">
+      <div className="rounded-md border bg-muted/40 px-3 py-2">
+        <p className="text-xs">
           <span className="font-medium">{matchedCount}</span> of{' '}
           <span className="font-medium">{userMappings.length}</span> users auto-matched
         </p>
-        {unmatchedCount > 0 && (
-          <Button variant="outline" size="sm" onClick={onInviteAll}>
-            <Mail01Icon className="mr-1.5 h-3.5 w-3.5" />
-            Invite All Unmatched ({unmatchedCount})
-          </Button>
-        )}
       </div>
 
       {matched.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Matched Members</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Matched members</p>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Shortcut User</TableHead>
+                <TableHead className="text-xs text-right">Stories</TableHead>
                 <TableHead className="text-xs">Helpin Member</TableHead>
               </TableRow>
             </TableHeader>
@@ -1303,6 +1721,7 @@ function UserStep({
                       </div>
                     </div>
                   </TableCell>
+                  <TableCell className="py-1.5 text-right text-sm">{u.storyCount.toLocaleString()}</TableCell>
                   <TableCell className="py-1.5 text-sm">{u.matchedName || '—'}</TableCell>
                 </TableRow>
               ))}
@@ -1313,11 +1732,12 @@ function UserStep({
 
       {unmatched.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Unmatched Users ({unmatched.length})</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Unmatched users ({unmatched.length})</p>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Shortcut User</TableHead>
+                <TableHead className="text-xs text-right">Stories affected</TableHead>
                 <TableHead className="text-xs w-[220px]">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -1344,6 +1764,7 @@ function UserStep({
                         )}
                       </div>
                     </TableCell>
+                    <TableCell className="py-1.5 text-right text-sm">{u.storyCount.toLocaleString()}</TableCell>
                     <TableCell className="py-1.5">
                       {u.invited ? (
                         <span className="text-xs text-muted-foreground">Pending acceptance</span>
@@ -1405,8 +1826,283 @@ function UserStep({
           )}
         </div>
       )}
+      </div>
     </div>
   );
+}
+
+function ShortcutImportHistoryTable({
+  workspaceId,
+  imports,
+  loading,
+  onRefresh,
+  onSelect,
+}: {
+  workspaceId: string;
+  imports: ShortcutImportStatusResponse[];
+  loading: boolean;
+  onRefresh: () => void;
+  onSelect: (status: ShortcutImportStatusResponse) => void;
+}) {
+  const rows = imports.slice(0, 8);
+  const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.import_id ?? null);
+  const [detail, setDetail] = useState<ShortcutImportDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const loadDetail = useCallback(async (importId: string) => {
+    setSelectedId(importId);
+    setDetailLoading(true);
+    const { data, error } = await pmImportService.getShortcutStatusDetail(workspaceId, importId);
+    setDetailLoading(false);
+    if (error || !data) {
+      toast.error(error || 'Failed to load import details');
+      return;
+    }
+    setDetail(data);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!selectedId && rows.length > 0) {
+      void loadDetail(rows[0].import_id);
+    } else if (selectedId && detail?.import_id !== selectedId) {
+      void loadDetail(selectedId);
+    }
+  }, [detail?.import_id, loadDetail, rows, selectedId]);
+
+  const selectedRow = rows.find((row) => row.import_id === selectedId) ?? rows[0] ?? null;
+
+  const handleCancel = async () => {
+    if (!detail) return;
+    setActionLoading('cancel');
+    const { data, error } = await pmImportService.cancelShortcutImport(workspaceId, detail.import_id);
+    setActionLoading(null);
+    if (error || !data) {
+      toast.error(error || 'Failed to cancel import');
+      return;
+    }
+    toast.success('Import canceled');
+    await onRefresh();
+    await loadDetail(detail.import_id);
+  };
+
+  const handleRetry = async () => {
+    if (!detail) return;
+    setActionLoading('retry');
+    const { data, error } = await pmImportService.retryShortcutImport(workspaceId, detail.import_id);
+    setActionLoading(null);
+    if (error || !data) {
+      toast.error(error || 'Failed to retry import');
+      return;
+    }
+    toast.success('Retry started');
+    await onRefresh();
+    onSelect({ ...detail, import_id: data.import_id, status: 'processing' });
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between px-4 py-3">
+        <CardTitle className="text-sm">Recent Shortcut imports</CardTitle>
+        <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={loading}>
+          {loading ? 'Refreshing' : 'Refresh'}
+        </Button>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 pt-0">
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No Shortcut imports have been started yet.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Started</TableHead>
+                <TableHead className="text-xs">Status</TableHead>
+                <TableHead className="text-xs text-right">Tasks</TableHead>
+                <TableHead className="text-xs">Step</TableHead>
+                <TableHead className="w-16 text-xs" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => {
+                const isFailed = row.status === 'failed';
+                const isComplete = row.status === 'completed';
+                const statusVariant = isFailed ? 'destructive' : isComplete ? 'secondary' : 'outline';
+                return (
+                  <TableRow
+                    key={row.import_id}
+                    className={cn('cursor-pointer', selectedId === row.import_id && 'bg-muted/50')}
+                    onClick={() => void loadDetail(row.import_id)}
+                  >
+                    <TableCell className="py-2 text-sm">{formatImportDate(row.created_at)}</TableCell>
+                    <TableCell className="py-2">
+                      <Badge variant={statusVariant}>{formatImportStatusLabel(row.status)}</Badge>
+                    </TableCell>
+                    <TableCell className="py-2 text-right text-sm">
+                      {(row.result?.tasks_created ?? row.total_rows ?? row.progress.entities_total ?? 0).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="py-2 text-sm text-muted-foreground">
+                      {formatImportStepLabel(row.progress.current_step)}
+                    </TableCell>
+                    <TableCell className="py-2 text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelect(row);
+                        }}
+                      >
+                        Open
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+        {selectedRow && (
+          <div className="mt-4 border-t pt-4">
+            {detailLoading && !detail ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loading01Icon className="h-4 w-4 animate-spin" />
+                Loading import details
+              </div>
+            ) : detail ? (
+              <ShortcutImportDetailPanel
+                detail={detail}
+                actionLoading={actionLoading}
+                onCancel={handleCancel}
+                onRetry={handleRetry}
+              />
+            ) : (
+              <Button type="button" variant="outline" size="sm" onClick={() => void loadDetail(selectedRow.import_id)}>
+                Load details
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ShortcutImportDetailPanel({
+  detail,
+  actionLoading,
+  onCancel,
+  onRetry,
+}: {
+  detail: ShortcutImportDetailResponse;
+  actionLoading: string | null;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  const counts = detail.diagnostics.counts.filter((item) => item.count > 0);
+  const failedMedia = detail.diagnostics.failed_media;
+  const unmapped = [
+    ...detail.diagnostics.unmapped_members,
+    ...detail.diagnostics.unmapped_states,
+    ...detail.diagnostics.unmapped_teams,
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">Import details</div>
+          <div className="text-xs text-muted-foreground">
+            {formatImportStatusLabel(detail.status)} · {formatImportStepLabel(detail.progress.current_step)}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {detail.cancelable && (
+            <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={actionLoading !== null}>
+              {actionLoading === 'cancel' ? 'Canceling' : 'Cancel'}
+            </Button>
+          )}
+          <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={!detail.retryable || actionLoading !== null}>
+            {actionLoading === 'retry' ? 'Retrying' : 'Retry'}
+          </Button>
+        </div>
+      </div>
+
+      {!detail.retryable && detail.retry_blocked_reason && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          {detail.retry_blocked_reason}
+        </div>
+      )}
+
+      {detail.options && (
+        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+          <DetailPill label="Stories" value={formatLookback(detail.options.story_lookback_months)} />
+          <DetailPill label="Epics" value={formatLookback(detail.options.epic_lookback_months)} />
+          <DetailPill label="Objectives" value={formatLookback(detail.options.objective_lookback_months)} />
+          <DetailPill label="Docs" value={detail.options.import_docs ? formatLookback(detail.options.docs_lookback_months) : 'Off'} />
+        </div>
+      )}
+
+      {counts.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {counts.slice(0, 12).map((item) => (
+            <DetailPill key={item.entity} label={formatDiagnosticLabel(item.entity)} value={item.count.toLocaleString()} />
+          ))}
+        </div>
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <DiagnosticList title="Warnings by type" items={detail.diagnostics.warning_groups.map((g) => `${formatDiagnosticLabel(g.type)}: ${g.count.toLocaleString()}`)} />
+        <DiagnosticList title="Failed media" items={failedMedia.map((item) => item.key || item.message)} empty="No failed media recorded" />
+        <DiagnosticList title="Unmapped data" items={unmapped.map((item) => item.message)} empty="No unmapped members, states, or teams recorded" />
+        <DiagnosticList
+          title="Failure retryability"
+          items={[
+            `${detail.diagnostics.retryable_failures.length.toLocaleString()} retryable`,
+            `${detail.diagnostics.non_retryable_failures.length.toLocaleString()} non-retryable`,
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DetailPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background px-3 py-2">
+      <div className="text-[11px] uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-medium">{value}</div>
+    </div>
+  );
+}
+
+function DiagnosticList({ title, items, empty = 'None' }: { title: string; items: string[]; empty?: string }) {
+  const visible = items.filter(Boolean).slice(0, 6);
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-sm font-medium">{title}</div>
+      {visible.length === 0 ? (
+        <div className="mt-2 text-xs text-muted-foreground">{empty}</div>
+      ) : (
+        <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+          {visible.map((item, idx) => (
+            <li key={`${title}-${idx}`} className="truncate">{item}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function formatLookback(months?: number) {
+  if (!months || months <= 0) return 'All time';
+  return `${months} months`;
+}
+
+function formatDiagnosticLabel(value: string) {
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 // ─── Step 3: Configure & Import ──────────────────────────────────────
@@ -1418,6 +2114,9 @@ function ImportStep({
   userMappings,
   importArchived,
   importCompleted,
+  importDocs,
+  docsSpaceName,
+  docsCollectionName,
   onArchived,
   onCompleted,
   importing,
@@ -1431,6 +2130,9 @@ function ImportStep({
   userMappings: UserMapping[];
   importArchived: boolean;
   importCompleted: boolean;
+  importDocs: boolean;
+  docsSpaceName: string;
+  docsCollectionName: string;
   onArchived: (v: boolean) => void;
   onCompleted: (v: boolean) => void;
   importing: boolean;
@@ -1441,7 +2143,7 @@ function ImportStep({
   const s = preview?.summary;
   const isDone = importStatus?.status === 'completed';
   const isFailed = importStatus?.status === 'failed';
-  const isRunning = importing || importStatus?.status === 'processing';
+  const isRunning = importing || importStatus?.status === 'pending' || importStatus?.status === 'scanning' || importStatus?.status === 'processing';
 
   const matchedUsers = userMappings.filter((u) => u.action === 'matched').length;
   const invitedUsers = userMappings.filter((u) => u.invited).length;
@@ -1507,7 +2209,7 @@ function ImportStep({
 
         {isRunning && (
           <p className="text-xs text-muted-foreground">
-            Do not close this window while the import is in progress.
+            You can leave this screen. The import status is saved and will remain available in history.
           </p>
         )}
 
@@ -1532,76 +2234,89 @@ function ImportStep({
   // ─── Pre-import config ──────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-base font-semibold">Review &amp; Import</h3>
-
-      <Card>
-        <CardHeader className="py-3 px-4">
-          <CardTitle className="text-sm">Options</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 px-4 pb-4 pt-0">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm">Import archived tasks</Label>
-            <Switch checked={importArchived} onCheckedChange={onArchived} disabled={hasApiToken} />
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <SectionHeader
+          number={1}
+          title="Options"
+          description="Final overrides before kicking off the import."
+        />
+        <SectionBody>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+              <span className="text-xs">Import archived tasks</span>
+              <Switch checked={importArchived} onCheckedChange={onArchived} disabled={hasApiToken} />
+            </label>
+            <label className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+              <span className="text-xs">Import completed tasks</span>
+              <Switch checked={importCompleted} onCheckedChange={onCompleted} disabled={hasApiToken} />
+            </label>
           </div>
-          <div className="flex items-center justify-between">
-            <Label className="text-sm">Import completed tasks</Label>
-            <Switch checked={importCompleted} onCheckedChange={onCompleted} disabled={hasApiToken} />
-          </div>
-        </CardContent>
-      </Card>
+        </SectionBody>
+      </section>
 
       {s && (
-        <Card>
-          <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm">Summary</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 pt-0">
-            <Table>
-              <TableBody>
-                <SummaryRow label="Teams" value={`${teamMappings.length} (${newTeams} new, ${existingTeams} existing)`} />
-                <SummaryRow
-                  label="Workflows"
-                  value={`${workflowMappings.length} existing workflows selected`}
-                />
-                <SummaryRow
-                  label="Workflow States"
-                  value={`${workflowMappings.reduce((sum, workflow) => sum + workflow.states.length, 0)} mapped`}
-                />
-                <SummaryRow label="Labels" value={`${s.labels_count}`} />
-                <SummaryRow label="Objectives" value={`${s.objectives_count}`} />
-                <SummaryRow label="Epics" value={`${s.epics_count}`} />
-                <SummaryRow label="Sprints" value={`${s.sprints_count}`} />
-                <SummaryRow label="Tasks" value={`${s.total_tasks.toLocaleString()}`} />
-                <SummaryRow label="Checklist Items" value={`${s.checklist_items_count}`} />
-                <SummaryRow
-                  label="User Mappings"
-                  value={`${matchedUsers} matched${invitedUsers > 0 ? `, ${invitedUsers} invited` : ''}${skippedUsers > 0 ? `, ${skippedUsers} skipped` : ''}`}
-                />
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <section className="space-y-3">
+          <SectionHeader number={2} title="Summary" description="Review what will be imported." />
+          <SectionBody>
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableBody>
+                  <SummaryRow label="Teams" value={`${teamMappings.length} (${newTeams} new, ${existingTeams} existing)`} />
+                  <SummaryRow
+                    label="Workflows"
+                    value={`${workflowMappings.length} existing workflows selected`}
+                  />
+                  <SummaryRow
+                    label="Workflow states"
+                    value={`${workflowMappings.reduce((sum, workflow) => sum + workflow.states.length, 0)} mapped`}
+                  />
+                  <SummaryRow label="Labels" value={`${s.labels_count}`} />
+                  <SummaryRow label="Objectives" value={`${s.objectives_count}`} />
+                  <SummaryRow label="Epics" value={`${s.epics_count}`} />
+                  <SummaryRow label="Sprints" value={`${s.sprints_count}`} />
+                  <SummaryRow label="Tasks" value={`${s.total_tasks.toLocaleString()}`} />
+                  <SummaryRow
+                    label="Docs"
+                    value={
+                      importDocs
+                        ? `${s.docs_count.toLocaleString()} to ${docsCollectionName || docsSpaceName || 'selected space'}`
+                        : 'Not selected'
+                    }
+                  />
+                  <SummaryRow label="Checklist items" value={`${s.checklist_items_count}`} />
+                  <SummaryRow
+                    label="User mappings"
+                    value={`${matchedUsers} matched${invitedUsers > 0 ? `, ${invitedUsers} invited` : ''}${skippedUsers > 0 ? `, ${skippedUsers} skipped` : ''}`}
+                  />
+                </TableBody>
+              </Table>
+            </div>
+          </SectionBody>
+        </section>
       )}
 
       {preview && preview.warnings && preview.warnings.length > 0 && (
-        <Card>
-          <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm">Warnings</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5 px-4 pb-4 pt-0">
-            {preview.warnings.map((w, i) => (
-              <div key={i} className="flex items-start gap-2 text-xs text-yellow-600 dark:text-yellow-400">
-                <Alert01Icon className="mt-0.5 h-3 w-3 shrink-0" />
-                <span>{w}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+        <section className="space-y-3">
+          <SectionHeader number={3} title="Warnings" description="Resolve these before importing if possible." />
+          <SectionBody>
+            <div className="space-y-1.5 rounded-md border border-yellow-300/50 bg-yellow-50/60 px-3 py-2 dark:border-yellow-900/50 dark:bg-yellow-950/20">
+              {preview.warnings.map((w, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-yellow-700 dark:text-yellow-400">
+                  <Alert01Icon className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>{w}</span>
+                </div>
+              ))}
+            </div>
+          </SectionBody>
+        </section>
       )}
 
-      <div className="flex justify-end">
-        <Button onClick={onStart}>Start Import</Button>
+      <div className="flex items-center justify-between border-t pt-4">
+        <p className="text-xs text-muted-foreground">
+          The import runs in the background. You can leave this page and check progress in History.
+        </p>
+        <Button onClick={onStart}>Start import</Button>
       </div>
     </div>
   );
@@ -1627,6 +2342,7 @@ function ResultTable({ result }: { result: ShortcutImportStatusResponse['result'
     { label: 'Epics', created: result.epics_created },
     { label: 'Sprints', created: result.sprints_created },
     { label: 'Tasks', created: result.tasks_created, skipped: result.tasks_skipped },
+    { label: 'Docs', created: result.docs_created, skipped: result.docs_skipped },
     { label: 'Checklist Items', created: result.checklist_items_created },
     { label: 'Owner Links', created: result.owner_links_created },
     { label: 'Label Links', created: result.label_links_created },

@@ -196,6 +196,7 @@ type AIMessageMetadata struct {
 // AISource is a single source citation in AI message metadata.
 type AISource struct {
 	DocID      string  `json:"docId"`
+	BlockID    string  `json:"blockId,omitempty"`
 	Title      string  `json:"title"`
 	Snippet    string  `json:"snippet"`
 	Confidence float64 `json:"confidence"`
@@ -208,6 +209,7 @@ type KnowledgeSearchResult struct {
 	ReferenceID   string
 	SourceType    string
 	DocumentID    string
+	BlockID       string
 	SourceID      string
 	ChunkIndex    int
 	Title         string
@@ -282,6 +284,7 @@ type SupportAIService struct {
 	redis                  *redis.Client
 	db                     *gorm.DB
 	supportEventRecorder   SupportEventRecorder
+	traceRecorder          SupportAIRetrievalTraceRecorder
 }
 
 // NewSupportAIService creates a new SupportAIService with all dependencies.
@@ -361,11 +364,38 @@ func (s *SupportAIService) SetSupportEventRecorder(r SupportEventRecorder) {
 	s.supportEventRecorder = r
 }
 
+func (s *SupportAIService) SetSupportAIRetrievalTraceRecorder(r SupportAIRetrievalTraceRecorder) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.traceRecorder = r
+	return s
+}
+
 func (s *SupportAIService) recordSupportEvent(input SupportEventInput) {
 	if s.supportEventRecorder == nil {
 		return
 	}
 	s.supportEventRecorder.RecordEventBestEffort(input)
+}
+
+func (s *SupportAIService) recordSupportAIRetrievalTraceBestEffort(trace *model.SupportAIRetrievalTrace) {
+	if s == nil || s.traceRecorder == nil || trace == nil {
+		return
+	}
+	traceCopy := *trace
+	go func(trace model.SupportAIRetrievalTrace) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.traceRecorder.RecordSupportAIRetrievalTrace(ctx, &trace); err != nil {
+			slog.WarnContext(ctx, "record support AI retrieval trace failed",
+				"error", err,
+				"workspace_id", trace.WorkspaceID,
+				"conversation_id", trace.ConversationID,
+				"message_id", trace.MessageID,
+			)
+		}
+	}(traceCopy)
 }
 
 func (s *SupportAIService) SetTriageService(triageService *SupportInboxTriageService) *SupportAIService {
@@ -825,6 +855,36 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		}
 		if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
 			return fmt.Errorf("create AI message: %w", err)
+		}
+		canAnswer := fmt.Sprintf("%t", response.CanAnswer)
+		canResolve := canAnswer
+		trace, traceErr := BuildSupportAIRetrievalTrace(SupportAIRetrievalTraceInput{
+			WorkspaceID:    workspaceID,
+			ConversationID: conversationID,
+			MessageID:      aiMsg.ID,
+			SearchQueries:  queryPlan.SearchQueries,
+			SearchResults:  searchResults,
+			CitedSourceIDs: response.SourceDocIDs,
+			AIConfidence:   confidence,
+			CanAnswer:      &canAnswer,
+			CanResolve:     &canResolve,
+			Metadata: map[string]any{
+				"agent_id":           agentID,
+				"trigger_message_id": msg.ID,
+				"reply_kind":         answerReplyKind,
+				"issue_key":          queryPlan.IssueKey,
+				"progress_state":     answerProgressState,
+			},
+		})
+		if traceErr != nil {
+			slog.WarnContext(ctx, "build support AI retrieval trace failed",
+				"error", traceErr,
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", aiMsg.ID,
+			)
+		} else {
+			s.recordSupportAIRetrievalTraceBestEffort(trace)
 		}
 
 		s.recordSupportEvent(SupportEventInput{
@@ -2295,6 +2355,7 @@ func (s *SupportAIService) searchSingleQuery(
 				ReferenceID:   knowledgeReferenceID(knowledgeSourceTypeDocs, result.DocumentID),
 				SourceType:    knowledgeSourceTypeDocs,
 				DocumentID:    result.DocumentID,
+				BlockID:       derefString(result.BlockID),
 				SourceID:      result.SpaceID,
 				ChunkIndex:    result.ChunkIndex,
 				Title:         result.Title,
@@ -2484,6 +2545,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 		seenDocs[docID] = struct{}{}
 		sources = append(sources, AISource{
 			DocID:      docID,
+			BlockID:    result.BlockID,
 			Title:      result.Title,
 			Snippet:    excerptText(result.Content, 180),
 			Confidence: clamp01(maxFloat(result.VectorScore, clamp01(result.LexicalScore/0.35))),

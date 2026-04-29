@@ -225,11 +225,16 @@ func main() {
 			&model.SupportCoverageGapArticle{},
 			&model.SupportCoverageSnapshot{},
 			&model.SupportCoverageDigestDelivery{},
+			&model.SupportCoverageAnalysisRun{},
+			&model.SupportCoverageConversationAnalysis{},
+			&model.SupportAIRetrievalTrace{},
+			&model.SupportCoverageRecommendation{},
 			&model.GitIntegration{},
 			&model.GitRepository{},
 			&model.PMTeamRepoDefault{},
 			&model.TaskDeliveryTarget{},
 			&model.TaskGitLink{},
+			&model.GitWebhookEvent{},
 			&model.AgentHandoff{},
 			&model.PMTaskTemplate{},
 			&model.PMRecurringTemplate{},
@@ -243,6 +248,7 @@ func main() {
 			&model.DocsDocument{},
 			&model.DocsDocumentKey{},
 			&model.DocsContent{},
+			&model.DocsBlock{},
 			&model.DocsVersion{},
 			&model.DocsLink{},
 			&model.DocsHelpcenterConfig{},
@@ -490,6 +496,13 @@ func main() {
 
 	// Initialize repositories.
 	userRepo := repository.NewUserRepository(db)
+	if len(cfg.PlatformAdminEmails) > 0 {
+		updated, err := userRepo.GrantPlatformAdminByEmails(context.Background(), cfg.PlatformAdminEmails)
+		if err != nil {
+			fatalWithSentry("failed to bootstrap platform admins", err)
+		}
+		slog.Info("startup: platform admin bootstrap complete", "configured_emails", len(cfg.PlatformAdminEmails), "updated_users", updated)
+	}
 	passkeyRepo := repository.NewPasskeyRepository(db)
 	orgRepo := repository.NewOrganizationRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
@@ -546,11 +559,14 @@ func main() {
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
 	taskDeliveryTargetRepo := repository.NewTaskDeliveryTargetRepository(db)
 	taskGitLinkRepo := repository.NewTaskGitLinkRepository(db)
+	gitWebhookEventRepo := repository.NewGitWebhookEventRepository(db)
 	agentHandoffRepo := repository.NewAgentHandoffRepository(db)
 	docsSpaceRepo := repository.NewDocsSpaceRepository(db)
 	docsCollectionRepo := repository.NewDocsCollectionRepository(db, cfg.DocsOrderingUseSortKey)
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db, cfg.DocsOrderingUseSortKey)
 	docsContentRepo := repository.NewDocsContentRepository(db)
+	docsBlockRepo := repository.NewDocsBlockRepository(db)
+	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db, cfg.DocsOrderingUseSortKey)
@@ -626,7 +642,7 @@ func main() {
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, pmTaskRepo, wsPublisher, notificationService, workspaceRepo)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
 	pmViewService := service.NewPMViewService(pmViewRepo, wsPublisher)
-	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService)
+	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService, resolvePMImportEncryptionKey(cfg))
 	pmImportService.SetPublisher(wsPublisher)
 	searchService := service.NewSearchService(searchRepo, workspaceRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
@@ -808,6 +824,7 @@ func main() {
 	agentService.SetRuleEngine(ruleEngine)
 	agentService.SetWorkflowService(pmWorkflowService)
 	pmRecurringTemplateService.SetTemporalClient(temporalClient)
+	pmImportService.SetTemporalClient(temporalClient)
 
 	slog.Info("startup: backfilling built-in agents for existing workspaces")
 	if err := agentService.EnsureSystemTemplates(context.Background()); err != nil {
@@ -849,6 +866,8 @@ func main() {
 	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, wsPublisher)
+	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
+	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
@@ -886,6 +905,7 @@ func main() {
 	docsDocumentService.SetHelpcenterService(docsHelpcenterService)
 	docsDeletionDeps := service.DocsDocumentDeletionDependencies{
 		ContentRepo:     docsContentRepo,
+		BlockRepo:       docsBlockRepo,
 		VersionRepo:     docsVersionRepo,
 		LinkRepo:        docsLinkRepo,
 		ChunkRepo:       docsChunkRepo,
@@ -911,6 +931,7 @@ func main() {
 	)
 	docsEmbeddingService := service.NewDocsEmbeddingService(
 		docsChunkRepo,
+		docsBlockRepo,
 		agentKnowledgeSourceRepo,
 		docsContentRepo,
 		docsSpaceRepo,
@@ -993,6 +1014,7 @@ func main() {
 	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetGitService(gitService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
+	commandService.SetDocsBlockService(docsBlockService)
 	ruleEngine.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
@@ -1020,10 +1042,20 @@ func main() {
 	// Coverage telemetry: repos → services → async recorder → inject into hot-path services.
 	supportEventRepo := repository.NewSupportEventRepository(db)
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
+	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	supportCoverageService.SetTemporalClient(temporalClient)
+	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
+	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
+		SetCoverageRepositories(supportCoverageRepo, supportCoverageAnalysisRepo).
+		SetConversationRepositories(supportConversationRepo, supportMessageRepo).
+		SetKnowledgeMatcher(supportCoverageKnowledgeMatcher, docsSpaceRepo, supportContentSourceRepo).
+		SetTemporalClient(temporalClient)
+	supportCoverageTraceService := service.NewSupportCoverageRetrievalTraceService(supportCoverageAnalysisRepo)
 	supportEventService := service.NewSupportEventService(supportEventRepo, supportCoverageService)
 	supportEventRecorder := service.NewSupportEventAsyncRecorder(supportEventService, 250)
 	supportAIService.SetSupportEventRecorder(supportEventRecorder)
+	supportAIService.SetSupportAIRetrievalTraceRecorder(supportCoverageTraceService)
 	supportInboxService.SetSupportEventRecorder(supportEventRecorder)
 
 	supportCoverageDigestService := service.NewSupportCoverageDigestService(
@@ -1104,7 +1136,7 @@ func main() {
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
 		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService),
-		Git:                 handler.NewGitHandler(gitService),
+		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
 		CRMContact:          handler.NewCRMContactHandler(crmContactService),
@@ -1135,6 +1167,7 @@ func main() {
 			docsCollectionService,
 			docsDocumentService,
 			docsContentService,
+			docsBlockService,
 			docsVersionService,
 			docsLinkService,
 			docsHelpcenterService,
@@ -1180,6 +1213,12 @@ func main() {
 		slog.Error("failed to remove legacy agent schedule workflows", "error", err)
 	} else if terminated > 0 {
 		slog.Info("removed legacy agent schedule workflows", "count", terminated)
+	}
+	if err := supportCoverageService.EnsureDailyEnrichment(context.Background()); err != nil {
+		slog.Error("failed to ensure coverage gap daily enrichment workflow", "error", err)
+	}
+	if err := supportCoverageDailyAnalyzer.EnsureDailyAnalysis(context.Background()); err != nil {
+		slog.Error("failed to ensure coverage daily analysis workflow", "error", err)
 	}
 
 	// Start sprint automation cron workflow via Temporal (replaces local ticker).
@@ -1456,6 +1495,23 @@ func resolveTOTPEncryptionKey(cfg *config.Config) []byte {
 	}
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for TOTP fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.PMImportEncryptionKey)); err != nil {
+		slog.Warn("invalid PM_IMPORT_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
 		return key
 	}

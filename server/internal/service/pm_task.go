@@ -466,8 +466,11 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 					title = u.Hostname()
 				}
 			}
+			taskID := newTask.ID
 			link := &model.PMExternalLink{
-				TaskID:      newTask.ID,
+				TaskID:      &taskID,
+				EntityType:  "task",
+				EntityID:    newTask.ID,
 				URL:         linkURL,
 				Title:       title,
 				CreatedByID: actorID,

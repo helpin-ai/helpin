@@ -33,9 +33,14 @@ func RequireAuth(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
 				writeError(w, http.StatusUnauthorized, "invalid or expired token")
 				return
 			}
+			if claims.TokenUse != auth.TokenUseAccess {
+				writeError(w, http.StatusUnauthorized, "access token required")
+				return
+			}
 
 			ctx := WithUserID(r.Context(), claims.UserID)
 			ctx = WithUserEmail(ctx, claims.Email)
+			ctx = WithClaims(ctx, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

@@ -12,7 +12,7 @@ export interface EditorImageUploadResult {
   publicUrl: string;
 }
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
 
 /**
  * Upload an image file via the attachment infrastructure and return the public URL
@@ -26,7 +26,7 @@ export async function uploadEditorImage(
     throw new Error('Only image files are supported');
   }
   if (file.size > MAX_SIZE) {
-    throw new Error('Image exceeds maximum size of 10 MB');
+    throw new Error('Image exceeds maximum size of 50 MB');
   }
 
   // 1. Initiate upload → get presigned PUT URL + public URL

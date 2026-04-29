@@ -105,11 +105,14 @@ import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
 import { buildHelpcenterPreviewUrlFromEnv } from '@/lib/helpcenterPreview'
 import { docsService } from '@/lib/services/docsService'
+import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import { queryKeys } from '@/lib/queryKeys'
 import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
 import { UserAvatar } from '@/components/pm/UserAvatar'
+import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
 
 function docStatusColor(status: string): string {
   switch (status) {
@@ -201,7 +204,13 @@ function EditingIndicator() {
   )
 }
 
-export function DocsDocumentDetail() {
+export function DocsDocumentDetail({
+  fromGapId,
+  fromSuggestionId,
+}: {
+  fromGapId?: string
+  fromSuggestionId?: string
+} = {}) {
   const navigate = useNavigate()
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -209,6 +218,10 @@ export function DocsDocumentDetail() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
+  const coverageGapClosedRef = useRef(false)
+  const [coverageInitialContent] = useState(() =>
+    loadCoverageHandoffContent(fromGapId, fromSuggestionId),
+  )
 
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs, canPublishDocs, canAdminDocs, isAdmin } = usePermissions(access)
@@ -464,12 +477,29 @@ export function DocsDocumentDetail() {
   const handleSave = useCallback(
     async (json: JSONContent) => {
       await saveContent.mutateAsync({ docId, content: json })
+      if (fromGapId && fromSuggestionId && !coverageGapClosedRef.current) {
+        coverageGapClosedRef.current = true
+        const result = await supportCoverageService.addDocumentToGap(wsId, fromGapId, {
+          route: 'update_article',
+          target_document_id: docId,
+        })
+        if (result.error) throw new Error(result.error)
+      }
       // Invalidate translation data so needs_review status updates promptly
       if (space?.type === 'external_capable' && (localesConfig?.enabled_locales?.length ?? 0) > 1) {
         queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
       }
     },
-    [saveContent, docId, space?.type, localesConfig?.enabled_locales?.length, queryClient, wsId],
+    [
+      saveContent,
+      docId,
+      fromGapId,
+      fromSuggestionId,
+      wsId,
+      space?.type,
+      localesConfig?.enabled_locales?.length,
+      queryClient,
+    ],
   )
 
   const isExternalHelpCenter = space?.type === 'external_capable'
@@ -531,6 +561,13 @@ export function DocsDocumentDetail() {
     : translationDrafts[translationDraftKey(docId, activeLocale)] ?? translationDraftFromTranslation(activeLocale, activeTranslation)
   const displayedTitle = isSourceLocaleActive ? titleDraft : activeTranslationDraft.title
 
+  const preparePublishedContent = useCallback(async (rawContent: JSONContent | null | undefined) => {
+    if (!isExternalHelpCenter || !rawContent) return undefined
+    return prepareDocsContentForPublish(rawContent, {
+      uploadConfig: { workspaceId: wsId, entityType: 'editor_upload', entityId: docId },
+    })
+  }, [docId, isExternalHelpCenter, wsId])
+
   useTitle(displayedTitle || 'Document')
 
   const handlePublish = async () => {
@@ -542,7 +579,8 @@ export function DocsDocumentDetail() {
       return
     }
     try {
-      await publishDoc.mutateAsync({ id: docId })
+      const publishedContent = await preparePublishedContent(content?.content as JSONContent | null | undefined)
+      await publishDoc.mutateAsync({ id: docId, published_content: publishedContent })
       toast.success('Document published')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to publish')
@@ -552,10 +590,18 @@ export function DocsDocumentDetail() {
   const handleConfirmPublish = async () => {
     try {
       if (pendingPublishLocale && pendingPublishLocale !== defaultLocale) {
-        await publishArticleTranslation.mutateAsync({ locale: pendingPublishLocale, slug: pendingSlug })
+        const draft = translationDrafts[translationDraftKey(docId, pendingPublishLocale)]
+          ?? translationDraftFromTranslation(pendingPublishLocale, articleTranslationsByLocale.get(pendingPublishLocale) ?? null)
+        const publishedContent = await preparePublishedContent(draft.content as JSONContent | null | undefined)
+        await publishArticleTranslation.mutateAsync({
+          locale: pendingPublishLocale,
+          slug: pendingSlug,
+          published_content: publishedContent,
+        })
         toast.success(`${getHelpcenterLocaleLabel(pendingPublishLocale)} translation published`)
       } else {
-        await publishDoc.mutateAsync({ id: docId, slug: pendingSlug })
+        const publishedContent = await preparePublishedContent(content?.content as JSONContent | null | undefined)
+        await publishDoc.mutateAsync({ id: docId, slug: pendingSlug, published_content: publishedContent })
         toast.success('Document published')
       }
       setSlugDialogOpen(false)
@@ -738,7 +784,8 @@ export function DocsDocumentDetail() {
           await docsService.publishCollectionTranslation(wsId, doc.collection_id, activeLocale)
         }
       }
-      await publishArticleTranslation.mutateAsync({ locale: activeLocale })
+      const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
+      await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
       toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
       setParentPublishConfirmOpen(false)
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
@@ -747,7 +794,7 @@ export function DocsDocumentDetail() {
     } finally {
       setGeneratingParents(false)
     }
-  }, [activeLocale, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale, publishArticleTranslation, queryClient])
+  }, [activeLocale, activeTranslationDraft.content, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale, preparePublishedContent, publishArticleTranslation, queryClient])
 
   const activeLocaleShortLabel = activeLocale.toUpperCase()
   const sourceLivePublished = isExternalHelpCenter ? !!doc?.live_published_at : doc?.status === 'published'
@@ -982,7 +1029,7 @@ export function DocsDocumentDetail() {
               size="sm"
               variant={isPublished && !hasUnpublishedChanges ? 'secondary' : 'default'}
               className="h-7 gap-1.5 text-xs"
-              onClick={() => {
+              onClick={async () => {
                 if (isSourceLocaleActive) {
                   void handlePublish()
                   return
@@ -997,10 +1044,13 @@ export function DocsDocumentDetail() {
                   setParentPublishConfirmOpen(true)
                   return
                 }
-                publishArticleTranslation.mutate({ locale: activeLocale }, {
-                  onSuccess: () => toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`),
-                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
-                })
+                try {
+                  const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
+                  await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
+                  toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
+                }
               }}
               disabled={publishDisabled}
             >
@@ -1195,7 +1245,11 @@ export function DocsDocumentDetail() {
                       }
                     : undefined
               }
-              initialContent={isSourceLocaleActive ? (content?.content as JSONContent | null) : activeTranslationDraft.content}
+              initialContent={
+                isSourceLocaleActive
+                  ? coverageInitialContent ?? (content?.content as JSONContent | null)
+                  : activeTranslationDraft.content
+              }
               onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
               readOnly={effectiveReadOnly}
               uploadConfig={

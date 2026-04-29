@@ -14,6 +14,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/server ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/temporal-worker ./cmd/temporal-worker
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migrate ./cmd/migrate
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/reconcile-git-pr-status ./cmd/reconcile-git-pr-status
 
 # ---- Minimal runtime base ----
 FROM alpine:3.19 AS runtime-base
@@ -35,6 +36,7 @@ RUN apk add --no-cache \
     && npm i -g @openai/codex
 
 COPY --from=builder /app/server .
+COPY --from=builder /app/reconcile-git-pr-status .
 RUN chown -R app:app /app
 
 USER app:app

@@ -99,6 +99,7 @@ func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 			avatar_seed TEXT,
 			avatar_background_mode TEXT,
 			avatar_background_color TEXT,
+			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

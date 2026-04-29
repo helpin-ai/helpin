@@ -6,16 +6,20 @@ import (
 	"fmt"
 	"hash/fnv"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/helpin-ai/helpin/server/internal/websocket"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
+	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/websocket"
+	tclient "go.temporal.io/sdk/client"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+const shortcutImportStaleAfter = 30 * time.Minute
 
 type PMImportService struct {
 	db                *gorm.DB
@@ -23,7 +27,11 @@ type PMImportService struct {
 	workflowRepo      *repository.PMWorkflowRepository
 	attachmentService shortcutImportedAttachmentService
 	mediaDownloader   shortcutMediaDownloader
+	docsDocumentSvc   *DocsDocumentService
+	docsContentSvc    *DocsContentService
 	publisher         *websocket.Publisher
+	temporalClient    tclient.Client
+	encryptionKey     []byte
 }
 
 var shortcutImportLabelColors = []string{
@@ -45,18 +53,38 @@ var shortcutImportLabelColors = []string{
 	"#a855f7",
 }
 
-func NewPMImportService(db *gorm.DB, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, attachmentService shortcutImportedAttachmentService) *PMImportService {
+func NewPMImportService(db *gorm.DB, workspaceRepo *repository.WorkspaceRepository, workflowRepo *repository.PMWorkflowRepository, attachmentService shortcutImportedAttachmentService, encryptionKey ...[]byte) *PMImportService {
+	var key []byte
+	if len(encryptionKey) > 0 && len(encryptionKey[0]) == 32 {
+		key = append([]byte(nil), encryptionKey[0]...)
+	}
 	return &PMImportService{
 		db:                db,
 		workspaceRepo:     workspaceRepo,
 		workflowRepo:      workflowRepo,
 		attachmentService: attachmentService,
 		mediaDownloader:   newShortcutHTTPMediaDownloader(),
+		encryptionKey:     key,
 	}
 }
 
 func (s *PMImportService) SetPublisher(publisher *websocket.Publisher) {
 	s.publisher = publisher
+}
+
+func (s *PMImportService) SetTemporalClient(client tclient.Client) {
+	if s == nil {
+		return
+	}
+	s.temporalClient = client
+}
+
+func (s *PMImportService) SetDocsImportDependencies(documentSvc *DocsDocumentService, contentSvc *DocsContentService) {
+	if s == nil {
+		return
+	}
+	s.docsDocumentSvc = documentSvc
+	s.docsContentSvc = contentSvc
 }
 
 func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, actorID string, csvData []byte, apiToken string) (*model.ShortcutImportPreviewResponse, error) {
@@ -95,7 +123,7 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 	labelNames := map[string]struct{}{}
 	teamCounts := map[string]int{}
 	workflowStateCounts := map[string]*shortcutWorkflowAggregate{}
-	emails := map[string]struct{}{}
+	emailCounts := map[string]int{}
 	checklistCount := 0
 	for _, row := range data.Rows {
 		storyTypeCounts[row.Type]++
@@ -137,10 +165,10 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 		workflow.StateCounts[row.State]++
 		workflow.TaskCount++
 		if row.Requester != "" {
-			emails[normalizeShortcutName(row.Requester)] = struct{}{}
+			emailCounts[normalizeShortcutName(row.Requester)]++
 		}
 		for _, owner := range shortcutOwnerEmails(row.Owners) {
-			emails[normalizeShortcutName(owner)] = struct{}{}
+			emailCounts[normalizeShortcutName(owner)]++
 		}
 		checklistCount += len(parseShortcutChecklist(row.Tasks))
 	}
@@ -150,9 +178,9 @@ func (s *PMImportService) PreviewShortcut(ctx context.Context, workspaceID, acto
 		return nil, err
 	}
 
-	users := make([]model.ShortcutUserMatch, 0, len(emails))
-	for _, email := range sortedSetKeys(emails) {
-		match := model.ShortcutUserMatch{Email: email}
+	users := make([]model.ShortcutUserMatch, 0, len(emailCounts))
+	for _, email := range sortKeysByCount(emailCounts) {
+		match := model.ShortcutUserMatch{Email: email, StoryCount: emailCounts[email]}
 		if member, ok := memberByEmail[email]; ok {
 			match.MatchedUserID = &member.UserID
 			match.MatchedName = &member.FullName
@@ -265,6 +293,9 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
 		return nil, err
 	}
+	if err := s.reconcileStaleShortcutImports(ctx, workspaceID); err != nil {
+		return nil, err
+	}
 	var job model.PMImportJob
 	if err := s.db.WithContext(ctx).
 		Where("id = ? AND workspace_id = ? AND source = ?", importID, workspaceID, model.PMImportSourceShortcut).
@@ -274,9 +305,133 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 		}
 		return nil, fmt.Errorf("get import job: %w", err)
 	}
+	return shortcutImportStatusFromJob(job), nil
+}
+
+func (s *PMImportService) GetShortcutStatusDetail(ctx context.Context, workspaceID, actorID, importID string) (*model.ShortcutImportDetailResponse, error) {
+	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	if err := s.reconcileStaleShortcutImports(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+	var job model.PMImportJob
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND workspace_id = ? AND source = ?", importID, workspaceID, model.PMImportSourceShortcut).
+		First(&job).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("import job not found")
+		}
+		return nil, fmt.Errorf("get import job: %w", err)
+	}
+	status := shortcutImportStatusFromJob(job)
+	detail := &model.ShortcutImportDetailResponse{
+		ShortcutImportStatusResponse: *status,
+		Diagnostics:                  shortcutImportDiagnostics(status.Result),
+		Retryable:                    shortcutImportCanRetry(job) && len(s.encryptionKey) == 32,
+		RetryBlockedReason:           shortcutImportRetryBlockedReason(job, s.encryptionKey),
+		Cancelable:                   shortcutImportCanCancel(job.Status),
+	}
+	if opts, ok := s.shortcutImportStoredOptions(job); ok {
+		detail.Options = opts
+	}
+	return detail, nil
+}
+
+func (s *PMImportService) ListShortcutStatuses(ctx context.Context, workspaceID, actorID string) ([]model.ShortcutImportStatusResponse, error) {
+	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	if err := s.reconcileStaleShortcutImports(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+	var jobs []model.PMImportJob
+	if err := s.db.WithContext(ctx).
+		Where("workspace_id = ? AND source = ?", workspaceID, model.PMImportSourceShortcut).
+		Order("created_at DESC").
+		Limit(50).
+		Find(&jobs).Error; err != nil {
+		return nil, fmt.Errorf("list import jobs: %w", err)
+	}
+	statuses := make([]model.ShortcutImportStatusResponse, 0, len(jobs))
+	for _, job := range jobs {
+		statuses = append(statuses, *shortcutImportStatusFromJob(job))
+	}
+	return statuses, nil
+}
+
+func (s *PMImportService) CancelShortcutImport(ctx context.Context, workspaceID, actorID, importID string) (*model.ShortcutImportStatusResponse, error) {
+	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	var job model.PMImportJob
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND workspace_id = ? AND source = ?", importID, workspaceID, model.PMImportSourceShortcut).
+		First(&job).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("import job not found")
+		}
+		return nil, fmt.Errorf("get import job: %w", err)
+	}
+	if !shortcutImportCanCancel(job.Status) {
+		return shortcutImportStatusFromJob(job), nil
+	}
+	if s.temporalClient != nil && job.WorkflowID != nil && strings.TrimSpace(*job.WorkflowID) != "" {
+		_ = s.temporalClient.CancelWorkflow(ctx, *job.WorkflowID, "")
+	}
+	msg := "Import canceled by user"
+	now := time.Now().UTC()
+	if err := s.updateJob(ctx, job.ID, map[string]interface{}{
+		"status":       model.PMImportStatusCanceled,
+		"error":        &msg,
+		"completed_at": &now,
+		"updated_at":   now,
+	}); err != nil {
+		return nil, fmt.Errorf("cancel import job: %w", err)
+	}
+	job.Status = model.PMImportStatusCanceled
+	job.Error = &msg
+	job.CompletedAt = &now
+	job.UpdatedAt = now
+	return shortcutImportStatusFromJob(job), nil
+}
+
+func (s *PMImportService) RetryShortcutImport(ctx context.Context, workspaceID, actorID, importID string) (*model.ShortcutImportExecuteResponse, error) {
+	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	var job model.PMImportJob
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND workspace_id = ? AND source = ?", importID, workspaceID, model.PMImportSourceShortcut).
+		First(&job).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("import job not found")
+		}
+		return nil, fmt.Errorf("get import job: %w", err)
+	}
+	if !shortcutImportCanRetry(job) || len(s.encryptionKey) != 32 {
+		return nil, fmt.Errorf("%s", shortcutImportRetryBlockedReason(job, s.encryptionKey))
+	}
+	raw, err := appcrypto.DecryptString(*job.PayloadEncrypted, s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("Shortcut import payload could not be decrypted")
+	}
+	var req model.ShortcutAPIImportExecuteRequest
+	if err := json.Unmarshal([]byte(raw), &req); err != nil {
+		return nil, fmt.Errorf("Shortcut import payload is invalid")
+	}
+	if strings.TrimSpace(req.APIToken) == "" {
+		return nil, fmt.Errorf("Shortcut import token is missing from stored payload")
+	}
+	return s.ExecuteShortcutAPI(ctx, workspaceID, actorID, req)
+}
+
+func shortcutImportStatusFromJob(job model.PMImportJob) *model.ShortcutImportStatusResponse {
 	resp := &model.ShortcutImportStatusResponse{
-		ImportID: job.ID,
-		Status:   job.Status,
+		ImportID:  job.ID,
+		Status:    job.Status,
+		FileName:  job.FileName,
+		TotalRows: job.TotalRows,
 		Progress: model.ShortcutImportStatusProgress{
 			CurrentStep:       job.CurrentStep,
 			StepsCompleted:    job.StepsCompleted,
@@ -284,7 +439,10 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 			EntitiesProcessed: job.EntitiesProcessed,
 			EntitiesTotal:     job.EntitiesTotal,
 		},
-		Error: job.Error,
+		Error:       job.Error,
+		CreatedAt:   &job.CreatedAt,
+		UpdatedAt:   &job.UpdatedAt,
+		CompletedAt: job.CompletedAt,
 	}
 	if job.Result != nil && *job.Result != "" {
 		var result model.ShortcutImportResult
@@ -292,12 +450,205 @@ func (s *PMImportService) GetShortcutStatus(ctx context.Context, workspaceID, ac
 			resp.Result = &result
 		}
 	}
-	return resp, nil
+	return resp
+}
+
+func (s *PMImportService) reconcileStaleShortcutImports(ctx context.Context, workspaceID string) error {
+	cutoff := time.Now().UTC().Add(-shortcutImportStaleAfter)
+	msg := fmt.Sprintf("Import did not report progress for %s. Retry the import or cancel it from history.", shortcutImportStaleAfter)
+	now := time.Now().UTC()
+	if err := s.db.WithContext(ctx).Model(&model.PMImportJob{}).
+		Where("workspace_id = ? AND source = ? AND status IN ? AND updated_at < ?", workspaceID, model.PMImportSourceShortcut, []string{
+			model.PMImportStatusPending,
+			model.PMImportStatusScanning,
+			model.PMImportStatusProcessing,
+		}, cutoff).
+		Updates(map[string]interface{}{
+			"status":       model.PMImportStatusFailed,
+			"error":        &msg,
+			"completed_at": &now,
+			"updated_at":   now,
+		}).Error; err != nil {
+		return fmt.Errorf("reconcile stale Shortcut imports: %w", err)
+	}
+	return nil
+}
+
+func shortcutImportCanCancel(status string) bool {
+	switch status {
+	case model.PMImportStatusPending, model.PMImportStatusScanning, model.PMImportStatusProcessing:
+		return true
+	default:
+		return false
+	}
+}
+
+func shortcutImportCanRetry(job model.PMImportJob) bool {
+	return (job.Status == model.PMImportStatusFailed || job.Status == model.PMImportStatusCanceled) &&
+		job.PayloadEncrypted != nil &&
+		strings.TrimSpace(*job.PayloadEncrypted) != ""
+}
+
+func shortcutImportRetryBlockedReason(job model.PMImportJob, encryptionKey []byte) string {
+	if job.Status != model.PMImportStatusFailed && job.Status != model.PMImportStatusCanceled {
+		return "Only failed or canceled Shortcut API imports can be retried"
+	}
+	if len(encryptionKey) != 32 {
+		return "Shortcut import retry requires the import encryption key to be configured"
+	}
+	if job.PayloadEncrypted == nil || strings.TrimSpace(*job.PayloadEncrypted) == "" {
+		return "This import cannot be retried because no stored API payload is available"
+	}
+	return ""
+}
+
+func (s *PMImportService) shortcutImportStoredOptions(job model.PMImportJob) (*model.ShortcutImportOptions, bool) {
+	if len(s.encryptionKey) != 32 || job.PayloadEncrypted == nil || strings.TrimSpace(*job.PayloadEncrypted) == "" {
+		return nil, false
+	}
+	raw, err := appcrypto.DecryptString(*job.PayloadEncrypted, s.encryptionKey)
+	if err != nil {
+		return nil, false
+	}
+	var req model.ShortcutAPIImportExecuteRequest
+	if err := json.Unmarshal([]byte(raw), &req); err != nil {
+		return nil, false
+	}
+	return &req.Options, true
+}
+
+func shortcutImportDiagnostics(result *model.ShortcutImportResult) model.ShortcutImportDiagnostics {
+	diag := model.ShortcutImportDiagnostics{}
+	if result == nil {
+		return diag
+	}
+	diag.Counts = []model.ShortcutImportCount{
+		{Entity: "teams", Count: result.TeamsCreated},
+		{Entity: "workflows", Count: result.WorkflowsCreated},
+		{Entity: "workflow_states", Count: result.WorkflowStatesCreated},
+		{Entity: "labels", Count: result.LabelsCreated},
+		{Entity: "objectives", Count: result.ObjectivesCreated},
+		{Entity: "epics", Count: result.EpicsCreated},
+		{Entity: "sprints", Count: result.SprintsCreated},
+		{Entity: "tasks_created", Count: result.TasksCreated},
+		{Entity: "tasks_skipped", Count: result.TasksSkipped},
+		{Entity: "docs_created", Count: result.DocsCreated},
+		{Entity: "docs_skipped", Count: result.DocsSkipped},
+		{Entity: "checklist_items", Count: result.ChecklistItemsCreated},
+		{Entity: "owner_links", Count: result.OwnerLinksCreated},
+		{Entity: "label_links", Count: result.LabelLinksCreated},
+		{Entity: "external_links", Count: result.ExternalLinksCreated},
+		{Entity: "task_links", Count: result.TaskLinksCreated},
+		{Entity: "attachments", Count: result.AttachmentsCreated},
+		{Entity: "comments", Count: result.CommentsCreated},
+	}
+	groups := map[string][]string{}
+	for _, warning := range result.Warnings {
+		category := shortcutImportWarningCategory(warning)
+		groups[category] = append(groups[category], warning)
+		item := shortcutImportDiagnosticItemFromWarning(category, warning)
+		switch category {
+		case "media":
+			diag.FailedMedia = append(diag.FailedMedia, item)
+			if item.Retryable {
+				diag.RetryableFailures = append(diag.RetryableFailures, item)
+			} else {
+				diag.NonRetryableFailures = append(diag.NonRetryableFailures, item)
+			}
+		case "members":
+			diag.UnmappedMembers = append(diag.UnmappedMembers, item)
+		case "states":
+			diag.UnmappedStates = append(diag.UnmappedStates, item)
+		case "teams":
+			diag.UnmappedTeams = append(diag.UnmappedTeams, item)
+		}
+	}
+	for category, warnings := range groups {
+		visible := warnings
+		if len(visible) > 8 {
+			visible = visible[:8]
+		}
+		diag.WarningGroups = append(diag.WarningGroups, model.ShortcutImportWarningGroup{
+			Type:     category,
+			Count:    len(warnings),
+			Warnings: append([]string(nil), visible...),
+		})
+	}
+	sort.Slice(diag.WarningGroups, func(i, j int) bool {
+		if diag.WarningGroups[i].Count == diag.WarningGroups[j].Count {
+			return diag.WarningGroups[i].Type < diag.WarningGroups[j].Type
+		}
+		return diag.WarningGroups[i].Count > diag.WarningGroups[j].Count
+	})
+	return diag
+}
+
+func shortcutImportWarningCategory(warning string) string {
+	lower := strings.ToLower(warning)
+	switch {
+	case strings.Contains(lower, "shortcut media"):
+		return "media"
+	case strings.Contains(lower, "owner email") || strings.Contains(lower, "requester"):
+		return "members"
+	case strings.Contains(lower, "could not be mapped") || strings.Contains(lower, "default state"):
+		return "states"
+	case strings.Contains(lower, "team"):
+		return "teams"
+	case strings.Contains(lower, "doc"):
+		return "docs"
+	default:
+		return "general"
+	}
+}
+
+func shortcutImportDiagnosticItemFromWarning(category, warning string) model.ShortcutImportDiagnosticItem {
+	item := model.ShortcutImportDiagnosticItem{
+		Type:      category,
+		Message:   warning,
+		Count:     firstIntInString(warning),
+		Retryable: false,
+	}
+	if category == "media" {
+		item.Key = quotedValue(warning)
+		lower := strings.ToLower(warning)
+		item.Retryable = strings.Contains(lower, "download") &&
+			!strings.Contains(lower, "exceeds") &&
+			!strings.Contains(lower, "not allowed") &&
+			!strings.Contains(lower, "unsupported")
+	}
+	if category == "members" {
+		item.Key = quotedValue(warning)
+	}
+	return item
+}
+
+func quotedValue(text string) string {
+	if start := strings.Index(text, `"`); start >= 0 {
+		if end := strings.Index(text[start+1:], `"`); end >= 0 {
+			return text[start+1 : start+1+end]
+		}
+	}
+	if start := strings.Index(text, `'`); start >= 0 {
+		if end := strings.Index(text[start+1:], `'`); end >= 0 {
+			return text[start+1 : start+1+end]
+		}
+	}
+	return ""
+}
+
+func firstIntInString(text string) int {
+	for _, field := range strings.Fields(text) {
+		cleaned := strings.Trim(field, ".,:;()[]")
+		if n, err := strconv.Atoi(cleaned); err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 func (s *PMImportService) runShortcutImport(jobID, workspaceID, actorID string, csvData []byte, req model.ShortcutImportExecuteRequest, apiToken string) {
 	ctx := context.Background()
-	totalSteps := s.shortcutImportTotalSteps(apiToken)
+	totalSteps := s.shortcutImportTotalSteps(apiToken, req.Options)
 	if err := s.updateJob(ctx, jobID, map[string]interface{}{
 		"status":             model.PMImportStatusProcessing,
 		"current_step":       "parse",
@@ -1638,7 +1989,11 @@ func (s *PMImportService) updateJob(ctx context.Context, jobID string, updates m
 	if strings.TrimSpace(jobID) == "" {
 		return nil
 	}
-	return s.db.WithContext(ctx).Model(&model.PMImportJob{}).Where("id = ?", jobID).Updates(updates).Error
+	query := s.db.WithContext(ctx).Model(&model.PMImportJob{}).Where("id = ?", jobID)
+	if status, ok := updates["status"].(string); !ok || status != model.PMImportStatusCanceled {
+		query = query.Where("status <> ?", model.PMImportStatusCanceled)
+	}
+	return query.Updates(updates).Error
 }
 
 func (s *PMImportService) markStep(ctx context.Context, jobID, step string, completed, entitiesProcessed, totalSteps int) error {
@@ -1662,11 +2017,15 @@ func (s *PMImportService) setCurrentStep(ctx context.Context, jobID, step string
 	})
 }
 
-func (s *PMImportService) shortcutImportTotalSteps(apiToken string) int {
-	if apiToken != "" {
-		return 11
+func (s *PMImportService) shortcutImportTotalSteps(apiToken string, options ...model.ShortcutImportOptions) int {
+	extraSteps := 0
+	if len(options) > 0 && options[0].ImportDocs {
+		extraSteps++
 	}
-	return 8
+	if apiToken != "" {
+		return 11 + extraSteps
+	}
+	return 8 + extraSteps
 }
 
 func filterShortcutRows(rows []shortcutCSVRow, options model.ShortcutImportOptions) []shortcutCSVRow {

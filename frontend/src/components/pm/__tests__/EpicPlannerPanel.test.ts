@@ -1,6 +1,36 @@
 import { describe, expect, it } from 'vitest';
 
-import { nextCompletedRunNotificationId, shouldReloadEpicPlannerRuns } from '../EpicPlannerPanel';
+import {
+  getEpicPlannerPrimaryAction,
+  nextCompletedRunNotificationId,
+  shouldReloadEpicPlannerRuns,
+  shouldShowRunsLoading,
+} from '../EpicPlannerPanel';
+import type { AgentRun } from '@/lib/pmTypes';
+
+function run(overrides: Partial<AgentRun>): AgentRun {
+  return {
+    id: 'run-1',
+    workspace_id: 'ws-1',
+    agent_id: 'agent-1',
+    target_type: 'epic',
+    target_id: 'epic-1',
+    runtime_kind: 'native_sdk',
+    invocation_mode: 'interactive',
+    approval_state: 'not_required',
+    pause_reason: 'none',
+    status: 'queued',
+    input: {},
+    output_summary: {},
+    cached_input_tokens: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    tokens_used: 0,
+    created_at: '2026-04-29T00:00:00Z',
+    updated_at: '2026-04-29T00:00:00Z',
+    ...overrides,
+  };
+}
 
 describe('nextCompletedRunNotificationId', () => {
   it('notifies once for a newly completed run', () => {
@@ -51,5 +81,92 @@ describe('shouldReloadEpicPlannerRuns', () => {
         'epic-1',
       ),
     ).toBe(false);
+  });
+});
+
+describe('shouldShowRunsLoading', () => {
+  it('only shows the visible loader for the initial empty load', () => {
+    expect(shouldShowRunsLoading(true, false, [])).toBe(true);
+    expect(shouldShowRunsLoading(true, true, [])).toBe(false);
+    expect(shouldShowRunsLoading(true, false, [run({})])).toBe(false);
+  });
+});
+
+describe('getEpicPlannerPrimaryAction', () => {
+  it('starts the selected agent when there are no runs', () => {
+    expect(
+      getEpicPlannerPrimaryAction({
+        selectedAgentName: 'Atlas',
+        activeRun: null,
+        latestRun: null,
+        latestRunAgentName: null,
+        starting: false,
+      }),
+    ).toMatchObject({
+      kind: 'start',
+      label: 'Run Atlas',
+      status: 'Choose an AI planning agent to plan this epic.',
+      secondaryActionLabel: null,
+    });
+  });
+
+  it('opens the active agent run instead of offering another start', () => {
+    expect(
+      getEpicPlannerPrimaryAction({
+        selectedAgentName: 'Scribe',
+        activeRun: run({ id: 'run-active', agent_id: 'agent-atlas', status: 'running' }),
+        activeRunAgentName: 'Atlas',
+        latestRun: null,
+        latestRunAgentName: null,
+        starting: false,
+      }),
+    ).toMatchObject({
+      kind: 'open',
+      runId: 'run-active',
+      label: 'Open Atlas run',
+      status: 'Atlas is running.',
+      secondaryActionLabel: null,
+    });
+  });
+
+  it('uses pause-specific labels for interactive blockers', () => {
+    expect(
+      getEpicPlannerPrimaryAction({
+        selectedAgentName: 'Atlas',
+        activeRun: run({ status: 'paused', pause_reason: 'human_input' }),
+        activeRunAgentName: 'Atlas',
+        latestRun: null,
+        latestRunAgentName: null,
+        starting: false,
+      }).label,
+    ).toBe('Reply to Atlas');
+
+    expect(
+      getEpicPlannerPrimaryAction({
+        selectedAgentName: 'Atlas',
+        activeRun: run({ status: 'paused', pause_reason: 'human_approval' }),
+        activeRunAgentName: 'Atlas',
+        latestRun: null,
+        latestRunAgentName: null,
+        starting: false,
+      }).label,
+    ).toBe('Review Atlas request');
+  });
+
+  it('views completed runs and offers to run the selected agent again', () => {
+    expect(
+      getEpicPlannerPrimaryAction({
+        selectedAgentName: 'Scribe',
+        activeRun: null,
+        latestRun: run({ status: 'completed', agent_id: 'agent-atlas' }),
+        latestRunAgentName: 'Atlas',
+        starting: false,
+      }),
+    ).toMatchObject({
+      kind: 'open',
+      label: 'View Atlas run',
+      secondaryActionLabel: 'Run Scribe',
+      status: 'Atlas completed a planning run.',
+    });
   });
 });
