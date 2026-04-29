@@ -91,6 +91,12 @@ type CoverageRecommendedFix struct {
 	ImplementationNotes string `json:"implementation_notes"`
 }
 
+type CoverageFixBundleDecision struct {
+	RecommendedFixes []CoverageRecommendedFix `json:"recommended_fixes"`
+	DecisionReason   string                   `json:"decision_reason"`
+	Confidence       float64                  `json:"confidence"`
+}
+
 type SupportCoverageDailyAnalyzer struct {
 	llmProvider  llm.Provider
 	providerName string
@@ -196,6 +202,46 @@ func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, 
 	return &result, raw, nil
 }
 
+func (s *SupportCoverageDailyAnalyzer) RefineFixBundleWithKnowledge(ctx context.Context, result CoverageConversationAnalysisResult, candidates []CoverageKnowledgeCandidate) (*CoverageFixBundleDecision, error) {
+	if s == nil || s.llmProvider == nil {
+		return nil, fmt.Errorf("coverage analyzer llm provider is not configured")
+	}
+	payload := struct {
+		AnalysisResult CoverageConversationAnalysisResult `json:"analysis_result"`
+		Candidates     []CoverageKnowledgeCandidate       `json:"candidates"`
+	}{
+		AnalysisResult: result,
+		Candidates:     candidates,
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal fix bundle refinement input: %w", err)
+	}
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		SystemPrompt: coverageFixBundleRefinementSystemPrompt(),
+		Messages: []llm.Message{{
+			Role:    "user",
+			Content: string(payloadJSON),
+		}},
+		Provider:    s.providerName,
+		Model:       s.modelName,
+		Temperature: 0.1,
+		MaxTokens:   1400,
+		JSONMode:    true,
+		JSONSchema:  coverageFixBundleDecisionJSONSchema(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("coverage fix bundle refinement llm: %w", err)
+	}
+
+	var decision CoverageFixBundleDecision
+	if err := llm.UnmarshalResponse(resp.Content, &decision); err != nil {
+		return nil, fmt.Errorf("parse coverage fix bundle refinement response: %w", err)
+	}
+	normalizeCoverageFixBundleDecision(&decision)
+	return &decision, nil
+}
+
 func CoverageTranscriptHash(messages []model.SupportMessage) string {
 	ordered := sortedCoverageMessages(messages)
 	records := make([]string, 0, len(ordered))
@@ -234,6 +280,31 @@ func normalizeCoverageConversationAnalysisResult(result *CoverageConversationAna
 	}
 	for i := range result.RecommendedFixes {
 		fix := &result.RecommendedFixes[i]
+		fix.Type = strings.TrimSpace(fix.Type)
+		fix.TargetType = strings.TrimSpace(fix.TargetType)
+		fix.TargetID = strings.TrimSpace(fix.TargetID)
+		fix.TargetTitle = strings.TrimSpace(fix.TargetTitle)
+		fix.TargetURL = strings.TrimSpace(fix.TargetURL)
+		fix.Priority = strings.TrimSpace(fix.Priority)
+		if fix.Priority == "" {
+			fix.Priority = model.SupportCoverageRecommendationPrioritySecondary
+		}
+		fix.Rationale = strings.TrimSpace(fix.Rationale)
+		fix.SuggestedChange = strings.TrimSpace(fix.SuggestedChange)
+		fix.ImplementationNotes = strings.TrimSpace(fix.ImplementationNotes)
+	}
+}
+
+func normalizeCoverageFixBundleDecision(decision *CoverageFixBundleDecision) {
+	if decision == nil {
+		return
+	}
+	decision.DecisionReason = strings.TrimSpace(decision.DecisionReason)
+	if len(decision.RecommendedFixes) > 3 {
+		decision.RecommendedFixes = decision.RecommendedFixes[:3]
+	}
+	for i := range decision.RecommendedFixes {
+		fix := &decision.RecommendedFixes[i]
 		fix.Type = strings.TrimSpace(fix.Type)
 		fix.TargetType = strings.TrimSpace(fix.TargetType)
 		fix.TargetID = strings.TrimSpace(fix.TargetID)
@@ -293,6 +364,46 @@ func coverageConversationAnalysisJSONSchema() map[string]any {
 			"search_query":         map[string]any{"type": "string"},
 			"should_run_retrieval": map[string]any{"type": "boolean"},
 			"confidence":           map[string]any{"type": "number"},
+			"recommended_fixes": map[string]any{
+				"type":     "array",
+				"maxItems": 3,
+				"items": map[string]any{
+					"type":                 "object",
+					"additionalProperties": false,
+					"required":             []string{"type", "target_type", "target_id", "target_title", "target_url", "priority", "rationale", "suggested_change", "implementation_notes"},
+					"properties": map[string]any{
+						"type":                 map[string]any{"type": "string", "enum": []string{model.SupportCoverageFixCreateArticle, model.SupportCoverageFixUpdateArticle, model.SupportCoverageFixUpdateWebsitePage, model.SupportCoverageFixCreateWebsitePage, model.SupportCoverageFixAddData, model.SupportCoverageFixAddAction, model.SupportCoverageFixDefinePolicy, model.SupportCoverageFixImproveWorkflow, model.SupportCoverageFixNoFix}},
+						"target_type":          map[string]any{"type": "string", "enum": []string{"", "docs", "website_page", "content_source", "data_source", "tool_action", "policy", "workflow", "agent_instruction"}},
+						"target_id":            map[string]any{"type": "string"},
+						"target_title":         map[string]any{"type": "string"},
+						"target_url":           map[string]any{"type": "string"},
+						"priority":             map[string]any{"type": "string", "enum": []string{"", model.SupportCoverageRecommendationPriorityPrimary, model.SupportCoverageRecommendationPrioritySecondary}},
+						"rationale":            map[string]any{"type": "string"},
+						"suggested_change":     map[string]any{"type": "string"},
+						"implementation_notes": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+}
+
+func coverageFixBundleRefinementSystemPrompt() string {
+	return `You refine support coverage gap recommendations using current customer-facing knowledge candidates. Return JSON only.
+
+Use update_article only when a candidate help article is clearly about the same customer need but is missing, outdated, or unclear. Use update_website_page when a website/content page should answer a prospect, sales, pricing, integration, migration, security, comparison, or pre-purchase question. Use create_article or create_website_page when no candidate covers the same topic.
+
+Preserve data, action, policy, workflow, and agent-instruction recommendations from the first-pass analysis if they remain relevant. Mixed cases may produce multiple fixes, capped at 3. Mark exactly one primary fix unless two fixes are equally necessary. Keep decision_reason short enough for a UI card.`
+}
+
+func coverageFixBundleDecisionJSONSchema() map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"recommended_fixes", "decision_reason", "confidence"},
+		"properties": map[string]any{
+			"decision_reason": map[string]any{"type": "string"},
+			"confidence":      map[string]any{"type": "number"},
 			"recommended_fixes": map[string]any{
 				"type":     "array",
 				"maxItems": 3,

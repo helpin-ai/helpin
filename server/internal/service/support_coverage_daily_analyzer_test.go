@@ -253,3 +253,108 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationRejectsMalformedJSON(t 
 		t.Fatal("expected malformed JSON error")
 	}
 }
+
+func TestSupportCoverageDailyAnalyzer_RefineFixBundleWithKnowledge(t *testing.T) {
+	cases := []struct {
+		name        string
+		result      CoverageConversationAnalysisResult
+		candidates  []CoverageKnowledgeCandidate
+		response    string
+		wantFixType string
+		wantTarget  string
+	}{
+		{
+			name: "existing docs article incomplete",
+			result: CoverageConversationAnalysisResult{
+				HasGap:       true,
+				GapKind:      "content",
+				GapCategory:  model.SupportCoverageGapCategoryKnowledge,
+				CustomerNeed: "Customer needs refund exception criteria",
+			},
+			candidates: []CoverageKnowledgeCandidate{{
+				SourceType: "docs",
+				TargetType: "docs",
+				DocumentID: "doc-1",
+				Title:      "Refunds",
+				Excerpt:    "Basic refund policy",
+			}},
+			response:    `{"recommended_fixes":[{"type":"update_article","target_type":"docs","target_id":"doc-1","target_title":"Refunds","target_url":"","priority":"primary","rationale":"The article is close but incomplete","suggested_change":"Add exception criteria","implementation_notes":"Include examples"}],"decision_reason":"Existing article covers the topic but needs detail.","confidence":0.87}`,
+			wantFixType: model.SupportCoverageFixUpdateArticle,
+			wantTarget:  "doc-1",
+		},
+		{
+			name: "existing website page incomplete",
+			result: CoverageConversationAnalysisResult{
+				HasGap:       true,
+				GapKind:      "content",
+				GapCategory:  model.SupportCoverageGapCategoryKnowledge,
+				CustomerNeed: "Prospect asks about security certifications",
+			},
+			candidates: []CoverageKnowledgeCandidate{{
+				SourceType: "website",
+				TargetType: "website_page",
+				PageID:     "page-1",
+				Title:      "Security",
+				URL:        "https://example.com/security",
+			}},
+			response:    `{"recommended_fixes":[{"type":"update_website_page","target_type":"website_page","target_id":"page-1","target_title":"Security","target_url":"https://example.com/security","priority":"primary","rationale":"Prospects need this before buying","suggested_change":"Add certification details","implementation_notes":"Coordinate with marketing"}],"decision_reason":"Website page is the correct surface.","confidence":0.84}`,
+			wantFixType: model.SupportCoverageFixUpdateWebsitePage,
+			wantTarget:  "page-1",
+		},
+		{
+			name: "no relevant candidate creates new content",
+			result: CoverageConversationAnalysisResult{
+				HasGap:       true,
+				GapKind:      "content",
+				GapCategory:  model.SupportCoverageGapCategoryKnowledge,
+				CustomerNeed: "Customer needs migration steps",
+			},
+			response:    `{"recommended_fixes":[{"type":"create_article","target_type":"docs","target_id":"","target_title":"Migration steps","target_url":"","priority":"primary","rationale":"No existing candidate covers it","suggested_change":"Create a migration guide","implementation_notes":"Use support transcript as outline"}],"decision_reason":"No matching content exists.","confidence":0.79}`,
+			wantFixType: model.SupportCoverageFixCreateArticle,
+		},
+		{
+			name: "non knowledge fix preserved",
+			result: CoverageConversationAnalysisResult{
+				HasGap:      true,
+				GapKind:     "action",
+				GapCategory: model.SupportCoverageGapCategoryAction,
+				RecommendedFixes: []CoverageRecommendedFix{{
+					Type:       model.SupportCoverageFixAddAction,
+					TargetType: "tool_action",
+					Priority:   model.SupportCoverageRecommendationPriorityPrimary,
+				}},
+			},
+			response:    `{"recommended_fixes":[{"type":"add_action","target_type":"tool_action","target_id":"","target_title":"Cancel subscription","target_url":"","priority":"primary","rationale":"The human performed this operation","suggested_change":"Add a guarded cancellation action","implementation_notes":"Require confirmation"}],"decision_reason":"Action recommendation remains primary.","confidence":0.82}`,
+			wantFixType: model.SupportCoverageFixAddAction,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := &scriptedSupportPlannerLLM{
+				responses: []llm.ChatResponse{{Content: tc.response}},
+			}
+			analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+
+			decision, err := analyzer.RefineFixBundleWithKnowledge(context.Background(), tc.result, tc.candidates)
+			if err != nil {
+				t.Fatalf("RefineFixBundleWithKnowledge: %v", err)
+			}
+			if decision.DecisionReason == "" || decision.Confidence == 0 {
+				t.Fatalf("expected decision reason and confidence: %+v", decision)
+			}
+			if len(decision.RecommendedFixes) == 0 {
+				t.Fatal("expected recommended fixes")
+			}
+			if decision.RecommendedFixes[0].Type != tc.wantFixType {
+				t.Fatalf("fix type = %q, want %q", decision.RecommendedFixes[0].Type, tc.wantFixType)
+			}
+			if tc.wantTarget != "" && decision.RecommendedFixes[0].TargetID != tc.wantTarget {
+				t.Fatalf("target = %q, want %q", decision.RecommendedFixes[0].TargetID, tc.wantTarget)
+			}
+			if len(provider.requests) != 1 || !provider.requests[0].JSONMode {
+				t.Fatalf("expected one JSON-mode request, got %+v", provider.requests)
+			}
+		})
+	}
+}
