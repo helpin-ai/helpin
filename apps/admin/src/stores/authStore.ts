@@ -4,12 +4,18 @@ import { authService } from '@/lib/services/authService'
 import { passkeyService } from '@/lib/services/passkeyService'
 import type { User } from '@/lib/types'
 
+interface AdminTokenClaims {
+  pa?: boolean
+  is_platform_admin?: boolean
+  mfa?: boolean
+  mfa_satisfied?: boolean
+}
+
 interface AuthState {
   user: User | null
   loading: boolean
   serverUnreachable: boolean
   initialize: () => Promise<void>
-  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null }>
   signInWithPasskey: (
     emailHint?: string,
     rememberMe?: boolean,
@@ -20,11 +26,49 @@ interface AuthState {
 
 let initializing = false
 
-function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean, set: (state: Partial<AuthState>) => void) {
+function decodeClaims(accessToken: string): AdminTokenClaims | null {
+  const [, payload] = accessToken.split('.')
+  if (!payload) {
+    return null
+  }
+
+  try {
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const decoded = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='))
+    return JSON.parse(decoded) as AdminTokenClaims
+  } catch {
+    return null
+  }
+}
+
+function claimsAllowAdmin(accessToken: string): boolean {
+  const claims = decodeClaims(accessToken)
+  return Boolean((claims?.pa || claims?.is_platform_admin) && (claims?.mfa || claims?.mfa_satisfied))
+}
+
+function clearAuthSession() {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+  localStorage.removeItem('remember_me')
+  stopTokenRefreshTimer()
+}
+
+function withTokenState(user: User, accessToken: string): User {
+  return { ...user, mfa_satisfied_in_token: claimsAllowAdmin(accessToken) }
+}
+
+function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean, set: (state: Partial<AuthState>) => void): string | null {
+  if (!user.is_platform_admin || !claimsAllowAdmin(accessToken)) {
+    clearAuthSession()
+    set({ user: null, serverUnreachable: false, loading: false })
+    return 'This account is not authorized for admin tools.'
+  }
+
   localStorage.setItem('access_token', accessToken)
   localStorage.setItem('refresh_token', refreshToken)
   localStorage.setItem('remember_me', rememberMe ? '1' : '0')
-  set({ user, serverUnreachable: false, loading: false })
+  set({ user: withTokenState(user, accessToken), serverUnreachable: false, loading: false })
+  return null
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -47,8 +91,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const { data, error, isNetworkError } = await authService.me()
-      if (data && !error) {
-        set({ user: data, loading: false, serverUnreachable: false })
+      if (data && !error && data.is_platform_admin && claimsAllowAdmin(token)) {
+        set({ user: withTokenState(data, token), loading: false, serverUnreachable: false })
         return
       }
 
@@ -57,48 +101,37 @@ export const useAuthStore = create<AuthState>((set) => ({
         return
       }
 
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
+      clearAuthSession()
       set({ user: null, loading: false, serverUnreachable: false })
     } finally {
       initializing = false
     }
   },
 
-  signIn: async (email: string, password: string, rememberMe = false) => {
-    const { data, error } = await authService.signin(email, password, rememberMe)
-    if (error || !data) {
-      return { error: error || 'Sign in failed' }
-    }
-    if (!data.user || !data.access_token || !data.refresh_token) {
-      return { error: data.requires_2fa ? 'Two-factor verification is only available in the main app.' : 'Sign in failed' }
-    }
-
-    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)
-    return { error: null }
-  },
-
   signInWithPasskey: async (emailHint?: string, rememberMe = false, options?: { useAutofill?: boolean }) => {
-    const { data, error, cancelled } = await passkeyService.beginAuthentication(emailHint, rememberMe, options)
+    const { data, error, code, cancelled } = await passkeyService.beginAuthentication(emailHint, rememberMe, options)
     if (cancelled) {
       return { error: null, cancelled: true }
     }
     if (error || !data) {
+      if (code === 'no_passkey') {
+        return { error: 'Register a passkey in the main app before using admin tools.' }
+      }
       return { error: error || 'Passkey sign in failed' }
     }
     if (!data.user || !data.access_token || !data.refresh_token) {
-      return { error: data.requires_2fa ? 'Two-factor verification is only available in the main app.' : 'Passkey sign in failed' }
+      return { error: 'Passkey sign in failed' }
     }
 
-    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)
+    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)
+    if (adminError) {
+      return { error: adminError }
+    }
     return { error: null }
   },
 
   signOut: () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    localStorage.removeItem('remember_me')
-    stopTokenRefreshTimer()
+    clearAuthSession()
     set({ user: null, serverUnreachable: false })
     window.location.href = '/admin/login'
   },

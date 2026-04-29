@@ -28,6 +28,7 @@ import {
 import { toast } from 'sonner';
 import {
   pmImportService,
+  type ShortcutImportDetailResponse,
   type ShortcutImportOptionsPayload,
   type ShortcutImportPreviewResponse,
   type ShortcutImportStatusResponse,
@@ -480,7 +481,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
     setUserMappings(
       data.users.map((u) => ({
         email: u.email,
-        storyCount: 0,
+        storyCount: u.story_count ?? 0,
         matchedUserId: u.matched_user_id,
         matchedName: u.matched_name,
         shortcutName: u.shortcut_name || null,
@@ -900,6 +901,7 @@ export function ShortcutImportWizard({ workspaceId, members }: ShortcutImportWiz
 
     {showHistoryTable && (
       <ShortcutImportHistoryTable
+        workspaceId={workspaceId}
         imports={importHistory}
         loading={historyLoading}
         onRefresh={loadImportHistory}
@@ -1703,6 +1705,7 @@ function UserStep({
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Shortcut User</TableHead>
+                <TableHead className="text-xs text-right">Stories</TableHead>
                 <TableHead className="text-xs">Helpin Member</TableHead>
               </TableRow>
             </TableHeader>
@@ -1718,6 +1721,7 @@ function UserStep({
                       </div>
                     </div>
                   </TableCell>
+                  <TableCell className="py-1.5 text-right text-sm">{u.storyCount.toLocaleString()}</TableCell>
                   <TableCell className="py-1.5 text-sm">{u.matchedName || '—'}</TableCell>
                 </TableRow>
               ))}
@@ -1733,6 +1737,7 @@ function UserStep({
             <TableHeader>
               <TableRow>
                 <TableHead className="text-xs">Shortcut User</TableHead>
+                <TableHead className="text-xs text-right">Stories affected</TableHead>
                 <TableHead className="text-xs w-[220px]">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -1759,6 +1764,7 @@ function UserStep({
                         )}
                       </div>
                     </TableCell>
+                    <TableCell className="py-1.5 text-right text-sm">{u.storyCount.toLocaleString()}</TableCell>
                     <TableCell className="py-1.5">
                       {u.invited ? (
                         <span className="text-xs text-muted-foreground">Pending acceptance</span>
@@ -1826,17 +1832,74 @@ function UserStep({
 }
 
 function ShortcutImportHistoryTable({
+  workspaceId,
   imports,
   loading,
   onRefresh,
   onSelect,
 }: {
+  workspaceId: string;
   imports: ShortcutImportStatusResponse[];
   loading: boolean;
   onRefresh: () => void;
   onSelect: (status: ShortcutImportStatusResponse) => void;
 }) {
   const rows = imports.slice(0, 8);
+  const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.import_id ?? null);
+  const [detail, setDetail] = useState<ShortcutImportDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const loadDetail = useCallback(async (importId: string) => {
+    setSelectedId(importId);
+    setDetailLoading(true);
+    const { data, error } = await pmImportService.getShortcutStatusDetail(workspaceId, importId);
+    setDetailLoading(false);
+    if (error || !data) {
+      toast.error(error || 'Failed to load import details');
+      return;
+    }
+    setDetail(data);
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!selectedId && rows.length > 0) {
+      void loadDetail(rows[0].import_id);
+    } else if (selectedId && detail?.import_id !== selectedId) {
+      void loadDetail(selectedId);
+    }
+  }, [detail?.import_id, loadDetail, rows, selectedId]);
+
+  const selectedRow = rows.find((row) => row.import_id === selectedId) ?? rows[0] ?? null;
+
+  const handleCancel = async () => {
+    if (!detail) return;
+    setActionLoading('cancel');
+    const { data, error } = await pmImportService.cancelShortcutImport(workspaceId, detail.import_id);
+    setActionLoading(null);
+    if (error || !data) {
+      toast.error(error || 'Failed to cancel import');
+      return;
+    }
+    toast.success('Import canceled');
+    await onRefresh();
+    await loadDetail(detail.import_id);
+  };
+
+  const handleRetry = async () => {
+    if (!detail) return;
+    setActionLoading('retry');
+    const { data, error } = await pmImportService.retryShortcutImport(workspaceId, detail.import_id);
+    setActionLoading(null);
+    if (error || !data) {
+      toast.error(error || 'Failed to retry import');
+      return;
+    }
+    toast.success('Retry started');
+    await onRefresh();
+    onSelect({ ...detail, import_id: data.import_id, status: 'processing' });
+  };
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between px-4 py-3">
@@ -1865,7 +1928,11 @@ function ShortcutImportHistoryTable({
                 const isComplete = row.status === 'completed';
                 const statusVariant = isFailed ? 'destructive' : isComplete ? 'secondary' : 'outline';
                 return (
-                  <TableRow key={row.import_id}>
+                  <TableRow
+                    key={row.import_id}
+                    className={cn('cursor-pointer', selectedId === row.import_id && 'bg-muted/50')}
+                    onClick={() => void loadDetail(row.import_id)}
+                  >
                     <TableCell className="py-2 text-sm">{formatImportDate(row.created_at)}</TableCell>
                     <TableCell className="py-2">
                       <Badge variant={statusVariant}>{formatImportStatusLabel(row.status)}</Badge>
@@ -1877,8 +1944,16 @@ function ShortcutImportHistoryTable({
                       {formatImportStepLabel(row.progress.current_step)}
                     </TableCell>
                     <TableCell className="py-2 text-right">
-                      <Button type="button" variant="ghost" size="sm" onClick={() => onSelect(row)}>
-                        View
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelect(row);
+                        }}
+                      >
+                        Open
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -1887,9 +1962,147 @@ function ShortcutImportHistoryTable({
             </TableBody>
           </Table>
         )}
+        {selectedRow && (
+          <div className="mt-4 border-t pt-4">
+            {detailLoading && !detail ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loading01Icon className="h-4 w-4 animate-spin" />
+                Loading import details
+              </div>
+            ) : detail ? (
+              <ShortcutImportDetailPanel
+                detail={detail}
+                actionLoading={actionLoading}
+                onCancel={handleCancel}
+                onRetry={handleRetry}
+              />
+            ) : (
+              <Button type="button" variant="outline" size="sm" onClick={() => void loadDetail(selectedRow.import_id)}>
+                Load details
+              </Button>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+function ShortcutImportDetailPanel({
+  detail,
+  actionLoading,
+  onCancel,
+  onRetry,
+}: {
+  detail: ShortcutImportDetailResponse;
+  actionLoading: string | null;
+  onCancel: () => void;
+  onRetry: () => void;
+}) {
+  const counts = detail.diagnostics.counts.filter((item) => item.count > 0);
+  const failedMedia = detail.diagnostics.failed_media;
+  const unmapped = [
+    ...detail.diagnostics.unmapped_members,
+    ...detail.diagnostics.unmapped_states,
+    ...detail.diagnostics.unmapped_teams,
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">Import details</div>
+          <div className="text-xs text-muted-foreground">
+            {formatImportStatusLabel(detail.status)} · {formatImportStepLabel(detail.progress.current_step)}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {detail.cancelable && (
+            <Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={actionLoading !== null}>
+              {actionLoading === 'cancel' ? 'Canceling' : 'Cancel'}
+            </Button>
+          )}
+          <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={!detail.retryable || actionLoading !== null}>
+            {actionLoading === 'retry' ? 'Retrying' : 'Retry'}
+          </Button>
+        </div>
+      </div>
+
+      {!detail.retryable && detail.retry_blocked_reason && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          {detail.retry_blocked_reason}
+        </div>
+      )}
+
+      {detail.options && (
+        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+          <DetailPill label="Stories" value={formatLookback(detail.options.story_lookback_months)} />
+          <DetailPill label="Epics" value={formatLookback(detail.options.epic_lookback_months)} />
+          <DetailPill label="Objectives" value={formatLookback(detail.options.objective_lookback_months)} />
+          <DetailPill label="Docs" value={detail.options.import_docs ? formatLookback(detail.options.docs_lookback_months) : 'Off'} />
+        </div>
+      )}
+
+      {counts.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {counts.slice(0, 12).map((item) => (
+            <DetailPill key={item.entity} label={formatDiagnosticLabel(item.entity)} value={item.count.toLocaleString()} />
+          ))}
+        </div>
+      )}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <DiagnosticList title="Warnings by type" items={detail.diagnostics.warning_groups.map((g) => `${formatDiagnosticLabel(g.type)}: ${g.count.toLocaleString()}`)} />
+        <DiagnosticList title="Failed media" items={failedMedia.map((item) => item.key || item.message)} empty="No failed media recorded" />
+        <DiagnosticList title="Unmapped data" items={unmapped.map((item) => item.message)} empty="No unmapped members, states, or teams recorded" />
+        <DiagnosticList
+          title="Failure retryability"
+          items={[
+            `${detail.diagnostics.retryable_failures.length.toLocaleString()} retryable`,
+            `${detail.diagnostics.non_retryable_failures.length.toLocaleString()} non-retryable`,
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DetailPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-background px-3 py-2">
+      <div className="text-[11px] uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-medium">{value}</div>
+    </div>
+  );
+}
+
+function DiagnosticList({ title, items, empty = 'None' }: { title: string; items: string[]; empty?: string }) {
+  const visible = items.filter(Boolean).slice(0, 6);
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="text-sm font-medium">{title}</div>
+      {visible.length === 0 ? (
+        <div className="mt-2 text-xs text-muted-foreground">{empty}</div>
+      ) : (
+        <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+          {visible.map((item, idx) => (
+            <li key={`${title}-${idx}`} className="truncate">{item}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function formatLookback(months?: number) {
+  if (!months || months <= 0) return 'All time';
+  return `${months} months`;
+}
+
+function formatDiagnosticLabel(value: string) {
+  return value
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 // ─── Step 3: Configure & Import ──────────────────────────────────────

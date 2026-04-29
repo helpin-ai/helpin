@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,11 +26,18 @@ import (
 	"gorm.io/gorm"
 )
 
+var (
+	ErrBadRequest         = errors.New("bad request")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrTwoFAUnavailable   = errors.New("two-factor authentication is not available")
+)
+
 const (
 	passwordResetTTL   = time.Hour
 	twoFAIssuer        = "Helpin"
 	recoveryCodeCount  = 10
 	totpWindow         = 1
+	legacyRefreshFloor = 30 * time.Minute
 )
 
 type authEmailSender interface {
@@ -101,7 +109,7 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, false, false)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens after signup", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)
@@ -161,7 +169,7 @@ func slugifyOrg(name string) string {
 // Signin authenticates a user and returns auth tokens or a 2FA challenge.
 func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*model.SigninResponse, error) {
 	if req.Email == "" || req.Password == "" {
-		return nil, fmt.Errorf("email and password are required")
+		return nil, fmt.Errorf("%w: email and password are required", ErrBadRequest)
 	}
 
 	user, err := s.userRepo.GetByEmail(ctx, req.Email)
@@ -171,22 +179,22 @@ func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*mod
 	}
 	if user == nil {
 		s.logger.InfoContext(ctx, "signin attempted with unknown email", "email", req.Email)
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	if err := auth.CheckPassword(req.Password, user.PasswordHash); err != nil {
 		s.logger.InfoContext(ctx, "signin failed invalid password", "user_id", user.ID, "email", req.Email)
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	if user.TOTPVerified {
 		if len(s.encryptionKey) != 32 {
 			s.logger.ErrorContext(ctx, "cannot complete 2fa signin without encryption key", "user_id", user.ID)
-			return nil, fmt.Errorf("two-factor authentication is not available")
+			return nil, ErrTwoFAUnavailable
 		}
 		if user.TOTPSecretEncrypted == nil || strings.TrimSpace(*user.TOTPSecretEncrypted) == "" {
 			s.logger.ErrorContext(ctx, "user marked 2fa enabled without secret", "user_id", user.ID)
-			return nil, fmt.Errorf("two-factor authentication is not available")
+			return nil, ErrTwoFAUnavailable
 		}
 
 		twoFAToken, err := s.jwtManager.Generate2FAToken(user.ID, user.Email, req.RememberMe)
@@ -202,7 +210,7 @@ func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*mod
 		}, nil
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, req.RememberMe)
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, req.RememberMe, false)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens after signin", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)
@@ -395,16 +403,16 @@ func (s *AuthService) RegenerateRecoveryCodes(ctx context.Context, userID string
 // Verify2FASignin validates a short-lived 2FA challenge and exchanges it for a full auth session.
 func (s *AuthService) Verify2FASignin(ctx context.Context, req model.TwoFASigninRequest) (*model.AuthResponse, error) {
 	if strings.TrimSpace(req.TwoFAToken) == "" {
-		return nil, fmt.Errorf("two_fa_token is required")
+		return nil, fmt.Errorf("%w: two_fa_token is required", ErrBadRequest)
 	}
 
 	hasTOTPCode := strings.TrimSpace(req.TOTPCode) != ""
 	hasRecoveryCode := strings.TrimSpace(req.RecoveryCode) != ""
 	switch {
 	case hasTOTPCode == hasRecoveryCode:
-		return nil, fmt.Errorf("exactly one of totp_code or recovery_code is required")
+		return nil, fmt.Errorf("%w: exactly one of totp_code or recovery_code is required", ErrBadRequest)
 	case len(s.encryptionKey) != 32:
-		return nil, fmt.Errorf("two-factor authentication is not configured")
+		return nil, ErrTwoFAUnavailable
 	}
 
 	claims, err := s.jwtManager.Validate2FAToken(req.TwoFAToken)
@@ -469,7 +477,7 @@ func (s *AuthService) Verify2FASignin(ctx context.Context, req model.TwoFASignin
 		return nil, err
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, claims.RememberMe)
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, claims.RememberMe, true)
 	if err != nil {
 		return nil, fmt.Errorf("generate tokens: %w", err)
 	}
@@ -580,6 +588,10 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*m
 		s.logger.ErrorContext(ctx, "invalid refresh token", "error", err)
 		return nil, fmt.Errorf("invalid refresh token: %w", err)
 	}
+	if !claimsUsableForRefresh(claims) {
+		s.logger.WarnContext(ctx, "non-refresh token rejected during refresh", "user_id", claims.UserID, "token_use", claims.TokenUse)
+		return nil, fmt.Errorf("invalid refresh token")
+	}
 
 	user, err := s.userRepo.GetByID(ctx, claims.UserID)
 	if err != nil {
@@ -591,7 +603,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*m
 		return nil, fmt.Errorf("user not found")
 	}
 
-	accessToken, newRefresh, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
+	accessToken, newRefresh, err := s.generateTokenPairForUser(user, false, claims.MFASatisfied)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens during refresh", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)
@@ -810,8 +822,33 @@ func toUserProfile(u *model.User) model.UserProfile {
 		AvatarBackgroundColor: u.AvatarBackgroundColor,
 		DefaultWorkspaceID:    u.DefaultWorkspaceID,
 		TwoFAEnabled:          u.TOTPVerified,
+		IsPlatformAdmin:       u.IsPlatformAdmin,
 		CreatedAt:             u.CreatedAt,
 		UpdatedAt:             u.UpdatedAt,
+	}
+}
+
+func (s *AuthService) generateTokenPairForUser(user *model.User, rememberMe bool, mfaSatisfied bool) (string, string, error) {
+	return s.jwtManager.GenerateTokenPair(
+		user.ID,
+		user.Email,
+		rememberMe,
+		auth.WithMFASatisfied(mfaSatisfied),
+		auth.WithPlatformAdmin(user.IsPlatformAdmin),
+	)
+}
+
+func claimsUsableForRefresh(claims *auth.Claims) bool {
+	if claims == nil {
+		return false
+	}
+	switch claims.TokenUse {
+	case auth.TokenUseRefresh:
+		return true
+	case "":
+		return claims.ExpiresAt != nil && time.Until(claims.ExpiresAt.Time) > legacyRefreshFloor
+	default:
+		return false
 	}
 }
 

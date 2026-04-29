@@ -38,6 +38,7 @@ export interface ShortcutUserMatch {
   matched_user_id: string | null;
   matched_name: string | null;
   shortcut_name?: string | null;
+  story_count: number;
 }
 
 export interface ShortcutImportPreviewResponse {
@@ -89,6 +90,44 @@ export interface ShortcutImportStatusResponse {
   created_at?: string;
   updated_at?: string;
   completed_at?: string | null;
+}
+
+export interface ShortcutImportCount {
+  entity: string;
+  count: number;
+}
+
+export interface ShortcutImportWarningGroup {
+  type: string;
+  count: number;
+  warnings: string[];
+}
+
+export interface ShortcutImportDiagnosticItem {
+  type: string;
+  key?: string;
+  message: string;
+  count?: number;
+  retryable: boolean;
+}
+
+export interface ShortcutImportDiagnostics {
+  counts: ShortcutImportCount[];
+  warning_groups: ShortcutImportWarningGroup[];
+  failed_media: ShortcutImportDiagnosticItem[];
+  unmapped_members: ShortcutImportDiagnosticItem[];
+  unmapped_states: ShortcutImportDiagnosticItem[];
+  unmapped_teams: ShortcutImportDiagnosticItem[];
+  retryable_failures: ShortcutImportDiagnosticItem[];
+  non_retryable_failures: ShortcutImportDiagnosticItem[];
+}
+
+export interface ShortcutImportDetailResponse extends ShortcutImportStatusResponse {
+  options?: ShortcutImportOptionsPayload;
+  diagnostics: ShortcutImportDiagnostics;
+  retryable: boolean;
+  retry_blocked_reason?: string;
+  cancelable: boolean;
 }
 
 export interface ShortcutImportExecuteResponse {
@@ -166,6 +205,26 @@ function statusRequest<T>(path: string): Promise<{ data: T | null; error: string
     .catch((e) => ({ data: null as T | null, error: e instanceof Error ? e.message : 'Network error' }));
 }
 
+function postStatusRequest<T>(path: string): Promise<{ data: T | null; error: string | null }> {
+  const token = localStorage.getItem('access_token');
+  return fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        return { data: null as T | null, error: (err.error || res.statusText) as string | null };
+      }
+      const data = await res.json();
+      return { data: data as T, error: null };
+    })
+    .catch((e) => ({ data: null as T | null, error: e instanceof Error ? e.message : 'Network error' }));
+}
+
 export const pmImportService = {
   previewShortcutAPI: (
     workspaceId: string,
@@ -203,6 +262,21 @@ export const pmImportService = {
   getShortcutStatus: (workspaceId: string, importId: string) =>
     statusRequest<ShortcutImportStatusResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/status/${encodeURIComponent(importId)}`,
+    ),
+
+  getShortcutStatusDetail: (workspaceId: string, importId: string) =>
+    statusRequest<ShortcutImportDetailResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/status/${encodeURIComponent(importId)}/detail`,
+    ),
+
+  cancelShortcutImport: (workspaceId: string, importId: string) =>
+    postStatusRequest<ShortcutImportStatusResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/status/${encodeURIComponent(importId)}/cancel`,
+    ),
+
+  retryShortcutImport: (workspaceId: string, importId: string) =>
+    postStatusRequest<ShortcutImportExecuteResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/status/${encodeURIComponent(importId)}/retry`,
     ),
 
   listShortcutStatuses: (workspaceId: string) =>
