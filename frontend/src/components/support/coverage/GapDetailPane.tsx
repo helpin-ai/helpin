@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Markdown from 'react-markdown'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -253,7 +254,11 @@ export function GapDetailPane({
                     )}
                   </div>
                 </div>
-                {ev.excerpt && <p className="mt-1.5 leading-relaxed">{ev.excerpt}</p>}
+                {ev.excerpt && (
+                  <div className="prose-chat mt-1.5 text-sm leading-relaxed">
+                    <Markdown>{ev.excerpt}</Markdown>
+                  </div>
+                )}
               </div>
             ))}
           </div>
