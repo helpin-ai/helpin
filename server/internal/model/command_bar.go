@@ -173,6 +173,7 @@ type PromoteCommandBarRunResponse struct {
 type CommandBarAgent struct {
 	ID             string   `json:"id"`
 	Name           string   `json:"name"`
+	Description    string   `json:"description,omitempty"`
 	PresetKey      string   `json:"preset_key,omitempty"`
 	Role           string   `json:"role,omitempty"`
 	AllowedTargets []string `json:"allowed_targets"`

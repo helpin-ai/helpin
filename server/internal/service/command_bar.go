@@ -18,6 +18,8 @@ import (
 )
 
 const maxCommandBarPlanSteps = 5
+const defaultCommandRouterMaxTokens = 900
+const defaultCommandRouterTimeout = 2500 * time.Millisecond
 
 type commandBarTriggerContextPayload struct {
 	PlanID      string                      `json:"plan_id,omitempty"`
@@ -29,21 +31,42 @@ type commandBarTriggerContextPayload struct {
 }
 
 type CommandBarService struct {
-	agentService  *AgentService
-	planRepo      *repository.CommandBarPlanRepository
-	unmetRepo     *repository.CommandBarUnmetIntentRepository
-	dismissalRepo *repository.CommandBarPlanDismissalRepository
-	llmProvider   llm.Provider
+	agentService              *AgentService
+	planRepo                  *repository.CommandBarPlanRepository
+	unmetRepo                 *repository.CommandBarUnmetIntentRepository
+	dismissalRepo             *repository.CommandBarPlanDismissalRepository
+	llmProvider               llm.Provider
+	commandRouterLLMProvider  string
+	commandRouterLLMModel     string
+	commandRouterLLMMaxTokens int
+	commandRouterLLMTimeout   time.Duration
 }
 
 func NewCommandBarService(agentService *AgentService, planRepo *repository.CommandBarPlanRepository, unmetRepo *repository.CommandBarUnmetIntentRepository, dismissalRepo *repository.CommandBarPlanDismissalRepository, llmProvider llm.Provider) *CommandBarService {
 	return &CommandBarService{
-		agentService:  agentService,
-		planRepo:      planRepo,
-		unmetRepo:     unmetRepo,
-		dismissalRepo: dismissalRepo,
-		llmProvider:   llmProvider,
+		agentService:              agentService,
+		planRepo:                  planRepo,
+		unmetRepo:                 unmetRepo,
+		dismissalRepo:             dismissalRepo,
+		llmProvider:               llmProvider,
+		commandRouterLLMMaxTokens: defaultCommandRouterMaxTokens,
+		commandRouterLLMTimeout:   defaultCommandRouterTimeout,
 	}
+}
+
+func (s *CommandBarService) SetLLMRouterConfig(provider, modelName string, maxTokens int, timeout time.Duration) *CommandBarService {
+	if s == nil {
+		return s
+	}
+	s.commandRouterLLMProvider = strings.TrimSpace(provider)
+	s.commandRouterLLMModel = strings.TrimSpace(modelName)
+	if maxTokens > 0 {
+		s.commandRouterLLMMaxTokens = maxTokens
+	}
+	if timeout > 0 {
+		s.commandRouterLLMTimeout = timeout
+	}
+	return s
 }
 
 func (s *CommandBarService) ParseIntent(ctx context.Context, workspaceID, actorID string, req model.CommandBarParseRequest) (*model.CommandBarParseResponse, error) {
@@ -78,13 +101,13 @@ func (s *CommandBarService) ParseIntent(ctx context.Context, workspaceID, actorI
 	if parsed := parseExplicitNamedAgents(text, pageContext, candidates); parsed != nil {
 		return parsed, nil
 	}
+	if parsed := s.parseIntentWithLLM(ctx, text, pageContext, candidates); parsed != nil {
+		return parsed, nil
+	}
 	if parsed := parsePreferredOneShotCommandIntent(text, pageContext, candidates); parsed != nil {
 		return parsed, nil
 	}
 	if parsed := parseIntentDeterministically(text, pageContext, narrowCandidates); parsed != nil {
-		return parsed, nil
-	}
-	if parsed := s.parseIntentWithLLM(ctx, text, pageContext, narrowCandidates); parsed != nil && parsed.Status == model.CommandBarParseStatusPlan {
 		return parsed, nil
 	}
 	if parsed := parseOneShotCommandIntent(text, pageContext, candidates); parsed != nil {
@@ -1013,25 +1036,105 @@ func validatePromotedAgentTargets(targets []string, sourceAgent *model.Agent) er
 	return nil
 }
 
+type commandBarPlannerAgentCard struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description,omitempty"`
+	PresetKey      string   `json:"preset_key,omitempty"`
+	Role           string   `json:"role,omitempty"`
+	AllowedTargets []string `json:"allowed_targets"`
+	AllowedTools   []string `json:"allowed_tools,omitempty"`
+	OneShot        bool     `json:"one_shot"`
+}
+
+type commandBarPlannerToolCard struct {
+	Name        string `json:"name"`
+	Category    string `json:"category"`
+	Description string `json:"description"`
+	Mutation    bool   `json:"mutation"`
+}
+
+type commandBarPlannerStep struct {
+	AgentID      string   `json:"agent_id"`
+	Instructions string   `json:"instructions"`
+	AllowedTools []string `json:"allowed_tools,omitempty"`
+}
+
+type commandBarPlannerOutput struct {
+	Status             string                  `json:"status"`
+	RouteKind          string                  `json:"route_kind"`
+	AgentID            string                  `json:"agent_id"`
+	Instructions       string                  `json:"instructions"`
+	Steps              []commandBarPlannerStep `json:"steps"`
+	OneShotTools       []string                `json:"one_shot_tools"`
+	Rationale          string                  `json:"rationale"`
+	Reason             string                  `json:"reason"`
+	ClarifyingQuestion string                  `json:"clarifying_question"`
+	Confidence         float64                 `json:"confidence"`
+}
+
 func (s *CommandBarService) parseIntentWithLLM(ctx context.Context, text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
 	if s == nil || s.llmProvider == nil {
 		return nil
 	}
-	candidateJSON, _ := json.Marshal(candidates)
+	agentCards := commandBarPlannerAgentCards(candidates)
+	toolCards := s.commandBarPlannerToolCards(candidates)
+	candidateJSON, _ := json.Marshal(agentCards)
+	toolJSON, _ := json.Marshal(toolCards)
 	contextJSON, _ := json.Marshal(pageContext)
-	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
-		SystemPrompt: fmt.Sprintf(`You classify command-bar requests for Helpin agent runs. Return strict JSON only. Choose agents only when the request clearly fits available candidates and target. If it does not fit, return no_matching_agent with a short reason. Plans may have 1-%d sequential steps. Each step instruction must be scoped to that agent only; do not ask one agent to invoke another agent.`, maxCommandBarPlanSteps),
+	timeout := s.commandRouterLLMTimeout
+	if timeout <= 0 {
+		timeout = defaultCommandRouterTimeout
+	}
+	callCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	maxTokens := s.commandRouterLLMMaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultCommandRouterMaxTokens
+	}
+	resp, err := s.llmProvider.ChatCompletion(callCtx, llm.ChatRequest{
+		Provider: s.commandRouterLLMProvider,
+		Model:    s.commandRouterLLMModel,
+		SystemPrompt: fmt.Sprintf(`You are Helpin's command-bar semantic router. Return strict JSON only.
+
+Decide whether the user request should run:
+- "known_agent": exactly one saved non-one-shot agent.
+- "multi_step": 2-%d saved non-one-shot agents in sequence.
+- "one_shot_command": the one-shot Command Agent with a narrow tool subset.
+- "no_matching_agent": no safe route or a clarifying question is required.
+
+Routing policy:
+- Use saved agents only when the request clearly matches the agent name, role, description, preset, and current target.
+- Use multi_step only when the user explicitly asks for staged work or names multiple agents.
+- Use one_shot_command for ad hoc data questions, workspace lookup/count/summarization, one-off document/task/CRM changes, or requests that do not fit a reusable saved agent.
+- For one_shot_command, choose the minimum necessary tools from the available one-shot tool catalog. Do not choose mutation tools for read-only questions.
+- Never route destructive workspace deletes.
+- Each step instruction must be scoped to that agent only; do not ask one agent to invoke another agent.`, maxCommandBarPlanSteps),
 		Messages: []llm.Message{{
 			Role: "user",
 			Content: fmt.Sprintf(`Request: %s
 Page context: %s
 Available agents: %s
+Available one-shot tools: %s
 
-Return JSON: {"status":"plan","steps":[{"agent_id":"...","instructions":"..."}],"rationale":"..."} or {"status":"no_matching_agent","reason":"..."}. For backward compatibility, {"status":"plan","agent_id":"...","instructions":"...","rationale":"..."} is also accepted.`, text, string(contextJSON), string(candidateJSON)),
+Return one JSON object:
+{
+  "status": "plan" | "no_matching_agent",
+  "route_kind": "known_agent" | "multi_step" | "one_shot_command" | "no_matching_agent",
+  "agent_id": "single saved agent id, or Command Agent id for one_shot_command",
+  "instructions": "single-step instruction",
+  "steps": [{"agent_id":"saved agent id","instructions":"step-scoped instruction"}],
+  "one_shot_tools": ["tool_name"],
+  "rationale": "short reason",
+  "reason": "short no-match reason",
+  "clarifying_question": "only when status is no_matching_agent because the request is ambiguous",
+  "confidence": 0.0
+}`, text, string(contextJSON), string(candidateJSON), string(toolJSON)),
 		}},
 		Temperature: 0,
-		MaxTokens:   500,
+		MaxTokens:   maxTokens,
 		JSONMode:    true,
+		JSONSchema:  commandBarPlannerJSONSchema(),
 	})
 	if err != nil || resp == nil {
 		if err != nil {
@@ -1040,25 +1143,16 @@ Return JSON: {"status":"plan","steps":[{"agent_id":"...","instructions":"..."}],
 		return nil
 	}
 
-	var parsed struct {
-		Status       string `json:"status"`
-		AgentID      string `json:"agent_id"`
-		Instructions string `json:"instructions"`
-		Rationale    string `json:"rationale"`
-		Reason       string `json:"reason"`
-		Steps        []struct {
-			AgentID      string `json:"agent_id"`
-			Instructions string `json:"instructions"`
-		} `json:"steps"`
-	}
+	var parsed commandBarPlannerOutput
 	if err := json.Unmarshal([]byte(resp.Content), &parsed); err != nil {
 		slog.WarnContext(ctx, "command bar llm parse returned invalid json", "error", err)
 		return nil
 	}
-	if parsed.Status == model.CommandBarParseStatusNoMatchingAgent {
+	if parsed.Status == model.CommandBarParseStatusNoMatchingAgent || parsed.RouteKind == model.CommandBarParseStatusNoMatchingAgent {
+		reason := firstNonEmptyString(strings.TrimSpace(parsed.Reason), strings.TrimSpace(parsed.ClarifyingQuestion), "No available agent matched this request.")
 		return &model.CommandBarParseResponse{
 			Status:      model.CommandBarParseStatusNoMatchingAgent,
-			Reason:      firstNonEmptyString(strings.TrimSpace(parsed.Reason), "No available agent matched this request."),
+			Reason:      reason,
 			Suggestions: defaultCommandBarSuggestions(pageContext.EntityType),
 			Candidates:  candidates,
 		}
@@ -1066,34 +1160,191 @@ Return JSON: {"status":"plan","steps":[{"agent_id":"...","instructions":"..."}],
 	if parsed.Status != model.CommandBarParseStatusPlan {
 		return nil
 	}
-	if len(parsed.Steps) > 0 {
-		steps := make([]model.CommandBarPlanStep, 0, min(len(parsed.Steps), maxCommandBarPlanSteps))
-		for i, parsedStep := range parsed.Steps {
-			if i >= maxCommandBarPlanSteps {
-				break
-			}
-			agent, ok := findCommandBarCandidateByID(candidates, parsedStep.AgentID)
-			if !ok {
-				return nil
-			}
-			steps = append(steps, model.CommandBarPlanStep{
-				AgentID:      agent.ID,
-				AgentKey:     agent.PresetKey,
-				AgentName:    agent.Name,
-				Target:       pageContext,
-				Instructions: firstNonEmptyString(strings.TrimSpace(parsedStep.Instructions), fmt.Sprintf("Execute your normal %s role for the current target.", agent.Name)),
-			})
+	switch strings.TrimSpace(parsed.RouteKind) {
+	case model.CommandBarPlanKindOneShotCommand, "one_shot":
+		return s.commandBarOneShotPlanFromLLM(text, pageContext, candidates, parsed)
+	case "multi_step":
+		return commandBarKnownAgentPlanFromLLM(pageContext, candidates, parsed)
+	case "", model.CommandBarPlanKindKnownAgent:
+		if len(parsed.Steps) > 1 {
+			return commandBarKnownAgentPlanFromLLM(pageContext, candidates, parsed)
 		}
-		if len(steps) == 0 {
+		if strings.TrimSpace(parsed.AgentID) == "" && len(parsed.Steps) == 1 {
+			parsed.AgentID = parsed.Steps[0].AgentID
+			parsed.Instructions = firstNonEmptyString(strings.TrimSpace(parsed.Instructions), parsed.Steps[0].Instructions)
+		}
+		agent, ok := findCommandBarCandidateByID(candidates, parsed.AgentID)
+		if !ok || isOneShotCommandAgent(agent) {
 			return nil
 		}
-		return commandBarMultiStepPlanResponse(steps, firstNonEmptyString(strings.TrimSpace(parsed.Rationale), "Matched request to available agents."), candidates)
+		return commandBarPlanResponse(agent, pageContext, text, parsed.Instructions, parsed.Rationale, candidates)
+	default:
+		return nil
 	}
-	agent, ok := findCommandBarCandidateByID(candidates, parsed.AgentID)
+}
+
+func commandBarPlannerAgentCards(candidates []model.CommandBarAgent) []commandBarPlannerAgentCard {
+	cards := make([]commandBarPlannerAgentCard, 0, len(candidates))
+	for _, candidate := range candidates {
+		cards = append(cards, commandBarPlannerAgentCard{
+			ID:             candidate.ID,
+			Name:           candidate.Name,
+			Description:    candidate.Description,
+			PresetKey:      candidate.PresetKey,
+			Role:           candidate.Role,
+			AllowedTargets: candidate.AllowedTargets,
+			AllowedTools:   candidate.AllowedTools,
+			OneShot:        isOneShotCommandAgent(candidate),
+		})
+	}
+	return cards
+}
+
+func commandBarPlannerJSONSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"status": map[string]any{
+				"type": "string",
+				"enum": []string{model.CommandBarParseStatusPlan, model.CommandBarParseStatusNoMatchingAgent},
+			},
+			"route_kind": map[string]any{
+				"type": "string",
+				"enum": []string{model.CommandBarPlanKindKnownAgent, "multi_step", model.CommandBarPlanKindOneShotCommand, model.CommandBarParseStatusNoMatchingAgent},
+			},
+			"agent_id": map[string]any{"type": "string"},
+			"instructions": map[string]any{
+				"type": "string",
+			},
+			"steps": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"agent_id":      map[string]any{"type": "string"},
+						"instructions":  map[string]any{"type": "string"},
+						"allowed_tools": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+					},
+					"required":             []string{"agent_id", "instructions"},
+					"additionalProperties": false,
+				},
+			},
+			"one_shot_tools": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"rationale":      map[string]any{"type": "string"},
+			"reason":         map[string]any{"type": "string"},
+			"clarifying_question": map[string]any{
+				"type": "string",
+			},
+			"confidence": map[string]any{"type": "number"},
+		},
+		"required":             []string{"status", "route_kind", "rationale", "confidence"},
+		"additionalProperties": false,
+	}
+}
+
+func (s *CommandBarService) commandBarPlannerToolCards(candidates []model.CommandBarAgent) []commandBarPlannerToolCard {
+	commandAgent, ok := findCommandBarCandidateByPreset(candidates, model.AgentPresetCommandAgent)
+	if !ok || s == nil || s.agentService == nil {
+		return nil
+	}
+	allowedSet := make(map[string]bool, len(commandAgent.AllowedTools))
+	for _, tool := range commandAgent.AllowedTools {
+		allowedSet[strings.TrimSpace(tool)] = true
+	}
+	catalog := s.agentService.ListToolCatalog()
+	cards := make([]commandBarPlannerToolCard, 0, len(catalog.Tools))
+	for _, tool := range catalog.Tools {
+		if !allowedSet[tool.Name] {
+			continue
+		}
+		cards = append(cards, commandBarPlannerToolCard{
+			Name:        tool.Name,
+			Category:    tool.Category,
+			Description: tool.Description,
+			Mutation:    commandBarToolIsMutation(tool.Name),
+		})
+	}
+	return cards
+}
+
+func commandBarKnownAgentPlanFromLLM(pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent, parsed commandBarPlannerOutput) *model.CommandBarParseResponse {
+	if len(parsed.Steps) == 0 {
+		return nil
+	}
+	steps := make([]model.CommandBarPlanStep, 0, min(len(parsed.Steps), maxCommandBarPlanSteps))
+	for i, parsedStep := range parsed.Steps {
+		if i >= maxCommandBarPlanSteps {
+			break
+		}
+		agent, ok := findCommandBarCandidateByID(candidates, parsedStep.AgentID)
+		if !ok || isOneShotCommandAgent(agent) {
+			return nil
+		}
+		steps = append(steps, model.CommandBarPlanStep{
+			AgentID:      agent.ID,
+			AgentKey:     agent.PresetKey,
+			AgentName:    agent.Name,
+			Target:       pageContext,
+			Instructions: firstNonEmptyString(strings.TrimSpace(parsedStep.Instructions), fmt.Sprintf("Execute your normal %s role for the current target.", agent.Name)),
+		})
+	}
+	if len(steps) == 0 {
+		return nil
+	}
+	return commandBarMultiStepPlanResponse(steps, firstNonEmptyString(strings.TrimSpace(parsed.Rationale), "Matched request to available agents."), candidates)
+}
+
+func (s *CommandBarService) commandBarOneShotPlanFromLLM(text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent, parsed commandBarPlannerOutput) *model.CommandBarParseResponse {
+	agent, ok := findCommandBarCandidateByPreset(candidates, model.AgentPresetCommandAgent)
 	if !ok {
 		return nil
 	}
-	return commandBarPlanResponse(agent, pageContext, text, parsed.Instructions, parsed.Rationale, candidates)
+	allowedTools := normalizeStringSlice(parsed.OneShotTools)
+	if len(allowedTools) == 0 && len(parsed.Steps) == 1 {
+		allowedTools = normalizeStringSlice(parsed.Steps[0].AllowedTools)
+	}
+	if len(allowedTools) == 0 {
+		var recognized bool
+		allowedTools, recognized = oneShotCommandToolsForIntent(text, pageContext, agent.AllowedTools)
+		if !recognized {
+			return nil
+		}
+	}
+	allowedTools = commandBarFilterOneShotToolsForIntent(text, allowedTools, agent.AllowedTools)
+	if len(allowedTools) == 0 {
+		return nil
+	}
+	instructions := commandBarOneShotInstructions(text, pageContext, allowedTools)
+	if extra := strings.TrimSpace(firstNonEmptyString(parsed.Instructions, firstStepInstructions(parsed.Steps))); extra != "" {
+		instructions += "\n\nPlanner instruction:\n" + extra
+	}
+	step := model.CommandBarPlanStep{
+		AgentID:      agent.ID,
+		AgentKey:     agent.PresetKey,
+		AgentName:    firstNonEmptyString(strings.TrimSpace(agent.Name), "Command Agent"),
+		PlanKind:     model.CommandBarPlanKindOneShotCommand,
+		Target:       pageContext,
+		Instructions: instructions,
+		AllowedTools: allowedTools,
+	}
+	resp := commandBarMultiStepPlanResponse(
+		[]model.CommandBarPlanStep{step},
+		firstNonEmptyString(strings.TrimSpace(parsed.Rationale), "Prepared a one-shot command agent from semantic routing."),
+		candidates,
+	)
+	resp.Plan.Guardrails = append(resp.Plan.Guardrails, model.CommandBarGuardrail{
+		Type:     "one_shot_command",
+		Severity: "info",
+		Message:  "This is a one-shot run. It is not saved as a reusable agent unless you promote it after completion.",
+	})
+	return resp
+}
+
+func firstStepInstructions(steps []commandBarPlannerStep) string {
+	if len(steps) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(steps[0].Instructions)
 }
 
 func parseIntentDeterministically(text string, pageContext model.CommandBarPageContext, candidates []model.CommandBarAgent) *model.CommandBarParseResponse {
@@ -1172,6 +1423,7 @@ func commandBarCandidatesForTarget(agents []model.Agent, targetType string) []mo
 		candidates = append(candidates, model.CommandBarAgent{
 			ID:             agent.ID,
 			Name:           agent.Name,
+			Description:    commandBarAgentDescription(agent),
 			PresetKey:      normalizePresetKey(agent.PresetKey),
 			Role:           agent.Role,
 			AllowedTargets: allowedTargets,
@@ -1179,6 +1431,19 @@ func commandBarCandidatesForTarget(agents []model.Agent, targetType string) []mo
 		})
 	}
 	return candidates
+}
+
+func commandBarAgentDescription(agent model.Agent) string {
+	if preset, ok := agentPresetDefinition(normalizePresetKey(agent.PresetKey)); ok {
+		return strings.TrimSpace(preset.Description)
+	}
+	if role := strings.TrimSpace(agent.Role); role != "" {
+		return role
+	}
+	if template := strings.TrimSpace(agent.SourceTemplateKey); template != "" {
+		return "Custom agent created from template " + template + "."
+	}
+	return "Custom workspace agent."
 }
 
 func commandBarNarrowCandidates(candidates []model.CommandBarAgent) []model.CommandBarAgent {
@@ -1273,6 +1538,9 @@ func parsePreferredOneShotCommandIntent(text string, pageContext model.CommandBa
 func shouldPreferOneShotCommandIntent(text string, pageContext model.CommandBarPageContext) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	targetType := normalizeCommandBarTargetType(pageContext.EntityType)
+	if shouldPreferOneShotPMTaskAnalysis(lower, targetType) {
+		return true
+	}
 	if targetType != "crm_contact" && targetType != "crm_deal" {
 		return false
 	}
@@ -1289,6 +1557,52 @@ func shouldPreferOneShotCommandIntent(text string, pageContext model.CommandBarP
 		"update account",
 		"refresh contact",
 		"refresh company",
+	)
+}
+
+func shouldPreferOneShotPMTaskAnalysis(lower, targetType string) bool {
+	if targetType != "workspace" && targetType != "task" && targetType != "epic" {
+		return false
+	}
+	if !containsAny(lower, "task", "tasks", "story", "stories") {
+		return false
+	}
+	if containsAny(lower,
+		"create task",
+		"create tasks",
+		"new task",
+		"new tasks",
+		"create story",
+		"new story",
+		"break down",
+		"breakdown",
+		"turn this into tasks",
+		"acceptance criteria",
+	) {
+		return false
+	}
+	return containsAny(lower,
+		"how many",
+		"count",
+		"number of",
+		"needs attention",
+		"need attention",
+		"attention",
+		"blocked",
+		"stale",
+		"overdue",
+		"due",
+		"status",
+		"statuses",
+		"what tasks",
+		"which tasks",
+		"list tasks",
+		"show tasks",
+		"open tasks",
+		"unassigned",
+		"assigned",
+		"priority",
+		"high priority",
 	)
 }
 
@@ -1451,6 +1765,10 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 	if targetType == "task" || containsAny(lower, "task", "story", "comment") {
 		tools = append(tools, "get_task_context")
 	}
+	if shouldPreferOneShotPMTaskAnalysis(lower, targetType) {
+		recognized = true
+		tools = append(tools, "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks")
+	}
 	if containsAny(lower, "comment", "add note", "write note") && (targetType == "task" || containsAny(lower, "task", "story")) {
 		recognized = true
 		tools = append(tools, "add_task_comment")
@@ -1507,6 +1825,77 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 	return filtered, len(filtered) > 0
 }
 
+func commandBarFilterOneShotToolsForIntent(text string, requestedTools, agentTools []string) []string {
+	allowedSet := make(map[string]bool, len(agentTools))
+	for _, tool := range agentTools {
+		allowedSet[strings.TrimSpace(tool)] = true
+	}
+	mutationAllowed := commandBarIntentAllowsMutation(text)
+	filtered := make([]string, 0, len(requestedTools))
+	seen := map[string]bool{}
+	for _, tool := range requestedTools {
+		tool = strings.TrimSpace(tool)
+		if tool == "" || seen[tool] {
+			continue
+		}
+		if len(allowedSet) > 0 && !allowedSet[tool] {
+			continue
+		}
+		if commandBarToolIsMutation(tool) && !mutationAllowed {
+			continue
+		}
+		seen[tool] = true
+		filtered = append(filtered, tool)
+	}
+	return filtered
+}
+
+func commandBarIntentAllowsMutation(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	return containsAny(lower,
+		"add ",
+		"associate",
+		"change",
+		"create",
+		"draft",
+		"edit",
+		"enrich",
+		"ensure",
+		"follow-up task",
+		"follow up task",
+		"make a task",
+		"move",
+		"new ",
+		"refresh",
+		"rewrite",
+		"turn this into",
+		"update",
+		"write",
+	)
+}
+
+func commandBarToolIsMutation(tool string) bool {
+	switch strings.TrimSpace(tool) {
+	case "add_deal_note",
+		"add_task_comment",
+		"create_document",
+		"create_task",
+		"enrich_crm_company",
+		"enrich_crm_contact",
+		"ensure_crm_contact_company",
+		"ensure_task_label",
+		"update_deal_stage",
+		"update_task_state",
+		"write_document_content":
+		return true
+	default:
+		return false
+	}
+}
+
 func commandBarOneShotInstructions(text string, pageContext model.CommandBarPageContext, tools []string) string {
 	goal, plan, constraints := oneShotExecutionBrief(text, pageContext, tools)
 	parts := []string{"One-shot execution brief"}
@@ -1559,6 +1948,19 @@ func oneShotExecutionBrief(text string, pageContext model.CommandBarPageContext,
 			"Do not invent contact, company, title, domain, funding, or employment facts.",
 			"Use guarded CRM enrichment tools for CRM writes; names, existing email, existing phone, company name, and existing domain are protected server-side.",
 			"Ask for approval before any high-impact CRM mutation.",
+		}
+		return goal, plan, constraints
+	case shouldPreferOneShotPMTaskAnalysis(lower, targetType):
+		goal := "Answer the requested task question using live workspace PM data."
+		plan := []string{
+			"Resolve the referenced team or workflow context when the request names one.",
+			"List matching workspace tasks with read-only filters first; use compact results unless more detail is needed.",
+			"Count and group the tasks according to the user's wording, explaining how ambiguous terms such as needs attention were interpreted.",
+			"Return the answer with task names or IDs for any items that need follow-up.",
+		}
+		constraints := []string{
+			"Do not create, update, or move tasks for an analytical question.",
+			"Ask for clarification if the team or attention criteria cannot be resolved from available data.",
 		}
 		return goal, plan, constraints
 	case targetType == "document" || containsAny(lower, "doc", "document", "article", "stale"):

@@ -9,11 +9,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type scriptedCommandBarLLM struct {
+	response string
+	err      error
+	requests []llm.ChatRequest
+}
+
+func (s *scriptedCommandBarLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	s.requests = append(s.requests, req)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &llm.ChatResponse{Content: s.response}, nil
+}
 
 func TestParseExplicitNamedAgentsPreservesRequestOrder(t *testing.T) {
 	pageContext := model.CommandBarPageContext{
@@ -132,6 +147,130 @@ func TestParseIntentDeterministicallyPrefersKnownAgentBeforeOneShot(t *testing.T
 	}
 	if got := resp.Plan.Steps[0].AgentID; got != "agent-task" {
 		t.Fatalf("expected task planner, got %q", got)
+	}
+}
+
+func TestWorkspaceTaskQuestionPrefersOneShotCommandAgent(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
+	candidates := []model.CommandBarAgent{
+		{ID: "agent-task", Name: "Atlas", PresetKey: model.AgentPresetTaskPlanner, AllowedTargets: []string{"workspace"}},
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"workspace"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "get_task_context"},
+		},
+	}
+
+	resp := parsePreferredOneShotCommandIntent("how many tasks in engineering team needs attention?", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot command plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.AgentID != "agent-command" {
+		t.Fatalf("expected Command Agent, got %q", step.AgentID)
+	}
+	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected one-shot plan kind, got %q", step.PlanKind)
+	}
+	for _, required := range []string{"list_workspace_teams", "list_team_workflows_with_stages", "list_tasks"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+	if strings.Contains(strings.ToLower(strings.Join(step.AllowedTools, ",")), "create_task") {
+		t.Fatalf("did not expect create_task for read-only task question: %#v", step.AllowedTools)
+	}
+	if !strings.Contains(step.Instructions, "Do not create, update, or move tasks") {
+		t.Fatalf("expected read-only PM analysis guardrail, got %q", step.Instructions)
+	}
+}
+
+func TestParseIntentWithLLMRoutesOneShotAndNarrowsTools(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
+	candidates := []model.CommandBarAgent{
+		{ID: "agent-atlas", Name: "Atlas", Description: "Task planning agent", PresetKey: model.AgentPresetTaskPlanner, AllowedTargets: []string{"workspace"}},
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			Description:    "One-shot workspace operator",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"workspace"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task"},
+		},
+	}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"one_shot_command",
+		"agent_id":"agent-command",
+		"instructions":"Count engineering tasks that need attention.",
+		"one_shot_tools":["list_workspace_teams","list_tasks","create_task"],
+		"rationale":"This is an ad hoc data question, not planning.",
+		"confidence":0.91
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetLLMRouterConfig("openai", "gpt-5.5", 777, time.Second)
+
+	resp := service.parseIntentWithLLM(context.Background(), "how many tasks in engineering team needs attention?", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.AgentID != "agent-command" || step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected command one-shot step, got %#v", step)
+	}
+	if !slices.Contains(step.AllowedTools, "list_tasks") || !slices.Contains(step.AllowedTools, "list_workspace_teams") {
+		t.Fatalf("expected read tools, got %#v", step.AllowedTools)
+	}
+	if slices.Contains(step.AllowedTools, "create_task") {
+		t.Fatalf("did not expect mutation tool for read-only question, got %#v", step.AllowedTools)
+	}
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected one LLM request, got %d", len(fakeLLM.requests))
+	}
+	if got := fakeLLM.requests[0].Provider; got != "openai" {
+		t.Fatalf("expected provider openai, got %q", got)
+	}
+	if got := fakeLLM.requests[0].Model; got != "gpt-5.5" {
+		t.Fatalf("expected model gpt-5.5, got %q", got)
+	}
+	if got := fakeLLM.requests[0].MaxTokens; got != 777 {
+		t.Fatalf("expected max tokens 777, got %d", got)
+	}
+	if fakeLLM.requests[0].JSONSchema == nil {
+		t.Fatalf("expected command router JSON schema for schema-forced providers")
+	}
+}
+
+func TestParseIntentWithLLMRoutesMultiStepSavedAgents(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "task", EntityID: "task-1"}
+	candidates := []model.CommandBarAgent{
+		{ID: "agent-forge", Name: "Forge", PresetKey: model.AgentPresetCodeBuilder, AllowedTargets: []string{"task"}},
+		{ID: "agent-lens", Name: "Lens", PresetKey: model.AgentPresetReviewAgent, AllowedTargets: []string{"task"}},
+		{ID: "agent-command", Name: "Command Agent", PresetKey: model.AgentPresetCommandAgent, AllowedTargets: []string{"task"}, AllowedTools: []string{"get_task_context"}},
+	}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"multi_step",
+		"steps":[
+			{"agent_id":"agent-forge","instructions":"Implement the requested task."},
+			{"agent_id":"agent-lens","instructions":"Review Forge's result."}
+		],
+		"rationale":"The user asked for implementation followed by review.",
+		"confidence":0.93
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM)
+
+	resp := service.parseIntentWithLLM(context.Background(), "have Forge implement then Lens review", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 2 {
+		t.Fatalf("expected two-step saved-agent plan, got %#v", resp)
+	}
+	if resp.Plan.Steps[0].AgentID != "agent-forge" || resp.Plan.Steps[1].AgentID != "agent-lens" {
+		t.Fatalf("unexpected step order: %#v", resp.Plan.Steps)
+	}
+	if resp.Plan.PlanKind != model.CommandBarPlanKindKnownAgent {
+		t.Fatalf("expected known-agent plan kind, got %q", resp.Plan.PlanKind)
 	}
 }
 
