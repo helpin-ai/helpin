@@ -35,6 +35,9 @@ import type {
   SupportConversationTriage,
   SupportMessageActionResponse,
   SupportMessageEmailDetail,
+  SupportCannedResponse,
+  CreateCannedResponseRequest,
+  UpdateCannedResponseRequest,
   SupportMessageInfo,
 } from '../pmTypes';
 
@@ -97,6 +100,16 @@ export const supportService = {
     api.put<SupportTriageRule>(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`, payload),
   deleteTriageRule: (workspaceId: string, ruleId: string) =>
     api.del(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`),
+  listCannedResponses: (workspaceId: string) =>
+    api.get<SupportCannedResponse[]>(`/support/inbox/canned-responses${qs(workspaceId)}`),
+  searchCannedResponses: (workspaceId: string, query: string) =>
+    api.get<SupportCannedResponse[]>(`/support/inbox/canned-responses/search${qs(workspaceId)}&q=${encodeURIComponent(query)}`),
+  createCannedResponse: (workspaceId: string, payload: CreateCannedResponseRequest) =>
+    api.post<SupportCannedResponse>(`/support/inbox/canned-responses${qs(workspaceId)}`, payload),
+  updateCannedResponse: (workspaceId: string, responseId: string, payload: UpdateCannedResponseRequest) =>
+    api.put<SupportCannedResponse>(`/support/inbox/canned-responses/${responseId}${qs(workspaceId)}`, payload),
+  deleteCannedResponse: (workspaceId: string, responseId: string) =>
+    api.del(`/support/inbox/canned-responses/${responseId}${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
   listConversationAssignees: (workspaceId: string, conversationId: string) =>

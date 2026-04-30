@@ -58,7 +58,7 @@ const markdownComponents = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="[overflow-wrap:anywhere] break-words"
+      className="break-all [overflow-wrap:anywhere]"
     >
       {children}
     </a>
@@ -507,7 +507,7 @@ export const MessageBubble = memo(function MessageBubble({
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
       ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
-      : 'min-w-0 max-w-[85%]';
+      : 'min-w-0 max-w-[min(85%,42rem)]';
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
