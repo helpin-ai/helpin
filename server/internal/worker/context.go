@@ -10,6 +10,17 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
+// executionContextSync holds the mutexes and shared mutable caches for an
+// ExecutionContext. It lives behind a pointer so that struct-copying an
+// ExecutionContext (used by cloneExecutionContext for short-lived post-run
+// contexts) shares the synchronization primitives instead of copying them —
+// a `go vet` lock-copy error and a real race hazard.
+type executionContextSync struct {
+	toolFileStateMu        sync.Mutex
+	securityScannerCacheMu sync.Mutex
+	securityScannerCache   map[string]securityScannerCacheEntry
+}
+
 // ExecutionContext holds all state for a single agent run execution.
 type ExecutionContext struct {
 	Context                    context.Context
@@ -71,11 +82,19 @@ type ExecutionContext struct {
 	LastExecutionResult        *ExecutionResult
 	StagedRuntimeSkillRoot     string
 	ToolFileState              *ToolFileState
-	toolFileStateMu            sync.Mutex
-	securityScannerCache       map[string]securityScannerCacheEntry
-	securityScannerCacheMu     sync.Mutex
+	sync                       *executionContextSync
 	PublishedPreviews          map[string]PublishedPreview
 	CurrentAssistantText       string
+}
+
+// ensureSync lazily allocates the synchronization block. Call before any
+// mutex/cache access. ExecutionContext is constructed in many places via
+// struct literals, so we don't require callers to initialize sync explicitly.
+func (e *ExecutionContext) ensureSync() *executionContextSync {
+	if e.sync == nil {
+		e.sync = &executionContextSync{}
+	}
+	return e.sync
 }
 
 type LiveExecutionResumeSignal struct {

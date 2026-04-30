@@ -1,0 +1,103 @@
+name: Email E2E (MailSlurp)
+
+# Real-provider email tests via MailSlurp + Postmark staging. See
+# `docs/test-suite-ci-email-plan.md` Phase 6 / Scenarios A–G.
+#
+# Runs:
+# - Daily schedule (03:30 UTC, after Nightly).
+# - Manual workflow_dispatch.
+# - NOT on pull_request — secrets are not available to forked PRs and these
+#   tests cost money. To run pre-merge from an internal branch, use
+#   workflow_dispatch and pass the branch name.
+#
+# Behavior when secrets are missing:
+# - Job exits early with a clear "secrets-missing" status, NOT a failure.
+#   This keeps the schedule from going red while MailSlurp/Postmark are
+#   being provisioned.
+#
+# Required repo/org secrets (set these once before promoting):
+# - MAILSLURP_API_KEY        — MailSlurp account API key
+# - POSTMARK_STAGING_TOKEN   — Postmark staging server token
+# - POSTMARK_INBOUND_DOMAIN  — domain whose MX points at staging API
+# - SUPPORT_REPLY_DOMAIN     — domain for Reply-To threading
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to run against'
+        required: false
+        default: 'develop'
+
+concurrency:
+  group: email-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  preflight:
+    name: Check secrets
+    runs-on: arc-runners-helpin-ai
+    outputs:
+      have_secrets: ${{ steps.check.outputs.have_secrets }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          MAILSLURP_API_KEY: ${{ secrets.MAILSLURP_API_KEY }}
+          POSTMARK_STAGING_TOKEN: ${{ secrets.POSTMARK_STAGING_TOKEN }}
+        run: |
+          if [ -n "$MAILSLURP_API_KEY" ] && [ -n "$POSTMARK_STAGING_TOKEN" ]; then
+            echo "have_secrets=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::email-e2e secrets present — running suite"
+          else
+            echo "have_secrets=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::email-e2e secrets missing — skipping (this is expected until secrets are provisioned)"
+          fi
+
+  # Scenario suite. Each scenario is a separate test target so failures
+  # report the specific behavior that broke (delivery vs threading vs bounce
+  # vs spam vs attachments vs HTML).
+  #
+  # Scenarios A-G map to docs/test-suite-ci-email-plan.md Phase 6.
+  # Test files will live under server/internal/test/email_e2e/ (not yet
+  # implemented — this job will be wired in a follow-up PR once secrets
+  # land and MailSlurp account is provisioned).
+  scenarios:
+    name: MailSlurp scenarios
+    needs: preflight
+    if: needs.preflight.outputs.have_secrets == 'true'
+    runs-on: arc-runners-helpin-ai
+    env:
+      MAILSLURP_API_KEY: ${{ secrets.MAILSLURP_API_KEY }}
+      POSTMARK_STAGING_TOKEN: ${{ secrets.POSTMARK_STAGING_TOKEN }}
+      POSTMARK_INBOUND_DOMAIN: ${{ secrets.POSTMARK_INBOUND_DOMAIN }}
+      SUPPORT_REPLY_DOMAIN: ${{ secrets.SUPPORT_REPLY_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Run MailSlurp scenarios
+        # Test target tag is reserved; the actual test files land in a
+        # follow-up PR once MailSlurp + Postmark staging are provisioned.
+        # `|| true` keeps the job green until tests exist; once they do,
+        # remove the trailing `|| true` to make failures visible.
+        working-directory: server
+        run: |
+          if go test -tags=email_e2e -run='^TestMailSlurpScenario' ./... 2>&1; then
+            echo "::notice::MailSlurp scenarios passed"
+          else
+            STATUS=$?
+            # 5xx from MailSlurp / Postmark surfaces as `t.Skip` via the
+            # plan's `skipOnProviderError` helper. A non-skip failure means
+            # actual product breakage and should fail the job.
+            echo "::warning::MailSlurp scenarios exited with status $STATUS"
+            exit $STATUS
+          fi || true

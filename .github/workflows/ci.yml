@@ -1,16 +1,26 @@
 name: CI
 
+# PR-required CI gates. Mirrors the rollout in
+# `docs/test-suite-ci-email-plan.md`. Suites that haven't met the promotion
+# criteria (5 consecutive green nightlies + flake rate < 2% + p95 within
+# budget) run as `continue-on-error: true` so they're visible without
+# blocking PRs. Promoting one to required is a single-line edit.
+
 on:
-  # Keep CI manual-only for now. The frontend support e2e suite is wired,
-  # but we are not gating PRs on it yet.
+  pull_request:
+    branches: [main, develop]
   workflow_dispatch:
-  # pull_request:
-  #   branches: [main, develop]
+
+concurrency:
+  # Cancel in-progress runs for the same PR/branch when a new push lands.
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ------------------------- Server -------------------------
   server:
     name: Server CI
     runs-on: arc-runners-helpin-ai
@@ -19,15 +29,56 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+
+      - name: Migration status (informational)
+        # `migrate validate` exits 1 on pending migrations, which is normal
+        # for any PR that adds one — so we print status only here. A real
+        # PR-safe lint will land in a follow-up `cmd/migrate lint`.
+        working-directory: server
+        run: go run ./cmd/migrate status || true
+
       - name: Vet
         working-directory: server
         run: go vet ./...
+
       - name: Build
         working-directory: server
         run: |
           go build ./cmd/api
           go build ./cmd/temporal-worker
+          go build ./cmd/migrate
 
+  server-tests:
+    name: Server Tests
+    runs-on: arc-runners-helpin-ai
+    # Informational until promoted per the plan's promotion criteria.
+    continue-on-error: true
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: helpin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/helpin_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Test
+        working-directory: server
+        run: go test ./...
+
+  # ------------------------ Frontend ------------------------
   frontend:
     name: Frontend CI
     runs-on: arc-runners-helpin-ai
@@ -39,14 +90,50 @@ jobs:
       - uses: pnpm/action-setup@v4
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      # Enable when we are ready to gate PRs on frontend browser coverage.
-      # - name: Install Playwright Chromium
-      #   run: pnpm --dir frontend exec playwright install --with-deps chromium
-      # - name: Frontend support e2e
-      #   run: pnpm --dir frontend run test:e2e:support
       - name: Build all packages
         run: pnpm build
 
+  frontend-tests:
+    name: Frontend Vitest
+    runs-on: arc-runners-helpin-ai
+    # Informational until 13 known-failing test files are fixed (see plan:
+    # TanStack Query / TooltipProvider wrapper issues).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build widget-core (frontend imports compiled output)
+        run: pnpm --filter @helpin-ai/widget-core build
+      - name: Frontend Vitest
+        run: pnpm --dir frontend run test
+
+  # ------------------------ Packages ------------------------
+  packages-tests:
+    name: Package Vitest
+    runs-on: arc-runners-helpin-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: widget-core
+        run: pnpm --dir packages/widget-core run test
+      - name: sdk-js
+        run: pnpm --dir packages/sdk-js run test
+      - name: react
+        run: pnpm --dir packages/react run test
+      - name: nextjs
+        run: pnpm --dir packages/nextjs run test
+
+  # ----------------------- Help Center ----------------------
   helpcenter:
     name: Help Center CI
     runs-on: arc-runners-helpin-ai
@@ -61,6 +148,9 @@ jobs:
       - name: Install
         working-directory: help-center
         run: pnpm install --frozen-lockfile
+      - name: Vitest
+        working-directory: help-center
+        run: pnpm run test
       - name: Build
         working-directory: help-center
         run: pnpm run build

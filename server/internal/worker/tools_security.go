@@ -425,12 +425,13 @@ func getSecurityScannerCacheEntry(ctx *ExecutionContext, key string) (securitySc
 	if ctx == nil || strings.TrimSpace(key) == "" {
 		return securityScannerCacheEntry{}, false
 	}
-	ctx.securityScannerCacheMu.Lock()
-	defer ctx.securityScannerCacheMu.Unlock()
-	if ctx.securityScannerCache == nil {
+	s := ctx.ensureSync()
+	s.securityScannerCacheMu.Lock()
+	defer s.securityScannerCacheMu.Unlock()
+	if s.securityScannerCache == nil {
 		return securityScannerCacheEntry{}, false
 	}
-	entry, ok := ctx.securityScannerCache[key]
+	entry, ok := s.securityScannerCache[key]
 	return entry, ok
 }
 
@@ -438,12 +439,13 @@ func putSecurityScannerCacheEntry(ctx *ExecutionContext, key string, entry secur
 	if ctx == nil || strings.TrimSpace(key) == "" {
 		return
 	}
-	ctx.securityScannerCacheMu.Lock()
-	defer ctx.securityScannerCacheMu.Unlock()
-	if ctx.securityScannerCache == nil {
-		ctx.securityScannerCache = make(map[string]securityScannerCacheEntry)
+	s := ctx.ensureSync()
+	s.securityScannerCacheMu.Lock()
+	defer s.securityScannerCacheMu.Unlock()
+	if s.securityScannerCache == nil {
+		s.securityScannerCache = make(map[string]securityScannerCacheEntry)
 	}
-	ctx.securityScannerCache[key] = entry
+	s.securityScannerCache[key] = entry
 }
 
 func sortedStrings(values []string) []string {
