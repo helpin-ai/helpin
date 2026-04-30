@@ -171,7 +171,7 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 	}{
 		{
 			name:           "knowledge gap",
-			response:       `{"has_gap":true,"gap_kind":"content","gap_category":"knowledge","canonical_title":"Refund policy gap","customer_need":"Customer needed refund exception terms","ai_failure":"AI found generic refund docs only","human_resolution":"Agent explained an exception","decision_reason":"Human answer shows docs are incomplete","search_query":"refund exception policy","should_run_retrieval":true,"recommended_fixes":[{"type":"update_article","target_type":"docs","target_id":"doc-1","target_title":"Refunds","priority":"primary","rationale":"Existing docs are close","suggested_change":"Add exception criteria","implementation_notes":"Mention Stripe refund path"}],"confidence":0.86}`,
+			response:       `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asking about refund","has_gap":true,"gap_kind":"content","gap_category":"knowledge","canonical_title":"Refund policy gap","customer_need":"Customer needed refund exception terms","ai_failure":"AI found generic refund docs only","human_resolution":"Agent explained an exception","decision_reason":"Human answer shows docs are incomplete","search_query":"refund exception policy","should_run_retrieval":true,"recommended_fixes":[{"type":"update_article","target_type":"docs","target_id":"doc-1","target_title":"Refunds","priority":"primary","rationale":"Existing docs are close","suggested_change":"Add exception criteria","implementation_notes":"Mention Stripe refund path"}],"confidence":0.86}`,
 			wantHasGap:     true,
 			wantKind:       "content",
 			wantCategory:   model.SupportCoverageGapCategoryKnowledge,
@@ -179,7 +179,7 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 		},
 		{
 			name:           "data gap",
-			response:       `{"has_gap":true,"gap_kind":"data","gap_category":"context","canonical_title":"Subscription status unavailable","customer_need":"Customer asked why renewal failed","ai_failure":"AI lacked subscription status","human_resolution":"Agent checked billing data","decision_reason":"Resolution depended on account data","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"add_data","target_type":"data_source","priority":"primary","rationale":"AI needs subscription status","suggested_change":"Expose subscription status to inbox AI","implementation_notes":"Connect billing source"}],"confidence":0.8}`,
+			response:       `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asking about renewal","has_gap":true,"gap_kind":"data","gap_category":"context","canonical_title":"Subscription status unavailable","customer_need":"Customer asked why renewal failed","ai_failure":"AI lacked subscription status","human_resolution":"Agent checked billing data","decision_reason":"Resolution depended on account data","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"add_data","target_type":"data_source","priority":"primary","rationale":"AI needs subscription status","suggested_change":"Expose subscription status to inbox AI","implementation_notes":"Connect billing source"}],"confidence":0.8}`,
 			wantHasGap:     true,
 			wantKind:       "data",
 			wantCategory:   model.SupportCoverageGapCategoryContext,
@@ -187,7 +187,7 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 		},
 		{
 			name:           "action gap",
-			response:       `{"has_gap":true,"gap_kind":"action","gap_category":"action","canonical_title":"Cancel subscription action missing","customer_need":"Customer wanted cancellation","ai_failure":"AI could explain only","human_resolution":"Agent cancelled subscription","decision_reason":"Resolution required an operation","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"add_action","target_type":"tool_action","priority":"primary","rationale":"AI needs a cancellation action","suggested_change":"Add guarded cancel action","implementation_notes":"Require confirmation"}],"confidence":0.81}`,
+			response:       `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer requesting cancellation","has_gap":true,"gap_kind":"action","gap_category":"action","canonical_title":"Cancel subscription action missing","customer_need":"Customer wanted cancellation","ai_failure":"AI could explain only","human_resolution":"Agent cancelled subscription","decision_reason":"Resolution required an operation","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"add_action","target_type":"tool_action","priority":"primary","rationale":"AI needs a cancellation action","suggested_change":"Add guarded cancel action","implementation_notes":"Require confirmation"}],"confidence":0.81}`,
 			wantHasGap:     true,
 			wantKind:       "action",
 			wantCategory:   model.SupportCoverageGapCategoryAction,
@@ -195,7 +195,7 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 		},
 		{
 			name:       "no gap",
-			response:   `{"has_gap":false,"gap_kind":"","gap_category":"","canonical_title":"","customer_need":"Customer asked setup question","ai_failure":"","human_resolution":"","decision_reason":"AI correctly resolved the issue","search_query":"","should_run_retrieval":false,"recommended_fixes":[],"confidence":0.91}`,
+			response:   `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asking setup question","has_gap":false,"gap_kind":"","gap_category":"","canonical_title":"","customer_need":"Customer asked setup question","ai_failure":"","human_resolution":"","decision_reason":"AI correctly resolved the issue","search_query":"","should_run_retrieval":false,"recommended_fixes":[],"confidence":0.91}`,
 			wantHasGap: false,
 		},
 	}
@@ -478,6 +478,9 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			human_resolution TEXT NOT NULL DEFAULT '',
 			decision_reason TEXT NOT NULL DEFAULT '',
 			confidence REAL NOT NULL DEFAULT 0,
+			is_support_query BOOLEAN NOT NULL DEFAULT 1,
+			conversation_type TEXT NOT NULL DEFAULT 'support_query',
+			classification_reason TEXT NOT NULL DEFAULT '',
 			error_message TEXT,
 			raw_output TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -783,5 +786,255 @@ func TestSupportCoverageDailyAnalyzer_GenerateKnowledgeSuggestion(t *testing.T) 
 				t.Fatalf("prompt should guard against unsupported claims: %s", provider.requests[0].SystemPrompt)
 			}
 		})
+	}
+}
+
+func TestClassifyCoverageConversationLocally(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    CoverageConversationAnalysisInput
+		wantSkip bool
+		wantType string
+	}{
+		{
+			name: "no customer messages",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Internal note",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "user", Content: "Forwarding this for reference"},
+				},
+			},
+			wantSkip: true,
+			wantType: "other",
+		},
+		{
+			name: "auto-reply subject",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Out of Office: Re: Your inquiry",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "I am currently out of the office."},
+				},
+			},
+			wantSkip: true,
+			wantType: "auto_reply",
+		},
+		{
+			name: "delivery status notification",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Delivery Status Notification (Failure)",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "This is an automatically generated Delivery Status Notification."},
+				},
+			},
+			wantSkip: true,
+			wantType: "auto_reply",
+		},
+		{
+			name: "automatic reply",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Automatic Reply: Meeting request",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Thank you for your email. I will respond shortly."},
+				},
+			},
+			wantSkip: true,
+			wantType: "auto_reply",
+		},
+		{
+			name: "newsletter with unsubscribe",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Weekly Product Update",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Check out our latest features! Click here to unsubscribe from this list."},
+				},
+			},
+			wantSkip: true,
+			wantType: "newsletter",
+		},
+		{
+			name: "cold outreach with book a call",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Quick question about your growth",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Hi, we help companies like yours increase traffic. Let's book a call to discuss!"},
+				},
+			},
+			wantSkip: true,
+			wantType: "cold_outreach",
+		},
+		{
+			name: "cold outreach with question mark — not skipped",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Partnership opportunity",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Would you be interested in a partnership opportunity?"},
+				},
+			},
+			wantSkip: false,
+		},
+		{
+			name: "newsletter pattern but has question — not skipped",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Weekly Product Update",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Can I unsubscribe from this list? How do I manage that?"},
+				},
+			},
+			wantSkip: false,
+		},
+		{
+			name: "real support query",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Help with billing",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "I was charged twice for my subscription. Can you help?"},
+				},
+			},
+			wantSkip: false,
+		},
+		{
+			name: "prospect pricing question",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Pricing inquiry",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "What are your enterprise pricing plans?"},
+				},
+			},
+			wantSkip: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			classification, skip := classifyCoverageConversationLocally(tc.input)
+			if skip != tc.wantSkip {
+				t.Fatalf("skip = %v, want %v (classification: %+v)", skip, tc.wantSkip, classification)
+			}
+			if tc.wantSkip && classification.ConversationType != tc.wantType {
+				t.Fatalf("ConversationType = %q, want %q", classification.ConversationType, tc.wantType)
+			}
+		})
+	}
+}
+
+func TestNormalizeCoverageConversationAnalysisResult_Classification(t *testing.T) {
+	cases := []struct {
+		name             string
+		input            CoverageConversationAnalysisResult
+		wantSupport      bool
+		wantType         string
+		wantHasGap       bool
+		wantFixesCleared bool
+	}{
+		{
+			name: "support query passes through",
+			input: CoverageConversationAnalysisResult{
+				IsSupportQuery:   true,
+				ConversationType: "support_query",
+				HasGap:           true,
+				GapKind:          "content",
+				RecommendedFixes: []CoverageRecommendedFix{{Type: "create_article", Priority: "primary"}},
+			},
+			wantSupport: true,
+			wantType:    "support_query",
+			wantHasGap:  true,
+		},
+		{
+			name: "newsletter clears gap fields",
+			input: CoverageConversationAnalysisResult{
+				IsSupportQuery:   false,
+				ConversationType: "newsletter",
+				HasGap:           true,
+				GapKind:          "content",
+				RecommendedFixes: []CoverageRecommendedFix{{Type: "create_article"}},
+			},
+			wantSupport:      false,
+			wantType:         "newsletter",
+			wantHasGap:       false,
+			wantFixesCleared: true,
+		},
+		{
+			name: "empty conversation_type defaults to support_query",
+			input: CoverageConversationAnalysisResult{
+				ConversationType: "",
+				HasGap:           true,
+			},
+			wantSupport: true,
+			wantType:    "support_query",
+			wantHasGap:  true,
+		},
+		{
+			name: "unknown conversation_type becomes other",
+			input: CoverageConversationAnalysisResult{
+				ConversationType: "marketing_blast",
+				HasGap:           true,
+			},
+			wantSupport:      false,
+			wantType:         "other",
+			wantHasGap:       false,
+			wantFixesCleared: true,
+		},
+		{
+			name: "inconsistent: is_support_query=true but type=spam — type wins",
+			input: CoverageConversationAnalysisResult{
+				IsSupportQuery:   true,
+				ConversationType: "spam",
+				HasGap:           true,
+				RecommendedFixes: []CoverageRecommendedFix{{Type: "create_article"}},
+			},
+			wantSupport:      false,
+			wantType:         "spam",
+			wantHasGap:       false,
+			wantFixesCleared: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tc.input
+			normalizeCoverageConversationAnalysisResult(&result)
+			if result.IsSupportQuery != tc.wantSupport {
+				t.Fatalf("IsSupportQuery = %v, want %v", result.IsSupportQuery, tc.wantSupport)
+			}
+			if result.ConversationType != tc.wantType {
+				t.Fatalf("ConversationType = %q, want %q", result.ConversationType, tc.wantType)
+			}
+			if result.HasGap != tc.wantHasGap {
+				t.Fatalf("HasGap = %v, want %v", result.HasGap, tc.wantHasGap)
+			}
+			if tc.wantFixesCleared && len(result.RecommendedFixes) != 0 {
+				t.Fatalf("expected fixes cleared, got %d", len(result.RecommendedFixes))
+			}
+		})
+	}
+}
+
+func TestSupportCoverageDailyAnalyzer_AnalyzeConversationClassifiesNonSupport(t *testing.T) {
+	response := `{"is_support_query":false,"conversation_type":"cold_outreach","classification_reason":"vendor pitch for SEO services","has_gap":false,"gap_kind":"","gap_category":"","canonical_title":"","customer_need":"","ai_failure":"","human_resolution":"","decision_reason":"","search_query":"","should_run_retrieval":false,"recommended_fixes":[],"confidence":0}`
+
+	provider := &scriptedSupportPlannerLLM{
+		responses: []llm.ChatResponse{{Content: response}},
+	}
+	analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+
+	result, _, err := analyzer.AnalyzeConversation(context.Background(), CoverageConversationAnalysisInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-1",
+		Subject:        "SEO services for your company",
+		Messages: []CoverageConversationMessage{
+			{ID: "m-1", SenderType: "customer", Content: "Hi, I noticed your website could use some SEO improvements. Book a call with us!"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeConversation: %v", err)
+	}
+	if result.IsSupportQuery {
+		t.Fatal("expected IsSupportQuery=false for cold outreach")
+	}
+	if result.ConversationType != "cold_outreach" {
+		t.Fatalf("ConversationType = %q, want cold_outreach", result.ConversationType)
+	}
+	if result.HasGap {
+		t.Fatal("expected HasGap=false for non-support conversation")
 	}
 }
