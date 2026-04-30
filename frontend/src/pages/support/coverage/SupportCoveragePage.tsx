@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -45,23 +45,48 @@ export function SupportCoveragePage() {
   const canGenerate = has('support.edit') && has('docs.edit')
   const canReanalyze = has('settings.manage')
   const [reanalyzing, setReanalyzing] = useState(false)
+  const reanalyzeBaselineRef = useRef<string | null>(null)
 
   const handleReanalyze = useCallback(async () => {
     if (!wsId || reanalyzing) return
     setReanalyzing(true)
+    reanalyzeBaselineRef.current = summary?.last_analyzed_at ?? null
     try {
       const { error } = await supportCoverageService.triggerReanalysis(wsId)
       if (error) {
         toast.error(error === 'reanalysis already in progress' ? 'Reanalysis is already running' : 'Failed to start reanalysis')
+        setReanalyzing(false)
+        reanalyzeBaselineRef.current = null
       } else {
-        toast.success('Reanalysis started. This may take a few minutes — refresh the page to see updated results.')
+        toast.success('Reanalysis started — the page will refresh automatically when complete.')
       }
     } catch {
       toast.error('Failed to start reanalysis')
-    } finally {
       setReanalyzing(false)
+      reanalyzeBaselineRef.current = null
     }
-  }, [wsId, reanalyzing])
+  }, [wsId, reanalyzing, summary?.last_analyzed_at])
+
+  // Poll summary while reanalyzing to detect completion.
+  useEffect(() => {
+    if (!reanalyzing || !wsId) return
+    const interval = setInterval(async () => {
+      const { data } = await supportCoverageService.getSummary(wsId)
+      if (data?.last_analyzed_at && data.last_analyzed_at !== reanalyzeBaselineRef.current) {
+        setReanalyzing(false)
+        reanalyzeBaselineRef.current = null
+        setSummary(data)
+        // Refresh gap list with new data.
+        const gapsRes = await supportCoverageService.listGaps(wsId, { status: statusFilter })
+        if (gapsRes.data) {
+          setGaps(gapsRes.data.items || [])
+          setTotal(gapsRes.data.total || 0)
+        }
+        toast.success('Reanalysis complete.')
+      }
+    }, 30_000)
+    return () => clearInterval(interval)
+  }, [reanalyzing, wsId, statusFilter])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
 
   useEffect(() => {

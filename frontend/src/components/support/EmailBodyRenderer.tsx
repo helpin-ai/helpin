@@ -109,7 +109,10 @@ export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
   const measure = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
-    const next = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+    // body.scrollHeight reflects content height independent of the iframe's
+    // current height; documentElement.scrollHeight is clamped to the iframe
+    // size, so it can't shrink when content collapses. Prefer body.
+    const next = doc.body.scrollHeight;
     if (next > 0) setHeight(next);
   }, []);
 
