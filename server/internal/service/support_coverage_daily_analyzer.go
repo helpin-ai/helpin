@@ -28,7 +28,7 @@ var errCoverageNoPublicSegment = errors.New("coverage conversation has no public
 const (
 	coverageAnalysisMaxMessages             = 80
 	coverageAnalysisMaxMessageChars         = 2000
-	coverageAnalyzerVersion                 = "v3"
+	coverageAnalyzerVersion                 = "v4"
 	coverageAnalysisWorkflowID              = "coverage-daily-analysis"
 	coverageAnalysisCronSchedule            = "30 4 * * *"
 	coverageAnalysisOverlap                 = 2 * time.Hour
