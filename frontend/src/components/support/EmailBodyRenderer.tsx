@@ -23,7 +23,7 @@ const IFRAME_STYLES = `
   }
   html, body {
     margin: 0;
-    padding: 0;
+    padding: 8px 12px;
     min-width: 0 !important;
     max-width: 100% !important;
     background: #ffffff;
