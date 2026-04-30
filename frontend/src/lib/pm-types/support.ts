@@ -433,6 +433,7 @@ export interface AIMessageMetadata {
     title: string;
     snippet: string;
     confidence: number;
+    url?: string;
   }>;
   ai_confidence: number;
   ai_model: string;

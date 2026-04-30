@@ -2,7 +2,7 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
@@ -610,6 +610,78 @@ export const MessageBubble = memo(function MessageBubble({
                 {message.email_delivery_error ? ` · ${message.email_delivery_error}` : ''}
               </span>
             </div>
+          ) : aiMeta ? (
+            // AI message: combined footer — confidence + sources on the left, receipt on the right
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <div className="inline-flex items-center gap-1.5 text-[11px]">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                    <CheckmarkCircle02Icon className="h-3 w-3" />
+                    {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
+                  </span>
+                  {aiMeta.ai_sources?.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSourcesOpen(!sourcesOpen)}
+                      aria-expanded={sourcesOpen}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground ${sourcesOpen ? 'border-border bg-background text-foreground' : 'border-border/60 bg-muted/40'}`}
+                    >
+                      <File01Icon className="h-3 w-3" />
+                      {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
+                      <ArrowDown01Icon className={`h-3 w-3 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  )}
+                </div>
+                {receiptStatus && (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                    {receiptStatus === 'read' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
+                        Read in chat
+                      </>
+                    ) : receiptStatus === 'read_email' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
+                        Read via email
+                      </>
+                    ) : receiptStatus === 'delivered_email' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5" />
+                        Delivered via email
+                      </>
+                    ) : (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5" />
+                        Delivered
+                      </>
+                    )}
+                  </span>
+                )}
+              </div>
+              {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
+                <div className="mt-1.5 overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
+                  {aiMeta.ai_sources.map((src, idx) => {
+                    const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
+                    const linkProps = src.url
+                      ? { href: src.url, target: '_blank' as const, rel: 'noopener noreferrer' }
+                      : {};
+                    return (
+                      <Tag
+                        key={src.docId}
+                        {...linkProps}
+                        className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-background hover:text-primary' : 'text-foreground'}`}
+                      >
+                        <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className={`min-w-0 truncate font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
+                        {src.url && (
+                          <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                        )}
+                      </Tag>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           ) : receiptStatus && (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
               {receiptStatus === 'read' ? (
@@ -632,37 +704,6 @@ export const MessageBubble = memo(function MessageBubble({
                   <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[11px] text-muted-foreground">Delivered</span>
                 </>
-              )}
-            </div>
-          )}
-
-          {/* AI metadata: confidence badge + collapsible sources */}
-          {aiMeta && (
-            <div className={`mt-0.5 ${isCustomer ? '' : 'text-right'}`}>
-              <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
-                  {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
-                </span>
-                {aiMeta.ai_sources?.length > 0 && (
-                  <button
-                    onClick={() => setSourcesOpen(!sourcesOpen)}
-                    className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-muted"
-                  >
-                    <File01Icon className="h-3 w-3" />
-                    {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
-                    {sourcesOpen ? <ArrowUp01Icon className="h-3 w-3" /> : <ArrowDown01Icon className="h-3 w-3" />}
-                  </button>
-                )}
-              </div>
-              {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
-                <div className="mt-1.5 space-y-1 rounded-lg border bg-muted/50 p-2 text-left text-xs">
-                  {aiMeta.ai_sources.map((src) => (
-                    <div key={src.docId} className="flex items-start gap-1.5">
-                      <File01Icon className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="font-medium">{src.title}</span>
-                    </div>
-                  ))}
-                </div>
               )}
             </div>
           )}
