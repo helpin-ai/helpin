@@ -287,8 +287,8 @@ export function SupportCoveragePage() {
             {(['content', 'data', 'action'] as const).map((kind) => (
               <SelectItem key={kind} value={kind}>
                 <div>
-                  <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)}</span>
-                  <span className="ml-1.5 text-muted-foreground">{GAP_KIND_DESCRIPTIONS[kind]}</span>
+                  <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)} gap</span>
+                  <span className="ml-1.5 text-muted-foreground">— {GAP_KIND_DESCRIPTIONS[kind]}</span>
                 </div>
               </SelectItem>
             ))}
