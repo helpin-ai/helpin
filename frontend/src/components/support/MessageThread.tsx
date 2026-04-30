@@ -167,15 +167,17 @@ function DaySeparator({
   separatorRef?: (node: HTMLDivElement | null) => void;
 }) {
   return (
-    <div ref={separatorRef} className="sticky top-0 z-[1] flex items-center justify-center py-3">
+    <div ref={separatorRef} className="sticky top-0 z-[1] my-5 flex items-center gap-3">
+      <div className="h-px flex-1 bg-border/60" aria-hidden />
       <span
-        className={`relative rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+        className={`shrink-0 rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
           isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
         }`}
         style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
       >
         {label}
       </span>
+      <div className="h-px flex-1 bg-border/60" aria-hidden />
     </div>
   );
 }

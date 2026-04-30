@@ -4,7 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
-import { MessageActionsMenu } from './MessageActionsMenu';
+import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
 import { MessageInfoDialog } from './MessageInfoDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -400,7 +400,7 @@ export const MessageBubble = memo(function MessageBubble({
       const escalationPillClass = 'rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200';
       const defaultPillClass = 'rounded-full px-3 py-1 text-xs text-muted-foreground';
       return (
-        <div className="my-3 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+        <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
               <div className={`flex items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
@@ -427,7 +427,7 @@ export const MessageBubble = memo(function MessageBubble({
     }
 
     return (
-      <div className="my-4 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+      <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-2.5 rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm" style={{ border: 'none' }}>
@@ -520,6 +520,15 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
+        <MessageActionsContextMenu
+          canEdit={cancellableActive}
+          canDelete={canMutateOwnReply}
+          onEdit={handleUndoOrEdit}
+          onCopy={handleCopy}
+          onReply={handleQuoteReply}
+          onDelete={() => setDeleteDialogOpen(true)}
+          onInfo={() => setInfoOpen(true)}
+        >
         <div
           data-slot="support-message-bubble"
           className={`${bubbleWidthClass} group/message relative`}
@@ -538,7 +547,7 @@ export const MessageBubble = memo(function MessageBubble({
             <Tooltip>
               <TooltipTrigger asChild>
                 <div
-                  className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                  className={`rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                     isCustomer
                       ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
@@ -619,6 +628,7 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           )}
         </div>
+        </MessageActionsContextMenu>
 
         {/* Right side: avatar or spacer (agent/user messages) */}
         {!isCustomer && (
