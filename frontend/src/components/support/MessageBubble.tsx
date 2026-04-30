@@ -2,14 +2,15 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
-import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
+import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
+import { timeAgo } from '@/lib/utils';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 
@@ -64,17 +65,10 @@ const markdownComponents = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
-  widget: 'Chat Widget',
+  widget: 'Chat',
   email: 'Email',
   internal: 'Internal',
   api: 'API',
-};
-
-const SENDER_TYPE_LABELS: Record<string, string> = {
-  customer: 'Customer',
-  user: 'Agent',
-  agent: 'Agent',
-  ai: 'AI Agent',
 };
 
 function previewHostLabel(preview: SupportLinkPreview): string {
@@ -188,7 +182,6 @@ export const MessageBubble = memo(function MessageBubble({
   const resolvedSenderName = isAI ? HELPIN_AI_DISPLAY_NAME : senderName;
   const showAvatar = isLastInGroup;
   const fullTimestamp = formatTimestamp(message.created_at);
-  const senderLabel = SENDER_TYPE_LABELS[effectiveSenderType] ?? effectiveSenderType;
   const sourceLabel = source ? SOURCE_LABELS[source] ?? source : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
@@ -238,14 +231,16 @@ export const MessageBubble = memo(function MessageBubble({
   const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
   const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
 
+  const verb = isCustomer ? 'Received' : 'Sent';
+  const relativeTime = timeAgo(message.created_at);
+  const isRelativeFormat = relativeTime.endsWith(' ago') || relativeTime === 'Just now';
+  const timeLine = isRelativeFormat
+    ? `${verb}, ${relativeTime} (${formatMessageTime(message.created_at)})`
+    : `${verb}, ${relativeTime}`;
   const tooltipContent = (
-    <div className="space-y-0.5 text-xs">
-      <div className="font-medium">{resolvedSenderName}</div>
-      <div className="text-muted-foreground">{fullTimestamp}</div>
-      <div className="text-muted-foreground">
-        {senderLabel}
-        {sourceLabel && ` · via ${sourceLabel}`}
-      </div>
+    <div className="space-y-0.5 text-center text-xs">
+      <div>{timeLine}</div>
+      {sourceLabel && <div className="text-background/70">via {sourceLabel}</div>}
     </div>
   );
 
@@ -286,9 +281,24 @@ export const MessageBubble = memo(function MessageBubble({
       'mailbox_moved',
       'triage_routed',
       'triage_dismissed',
+      'ai_escalated',
+      'customer_requested_human',
     ];
+
     const stateEventTypes: ReadonlyArray<string> = ['resolved', 'reopened', 'closed'];
     const eventType = message.system_event_type;
+
+    const HANDOFF_LABELS: Record<string, string> = {
+      ai_escalated: 'AI handed off to a human',
+      customer_requested_human: 'Customer requested a human',
+    };
+    const isHandoffEvent = !!eventType && eventType in HANDOFF_LABELS;
+    const handoffLabel = isHandoffEvent ? HANDOFF_LABELS[eventType] : null;
+    const handoffIcon = eventType === 'customer_requested_human'
+      ? <UserIcon className="h-3 w-3" />
+      : eventType === 'ai_escalated'
+        ? <BotIcon className="h-3 w-3" />
+        : null;
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
@@ -326,18 +336,22 @@ export const MessageBubble = memo(function MessageBubble({
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex items-center gap-2 rounded-full px-3 py-1 text-xs text-muted-foreground">
-                {resolvedAvatarUrl ? (
+                {isHandoffEvent ? (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    {handoffIcon}
+                  </span>
+                ) : resolvedAvatarUrl ? (
                   <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
                 ) : (
                   <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none ${getAvatarColor(avatarSeed)}`}>
                     {getInitial(resolvedSenderName)}
                   </div>
                 )}
-                <span>{message.content}</span>
+                <span>{handoffLabel ?? message.content}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top">
-              <div className="text-xs text-muted-foreground">{fullTimestamp}</div>
+              <div className="text-xs">{fullTimestamp}</div>
             </TooltipContent>
           </Tooltip>
         </div>
@@ -356,7 +370,7 @@ export const MessageBubble = memo(function MessageBubble({
           <TooltipContent side="top">
             <div className="space-y-0.5 text-xs">
               <div className="font-medium">{resolvedSenderName}</div>
-              <div className="text-muted-foreground">{fullTimestamp}</div>
+              <div className="text-background/70">{fullTimestamp}</div>
             </div>
           </TooltipContent>
         </Tooltip>
@@ -388,7 +402,7 @@ export const MessageBubble = memo(function MessageBubble({
                 </div>
               </div>
             </TooltipTrigger>
-            <TooltipContent side="top" align="start">{tooltipContent}</TooltipContent>
+            <TooltipContent side="top">{tooltipContent}</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -500,7 +514,7 @@ export const MessageBubble = memo(function MessageBubble({
                   )}
                 </div>
               </TooltipTrigger>
-              <TooltipContent side="top" align={isCustomer ? 'start' : 'end'}>
+              <TooltipContent side="top">
                 {tooltipContent}
               </TooltipContent>
             </Tooltip>

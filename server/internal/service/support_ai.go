@@ -996,9 +996,13 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		availability = resolveSupportAvailability(settings, now)
 	}
 
-	var systemMsg *model.SupportMessage
+	var replyMsg *model.SupportMessage
+	var handoffSystemMsg *model.SupportMessage
 	escalationAlreadyMessaged := false
-	history, historyErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	// Load with includeInternal=true so dedupe can see the new internal
+	// handoff system events (and the legacy ai_escalated rows that were
+	// public but are still recognized).
+	history, historyErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
 	if historyErr != nil {
 		slog.WarnContext(ctx, "load conversation history for escalation dedupe failed",
 			"workspace_id", workspaceID,
@@ -1009,24 +1013,38 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		escalationAlreadyMessaged = hasEscalationMessageInHistory(history)
 	}
 
-	// 1. Create system message — use customizable escalation message from settings
+	// 1. Create handoff messages — a customer-facing reply plus an
+	// internal-only system event describing why the handoff happened.
 	if !escalationAlreadyMessaged {
 		escalationContent := "Let me connect you with a team member who can help further."
 		if strings.TrimSpace(settings.EscalationMessage) != "" {
 			escalationContent = settings.EscalationMessage
 		}
 
-		systemMsg = &model.SupportMessage{
+		replyMsg = &model.SupportMessage{
+			WorkspaceID:       workspaceID,
+			ConversationID:    conversationID,
+			SenderType:        "ai",
+			MessageType:       "reply",
+			SenderDisplayName: strPtr(helpinAIDisplayName),
+			Content:           escalationContent,
+		}
+		if err := s.messageRepo.Create(ctx, replyMsg); err != nil {
+			return fmt.Errorf("create escalation reply: %w", err)
+		}
+
+		handoffSystemMsg = &model.SupportMessage{
 			WorkspaceID:       workspaceID,
 			ConversationID:    conversationID,
 			SenderType:        "agent",
 			MessageType:       "system",
-			SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventAIEscalated),
+			SystemEventType:   model.SupportSystemEventTypeStrPtr(systemEventForEscalationReason(reason)),
 			SenderDisplayName: strPtr(helpinAIDisplayName),
-			Content:           escalationContent,
+			Content:           "",
+			IsInternal:        true,
 		}
-		if err := s.messageRepo.Create(ctx, systemMsg); err != nil {
-			return fmt.Errorf("create escalation system message: %w", err)
+		if err := s.messageRepo.Create(ctx, handoffSystemMsg); err != nil {
+			return fmt.Errorf("create escalation system event: %w", err)
 		}
 	} else {
 		slog.InfoContext(ctx, "support escalation system message skipped — already present",
@@ -1135,8 +1153,17 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	s.recordSupportEvent(handoffEvent)
 
 	// 4. Broadcast events
-	if systemMsg != nil {
-		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, systemMsg, "ai:escalation"))
+	// Publish the customer-facing reply first — SupportMessageEvent only
+	// attaches Data for non-internal messages, so this is the row that
+	// actually carries payload to widget and admin clients.
+	if replyMsg != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, replyMsg, "ai:escalation"))
+	}
+	// Then publish the internal system event so the inbox renders the
+	// handoff pill. The websocket factory strips Data for internal rows;
+	// inbox clients refetch on this signal.
+	if handoffSystemMsg != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, handoffSystemMsg, "ai:escalation"))
 	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",
@@ -1774,8 +1801,27 @@ func hasEscalationSystemEventInHistory(history []model.SupportMessage) bool {
 	return false
 }
 
+// systemEventForEscalationReason maps the reason argument passed to
+// EscalateToHuman to the appropriate internal-only system event type.
+// Customer-driven reasons surface as "customer_requested_human"; AI-driven
+// reasons (low_confidence, stuck, etc.) surface as "ai_escalated".
+func systemEventForEscalationReason(reason string) model.SupportSystemEventType {
+	if reason == "customer_requested" || reason == "customer_requested_human" {
+		return model.SystemEventCustomerRequestedHuman
+	}
+	return model.SystemEventAIEscalated
+}
+
 func isEscalationSystemEvent(msg model.SupportMessage) bool {
-	return msg.SystemEventType != nil && *msg.SystemEventType == model.SystemEventAIEscalated
+	if msg.SystemEventType == nil {
+		return false
+	}
+	switch *msg.SystemEventType {
+	case model.SystemEventAIEscalated,
+		model.SystemEventCustomerRequestedHuman:
+		return true
+	}
+	return false
 }
 
 func containsHandoffLanguage(content string) bool {
