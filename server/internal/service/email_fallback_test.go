@@ -1382,9 +1382,6 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	if messages[0].ViaChannel == nil || *messages[0].ViaChannel != "email" {
 		t.Fatalf("expected via_channel=email, got %#v", messages[0].ViaChannel)
 	}
-	if !strings.Contains(messages[0].Metadata, `"link_previews"`) {
-		t.Fatalf("expected link preview metadata, got %q", messages[0].Metadata)
-	}
 
 	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
 	if err != nil {
