@@ -393,6 +393,10 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 	// Defense-in-depth: override speculative human_resolution when no human actually replied.
 	if !input.HasHumanReply && result.HumanResolution != "No human response observed" {
 		result.HumanResolution = "No human response observed"
+		raw, err = json.Marshal(result)
+		if err != nil {
+			return false, fmt.Errorf("marshal overridden analyzer result: %w", err)
+		}
 	}
 
 	// Determine status: non-support conversations are "skipped", others "analyzed".
