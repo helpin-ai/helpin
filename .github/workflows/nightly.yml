@@ -33,11 +33,19 @@ jobs:
     # currently can't spin up service sidecar pods on our ARC runners.
     # Existing test suite uses in-memory SQLite. Postgres-backed nightly
     # tests will land once the runner story is sorted.
+    env:
+      CGO_ENABLED: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+      - name: Verify gcc available
+        run: |
+          if ! command -v gcc >/dev/null 2>&1; then
+            (command -v sudo >/dev/null 2>&1 && sudo apt-get update && sudo apt-get install -y gcc) \
+              || (apt-get update && apt-get install -y gcc) || true
+          fi
       - name: Test with race detector
         working-directory: server
         run: go test -race ./...
