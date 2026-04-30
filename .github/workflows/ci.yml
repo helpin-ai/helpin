@@ -107,9 +107,6 @@ jobs:
     name: Frontend Vitest
     runs-on: arc-runners-helpin-ai
     timeout-minutes: 10
-    # Informational until 13 known-failing test files are fixed (see plan:
-    # TanStack Query / TooltipProvider wrapper issues).
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -129,12 +126,6 @@ jobs:
     runs-on: arc-runners-helpin-ai
     # Plan budget: ≤ 3 min for all packages combined.
     timeout-minutes: 8
-    # Informational until packages/react React-version mismatch is resolved
-    # (workspace has both react@19.2.4 and react@19.2.5 hoisted; packages/react
-    # resolves through root and trips an "incompatible react versions" check).
-    # Fix tracked separately — needs aligning frontend/admin/help-center
-    # specifiers and a lockfile regen.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

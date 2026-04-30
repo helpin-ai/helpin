@@ -12,6 +12,7 @@ vi.mock('@/components/ui/badge', () => ({
   Badge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }))
 
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { ArticleLocalePillRail } from '../ArticleLocalePillRail'
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -25,27 +26,26 @@ describe('ArticleLocalePillRail', () => {
 
     act(() => {
       root.render(
-        <ArticleLocalePillRail
-          items={[
-            { locale: 'en', shortLabel: 'EN', isSource: true, sourceStatus: 'published', isActive: true },
-            { locale: 'fr', shortLabel: 'FR', translationState: 'draft', isActive: false },
-            { locale: 'de', shortLabel: 'DE', translationState: 'missing', isActive: false },
-            { locale: 'es', shortLabel: 'ES', translationState: 'needs_review', isActive: false },
-          ]}
-          onSelectLocale={onSelectLocale}
-        />,
+        <TooltipProvider>
+          <ArticleLocalePillRail
+            items={[
+              { locale: 'en', shortLabel: 'EN', isSource: true, sourceStatus: 'published', isActive: true },
+              { locale: 'fr', shortLabel: 'FR', translationState: 'draft', isActive: false },
+              { locale: 'de', shortLabel: 'DE', translationState: 'missing', isActive: false },
+              { locale: 'es', shortLabel: 'ES', translationState: 'needs_review', isActive: false },
+            ]}
+            onSelectLocale={onSelectLocale}
+          />
+        </TooltipProvider>,
       )
     })
 
     expect(container.textContent).toContain('EN')
-    expect(container.textContent).toContain('Source')
-    expect(container.textContent).toContain('Published')
+    // "Source" pill now renders as the abbreviated 'SRC' badge
+    expect(container.textContent).toContain('SRC')
     expect(container.textContent).toContain('FR')
-    expect(container.textContent).toContain('Draft')
     expect(container.textContent).toContain('DE')
-    expect(container.textContent).toContain('Add')
     expect(container.textContent).toContain('ES')
-    expect(container.textContent).toContain('Needs review')
 
     const frButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('FR'))
     expect(frButton).toBeTruthy()

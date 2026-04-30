@@ -100,6 +100,9 @@ vi.mock('@/components/ui/icon-picker', () => ({
 
 vi.mock('@/lib/icons', () => ({
   FolderOpenIcon: () => null,
+  Folder01Icon: () => null,
+  ArrowDown01Icon: () => null,
+  Tick01Icon: () => null,
 }))
 
 vi.mock('sonner', () => ({
