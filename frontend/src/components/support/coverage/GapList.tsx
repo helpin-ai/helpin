@@ -1,17 +1,18 @@
 import { FileSearchIcon } from '@/lib/icons'
 import type { SupportCoverageGapListItem } from '@/lib/supportCoverageTypes'
-import { GAP_CATEGORY_LABELS, GAP_CATEGORY_COLORS } from '@/lib/supportCoverageTypes'
+import { GAP_KIND_LABELS, GAP_KIND_COLORS, resolveGapKindDisplay } from '@/lib/supportCoverageTypes'
 import { cn, timeAgo } from '@/lib/utils'
 import { GapImpactBadge } from './GapImpactBadge'
 
 const ROW_GRID_FULL =
-  'grid w-full grid-cols-[minmax(0,1fr)_120px_100px_90px_90px] items-center gap-4 px-4 py-3 text-left'
+  'grid w-full grid-cols-[minmax(0,1fr)_100px_100px_90px_90px] items-center gap-4 px-4 py-3 text-left'
 const ROW_GRID_COMPACT =
-  'grid w-full grid-cols-[minmax(0,1fr)_120px_90px] items-center gap-3 px-3 py-3 text-left'
+  'grid w-full grid-cols-[minmax(0,1fr)_80px_90px] items-center gap-3 px-3 py-3 text-left'
 
-function CategoryBadge({ category }: { category: string }) {
-  const colors = GAP_CATEGORY_COLORS[category] ?? GAP_CATEGORY_COLORS.unknown
-  const label = GAP_CATEGORY_LABELS[category] ?? category
+function KindBadge({ gapKind }: { gapKind: string }) {
+  const kind = resolveGapKindDisplay(gapKind)
+  const colors = GAP_KIND_COLORS[kind] ?? GAP_KIND_COLORS.content
+  const label = GAP_KIND_LABELS[gapKind] ?? gapKind
   return (
     <span
       className={cn(
@@ -59,7 +60,7 @@ export function GapList({
           )}
         >
           <span>Gap</span>
-          <span>Category</span>
+          <span>Type</span>
           <span>Impact</span>
           <span>Evidence</span>
           <span>Last seen</span>
@@ -87,17 +88,17 @@ export function GapList({
                 )}
               </div>
 
-              {!compact && (
+              {compact ? (
                 <div>
-                  <CategoryBadge category={gap.gap_category} />
+                  <KindBadge gapKind={gap.gap_kind} />
+                </div>
+              ) : (
+                <div>
+                  <KindBadge gapKind={gap.gap_kind} />
                 </div>
               )}
 
-              {compact ? (
-                <div className="flex justify-start">
-                  <CategoryBadge category={gap.gap_category} />
-                </div>
-              ) : (
+              {!compact && (
                 <div className="flex justify-start">
                   <GapImpactBadge tier={gap.impact_tier} />
                 </div>

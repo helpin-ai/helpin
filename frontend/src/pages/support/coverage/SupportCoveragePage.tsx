@@ -13,7 +13,7 @@ import type {
   SupportCoverageGapListItem,
   SupportCoverageSummary,
 } from '@/lib/supportCoverageTypes'
-import { GAP_STATUS_LABELS, GAP_CATEGORY_LABELS, GAP_CATEGORY_COLORS } from '@/lib/supportCoverageTypes'
+import { GAP_STATUS_LABELS, GAP_KIND_DESCRIPTIONS } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
@@ -31,7 +31,7 @@ export function SupportCoveragePage() {
   const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('open')
-  const [categoryFilter, setCategoryFilter] = useState('')
+  const [kindFilter, setKindFilter] = useState('')
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [targetSpaceId, setTargetSpaceId] = useState('')
@@ -99,7 +99,7 @@ export function SupportCoveragePage() {
       setSelectedGap(null)
       const [summaryRes, gapsRes] = await Promise.all([
         supportCoverageService.getSummary(wsId),
-        supportCoverageService.listGaps(wsId, { status: statusFilter, ...(categoryFilter && { gap_category: categoryFilter }) }),
+        supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter && { gap_kind: kindFilter }) }),
       ])
       if (cancelled) return
       if (summaryRes.data) setSummary(summaryRes.data)
@@ -114,7 +114,7 @@ export function SupportCoveragePage() {
     return () => {
       cancelled = true
     }
-  }, [wsId, statusFilter, categoryFilter])
+  }, [wsId, statusFilter, kindFilter])
 
   const refreshGap = async (gapId: string) => {
     const { data } = await supportCoverageService.getGap(wsId, gapId)
@@ -122,7 +122,7 @@ export function SupportCoveragePage() {
   }
 
   const refreshList = async () => {
-    const { data } = await supportCoverageService.listGaps(wsId, { status: statusFilter, ...(categoryFilter && { gap_category: categoryFilter }) })
+    const { data } = await supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter && { gap_kind: kindFilter }) })
     if (data) {
       setGaps(data.items || [])
       setTotal(data.total || 0)
@@ -277,37 +277,18 @@ export function SupportCoveragePage() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setCategoryFilter('')}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-              categoryFilter === ''
-                ? 'border-primary/25 bg-primary/10 font-semibold text-primary'
-                : 'border-border/60 text-muted-foreground hover:bg-muted'
-            }`}
-          >
-            All
-          </button>
-          {(['knowledge', 'context', 'action', 'policy', 'workflow'] as const).map((cat) => {
-            const colors = GAP_CATEGORY_COLORS[cat]
-            const active = categoryFilter === cat
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategoryFilter(cat)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                  active
-                    ? `${colors.bg} ${colors.text} ${colors.border} font-semibold`
-                    : 'border-border/60 text-muted-foreground hover:bg-muted'
-                }`}
-              >
-                {GAP_CATEGORY_LABELS[cat]}
-              </button>
-            )
-          })}
-        </div>
+        <select
+          value={kindFilter}
+          onChange={(e) => setKindFilter(e.target.value)}
+          className="h-8 rounded-lg border border-border/60 bg-background px-3 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="">All types</option>
+          {(['content', 'data', 'action'] as const).map((kind) => (
+            <option key={kind} value={kind}>
+              {kind.charAt(0).toUpperCase() + kind.slice(1)} — {GAP_KIND_DESCRIPTIONS[kind]}
+            </option>
+          ))}
+        </select>
         <span className="text-xs text-muted-foreground">
           {total} gap{total !== 1 ? 's' : ''}
         </span>

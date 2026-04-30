@@ -157,28 +157,32 @@ export const V1_GAP_TYPE_LABELS: Record<SupportCoverageV1GapType, string> = {
   needs_review: 'Unclassified',
 }
 
-export const GAP_CATEGORY_LABELS: Record<string, string> = {
-  knowledge: 'Knowledge',
-  structure: 'Structure',
-  conflict: 'Conflict',
-  context: 'Data / Context',
+// Gap kind is the high-level grouping (content, data, action/policy).
+// gap_category is the granular sub-type — we map it to one of 3 kinds for display.
+export const GAP_KIND_LABELS: Record<string, string> = {
+  content: 'Content',
+  data: 'Data',
   action: 'Action',
-  workflow: 'Workflow',
-  policy: 'Policy',
-  evaluation: 'Evaluation',
-  unknown: 'Unclassified',
+  policy: 'Action',
 }
 
-export const GAP_CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  knowledge: { bg: 'bg-blue-50 dark:bg-blue-950/30', text: 'text-blue-700 dark:text-blue-400', border: 'border-blue-200 dark:border-blue-800' },
-  context: { bg: 'bg-amber-50 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-800' },
+export const GAP_KIND_DESCRIPTIONS: Record<string, string> = {
+  content: 'Missing or incomplete docs and knowledge',
+  data: 'AI lacked customer or account data',
+  action: 'AI couldn\'t perform the required operation',
+}
+
+export const GAP_KIND_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  content: { bg: 'bg-blue-50 dark:bg-blue-950/30', text: 'text-blue-700 dark:text-blue-400', border: 'border-blue-200 dark:border-blue-800' },
+  data: { bg: 'bg-amber-50 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-800' },
   action: { bg: 'bg-purple-50 dark:bg-purple-950/30', text: 'text-purple-700 dark:text-purple-400', border: 'border-purple-200 dark:border-purple-800' },
-  policy: { bg: 'bg-rose-50 dark:bg-rose-950/30', text: 'text-rose-700 dark:text-rose-400', border: 'border-rose-200 dark:border-rose-800' },
-  workflow: { bg: 'bg-teal-50 dark:bg-teal-950/30', text: 'text-teal-700 dark:text-teal-400', border: 'border-teal-200 dark:border-teal-800' },
-  structure: { bg: 'bg-indigo-50 dark:bg-indigo-950/30', text: 'text-indigo-700 dark:text-indigo-400', border: 'border-indigo-200 dark:border-indigo-800' },
-  conflict: { bg: 'bg-orange-50 dark:bg-orange-950/30', text: 'text-orange-700 dark:text-orange-400', border: 'border-orange-200 dark:border-orange-800' },
-  evaluation: { bg: 'bg-cyan-50 dark:bg-cyan-950/30', text: 'text-cyan-700 dark:text-cyan-400', border: 'border-cyan-200 dark:border-cyan-800' },
-  unknown: { bg: 'bg-muted/40', text: 'text-muted-foreground', border: 'border-border/60' },
+  policy: { bg: 'bg-purple-50 dark:bg-purple-950/30', text: 'text-purple-700 dark:text-purple-400', border: 'border-purple-200 dark:border-purple-800' },
+}
+
+// Resolve gap_kind to display kind (policy → action).
+export function resolveGapKindDisplay(gapKind: string): string {
+  if (gapKind === 'policy') return 'action'
+  return gapKind || 'content'
 }
 
 export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {
