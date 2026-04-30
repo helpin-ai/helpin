@@ -1,0 +1,6 @@
+./config.go
+./context.go
+./doc.go
+./environment.go
+./gonja.go
+./version.go

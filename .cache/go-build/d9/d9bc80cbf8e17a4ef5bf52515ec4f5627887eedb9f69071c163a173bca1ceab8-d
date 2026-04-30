@@ -1,0 +1,8 @@
+./codefence.go
+./collapse_code.go
+./consecutive_newlines.go
+./delimiter.go
+./escape_multiline.go
+./prefix_lines.go
+./quote.go
+./surrounding_spaces.go

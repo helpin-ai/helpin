@@ -1,0 +1,5 @@
+./parser-check.go
+./parser-parse.go
+./parser.go
+./readability.go
+./utils.go

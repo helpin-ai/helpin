@@ -673,9 +673,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Canned responses
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses", h.SupportInbox.ListCannedResponses)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses/search", h.SupportInbox.SearchCannedResponses)
-				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/canned-responses", h.SupportInbox.CreateCannedResponse)
-				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/canned-responses/{id}", h.SupportInbox.UpdateCannedResponse)
-				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/canned-responses/{id}", h.SupportInbox.DeleteCannedResponse)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/canned-responses", h.SupportInbox.CreateCannedResponse)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/canned-responses/{id}", h.SupportInbox.UpdateCannedResponse)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/inbox/canned-responses/{id}", h.SupportInbox.DeleteCannedResponse)
 
 				// Typing indicators — Deprecated: use WebSocket support:typing:start/stop instead. Kept as HTTP fallback.
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/typing", h.SupportInbox.TypingIndicator)

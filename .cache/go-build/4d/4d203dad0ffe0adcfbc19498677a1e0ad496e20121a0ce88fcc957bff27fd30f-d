@@ -1,0 +1,7 @@
+./b64decode.go
+./b64decode_subr.go
+./b64decode_text_amd64.go
+./b64encode.go
+./b64encode_subr.go
+./b64encode_text_amd64.go
+./native_export.go

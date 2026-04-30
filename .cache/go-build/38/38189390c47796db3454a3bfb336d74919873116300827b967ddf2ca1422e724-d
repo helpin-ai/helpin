@@ -1,0 +1,10 @@
+./constants.go
+./detect.go
+./doc.go
+./info.go
+./lang.go
+./options.go
+./script.go
+./trigrams.go
+./unicode.go
+./utils.go

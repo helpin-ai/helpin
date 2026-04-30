@@ -1,0 +1,10 @@
+./add_space.go
+./adjacent.go
+./alternatives.go
+./domutils.go
+./empty_code.go
+./list_end_comment.go
+./list_items.go
+./redundant.go
+./span.go
+./swap.go

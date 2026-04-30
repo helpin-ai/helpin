@@ -1,0 +1,8 @@
+./base.go
+./idiosyncrasies-search.go
+./plausible-year.go
+./regex-parse.go
+./regex-pattern-search.go
+./search-pattern-test.go
+./search-pattern.go
+./utils.go

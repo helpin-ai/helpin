@@ -1,0 +1,12 @@
+./config.go
+./context.go
+./evaluate.go
+./filters.go
+./macro.go
+./renderer.go
+./self.go
+./statement.go
+./template.go
+./tests.go
+./value.go
+./varargs.go

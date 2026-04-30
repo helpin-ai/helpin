@@ -1,0 +1,9 @@
+./codesets.go
+./errorhandler.go
+./hostparser.go
+./inputstring.go
+./parser.go
+./parseroptions.go
+./path.go
+./searchparams.go
+./url.go

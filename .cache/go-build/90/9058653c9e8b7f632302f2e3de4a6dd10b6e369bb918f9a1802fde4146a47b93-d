@@ -1,0 +1,9 @@
+./build_id_versioning.go
+./default_failure_converter.go
+./doc.go
+./error.go
+./plugin.go
+./priority.go
+./retry_policy.go
+./search_attributes.go
+./version.go

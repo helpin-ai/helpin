@@ -1,0 +1,3 @@
+./parser.go
+./robotstxt.go
+./scanner.go

@@ -757,6 +757,10 @@ func (h *SupportInboxHandler) CreateCannedResponse(w http.ResponseWriter, r *htt
 
 	response, err := h.supportService.CreateCannedResponse(r.Context(), workspaceID, req, actorID)
 	if err != nil {
+		if errors.Is(err, service.ErrCannedResponseDuplicate) {
+			writeError(w, http.StatusConflict, "shortcut already exists")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -780,6 +784,10 @@ func (h *SupportInboxHandler) UpdateCannedResponse(w http.ResponseWriter, r *htt
 
 	response, err := h.supportService.UpdateCannedResponse(r.Context(), workspaceID, id, req)
 	if err != nil {
+		if errors.Is(err, service.ErrCannedResponseDuplicate) {
+			writeError(w, http.StatusConflict, "shortcut already exists")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

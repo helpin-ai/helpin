@@ -216,6 +216,32 @@ export interface CreateSupportTriageRuleRequest {
   target_mailbox_id: string;
 }
 
+export interface SupportCannedResponse {
+  id: string;
+  workspace_id: string;
+  short_code: string;
+  title: string;
+  content: string;
+  tag: string;
+  created_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCannedResponseRequest {
+  short_code: string;
+  title: string;
+  content: string;
+  tag?: string;
+}
+
+export interface UpdateCannedResponseRequest {
+  short_code: string;
+  title: string;
+  content: string;
+  tag?: string;
+}
+
 export interface UpdateSupportTriageRuleRequest {
   priority?: number;
   active?: boolean;

@@ -1,0 +1,15 @@
+./comments-discard.go
+./comments-removed.go
+./comments.go
+./content-discard-overall.go
+./content-discard-precision.go
+./content.go
+./image-discard.go
+./meta-author-discard.go
+./meta-author.go
+./meta-categories.go
+./meta-tags.go
+./meta-title.go
+./selector.go
+./teaser-discard.go
+./utils.go

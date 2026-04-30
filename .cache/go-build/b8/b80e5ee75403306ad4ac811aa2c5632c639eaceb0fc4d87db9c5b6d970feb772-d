@@ -1,0 +1,11 @@
+./comment.go
+./error.go
+./expression.go
+./filters.go
+./logic.go
+./math.go
+./parser.go
+./statement.go
+./template.go
+./tests.go
+./variable.go

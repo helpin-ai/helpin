@@ -1,0 +1,5 @@
+./compiler.go
+./encode_norace.go
+./encoder.go
+./pools_amd64.go
+./stream.go

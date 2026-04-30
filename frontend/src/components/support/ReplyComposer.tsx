@@ -6,7 +6,7 @@ import { Markdown } from 'tiptap-markdown';
 import {
   SentIcon, AttachmentIcon, StickyNote01Icon, Comment01Icon, Cancel01Icon, Loading01Icon,
   Mail01Icon, SparklesIcon, ArrowUp01Icon, ArrowUpDownIcon, ArrowReloadHorizontalIcon,
-  TickDouble01Icon, SmileIcon, Briefcase01Icon,
+  TickDouble01Icon, SmileIcon, Briefcase01Icon, Copy01Icon, PlusSignIcon,
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
   CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
 } from '@/lib/icons';
@@ -35,17 +35,18 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
 import { getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
-import { useRewriteSupportDraft, useSendMessage, useUploadSupportAttachment } from '@/hooks/queries/useSupport';
+import { useCannedResponses, useRewriteSupportDraft, useSendMessage, useUploadSupportAttachment } from '@/hooks/queries/useSupport';
 import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
 import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
-import type { SupportAIRewriteOperation } from '@/lib/pmTypes';
+import type { SupportAIRewriteOperation, SupportCannedResponse } from '@/lib/pmTypes';
 import { EmojiPicker } from './EmojiPicker';
 import { LinkInsertModal } from './LinkInsertModal';
 
@@ -190,11 +191,119 @@ function detectMentions(
   };
 }
 
+function stripShortcutContent(value: string) {
+  if (!value) return '';
+  const doc = new DOMParser().parseFromString(value, 'text/html');
+  return doc.body.textContent?.replace(/\s+/g, ' ').trim() || value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function filterShortcuts(shortcuts: SupportCannedResponse[], query: string) {
+  const normalized = query.trim().toLowerCase().replace(/^!/, '');
+  return shortcuts
+    .filter((item) => {
+      if (!normalized) return true;
+      return item.short_code.toLowerCase().replace(/^!/, '').includes(normalized) ||
+        item.title.toLowerCase().includes(normalized) ||
+        stripShortcutContent(item.content).toLowerCase().includes(normalized) ||
+        (item.tag || 'Others').toLowerCase().includes(normalized);
+    })
+    .sort((a, b) => a.short_code.localeCompare(b.short_code))
+    .slice(0, 8);
+}
+
+function groupShortcuts(shortcuts: SupportCannedResponse[]) {
+  const groups = new Map<string, SupportCannedResponse[]>();
+  for (const shortcut of shortcuts) {
+    const tag = shortcut.tag || 'Others';
+    groups.set(tag, [...(groups.get(tag) ?? []), shortcut]);
+  }
+  return Array.from(groups.entries()).map(([tag, items]) => ({ tag, items }));
+}
+
+function detectShortcuts(
+  editorInstance: ReturnType<typeof useEditor>,
+  shortcuts: SupportCannedResponse[],
+): { from: number; to: number; query: string; items: SupportCannedResponse[]; selectedIndex: number } | null {
+  if (!editorInstance) return null;
+  const { selection } = editorInstance.state;
+  if (!selection.empty) return null;
+
+  const textBefore = selection.$from.parent.textBetween(
+    0,
+    selection.$from.parentOffset,
+    undefined,
+    '\ufffc',
+  );
+  const match = textBefore.match(/!([^\s!]*)$/);
+  if (!match) return null;
+
+  const query = match[1].toLowerCase();
+  return {
+    from: selection.from - (query.length + 1),
+    to: selection.from,
+    query,
+    items: filterShortcuts(shortcuts, query),
+    selectedIndex: 0,
+  };
+}
+
+function ShortcutsList({
+  shortcuts,
+  selectedIndex,
+  onSelect,
+  compact = false,
+}: {
+  shortcuts: SupportCannedResponse[];
+  selectedIndex?: number;
+  onSelect: (shortcut: SupportCannedResponse) => void;
+  compact?: boolean;
+}) {
+  let flatIndex = 0;
+  return (
+    <div className="space-y-2">
+      {groupShortcuts(shortcuts).map((group) => (
+        <div key={group.tag}>
+          <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+            {group.tag === 'Others' ? 'Others (default)' : group.tag}
+          </div>
+          <div className="space-y-1">
+            {group.items.map((shortcut) => {
+              const currentIndex = flatIndex++;
+              const active = selectedIndex === currentIndex;
+              return (
+                <button
+                  key={shortcut.id}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => onSelect(shortcut)}
+                  className={cn(
+                    'flex w-full items-start gap-3 rounded-lg px-2 py-2 text-left transition-colors',
+                    active ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
+                  )}
+                >
+                  <span className="mt-0.5 shrink-0 font-mono text-xs font-semibold text-primary">{shortcut.short_code}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{shortcut.title || shortcut.short_code}</span>
+                    <span className={cn('block truncate text-xs text-muted-foreground', compact && 'max-w-[520px]')}>
+                      {stripShortcutContent(shortcut.content)}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }: ReplyComposerProps) {
   const { replyMode, setReplyMode, setDraft, clearDraft } = useSupportInboxStore();
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
 
   const { data: members = [] } = useQuery({
     queryKey: [...queryKeys.workspaces.members(workspaceId), 'assignable'],
@@ -202,6 +311,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     enabled: !!workspaceId,
     staleTime: 60_000,
   });
+  const { data: shortcuts = [] } = useCannedResponses(workspaceId);
 
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -283,6 +393,18 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   mentionStateRef.current = mentionState;
   const membersRef = useRef(members);
   membersRef.current = members;
+  const [shortcutsPanelOpen, setShortcutsPanelOpen] = useState(false);
+  const [shortcutState, setShortcutState] = useState<{
+    from: number;
+    to: number;
+    query: string;
+    items: SupportCannedResponse[];
+    selectedIndex: number;
+  } | null>(null);
+  const shortcutStateRef = useRef(shortcutState);
+  shortcutStateRef.current = shortcutState;
+  const shortcutsRef = useRef(shortcuts);
+  shortcutsRef.current = shortcuts;
 
   // Typing indicator
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
@@ -361,6 +483,51 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[40px] max-h-[160px] overflow-y-auto text-sm leading-relaxed',
       },
       handleKeyDown: (_view, event) => {
+        const currentShortcut = shortcutStateRef.current;
+        if (currentShortcut) {
+          if (event.key === 'ArrowDown' && currentShortcut.items.length > 0) {
+            event.preventDefault();
+            setShortcutState({
+              ...currentShortcut,
+              selectedIndex: (currentShortcut.selectedIndex + 1) % currentShortcut.items.length,
+            });
+            return true;
+          }
+          if (event.key === 'ArrowUp' && currentShortcut.items.length > 0) {
+            event.preventDefault();
+            setShortcutState({
+              ...currentShortcut,
+              selectedIndex:
+                (currentShortcut.selectedIndex - 1 + currentShortcut.items.length) %
+                currentShortcut.items.length,
+            });
+            return true;
+          }
+          if ((event.key === 'Enter' || event.key === 'Tab') && currentShortcut.items.length > 0) {
+            const selected = currentShortcut.items[currentShortcut.selectedIndex];
+            if (!selected || !editorRef.current) return false;
+            event.preventDefault();
+            editorRef.current
+              .chain()
+              .focus()
+              .insertContentAt(
+                { from: currentShortcut.from, to: currentShortcut.to },
+                selected.content,
+              )
+              .run();
+            setShortcutState(null);
+            setShortcutsPanelOpen(false);
+            setReplyMode('reply');
+            return true;
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            setShortcutState(null);
+            setShortcutsPanelOpen(false);
+            return true;
+          }
+        }
+
         const currentMention = mentionStateRef.current;
         if (currentMention && currentMention.items.length > 0) {
           if (event.key === 'ArrowDown') {
@@ -445,17 +612,38 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
       // Mention detection
       const mention = detectMentions(ed, membersRef.current);
       setMentionState(mention);
+      const shortcut = detectShortcuts(ed, shortcutsRef.current);
+      setShortcutState(shortcut);
+      setShortcutsPanelOpen(!!shortcut);
 
       // Auto-switch to note mode when mention detected in reply mode
       if (mention && useSupportInboxStore.getState().replyMode === 'reply') {
         setReplyMode('note');
       }
     },
-    onBlur: () => setMentionState(null),
+    onBlur: () => {
+      setMentionState(null);
+      setShortcutState(null);
+      setShortcutsPanelOpen(false);
+    },
   });
 
   const editorRef = useRef(editor);
   editorRef.current = editor;
+
+  const insertShortcut = useCallback((shortcut: SupportCannedResponse, range?: { from: number; to: number }) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const chain = ed.chain().focus();
+    if (range) {
+      chain.insertContentAt(range, shortcut.content).run();
+    } else {
+      chain.insertContent(shortcut.content).run();
+    }
+    setShortcutState(null);
+    setShortcutsPanelOpen(false);
+    setReplyMode('reply');
+  }, [setReplyMode]);
 
   // Backup event handlers for TipTap v3 compatibility
   useEffect(() => {
@@ -469,12 +657,17 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
       text.trim() ? handleTyping(text) : sendTyping(false);
       const mention = detectMentions(editor, membersRef.current);
       setMentionState(mention);
+      const shortcut = detectShortcuts(editor, shortcutsRef.current);
+      setShortcutState(shortcut);
+      setShortcutsPanelOpen(!!shortcut);
       if (mention && useSupportInboxStore.getState().replyMode === 'reply') {
         setReplyMode('note');
       }
     };
     const handleBlur = () => {
       setMentionState(null);
+      setShortcutState(null);
+      setShortcutsPanelOpen(false);
       // Defer so that clicking a toolbar button (which steals focus briefly)
       // doesn't immediately collapse the toolbar.
       setTimeout(() => {
@@ -685,11 +878,45 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         </div>
       )}
 
+      {(shortcutState || shortcutsPanelOpen) && (
+        <div className="absolute bottom-full left-0 right-0 z-50 mb-2 px-1">
+          <div className="max-h-[300px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
+            <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+              Shortcuts
+            </p>
+            {(shortcutState ? shortcutState.items : shortcuts).length > 0 ? (
+              <ShortcutsList
+                shortcuts={shortcutState ? shortcutState.items : shortcuts}
+                selectedIndex={shortcutState?.selectedIndex}
+                compact
+                onSelect={(shortcut) => insertShortcut(shortcut, shortcutState ? { from: shortcutState.from, to: shortcutState.to } : undefined)}
+              />
+            ) : (
+              <div className="px-3 py-5 text-center">
+                <p className="text-sm text-muted-foreground">No shortcut was found. You may add more shortcuts.</p>
+                {workspaceSlug ? (
+                  <a
+                    href={`/w/${workspaceSlug}/settings/message-shortcuts`}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    <PlusSignIcon className="h-3.5 w-3.5" />
+                    Add Shortcut
+                  </a>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Mode toggle */}
       <div className="flex items-center gap-1 px-4 pt-3">
         <button
           type="button"
-          onClick={() => setReplyMode('reply')}
+          onClick={() => {
+            setReplyMode('reply');
+            setShortcutsPanelOpen(false);
+          }}
           className={cn(
             'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
             !isNote
@@ -702,7 +929,10 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         </button>
         <button
           type="button"
-          onClick={() => setReplyMode('note')}
+          onClick={() => {
+            setReplyMode('note');
+            setShortcutsPanelOpen(false);
+          }}
           className={cn(
             'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
             isNote
@@ -712,6 +942,23 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         >
           <StickyNote01Icon className="h-3 w-3" />
           Note
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setShortcutsPanelOpen((open) => !open);
+            setShortcutState(null);
+            setReplyMode('reply');
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            shortcutsPanelOpen
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          )}
+        >
+          <Copy01Icon className="h-3 w-3" />
+          Shortcuts
         </button>
         <DropdownMenu>
           <Tooltip>
