@@ -197,6 +197,7 @@ func (h *AutomationHandler) ListActivity(w http.ResponseWriter, r *http.Request)
 		BindingKind: queryStringPtrWithFallback(r, "binding_kind", "source"),
 		Status:      queryStringPtr(r, "status"),
 		ReferenceID: queryStringPtr(r, "reference_id"),
+		RunID:       queryStringPtr(r, "run_id"),
 		FiredAfter:  firedAfter,
 		FiredBefore: firedBefore,
 	}

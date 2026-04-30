@@ -43,6 +43,7 @@ const activityQS = (workspaceId: string, filters: AutomationTriggerExecutionFilt
   if (filters.status) params.set('status', filters.status);
   if (filters.source) params.set('source', filters.source);
   if (filters.reference_id) params.set('reference_id', filters.reference_id);
+  if (filters.run_id) params.set('run_id', filters.run_id);
   if (filters.fired_after) params.set('fired_after', filters.fired_after);
   if (filters.fired_before) params.set('fired_before', filters.fired_before);
   if (filters.page && filters.page > 0) params.set('page', String(filters.page));

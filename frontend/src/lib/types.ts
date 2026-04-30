@@ -461,6 +461,7 @@ export interface AutomationTriggerExecutionFilters {
   status?: string;
   source?: string;
   reference_id?: string;
+  run_id?: string;
   fired_after?: string;
   fired_before?: string;
   page?: number;
