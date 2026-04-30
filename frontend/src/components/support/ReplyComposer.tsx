@@ -9,6 +9,7 @@ import {
   TickDouble01Icon, SmileIcon, Briefcase01Icon, Copy01Icon, PlusSignIcon,
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
   CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
+  StickyNote01Icon,
 } from '@/lib/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
