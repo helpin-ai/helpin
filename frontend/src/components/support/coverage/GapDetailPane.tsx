@@ -182,7 +182,7 @@ export function GapDetailPane({
         <dl className="mt-3 grid grid-cols-3 gap-3 text-xs">
           <div>
             <dt className="text-muted-foreground">Topic</dt>
-            <dd className="mt-0.5 font-medium">{coverageTopicLabel(gap.issue_key)}</dd>
+            <dd className="mt-0.5 truncate font-medium">{gap.topic_title || coverageTopicLabel(gap.issue_key)}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">First seen</dt>
