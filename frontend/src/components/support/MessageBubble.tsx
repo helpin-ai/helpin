@@ -728,10 +728,16 @@ export const MessageBubble = memo(function MessageBubble({
               )}
             </div>
           ) : aiMeta ? (
-            // AI message: confidence + sources on the left, receipt on the
-            // right, spread across the row under the bubble.
+            // AI message: combined footer — confidence + sources cluster + receipt.
+            // For agent messages the parent wrapper isn't bubble-width, so
+            // justify-between would scatter the chips across the whole row.
+            // Cluster everything to the right under the bubble instead.
             <>
-              <div className="mt-1.5 flex items-center justify-between gap-2">
+              <div
+                className={`mt-1.5 flex items-center gap-2 ${
+                  isCustomer ? 'justify-between' : 'justify-end'
+                }`}
+              >
                 <div className="inline-flex items-center gap-1.5 text-[11px]">
                   <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
                     <CheckmarkCircle02Icon className="h-3 w-3" />
