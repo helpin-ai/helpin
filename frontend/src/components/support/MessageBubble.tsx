@@ -52,7 +52,7 @@ const markdownComponents = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="[overflow-wrap:anywhere] break-words"
+      className="break-all [overflow-wrap:anywhere]"
     >
       {children}
     </a>
@@ -79,17 +79,13 @@ function previewHostLabel(preview: SupportLinkPreview): string {
   }
 }
 
-function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview; isOutgoing: boolean }) {
+function LinkPreviewCard({ preview }: { preview: SupportLinkPreview }) {
   return (
     <a
       href={preview.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`block overflow-hidden rounded-xl border transition-colors hover:opacity-95 ${
-        isOutgoing
-          ? 'border-white/20 bg-white/10 text-white'
-          : 'border-border bg-background text-foreground'
-      }`}
+      className="block overflow-hidden rounded-xl border border-border bg-background text-foreground transition-colors hover:bg-muted/40"
     >
       {preview.image_url ? (
         <img
@@ -100,13 +96,13 @@ function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview;
         />
       ) : null}
       <div className="space-y-1.5 p-3">
-        <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wide ${isOutgoing ? 'text-white/70' : 'text-muted-foreground'}`}>
+        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
           <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
           <LinkSquare01Icon className="h-3 w-3 shrink-0" />
         </div>
-        <div className="text-sm font-semibold leading-snug">{preview.title}</div>
+        <div className="text-sm font-semibold leading-snug text-foreground">{preview.title}</div>
         {preview.description ? (
-          <p className={`text-xs leading-relaxed ${isOutgoing ? 'text-white/80' : 'text-muted-foreground'}`}>
+          <p className="text-xs leading-relaxed text-muted-foreground">
             {preview.description}
           </p>
         ) : null}
@@ -441,7 +437,7 @@ export const MessageBubble = memo(function MessageBubble({
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
       ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
-      : 'min-w-0 max-w-[85%]';
+      : 'min-w-0 max-w-[min(85%,42rem)]';
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
@@ -509,7 +505,6 @@ export const MessageBubble = memo(function MessageBubble({
                         <LinkPreviewCard
                           key={`${message.id}:${preview.url}`}
                           preview={preview}
-                          isOutgoing={!isCustomer}
                         />
                       ))}
                     </div>

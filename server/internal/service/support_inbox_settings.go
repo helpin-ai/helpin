@@ -10,9 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
+
+const cannedResponseShortCodeIndex = "idx_support_canned_responses_ws_short_code"
 
 var (
 	ErrCannedResponseDuplicate = errors.New("shortcut already exists")
@@ -599,14 +603,18 @@ func normalizeCannedResponseRequest(req model.CannedResponseRequest) (model.Cann
 	return req, nil
 }
 
+// isDuplicateCannedResponseError detects a race-condition violation of the
+// (workspace_id, short_code) unique index. The pre-flight GetByShortCode check
+// covers the common case; this fallback only fires when two creates land
+// between that lookup and the INSERT.
 func isDuplicateCannedResponseError(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "idx_support_canned_responses_ws_short_code") ||
-		strings.Contains(msg, "duplicate key") ||
-		strings.Contains(msg, "unique constraint")
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), cannedResponseShortCodeIndex)
 }
 
 // CreateCannedResponse creates a new canned response.

@@ -42,13 +42,13 @@ import { unwrap } from '@/lib/queryUtils';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { AssignableMember } from '@/lib/types';
 import type { SupportAIRewriteOperation, SupportCannedResponse } from '@/lib/pmTypes';
 import { EmojiPicker } from './EmojiPicker';
 import { LinkInsertModal } from './LinkInsertModal';
+import { AddShortcutDialog } from './AddShortcutDialog';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 
@@ -247,43 +247,77 @@ function detectShortcuts(
   };
 }
 
+function highlightMatch(text: string, query: string): ReactNode {
+  if (!text) return text;
+  const needle = query.replace(/^!/, '').trim();
+  if (!needle) return text;
+  const lower = text.toLowerCase();
+  const idx = lower.indexOf(needle.toLowerCase());
+  if (idx === -1) return text;
+  const end = idx + needle.length;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-transparent font-semibold text-foreground">{text.slice(idx, end)}</mark>
+      {text.slice(end)}
+    </>
+  );
+}
+
 function ShortcutsList({
   shortcuts,
   selectedIndex,
   onSelect,
   compact = false,
+  query = '',
 }: {
   shortcuts: SupportCannedResponse[];
   selectedIndex?: number;
   onSelect: (shortcut: SupportCannedResponse) => void;
   compact?: boolean;
+  query?: string;
 }) {
+  const selectedRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex]);
+
   let flatIndex = 0;
   return (
-    <div className="space-y-2">
+    <div role="listbox" aria-label="Message shortcuts" className="space-y-2">
       {groupShortcuts(shortcuts).map((group) => (
         <div key={group.tag}>
-          <div className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
-            {group.tag === 'Others' ? 'Others (default)' : group.tag}
+          <div className="flex items-center justify-between px-2 pb-1">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+              {group.tag === 'Others' ? 'Others' : group.tag}
+            </span>
+            <span className="text-[10px] tabular-nums text-muted-foreground/50">{group.items.length}</span>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {group.items.map((shortcut) => {
               const currentIndex = flatIndex++;
               const active = selectedIndex === currentIndex;
               return (
                 <button
                   key={shortcut.id}
+                  ref={active ? selectedRef : undefined}
                   type="button"
+                  role="option"
+                  aria-selected={active}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => onSelect(shortcut)}
                   className={cn(
-                    'flex w-full items-start gap-3 rounded-lg px-2 py-2 text-left transition-colors',
-                    active ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
+                    'flex w-full items-start gap-3 rounded-md border-l-2 border-transparent px-2 py-2 text-left transition-colors',
+                    active ? 'border-primary bg-accent text-accent-foreground' : 'hover:bg-muted',
                   )}
                 >
-                  <span className="mt-0.5 shrink-0 font-mono text-xs font-semibold text-primary">{shortcut.short_code}</span>
+                  <span className="mt-0.5 shrink-0 font-mono text-xs font-semibold text-primary">
+                    {highlightMatch(shortcut.short_code, query)}
+                  </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{shortcut.title || shortcut.short_code}</span>
+                    <span className="block truncate text-sm font-medium">
+                      {highlightMatch(shortcut.title || shortcut.short_code, query)}
+                    </span>
                     <span className={cn('block truncate text-xs text-muted-foreground', compact && 'max-w-[520px]')}>
                       {stripShortcutContent(shortcut.content)}
                     </span>
@@ -303,7 +337,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   const sendMutation = useSendMessage(workspaceId, conversationId);
   const rewriteMutation = useRewriteSupportDraft(workspaceId, conversationId);
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
 
   const { data: members = [] } = useQuery({
     queryKey: [...queryKeys.workspaces.members(workspaceId), 'assignable'],
@@ -393,7 +426,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   mentionStateRef.current = mentionState;
   const membersRef = useRef(members);
   membersRef.current = members;
+  const shortcutsPanelOpenRef = useRef(false);
+  const panelIndexRef = useRef(0);
+  const [addShortcutOpen, setAddShortcutOpen] = useState(false);
+  const [addShortcutSeed, setAddShortcutSeed] = useState('');
   const [shortcutsPanelOpen, setShortcutsPanelOpen] = useState(false);
+  shortcutsPanelOpenRef.current = shortcutsPanelOpen;
   const [shortcutState, setShortcutState] = useState<{
     from: number;
     to: number;
@@ -405,6 +443,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   shortcutStateRef.current = shortcutState;
   const shortcutsRef = useRef(shortcuts);
   shortcutsRef.current = shortcuts;
+  const [panelIndex, setPanelIndex] = useState(0);
+  panelIndexRef.current = panelIndex;
 
   // Typing indicator
   const sendTyping = useCallback((typing: boolean, typingContent?: string) => {
@@ -523,6 +563,34 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           if (event.key === 'Escape') {
             event.preventDefault();
             setShortcutState(null);
+            setShortcutsPanelOpen(false);
+            return true;
+          }
+        }
+
+        // Browse-mode keyboard nav (panel opened via toolbar, no `!` query)
+        if (!currentShortcut && shortcutsPanelOpenRef.current && shortcutsRef.current.length > 0) {
+          const items = shortcutsRef.current;
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setPanelIndex((idx) => (idx + 1) % items.length);
+            return true;
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setPanelIndex((idx) => (idx - 1 + items.length) % items.length);
+            return true;
+          }
+          if (event.key === 'Enter') {
+            const selected = items[panelIndexRef.current];
+            if (!selected || !editorRef.current) return false;
+            event.preventDefault();
+            editorRef.current.chain().focus().insertContent(selected.content).run();
+            setShortcutsPanelOpen(false);
+            return true;
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault();
             setShortcutsPanelOpen(false);
             return true;
           }
@@ -878,36 +946,75 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         </div>
       )}
 
-      {(shortcutState || shortcutsPanelOpen) && (
-        <div className="absolute bottom-full left-0 right-0 z-50 mb-2 px-1">
-          <div className="max-h-[300px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
-            <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
-              Shortcuts
-            </p>
-            {(shortcutState ? shortcutState.items : shortcuts).length > 0 ? (
-              <ShortcutsList
-                shortcuts={shortcutState ? shortcutState.items : shortcuts}
-                selectedIndex={shortcutState?.selectedIndex}
-                compact
-                onSelect={(shortcut) => insertShortcut(shortcut, shortcutState ? { from: shortcutState.from, to: shortcutState.to } : undefined)}
-              />
-            ) : (
-              <div className="px-3 py-5 text-center">
-                <p className="text-sm text-muted-foreground">No shortcut was found. You may add more shortcuts.</p>
-                {workspaceSlug ? (
-                  <a
-                    href={`/w/${workspaceSlug}/settings/message-shortcuts`}
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                  >
-                    <PlusSignIcon className="h-3.5 w-3.5" />
-                    Add Shortcut
-                  </a>
-                ) : null}
+      {(shortcutState || shortcutsPanelOpen) && (() => {
+        const items = shortcutState ? shortcutState.items : shortcuts;
+        const isFiltering = !!shortcutState;
+        const queryToken = shortcutState ? `!${shortcutState.query}` : '';
+        return (
+          <div className="absolute bottom-full left-0 right-0 z-50 mb-2 px-1">
+            <div className="flex max-h-[340px] flex-col overflow-hidden rounded-xl border border-border/60 bg-popover shadow-lg">
+              <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <StickyNote01Icon className="h-3.5 w-3.5" />
+                  <span>Shortcuts</span>
+                  {isFiltering && shortcutState ? (
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">{queryToken}</span>
+                  ) : (
+                    <span className="text-muted-foreground/60">· browse all</span>
+                  )}
+                </div>
+                <span className="text-[11px] tabular-nums text-muted-foreground/70">
+                  {items.length} {items.length === 1 ? 'match' : 'matches'}
+                </span>
               </div>
-            )}
+
+              <div className="flex-1 overflow-y-auto p-1.5">
+                {items.length > 0 ? (
+                  <ShortcutsList
+                    shortcuts={items}
+                    selectedIndex={shortcutState?.selectedIndex ?? (isFiltering ? undefined : panelIndex)}
+                    query={shortcutState?.query ?? ''}
+                    compact
+                    onSelect={(shortcut) => insertShortcut(shortcut, shortcutState ? { from: shortcutState.from, to: shortcutState.to } : undefined)}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
+                    <div className="rounded-full bg-muted/60 p-2">
+                      <StickyNote01Icon className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm font-medium">
+                      {isFiltering ? <>No shortcut matches <span className="font-mono">{queryToken}</span></> : 'No shortcuts yet'}
+                    </p>
+                    <p className="max-w-xs text-xs text-muted-foreground">
+                      Save replies you send often, then trigger them with a bang prefix.
+                    </p>
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setAddShortcutSeed(queryToken);
+                        setShortcutState(null);
+                        setShortcutsPanelOpen(false);
+                        setAddShortcutOpen(true);
+                      }}
+                      className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      <PlusSignIcon className="h-3.5 w-3.5" />
+                      {isFiltering && shortcutState?.query ? <>Add <span className="font-mono">{queryToken}</span></> : 'Add shortcut'}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 border-t border-border/40 bg-muted/30 px-3 py-1.5 text-[10px] text-muted-foreground/80">
+                <span className="flex items-center gap-1"><kbd className="rounded border border-border/60 bg-background px-1 font-mono text-[10px]">↑</kbd><kbd className="rounded border border-border/60 bg-background px-1 font-mono text-[10px]">↓</kbd> navigate</span>
+                <span className="flex items-center gap-1"><kbd className="rounded border border-border/60 bg-background px-1 font-mono text-[10px]">↵</kbd> insert</span>
+                <span className="flex items-center gap-1"><kbd className="rounded border border-border/60 bg-background px-1 font-mono text-[10px]">esc</kbd> close</span>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Mode toggle */}
       <div className="flex items-center gap-1 px-4 pt-3">
@@ -948,6 +1055,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           onClick={() => {
             setShortcutsPanelOpen((open) => !open);
             setShortcutState(null);
+            setPanelIndex(0);
             setReplyMode('reply');
           }}
           className={cn(
@@ -1039,6 +1147,13 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         initialUrl={linkInitial.url}
         onInsert={handleLinkInsert}
         onRemove={editor.isActive('link') ? handleLinkRemove : undefined}
+      />
+
+      <AddShortcutDialog
+        open={addShortcutOpen}
+        workspaceId={workspaceId}
+        seedShortCode={addShortcutSeed}
+        onOpenChange={setAddShortcutOpen}
       />
 
       {/* Attachment preview strip */}

@@ -14,12 +14,14 @@ import {
   classifyRun,
   listGroupKey,
   LIST_GROUP_LABEL,
-  outputSummaryText,
   planKindLabel,
   planSummaryText,
   planUpdatedAt,
+  runContextLine,
+  runDisplayTitle,
+  runStatusLabel,
   runUpdatedAt,
-  targetLabel,
+  type ActivityState,
   type ListGroupKey,
 } from './utils';
 
@@ -142,9 +144,27 @@ function titleFor(it: ListItem, runsById: Record<string, AgentRun>): string {
     if (it.plan.prompt) return it.plan.prompt;
     const firstId = it.plan.runIdsByStep[0];
     const first = firstId ? runsById[firstId] : null;
-    return first ? targetLabel(first) : 'Command run';
+    return first ? runDisplayTitle(first) || 'Command run' : 'Command run';
   }
-  return targetLabel(it.run);
+  return runDisplayTitle(it.run) || 'Agent run';
+}
+
+function stateTextClass(state: ActivityState): string {
+  switch (state) {
+    case 'attention':
+      return 'text-destructive';
+    case 'awaiting':
+      return 'text-amber-700 dark:text-amber-300';
+    case 'cancelled':
+      return 'text-muted-foreground';
+    case 'running':
+      return 'text-orange-700 dark:text-orange-300';
+    case 'completed':
+      return 'text-emerald-700 dark:text-emerald-300';
+    case 'queued':
+    default:
+      return 'text-muted-foreground';
+  }
 }
 
 function ListRow({
@@ -170,7 +190,7 @@ function ListRow({
   const title = titleFor(item, runsById);
   const ts = new Date(item.ts);
 
-  let label: string;
+  let metaLabel: string;
   let subline: string;
   let rail: React.ReactNode = null;
   let busy = false;
@@ -179,7 +199,7 @@ function ListRow({
 
   if (item.kind === 'plan') {
     const { plan } = item;
-    label = planKindLabel(plan.planKind, plan.steps.length);
+    metaLabel = planKindLabel(plan.planKind, plan.steps.length);
     subline = planSummaryText(plan, runsById);
     rail =
       plan.planKind === 'task_pipeline_fan_out' ? (
@@ -192,23 +212,32 @@ function ListRow({
         <PipelineRail plan={plan} runsById={runsById} />
       ) : null;
     busy = busyPlanId === plan.id;
-    if (state === 'attention') {
+    if (state === 'attention' || state === 'cancelled') {
       onRetry = () => onRetryPlan(plan);
       const failedRun = Object.values(plan.runIdsByStep)
         .map((id) => runsById[id])
         .find((r) => r && (r.status === 'failed' || r.status === 'cancelled'));
-      errorMessage = failedRun?.error_message ?? 'Failed';
+      errorMessage = failedRun?.error_message ?? null;
     }
   } else {
     const { run } = item;
-    label = 'Agent';
-    subline = outputSummaryText(run) || run.target_type.replaceAll('_', ' ');
+    metaLabel = runContextLine(run);
+    subline = runStatusLabel(run);
     busy = busyRunId === run.id;
-    if (state === 'attention') {
+    if (state === 'attention' || state === 'cancelled') {
       onRetry = () => onRetryRun(run);
-      errorMessage = run.error_message ?? 'Failed';
+      errorMessage = run.error_message ?? null;
     }
   }
+
+  // For attention/cancelled rows, the error message replaces the subline so
+  // the user sees *why* the run needs attention without expanding it. When
+  // there's no error_message we keep the status label as a soft fallback.
+  const showError = (state === 'attention' || state === 'cancelled') && !!errorMessage;
+  const sublineText = showError ? errorMessage! : subline;
+  const sublineTextClass = showError
+    ? 'text-destructive'
+    : stateTextClass(state);
 
   return (
     <div
@@ -232,18 +261,19 @@ function ListRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <span className="truncate text-sm font-medium text-foreground">{title}</span>
-          <span className="shrink-0 text-[11px] text-muted-foreground">
-            {label} · {sinceOrTime(ts)}
-          </span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">{sinceOrTime(ts)}</span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <span
-            className={cn(
-              'min-w-0 truncate text-[11px]',
-              state === 'attention' ? 'text-destructive' : 'text-muted-foreground',
-            )}
+            className={cn('min-w-0 flex-1 truncate text-[11px]', sublineTextClass)}
           >
-            {state === 'attention' ? errorMessage : subline}
+            {sublineText}
+            {metaLabel ? (
+              <>
+                <span className="text-muted-foreground/60"> · </span>
+                <span className="text-muted-foreground">{metaLabel}</span>
+              </>
+            ) : null}
           </span>
           {onRetry ? (
             <button

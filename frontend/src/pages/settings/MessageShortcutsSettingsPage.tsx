@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { SettingsPageFrame } from './SettingsPageFrame';
+import { AddShortcutDialog } from '@/components/support/AddShortcutDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +32,6 @@ import {
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import {
   useCannedResponses,
-  useCreateCannedResponse,
   useDeleteCannedResponse,
   useUpdateCannedResponse,
 } from '@/hooks/queries/useSupport';
@@ -40,12 +40,15 @@ import { cn } from '@/lib/utils';
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
+  Cancel01Icon,
   Delete01Icon,
   Loading01Icon,
   MoreHorizontalIcon,
   PencilEdit01Icon,
   PlusSignIcon,
   Search01Icon,
+  StickyNote01Icon,
+  TickDouble01Icon,
 } from '@/lib/icons';
 
 const DEFAULT_TAG = 'Others';
@@ -255,16 +258,17 @@ export function MessageShortcutsSettingsPage() {
 
 function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string }) {
   const { data: responses = [], isLoading } = useCannedResponses(workspaceId);
-  const createShortcut = useCreateCannedResponse(workspaceId);
   const updateShortcut = useUpdateCannedResponse(workspaceId);
   const deleteShortcut = useDeleteCannedResponse(workspaceId);
-  const [form, setForm] = useState<ShortcutFormState>(emptyForm);
+  const [addOpen, setAddOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingForm, setEditingForm] = useState<ShortcutFormState>(emptyForm);
   const [pendingDelete, setPendingDelete] = useState<SupportCannedResponse | null>(null);
   const [pendingGroupDelete, setPendingGroupDelete] = useState<string | null>(null);
+  const [renamingTag, setRenamingTag] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const tags = useMemo(() => buildTagOptions(responses), [responses]);
   const filteredResponses = useMemo(() => {
@@ -278,20 +282,6 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
     );
   }, [responses, search]);
   const groups = useMemo(() => groupResponses(filteredResponses), [filteredResponses]);
-
-  const handleCreate = async () => {
-    const tag = normalizeTag(form);
-    try {
-      await createShortcut.mutateAsync({
-        short_code: form.shortCode.trim(),
-        title: form.title.trim() || form.shortCode.trim(),
-        content: form.content,
-        tag,
-      });
-      setForm(emptyForm);
-      toast.success('Shortcut added');
-    } catch {}
-  };
 
   const handleUpdate = async (responseId: string) => {
     const tag = normalizeTag(editingForm);
@@ -310,20 +300,35 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
     } catch {}
   };
 
-  const handleRenameGroup = async (tag: string) => {
-    const next = window.prompt('Rename tag', tag);
-    if (!next || next.trim() === tag) return;
-    const items = responses.filter((item) => (item.tag || DEFAULT_TAG) === tag);
+  const startRenameGroup = (tag: string) => {
+    setRenamingTag(tag);
+    setRenameValue(tag);
+  };
+
+  const cancelRenameGroup = () => {
+    setRenamingTag(null);
+    setRenameValue('');
+  };
+
+  const commitRenameGroup = async () => {
+    if (!renamingTag) return;
+    const next = renameValue.trim();
+    if (!next || next === renamingTag) {
+      cancelRenameGroup();
+      return;
+    }
+    const items = responses.filter((item) => (item.tag || DEFAULT_TAG) === renamingTag);
     await Promise.all(items.map((item) => updateShortcut.mutateAsync({
       responseId: item.id,
       payload: {
         short_code: item.short_code,
         title: item.title,
         content: item.content,
-        tag: next.trim(),
+        tag: next,
       },
     })));
-    toast.success('Tag updated');
+    cancelRenameGroup();
+    toast.success('Tag renamed');
   };
 
   const handleDeleteGroup = async (tag: string) => {
@@ -337,30 +342,13 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border bg-card p-4">
-        <div className="mb-4">
-          <h3 className="text-sm font-semibold">Add a new shortcut</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Saved replies can be inserted from the composer by typing a bang trigger.
-          </p>
-        </div>
-        <ShortcutForm
-          state={form}
-          workspaceId={workspaceId}
-          tags={tags}
-          existing={responses}
-          pending={createShortcut.isPending}
-          submitLabel="Add Shortcut"
-          onChange={setForm}
-          onSubmit={handleCreate}
-        />
-      </section>
-
       <section className="rounded-lg border bg-card">
         <div className="flex flex-col gap-3 border-b p-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h3 className="text-sm font-semibold">Manage all shortcuts</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{responses.length} shortcuts in this workspace.</p>
+            <h3 className="text-sm font-semibold">Message shortcuts</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {responses.length} saved {responses.length === 1 ? 'reply' : 'replies'} · insert from the composer with a bang trigger.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative w-full md:w-72">
@@ -369,9 +357,23 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search shortcuts..."
-                className="pl-8"
+                className="pl-8 pr-8"
               />
+              {search ? (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Cancel01Icon className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
             </div>
+            <Button onClick={() => setAddOpen(true)}>
+              <PlusSignIcon className="h-4 w-4" />
+              Add shortcut
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Shortcut bulk actions">
@@ -394,22 +396,64 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
 
         <div className="divide-y">
           {isLoading ? (
-            <div className="p-6 text-sm text-muted-foreground">Loading shortcuts...</div>
+            <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+              <Loading01Icon className="h-4 w-4 animate-spin" />
+              Loading shortcuts...
+            </div>
+          ) : responses.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 p-10 text-center">
+              <div className="rounded-full bg-muted/50 p-3">
+                <StickyNote01Icon className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <p className="text-sm font-medium">No shortcuts yet</p>
+              <p className="max-w-xs text-sm text-muted-foreground">
+                Add your first saved reply above to insert it from the composer with a bang trigger.
+              </p>
+            </div>
           ) : groups.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">No shortcuts found.</div>
+            <div className="flex flex-col items-center gap-2 p-10 text-center">
+              <p className="text-sm font-medium">No matches for &ldquo;{search}&rdquo;</p>
+              <Button variant="ghost" size="sm" onClick={() => setSearch('')}>Clear search</Button>
+            </div>
           ) : groups.map((group) => {
             const isCollapsed = collapsed[group.tag] ?? false;
             return (
               <div key={group.tag}>
                 <div className="flex flex-wrap items-center justify-between gap-3 bg-muted/25 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-semibold">{group.tag === DEFAULT_TAG ? 'Others (default)' : group.tag}</h4>
-                    <Badge variant="secondary">{group.items.length} shortcuts</Badge>
+                  <div className="flex flex-1 items-center gap-2">
+                    {renamingTag === group.tag ? (
+                      <>
+                        <Input
+                          autoFocus
+                          value={renameValue}
+                          onChange={(event) => setRenameValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') void commitRenameGroup();
+                            if (event.key === 'Escape') cancelRenameGroup();
+                          }}
+                          className="h-8 max-w-[220px]"
+                          aria-label="Tag name"
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => void commitRenameGroup()} aria-label="Save tag name">
+                          <TickDouble01Icon className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={cancelRenameGroup} aria-label="Cancel rename">
+                          <Cancel01Icon className="h-4 w-4" />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <h4 className="text-sm font-semibold">{group.tag === DEFAULT_TAG ? 'Others (default)' : group.tag}</h4>
+                        <Badge variant="secondary">{group.items.length} shortcuts</Badge>
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => void handleRenameGroup(group.tag)} aria-label="Rename tag">
-                      <PencilEdit01Icon className="h-4 w-4" />
-                    </Button>
+                    {renamingTag === group.tag ? null : (
+                      <Button variant="ghost" size="icon" onClick={() => startRenameGroup(group.tag)} aria-label="Rename tag">
+                        <PencilEdit01Icon className="h-4 w-4" />
+                      </Button>
+                    )}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" aria-label="Group actions">
@@ -495,6 +539,12 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
           })}
         </div>
       </section>
+
+      <AddShortcutDialog
+        open={addOpen}
+        workspaceId={workspaceId}
+        onOpenChange={setAddOpen}
+      />
 
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
