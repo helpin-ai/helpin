@@ -261,7 +261,7 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 			COALESCE(t.canonical_title, t.title, '') AS canonical_title,
 			(SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
 			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
-			(SELECT COUNT(*) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
+			(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
