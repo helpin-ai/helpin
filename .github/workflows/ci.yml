@@ -1,66 +1,175 @@
 name: CI
 
+# PR-required CI gates. Mirrors the rollout in
+# `docs/test-suite-ci-email-plan.md`. Suites that haven't met the promotion
+# criteria (5 consecutive green nightlies + flake rate < 2% + p95 within
+# budget) run as `continue-on-error: true` so they're visible without
+# blocking PRs. Promoting one to required is a single-line edit.
+
 on:
-  # Keep CI manual-only for now. The frontend support e2e suite is wired,
-  # but we are not gating PRs on it yet.
+  pull_request:
+    branches: [main, develop]
   workflow_dispatch:
-  # pull_request:
-  #   branches: [main, develop]
+
+concurrency:
+  # Cancel in-progress runs for the same PR/branch when a new push lands.
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ------------------------- Server -------------------------
   server:
     name: Server CI
     runs-on: arc-runners-helpin-ai
+    # Plan budget: ≤ 6 min for vet+build. Generous timeout so transient
+    # network blips don't fail the run for the wrong reason.
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+
+      - name: Migration status (informational)
+        # `migrate validate` exits 1 on pending migrations, which is normal
+        # for any PR that adds one — so we print status only here. A real
+        # PR-safe lint will land in a follow-up `cmd/migrate lint`.
+        working-directory: server
+        run: go run ./cmd/migrate status || true
+
       - name: Vet
         working-directory: server
         run: go vet ./...
+
       - name: Build
         working-directory: server
         run: |
           go build ./cmd/api
           go build ./cmd/temporal-worker
+          go build ./cmd/migrate
 
+  server-tests:
+    name: Server Tests
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 20
+    # Informational until promoted per the plan's promotion criteria.
+    continue-on-error: true
+    # Existing test suite uses in-memory SQLite (see server/CLAUDE.md).
+    # `services: postgres` is aspirational and currently breaks on our
+    # ARC runners (k8s API unreachable when spinning up the sidecar pod).
+    # Postgres-backed tests will move to nightly with a setup-postgres
+    # action once the runner story is sorted.
+    env:
+      # mattn/go-sqlite3 (used by gorm.io/driver/sqlite) requires CGO.
+      # Without this, codex/auth/tool tests fail with "Binary was compiled
+      # with 'CGO_ENABLED=0'". The runner image must have gcc installed.
+      CGO_ENABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Verify gcc available (CGO requires it)
+        run: |
+          if ! command -v gcc >/dev/null 2>&1; then
+            echo "::warning::gcc not found; installing build-essential"
+            (command -v sudo >/dev/null 2>&1 && sudo apt-get update && sudo apt-get install -y gcc) \
+              || (apt-get update && apt-get install -y gcc) \
+              || echo "::error::could not install gcc — CGO tests will fail"
+          fi
+          gcc --version || true
+      - name: Test
+        working-directory: server
+        run: go test ./...
+
+  # ------------------------ Frontend ------------------------
   frontend:
     name: Frontend CI
     runs-on: arc-runners-helpin-ai
+    # Plan budget: ≤ 4 min build. Tsc -b alone can stretch to 3-4m on
+    # cold cache; allow headroom.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - uses: pnpm/action-setup@v4
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      # Enable when we are ready to gate PRs on frontend browser coverage.
-      # - name: Install Playwright Chromium
-      #   run: pnpm --dir frontend exec playwright install --with-deps chromium
-      # - name: Frontend support e2e
-      #   run: pnpm --dir frontend run test:e2e:support
       - name: Build all packages
         run: pnpm build
 
+  frontend-tests:
+    name: Frontend Vitest
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build widget-core (frontend imports compiled output)
+        run: pnpm --filter @helpin-ai/widget-core build
+      - name: Frontend Vitest
+        run: pnpm --dir frontend run test
+
+  # ------------------------ Packages ------------------------
+  packages-tests:
+    name: Package Vitest
+    runs-on: arc-runners-helpin-ai
+    # Plan budget: ≤ 3 min for all packages combined.
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # widget-core's reply-time-parity.test imports from @helpin-ai/shared;
+      # without dist/ built, vite can't resolve the package entry. Build
+      # workspace deps first so all package tests find their imports.
+      - name: Build workspace deps (shared)
+        run: pnpm --filter @helpin-ai/shared build
+      - name: widget-core
+        run: pnpm --dir packages/widget-core run test
+      - name: sdk-js
+        run: pnpm --dir packages/sdk-js run test
+      - name: react
+        run: pnpm --dir packages/react run test
+      - name: nextjs
+        run: pnpm --dir packages/nextjs run test
+
+  # ----------------------- Help Center ----------------------
   helpcenter:
     name: Help Center CI
     runs-on: arc-runners-helpin-ai
+    # Plan budget: ≤ 3 min build + test.
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+      # pnpm must be installed BEFORE setup-node when setup-node uses
+      # `cache: pnpm` — otherwise setup-node can't find pnpm on PATH.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'pnpm'
           cache-dependency-path: help-center/pnpm-lock.yaml
-      - uses: pnpm/action-setup@v4
       - name: Install
         working-directory: help-center
         run: pnpm install --frozen-lockfile
+      - name: Vitest
+        working-directory: help-center
+        run: pnpm run test
       - name: Build
         working-directory: help-center
         run: pnpm run build

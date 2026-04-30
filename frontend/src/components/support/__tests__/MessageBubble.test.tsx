@@ -13,7 +13,7 @@ import { MessageBubble } from '../MessageBubble'
 
 const LONG_PADDLE_URL = 'https://customer-portal.paddle.com/cpl_01jmc9m8bb4r0aqj6pwsfm3e28?action=update_subscription_payment_method&subscription_id=sub_01kjeeddmwt0qjg6snxcavej39&token=pga_eyJhbGciOiJFZERTQSIsImtpZCI6Imp3a18wMWhkazBtZDNzcHRtY3ZoYzR0dG0zZ2JoOSIsInR5cCI6IkpXVCJ9.eyJpZCI6InBnYV8wMWtwMnJtY2dnOHFtbmUyeHg4MWM5c3RldiIsInNlbGxlci1pZCI6IjIxNzkxNyIsInR5cGUiOiJzdGFuZGFyZCIsInZlcnNpb24iOiIxIiwidXNhZ2UiOiJjdXN0b21lci1wb3J0YWwtdXJsIiwic2NvcGUiOiJjdXN0b21lci5hZGp1c3RtZW50LnJlYWQgY3VzdG9tZXIuY2hlY2tvdXQuY3JlYXRlIGN1c3RvbWVyLmNoZWNrb3V0LnJlYWQgY3VzdG9tZXIuY3VzdG9tZXIucmVhZCBjdXN0b21lci5jdXN0b21lci51cGRhdGUgY3VzdG9tZXIuY3VzdG9tZXItYWRkcmVzcy5yZWFkIGN1c3RvbWVyLmN1c3RvbWVyLWFkZHJlc3MudXBkYXRlIGN1c3RvbWVyLmN1c3RvbWVyLWJ1c2luZXNzLnJlYWQgY3VzdG9tZXIuY3VzdG9tZXItYnVzaW5lc3MuY3JlYXRlIGN1c3RvbWVyLmN1c3RvbWVyLWJ1c2luZXNzLnVwZGF0ZSBjdXN0b21lci5jdXN0b21lci1wYXltZW50LW1ldGhvZC5yZWFkIGN1c3RvbWVyLmN1c3RvbWVyLXBheW1lbnQtbWV0aG9kLmRlbGV0ZSBjdXN0b21lci5pbnZvaWNlLnJlYWQgY3VzdG9tZXIuc3Vic2NyaXB0aW9uLWNhbmNlbC5jcmVhdGUgY3VzdG9tZXIuc3Vic2NyaXB0aW9uLWNvbnNlbnQtcmVxdWlyZW1lbnQtZ3JhbnQuY3JlYXRlIGN1c3RvbWVyLnN1YnNjcmlwdGlvbi1jb25zZW50LXJlcXVpcmVtZW50LnJlYWQgY3VzdG9tZXIuc3Vic2NyaXB0aW9uLnJlYWQgY3VzdG9tZXIuc3Vic2NyaXB0aW9uLnVwZGF0ZSBjdXN0b21lci50cmFuc2FjdGlvbi5jcmVhdGUgY3VzdG9tZXIudHJhbnNhY3Rpb24ucmVhZCBjdXN0b21lci50cmFuc2FjdGlvbi51cGRhdGUgY3VzdG9tZXIudHJhbnNhY3Rpb24ub3JpZ2luLnJlYWQiLCJpc3MiOiJndWVzdGFjY2Vzcy1zZXJ2aWNlIiwic3ViIjoiY3RtXzAxa2plZTRxdGpkeTBuMTZ4cmZ4cXllY2NtIiwiZXhwIjoxNzc2MTQ4MzE5LCJpYXQiOjE3NzYwNjE5MTl9.u1Lm-pF347MaDE92MtneXBR6a4KxXiobrEBXjXjVm5Jk49qqGHKSYpUswzVyZy9BU0kl26tvkonj3gjMVquzAA'
 
-function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'delivered_email' | 'read' | 'read_email' | null) {
+function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -184,7 +184,11 @@ describe('MessageBubble', () => {
       updated_at: '2026-04-24T12:20:00.000Z',
     }
 
-    const delivered = renderBubble(message, 'delivered_email')
+    const sent = renderBubble(message, 'sent_email')
+    expect(sent.container.textContent).toContain('Sent via email')
+    sent.cleanup()
+
+    const delivered = renderBubble({ ...message, id: 'msg-email-status-delivered', email_delivery_status: 'delivered' }, 'delivered_email')
     expect(delivered.container.textContent).toContain('Delivered via email')
     delivered.cleanup()
 

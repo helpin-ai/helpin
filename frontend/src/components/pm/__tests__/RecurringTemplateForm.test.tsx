@@ -22,8 +22,10 @@ describe('RecurringTemplateForm', () => {
       );
     });
 
-    expect(container.textContent).toContain('Frequency');
-    expect(container.textContent).toContain('Weekdays');
+    // Production renders "Repeat every" + a single weekday picker (the
+    // "Frequency" + "Weekdays" labels were renamed in the form rewrite).
+    expect(container.textContent).toContain('Repeat every');
+    expect(container.textContent).toContain('Time-based');
 
     const completionButton = Array.from(container.querySelectorAll('button')).find((element) =>
       element.textContent?.includes('On completion'),
@@ -33,8 +35,10 @@ describe('RecurringTemplateForm', () => {
       completionButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(container.textContent).toContain('Completion event');
-    expect(container.textContent).not.toContain('Weekdays');
+    // Completion-mode now exposes a "Trigger when task moves to" picker
+    // (was: "Completion event" select).
+    expect(container.textContent).toContain('Trigger when task moves to');
+    expect(container.textContent).not.toContain('Repeat every');
 
     act(() => {
       root.unmount();
@@ -83,7 +87,10 @@ describe('RecurringTemplateForm', () => {
           schedule_type: 'time',
           frequency: 'weekly',
           interval: 2,
-          weekdays: [1, 3],
+          // The form now renders a single-weekday picker; even when the
+          // initial config carries multiple weekdays, only the first is
+          // surfaced and submitted on Save without further interaction.
+          weekdays: [1],
           due_date_mode: 'offset_days',
           due_offset_days: 3,
           sprint_assignment_mode: 'current_sprint',

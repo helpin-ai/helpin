@@ -256,6 +256,14 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 	if err := s.messageRepo.SetCancellableUntil(ctx, msg.ID, fireAt); err != nil {
 		s.logger.WarnContext(ctx, "set support message cancellable_until failed", "error", err, "message_id", msg.ID)
 	}
+	s.logger.InfoContext(ctx, "email fallback enqueued",
+		"workspace_id", workspaceID,
+		"conversation_id", conv.ID,
+		"message_id", msg.ID,
+		"to_email", strings.TrimSpace(*conv.CustomerEmail),
+		"fire_at", fireAt,
+		"delay_secs", delaySecs,
+	)
 	return nil
 }
 
@@ -650,6 +658,12 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	pending = freshPending
 
 	if online, err := s.isVisitorOnline(ctx, conv.WorkspaceID, conv.AnonymousID); err == nil && online {
+		s.logger.InfoContext(ctx, "email fallback postponed — visitor online",
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"to_email", strings.TrimSpace(*conv.CustomerEmail),
+			"retry_secs", int(emailFallbackOnlineRetry.Seconds()),
+		)
 		return s.postpone(ctx, conversationID, emailFallbackOnlineRetry)
 	}
 
@@ -698,6 +712,14 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		headers,
 	)
 	if err != nil {
+		s.logger.ErrorContext(ctx, "email fallback send failed",
+			"error", err,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"from_email", fromAddress,
+			"to_email", strings.TrimSpace(*conv.CustomerEmail),
+			"message_count", len(pending),
+		)
 		return fmt.Errorf("send fallback email: %w", err)
 	}
 
@@ -713,7 +735,7 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		ConversationID:    conversationID,
 		Direction:         "outbound",
 		MessageIDs:        model.DocsStringArray(messageIDValues),
-		FromEmail:         s.emailClient.FromEmail(),
+		FromEmail:         fromAddress,
 		ToEmail:           strings.TrimSpace(*conv.CustomerEmail),
 		Subject:           subject,
 		RFCMessageID:      rfcMessageID,
@@ -733,6 +755,15 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return txErr
 	}
 
+	s.logger.InfoContext(ctx, "email fallback accepted by postmark",
+		"workspace_id", conv.WorkspaceID,
+		"conversation_id", conversationID,
+		"email_log_id", logID,
+		"postmark_message_id", strings.TrimSpace(postmarkMessageID),
+		"from_email", fromAddress,
+		"to_email", strings.TrimSpace(*conv.CustomerEmail),
+		"message_count", len(messageIDValues),
+	)
 	s.publishMessageUpdated(conv.WorkspaceID, conversationID, lastString(messageIDValues), "postmark:sent")
 
 	return s.cleanup(ctx, conversationID)
@@ -844,7 +875,10 @@ func (s *EmailFallbackService) ProcessOpenEvent(ctx context.Context, payload mod
 
 	s.logger.InfoContext(ctx, "postmark open marked support message read",
 		"message_id", postmarkMessageID,
+		"workspace_id", logRow.WorkspaceID,
 		"conversation_id", logRow.ConversationID,
+		"from_email", logRow.FromEmail,
+		"to_email", logRow.ToEmail,
 		"message_count", len(logRow.MessageIDs),
 	)
 	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:open")
@@ -913,7 +947,10 @@ func (s *EmailFallbackService) ProcessDeliveryEvent(ctx context.Context, payload
 
 	s.logger.InfoContext(ctx, "postmark delivery marked support email delivered",
 		"message_id", postmarkMessageID,
+		"workspace_id", logRow.WorkspaceID,
 		"conversation_id", logRow.ConversationID,
+		"from_email", logRow.FromEmail,
+		"to_email", logRow.ToEmail,
 	)
 	s.publishMessageUpdated(logRow.WorkspaceID, logRow.ConversationID, lastString([]string(logRow.MessageIDs)), "postmark:delivery")
 	return nil
@@ -991,7 +1028,11 @@ func (s *EmailFallbackService) ProcessBounceEvent(ctx context.Context, payload m
 
 	s.logger.InfoContext(ctx, "postmark bounce marked support email bounced",
 		"message_id", postmarkMessageID,
+		"workspace_id", logRow.WorkspaceID,
 		"conversation_id", logRow.ConversationID,
+		"from_email", logRow.FromEmail,
+		"to_email", logRow.ToEmail,
+		"bounce_type", strings.TrimSpace(payload.Type),
 	)
 	if bounceTypeIsPermanent(payload.Type) {
 		recipient := strings.TrimSpace(payload.Recipient)
@@ -1089,7 +1130,10 @@ func (s *EmailFallbackService) ProcessSpamComplaintEvent(ctx context.Context, pa
 
 	s.logger.InfoContext(ctx, "postmark spam complaint marked support email complained",
 		"message_id", postmarkMessageID,
+		"workspace_id", logRow.WorkspaceID,
 		"conversation_id", logRow.ConversationID,
+		"from_email", logRow.FromEmail,
+		"to_email", logRow.ToEmail,
 	)
 	recipient := strings.TrimSpace(payload.Recipient)
 	if recipient == "" {
