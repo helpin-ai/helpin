@@ -328,6 +328,125 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 			"required": []string{"deal_id", "content"},
 		},
 	},
+	{
+		CommandName: "crm.enrich_contact",
+		Alias:       "enrich_crm_contact",
+		Category:    "CRM",
+		Description: "Safely enrich a CRM contact with sourced public data. Names and existing email/phone are protected; core fields are fill-only and agent-owned metadata is namespaced.",
+		InputSchema: crmEnrichmentSchema("contact_id", []string{"email", "phone", "job_title", "avatar_url", "linkedin_url", "location", "enrichment_note"}),
+	},
+	{
+		CommandName: "crm.enrich_company",
+		Alias:       "enrich_crm_company",
+		Category:    "CRM",
+		Description: "Safely enrich a CRM company with sourced public data. Company name and existing domain are protected; core fields are fill-only and agent-owned metadata is namespaced.",
+		InputSchema: crmEnrichmentSchema("company_id", []string{"domain", "industry", "employee_count", "annual_revenue", "description", "logo_url", "linkedin_url", "headquarters", "enrichment_note"}),
+	},
+	{
+		CommandName: "crm.ensure_contact_company",
+		Alias:       "ensure_crm_contact_company",
+		Category:    "CRM",
+		Description: "Create or reuse a CRM company and associate it with a contact. Does not modify existing company identity fields.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"contact_id": map[string]any{
+					"type":        "string",
+					"description": "The contact ID to associate with a company. Defaults to the current CRM contact target when omitted by the runtime.",
+				},
+				"company_name": map[string]any{
+					"type":        "string",
+					"description": "The company name to create or match.",
+				},
+				"domain": map[string]any{
+					"type":        "string",
+					"description": "Optional company domain to match or set on a newly-created company.",
+				},
+				"source_url": map[string]any{
+					"type":        "string",
+					"description": "Public source URL supporting the company/contact relationship.",
+				},
+				"evidence": map[string]any{
+					"type":        "string",
+					"description": "Short explanation of the evidence for the relationship.",
+				},
+				"confidence": map[string]any{
+					"type":        "number",
+					"description": "Confidence from 0.0 to 1.0. Values below 0.70 are rejected.",
+					"minimum":     0,
+					"maximum":     1,
+				},
+				"association_label": map[string]any{
+					"type":        "string",
+					"description": "Optional association label. Defaults to primary.",
+				},
+				"dry_run": map[string]any{
+					"type":        "boolean",
+					"description": "When true, returns whether it would create/reuse/link without writing CRM records.",
+				},
+			},
+			"required":             []string{"contact_id", "company_name", "source_url", "evidence", "confidence"},
+			"additionalProperties": false,
+		},
+	},
+}
+
+func crmEnrichmentSchema(idField string, fieldEnum []string) map[string]any {
+	fieldItem := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"field": map[string]any{
+				"type":        "string",
+				"enum":        fieldEnum,
+				"description": "The guarded CRM field to enrich. Identity fields such as names are intentionally unavailable.",
+			},
+			"value": map[string]any{
+				"description": "The proposed field value. Use a string for text/url fields, an integer for employee_count, and a number for annual_revenue.",
+			},
+			"source_url": map[string]any{
+				"type":        "string",
+				"description": "Public source URL that supports the value.",
+			},
+			"evidence": map[string]any{
+				"type":        "string",
+				"description": "Short explanation of the evidence from the source.",
+			},
+			"confidence": map[string]any{
+				"type":        "number",
+				"description": "Confidence from 0.0 to 1.0. Values below 0.70 are rejected.",
+				"minimum":     0,
+				"maximum":     1,
+			},
+		},
+		"required":             []string{"field", "value", "source_url", "evidence", "confidence"},
+		"additionalProperties": false,
+	}
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			idField: map[string]any{
+				"type":        "string",
+				"description": "The CRM object ID to enrich.",
+			},
+			"fields": map[string]any{
+				"type":        "array",
+				"description": "Guarded field updates to apply. Existing protected values are skipped, not overwritten.",
+				"items":       fieldItem,
+				"minItems":    1,
+				"maxItems":    20,
+			},
+			"evidence_summary": map[string]any{
+				"type":        "string",
+				"description": "Brief summary of the researched evidence.",
+			},
+			"dry_run": map[string]any{
+				"type":        "boolean",
+				"description": "When true, returns what would be applied/skipped without writing CRM fields.",
+			},
+		},
+		"required":             []string{idField, "fields"},
+		"additionalProperties": false,
+	}
 }
 
 func createTaskBatchSchema() map[string]any {

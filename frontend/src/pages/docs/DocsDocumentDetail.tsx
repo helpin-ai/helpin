@@ -113,6 +113,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
+import { useRegisterPageContext } from '@/components/command-bar/pageContext'
 
 function docStatusColor(status: string): string {
   switch (status) {
@@ -228,6 +229,11 @@ export function DocsDocumentDetail({
   const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
+  useRegisterPageContext(doc ? {
+    entity_type: 'document',
+    entity_id: doc.id,
+    display_title: doc.title,
+  } : null, 20)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
   const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
@@ -1428,7 +1434,7 @@ export function DocsDocumentDetail({
               {/* Owner (source only) */}
               {isSourceLocaleActive && (<>
               <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Owner</span>
+              <span className="text-[12px] text-muted-foreground self-center">Owner</span>
               <div className="min-w-0 self-center">
                 {canEditDocs && !doc.is_locked ? (
                   <MemberPickerPopover
@@ -1462,7 +1468,7 @@ export function DocsDocumentDetail({
 
               {/* Created by */}
               <UserCheck01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Created by</span>
+              <span className="text-[12px] text-muted-foreground self-center">Created by</span>
               <div className="min-w-0 self-center">
                 {(() => {
                   const creator = members.find((m) => m.user_id === doc.created_by)
@@ -1477,7 +1483,7 @@ export function DocsDocumentDetail({
               {/* Collection */}
               <FolderOpenIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
 
-              <span className="text-xs text-muted-foreground self-center">Collection</span>
+              <span className="text-[12px] text-muted-foreground self-center">Collection</span>
               <div className="min-w-0 self-center">
                 {canEditDocs && !doc.is_locked ? (
                   <Select
@@ -1523,14 +1529,14 @@ export function DocsDocumentDetail({
 
               {/* Created */}
               <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Created</span>
+              <span className="text-[12px] text-muted-foreground self-center">Created</span>
               <div className="min-w-0 self-center">
                 <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.created_at ? activeTranslation.created_at : doc.created_at)}</span>
               </div>
 
               {/* Updated */}
               <Clock01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Updated</span>
+              <span className="text-[12px] text-muted-foreground self-center">Updated</span>
               <div className="min-w-0 self-center">
                 <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.updated_at ? activeTranslation.updated_at : doc.updated_at)}</span>
               </div>
@@ -1539,7 +1545,7 @@ export function DocsDocumentDetail({
               {(isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at) && (
                 <>
                   <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                  <span className="text-xs text-muted-foreground self-center">Published</span>
+                  <span className="text-[12px] text-muted-foreground self-center">Published</span>
                   <div className="min-w-0 self-center">
                     <span className="text-xs">{timeAgo((isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at)!)}</span>
                   </div>

@@ -248,10 +248,16 @@ func Pending(ctx context.Context, db *sql.DB) ([]StatusRow, error) {
 	})
 }
 
-// Create scaffolds a new migration SQL file in the given directory using the
-// naming convention YYYYMMDDNNNN_name.sql. It auto-increments the sequence
-// number based on existing files for today's date. Returns the created file path.
+// Create scaffolds a new migration SQL file in the given directory using a
+// sortable UTC timestamp version: YYYYMMDDHHMMSSffffff_name.sql.
+// Older YYYYMMDDNNNN migrations remain valid; the timestamp format avoids the
+// branch-local sequence collisions that happen when multiple branches create
+// migrations on the same day.
 func Create(dir string, name string) (string, error) {
+	return createAt(dir, name, time.Now().UTC())
+}
+
+func createAt(dir string, name string, now time.Time) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", fmt.Errorf("migration name is required")
@@ -274,31 +280,31 @@ func Create(dir string, name string) (string, error) {
 		return "", fmt.Errorf("migration name %q contains no valid characters", name)
 	}
 
-	// Determine today's date prefix and next sequence number.
-	datePrefix := time.Now().UTC().Format("20060102")
-	seq := 1
-
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", fmt.Errorf("read migration directory %s: %w", dir, err)
 	}
+	existingVersions := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".sql" {
 			continue
 		}
 		version, _, ok := parseMigrationName(entry.Name())
-		if !ok || !strings.HasPrefix(version, datePrefix) {
-			continue
-		}
-		// Extract sequence from version (last 4 digits).
-		seqStr := version[len(datePrefix):]
-		var n int
-		if _, err := fmt.Sscanf(seqStr, "%d", &n); err == nil && n >= seq {
-			seq = n + 1
+		if ok {
+			existingVersions[version] = struct{}{}
 		}
 	}
 
-	version := fmt.Sprintf("%s%04d", datePrefix, seq)
+	versionTime := now.UTC()
+	version := timestampMigrationVersion(versionTime)
+	for {
+		if _, exists := existingVersions[version]; !exists {
+			break
+		}
+		versionTime = versionTime.Add(time.Microsecond)
+		version = timestampMigrationVersion(versionTime)
+	}
+
 	filename := fmt.Sprintf("%s_%s.sql", version, sanitized)
 	path := filepath.Join(dir, filename)
 
@@ -308,6 +314,11 @@ func Create(dir string, name string) (string, error) {
 	}
 
 	return path, nil
+}
+
+func timestampMigrationVersion(t time.Time) string {
+	t = t.UTC()
+	return fmt.Sprintf("%s%06d", t.Format("20060102150405"), t.Nanosecond()/1000)
 }
 
 type appliedMigration struct {

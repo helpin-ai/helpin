@@ -137,11 +137,11 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
 
           {/* ── Conversation Info ────────────────────────── */}
           <div className="border-b border-border/50 px-4 py-3 space-y-1.5">
-            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
               <span className="text-muted-foreground">Created</span>
               <span className="font-medium text-foreground/90">{formatTimestamp(conversation.created_at)}</span>
             </div>
-            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
               <span className="text-muted-foreground">Updated</span>
               <span className="font-medium text-foreground/90">{formatTimestamp(conversation.updated_at)}</span>
             </div>

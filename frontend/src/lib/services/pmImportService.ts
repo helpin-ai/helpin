@@ -35,10 +35,15 @@ export interface ShortcutTeamPreview {
 
 export interface ShortcutUserMatch {
   email: string;
+  shortcut_member_id?: string | null;
   matched_user_id: string | null;
+  matched_member_id?: string | null;
+  matched_member_status?: string | null;
   matched_name: string | null;
   shortcut_name?: string | null;
   story_count: number;
+  owner_count: number;
+  requester_count: number;
 }
 
 export interface ShortcutImportPreviewResponse {
@@ -244,6 +249,7 @@ export const pmImportService = {
     workspaceId: string,
     apiToken: string,
     userMappings: Record<string, string>,
+    memberMappings: Record<string, string>,
     teamMappings: Record<string, string>,
     workflowStateMappings: WorkflowStateMappingPayload[],
     options: ShortcutImportOptionsPayload,
@@ -253,6 +259,7 @@ export const pmImportService = {
       {
         api_token: apiToken,
         user_mappings: userMappings,
+        member_mappings: memberMappings,
         team_mappings: teamMappings,
         workflow_state_mappings: workflowStateMappings,
         options,

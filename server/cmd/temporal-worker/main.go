@@ -116,6 +116,7 @@ func main() {
 	workspaceSkillRepo := repository.NewWorkspaceSkillRepository(db)
 	artifactRepo := repository.NewAgentRunArtifactRepository(db)
 	interactionRepo := repository.NewAgentRunInteractionRepository(db)
+	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
 	sessionSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	storyRepo := repository.NewPMTaskRepository(db)
@@ -177,6 +178,7 @@ func main() {
 	crmAssociationRepo := repository.NewCRMAssociationRepository(db)
 	crmSignalRepo := repository.NewCRMSignalRepository(db)
 	crmActivityRepo := repository.NewCRMActivityRepository(db)
+	crmEnrichmentRepo := repository.NewCRMEnrichmentRepository(db)
 	crmSummaryRepo := repository.NewCRMSummaryRepository(db)
 	automationHealthRepo := repository.NewAutomationHealthRepository(db)
 	pmAttachmentRepo := repository.NewPMAttachmentRepository(db)
@@ -447,7 +449,7 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetTriggerExecutionRepository(triggerExecutionRepo).SetNotificationService(notificationService)
+	).SetTriggerExecutionRepository(triggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetNotificationService(notificationService).SetCRMRepositories(crmContactRepo, crmDealRepo)
 	agentService.SetWorkflowService(pmWorkflowService)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
@@ -497,6 +499,7 @@ func main() {
 	)
 	crmDealService := service.NewCRMDealService(crmDealRepo, crmAssociationRepo)
 	crmActivityService := service.NewCRMActivityService(crmActivityRepo)
+	crmEnrichmentService := service.NewCRMEnrichmentService(crmEnrichmentRepo, crmContactRepo, crmCompanyRepo, crmAssociationRepo)
 	pmLabelService := service.NewPMLabelService(labelRepo, wsPublisher)
 	pmCommentService := service.NewPMCommentService(commentRepo, storyRepo, pmAttachmentRepo, pmActivityService, wsPublisher, notificationService, workspaceRepo, s3Client)
 	commandService := service.NewInternalCommandService(
@@ -511,6 +514,7 @@ func main() {
 	)
 	commandService.SetPMLabelService(pmLabelService)
 	commandService.SetPMCommentService(pmCommentService)
+	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	commandService.SetDocsBlockService(docsBlockService)
 	activities = temporalapp.NewAgentRunActivities(
@@ -556,6 +560,7 @@ func main() {
 		runtimes,
 		githubAppClient,
 		runEngine,
+		agentService,
 	)
 	automationHealthService := service.NewAutomationHealthService(automationHealthRepo)
 	ruleEngine := service.NewAutomationRuleEngine(
@@ -651,6 +656,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	})
 	w.RegisterActivityWithOptions(activities.MarkRunFailedActivity, activity.RegisterOptions{
 		Name: "AgentRunActivities.MarkRunFailedActivity",
+	})
+	w.RegisterActivityWithOptions(activities.AdvanceCommandBarPlanActivity, activity.RegisterOptions{
+		Name: "AgentRunActivities.AdvanceCommandBarPlanActivity",
 	})
 
 	// Register email sync workflow and activities.

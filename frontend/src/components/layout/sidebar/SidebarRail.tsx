@@ -3,6 +3,7 @@ import { Moon02Icon, Sun01Icon } from '@/lib/icons';
 import { isModuleEnabled } from '@/lib/featureFlags';
 import type { WorkspaceModule } from '@/lib/types';
 import type { RailId, RailItem } from './types';
+import { SidebarRunsButton } from './SidebarRunsButton';
 
 type SidebarRailProps = {
   railItems: RailItem[];
@@ -80,6 +81,7 @@ export function SidebarRail({
           <Moon02Icon className="absolute h-3.5 w-3.5 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
           <span className="sr-only">{theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}</span>
         </button>
+        <SidebarRunsButton />
         {accountMenu}
       </div>
     </div>
