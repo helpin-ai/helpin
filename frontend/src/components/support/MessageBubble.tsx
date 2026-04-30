@@ -7,6 +7,7 @@ import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
 import { MessageInfoDialog } from './MessageInfoDialog';
+import { useAddShortcutDialogStore } from './AddShortcutDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
@@ -301,6 +302,13 @@ export const MessageBubble = memo(function MessageBubble({
     toast.success('Message copied');
   }, [displayContent]);
 
+  const canSaveAsShortcut = displayContent.trim().length > 0 && message.message_type !== 'system';
+  const openAddShortcutDialog = useAddShortcutDialogStore((s) => s.openDialog);
+  const handleSaveAsShortcut = useCallback(
+    () => openAddShortcutDialog({ seedContent: displayContent }),
+    [openAddShortcutDialog, displayContent],
+  );
+
   const handleQuoteReply = useCallback(() => {
     const quoted = displayContent
       .split('\n')
@@ -527,6 +535,7 @@ export const MessageBubble = memo(function MessageBubble({
           onReply={handleQuoteReply}
           onDelete={() => setDeleteDialogOpen(true)}
           onInfo={() => setInfoOpen(true)}
+          onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
         >
         <div
           data-slot="support-message-bubble"
@@ -541,6 +550,7 @@ export const MessageBubble = memo(function MessageBubble({
             onReply={handleQuoteReply}
             onDelete={() => setDeleteDialogOpen(true)}
             onInfo={() => setInfoOpen(true)}
+            onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
           />
           {showBubble && (
             <Tooltip>

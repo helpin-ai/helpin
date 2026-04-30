@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
+import { create } from 'zustand';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -46,6 +47,7 @@ function validateShortcut(shortCode: string) {
   if (!value) return 'Shortcut is required';
   if (!value.startsWith('!')) return 'Shortcut must start with !';
   if (/\s/.test(value)) return 'Shortcut cannot contain spaces';
+  if (value.length < 2) return 'Shortcut must have at least one character after !';
   return null;
 }
 
@@ -60,16 +62,39 @@ function seedShortCode(seed?: string) {
   return trimmed.startsWith('!') ? trimmed : `!${trimmed}`;
 }
 
+/**
+ * Single shared instance pattern: rather than mounting AddShortcutDialog in
+ * every place that needs to trigger it, mount one instance high in the tree
+ * (e.g. MessageThread) and have callers use this store to open it. Keeps the
+ * dialog DOM and TiptapEditor instance singleton across the workspace.
+ */
+interface AddShortcutDialogStore {
+  open: boolean;
+  seedShortCode?: string;
+  seedContent?: string;
+  openDialog: (opts?: { seedShortCode?: string; seedContent?: string }) => void;
+  close: () => void;
+}
+
+export const useAddShortcutDialogStore = create<AddShortcutDialogStore>((set) => ({
+  open: false,
+  openDialog: (opts) =>
+    set({ open: true, seedShortCode: opts?.seedShortCode, seedContent: opts?.seedContent }),
+  close: () => set({ open: false }),
+}));
+
 export interface AddShortcutDialogProps {
   open: boolean;
   workspaceId: string;
   /** Pre-fill the shortcode field. Useful when opened from the composer with a typed query. */
   seedShortCode?: string;
+  /** Pre-fill the message editor (markdown). Useful when opened from a message bubble. */
+  seedContent?: string;
   onOpenChange: (open: boolean) => void;
   onCreated?: (shortcut: SupportCannedResponse) => void;
 }
 
-export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, onOpenChange, onCreated }: AddShortcutDialogProps) {
+export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, seedContent, onOpenChange, onCreated }: AddShortcutDialogProps) {
   const { data: responses = [] } = useCannedResponses(workspaceId);
   const createShortcut = useCreateCannedResponse(workspaceId);
 
@@ -87,9 +112,9 @@ export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, onOp
     setTitle('');
     setTag(DEFAULT_TAG);
     setCustomTag('');
-    setContent('');
+    setContent(seedContent ?? '');
     setPendingUploads(0);
-  }, [open, seed]);
+  }, [open, seed, seedContent]);
 
   const tags = useMemo(() => buildTagOptions(responses), [responses]);
   const shortcutError = validateShortcut(shortCode);
@@ -119,7 +144,7 @@ export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, onOp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl sm:max-w-3xl">
+      <DialogContent className="max-w-2xl sm:max-w-[52rem]">
         <DialogHeader>
           <DialogTitle>Add shortcut</DialogTitle>
           <DialogDescription>
@@ -206,5 +231,26 @@ export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, onOp
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Mount this once at a parent level (e.g. MessageThread). Any descendant can
+ * trigger the dialog via `useAddShortcutDialogStore.getState().openDialog(...)`.
+ * Avoids having a separate dialog instance per call site.
+ */
+export function SharedAddShortcutDialog({ workspaceId }: { workspaceId: string }) {
+  const open = useAddShortcutDialogStore((s) => s.open);
+  const seedShortCode = useAddShortcutDialogStore((s) => s.seedShortCode);
+  const seedContent = useAddShortcutDialogStore((s) => s.seedContent);
+  const close = useAddShortcutDialogStore((s) => s.close);
+  return (
+    <AddShortcutDialog
+      open={open}
+      workspaceId={workspaceId}
+      seedShortCode={seedShortCode}
+      seedContent={seedContent}
+      onOpenChange={(next) => { if (!next) close(); }}
+    />
   );
 }

@@ -6,7 +6,7 @@ import { Markdown } from 'tiptap-markdown';
 import {
   SentIcon, AttachmentIcon, Cancel01Icon, Loading01Icon,
   Mail01Icon, SparklesIcon, ArrowUp01Icon, ArrowUpDownIcon, ArrowReloadHorizontalIcon,
-  TickDouble01Icon, SmileIcon, Briefcase01Icon, Copy01Icon, PlusSignIcon,
+  TickDouble01Icon, SmileIcon, Briefcase01Icon, PlusSignIcon,
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
   CodeIcon, QuoteDownIcon, LeftToRightListBulletIcon, LeftToRightListNumberIcon, Link01Icon,
   StickyNote01Icon,
@@ -49,7 +49,7 @@ import type { AssignableMember } from '@/lib/types';
 import type { SupportAIRewriteOperation, SupportCannedResponse } from '@/lib/pmTypes';
 import { EmojiPicker } from './EmojiPicker';
 import { LinkInsertModal } from './LinkInsertModal';
-import { AddShortcutDialog } from './AddShortcutDialog';
+import { useAddShortcutDialogStore } from './AddShortcutDialog';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -236,10 +236,16 @@ function detectShortcuts(
     undefined,
     '\ufffc',
   );
-  const match = textBefore.match(/!([^\s!]*)$/);
+  // Trigger only when `!` is at the start of the line/block or directly
+  // follows whitespace. This treats `!` as a command sigil only when it's
+  // initiating a new token, so sentence punctuation like "That's great!"
+  // and intra-word `!` ("foo!bar") don't open the panel.
+  const match = textBefore.match(/(^|\s)!([^\s!]*)$/);
   if (!match) return null;
 
-  const query = match[1].toLowerCase();
+  const query = match[2].toLowerCase();
+  // Anchor the replacement range at the `!` itself (not the leading
+  // whitespace) so inserting a shortcut preserves any preceding space.
   return {
     from: selection.from - (query.length + 1),
     to: selection.from,
@@ -429,9 +435,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   const membersRef = useRef(members);
   membersRef.current = members;
   const shortcutsPanelOpenRef = useRef(false);
+  const shortcutsPanelRef = useRef<HTMLDivElement | null>(null);
   const panelIndexRef = useRef(0);
-  const [addShortcutOpen, setAddShortcutOpen] = useState(false);
-  const [addShortcutSeed, setAddShortcutSeed] = useState('');
+  const openAddShortcutDialog = useAddShortcutDialogStore((s) => s.openDialog);
   const [shortcutsPanelOpen, setShortcutsPanelOpen] = useState(false);
   shortcutsPanelOpenRef.current = shortcutsPanelOpen;
   const [shortcutState, setShortcutState] = useState<{
@@ -559,7 +565,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
               .run();
             setShortcutState(null);
             setShortcutsPanelOpen(false);
-            setReplyMode('reply');
             return true;
           }
           if (event.key === 'Escape') {
@@ -712,10 +717,27 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     }
     setShortcutState(null);
     setShortcutsPanelOpen(false);
-    setReplyMode('reply');
-  }, [setReplyMode]);
+  }, []);
 
   // Backup event handlers for TipTap v3 compatibility
+  // Close the shortcuts panel when the user clicks anywhere outside both
+  // the panel and the editor. Editor blur alone isn't reliable across all
+  // focus-stealing surfaces, so we listen at the document level while open.
+  useEffect(() => {
+    if (!shortcutsPanelOpen && !shortcutState) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (shortcutsPanelRef.current?.contains(target)) return;
+      const editorEl = editor?.view?.dom;
+      if (editorEl && editorEl.contains(target)) return;
+      setShortcutsPanelOpen(false);
+      setShortcutState(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [shortcutsPanelOpen, shortcutState, editor]);
+
   useEffect(() => {
     if (!editor) return;
 
@@ -968,7 +990,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         const isFiltering = !!shortcutState;
         const queryToken = shortcutState ? `!${shortcutState.query}` : '';
         return (
-          <div className="absolute bottom-full left-0 right-0 z-50 mb-2 px-1">
+          <div ref={shortcutsPanelRef} className="absolute bottom-full left-0 right-0 z-50 mb-2 px-1">
             <div className="flex max-h-[340px] flex-col overflow-hidden rounded-xl border border-border/60 bg-popover shadow-lg">
               <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
                 <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -976,13 +998,13 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
                   <span>Shortcuts</span>
                   {isFiltering && shortcutState ? (
                     <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">{queryToken}</span>
-                  ) : (
-                    <span className="text-muted-foreground/60">· browse all</span>
-                  )}
+                  ) : null}
                 </div>
-                <span className="text-[11px] tabular-nums text-muted-foreground/70">
-                  {items.length} {items.length === 1 ? 'match' : 'matches'}
-                </span>
+                {isFiltering ? (
+                  <span className="text-[11px] tabular-nums text-muted-foreground/70">
+                    {items.length} {items.length === 1 ? 'match' : 'matches'}
+                  </span>
+                ) : null}
               </div>
 
               <div className="flex-1 overflow-y-auto p-1.5">
@@ -1009,10 +1031,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
-                        setAddShortcutSeed(queryToken);
                         setShortcutState(null);
                         setShortcutsPanelOpen(false);
-                        setAddShortcutOpen(true);
+                        openAddShortcutDialog({ seedShortCode: queryToken });
                       }}
                       className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                     >
@@ -1071,16 +1092,14 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
             setShortcutsPanelOpen((open) => !open);
             setShortcutState(null);
             setPanelIndex(0);
-            setReplyMode('reply');
           }}
           className={cn(
-            'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            'rounded-full px-3 py-1 text-xs font-medium transition-colors',
             shortcutsPanelOpen
               ? 'bg-primary/10 text-primary'
               : 'text-muted-foreground hover:bg-muted hover:text-foreground',
           )}
         >
-          <Copy01Icon className="h-3 w-3" />
           Shortcuts
         </button>
         <DropdownMenu>
@@ -1162,13 +1181,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         initialUrl={linkInitial.url}
         onInsert={handleLinkInsert}
         onRemove={editor.isActive('link') ? handleLinkRemove : undefined}
-      />
-
-      <AddShortcutDialog
-        open={addShortcutOpen}
-        workspaceId={workspaceId}
-        seedShortCode={addShortcutSeed}
-        onOpenChange={setAddShortcutOpen}
       />
 
       {/* Attachment preview strip */}

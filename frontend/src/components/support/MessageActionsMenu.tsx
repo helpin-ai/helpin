@@ -5,6 +5,7 @@ import {
   InformationCircleIcon,
   MoreVerticalIcon,
   PencilEdit02Icon,
+  StickyNote01Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +32,8 @@ export interface MessageActions {
   onReply: () => void;
   onDelete: () => void;
   onInfo: () => void;
+  /** Optional — when provided, a "Save as shortcut" entry is shown. */
+  onSaveAsShortcut?: () => void;
 }
 
 /**
@@ -52,6 +55,7 @@ function MessageActionItems({
   onReply,
   onDelete,
   onInfo,
+  onSaveAsShortcut,
 }: ItemPrimitives & MessageActions) {
   return (
     <>
@@ -72,6 +76,12 @@ function MessageActionItems({
         <Comment01Icon className="h-4 w-4" />
         Reply
       </Item>
+      {onSaveAsShortcut && (
+        <Item onSelect={onSaveAsShortcut}>
+          <StickyNote01Icon className="h-4 w-4" />
+          Save as shortcut
+        </Item>
+      )}
       {canDelete && (
         <Item variant="destructive" onSelect={onDelete}>
           <Delete01Icon className="h-4 w-4" />
@@ -114,7 +124,7 @@ export function MessageActionsMenu({ alignSide, ...actions }: MessageActionsMenu
         <DropdownMenuContent
           align={alignSide === 'left' ? 'end' : 'start'}
           side="bottom"
-          className="min-w-32"
+          className="min-w-44"
         >
           <MessageActionItems
             Item={DropdownMenuItem}
@@ -217,7 +227,7 @@ export function MessageActionsContextMenu({ children, ...actions }: MessageActio
           </div>
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-32">
+      <ContextMenuContent className="min-w-44">
         <MessageActionItems
           Item={ContextMenuItem}
           Separator={ContextMenuSeparator}
