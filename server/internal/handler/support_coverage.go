@@ -104,11 +104,13 @@ func (h *SupportCoverageHandler) GetSummary(w http.ResponseWriter, r *http.Reque
 func (h *SupportCoverageHandler) ListGaps(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	filter := model.SupportCoverageGapFilter{
-		Status:    r.URL.Query().Get("status"),
-		V1GapType: r.URL.Query().Get("v1_gap_type"),
-		IssueKey:  r.URL.Query().Get("issue_key"),
-		Search:    r.URL.Query().Get("search"),
-		ShowRaw:   r.URL.Query().Get("show_raw") == "true",
+		Status:      r.URL.Query().Get("status"),
+		GapKind:     r.URL.Query().Get("gap_kind"),
+		GapCategory: r.URL.Query().Get("gap_category"),
+		V1GapType:   r.URL.Query().Get("v1_gap_type"),
+		IssueKey:    r.URL.Query().Get("issue_key"),
+		Search:      r.URL.Query().Get("search"),
+		ShowRaw:     r.URL.Query().Get("show_raw") == "true",
 	}
 	gaps, total, err := h.coverageSvc.ListGaps(r.Context(), wsID, filter)
 	if err != nil {
