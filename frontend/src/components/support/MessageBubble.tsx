@@ -167,7 +167,7 @@ interface MessageBubbleProps {
   isConsecutive?: boolean;
   isLastInGroup?: boolean;
   source?: TicketSource;
-  receiptStatus?: 'delivered' | 'delivered_email' | 'read' | 'read_email' | null;
+  receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null;
   fallbackAvatarUrl?: string;
   customerDisplayName?: string;
 }
@@ -773,6 +773,11 @@ export const MessageBubble = memo(function MessageBubble({
                         <TickDouble01Icon className="h-3.5 w-3.5" />
                         Delivered via email
                       </>
+                    ) : receiptStatus === 'sent_email' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5" />
+                        Sent via email
+                      </>
                     ) : (
                       <>
                         <TickDouble01Icon className="h-3.5 w-3.5" />
@@ -822,6 +827,11 @@ export const MessageBubble = memo(function MessageBubble({
                 <>
                   <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[11px] text-muted-foreground">Delivered via email</span>
+                </>
+              ) : receiptStatus === 'sent_email' ? (
+                <>
+                  <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-[11px] text-muted-foreground">Sent via email</span>
                 </>
               ) : (
                 <>
