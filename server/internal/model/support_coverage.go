@@ -258,13 +258,14 @@ func (SupportCoverageDigestDelivery) TableName() string {
 
 // SupportCoverageGapFilter controls gap list queries.
 type SupportCoverageGapFilter struct {
-	Status    string `json:"status"`
-	V1GapType string `json:"v1_gap_type"`
-	IssueKey  string `json:"issue_key"`
-	Search    string `json:"search"`
-	ShowRaw   bool   `json:"show_raw"`
-	Page      int    `json:"page"`
-	PerPage   int    `json:"per_page"`
+	Status      string `json:"status"`
+	GapCategory string `json:"gap_category"`
+	V1GapType   string `json:"v1_gap_type"`
+	IssueKey    string `json:"issue_key"`
+	Search      string `json:"search"`
+	ShowRaw     bool   `json:"show_raw"`
+	Page        int    `json:"page"`
+	PerPage     int    `json:"per_page"`
 }
 
 // SupportCoverageGapListItem is a row in the gap inbox table.

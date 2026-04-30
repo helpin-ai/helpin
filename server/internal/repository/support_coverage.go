@@ -272,6 +272,9 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	if filter.Status != "" {
 		q = q.Where("g.status = ?", filter.Status)
 	}
+	if filter.GapCategory != "" {
+		q = q.Where("g.gap_category = ?", filter.GapCategory)
+	}
 	if filter.V1GapType != "" {
 		q = q.Where("g.v1_gap_type = ?", filter.V1GapType)
 	}
@@ -291,6 +294,9 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	}
 	if filter.Status != "" {
 		countQ = countQ.Where("status = ?", filter.Status)
+	}
+	if filter.GapCategory != "" {
+		countQ = countQ.Where("gap_category = ?", filter.GapCategory)
 	}
 	if filter.V1GapType != "" {
 		countQ = countQ.Where("v1_gap_type = ?", filter.V1GapType)
