@@ -131,14 +131,92 @@ interface MessageActionsContextMenuProps extends MessageActions {
   children: React.ReactNode;
 }
 
+// Targets where the browser's native context menu is more useful than ours
+// (open link in new tab, save image, paste into a field, etc.).
+const NATIVE_MENU_SELECTOR =
+  'a[href], img, video, audio, input, textarea, [contenteditable=""], [contenteditable="true"]';
+
+function clickPointInSelection(e: React.MouseEvent, selection: Selection): boolean {
+  // caretRangeFromPoint (WebKit/Blink) and caretPositionFromPoint (Gecko)
+  // give us the exact text position under the click — this is what the
+  // browser uses to decide whether the native menu shows selection actions.
+  const doc = (e.target as Node)?.ownerDocument ?? document;
+  type CaretAPI = Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (
+      x: number,
+      y: number,
+    ) => { offsetNode: Node; offset: number } | null;
+  };
+  const docApi = doc as CaretAPI;
+  let caretNode: Node | null = null;
+  let caretOffset = 0;
+  if (typeof docApi.caretRangeFromPoint === 'function') {
+    const r = docApi.caretRangeFromPoint(e.clientX, e.clientY);
+    if (!r) return false;
+    caretNode = r.startContainer;
+    caretOffset = r.startOffset;
+  } else if (typeof docApi.caretPositionFromPoint === 'function') {
+    const p = docApi.caretPositionFromPoint(e.clientX, e.clientY);
+    if (!p) return false;
+    caretNode = p.offsetNode;
+    caretOffset = p.offset;
+  } else {
+    return false;
+  }
+  for (let i = 0; i < selection.rangeCount; i++) {
+    const range = selection.getRangeAt(i);
+    if (
+      range.comparePoint &&
+      caretNode &&
+      range.comparePoint(caretNode, caretOffset) === 0
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function shouldDeferToNative(e: React.MouseEvent): boolean {
+  const target = e.target as Element | null;
+  if (target && target.closest(NATIVE_MENU_SELECTOR)) return true;
+  // Active text selection where the click point falls inside the selection —
+  // let the user copy/search the selection via the browser menu.
+  const selection = typeof window !== 'undefined' ? window.getSelection() : null;
+  if (selection && !selection.isCollapsed && selection.toString().trim().length > 0) {
+    if (clickPointInSelection(e, selection)) return true;
+  }
+  return false;
+}
+
 /**
  * Wraps a message bubble so right-click opens the same action menu as the
- * 3-dots trigger.
+ * 3-dots trigger — except on links, images, inputs, or active text
+ * selections, where the browser's native menu is more useful.
  */
 export function MessageActionsContextMenu({ children, ...actions }: MessageActionsContextMenuProps) {
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild>
+        {/*
+          Outer div is the Radix trigger element (asChild attaches its
+          listeners here). The inner div sits below it in the DOM so its
+          bubble-phase onContextMenu fires first; stopPropagation there
+          prevents Radix from receiving the event, allowing the browser's
+          native menu to render. display:contents keeps both wrappers out of
+          the layout tree.
+        */}
+        <div style={{ display: 'contents' }}>
+          <div
+            style={{ display: 'contents' }}
+            onContextMenu={(e) => {
+              if (shouldDeferToNative(e)) e.stopPropagation();
+            }}
+          >
+            {children}
+          </div>
+        </div>
+      </ContextMenuTrigger>
       <ContextMenuContent className="min-w-32">
         <MessageActionItems
           Item={ContextMenuItem}
