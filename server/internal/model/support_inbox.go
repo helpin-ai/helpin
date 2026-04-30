@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
@@ -210,6 +212,14 @@ type SupportMessage struct {
 	EmailReadAt       *time.Time `json:"email_read_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	// CancellableUntil is the moment the email-fallback timer fires for an
+	// outbound agent reply. Until this passes, the agent can soft-delete the
+	// message and the queued email is removed from the per-conversation Redis
+	// outbox. NULL for messages that aren't subject to email fallback.
+	CancellableUntil *time.Time `json:"cancellable_until,omitempty" gorm:"index"`
+	// DeletedAt enables GORM soft-delete: removed messages keep their row
+	// (auditability) but are filtered out of every read path automatically.
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	// Virtual fields — populated by service layer, not stored in DB.
 	Attachments []SupportAttachmentPayload `json:"attachments,omitempty" gorm:"-"`
