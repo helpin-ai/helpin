@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -13,6 +14,10 @@ import (
 	"go.temporal.io/api/serviceerror"
 	tclient "go.temporal.io/sdk/client"
 )
+
+// ErrReanalysisAlreadyRunning is returned when a reanalysis workflow is
+// already in progress for the workspace.
+var ErrReanalysisAlreadyRunning = errors.New("reanalysis already in progress")
 
 const (
 	coverageDailyBatchWorkflowID = "coverage-gap-daily-batch"
@@ -281,6 +286,39 @@ func (s *SupportCoverageService) MergeGaps(ctx context.Context, workspaceID, sou
 // DiscardSuggestion rejects a suggestion and reverts the gap to open.
 func (s *SupportCoverageService) DiscardSuggestion(ctx context.Context, workspaceID, suggestionID string) error {
 	return s.coverageRepo.DiscardSuggestion(ctx, suggestionID, workspaceID)
+}
+
+// TriggerReanalysis starts a workspace coverage analysis workflow with
+// a 30-day window so that old conversations are re-evaluated against the
+// current analyzer version.
+func (s *SupportCoverageService) TriggerReanalysis(ctx context.Context, workspaceID string) error {
+	if s.temporal == nil {
+		return fmt.Errorf("temporal client is not configured")
+	}
+	if strings.TrimSpace(workspaceID) == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
+	now := time.Now().UTC()
+	windowStart := now.Add(-30 * 24 * time.Hour)
+	input := temporalapp.CoverageWorkspaceAnalysisInput{
+		WorkspaceID: workspaceID,
+		WindowStart: windowStart,
+		WindowEnd:   now,
+	}
+	workflowID := "coverage-reanalysis-" + workspaceID
+	_, err := s.temporal.ExecuteWorkflow(ctx, tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: temporalapp.QueueAutomation,
+	}, temporalapp.CoverageWorkspaceAnalysisWorkflowType, input)
+	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return ErrReanalysisAlreadyRunning
+		}
+		return fmt.Errorf("start coverage reanalysis workflow: %w", err)
+	}
+	slog.InfoContext(ctx, "triggered coverage reanalysis", "workspace_id", workspaceID, "workflow_id", workflowID)
+	return nil
 }
 
 // GetConversationCoverageState checks docs-issue feedback state.

@@ -33,10 +33,12 @@ import type {
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
   SupportConversationTriage,
+  SupportMessageActionResponse,
   SupportMessageEmailDetail,
   SupportCannedResponse,
   CreateCannedResponseRequest,
   UpdateCannedResponseRequest,
+  SupportMessageInfo,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -118,6 +120,13 @@ export const supportService = {
     api.get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
+  deleteConversationMessage: (workspaceId: string, conversationId: string, messageId: string, undo = false) => {
+    let path = `/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`;
+    if (undo) path += '&undo=1';
+    return api.del<SupportMessageActionResponse>(path);
+  },
+  getConversationMessageInfo: (workspaceId: string, conversationId: string, messageId: string) =>
+    api.get<SupportMessageInfo>(`/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`),
   rewriteConversationDraft: (workspaceId: string, conversationId: string, payload: SupportAIRewriteDraftRequest) =>
     api.post<SupportAIRewriteDraftResponse>(`/support/inbox/conversations/${conversationId}/rewrite-draft${qs(workspaceId)}`, payload),
   updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -426,4 +427,23 @@ func (h *SupportCoverageHandler) SubmitDocsIssueFeedback(w http.ResponseWriter, 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// TriggerReanalysis starts a coverage reanalysis workflow for the workspace.
+func (h *SupportCoverageHandler) TriggerReanalysis(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if err := h.coverageSvc.TriggerReanalysis(r.Context(), wsID); err != nil {
+		if errors.Is(err, service.ErrReanalysisAlreadyRunning) {
+			writeError(w, http.StatusConflict, "reanalysis already in progress")
+			return
+		}
+		slog.ErrorContext(r.Context(), "trigger coverage reanalysis", "error", err, "workspace_id", wsID)
+		writeError(w, http.StatusInternalServerError, "failed to start reanalysis")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
 }

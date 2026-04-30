@@ -4,7 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
 import {
-  SentIcon, AttachmentIcon, StickyNote01Icon, Comment01Icon, Cancel01Icon, Loading01Icon,
+  SentIcon, AttachmentIcon, Cancel01Icon, Loading01Icon,
   Mail01Icon, SparklesIcon, ArrowUp01Icon, ArrowUpDownIcon, ArrowReloadHorizontalIcon,
   TickDouble01Icon, SmileIcon, Briefcase01Icon, Copy01Icon, PlusSignIcon,
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
@@ -51,6 +51,7 @@ import { LinkInsertModal } from './LinkInsertModal';
 import { AddShortcutDialog } from './AddShortcutDialog';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 interface ReplyComposerProps {
   workspaceId: string;
@@ -775,6 +776,21 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     };
   }, [conversationId, editor]);
 
+  useEffect(() => {
+    if (!editor) return;
+    const handleRestoreDraft = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId?: string; markdown?: string }>).detail;
+      if (detail?.conversationId !== conversationId) return;
+      const markdown = detail.markdown ?? '';
+      setReplyMode('reply');
+      setDraft(conversationId, markdown);
+      editor.commands.setContent(markdown);
+      editor.commands.focus('end');
+    };
+    window.addEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
+    return () => window.removeEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
+  }, [conversationId, editor, setDraft, setReplyMode]);
+
   // Force placeholder redecoration when mode changes
   useEffect(() => {
     if (editor && editor.isEmpty) {
@@ -908,7 +924,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         isNote && 'bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
-      {emailFallbackHint && !isNote && (
+      {emailFallbackHint && !isNote && editor && !editor.isEmpty && (
         <div className="flex items-start gap-2 border-b border-border/20 bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground rounded-t-xl">
           <Mail01Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
           <p>
@@ -1025,13 +1041,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
             setShortcutsPanelOpen(false);
           }}
           className={cn(
-            'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            'rounded-full px-3 py-1 text-xs font-medium transition-colors',
             !isNote
-              ? 'bg-primary/10 text-primary'
+              ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/25 dark:text-blue-400'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted'
           )}
         >
-          <Comment01Icon className="h-3 w-3" />
           Reply
         </button>
         <button
@@ -1041,13 +1056,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
             setShortcutsPanelOpen(false);
           }}
           className={cn(
-            'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            'rounded-full px-3 py-1 text-xs font-medium transition-colors',
             isNote
               ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted'
           )}
         >
-          <StickyNote01Icon className="h-3 w-3" />
           Note
         </button>
         <button

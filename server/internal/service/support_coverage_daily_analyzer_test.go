@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1036,5 +1037,164 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationClassifiesNonSupport(t 
 	}
 	if result.HasGap {
 		t.Fatal("expected HasGap=false for non-support conversation")
+	}
+}
+
+// --- Segment builder tests ---
+
+func coverageTestMessageIDs(messages []model.SupportMessage) []string {
+	ids := make([]string, 0, len(messages))
+	for _, message := range messages {
+		ids = append(ids, message.ID)
+	}
+	return ids
+}
+
+func TestBuildLatestCoverageConversationSegment_NoLifecycleEventsUsesAllPublicMessages(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	messages := []model.SupportMessage{
+		{ID: "internal", SenderType: "user", MessageType: "reply", Content: "Internal", IsInternal: true, CreatedAt: base},
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "How do I reset password?", CreatedAt: base.Add(time.Minute)},
+		{ID: "m-2", SenderType: "ai", MessageType: "reply", Content: "Try settings.", CreatedAt: base.Add(2 * time.Minute)},
+	}
+
+	segment := BuildLatestCoverageConversationSegment(messages)
+	if segment == nil {
+		t.Fatal("expected segment")
+	}
+	if segment.StartMessageID != "m-1" || segment.EndMessageID != "m-2" {
+		t.Fatalf("unexpected segment bounds: %+v", segment)
+	}
+	if segment.Resolved {
+		t.Fatal("segment should not be resolved")
+	}
+	if len(segment.PublicMessages) != 2 {
+		t.Fatalf("public messages = %d, want 2", len(segment.PublicMessages))
+	}
+}
+
+func TestBuildLatestCoverageConversationSegment_ReopenedThreadStartsAtFirstPublicMessageAfterResolved(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	resolved := string(model.SystemEventResolved)
+	reopened := string(model.SystemEventReopened)
+	messages := []model.SupportMessage{
+		{ID: "old-customer", SenderType: "customer", MessageType: "reply", Content: "Refund question", CreatedAt: base},
+		{ID: "old-agent", SenderType: "user", MessageType: "reply", Content: "Refunded", CreatedAt: base.Add(time.Minute)},
+		{ID: "resolved-1", SenderType: "user", MessageType: "system", SystemEventType: &resolved, IsInternal: true, Content: "Resolved conversation", CreatedAt: base.Add(2 * time.Minute)},
+		{ID: "new-customer", SenderType: "customer", MessageType: "reply", Content: "Now I need SSO help", CreatedAt: base.Add(3 * time.Minute)},
+		{ID: "reopened-1", SenderType: "user", MessageType: "system", SystemEventType: &reopened, IsInternal: true, Content: "Reopened conversation", CreatedAt: base.Add(4 * time.Minute)},
+		{ID: "new-ai", SenderType: "ai", MessageType: "reply", Content: "Let me check SSO docs.", CreatedAt: base.Add(5 * time.Minute)},
+	}
+
+	segment := BuildLatestCoverageConversationSegment(messages)
+	if segment == nil {
+		t.Fatal("expected segment")
+	}
+	gotIDs := coverageTestMessageIDs(segment.PublicMessages)
+	wantIDs := []string{"new-customer", "new-ai"}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("segment messages = %v, want %v", gotIDs, wantIDs)
+	}
+	if segment.StartMessageID != "new-customer" {
+		t.Fatalf("start = %q, want new-customer", segment.StartMessageID)
+	}
+}
+
+func TestBuildLatestCoverageConversationSegment_ResolvedConversationUsesLatestClosedSegment(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	resolved := string(model.SystemEventResolved)
+	messages := []model.SupportMessage{
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "How do I invite a user?", CreatedAt: base},
+		{ID: "m-2", SenderType: "user", MessageType: "reply", Content: "Use Settings > Members.", CreatedAt: base.Add(time.Minute)},
+		{ID: "resolved-1", SenderType: "user", MessageType: "system", SystemEventType: &resolved, IsInternal: true, Content: "Resolved conversation", CreatedAt: base.Add(2 * time.Minute)},
+	}
+
+	segment := BuildLatestCoverageConversationSegment(messages)
+	if segment == nil {
+		t.Fatal("expected segment")
+	}
+	if !segment.Resolved {
+		t.Fatal("expected latest segment to be marked resolved")
+	}
+	gotIDs := coverageTestMessageIDs(segment.PublicMessages)
+	wantIDs := []string{"m-1", "m-2"}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("segment messages = %v, want %v", gotIDs, wantIDs)
+	}
+}
+
+func TestCoverageSegmentTranscriptHashIncludesSegmentBoundary(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	messages := []model.SupportMessage{
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "Question", CreatedAt: base},
+	}
+	first := CoverageConversationSegment{ID: "m-1:resolved-1", StartMessageID: "m-1", EndMessageID: "resolved-1", PublicMessages: messages}
+	second := CoverageConversationSegment{ID: "m-1:m-1", StartMessageID: "m-1", EndMessageID: "m-1", PublicMessages: messages}
+
+	if CoverageSegmentTranscriptHash(first) == CoverageSegmentTranscriptHash(second) {
+		t.Fatal("segment boundary should affect transcript hash")
+	}
+}
+
+func TestCoverageConversationAnalysisInputUsesLatestReopenedSegment(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	resolved := string(model.SystemEventResolved)
+	reopened := string(model.SystemEventReopened)
+	conversation := model.SupportConversation{
+		ID:          "conversation-1",
+		WorkspaceID: "ws-1",
+		Subject:     "Mixed thread",
+		Status:      model.SupportConversationStatusOpen,
+	}
+	messages := []model.SupportMessage{
+		{ID: "old-customer", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "customer", MessageType: "reply", Content: "Refund issue", CreatedAt: base},
+		{ID: "old-agent", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "user", MessageType: "reply", Content: "Refunded", CreatedAt: base.Add(time.Minute)},
+		{ID: "resolved-1", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "user", MessageType: "system", SystemEventType: &resolved, IsInternal: true, Content: "Resolved conversation", CreatedAt: base.Add(2 * time.Minute)},
+		{ID: "new-customer", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "customer", MessageType: "reply", Content: "SSO setup is failing", CreatedAt: base.Add(3 * time.Minute)},
+		{ID: "reopened-1", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "user", MessageType: "system", SystemEventType: &reopened, IsInternal: true, Content: "Reopened conversation", CreatedAt: base.Add(4 * time.Minute)},
+		{ID: "new-ai", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "ai", MessageType: "reply", Content: "Try SAML settings.", CreatedAt: base.Add(5 * time.Minute)},
+	}
+
+	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, nil)
+	if err != nil {
+		t.Fatalf("BuildCoverageConversationAnalysisInput: %v", err)
+	}
+	gotIDs := make([]string, 0, len(input.Messages))
+	for _, message := range input.Messages {
+		gotIDs = append(gotIDs, message.ID)
+		if strings.Contains(message.Content, "Refund") {
+			t.Fatalf("old segment leaked into analyzer input: %+v", input.Messages)
+		}
+	}
+	wantIDs := []string{"new-customer", "new-ai"}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("input message ids = %v, want %v", gotIDs, wantIDs)
+	}
+	if input.SegmentID == "" || input.SegmentStartMessageID != "new-customer" {
+		t.Fatalf("missing segment metadata: %+v", input)
+	}
+}
+
+func TestCoverageConversationAnalysisInputFiltersRetrievalTracesToSentSegmentMessages(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	resolved := string(model.SystemEventResolved)
+	conversation := model.SupportConversation{ID: "conversation-1", WorkspaceID: "ws-1"}
+	messages := []model.SupportMessage{
+		{ID: "old-ai", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "ai", MessageType: "reply", Content: "Old answer", CreatedAt: base},
+		{ID: "resolved-1", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "user", MessageType: "system", SystemEventType: &resolved, IsInternal: true, Content: "Resolved", CreatedAt: base.Add(time.Minute)},
+		{ID: "new-customer", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "customer", MessageType: "reply", Content: "New issue", CreatedAt: base.Add(2 * time.Minute)},
+		{ID: "new-ai", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "ai", MessageType: "reply", Content: "New answer", CreatedAt: base.Add(3 * time.Minute)},
+	}
+	traces := []model.SupportAIRetrievalTrace{
+		{MessageID: "old-ai", SearchQueries: json.RawMessage(`["refund"]`), Results: json.RawMessage(`[]`), CitedSourceIDs: json.RawMessage(`[]`)},
+		{MessageID: "new-ai", SearchQueries: json.RawMessage(`["sso"]`), Results: json.RawMessage(`[]`), CitedSourceIDs: json.RawMessage(`[]`)},
+	}
+
+	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, traces)
+	if err != nil {
+		t.Fatalf("BuildCoverageConversationAnalysisInput: %v", err)
+	}
+	if len(input.RetrievalTraces) != 1 || input.RetrievalTraces[0].MessageID != "new-ai" {
+		t.Fatalf("retrieval traces were not filtered to sent segment messages: %+v", input.RetrievalTraces)
 	}
 }

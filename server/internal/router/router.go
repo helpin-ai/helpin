@@ -648,6 +648,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/email/image-proxy", h.EmailImageProxy.Proxy)
 				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/messages", h.SupportInbox.CreateConversationMessage)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/conversations/{id}/messages/{msg_id}", h.SupportInbox.DeleteMessage)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages/{msg_id}", h.SupportInbox.GetMessageInfo)
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/rewrite-draft", h.SupportAI.RewriteSupportDraft)
 				}
@@ -708,6 +710,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/suggestions/{suggestionId}/discard", h.SupportCoverage.DiscardSuggestion)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/conversations/{conversationId}/state", h.SupportCoverage.GetConversationState)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/conversations/{conversationId}/docs-issue", h.SupportCoverage.SubmitDocsIssueFeedback)
+						r.With(requirePerm(authorization.PermSettingsManage)).Post("/reanalyze", h.SupportCoverage.TriggerReanalysis)
 					})
 				}
 			})

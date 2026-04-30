@@ -16,6 +16,7 @@ import {
   useCreateTaskFromConversation,
   useMoveConversation,
   useDismissConversationTriage,
+  useDeleteSupportMessage,
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
@@ -48,6 +49,7 @@ interface MessageThreadProps {
 
 const INITIAL_THREAD_ITEM_COUNT = 60;
 const THREAD_HISTORY_HYDRATION_DELAY_MS = 120;
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
   const typingState = useSupportPresenceStore(
@@ -165,15 +167,17 @@ function DaySeparator({
   separatorRef?: (node: HTMLDivElement | null) => void;
 }) {
   return (
-    <div ref={separatorRef} className="sticky top-0 z-[1] flex items-center justify-center py-3">
+    <div ref={separatorRef} className="sticky top-0 z-[1] my-5 flex items-center gap-3">
+      <div className="h-px flex-1 bg-border/60" aria-hidden />
       <span
-        className={`relative rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+        className={`shrink-0 rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
           isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
         }`}
         style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
       >
         {label}
       </span>
+      <div className="h-px flex-1 bg-border/60" aria-hidden />
     </div>
   );
 }
@@ -233,6 +237,7 @@ export function MessageThread({
   const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
+  const deleteMessage = useDeleteSupportMessage(workspaceId, conversationId);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { data: wsSettings } = useWorkspaceSettings(workspaceId);
   const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
@@ -390,6 +395,34 @@ export function MessageThread({
       wsSend('support:viewing:stop', { conversation_id: conversationId });
     };
   }, [conversationId, wsSend, wsConnected]);
+
+  useEffect(() => {
+    const handleKeyDown = async (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || event.shiftKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (!conversationId || deleteMessage.isPending) return;
+
+      const now = Date.now();
+      const latest = [...messages].reverse().find((message) => {
+        if (message.sender_type !== 'user' || message.sender_user_id !== currentUser?.id || message.is_internal) return false;
+        if (!message.cancellable_until) return false;
+        return Date.parse(message.cancellable_until) > now;
+      });
+      if (!latest) return;
+
+      event.preventDefault();
+      const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
+      if (result.markdown) {
+        window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
+          detail: { conversationId, markdown: result.markdown },
+        }));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [conversationId, currentUser?.id, deleteMessage, messages]);
 
   useEffect(() => {
     if (!conversationId) {
@@ -804,7 +837,7 @@ export function MessageThread({
 
       {/* Messages area with light background (Crisp-style) */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 bg-muted/20">
-        <div className="px-4 pb-4 pt-2">
+        <div className="px-4 pb-10 pt-2">
           {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
             <EmptyState

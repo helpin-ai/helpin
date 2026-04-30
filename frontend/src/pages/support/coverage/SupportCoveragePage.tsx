@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
@@ -12,6 +14,7 @@ import type {
   SupportCoverageSummary,
 } from '@/lib/supportCoverageTypes'
 import { GAP_STATUS_LABELS } from '@/lib/supportCoverageTypes'
+import { timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 const STATUS_FILTERS = ['open', 'done', 'rejected'] as const
@@ -40,6 +43,25 @@ export function SupportCoveragePage() {
   const { data: access } = useWorkspaceAccess(wsId)
   const { has } = usePermissions(access)
   const canGenerate = has('support.edit') && has('docs.edit')
+  const canReanalyze = has('settings.manage')
+  const [reanalyzing, setReanalyzing] = useState(false)
+
+  const handleReanalyze = useCallback(async () => {
+    if (!wsId || reanalyzing) return
+    setReanalyzing(true)
+    try {
+      const { error } = await supportCoverageService.triggerReanalysis(wsId)
+      if (error) {
+        toast.error(error === 'reanalysis already in progress' ? 'Reanalysis is already running' : 'Failed to start reanalysis')
+      } else {
+        toast.success('Reanalysis started. This may take a few minutes — refresh the page to see updated results.')
+      }
+    } catch {
+      toast.error('Failed to start reanalysis')
+    } finally {
+      setReanalyzing(false)
+    }
+  }, [wsId, reanalyzing])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
 
   useEffect(() => {
@@ -165,11 +187,30 @@ export function SupportCoveragePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <header>
-        <h2 className="text-xl font-semibold">Coverage Gaps</h2>
-        <p className="text-sm text-muted-foreground">
-          Where AI could not resolve a customer issue, and what docs work closes the gap.
-        </p>
+      <header className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Coverage Gaps</h2>
+          <p className="text-sm text-muted-foreground">
+            Issues AI couldn't fully resolve — with recommended fixes to close each gap.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          {canReanalyze && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={reanalyzing}
+              onClick={handleReanalyze}
+            >
+              {reanalyzing ? 'Reanalyzing…' : 'Reanalyze'}
+            </Button>
+          )}
+          {summary?.last_analyzed_at && (
+            <span className="text-[11px] text-muted-foreground/60">
+              Last analyzed {timeAgo(summary.last_analyzed_at)}
+            </span>
+          )}
+        </div>
       </header>
 
       {summary && (

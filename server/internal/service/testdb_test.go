@@ -784,6 +784,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			via_channel TEXT,
 			email_notified_at DATETIME,
 			email_read_at DATETIME,
+			cancellable_until DATETIME,
+			deleted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

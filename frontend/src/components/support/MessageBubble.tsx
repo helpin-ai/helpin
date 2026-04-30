@@ -1,18 +1,24 @@
-import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
+import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
+import { MessageDeleteDialog } from './MessageDeleteDialog';
+import { MessageInfoDialog } from './MessageInfoDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
 import { timeAgo } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
@@ -79,13 +85,24 @@ function previewHostLabel(preview: SupportLinkPreview): string {
   }
 }
 
-function LinkPreviewCard({ preview }: { preview: SupportLinkPreview }) {
+function formatCountdown(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview; isOutgoing: boolean }) {
   return (
     <a
       href={preview.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="block overflow-hidden rounded-xl border border-border bg-background text-foreground transition-colors hover:bg-muted/40"
+      className={`block overflow-hidden rounded-xl border transition-colors hover:opacity-95 ${
+        isOutgoing
+          ? 'border-white/20 bg-white/10 text-white'
+          : 'border-border bg-background text-foreground'
+      }`}
     >
       {preview.image_url ? (
         <img
@@ -96,13 +113,13 @@ function LinkPreviewCard({ preview }: { preview: SupportLinkPreview }) {
         />
       ) : null}
       <div className="space-y-1.5 p-3">
-        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wide ${isOutgoing ? 'text-white/70' : 'text-muted-foreground'}`}>
           <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
           <LinkSquare01Icon className="h-3 w-3 shrink-0" />
         </div>
-        <div className="text-sm font-semibold leading-snug text-foreground">{preview.title}</div>
+        <div className="text-sm font-semibold leading-snug">{preview.title}</div>
         {preview.description ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className={`text-xs leading-relaxed ${isOutgoing ? 'text-white/80' : 'text-muted-foreground'}`}>
             {preview.description}
           </p>
         ) : null}
@@ -221,6 +238,16 @@ export const MessageBubble = memo(function MessageBubble({
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [emailDetailOpen, setEmailDetailOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const deleteMutation = useDeleteSupportMessage(message.workspace_id, message.conversation_id);
+
+  useEffect(() => {
+    if (!message.cancellable_until) return;
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [message.cancellable_until]);
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
@@ -239,6 +266,49 @@ export const MessageBubble = memo(function MessageBubble({
       {sourceLabel && <div className="text-background/70">via {sourceLabel}</div>}
     </div>
   );
+
+  const cancellableUntilMs = message.cancellable_until ? Date.parse(message.cancellable_until) : 0;
+  const canMutateOwnReply = message.sender_type === 'user'
+    && message.sender_user_id === currentUser?.id
+    && message.message_type !== 'system'
+    && !message.is_internal;
+  const cancellableActive = canMutateOwnReply && Number.isFinite(cancellableUntilMs) && cancellableUntilMs > nowMs;
+  const hasCancellableFooter = canMutateOwnReply && !!message.cancellable_until;
+  const countdown = cancellableActive ? formatCountdown(cancellableUntilMs - nowMs) : '0:00';
+
+  const restoreComposerDraft = useCallback((markdown: string) => {
+    window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
+      detail: { conversationId: message.conversation_id, markdown },
+    }));
+  }, [message.conversation_id]);
+
+  const handleUndoOrEdit = useCallback(async () => {
+    const result = await deleteMutation.mutateAsync({ messageId: message.id, undo: true });
+    if (result.markdown) {
+      restoreComposerDraft(result.markdown);
+    }
+  }, [deleteMutation, message.id, restoreComposerDraft]);
+
+  const handleDelete = useCallback(async () => {
+    const result = await deleteMutation.mutateAsync({ messageId: message.id, undo: false });
+    setDeleteDialogOpen(false);
+    if (result.email_already_sent) {
+      toast.message('Message removed from chat', { description: 'The email may already have been delivered.' });
+    }
+  }, [deleteMutation, message.id]);
+
+  const handleCopy = useCallback(() => {
+    void navigator.clipboard?.writeText(displayContent);
+    toast.success('Message copied');
+  }, [displayContent]);
+
+  const handleQuoteReply = useCallback(() => {
+    const quoted = displayContent
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n');
+    restoreComposerDraft(`${quoted}\n\n`);
+  }, [displayContent, restoreComposerDraft]);
 
   const resolvedAvatarUrl = message.sender_avatar_url
     ?? fallbackAvatarUrl
@@ -330,7 +400,7 @@ export const MessageBubble = memo(function MessageBubble({
       const escalationPillClass = 'rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200';
       const defaultPillClass = 'rounded-full px-3 py-1 text-xs text-muted-foreground';
       return (
-        <div className="my-3 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+        <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
               <div className={`flex items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
@@ -357,7 +427,7 @@ export const MessageBubble = memo(function MessageBubble({
     }
 
     return (
-      <div className="my-4 flex items-center justify-center gap-2 animate-in fade-in duration-300">
+      <div className="my-5 flex items-center justify-center gap-2 animate-in fade-in duration-300">
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="flex items-center gap-2.5 rounded-full bg-slate-700 px-4 py-2 text-white shadow-sm" style={{ border: 'none' }}>
@@ -450,15 +520,34 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
         )}
 
+        <MessageActionsContextMenu
+          canEdit={cancellableActive}
+          canDelete={canMutateOwnReply}
+          onEdit={handleUndoOrEdit}
+          onCopy={handleCopy}
+          onReply={handleQuoteReply}
+          onDelete={() => setDeleteDialogOpen(true)}
+          onInfo={() => setInfoOpen(true)}
+        >
         <div
           data-slot="support-message-bubble"
-          className={bubbleWidthClass}
+          className={`${bubbleWidthClass} group/message relative`}
         >
+          <MessageActionsMenu
+            alignSide={isCustomer ? 'right' : 'left'}
+            canEdit={cancellableActive}
+            canDelete={canMutateOwnReply}
+            onEdit={handleUndoOrEdit}
+            onCopy={handleCopy}
+            onReply={handleQuoteReply}
+            onDelete={() => setDeleteDialogOpen(true)}
+            onInfo={() => setInfoOpen(true)}
+          />
           {showBubble && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <div
-                  className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
+                  className={`rounded-2xl border border-border/40 px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                     isCustomer
                       ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
@@ -505,6 +594,7 @@ export const MessageBubble = memo(function MessageBubble({
                         <LinkPreviewCard
                           key={`${message.id}:${preview.url}`}
                           preview={preview}
+                          isOutgoing={!isCustomer}
                         />
                       ))}
                     </div>
@@ -538,6 +628,7 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           )}
         </div>
+        </MessageActionsContextMenu>
 
         {/* Right side: avatar or spacer (agent/user messages) */}
         {!isCustomer && (
@@ -556,6 +647,19 @@ export const MessageBubble = memo(function MessageBubble({
           onOpenChange={setEmailDetailOpen}
         />
       )}
+      <MessageInfoDialog
+        workspaceId={message.workspace_id}
+        conversationId={message.conversation_id}
+        messageId={message.id}
+        open={infoOpen}
+        onOpenChange={setInfoOpen}
+      />
+      <MessageDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={handleDelete}
+        isPending={deleteMutation.isPending}
+      />
 
       {/* Lightbox modal — rendered in portal for full-screen overlay */}
       {lightboxSrc && createPortal(
@@ -580,7 +684,7 @@ export const MessageBubble = memo(function MessageBubble({
       )}
 
       {/* Status below the bubble row — outside the avatar alignment */}
-      {hasStatusBelow && (
+      {(hasStatusBelow || hasCancellableFooter) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
             <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
@@ -605,6 +709,100 @@ export const MessageBubble = memo(function MessageBubble({
                 {message.email_delivery_error ? ` · ${message.email_delivery_error}` : ''}
               </span>
             </div>
+          ) : hasCancellableFooter ? (
+            <div className={`flex items-center gap-1 text-[11px] text-muted-foreground ${isCustomer ? '' : 'justify-end'}`}>
+              <TickDouble01Icon className="h-3.5 w-3.5" />
+              {cancellableActive ? (
+                <>
+                  <span>Sent</span>
+                  <span>·</span>
+                  <button
+                    type="button"
+                    className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                    onClick={handleUndoOrEdit}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Undo
+                  </button>
+                  <span>·</span>
+                  <span>{countdown}</span>
+                </>
+              ) : (
+                <span>Delivered to email</span>
+              )}
+            </div>
+          ) : aiMeta ? (
+            // AI message: combined footer — confidence + sources on the left, receipt on the right
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <div className="inline-flex items-center gap-1.5 text-[11px]">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                    <CheckmarkCircle02Icon className="h-3 w-3" />
+                    {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
+                  </span>
+                  {aiMeta.ai_sources?.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSourcesOpen(!sourcesOpen)}
+                      aria-expanded={sourcesOpen}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground ${sourcesOpen ? 'border-border bg-background text-foreground' : 'border-border/60 bg-muted/40'}`}
+                    >
+                      <File01Icon className="h-3 w-3" />
+                      {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
+                      <ArrowDown01Icon className={`h-3 w-3 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  )}
+                </div>
+                {receiptStatus && (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+                    {receiptStatus === 'read' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
+                        Read in chat
+                      </>
+                    ) : receiptStatus === 'read_email' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
+                        Read via email
+                      </>
+                    ) : receiptStatus === 'delivered_email' ? (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5" />
+                        Delivered via email
+                      </>
+                    ) : (
+                      <>
+                        <TickDouble01Icon className="h-3.5 w-3.5" />
+                        Delivered
+                      </>
+                    )}
+                  </span>
+                )}
+              </div>
+              {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
+                <div className="mt-1.5 overflow-hidden rounded-xl border bg-muted/40 p-1 shadow-sm">
+                  {aiMeta.ai_sources.map((src, idx) => {
+                    const Tag: 'a' | 'div' = src.url ? 'a' : 'div';
+                    const linkProps = src.url
+                      ? { href: src.url, target: '_blank' as const, rel: 'noopener noreferrer' }
+                      : {};
+                    return (
+                      <Tag
+                        key={src.docId}
+                        {...linkProps}
+                        className={`group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${idx > 0 ? 'border-t border-border/60' : ''} ${src.url ? 'cursor-pointer text-foreground hover:bg-background hover:text-primary' : 'text-foreground'}`}
+                      >
+                        <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className={`min-w-0 truncate font-medium ${src.url ? 'group-hover:underline' : ''}`}>{src.title}</span>
+                        {src.url && (
+                          <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+                        )}
+                      </Tag>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           ) : receiptStatus && (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
               {receiptStatus === 'read' ? (
@@ -627,37 +825,6 @@ export const MessageBubble = memo(function MessageBubble({
                   <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="text-[11px] text-muted-foreground">Delivered</span>
                 </>
-              )}
-            </div>
-          )}
-
-          {/* AI metadata: confidence badge + collapsible sources */}
-          {aiMeta && (
-            <div className={`mt-0.5 ${isCustomer ? '' : 'text-right'}`}>
-              <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
-                  {(aiMeta.ai_confidence * 100).toFixed(0)}% confident
-                </span>
-                {aiMeta.ai_sources?.length > 0 && (
-                  <button
-                    onClick={() => setSourcesOpen(!sourcesOpen)}
-                    className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:bg-muted"
-                  >
-                    <File01Icon className="h-3 w-3" />
-                    {aiMeta.ai_sources.length} source{aiMeta.ai_sources.length > 1 ? 's' : ''}
-                    {sourcesOpen ? <ArrowUp01Icon className="h-3 w-3" /> : <ArrowDown01Icon className="h-3 w-3" />}
-                  </button>
-                )}
-              </div>
-              {sourcesOpen && aiMeta.ai_sources?.length > 0 && (
-                <div className="mt-1.5 space-y-1 rounded-lg border bg-muted/50 p-2 text-left text-xs">
-                  {aiMeta.ai_sources.map((src) => (
-                    <div key={src.docId} className="flex items-start gap-1.5">
-                      <File01Icon className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="font-medium">{src.title}</span>
-                    </div>
-                  ))}
-                </div>
               )}
             </div>
           )}

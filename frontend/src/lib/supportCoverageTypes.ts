@@ -136,6 +136,7 @@ export interface SupportCoverageSummary {
   total_open_gaps: number
   total_evidence_count: number
   handoffs_after_fixes: number
+  last_analyzed_at?: string | null
 }
 
 export interface SupportConversationCoverageState {
