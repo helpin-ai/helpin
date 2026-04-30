@@ -279,17 +279,17 @@ export function SupportCoveragePage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <Select value={kindFilter} onValueChange={setKindFilter}>
-          <SelectTrigger className="h-8 w-[220px] text-xs">
-            <SelectValue placeholder="All types" />
+          <SelectTrigger className="h-8 w-[140px] text-xs">
+            <SelectValue>
+              {kindFilter === 'all' ? 'All types' : `${kindFilter.charAt(0).toUpperCase() + kindFilter.slice(1)} gaps`}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
             {(['content', 'data', 'action'] as const).map((kind) => (
               <SelectItem key={kind} value={kind}>
-                <div>
-                  <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)} gap</span>
-                  <span className="ml-1.5 text-muted-foreground">— {GAP_KIND_DESCRIPTIONS[kind]}</span>
-                </div>
+                <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)} gaps</span>
+                <span className="ml-1.5 text-muted-foreground">— {GAP_KIND_DESCRIPTIONS[kind]}</span>
               </SelectItem>
             ))}
           </SelectContent>
