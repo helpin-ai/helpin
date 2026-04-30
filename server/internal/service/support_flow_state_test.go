@@ -398,6 +398,9 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 	if updated.AIState == nil || *updated.AIState != "escalated" {
 		t.Fatalf("ai_state = %#v, want escalated", updated.AIState)
 	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
 	if updated.CustomerRequestedHumanAt == nil {
 		t.Fatal("expected customer_requested_human_at to be set")
 	}
