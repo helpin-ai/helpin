@@ -49,12 +49,17 @@ export function SupportCoveragePage() {
   const handleReanalyze = useCallback(async () => {
     if (!wsId || reanalyzing) return
     setReanalyzing(true)
-    const { error } = await supportCoverageService.triggerReanalysis(wsId)
-    setReanalyzing(false)
-    if (error) {
+    try {
+      const { error } = await supportCoverageService.triggerReanalysis(wsId)
+      if (error) {
+        toast.error(error === 'reanalysis already in progress' ? 'Reanalysis is already running' : 'Failed to start reanalysis')
+      } else {
+        toast.success('Reanalysis started. This may take a few minutes — refresh the page to see updated results.')
+      }
+    } catch {
       toast.error('Failed to start reanalysis')
-    } else {
-      toast.success('Reanalysis started. This may take a few minutes — refresh the page to see updated results.')
+    } finally {
+      setReanalyzing(false)
     }
   }, [wsId, reanalyzing])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []

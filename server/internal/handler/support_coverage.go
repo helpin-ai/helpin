@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -436,6 +437,11 @@ func (h *SupportCoverageHandler) TriggerReanalysis(w http.ResponseWriter, r *htt
 		return
 	}
 	if err := h.coverageSvc.TriggerReanalysis(r.Context(), wsID); err != nil {
+		if errors.Is(err, service.ErrReanalysisAlreadyRunning) {
+			writeError(w, http.StatusConflict, "reanalysis already in progress")
+			return
+		}
+		slog.ErrorContext(r.Context(), "trigger coverage reanalysis", "error", err, "workspace_id", wsID)
 		writeError(w, http.StatusInternalServerError, "failed to start reanalysis")
 		return
 	}

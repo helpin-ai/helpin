@@ -15,6 +15,10 @@ import (
 	tclient "go.temporal.io/sdk/client"
 )
 
+// ErrReanalysisAlreadyRunning is returned when a reanalysis workflow is
+// already in progress for the workspace.
+var ErrReanalysisAlreadyRunning = errors.New("reanalysis already in progress")
+
 const (
 	coverageDailyBatchWorkflowID = "coverage-gap-daily-batch"
 	coverageDailyBatchSchedule   = "0 3 * * *"
@@ -307,6 +311,10 @@ func (s *SupportCoverageService) TriggerReanalysis(ctx context.Context, workspac
 		TaskQueue: temporalapp.QueueAutomation,
 	}, temporalapp.CoverageWorkspaceAnalysisWorkflowType, input)
 	if err != nil {
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return ErrReanalysisAlreadyRunning
+		}
 		return fmt.Errorf("start coverage reanalysis workflow: %w", err)
 	}
 	slog.InfoContext(ctx, "triggered coverage reanalysis", "workspace_id", workspaceID, "workflow_id", workflowID)
