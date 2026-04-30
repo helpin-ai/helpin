@@ -7,6 +7,7 @@ import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
 import { MessageInfoDialog } from './MessageInfoDialog';
+import { AddShortcutDialog } from './AddShortcutDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
@@ -239,6 +240,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [emailDetailOpen, setEmailDetailOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [saveShortcutOpen, setSaveShortcutOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const deleteMutation = useDeleteSupportMessage(message.workspace_id, message.conversation_id);
 
@@ -300,6 +302,9 @@ export const MessageBubble = memo(function MessageBubble({
     void navigator.clipboard?.writeText(displayContent);
     toast.success('Message copied');
   }, [displayContent]);
+
+  const canSaveAsShortcut = displayContent.trim().length > 0 && message.message_type !== 'system';
+  const handleSaveAsShortcut = useCallback(() => setSaveShortcutOpen(true), []);
 
   const handleQuoteReply = useCallback(() => {
     const quoted = displayContent
@@ -527,6 +532,7 @@ export const MessageBubble = memo(function MessageBubble({
           onReply={handleQuoteReply}
           onDelete={() => setDeleteDialogOpen(true)}
           onInfo={() => setInfoOpen(true)}
+          onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
         >
         <div
           data-slot="support-message-bubble"
@@ -541,6 +547,7 @@ export const MessageBubble = memo(function MessageBubble({
             onReply={handleQuoteReply}
             onDelete={() => setDeleteDialogOpen(true)}
             onInfo={() => setInfoOpen(true)}
+            onSaveAsShortcut={canSaveAsShortcut ? handleSaveAsShortcut : undefined}
           />
           {showBubble && (
             <Tooltip>
@@ -655,6 +662,12 @@ export const MessageBubble = memo(function MessageBubble({
         onOpenChange={setDeleteDialogOpen}
         onConfirm={handleDelete}
         isPending={deleteMutation.isPending}
+      />
+      <AddShortcutDialog
+        open={saveShortcutOpen}
+        workspaceId={message.workspace_id}
+        seedContent={displayContent}
+        onOpenChange={setSaveShortcutOpen}
       />
 
       {/* Lightbox modal — rendered in portal for full-screen overlay */}

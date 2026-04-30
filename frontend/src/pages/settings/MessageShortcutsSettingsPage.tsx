@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type { Editor } from '@tiptap/react';
 import { toast } from 'sonner';
 import { SettingsPageFrame } from './SettingsPageFrame';
 import { AddShortcutDialog } from '@/components/support/AddShortcutDialog';
@@ -167,10 +168,24 @@ function ShortcutForm({
   pending: boolean;
   submitLabel: string;
   onChange: (state: ShortcutFormState) => void;
-  onSubmit: () => void;
+  onSubmit: (markdownContent: string) => void;
   onCancel?: () => void;
 }) {
   const [pendingUploads, setPendingUploads] = useState(0);
+  const editorRef = useRef<Editor | null>(null);
+
+  // The TiptapEditor emits HTML through onChange, but the composer inserts
+  // shortcut content via the markdown extension. Read markdown from the
+  // editor at submit time so saved content stays in the same shape as
+  // composer-inserted shortcuts (matches AddShortcutDialog's create path).
+  const submitWithMarkdown = () => {
+    const editor = editorRef.current;
+    const storage = editor
+      ? (editor.storage as { markdown?: { getMarkdown(): string } }).markdown
+      : undefined;
+    const markdown = storage?.getMarkdown ? storage.getMarkdown().trim() : stripHTML(state.content);
+    onSubmit(markdown);
+  };
   const shortcutError = validateShortcut(state.shortCode);
   const normalizedCode = state.shortCode.trim();
   const duplicate = existing.some((item) => item.id !== editingId && item.short_code === normalizedCode);
@@ -220,6 +235,7 @@ function ShortcutForm({
           className="rounded-lg border-border bg-background"
           uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
           onUploadStateChange={setPendingUploads}
+          onEditorReady={(editor) => { editorRef.current = editor; }}
         />
         {pendingUploads > 0 ? <p className="text-xs text-muted-foreground">Uploading attachments...</p> : null}
       </div>
@@ -229,7 +245,7 @@ function ShortcutForm({
             Cancel
           </Button>
         ) : null}
-        <Button type="button" disabled={!canSubmit} onClick={onSubmit}>
+        <Button type="button" disabled={!canSubmit} onClick={submitWithMarkdown}>
           {pending ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlusSignIcon className="h-4 w-4" />}
           {submitLabel}
         </Button>
@@ -283,7 +299,7 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
   }, [responses, search]);
   const groups = useMemo(() => groupResponses(filteredResponses), [filteredResponses]);
 
-  const handleUpdate = async (responseId: string) => {
+  const handleUpdate = async (responseId: string, markdownContent: string) => {
     const tag = normalizeTag(editingForm);
     try {
       await updateShortcut.mutateAsync({
@@ -291,7 +307,7 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
         payload: {
           short_code: editingForm.shortCode.trim(),
           title: editingForm.title.trim() || editingForm.shortCode.trim(),
-          content: editingForm.content,
+          content: markdownContent,
           tag,
         },
       });
@@ -496,7 +512,7 @@ function MessageShortcutsSettingsContent({ workspaceId }: { workspaceId: string 
                               pending={updateShortcut.isPending}
                               submitLabel="Save Shortcut"
                               onChange={setEditingForm}
-                              onSubmit={() => void handleUpdate(item.id)}
+                              onSubmit={(markdown) => void handleUpdate(item.id, markdown)}
                               onCancel={() => setEditingId(null)}
                             />
                           ) : (

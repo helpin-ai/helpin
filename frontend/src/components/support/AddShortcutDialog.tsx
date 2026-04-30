@@ -46,6 +46,7 @@ function validateShortcut(shortCode: string) {
   if (!value) return 'Shortcut is required';
   if (!value.startsWith('!')) return 'Shortcut must start with !';
   if (/\s/.test(value)) return 'Shortcut cannot contain spaces';
+  if (value.length < 2) return 'Shortcut must have at least one character after !';
   return null;
 }
 
@@ -65,11 +66,13 @@ export interface AddShortcutDialogProps {
   workspaceId: string;
   /** Pre-fill the shortcode field. Useful when opened from the composer with a typed query. */
   seedShortCode?: string;
+  /** Pre-fill the message editor (markdown). Useful when opened from a message bubble. */
+  seedContent?: string;
   onOpenChange: (open: boolean) => void;
   onCreated?: (shortcut: SupportCannedResponse) => void;
 }
 
-export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, onOpenChange, onCreated }: AddShortcutDialogProps) {
+export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, seedContent, onOpenChange, onCreated }: AddShortcutDialogProps) {
   const { data: responses = [] } = useCannedResponses(workspaceId);
   const createShortcut = useCreateCannedResponse(workspaceId);
 
@@ -87,9 +90,9 @@ export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, onOp
     setTitle('');
     setTag(DEFAULT_TAG);
     setCustomTag('');
-    setContent('');
+    setContent(seedContent ?? '');
     setPendingUploads(0);
-  }, [open, seed]);
+  }, [open, seed, seedContent]);
 
   const tags = useMemo(() => buildTagOptions(responses), [responses]);
   const shortcutError = validateShortcut(shortCode);
@@ -119,7 +122,7 @@ export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, onOp
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl sm:max-w-3xl">
+      <DialogContent className="max-w-2xl sm:max-w-[52rem]">
         <DialogHeader>
           <DialogTitle>Add shortcut</DialogTitle>
           <DialogDescription>

@@ -593,6 +593,9 @@ func normalizeCannedResponseRequest(req model.CannedResponseRequest) (model.Cann
 	if !strings.HasPrefix(req.ShortCode, "!") || strings.ContainsAny(req.ShortCode, " \t\r\n") {
 		return req, fmt.Errorf("%w: shortcut must start with ! and contain no spaces", ErrCannedResponseInvalid)
 	}
+	if len(req.ShortCode) < 2 {
+		return req, fmt.Errorf("%w: shortcut must have at least one character after !", ErrCannedResponseInvalid)
+	}
 	if req.Title == "" {
 		req.Title = req.ShortCode
 	}
