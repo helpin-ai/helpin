@@ -427,3 +427,17 @@ func (h *SupportCoverageHandler) SubmitDocsIssueFeedback(w http.ResponseWriter, 
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+
+// TriggerReanalysis starts a coverage reanalysis workflow for the workspace.
+func (h *SupportCoverageHandler) TriggerReanalysis(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if err := h.coverageSvc.TriggerReanalysis(r.Context(), wsID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to start reanalysis")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
+}

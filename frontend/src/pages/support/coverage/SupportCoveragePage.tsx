@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
@@ -40,6 +41,15 @@ export function SupportCoveragePage() {
   const { data: access } = useWorkspaceAccess(wsId)
   const { has } = usePermissions(access)
   const canGenerate = has('support.edit') && has('docs.edit')
+  const canReanalyze = has('settings.manage')
+  const [reanalyzing, setReanalyzing] = useState(false)
+
+  const handleReanalyze = useCallback(async () => {
+    if (!wsId || reanalyzing) return
+    setReanalyzing(true)
+    await supportCoverageService.triggerReanalysis(wsId)
+    setReanalyzing(false)
+  }, [wsId, reanalyzing])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
 
   useEffect(() => {
@@ -231,7 +241,18 @@ export function SupportCoveragePage() {
         <span className="text-xs text-muted-foreground">
           {total} gap{total !== 1 ? 's' : ''}
         </span>
-        <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
+        <div className="ml-auto flex items-center gap-2">
+          {canReanalyze && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={reanalyzing}
+              onClick={handleReanalyze}
+            >
+              {reanalyzing ? 'Reanalyzing…' : 'Reanalyze'}
+            </Button>
+          )}
+        <div className="flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
           {STATUS_FILTERS.map((status) => (
             <button
               key={status}
@@ -246,6 +267,7 @@ export function SupportCoveragePage() {
               {GAP_STATUS_LABELS[status]}
             </button>
           ))}
+        </div>
         </div>
       </div>
 
