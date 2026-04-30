@@ -997,7 +997,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	}
 
 	var replyMsg *model.SupportMessage
-	var handoffSystemMsg *model.SupportMessage
+	var escalationSystemMsg *model.SupportMessage
 	escalationAlreadyMessaged := false
 	// Load with includeInternal=true so dedupe can see the new internal
 	// handoff system events (and the legacy ai_escalated rows that were
@@ -1013,8 +1013,8 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		escalationAlreadyMessaged = hasEscalationMessageInHistory(history)
 	}
 
-	// 1. Create handoff messages — a customer-facing reply plus an
-	// internal-only system event describing why the handoff happened.
+	// 1. Create escalation messages — a customer-facing reply plus an
+	// internal-only system event describing why the escalation happened.
 	if !escalationAlreadyMessaged {
 		escalationContent := "Let me connect you with a team member who can help further."
 		if strings.TrimSpace(settings.EscalationMessage) != "" {
@@ -1033,7 +1033,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			return fmt.Errorf("create escalation reply: %w", err)
 		}
 
-		handoffSystemMsg = &model.SupportMessage{
+		escalationSystemMsg = &model.SupportMessage{
 			WorkspaceID:       workspaceID,
 			ConversationID:    conversationID,
 			SenderType:        "agent",
@@ -1043,7 +1043,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 			Content:           "",
 			IsInternal:        true,
 		}
-		if err := s.messageRepo.Create(ctx, handoffSystemMsg); err != nil {
+		if err := s.messageRepo.Create(ctx, escalationSystemMsg); err != nil {
 			return fmt.Errorf("create escalation system event: %w", err)
 		}
 	} else {
@@ -1162,8 +1162,8 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	// Then publish the internal system event so the inbox renders the
 	// handoff pill. The websocket factory strips Data for internal rows;
 	// inbox clients refetch on this signal.
-	if handoffSystemMsg != nil {
-		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, handoffSystemMsg, "ai:escalation"))
+	if escalationSystemMsg != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
 	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",

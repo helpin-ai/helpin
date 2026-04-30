@@ -42,7 +42,7 @@ const (
 	// suggestion.
 	SystemEventTriageDismissed SupportSystemEventType = "triage_dismissed"
 
-	// SystemEventAIEscalated — AI decided to hand off to a human teammate
+	// SystemEventAIEscalated — AI decided to escalate to a human teammate
 	// (low confidence, stuck, action unavailable, etc.). Internal-only;
 	// the customer-facing escalation reply is sent as a separate public
 	// AI reply.
@@ -66,19 +66,19 @@ const (
 // allSupportSystemEventTypes is the authoritative set of valid event types.
 // Kept private so callers go through IsValidSupportSystemEventType.
 var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
-	SystemEventTeammateJoined:  {},
-	SystemEventAssigned:        {},
-	SystemEventUnassigned:      {},
-	SystemEventTook:            {},
-	SystemEventAgentAssigned:   {},
-	SystemEventMailboxMoved:    {},
-	SystemEventTriageRouted:    {},
-	SystemEventTriageDismissed: {},
+	SystemEventTeammateJoined:         {},
+	SystemEventAssigned:               {},
+	SystemEventUnassigned:             {},
+	SystemEventTook:                   {},
+	SystemEventAgentAssigned:          {},
+	SystemEventMailboxMoved:           {},
+	SystemEventTriageRouted:           {},
+	SystemEventTriageDismissed:        {},
 	SystemEventAIEscalated:            {},
 	SystemEventCustomerRequestedHuman: {},
 	SystemEventResolved:               {},
-	SystemEventReopened:        {},
-	SystemEventClosed:          {},
+	SystemEventReopened:               {},
+	SystemEventClosed:                 {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

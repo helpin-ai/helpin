@@ -288,13 +288,13 @@ export const MessageBubble = memo(function MessageBubble({
     const stateEventTypes: ReadonlyArray<string> = ['resolved', 'reopened', 'closed'];
     const eventType = message.system_event_type;
 
-    const HANDOFF_LABELS: Record<string, string> = {
-      ai_escalated: 'AI handed off to a human',
+    const ESCALATION_LABELS: Record<string, string> = {
+      ai_escalated: 'AI escalated to a human',
       customer_requested_human: 'Customer requested a human',
     };
-    const isHandoffEvent = !!eventType && eventType in HANDOFF_LABELS;
-    const handoffLabel = isHandoffEvent ? HANDOFF_LABELS[eventType] : null;
-    const handoffIcon = eventType === 'customer_requested_human'
+    const isEscalationEvent = !!eventType && eventType in ESCALATION_LABELS;
+    const escalationLabel = isEscalationEvent ? ESCALATION_LABELS[eventType] : null;
+    const escalationIcon = eventType === 'customer_requested_human'
       ? <UserIcon className="h-3 w-3" />
       : eventType === 'ai_escalated'
         ? <BotIcon className="h-3 w-3" />
@@ -331,14 +331,16 @@ export const MessageBubble = memo(function MessageBubble({
     // Routing events use a neutral muted style with leading avatar; state
     // transitions keep the stronger slate pill so they stay visually distinct.
     if (isRoutingEvent) {
+      const escalationPillClass = 'rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200';
+      const defaultPillClass = 'rounded-full px-3 py-1 text-xs text-muted-foreground';
       return (
         <div className="my-3 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex items-center gap-2 rounded-full px-3 py-1 text-xs text-muted-foreground">
-                {isHandoffEvent ? (
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    {handoffIcon}
+              <div className={`flex items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
+                {isEscalationEvent ? (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    {escalationIcon}
                   </span>
                 ) : resolvedAvatarUrl ? (
                   <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
@@ -347,7 +349,7 @@ export const MessageBubble = memo(function MessageBubble({
                     {getInitial(resolvedSenderName)}
                   </div>
                 )}
-                <span>{handoffLabel ?? message.content}</span>
+                <span>{escalationLabel ?? message.content}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top">
