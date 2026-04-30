@@ -850,6 +850,14 @@ func (r *SupportCoverageRepository) GetSummary(ctx context.Context, workspaceID 
 		Count(&totalEvidence)
 	summary.TotalEvidenceCount = int(totalEvidence)
 
+	var lastRun model.SupportCoverageAnalysisRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageAnalysisRunStatusCompleted).
+		Order("completed_at DESC").
+		First(&lastRun).Error; err == nil && lastRun.CompletedAt != nil {
+		summary.LastAnalyzedAt = lastRun.CompletedAt
+	}
+
 	return summary, nil
 }
 

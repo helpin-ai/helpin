@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
@@ -13,6 +14,7 @@ import type {
   SupportCoverageSummary,
 } from '@/lib/supportCoverageTypes'
 import { GAP_STATUS_LABELS } from '@/lib/supportCoverageTypes'
+import { timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 const STATUS_FILTERS = ['open', 'done', 'rejected'] as const
@@ -47,8 +49,13 @@ export function SupportCoveragePage() {
   const handleReanalyze = useCallback(async () => {
     if (!wsId || reanalyzing) return
     setReanalyzing(true)
-    await supportCoverageService.triggerReanalysis(wsId)
+    const { error } = await supportCoverageService.triggerReanalysis(wsId)
     setReanalyzing(false)
+    if (error) {
+      toast.error('Failed to start reanalysis')
+    } else {
+      toast.success('Reanalysis started. This may take a few minutes — refresh the page to see updated results.')
+    }
   }, [wsId, reanalyzing])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
 
@@ -175,11 +182,30 @@ export function SupportCoveragePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <header>
-        <h2 className="text-xl font-semibold">Coverage Gaps</h2>
-        <p className="text-sm text-muted-foreground">
-          Where AI could not resolve a customer issue, and what docs work closes the gap.
-        </p>
+      <header className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Coverage Gaps</h2>
+          <p className="text-sm text-muted-foreground">
+            Issues AI couldn't fully resolve — with recommended fixes to close each gap.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          {canReanalyze && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={reanalyzing}
+              onClick={handleReanalyze}
+            >
+              {reanalyzing ? 'Reanalyzing…' : 'Reanalyze'}
+            </Button>
+          )}
+          {summary?.last_analyzed_at && (
+            <span className="text-[11px] text-muted-foreground/60">
+              Last analyzed {timeAgo(summary.last_analyzed_at)}
+            </span>
+          )}
+        </div>
       </header>
 
       {summary && (
@@ -241,18 +267,7 @@ export function SupportCoveragePage() {
         <span className="text-xs text-muted-foreground">
           {total} gap{total !== 1 ? 's' : ''}
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          {canReanalyze && (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={reanalyzing}
-              onClick={handleReanalyze}
-            >
-              {reanalyzing ? 'Reanalyzing…' : 'Reanalyze'}
-            </Button>
-          )}
-        <div className="flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
+        <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
           {STATUS_FILTERS.map((status) => (
             <button
               key={status}
@@ -267,7 +282,6 @@ export function SupportCoveragePage() {
               {GAP_STATUS_LABELS[status]}
             </button>
           ))}
-        </div>
         </div>
       </div>
 
