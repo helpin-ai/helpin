@@ -437,6 +437,21 @@ func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, id
 	return tasks, nil
 }
 
+// ListByEpicID returns raw, non-archived tasks for an epic in a workspace.
+func (r *PMTaskRepository) ListByEpicID(ctx context.Context, workspaceID, epicID string) ([]model.PMTask, error) {
+	if workspaceID == "" || epicID == "" {
+		return []model.PMTask{}, nil
+	}
+	var tasks []model.PMTask
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND epic_id = ? AND archived = FALSE", workspaceID, epicID).
+		Order("display_id ASC, created_at ASC").
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list tasks by epic id: %w", err)
+	}
+	return tasks, nil
+}
+
 // ListByDisplayIDs returns raw tasks by display ID for a workspace.
 func (r *PMTaskRepository) ListByDisplayIDs(ctx context.Context, workspaceID string, displayIDs []int) ([]model.PMTask, error) {
 	if len(displayIDs) == 0 {

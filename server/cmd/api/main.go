@@ -802,7 +802,13 @@ func main() {
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
 	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo)
-	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMRouter)
+	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMRouter).
+		SetLLMRouterConfig(
+			cfg.CommandRouterLLMProvider,
+			cfg.CommandRouterLLMModel,
+			cfg.CommandRouterLLMMaxTokens,
+			time.Duration(cfg.CommandRouterLLMTimeoutMS)*time.Millisecond,
+		)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
