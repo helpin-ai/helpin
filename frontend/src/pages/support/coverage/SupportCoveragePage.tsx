@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
 import { useDocsCollections, useDocsSpaces } from '@/hooks/queries/useDocs'
@@ -31,7 +32,7 @@ export function SupportCoveragePage() {
   const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('open')
-  const [kindFilter, setKindFilter] = useState('')
+  const [kindFilter, setKindFilter] = useState('all')
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [targetSpaceId, setTargetSpaceId] = useState('')
@@ -99,7 +100,7 @@ export function SupportCoveragePage() {
       setSelectedGap(null)
       const [summaryRes, gapsRes] = await Promise.all([
         supportCoverageService.getSummary(wsId),
-        supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter && { gap_kind: kindFilter }) }),
+        supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter !== 'all' && { gap_kind: kindFilter }) }),
       ])
       if (cancelled) return
       if (summaryRes.data) setSummary(summaryRes.data)
@@ -122,7 +123,7 @@ export function SupportCoveragePage() {
   }
 
   const refreshList = async () => {
-    const { data } = await supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter && { gap_kind: kindFilter }) })
+    const { data } = await supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter !== 'all' && { gap_kind: kindFilter }) })
     if (data) {
       setGaps(data.items || [])
       setTotal(data.total || 0)
@@ -277,21 +278,22 @@ export function SupportCoveragePage() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={kindFilter}
-          onChange={(e) => setKindFilter(e.target.value)}
-          className="h-8 rounded-lg border border-border/60 bg-background px-3 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-        >
-          <option value="">All types</option>
-          {(['content', 'data', 'action'] as const).map((kind) => (
-            <option key={kind} value={kind}>
-              {kind.charAt(0).toUpperCase() + kind.slice(1)} — {GAP_KIND_DESCRIPTIONS[kind]}
-            </option>
-          ))}
-        </select>
-        <span className="text-xs text-muted-foreground">
-          {total} gap{total !== 1 ? 's' : ''}
-        </span>
+        <Select value={kindFilter} onValueChange={setKindFilter}>
+          <SelectTrigger className="h-8 w-[220px] text-xs">
+            <SelectValue placeholder="All types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            {(['content', 'data', 'action'] as const).map((kind) => (
+              <SelectItem key={kind} value={kind}>
+                <div>
+                  <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)}</span>
+                  <span className="ml-1.5 text-muted-foreground">{GAP_KIND_DESCRIPTIONS[kind]}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
           {STATUS_FILTERS.map((status) => (
             <button
