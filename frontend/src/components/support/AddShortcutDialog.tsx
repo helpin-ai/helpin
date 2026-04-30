@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
+import { create } from 'zustand';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -60,6 +61,27 @@ function seedShortCode(seed?: string) {
   if (!trimmed) return '';
   return trimmed.startsWith('!') ? trimmed : `!${trimmed}`;
 }
+
+/**
+ * Single shared instance pattern: rather than mounting AddShortcutDialog in
+ * every place that needs to trigger it, mount one instance high in the tree
+ * (e.g. MessageThread) and have callers use this store to open it. Keeps the
+ * dialog DOM and TiptapEditor instance singleton across the workspace.
+ */
+interface AddShortcutDialogStore {
+  open: boolean;
+  seedShortCode?: string;
+  seedContent?: string;
+  openDialog: (opts?: { seedShortCode?: string; seedContent?: string }) => void;
+  close: () => void;
+}
+
+export const useAddShortcutDialogStore = create<AddShortcutDialogStore>((set) => ({
+  open: false,
+  openDialog: (opts) =>
+    set({ open: true, seedShortCode: opts?.seedShortCode, seedContent: opts?.seedContent }),
+  close: () => set({ open: false }),
+}));
 
 export interface AddShortcutDialogProps {
   open: boolean;
@@ -209,5 +231,26 @@ export function AddShortcutDialog({ open, workspaceId, seedShortCode: seed, seed
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Mount this once at a parent level (e.g. MessageThread). Any descendant can
+ * trigger the dialog via `useAddShortcutDialogStore.getState().openDialog(...)`.
+ * Avoids having a separate dialog instance per call site.
+ */
+export function SharedAddShortcutDialog({ workspaceId }: { workspaceId: string }) {
+  const open = useAddShortcutDialogStore((s) => s.open);
+  const seedShortCode = useAddShortcutDialogStore((s) => s.seedShortCode);
+  const seedContent = useAddShortcutDialogStore((s) => s.seedContent);
+  const close = useAddShortcutDialogStore((s) => s.close);
+  return (
+    <AddShortcutDialog
+      open={open}
+      workspaceId={workspaceId}
+      seedShortCode={seedShortCode}
+      seedContent={seedContent}
+      onOpenChange={(next) => { if (!next) close(); }}
+    />
   );
 }

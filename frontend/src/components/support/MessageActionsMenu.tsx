@@ -124,7 +124,7 @@ export function MessageActionsMenu({ alignSide, ...actions }: MessageActionsMenu
         <DropdownMenuContent
           align={alignSide === 'left' ? 'end' : 'start'}
           side="bottom"
-          className="min-w-32"
+          className="min-w-44"
         >
           <MessageActionItems
             Item={DropdownMenuItem}
@@ -227,7 +227,7 @@ export function MessageActionsContextMenu({ children, ...actions }: MessageActio
           </div>
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-32">
+      <ContextMenuContent className="min-w-44">
         <MessageActionItems
           Item={ContextMenuItem}
           Separator={ContextMenuSeparator}

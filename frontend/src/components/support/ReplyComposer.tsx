@@ -49,7 +49,7 @@ import type { AssignableMember } from '@/lib/types';
 import type { SupportAIRewriteOperation, SupportCannedResponse } from '@/lib/pmTypes';
 import { EmojiPicker } from './EmojiPicker';
 import { LinkInsertModal } from './LinkInsertModal';
-import { AddShortcutDialog } from './AddShortcutDialog';
+import { useAddShortcutDialogStore } from './AddShortcutDialog';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
@@ -437,8 +437,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   const shortcutsPanelOpenRef = useRef(false);
   const shortcutsPanelRef = useRef<HTMLDivElement | null>(null);
   const panelIndexRef = useRef(0);
-  const [addShortcutOpen, setAddShortcutOpen] = useState(false);
-  const [addShortcutSeed, setAddShortcutSeed] = useState('');
+  const openAddShortcutDialog = useAddShortcutDialogStore((s) => s.openDialog);
   const [shortcutsPanelOpen, setShortcutsPanelOpen] = useState(false);
   shortcutsPanelOpenRef.current = shortcutsPanelOpen;
   const [shortcutState, setShortcutState] = useState<{
@@ -1032,10 +1031,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
-                        setAddShortcutSeed(queryToken);
                         setShortcutState(null);
                         setShortcutsPanelOpen(false);
-                        setAddShortcutOpen(true);
+                        openAddShortcutDialog({ seedShortCode: queryToken });
                       }}
                       className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                     >
@@ -1183,13 +1181,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         initialUrl={linkInitial.url}
         onInsert={handleLinkInsert}
         onRemove={editor.isActive('link') ? handleLinkRemove : undefined}
-      />
-
-      <AddShortcutDialog
-        open={addShortcutOpen}
-        workspaceId={workspaceId}
-        seedShortCode={addShortcutSeed}
-        onOpenChange={setAddShortcutOpen}
       />
 
       {/* Attachment preview strip */}
