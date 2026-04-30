@@ -351,7 +351,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if conv == nil {
 		return nil
 	}
-	if isEmailFallbackTerminalStatus(conv.Status) {
+	if isEmailFallbackInboundTerminalStatus(conv.Status) {
 		s.logger.InfoContext(ctx, "postmark inbound ignored for terminal conversation",
 			"message_id", strings.TrimSpace(payload.MessageID),
 			"conversation_id", conv.ID,
@@ -401,9 +401,15 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		ViaChannel:        &viaEmail,
 	}
 
+	wasResolved := model.NormalizeSupportConversationStatus(conv.Status) == model.SupportConversationStatusResolved
+
 	var createdMsg *model.SupportMessage
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := s.messageRepo.WithTx(tx).Create(ctx, msg); err != nil {
+		msgRepoTx := s.messageRepo.WithTx(tx)
+		emailLogRepoTx := s.emailLogRepo.WithTx(tx)
+		convRepoTx := s.convRepo.WithTx(tx)
+
+		if err := msgRepoTx.Create(ctx, msg); err != nil {
 			return err
 		}
 
@@ -431,8 +437,29 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		if logRow.PostmarkMessageID != nil && *logRow.PostmarkMessageID == "" {
 			logRow.PostmarkMessageID = nil
 		}
-		if err := s.emailLogRepo.WithTx(tx).Create(ctx, logRow); err != nil {
+		if err := emailLogRepoTx.Create(ctx, logRow); err != nil {
 			return err
+		}
+
+		if wasResolved {
+			reopenFlowState := supportEmailReopenFlowState(conv)
+			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
+				"status":      model.SupportConversationStatusOpen,
+				"flow_state":  reopenFlowState,
+				"resolved_at": nil,
+				"closed_at":   nil,
+				"updated_at":  s.now(),
+			}); err != nil {
+				return err
+			}
+			conv.Status = model.SupportConversationStatusOpen
+			flowState := reopenFlowState
+			conv.FlowState = &flowState
+			conv.ResolvedAt = nil
+			conv.ClosedAt = nil
+			if err := createEmailReopenedSystemMessage(ctx, msgRepoTx, conv); err != nil {
+				return err
+			}
 		}
 
 		createdMsg = msg
@@ -460,6 +487,14 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		_ = s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, s.now())
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, "email:"+createdMsg.ID))
+	if wasResolved {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "support_conversation",
+			EntityID:    conv.ID,
+			WorkspaceID: conv.WorkspaceID,
+		})
+	}
 	return nil
 }
 
@@ -1777,6 +1812,48 @@ func isEmailFallbackTerminalStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+// isEmailFallbackInboundTerminalStatus returns true only for statuses that
+// should reject inbound customer email replies. Resolved conversations accept
+// replies and reopen; only spam is truly terminal for inbound.
+func isEmailFallbackInboundTerminalStatus(status string) bool {
+	switch model.NormalizeSupportConversationStatus(status) {
+	case model.SupportConversationStatusSpam:
+		return true
+	default:
+		return false
+	}
+}
+
+// supportEmailReopenFlowState computes the flow state a resolved conversation
+// should transition to when reopened by an inbound customer email reply.
+func supportEmailReopenFlowState(conv *model.SupportConversation) string {
+	if conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
+		return model.SupportConversationFlowStateAssignedToHuman
+	}
+	if conv == nil {
+		return model.SupportConversationFlowStateWaitingForHuman
+	}
+	return defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID)
+}
+
+// createEmailReopenedSystemMessage records an internal system event marking
+// the conversation as reopened by an inbound email reply.
+func createEmailReopenedSystemMessage(ctx context.Context, msgRepo *repository.SupportMessageRepository, conv *model.SupportConversation) error {
+	if msgRepo == nil || conv == nil {
+		return nil
+	}
+	sysMsg := &model.SupportMessage{
+		WorkspaceID:     conv.WorkspaceID,
+		ConversationID:  conv.ID,
+		SenderType:      "user",
+		Content:         "Reopened conversation",
+		MessageType:     "system",
+		SystemEventType: model.SupportSystemEventTypeStrPtr(model.SystemEventReopened),
+		IsInternal:      true,
+	}
+	return msgRepo.Create(ctx, sysMsg)
 }
 
 func isLikelyUniqueConstraintError(err error) bool {

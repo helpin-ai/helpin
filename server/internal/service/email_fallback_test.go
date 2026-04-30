@@ -1612,3 +1612,150 @@ func TestIsEmailFallbackTerminalStatus(t *testing.T) {
 		t.Fatal("open should not be terminal")
 	}
 }
+
+func TestIsEmailFallbackInboundTerminalStatus(t *testing.T) {
+	if isEmailFallbackInboundTerminalStatus("resolved") {
+		t.Fatal("resolved should accept inbound replies and reopen")
+	}
+	if !isEmailFallbackInboundTerminalStatus("spam") {
+		t.Fatal("spam should be terminal")
+	}
+	if isEmailFallbackInboundTerminalStatus("open") {
+		t.Fatal("open should not be terminal")
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailReopensResolvedConversation(t *testing.T) {
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+	ctx := context.Background()
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	customerEmail := "customer@example.com"
+	customerName := "Customer"
+	resolvedAt := time.Date(2026, 4, 30, 8, 0, 0, 0, time.UTC)
+	flowState := model.SupportConversationFlowStateResolvedByHuman
+	conversationID := "33333333-3333-3333-3333-333333333333"
+	conversation := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Billing help",
+		Status:        model.SupportConversationStatusResolved,
+		FlowState:     &flowState,
+		CustomerEmail: &customerEmail,
+		CustomerName:  &customerName,
+		Source:        "email",
+		ResolvedAt:    &resolvedAt,
+	}
+	if err := env.convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create resolved conversation: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MessageID:         "pm-reopen-1",
+		MessageStream:     "inbound",
+		OriginalRecipient: "conv-" + conversationID + "@replies.helpin.ai",
+		To:                "conv-" + conversationID + "@replies.helpin.ai",
+		From:              customerEmail,
+		FromFull:          model.PostmarkAddress{Name: customerName, Email: customerEmail},
+		Subject:           "Re: Billing help",
+		StrippedTextReply: "I still need help with this invoice.",
+	}
+	rawPayload := `{"MessageStream":"inbound","MessageID":"pm-reopen-1"}`
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, rawPayload); err != nil {
+		t.Fatalf("process inbound email: %v", err)
+	}
+
+	updated, err := env.convRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("load updated conversation: %v", err)
+	}
+	if updated.Status != model.SupportConversationStatusOpen {
+		t.Fatalf("status = %q, want open", updated.Status)
+	}
+	if updated.ResolvedAt != nil {
+		t.Fatalf("resolved_at = %v, want nil", updated.ResolvedAt)
+	}
+	if updated.ClosedAt != nil {
+		t.Fatalf("closed_at = %v, want nil", updated.ClosedAt)
+	}
+	if updated.FlowState == nil || *updated.FlowState == model.SupportConversationFlowStateResolvedByHuman {
+		t.Fatalf("flow_state was not restored: %#v", updated.FlowState)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	var customerReplies, reopenedEvents int
+	for _, msg := range messages {
+		if msg.SenderType == "customer" && msg.MessageType == "reply" && strings.Contains(msg.Content, "invoice") {
+			customerReplies++
+		}
+		if msg.MessageType == "system" && msg.SystemEventType != nil && *msg.SystemEventType == string(model.SystemEventReopened) {
+			reopenedEvents++
+			if !msg.IsInternal {
+				t.Fatal("reopened system message should be internal")
+			}
+		}
+	}
+	if customerReplies != 1 {
+		t.Fatalf("customer replies = %d, want 1", customerReplies)
+	}
+	if reopenedEvents != 1 {
+		t.Fatalf("reopened system events = %d, want 1", reopenedEvents)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 1 || logs[0].Direction != "inbound" {
+		t.Fatalf("expected one inbound email log, got %+v", logs)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailIgnoresSpamConversation(t *testing.T) {
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+	ctx := context.Background()
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	customerEmail := "customer@example.com"
+	conversationID := "44444444-4444-4444-4444-444444444444"
+	conversation := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Spam",
+		Status:        model.SupportConversationStatusSpam,
+		CustomerEmail: &customerEmail,
+		Source:        "email",
+	}
+	if err := env.convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create spam conversation: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MessageID:         "pm-spam-1",
+		MessageStream:     "inbound",
+		OriginalRecipient: "conv-" + conversationID + "@replies.helpin.ai",
+		To:                "conv-" + conversationID + "@replies.helpin.ai",
+		From:              customerEmail,
+		FromFull:          model.PostmarkAddress{Email: customerEmail},
+		Subject:           "Re: Spam",
+		StrippedTextReply: "Why was this marked spam?",
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-spam-1"}`); err != nil {
+		t.Fatalf("process inbound spam reply: %v", err)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("messages = %d, want 0", len(messages))
+	}
+}
