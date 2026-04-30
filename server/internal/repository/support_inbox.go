@@ -126,6 +126,60 @@ func (r *SupportMessageRepository) WithTx(tx *gorm.DB) *SupportMessageRepository
 	return &SupportMessageRepository{db: tx}
 }
 
+// ownedReplyClause matches outbound, non-internal, non-system messages
+// authored by the given human user. It is the canonical eligibility
+// predicate for the message-actions feature: only the original author can
+// undo or remove their own reply, and only "real" replies (not csat
+// surveys, not system events, not internal notes) are mutable.
+const ownedReplyClause = `
+	sender_type    = 'user'
+AND sender_user_id = ?
+AND message_type   = 'reply'
+AND is_internal    = 0`
+
+// GetMessageForActor returns the message if it exists, is not soft-deleted,
+// and was authored by the given user as an outbound reply (not internal,
+// not a system event). Returns (nil, nil) when there is no match.
+func (r *SupportMessageRepository) GetMessageForActor(ctx context.Context, id, userID string) (*model.SupportMessage, error) {
+	var msg model.SupportMessage
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND "+ownedReplyClause, id, userID).
+		First(&msg).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get message for actor: %w", err)
+	}
+	return &msg, nil
+}
+
+// SoftDeleteMessage marks a message deleted iff the actor authored it.
+// A no-op (no error) when nothing matches — the service layer is expected
+// to call GetMessageForActor first if it needs to distinguish "not yours"
+// from "already gone".
+func (r *SupportMessageRepository) SoftDeleteMessage(ctx context.Context, id, userID string) error {
+	res := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("id = ? AND "+ownedReplyClause, id, userID).
+		Update("deleted_at", time.Now())
+	if res.Error != nil {
+		return fmt.Errorf("soft delete message: %w", res.Error)
+	}
+	return nil
+}
+
+// SetCancellableUntil writes the email-fallback cancel-window expiry on a
+// message. Called by EmailFallbackService.OnAgentReply right after the
+// message is enqueued so the UI countdown matches the actual fire time.
+func (r *SupportMessageRepository) SetCancellableUntil(ctx context.Context, id string, t time.Time) error {
+	if err := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("id = ?", id).
+		Update("cancellable_until", t).Error; err != nil {
+		return fmt.Errorf("set cancellable_until: %w", err)
+	}
+	return nil
+}
+
 // SupportInboxInstallationRepository handles widget installations.
 type SupportInboxInstallationRepository struct {
 	db *gorm.DB
