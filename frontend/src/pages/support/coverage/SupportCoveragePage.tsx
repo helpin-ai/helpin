@@ -14,7 +14,7 @@ import type {
   SupportCoverageGapListItem,
   SupportCoverageSummary,
 } from '@/lib/supportCoverageTypes'
-import { GAP_STATUS_LABELS, GAP_KIND_DESCRIPTIONS } from '@/lib/supportCoverageTypes'
+import { GAP_STATUS_LABELS, GAP_KIND_DESCRIPTIONS, GAP_KIND_COLORS } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
@@ -279,19 +279,32 @@ export function SupportCoveragePage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <Select value={kindFilter} onValueChange={setKindFilter}>
-          <SelectTrigger className="h-8 w-[140px] text-xs">
+          <SelectTrigger className="h-8 w-[150px] text-xs">
             <SelectValue>
-              {kindFilter === 'all' ? 'All types' : `${kindFilter.charAt(0).toUpperCase() + kindFilter.slice(1)} gaps`}
+              {kindFilter === 'all' ? (
+                'All types'
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <span className={`inline-block h-2 w-2 rounded-full border ${GAP_KIND_COLORS[kindFilter]?.bg} ${GAP_KIND_COLORS[kindFilter]?.border}`} />
+                  {kindFilter.charAt(0).toUpperCase() + kindFilter.slice(1)} gaps
+                </span>
+              )}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
-            {(['content', 'data', 'action'] as const).map((kind) => (
-              <SelectItem key={kind} value={kind}>
-                <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)} gaps</span>
-                <span className="ml-1.5 text-muted-foreground">— {GAP_KIND_DESCRIPTIONS[kind]}</span>
-              </SelectItem>
-            ))}
+            {(['content', 'data', 'action'] as const).map((kind) => {
+              const colors = GAP_KIND_COLORS[kind]
+              return (
+                <SelectItem key={kind} value={kind}>
+                  <span className="flex items-center gap-1.5">
+                    <span className={`inline-block h-2 w-2 rounded-full border ${colors.bg} ${colors.border}`} />
+                    <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)} gaps</span>
+                    <span className="text-muted-foreground">— {GAP_KIND_DESCRIPTIONS[kind]}</span>
+                  </span>
+                </SelectItem>
+              )
+            })}
           </SelectContent>
         </Select>
         <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
