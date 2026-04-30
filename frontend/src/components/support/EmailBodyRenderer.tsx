@@ -23,7 +23,7 @@ const IFRAME_STYLES = `
   }
   html, body {
     margin: 0;
-    padding: 8px 12px;
+    padding: 0;
     min-width: 0 !important;
     max-width: 100% !important;
     background: #ffffff;
@@ -36,6 +36,9 @@ const IFRAME_STYLES = `
     overflow-wrap: anywhere !important;
     overflow-x: hidden;
   }
+  /* Padding lives on body only so body.scrollHeight reflects the full
+     visible content height — measure() relies on this to size the iframe. */
+  body { padding: 8px 12px; }
   body, p, div, span, a, li, td, th, blockquote {
     max-width: 100% !important;
     overflow-wrap: anywhere !important;
