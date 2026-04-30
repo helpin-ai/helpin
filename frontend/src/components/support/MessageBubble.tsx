@@ -734,7 +734,7 @@ export const MessageBubble = memo(function MessageBubble({
             // Cluster everything to the right under the bubble instead.
             <>
               <div
-                className={`flex items-center gap-2 ${
+                className={`mt-1.5 flex items-center gap-2 ${
                   isCustomer ? 'justify-between' : 'justify-end'
                 }`}
               >
