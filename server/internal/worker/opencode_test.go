@@ -255,10 +255,93 @@ func TestBuildOpenCodeUserPromptRequiresImplementationForEngineerStory(t *testin
 	result := buildOpenCodeUserPrompt(&ExecutionContext{
 		Agent: &model.Agent{AllowedTools: []byte(`["write_file"]`)},
 		Task:  &model.PMTask{Name: "Story"},
-	}, "Please implement the story.")
+	}, &model.AgentRun{InvocationMode: model.InvocationModeAutonomous}, "Please implement the story.")
 
 	if result == "Please implement the story." {
 		t.Fatalf("expected engineer user prompt to include implementation guardrails")
+	}
+}
+
+func TestBuildOpenCodeUserPromptReviewAgentDoesNotForceImplementation(t *testing.T) {
+	result := buildOpenCodeUserPrompt(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetReviewAgent,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		Task: &model.PMTask{Name: "Review metrics recorder"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeAutonomous}, "Review the task.")
+
+	if strings.Contains(result, "This is an implementation run, not an analysis-only pass.") {
+		t.Fatalf("did not expect review user prompt to force implementation:\n%s", result)
+	}
+}
+
+func TestBuildOpenCodeUserPromptInteractiveEngineerDoesNotForceImplementation(t *testing.T) {
+	result := buildOpenCodeUserPrompt(&ExecutionContext{
+		Agent: &model.Agent{AllowedTools: []byte(`["write_file"]`)},
+		Task:  &model.PMTask{Name: "Story"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive}, "Please continue.")
+
+	if strings.Contains(result, "This is an implementation run, not an analysis-only pass.") {
+		t.Fatalf("did not expect interactive user prompt to force implementation:\n%s", result)
+	}
+}
+
+func TestBuildOpenCodeRuntimeInstructionsInteractiveDoesNotRequireFileChanges(t *testing.T) {
+	instructions := buildOpenCodeRuntimeInstructions(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetCodeBuilder,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		Task: &model.PMTask{Name: "Implement metrics"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive})
+
+	for _, expected := range []string{
+		"This is an interactive run. Continue from the latest human reply instead of restarting from scratch.",
+		"Make repository changes when they materially advance the task, but they are not required on every turn.",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected interactive OpenCode instructions to contain %q, got:\n%s", expected, instructions)
+		}
+	}
+	for _, unexpected := range []string{
+		"must make concrete repository changes",
+		"text-only analysis with no file modifications is a failed outcome",
+	} {
+		if strings.Contains(instructions, unexpected) {
+			t.Fatalf("did not expect interactive OpenCode instructions to contain %q, got:\n%s", unexpected, instructions)
+		}
+	}
+}
+
+func TestBuildOpenCodeRuntimeInstructionsUsesInteractionContractForAnySkill(t *testing.T) {
+	instructions := buildOpenCodeRuntimeInstructions(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetCodeBuilder,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"opencode": {Type: InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+		Task: &model.PMTask{Name: "Review metrics recorder"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive})
+
+	for _, expected := range []string{
+		"fenced code block labeled `helpin-review`",
+		"`review_checkpoint_v1` schema",
+		"\"phase\":\"...\"",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected OpenCode review instructions to contain %q, got:\n%s", expected, instructions)
+		}
 	}
 }
 
@@ -537,6 +620,55 @@ func TestPersistEngineerWorkspaceCommitsAndPushesChanges(t *testing.T) {
 	status := strings.TrimSpace(runGitCmd(t, workDir, "git", "status", "--porcelain"))
 	if status != "" {
 		t.Fatalf("expected clean working tree after persistence, got %q", status)
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestForOpenCodeCreatesStructuredPause(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: strings.TrimSpace(`
+1. Should producer alerts use a 5 minute or 10 minute idle threshold?
+2. Do you want the retry warning to key off absolute count or a ratio?
+`),
+	}
+
+	appendInteractivePlainTextQuestionInputRequestForRuntime(&ExecutionContext{}, result, "opencode")
+
+	request := ExtractLatestHumanInputRequest(result.ToolInvocations)
+	if request == nil {
+		t.Fatal("expected a structured human-input request")
+	}
+	if len(request.Questions) != 2 {
+		t.Fatalf("expected 2 questions, got %#v", request.Questions)
+	}
+	if request.Questions[0].Question != "Should producer alerts use a 5 minute or 10 minute idle threshold?" {
+		t.Fatalf("unexpected first question %#v", request.Questions[0])
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestForOpenCodeHonorsContractTransport(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: strings.TrimSpace(`
+1. Should producer alerts use a 5 minute or 10 minute idle threshold?
+2. Do you want the retry warning to key off absolute count or a ratio?
+`),
+	}
+
+	appendInteractivePlainTextQuestionInputRequestForRuntime(&ExecutionContext{
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindRequestUserInput,
+					Schema: "request_user_input_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"opencode": {Type: InteractionTransportTypeToolCall, ToolName: ToolRequestUserInput},
+					},
+				},
+			},
+		},
+	}, result, "opencode")
+
+	if request := ExtractLatestHumanInputRequest(result.ToolInvocations); request != nil {
+		t.Fatalf("did not expect a structured human-input request when the opencode contract is not a runtime bridge, got %#v", request)
 	}
 }
 

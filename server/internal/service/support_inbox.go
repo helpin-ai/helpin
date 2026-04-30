@@ -10,7 +10,9 @@ import (
 	"html"
 	"log/slog"
 	"net/netip"
+	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -179,7 +181,10 @@ func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspa
 		StrippedText:     log.StrippedText,
 		HTMLBody:         log.HTMLBody,
 		Status:           log.Status,
+		DeliveredAt:      log.DeliveredAt,
 		OpenedAt:         log.OpenedAt,
+		BouncedAt:        log.BouncedAt,
+		ErrorMessage:     log.ErrorMessage,
 		CreatedAt:        log.CreatedAt,
 	}, nil
 }
@@ -699,17 +704,17 @@ func (s *SupportInboxService) DismissConversationTriage(ctx context.Context, wor
 }
 
 // ListConversations returns conversations with optional filters.
-func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID, status, priority string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
+func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID, status, priority string, pagination model.PMPagination, search string) ([]model.SupportConversation, int64, error) {
 	if workspaceID == "" {
 		return nil, 0, fmt.Errorf("workspace_id is required")
 	}
 	status = model.NormalizeSupportConversationStatus(status)
 	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
-	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil, "")
+	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil, "", search)
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
-func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, mailboxID *string, flowState string, aiState ...string) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, mailboxID *string, flowState, search string, aiState ...string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -718,7 +723,7 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, wor
 		return nil, err
 	}
 	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
-	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, mailboxID, flowState, aiState...)
+	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, mailboxID, flowState, search, aiState...)
 	if err != nil {
 		return nil, err
 	}
@@ -1078,7 +1083,11 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 			ticket.FlowState = strPtr(model.SupportConversationFlowStateResolvedByHuman)
 		}
 	case model.SupportConversationStatusOpen:
-		ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
+		if ticket.HumanTakeover != nil && *ticket.HumanTakeover {
+			ticket.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+		} else {
+			ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
+		}
 	case model.SupportConversationStatusSpam:
 		ticket.ClosedAt = &now
 	}
@@ -1193,15 +1202,18 @@ func (s *SupportInboxService) ListConversationMessages(ctx context.Context, work
 	// Hydrate inbound email bodies onto messages so the thread bubbles can
 	// render rich HTML without a per-message round-trip. Only email messages
 	// need this — widget/in-app chat messages have no email log.
-	hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
+	if s.emailLogRepo != nil {
+		hydrateEmailBodies(ctx, s.emailLogRepo, workspaceID, ticketID, messages)
+	}
 
 	return messages, nil
 }
 
-// hydrateEmailBodies attaches the sanitized HTML and markdown bodies from
-// support_email_logs onto any message whose ViaChannel is "email". One query
-// pulls every log for the conversation; the loop below joins them onto
-// messages by the message_ids array. Safe to call with a nil repo.
+// hydrateEmailBodies joins support_email_logs onto messages by message_ids.
+// For inbound email messages (ViaChannel == "email") it populates HTMLBody +
+// StrippedText. For outbound messages (agent replies sent via the email
+// fallback), it surfaces EmailDeliveryStatus + EmailDeliveryError so the UI
+// can render delivery/bounce indicators. Safe to call with a nil repo.
 func hydrateEmailBodies(
 	ctx context.Context,
 	repo supportEmailLogReader,
@@ -1211,21 +1223,14 @@ func hydrateEmailBodies(
 	if repo == nil || len(messages) == 0 {
 		return
 	}
-	hasEmail := false
-	for i := range messages {
-		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
-			hasEmail = true
-			break
-		}
-	}
-	if !hasEmail {
-		return
-	}
 
 	logs, err := repo.ListByConversation(ctx, workspaceID, conversationID)
 	if err != nil {
 		slog.ErrorContext(ctx, "hydrate support email bodies",
 			"error", err, "conversation_id", conversationID)
+		return
+	}
+	if len(logs) == 0 {
 		return
 	}
 
@@ -1244,15 +1249,18 @@ func hydrateEmailBodies(
 	}
 
 	for i := range messages {
-		if messages[i].ViaChannel == nil || *messages[i].ViaChannel != "email" {
-			continue
-		}
 		log := byMessageID[messages[i].ID]
 		if log == nil {
 			continue
 		}
-		messages[i].HTMLBody = log.HTMLBody
-		messages[i].StrippedText = log.StrippedText
+		if messages[i].ViaChannel != nil && *messages[i].ViaChannel == "email" {
+			messages[i].HTMLBody = log.HTMLBody
+			messages[i].StrippedText = log.StrippedText
+		}
+		if log.Direction == "outbound" {
+			messages[i].EmailDeliveryStatus = log.Status
+			messages[i].EmailDeliveryError = log.ErrorMessage
+		}
 	}
 }
 
@@ -1293,9 +1301,9 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		}
 	}
 
-	// Pre-resolve @mentions for internal notes.
+	// Pre-resolve teammate @mentions for support messages.
 	var mentionedUserIDs []string
-	if req.IsInternal && s.notificationService != nil && s.workspaceRepo != nil {
+	if senderType == "user" && s.notificationService != nil && s.workspaceRepo != nil {
 		ids, err := resolveMentionRecipients(ctx, s.workspaceRepo, workspaceID, strings.TrimSpace(req.Content), derefString(senderUserID), nil)
 		if err != nil {
 			slog.ErrorContext(ctx, "resolve support mentions", "error", err, "conversation_id", ticketID)
@@ -1303,7 +1311,10 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if len(ids) > 0 {
 			filtered := make([]string, 0, len(ids))
 			for _, mentionedID := range ids {
-				if s.userCanAccessMailbox(ctx, workspaceID, conv.MailboxID, mentionedID) {
+				// Mailbox membership does not imply support module access — legacy mailboxes
+				// may include users (e.g. marketing team) who should not get support notifications.
+				if s.userCanAccessMailbox(ctx, workspaceID, conv.MailboxID, mentionedID) &&
+					s.userHasSupportModuleAccess(ctx, workspaceID, mentionedID) {
 					filtered = append(filtered, mentionedID)
 				}
 			}
@@ -1373,7 +1384,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, senderName)
 		if conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved {
 			conv.Status = model.SupportConversationStatusOpen
-			conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID))
+			if conv.HumanTakeover != nil && *conv.HumanTakeover {
+				conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+			} else {
+				conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID))
+			}
 			conv.ClosedAt = nil
 			if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
 				"status":      conv.Status,
@@ -1385,7 +1400,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 				slog.ErrorContext(ctx, "failed to reopen support conversation after customer reply", "error", err, "conversation_id", ticketID)
 			}
 		}
-		if s.triageService != nil {
+		if s.triageService != nil && !supportConversationHumanOwned(conv) {
 			go func(workspaceID, conversationID, messageID string) {
 				if _, triageErr := s.triageService.EvaluateAndRoute(context.WithoutCancel(ctx), workspaceID, conversationID, messageID); triageErr != nil {
 					slog.ErrorContext(ctx, "support triage failed after customer reply", "workspace_id", workspaceID, "conversation_id", conversationID, "message_id", messageID, "error", triageErr)
@@ -1398,6 +1413,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if conv.OpenedByUserID == nil || *conv.OpenedByUserID != *senderUserID {
 			conv.OpenedByUserID = senderUserID
 			conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+			conv.HumanTakeover = boolPtr(true)
 			if err := s.conversationRepo.Update(ctx, conv); err != nil {
 				slog.ErrorContext(ctx, "failed to set support conversation owner", "error", err, "conversation_id", ticketID)
 			}
@@ -1406,9 +1422,11 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && conv != nil {
 		conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+		conv.HumanTakeover = boolPtr(true)
 		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
 			"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
 			"opened_by_user_id": conv.OpenedByUserID,
+			"human_takeover":    true,
 		}); err != nil {
 			slog.ErrorContext(ctx, "failed to update support conversation flow state after teammate reply", "error", err, "conversation_id", ticketID)
 		}
@@ -2281,16 +2299,7 @@ func normalizeSupportTaskPriority(value string) string {
 }
 
 func supportTaskDescriptionToRichText(markdown string) *string {
-	trimmed := strings.TrimSpace(markdown)
-	if trimmed == "" {
-		return nil
-	}
-	rendered, err := tiptap.RenderHTML(tiptap.MarkdownToJSON(trimmed))
-	if err != nil {
-		slog.Warn("failed to render support task markdown to html", "error", err)
-		return strPtr(trimmed)
-	}
-	return strPtr(strings.TrimSpace(rendered))
+	return normalizeTaskDescriptionRichText(strPtr(markdown))
 }
 
 func trimRichTextPtr(value *string) *string {
@@ -2470,6 +2479,316 @@ func (s *SupportInboxService) matchOrCreateCRMContactIdentityTx(ctx context.Cont
 	slog.InfoContext(ctx, "auto-created CRM lead from widget",
 		"contact_id", contact.ID, "workspace_id", workspaceID, "source", contactSource)
 	return &contact.ID
+}
+
+type resolvedWidgetCompany struct {
+	externalID       string
+	name             string
+	domain           string
+	industry         *string
+	employeeCount    *int
+	annualRevenue    *float64
+	description      *string
+	logoURL          *string
+	customProperties model.JSONB
+}
+
+func (s *SupportInboxService) matchOrCreateCRMCompanyIdentityTx(ctx context.Context, companyRepo *repository.CRMCompanyRepository, workspaceID string, identity model.WidgetIdentityPayload) (*string, error) {
+	resolved := resolveWidgetCompanyPayload(identity.Company)
+	if resolved == nil {
+		return nil, nil
+	}
+
+	var company *model.CRMCompany
+	var err error
+	if resolved.externalID != "" {
+		company, err = companyRepo.GetByExternalID(ctx, workspaceID, resolved.externalID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if company == nil && resolved.domain != "" {
+		company, err = companyRepo.GetByDomain(ctx, workspaceID, resolved.domain)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if company == nil && resolved.name != "" {
+		company, err = companyRepo.GetByName(ctx, workspaceID, resolved.name)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if company != nil {
+		if syncCRMCompanyIdentity(company, *resolved) {
+			if err := companyRepo.Update(ctx, company); err != nil {
+				return nil, err
+			}
+		}
+		return &company.ID, nil
+	}
+
+	if resolved.name == "" {
+		return nil, nil
+	}
+
+	displayID, err := companyRepo.GetNextDisplayID(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	company = &model.CRMCompany{
+		WorkspaceID:      workspaceID,
+		DisplayID:        displayID,
+		ExternalID:       stringPtrOrNil(resolved.externalID),
+		Name:             resolved.name,
+		Domain:           stringPtrOrNil(resolved.domain),
+		Industry:         resolved.industry,
+		EmployeeCount:    resolved.employeeCount,
+		AnnualRevenue:    resolved.annualRevenue,
+		Description:      resolved.description,
+		LogoURL:          resolved.logoURL,
+		CustomProperties: resolved.customProperties,
+	}
+	if company.CustomProperties == nil {
+		company.CustomProperties = model.JSONB{}
+	}
+	if err := companyRepo.Create(ctx, company); err != nil {
+		return nil, err
+	}
+
+	slog.InfoContext(ctx, "auto-created CRM company from widget identity",
+		"company_id", company.ID, "workspace_id", workspaceID, "external_id", resolved.externalID)
+	return &company.ID, nil
+}
+
+func syncCRMCompanyIdentity(company *model.CRMCompany, identity resolvedWidgetCompany) bool {
+	updated := false
+	if identity.externalID != "" && strings.TrimSpace(derefString(company.ExternalID)) == "" {
+		company.ExternalID = &identity.externalID
+		updated = true
+	}
+	if identity.name != "" && strings.TrimSpace(company.Name) != identity.name {
+		company.Name = identity.name
+		updated = true
+	}
+	if identity.domain != "" && strings.TrimSpace(derefString(company.Domain)) != identity.domain {
+		company.Domain = &identity.domain
+		updated = true
+	}
+	if identity.industry != nil && strings.TrimSpace(derefString(company.Industry)) != *identity.industry {
+		company.Industry = identity.industry
+		updated = true
+	}
+	if identity.employeeCount != nil && (company.EmployeeCount == nil || *company.EmployeeCount != *identity.employeeCount) {
+		company.EmployeeCount = identity.employeeCount
+		updated = true
+	}
+	if identity.annualRevenue != nil && (company.AnnualRevenue == nil || *company.AnnualRevenue != *identity.annualRevenue) {
+		company.AnnualRevenue = identity.annualRevenue
+		updated = true
+	}
+	if identity.description != nil && strings.TrimSpace(derefString(company.Description)) != *identity.description {
+		company.Description = identity.description
+		updated = true
+	}
+	if identity.logoURL != nil && strings.TrimSpace(derefString(company.LogoURL)) != *identity.logoURL {
+		company.LogoURL = identity.logoURL
+		updated = true
+	}
+
+	merged := mergeCRMCustomProperties(company.CustomProperties, identity.customProperties)
+	if len(merged) != len(company.CustomProperties) {
+		company.CustomProperties = merged
+		return true
+	}
+	for key, value := range merged {
+		if !reflect.DeepEqual(company.CustomProperties[key], value) {
+			company.CustomProperties = merged
+			return true
+		}
+	}
+	return updated
+}
+
+func (s *SupportInboxService) ensurePrimaryContactCompanyAssociationTx(ctx context.Context, assocRepo *repository.CRMAssociationRepository, workspaceID, contactID, companyID string) error {
+	assoc := &model.CRMAssociation{
+		WorkspaceID:      workspaceID,
+		FromObjectType:   model.CRMObjectContact,
+		FromObjectID:     contactID,
+		ToObjectType:     model.CRMObjectCompany,
+		ToObjectID:       companyID,
+		AssociationLabel: crmAssociationStringPtr(primaryCompanyAssociationLabel),
+	}
+	if err := assocRepo.Create(ctx, assoc); err != nil {
+		return err
+	}
+
+	assocs, err := assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contactID)
+	if err != nil {
+		return err
+	}
+	for _, existing := range assocs {
+		otherType, otherID := otherAssociationSide(existing, model.CRMObjectContact, contactID)
+		if otherType != model.CRMObjectCompany {
+			continue
+		}
+		if existing.ID == assoc.ID || otherID == companyID {
+			if !isPrimaryCompanyAssociationLabel(existing.AssociationLabel) {
+				if err := assocRepo.UpdateLabel(ctx, existing.ID, crmAssociationStringPtr(primaryCompanyAssociationLabel)); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if isPrimaryCompanyAssociationLabel(existing.AssociationLabel) {
+			if err := assocRepo.UpdateLabel(ctx, existing.ID, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func resolveWidgetCompanyPayload(payload model.JSONB) *resolvedWidgetCompany {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	company := &resolvedWidgetCompany{
+		externalID:       widgetPayloadString(payload, "id"),
+		name:             widgetPayloadString(payload, "name"),
+		domain:           normalizeWidgetCompanyDomain(widgetPayloadString(payload, "domain")),
+		industry:         stringPtrOrNil(widgetPayloadString(payload, "industry")),
+		description:      stringPtrOrNil(widgetPayloadString(payload, "description")),
+		logoURL:          stringPtrOrNil(widgetPayloadString(payload, "logo_url")),
+		employeeCount:    widgetPayloadInt(payload, "employee_count"),
+		annualRevenue:    widgetPayloadFloat(payload, "annual_revenue"),
+		customProperties: model.JSONB{},
+	}
+	if company.name == "" && company.domain != "" {
+		company.name = company.domain
+	}
+	if company.name == "" && company.externalID != "" {
+		company.name = company.externalID
+	}
+
+	if company.externalID != "" {
+		company.customProperties["sdk_company_id"] = company.externalID
+	}
+	if createdAt := widgetPayloadString(payload, "created_at"); createdAt != "" {
+		company.customProperties["sdk_created_at"] = createdAt
+	}
+
+	for _, key := range []string{"custom", "custom_properties", "properties"} {
+		switch nested := payload[key].(type) {
+		case map[string]interface{}:
+			for nestedKey, value := range nested {
+				company.customProperties[nestedKey] = value
+			}
+		case model.JSONB:
+			for nestedKey, value := range nested {
+				company.customProperties[nestedKey] = value
+			}
+		}
+	}
+	for key, value := range payload {
+		switch key {
+		case "id", "name", "domain", "created_at", "custom", "custom_properties", "properties", "industry", "description", "logo_url", "employee_count", "annual_revenue":
+			continue
+		default:
+			company.customProperties[key] = value
+		}
+	}
+
+	if company.name == "" && company.externalID == "" && company.domain == "" {
+		return nil
+	}
+	return company
+}
+
+func mergeCRMCustomProperties(existing, incoming model.JSONB) model.JSONB {
+	merged := model.JSONB{}
+	for key, value := range existing {
+		merged[key] = value
+	}
+	for key, value := range incoming {
+		merged[key] = value
+	}
+	return merged
+}
+
+func widgetPayloadString(payload model.JSONB, key string) string {
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func widgetPayloadInt(payload model.JSONB, key string) *int {
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case int:
+		return &typed
+	case int64:
+		converted := int(typed)
+		return &converted
+	case float64:
+		converted := int(typed)
+		return &converted
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}
+
+func widgetPayloadFloat(payload model.JSONB, key string) *float64 {
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return nil
+	}
+	switch typed := value.(type) {
+	case float64:
+		return &typed
+	case float32:
+		converted := float64(typed)
+		return &converted
+	case int:
+		converted := float64(typed)
+		return &converted
+	case int64:
+		converted := float64(typed)
+		return &converted
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		if err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}
+
+func normalizeWidgetCompanyDomain(domain string) string {
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = strings.TrimPrefix(domain, "https://")
+	domain = strings.TrimPrefix(domain, "http://")
+	domain = strings.TrimPrefix(domain, "www.")
+	if idx := strings.Index(domain, "/"); idx >= 0 {
+		domain = domain[:idx]
+	}
+	return strings.TrimSpace(domain)
 }
 
 func (s *SupportInboxService) syncCRMContactIdentity(contact *model.CRMContact, identity resolvedWidgetIdentity) bool {
@@ -2707,7 +3026,7 @@ func truncate(s string, maxLen int) string {
 }
 
 // ListConversationsWithMentions returns conversations where the given user was mentioned.
-func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context, workspaceID, userID string) (*model.ConversationListResponse, error) {
+func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context, workspaceID, userID, search string) (*model.ConversationListResponse, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
@@ -2728,6 +3047,15 @@ func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context,
 	if conversations == nil {
 		conversations = []model.SupportConversation{}
 	}
+	if trimmedSearch := strings.TrimSpace(search); trimmedSearch != "" {
+		filtered := conversations[:0]
+		for _, conversation := range conversations {
+			if supportConversationMatchesSearch(conversation, trimmedSearch) {
+				filtered = append(filtered, conversation)
+			}
+		}
+		conversations = filtered
+	}
 	if s.triageService != nil {
 		if err := s.triageService.HydrateConversations(ctx, conversations); err != nil {
 			slog.ErrorContext(ctx, "hydrate support mention conversation triage", "error", err, "workspace_id", workspaceID)
@@ -2741,6 +3069,26 @@ func (s *SupportInboxService) ListConversationsWithMentions(ctx context.Context,
 		TotalPages: 1,
 		Meta:       model.ConversationListMeta{},
 	}, nil
+}
+
+func supportConversationMatchesSearch(conversation model.SupportConversation, search string) bool {
+	query := strings.ToLower(strings.TrimSpace(search))
+	if query == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(conversation.Subject), query) {
+		return true
+	}
+	if strings.Contains(fmt.Sprintf("%d", conversation.DisplayID), query) {
+		return true
+	}
+	if conversation.CustomerName != nil && strings.Contains(strings.ToLower(*conversation.CustomerName), query) {
+		return true
+	}
+	if conversation.CustomerEmail != nil && strings.Contains(strings.ToLower(*conversation.CustomerEmail), query) {
+		return true
+	}
+	return false
 }
 
 func (s *SupportInboxService) assignConversationAgent(ctx context.Context, workspaceID, conversationID, agentID string, actorID *string) error {
@@ -2766,6 +3114,20 @@ func (s *SupportInboxService) assignConversationAgent(ctx context.Context, works
 	previousAgentID := derefString(ticket.AssignedAgentID)
 	ticket.AssignedAgentID = &agentID
 	ticket.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+	if s.installationRepo != nil {
+		inst, _ := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+		if inst != nil {
+			settings := parseSettings(inst.Settings)
+			if settings.AIAgentID != nil && strings.TrimSpace(*settings.AIAgentID) == agentID {
+				pending := "pending"
+				ticket.HumanTakeover = boolPtr(false)
+				ticket.AIState = &pending
+				ticket.AIResolvedAt = nil
+				ticket.AIResolutionType = nil
+				ticket.FlowState = strPtr(model.SupportConversationFlowStateAIHandling)
+			}
+		}
+	}
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err
 	}
@@ -2814,6 +3176,9 @@ func (s *SupportInboxService) assignConversationUser(ctx context.Context, worksp
 
 	previousAssignedUserID := derefString(ticket.AssignedUserID)
 	ticket.AssignedUserID = normalizedUserID
+	if normalizedUserID != nil {
+		ticket.HumanTakeover = boolPtr(true)
+	}
 	ticket.FlowState = strPtr(defaultConversationFlowState(ticket.OpenedByUserID, ticket.AssignedUserID, ticket.AssignedAgentID))
 	if err := s.conversationRepo.Update(ctx, ticket); err != nil {
 		return err

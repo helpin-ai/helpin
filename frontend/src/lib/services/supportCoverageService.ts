@@ -21,6 +21,9 @@ export const supportCoverageService = {
   getGap: (wsId: string, gapId: string) =>
     api.get<SupportCoverageGapDetail>(`/support/coverage/gaps/${gapId}${qs(wsId)}`),
 
+  regenerate: (wsId: string, gapId: string) =>
+    api.post<{ status: 'queued' }>(`/support/coverage/gaps/${gapId}/regenerate${qs(wsId)}`, {}),
+
   updateGapStatus: (wsId: string, gapId: string, status: string, issueResolved?: boolean) =>
     api.post(`/support/coverage/gaps/${gapId}/status${qs(wsId)}`, { status, issue_resolved: issueResolved }),
 
@@ -30,14 +33,21 @@ export const supportCoverageService = {
   mergeGap: (wsId: string, gapId: string, targetGapId: string) =>
     api.post(`/support/coverage/gaps/${gapId}/merge${qs(wsId)}`, { target_gap_id: targetGapId }),
 
+  addDocumentToGap: (wsId: string, gapId: string, payload: { route: 'update_article'; target_document_id: string }) =>
+    api.post(`/support/coverage/gaps/${gapId}/add${qs(wsId)}`, payload),
+
   createArticleDraft: (wsId: string, gapId: string, payload: { target_space_id: string; target_collection_id?: string }) =>
     api.post<SupportGapSuggestion>(`/support/coverage/gaps/${gapId}/suggestions/article-draft${qs(wsId)}`, payload),
 
   createArticleUpdate: (wsId: string, gapId: string, payload: { target_document_id: string }) =>
     api.post<SupportGapSuggestion>(`/support/coverage/gaps/${gapId}/suggestions/article-update${qs(wsId)}`, payload),
 
-  applySuggestion: (wsId: string, suggestionId: string) =>
-    api.post(`/support/coverage/suggestions/${suggestionId}/apply${qs(wsId)}`, {}),
+  applySuggestion: (
+    wsId: string,
+    suggestionId: string,
+    payload?: { route?: string; suggestion_type?: string; target_document_id?: string }
+  ) =>
+    api.post(`/support/coverage/suggestions/${suggestionId}/apply${qs(wsId)}`, payload ?? {}),
 
   discardSuggestion: (wsId: string, suggestionId: string) =>
     api.post(`/support/coverage/suggestions/${suggestionId}/discard${qs(wsId)}`, {}),

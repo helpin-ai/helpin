@@ -2,14 +2,17 @@ import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode 
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon } from '@/lib/icons';
+import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, ArrowUp01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
-import { formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
+import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
+import { timeAgo } from '@/lib/utils';
+
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
@@ -62,17 +65,10 @@ const markdownComponents = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
-  widget: 'Chat Widget',
+  widget: 'Chat',
   email: 'Email',
   internal: 'Internal',
   api: 'API',
-};
-
-const SENDER_TYPE_LABELS: Record<string, string> = {
-  customer: 'Customer',
-  user: 'Agent',
-  agent: 'Agent',
-  ai: 'AI Agent',
 };
 
 function previewHostLabel(preview: SupportLinkPreview): string {
@@ -186,7 +182,6 @@ export const MessageBubble = memo(function MessageBubble({
   const resolvedSenderName = isAI ? HELPIN_AI_DISPLAY_NAME : senderName;
   const showAvatar = isLastInGroup;
   const fullTimestamp = formatTimestamp(message.created_at);
-  const senderLabel = SENDER_TYPE_LABELS[effectiveSenderType] ?? effectiveSenderType;
   const sourceLabel = source ? SOURCE_LABELS[source] ?? source : null;
 
   // Strip trailing AI contract JSON blocks that LLM sometimes appends to content.
@@ -234,15 +229,18 @@ export const MessageBubble = memo(function MessageBubble({
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
   const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
+  const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
 
+  const verb = isCustomer ? 'Received' : 'Sent';
+  const relativeTime = timeAgo(message.created_at);
+  const isRelativeFormat = relativeTime.endsWith(' ago') || relativeTime === 'Just now';
+  const timeLine = isRelativeFormat
+    ? `${verb}, ${relativeTime} (${formatMessageTime(message.created_at)})`
+    : `${verb}, ${relativeTime}`;
   const tooltipContent = (
-    <div className="space-y-0.5 text-xs">
-      <div className="font-medium">{resolvedSenderName}</div>
-      <div className="text-muted-foreground">{fullTimestamp}</div>
-      <div className="text-muted-foreground">
-        {senderLabel}
-        {sourceLabel && ` · via ${sourceLabel}`}
-      </div>
+    <div className="space-y-0.5 text-center text-xs">
+      <div>{timeLine}</div>
+      {sourceLabel && <div className="text-background/70">via {sourceLabel}</div>}
     </div>
   );
 
@@ -283,9 +281,24 @@ export const MessageBubble = memo(function MessageBubble({
       'mailbox_moved',
       'triage_routed',
       'triage_dismissed',
+      'ai_escalated',
+      'customer_requested_human',
     ];
+
     const stateEventTypes: ReadonlyArray<string> = ['resolved', 'reopened', 'closed'];
     const eventType = message.system_event_type;
+
+    const ESCALATION_LABELS: Record<string, string> = {
+      ai_escalated: 'AI escalated to a human',
+      customer_requested_human: 'Customer requested a human',
+    };
+    const isEscalationEvent = !!eventType && eventType in ESCALATION_LABELS;
+    const escalationLabel = isEscalationEvent ? ESCALATION_LABELS[eventType] : null;
+    const escalationIcon = eventType === 'customer_requested_human'
+      ? <UserIcon className="h-3 w-3" />
+      : eventType === 'ai_escalated'
+        ? <BotIcon className="h-3 w-3" />
+        : null;
 
     let isRoutingEvent: boolean;
     let stateEventKind: 'resolved' | 'reopened' | 'closed' | null;
@@ -318,23 +331,29 @@ export const MessageBubble = memo(function MessageBubble({
     // Routing events use a neutral muted style with leading avatar; state
     // transitions keep the stronger slate pill so they stay visually distinct.
     if (isRoutingEvent) {
+      const escalationPillClass = 'rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200';
+      const defaultPillClass = 'rounded-full px-3 py-1 text-xs text-muted-foreground';
       return (
         <div className="my-3 flex items-center justify-center gap-2 animate-in fade-in duration-300">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex items-center gap-2 rounded-full px-3 py-1 text-xs text-muted-foreground">
-                {resolvedAvatarUrl ? (
+              <div className={`flex items-center gap-2 ${isEscalationEvent ? escalationPillClass : defaultPillClass}`}>
+                {isEscalationEvent ? (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                    {escalationIcon}
+                  </span>
+                ) : resolvedAvatarUrl ? (
                   <img src={resolvedAvatarUrl} alt={resolvedSenderName} className="h-5 w-5 rounded-full object-cover" />
                 ) : (
                   <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold leading-none ${getAvatarColor(avatarSeed)}`}>
                     {getInitial(resolvedSenderName)}
                   </div>
                 )}
-                <span>{message.content}</span>
+                <span>{escalationLabel ?? message.content}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top">
-              <div className="text-xs text-muted-foreground">{fullTimestamp}</div>
+              <div className="text-xs">{fullTimestamp}</div>
             </TooltipContent>
           </Tooltip>
         </div>
@@ -353,7 +372,7 @@ export const MessageBubble = memo(function MessageBubble({
           <TooltipContent side="top">
             <div className="space-y-0.5 text-xs">
               <div className="font-medium">{resolvedSenderName}</div>
-              <div className="text-muted-foreground">{fullTimestamp}</div>
+              <div className="text-background/70">{fullTimestamp}</div>
             </div>
           </TooltipContent>
         </Tooltip>
@@ -380,12 +399,12 @@ export const MessageBubble = memo(function MessageBubble({
                   {mentionParts ? (
                     <p className="whitespace-pre-wrap">{mentionParts}</p>
                   ) : (
-                    <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
+                    <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
                   )}
                 </div>
               </div>
             </TooltipTrigger>
-            <TooltipContent side="top" align="start">{tooltipContent}</TooltipContent>
+            <TooltipContent side="top">{tooltipContent}</TooltipContent>
           </Tooltip>
         </div>
       </div>
@@ -418,6 +437,11 @@ export const MessageBubble = memo(function MessageBubble({
 
   const hasEmailBadge = message.via_channel === 'email';
   const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
+  const bubbleWidthClass = hasEmailBody
+    ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
+    : hasTableContent
+      ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
+      : 'min-w-0 max-w-[85%]';
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
@@ -432,7 +456,7 @@ export const MessageBubble = memo(function MessageBubble({
 
         <div
           data-slot="support-message-bubble"
-          className={hasTableContent ? 'min-w-0 max-w-[min(78vw,46rem)] lg:max-w-[min(72vw,48rem)]' : 'min-w-0 max-w-[85%]'}
+          className={bubbleWidthClass}
         >
           {showBubble && (
             <Tooltip>
@@ -440,13 +464,13 @@ export const MessageBubble = memo(function MessageBubble({
                 <div
                   className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                     isCustomer
-                      ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                      : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  } ${hasTableContent ? 'overflow-hidden' : ''}`}
+                      ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
+                      : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                  } ${hasTableContent || hasEmailBody ? 'overflow-hidden' : ''}`}
                 >
-                  {message.via_channel === 'email' && message.html_body ? (
+                  {hasEmailBody ? (
                     <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                      <EmailBodyRenderer html={message.html_body} />
+                      <EmailBodyRenderer html={message.html_body ?? ''} />
                     </div>
                   ) : (
                     displayContent && (
@@ -455,7 +479,7 @@ export const MessageBubble = memo(function MessageBubble({
                         data-chat-tone={isCustomer ? 'customer' : 'agent'}
                         data-has-table={hasTableContent ? 'true' : 'false'}
                       >
-                        <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{displayContent}</Markdown>
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
                       </div>
                     )
                   )}
@@ -492,7 +516,7 @@ export const MessageBubble = memo(function MessageBubble({
                   )}
                 </div>
               </TooltipTrigger>
-              <TooltipContent side="top" align={isCustomer ? 'start' : 'end'}>
+              <TooltipContent side="top">
                 {tooltipContent}
               </TooltipContent>
             </Tooltip>
@@ -577,8 +601,16 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           )}
 
-          {/* Read receipt indicator */}
-          {receiptStatus && (
+          {/* Delivery failure indicator — supersedes the read receipt when the outbound email bounced or was marked spam. */}
+          {(message.email_delivery_status === 'bounced' || message.email_delivery_status === 'spam_complaint') ? (
+            <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
+              <AlertCircleIcon className="h-3.5 w-3.5 text-red-500" />
+              <span className="text-[11px] text-red-600 dark:text-red-400">
+                {message.email_delivery_status === 'spam_complaint' ? 'Marked as spam' : 'Delivery failed'}
+                {message.email_delivery_error ? ` · ${message.email_delivery_error}` : ''}
+              </span>
+            </div>
+          ) : receiptStatus && (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
               {receiptStatus === 'read' ? (
                 <>

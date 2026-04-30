@@ -12,21 +12,59 @@ import {
   buildCanonicalHomePath,
   buildCanonicalSearchPath,
 } from '@/lib/locale'
-import { prefixBasepath } from '@/lib/pathUtils'
+import { absolutePublicUrl } from '@/lib/publicUrl'
 
 function absoluteUrl(rootData: RootRouteData, path: string) {
-  return new URL(prefixBasepath(rootData.basepath, path), rootData.origin).toString()
+  return absolutePublicUrl(rootData, path)
 }
 
-function createBaseMeta(title: string, description: string) {
+function absoluteAssetUrl(rootData: RootRouteData, value?: string | null) {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+  try {
+    if (/^[a-z]+:/i.test(trimmed) || trimmed.startsWith('//')) {
+      return new URL(trimmed, rootData.origin).toString()
+    }
+    return absolutePublicUrl(rootData, trimmed)
+  } catch {
+    return null
+  }
+}
+
+interface SocialMetaOptions {
+  title?: string | null
+  description?: string | null
+  imageUrl?: string | null
+  imageAlt?: string | null
+}
+
+function createBaseMeta(title: string, description: string, social?: SocialMetaOptions) {
+  const socialTitle = social?.title?.trim() || title
+  const socialDescription = social?.description?.trim() || description
+  const imageUrl = social?.imageUrl
+  const imageAlt = social?.imageAlt?.trim()
   return [
     { title },
     { name: 'description', content: description },
-    { property: 'og:title', content: title },
-    { property: 'og:description', content: description },
+    { property: 'og:title', content: socialTitle },
+    { property: 'og:description', content: socialDescription },
     { property: 'twitter:card', content: 'summary_large_image' },
-    { property: 'twitter:title', content: title },
-    { property: 'twitter:description', content: description },
+    { property: 'twitter:title', content: socialTitle },
+    { property: 'twitter:description', content: socialDescription },
+    ...(imageUrl
+      ? [
+          { property: 'og:image', content: imageUrl },
+          { property: 'og:image:width', content: '1200' },
+          { property: 'og:image:height', content: '630' },
+          { name: 'twitter:image', content: imageUrl },
+          ...(imageAlt
+            ? [
+                { property: 'og:image:alt', content: imageAlt },
+                { name: 'twitter:image:alt', content: imageAlt },
+              ]
+            : []),
+        ]
+      : []),
   ]
 }
 
@@ -58,6 +96,7 @@ export function buildHomeHead(rootData: RootRouteData) {
   const description =
     rootData.config.seo_description ||
     `Browse help articles and guides from ${rootData.config.brand_name}.`
+  const imageUrl = absoluteAssetUrl(rootData, rootData.config.og_image_url)
   const canonicalUrl = absoluteUrl(
     rootData,
     buildCanonicalHomePath(rootData.multilingualEnabled, rootData.activeLocale),
@@ -69,7 +108,12 @@ export function buildHomeHead(rootData: RootRouteData) {
       ...createHomeHreflangLinks(rootData),
     ],
     meta: [
-      ...createBaseMeta(title, description),
+      ...createBaseMeta(title, description, {
+        title: rootData.config.og_title,
+        description: rootData.config.og_description,
+        imageUrl,
+        imageAlt: rootData.config.og_image_alt || rootData.config.brand_name,
+      }),
       { property: 'og:type', content: 'website' },
       { property: 'og:url', content: canonicalUrl },
       { name: 'twitter:url', content: canonicalUrl },
@@ -130,6 +174,7 @@ export function buildArticleHead(
     article.excerpt ||
     rootData.config.seo_description ||
     `Read ${article.title} in ${rootData.config.brand_name}.`
+  const imageUrl = absoluteAssetUrl(rootData, article.og_image_url || rootData.config.og_image_url)
   const canonicalUrl = absoluteUrl(
     rootData,
     buildCanonicalArticlePath(
@@ -143,7 +188,12 @@ export function buildArticleHead(
   return {
     links: [...createCanonicalLinks(canonicalUrl), ...alternateLinks],
     meta: [
-      ...createBaseMeta(title, description),
+      ...createBaseMeta(title, description, {
+        title: article.og_title,
+        description: article.og_description,
+        imageUrl,
+        imageAlt: article.og_image_alt || rootData.config.og_image_alt || article.title,
+      }),
       { property: 'og:type', content: 'article' },
       { property: 'og:url', content: canonicalUrl },
       { name: 'twitter:url', content: canonicalUrl },

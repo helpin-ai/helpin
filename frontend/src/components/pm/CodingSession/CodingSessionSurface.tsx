@@ -8,16 +8,17 @@ import { CodingPreviewPanels } from '@/components/pm/CodingSession/CodingPreview
 import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
 import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
+import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
+import { normalizeCodingSessionPreviewPanelKey } from '@/components/pm/CodingSession/previewPanelKeys';
 import {
   isPersistedCodingSessionEvent,
-  parseCodingSessionInteraction,
   latestPendingCodingSessionInteraction,
   maxPersistedCodingSessionSequence,
   upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
-import type { Agent, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
+import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { codingSessionService } from '@/lib/services/codingSessionService';
 import { cn } from '@/lib/utils';
@@ -49,11 +50,14 @@ export function CodingSessionSurface({
 
   const [session, setSession] = useState<CodingSession | null>(null);
   const [events, setEvents] = useState<CodingSessionEvent[]>([]);
+  const [artifacts, setArtifacts] = useState<AgentRunArtifact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [handoffAgents, setHandoffAgents] = useState<Agent[] | null>(null);
+  const [handoffRuns, setHandoffRuns] = useState<AgentRun[] | null>(null);
+  const [handoffRunsTargetId, setHandoffRunsTargetId] = useState<string | null>(null);
   const sequenceRef = useRef(0);
   const seededSnapshotSessionRef = useRef<string | null>(null);
   const [streamSnapshotSeed, setStreamSnapshotSeed] = useState<CodingSessionStreamSnapshot | null>(null);
@@ -91,24 +95,32 @@ export function CodingSessionSurface({
     }
   }, [workspaceId, activeSessionId]);
 
+  const loadArtifacts = useCallback(async () => {
+    if (!workspaceId || !activeSessionId) return;
+    const artifactsRes = await codingSessionService.listArtifacts(workspaceId, activeSessionId);
+    if (artifactsRes.error) throw new Error(artifactsRes.error);
+    setArtifacts(artifactsRes.data ?? []);
+  }, [workspaceId, activeSessionId]);
+
   const load = useCallback(async () => {
     if (!workspaceId || !activeSessionId) return;
     setLoading(true);
     setError(null);
     try {
-      await Promise.all([loadSession(), loadEvents(0)]);
+      await Promise.all([loadSession(), loadEvents(0), loadArtifacts()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load agent session');
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, activeSessionId, loadSession, loadEvents]);
+  }, [workspaceId, activeSessionId, loadSession, loadEvents, loadArtifacts]);
 
   useEffect(() => {
     seededSnapshotSessionRef.current = null;
     setStreamSnapshotSeed(null);
     sequenceRef.current = 0;
     setEvents([]);
+    setArtifacts([]);
     setSession(null);
   }, [activeSessionId, workspaceId]);
 
@@ -119,11 +131,11 @@ export function CodingSessionSurface({
   const reconcileEvents = useCallback(async () => {
     if (!workspaceId || !activeSessionId) return;
     try {
-      await loadEvents(sequenceRef.current);
+      await Promise.all([loadEvents(sequenceRef.current), loadArtifacts()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh session events');
     }
-  }, [workspaceId, activeSessionId, loadEvents]);
+  }, [workspaceId, activeSessionId, loadEvents, loadArtifacts]);
 
   useEffect(() => {
     const onSessionUpdated = (raw: Event) => {
@@ -142,6 +154,7 @@ export function CodingSessionSurface({
         updated_at: new Date().toISOString(),
       } : current);
       void loadSession();
+      void loadArtifacts();
     };
     const onSessionEvent = (raw: Event) => {
       const detail = (raw as CustomEvent).detail as { parent_id?: string; data?: CodingSessionEvent } | undefined;
@@ -196,17 +209,71 @@ export function CodingSessionSurface({
     () => latestPendingCodingSessionInteraction(events),
     [events],
   );
-  const interactionsById = useMemo(() => {
-    const next = new Map<string, NonNullable<ReturnType<typeof parseCodingSessionInteraction>>>();
-    for (const event of events) {
-      const interaction = parseCodingSessionInteraction(event);
-      if (interaction) next.set(interaction.interaction_id, interaction);
-    }
-    return next;
-  }, [events]);
   const previewsByKey = useMemo(
     () => collectCodingSessionPreviews(events, streamState.live_turn_segments),
     [events, streamState.live_turn_segments],
+  );
+  const approvalPreviewPanelKey = useMemo<string | null>(() => {
+    if (!activeInteraction || activeInteraction.interaction_kind !== 'approval_request') return null;
+    const previewPanelKey = normalizeCodingSessionPreviewPanelKey(
+      typeof activeInteraction.request_payload?.preview_panel_key === 'string'
+        ? activeInteraction.request_payload.preview_panel_key
+        : '',
+    );
+    if (!previewPanelKey || !previewsByKey.has(previewPanelKey)) return null;
+    return previewPanelKey;
+  }, [activeInteraction, previewsByKey]);
+  const handleViewPreview = useCallback((panelKey: string) => {
+    if (typeof document === 'undefined') return;
+    const target = document.querySelector<HTMLElement>(`[data-preview-panel-key="${panelKey}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target.setAttribute('data-preview-flash', 'true');
+    window.setTimeout(() => target.removeAttribute('data-preview-flash'), 1400);
+  }, []);
+  const promptArtifact = useMemo(() => {
+    for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+      const artifact = artifacts[index];
+      if (artifact?.artifact_type === 'codex_prompt' || artifact?.artifact_type === 'opencode_prompt') {
+        return artifact;
+      }
+    }
+    return null;
+  }, [artifacts]);
+  const reviewArtifacts = useMemo(
+    () => {
+      const parseAssistantSequenceNo = (artifact: AgentRunArtifact) => {
+        if (!artifact.inline_content) return 0;
+        try {
+          const parsed = JSON.parse(artifact.inline_content) as Record<string, unknown>;
+          const value = parsed.assistant_message_sequence_no;
+          return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+        } catch {
+          return 0;
+        }
+      };
+
+      const decisionBySequence = new Map<number, AgentRunArtifact>();
+      for (const artifact of artifacts) {
+        if (artifact?.artifact_type !== 'review_decision') continue;
+        const seq = parseAssistantSequenceNo(artifact);
+        if (seq > 0) {
+          decisionBySequence.set(seq, artifact);
+        }
+      }
+
+      return artifacts
+        .filter((artifact) => artifact?.artifact_type === 'review_findings')
+        .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
+        .map((artifact) => {
+          const seq = parseAssistantSequenceNo(artifact);
+          return {
+            artifact,
+            decisionArtifact: seq > 0 ? decisionBySequence.get(seq) ?? null : null,
+          };
+        });
+    },
+    [artifacts],
   );
 
   const runAction = useCallback(async (name: string, fn: () => Promise<{ error: string | null }>) => {
@@ -227,25 +294,11 @@ export function CodingSessionSurface({
     responsePayload: Record<string, unknown>,
     followupMessage?: string,
   ) => {
-    const interaction = interactionsById.get(interactionId);
-    if (interaction?.interaction_kind === 'review_checkpoint') {
-      const decision = typeof responsePayload.decision === 'string' ? responsePayload.decision.trim() : '';
-      if (decision === 'approve') {
-        await runAction('approve-review-checkpoint', () => codingSessionService.approve(workspaceId, activeSessionId, {
-          ...(followupMessage?.trim() ? { content: followupMessage.trim(), send_message: true } : {}),
-        }));
-        return;
-      }
-      await runAction('request-review-changes', () => codingSessionService.requestChanges(workspaceId, activeSessionId, {
-        content: followupMessage?.trim() || 'Please revise and continue.',
-      }));
-      return;
-    }
     await runAction('resolve-interaction', () => codingSessionService.resolveInteraction(workspaceId, activeSessionId, interactionId, {
       response_payload: responsePayload,
       ...(followupMessage?.trim() ? { followup_message: followupMessage.trim() } : {}),
     }));
-  }, [interactionsById, runAction, activeSessionId, workspaceId]);
+  }, [runAction, activeSessionId, workspaceId]);
 
   const continueRun = useCallback(async (content?: string) => {
     if (!workspaceId || !activeSessionId) return;
@@ -304,6 +357,36 @@ export function CodingSessionSurface({
     return () => { cancelled = true; };
   }, [canSuggestHandoff, workspaceId, handoffAgents]);
 
+  useEffect(() => {
+    if (!canSuggestHandoff || !workspaceId || !session?.target_id) return;
+    if (handoffRuns !== null && handoffRunsTargetId === session.target_id) return;
+    let cancelled = false;
+    void (async () => {
+      const res = await agentService.listTargetRuns(workspaceId, 'task', session.target_id);
+      if (cancelled) return;
+      setHandoffRuns(res.data ?? []);
+      setHandoffRunsTargetId(session.target_id);
+    })();
+    return () => { cancelled = true; };
+  }, [canSuggestHandoff, workspaceId, session?.target_id, handoffRuns, handoffRunsTargetId]);
+
+  useEffect(() => {
+    if (!session?.target_id || session.target_type !== 'task') return;
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { parent_type?: string; parent_id?: string } | undefined;
+      if (detail?.parent_type === 'task' && detail.parent_id === session.target_id) {
+        setHandoffRuns(null);
+        setHandoffRunsTargetId(null);
+      }
+    };
+    window.addEventListener('agent_run-updated', handler);
+    window.addEventListener('agent_run-created', handler);
+    return () => {
+      window.removeEventListener('agent_run-updated', handler);
+      window.removeEventListener('agent_run-created', handler);
+    };
+  }, [session?.target_id, session?.target_type]);
+
   const handoffCandidates = useMemo(
     () => (handoffAgents ?? []).filter((agent) => agent.allowed_targets.includes('task')),
     [handoffAgents],
@@ -312,6 +395,19 @@ export function CodingSessionSurface({
     if (!session || !handoffAgents) return null;
     return handoffAgents.find((agent) => agent.id === session.agent_id) ?? null;
   }, [session, handoffAgents]);
+  const completedPersonaKeys = useMemo(() => {
+    if (!handoffAgents || !handoffRuns) return undefined;
+    if (handoffRunsTargetId !== session?.target_id) return undefined;
+    const agentById = new Map(handoffAgents.map((agent) => [agent.id, agent]));
+    const keys = new Set<AgentPersonaKey>();
+    for (const run of handoffRuns) {
+      const agent = agentById.get(run.agent_id);
+      if (agent) {
+        keys.add(resolveAgentPersonaKey({ agent }));
+      }
+    }
+    return keys;
+  }, [handoffAgents, handoffRuns, handoffRunsTargetId, session?.target_id]);
 
   const startHandoffRun = useCallback(async (agent: Agent) => {
     if (!session) return;
@@ -342,10 +438,11 @@ export function CodingSessionSurface({
         onCancelRun={() => void runAction('cancel', () => codingSessionService.cancel(workspaceId, activeSessionId))}
       />
 
-      {canSuggestHandoff && completedSessionAgent ? (
+      {canSuggestHandoff && completedSessionAgent && completedPersonaKeys ? (
         <NextAgentHint
           completedAgent={completedSessionAgent}
           candidates={handoffCandidates}
+          completedPersonaKeys={completedPersonaKeys}
           onRun={startHandoffRun}
           density="comfortable"
         />
@@ -397,6 +494,8 @@ export function CodingSessionSurface({
 
       <div className="grid min-h-0 flex-1 gap-4 xl:overflow-hidden xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]">
         <CodingTranscriptPane
+          promptArtifact={promptArtifact}
+          reviewArtifacts={reviewArtifacts}
           transcriptMessages={streamState.transcript_messages}
           liveAssistantMessage={streamState.live_assistant_message}
           liveReasoningMessage={streamState.live_reasoning_message}
@@ -408,6 +507,8 @@ export function CodingSessionSurface({
           activeInteraction={activeInteraction}
           acting={acting}
           messagePlaceholder={messagePlaceholder}
+          availablePreviewPanelKey={approvalPreviewPanelKey}
+          onViewPreview={handleViewPreview}
           onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
           onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
@@ -415,7 +516,11 @@ export function CodingSessionSurface({
 
         <div className="min-h-0 space-y-4 overflow-y-auto">
           <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
-          <CodingPreviewPanels previewsByKey={previewsByKey} />
+          <CodingPreviewPanels
+            previewsByKey={previewsByKey}
+            acting={acting}
+            onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
+          />
         </div>
       </div>
     </div>

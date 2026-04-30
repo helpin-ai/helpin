@@ -101,24 +101,28 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-helpin-redis-dev}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-helpin-redis-dev}"]
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"${REDIS_PASSWORD:-helpin-redis-dev}\" redis-cli ping | grep PONG"]
       interval: 5s
       timeout: 3s
       retries: 5
 
   temporal-worker:
-    build: ./server
+    build:
+      context: ./server
+      target: temporal-worker
     command: ["./temporal-worker"]
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgres://helpin:helpin@postgres:5432/helpin?sslmode=disable
       - JWT_SECRET=dev-secret-change-in-prod
       - NATS_URL=nats://nats:4222
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-helpin-redis-dev}@redis:6379/0
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
       - TEMPORAL_TLS_ENABLED=false
@@ -146,7 +150,7 @@ services:
   #     - CORS_ORIGINS=http://localhost:5173
   #     - PORT=8080
   #     - NATS_URL=nats://nats:4222
-  #     - REDIS_URL=redis://redis:6379/0
+  #     - REDIS_URL=redis://:${REDIS_PASSWORD:-helpin-redis-dev}@redis:6379/0
   #     - TEMPORAL_ADDRESS=temporal:7233
   #     - TEMPORAL_NAMESPACE=${TEMPORAL_NAMESPACE:-default}
   #     - TEMPORAL_TLS_ENABLED=false

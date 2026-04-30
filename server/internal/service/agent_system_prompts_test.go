@@ -18,21 +18,21 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 
 	requiredSnippets := []string{
 		"You run the full PRD-to-tasks loop inside a single interactive agent run.",
-		"Approval checkpoints happen inline in the same chat.",
+		"Approval requests happen inline in the same chat.",
 		"## Current Facts And Next-Step Rules",
 		"If an approved spec exists and tasks already exist:",
 		"If an approved spec exists and no tasks exist yet:",
 		"If no approved spec exists but a draft PRD already exists:",
 		"If approved PRD persistence is already complete:",
 		"`request_user_input`",
-		"`request_review_checkpoint`",
+		"`request_approval`",
 		"`publish_prd_draft`",
 		"`publish_task_plan`",
 		"Use `isOther: true` instead of adding an explicit Other option.",
 		"`files_to_modify` must be an array of objects",
 		"\"name\": \"Add tracking helper\"",
-		"\"dependency_refs\": [\"story_1\"]",
-		"\"story_type\": \"feature\"",
+		"\"dependency_refs\": [\"task_1\"]",
+		"\"task_type\": \"feature\"",
 		"\"test_strategy\": [\"...\"]",
 		"The value of `content` must be a JSON object.",
 		"Inside `proposed_tasks`, use the canonical field names `name` and `task_type`.",
@@ -60,7 +60,7 @@ func TestDefaultProductPlannerSystemPromptIncludesInlineInteractiveLoop(t *testi
 	}
 }
 
-func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
+func TestTaskPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 	prompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
 	if prompt == nil {
 		t.Fatal("expected task planner prompt")
@@ -73,13 +73,13 @@ func TestStoryPlannerSystemPromptIncludesDocApprovalLoop(t *testing.T) {
 		"Run a single interactive planning conversation for one task.",
 		"`publish_task_plan_doc`",
 		"`request_user_input`",
-		"`request_review_checkpoint`",
-		"call `publish_task_plan_doc`, then call `request_review_checkpoint` with `phase=\"task_doc\"`, then stop.",
+		"`request_approval`",
+		"call `publish_task_plan_doc`, then call `request_approval` with `phase=\"task_doc\"`, then stop.",
 		"\"phase\": \"prd|tasks|task_doc\"",
 		"`content` is required and must contain the full current markdown draft being reviewed.",
 		"Never call the tool with only `title` or with empty `content`.",
 		"platform will persist and link the approved preview",
-		"Revise the active planning document, republish the full replacement draft with `publish_task_plan_doc`, and request another review checkpoint with `phase=\"task_doc\"` when the revision is ready.",
+		"Revise the active planning document, republish the full replacement draft with `publish_task_plan_doc`, and request another approval request with `phase=\"task_doc\"` when the revision is ready.",
 		"Produce a planning document, not code.",
 		"keep repository interactions read-only",
 		"Do not modify code, create files, apply patches, or change git state in this run.",
@@ -98,7 +98,9 @@ func TestReviewAgentSystemPromptIncludesInteractiveLoop(t *testing.T) {
 	for _, snippet := range []string{
 		"You are Review Agent.",
 		"`request_user_input`",
+		"`request_review_checkpoint`",
 		"Treat review as an interactive loop, not a one-shot report.",
+		"After the initial findings pass, produce a `review_checkpoint` handoff and stop.",
 		"Do not finish immediately after posting findings unless the latest human reply clearly says the review is done",
 		"If the human asks you to implement changes based on the review",
 	} {
@@ -150,13 +152,13 @@ func TestLegacyPromptIsManaged(t *testing.T) {
 		{
 			name:      "epic planner legacy prompt",
 			presetKey: model.AgentPresetEpicPlanner,
-			prompt:    "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n5. `awaiting_story_approval`",
+			prompt:    "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `task_plan`\n5. `awaiting_task_approval`\n6. `create_tasks`",
 			want:      true,
 		},
 		{
 			name:      "task planner legacy prompt",
 			presetKey: model.AgentPresetTaskPlanner,
-			prompt:    "You are Story Planner for Helpin. Use `publish_preview` and `request_human_approval`.",
+			prompt:    "You are Task Planner for Helpin. Use `publish_preview` and `request_human_approval`.",
 			want:      true,
 		},
 		{
@@ -208,7 +210,7 @@ func TestSyncManagedSystemPromptForPresetPreservesCustomPrompt(t *testing.T) {
 }
 
 func TestSyncManagedSystemPromptForPresetMigratesLegacyManagedPrompt(t *testing.T) {
-	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n5. `awaiting_story_approval`"
+	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `task_plan`\n5. `awaiting_task_approval`\n6. `create_tasks`"
 	prompt, version := syncManagedSystemPromptForPreset(model.AgentPresetEpicPlanner, &legacyPrompt, nil, "")
 	if prompt != nil {
 		t.Fatalf("expected managed prompt to be stored as nil, got %+v", prompt)

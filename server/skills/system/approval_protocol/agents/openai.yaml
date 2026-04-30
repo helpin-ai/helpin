@@ -1,0 +1,21 @@
+policy:
+  completion_requires_interaction_kinds:
+    - approval_request
+    - request_user_input
+  interaction_contracts:
+    - kind: approval_request
+      schema: approval_request_v1
+      transports:
+        native_sdk:
+          type: tool_call
+          tool_name: request_approval
+    - kind: request_user_input
+      schema: request_user_input_v1
+      transports:
+        native_sdk:
+          type: tool_call
+          tool_name: request_user_input
+        codex:
+          type: runtime_bridge
+        opencode:
+          type: runtime_bridge

@@ -11,6 +11,8 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
 import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
+import { PageContextProvider } from '@/components/command-bar/pageContext'
+import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -88,19 +90,24 @@ function WorkspaceLayout() {
 
   return (
     <div className="min-h-svh bg-[radial-gradient(circle_at_20%_20%,rgba(188,214,231,0.75),rgba(245,248,251,0.92)_45%,rgba(187,210,229,0.55)_100%)]">
-      <div className="h-svh w-full overflow-hidden border border-border/70 bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
+      <div className="h-svh w-full overflow-hidden bg-background/92 shadow-[0_30px_80px_-45px_rgba(15,23,42,0.45)] backdrop-blur">
         <SidebarProvider
           className="!min-h-0 h-full"
           style={{ '--sidebar-width-icon': '3rem' } as CSSProperties}
         >
           <Sidebar />
           <SidebarInset className="relative min-w-0 overflow-hidden bg-transparent before:absolute before:top-3 before:left-0 before:bottom-3 before:z-10 before:w-px before:bg-border/70 before:[mask-image:linear-gradient(to_bottom,transparent,black_24px,black_calc(100%-24px),transparent)] dark:before:bg-border/60">
-            <RouteAwareHeader />
-            <main className="relative min-h-0 flex-1 overflow-hidden">
-              <Outlet />
-            </main>
-            <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
-            <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
+            <PageContextProvider>
+              <RouteAwareHeader />
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <main className="relative min-h-0 flex-1 overflow-hidden">
+                  <Outlet />
+                  <RouteAwareAskAgentsDock />
+                </main>
+              </div>
+              <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
+              <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
+            </PageContextProvider>
           </SidebarInset>
         </SidebarProvider>
       </div>
@@ -113,6 +120,13 @@ function RouteAwareHeader() {
   const location = useLocation()
   if (location.pathname.includes('/support')) return null
   return <Header />
+}
+
+/** Hide the Ask Agents dock on support routes — support has its own assistant flow. */
+function RouteAwareAskAgentsDock() {
+  const location = useLocation()
+  if (location.pathname.includes('/support')) return null
+  return <AskAgentsDock />
 }
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)

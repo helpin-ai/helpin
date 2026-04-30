@@ -91,6 +91,31 @@ func (e *RunEngine) StartRun(ctx context.Context, run *model.AgentRun) (string, 
 	return we.GetID(), we.GetRunID(), nil
 }
 
+// StartCommandBarPlan starts the parent workflow for a command-bar plan.
+func (e *RunEngine) StartCommandBarPlan(ctx context.Context, input CommandBarPlanWorkflowInput) (string, string, error) {
+	if e == nil || e.client == nil {
+		return "", "", fmt.Errorf("temporal run engine is not configured")
+	}
+	workflowID := WorkflowIDForCommandBarPlan(input.PlanID)
+	options := tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: QueueAutomation,
+	}
+	we, err := e.client.ExecuteWorkflow(ctx, options, CommandBarPlanWorkflow, input)
+	if err != nil {
+		return "", "", fmt.Errorf("start command bar plan workflow: %w", err)
+	}
+	return we.GetID(), we.GetRunID(), nil
+}
+
+// SignalCommandBarPlanRunCompleted notifies the parent command-bar workflow that a child run reached a terminal state.
+func (e *RunEngine) SignalCommandBarPlanRunCompleted(ctx context.Context, planID, runID string) error {
+	if e == nil || e.client == nil || strings.TrimSpace(planID) == "" {
+		return nil
+	}
+	return e.client.SignalWorkflow(ctx, WorkflowIDForCommandBarPlan(planID), "", WorkflowSignalCommandBarRun, CommandBarRunCompletedSignal{RunID: runID})
+}
+
 // CancelRun cancels an in-flight workflow.
 func (e *RunEngine) CancelRun(ctx context.Context, workflowID, workflowRunID string) error {
 	if e == nil || e.client == nil || workflowID == "" {
@@ -195,35 +220,38 @@ func (e *RunEngine) Health() RunnerHealth {
 	}
 }
 
-// StartSchedule starts a cron-scheduled workflow for an agent.
-func (e *RunEngine) StartSchedule(ctx context.Context, agentID, workspaceID, schedule string) error {
+// StartRuleSchedule starts a cron-scheduled workflow for an automation rule.
+func (e *RunEngine) StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error {
 	if e == nil || e.client == nil {
 		return fmt.Errorf("temporal run engine is not configured")
 	}
-	workflowID := WorkflowIDForSchedule(agentID)
+	workflowID := WorkflowIDForRuleSchedule(ruleID)
 	options := tclient.StartWorkflowOptions{
 		ID:           workflowID,
 		TaskQueue:    QueueAutomation,
 		CronSchedule: schedule,
 	}
-	_, err := e.client.ExecuteWorkflow(ctx, options, ScheduledAgentWorkflow, ScheduledAgentInput{
-		AgentID:     agentID,
+	_, err := e.client.ExecuteWorkflow(ctx, options, ScheduledRuleWorkflow, ScheduledRuleInput{
+		RuleID:      ruleID,
 		WorkspaceID: workspaceID,
 	})
 	if err != nil {
-		return fmt.Errorf("start schedule workflow: %w", err)
+		var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+		if errors.As(err, &alreadyStarted) {
+			return nil
+		}
+		return fmt.Errorf("start rule schedule workflow: %w", err)
 	}
 	return nil
 }
 
-// StopSchedule terminates a cron-scheduled workflow for an agent.
-// Silently ignores errors if no schedule workflow exists.
-func (e *RunEngine) StopSchedule(ctx context.Context, agentID string) error {
+// StopRuleSchedule terminates a cron-scheduled workflow for an automation rule.
+func (e *RunEngine) StopRuleSchedule(ctx context.Context, ruleID string) error {
 	if e == nil || e.client == nil {
 		return nil
 	}
-	workflowID := WorkflowIDForSchedule(agentID)
-	_ = e.client.TerminateWorkflow(ctx, workflowID, "", "schedule removed")
+	workflowID := WorkflowIDForRuleSchedule(ruleID)
+	_ = e.client.TerminateWorkflow(ctx, workflowID, "", "rule schedule removed")
 	return nil
 }
 
@@ -322,6 +350,11 @@ func (e *RunEngine) QueueContentSourceReindex(ctx context.Context, workspaceID, 
 // WorkflowIDForRun returns the temporal workflow ID for a run.
 func WorkflowIDForRun(runID string) string {
 	return "agent-run-" + runID
+}
+
+// WorkflowIDForCommandBarPlan returns the temporal workflow ID for a command-bar parent plan.
+func WorkflowIDForCommandBarPlan(planID string) string {
+	return "command-bar-plan-" + strings.TrimSpace(planID)
 }
 
 func deref(value *string, fallback string) string {

@@ -312,6 +312,9 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	query = applyTaskStringFilter(query, "pm_tasks.requester_id", filters.RequesterID)
 	query = applyTaskStringFilter(query, "pm_tasks.requester_member_id", filters.RequesterMemberID)
 	query = applyTaskStringFilter(query, "pm_tasks.severity", filters.Severity)
+	if filters.Completed != nil {
+		query = query.Where("pm_tasks.completed = ?", *filters.Completed)
+	}
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		query = r.applyDerivedBlockedFilter(query, *filters.Blocked == "true")
 	}
@@ -430,6 +433,36 @@ func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, id
 		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
 		Find(&tasks).Error; err != nil {
 		return nil, fmt.Errorf("list tasks by ids: %w", err)
+	}
+	return tasks, nil
+}
+
+// ListByEpicID returns raw, non-archived tasks for an epic in a workspace.
+func (r *PMTaskRepository) ListByEpicID(ctx context.Context, workspaceID, epicID string) ([]model.PMTask, error) {
+	if workspaceID == "" || epicID == "" {
+		return []model.PMTask{}, nil
+	}
+	var tasks []model.PMTask
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND epic_id = ? AND archived = FALSE", workspaceID, epicID).
+		Order("display_id ASC, created_at ASC").
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list tasks by epic id: %w", err)
+	}
+	return tasks, nil
+}
+
+// ListByDisplayIDs returns raw tasks by display ID for a workspace.
+func (r *PMTaskRepository) ListByDisplayIDs(ctx context.Context, workspaceID string, displayIDs []int) ([]model.PMTask, error) {
+	if len(displayIDs) == 0 {
+		return []model.PMTask{}, nil
+	}
+
+	var tasks []model.PMTask
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND display_id IN ?", workspaceID, displayIDs).
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list tasks by display ids: %w", err)
 	}
 	return tasks, nil
 }
@@ -840,7 +873,7 @@ func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID s
 
 	baseQuery := r.db.WithContext(ctx).
 		Model(&model.PMTask{}).
-		Where("workflow_state_id IN ? AND archived = false", stateIDs)
+		Where("workflow_state_id IN ?", stateIDs)
 	baseQuery = r.applyBoardFilters(baseQuery, filters)
 
 	var aggregateRows []struct {
@@ -874,7 +907,7 @@ func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID s
 	var allTasks []model.PMTask
 	for i, state := range states {
 		query := r.db.WithContext(ctx).
-			Where("workflow_state_id = ? AND archived = false", state.ID)
+			Where("workflow_state_id = ?", state.ID)
 		query = r.applyBoardFilters(query, filters)
 		query = query.Order(boardTaskOrderClause(state.StateType))
 		if perStateLimit > 0 {
@@ -943,7 +976,7 @@ func (r *PMTaskRepository) ListColumnTasks(ctx context.Context, stateID string, 
 	}
 
 	taskQuery := r.db.WithContext(ctx).
-		Where("workflow_state_id = ? AND archived = false", stateID)
+		Where("workflow_state_id = ?", stateID)
 	taskQuery = r.applyBoardFilters(taskQuery, filters)
 
 	var total int64
@@ -1023,12 +1056,13 @@ type stateInfo struct {
 
 // latestRunRow is a scan row for the most recent agent_run per task.
 type latestRunRow struct {
-	TargetID  string     `gorm:"column:target_id"`
-	ID        string     `gorm:"column:id"`
-	AgentID   string     `gorm:"column:agent_id"`
-	Status    string     `gorm:"column:status"`
-	StartedAt *time.Time `gorm:"column:started_at"`
-	CreatedAt time.Time  `gorm:"column:created_at"`
+	TargetID    string     `gorm:"column:target_id"`
+	ID          string     `gorm:"column:id"`
+	AgentID     string     `gorm:"column:agent_id"`
+	Status      string     `gorm:"column:status"`
+	PauseReason string     `gorm:"column:pause_reason"`
+	StartedAt   *time.Time `gorm:"column:started_at"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
 }
 
 // applyLatestRunMetadata populates latest task-targeted run metadata on each
@@ -1048,7 +1082,7 @@ func (r *PMTaskRepository) applyLatestRunMetadata(ctx context.Context, tasks []m
 	var rows []latestRunRow
 	if err := r.db.WithContext(ctx).
 		Table("agent_runs").
-		Select("target_id, id, agent_id, status, started_at, created_at").
+		Select("target_id, id, agent_id, status, pause_reason, started_at, created_at").
 		Where("target_type = ? AND target_id IN ?", "task", ids).
 		Order("target_id, COALESCE(started_at, created_at) DESC, created_at DESC").
 		Find(&rows).Error; err != nil {
@@ -1074,6 +1108,10 @@ func (r *PMTaskRepository) applyLatestRunMetadata(ctx context.Context, tasks []m
 		tasks[i].LatestRunID = &runID
 		tasks[i].LatestRunAgentID = &runAgentID
 		tasks[i].LatestRunStatus = &runStatus
+		if row.PauseReason != "" && row.PauseReason != "none" {
+			pauseReason := row.PauseReason
+			tasks[i].LatestRunPauseReason = &pauseReason
+		}
 		tasks[i].LatestRunAt = &latestRunAt
 	}
 	return tasks
@@ -1385,6 +1423,11 @@ func (r *PMTaskRepository) applyBoardFilters(q *gorm.DB, filters model.PMTaskFil
 	q = applyTaskStringFilter(q, "pm_tasks.requester_id", filters.RequesterID)
 	q = applyTaskStringFilter(q, "pm_tasks.requester_member_id", filters.RequesterMemberID)
 	q = applyTaskStringFilter(q, "pm_tasks.severity", filters.Severity)
+	archived := false
+	if filters.Archived != nil {
+		archived = *filters.Archived
+	}
+	q = q.Where("pm_tasks.archived = ?", archived)
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		q = r.applyDerivedBlockedFilter(q, *filters.Blocked == "true")
 	}
@@ -1585,7 +1628,7 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 
 	baseQuery := r.db.WithContext(ctx).
 		Model(&model.PMTask{}).
-		Where("workflow_state_id IN ? AND archived = false", stateIDs)
+		Where("workflow_state_id IN ?", stateIDs)
 	baseQuery = r.applyBoardFilters(baseQuery, filters)
 
 	// Aggregate counts per owner_member_id (NULL grouped as unassigned).

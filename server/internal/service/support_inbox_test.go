@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -80,7 +81,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// List all
-		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
+		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "", "")
 		if err != nil {
 			t.Fatalf("list conversations: %v", err)
 		}
@@ -92,7 +93,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by status
-		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
+		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil, "", "")
 		if err != nil {
 			t.Fatalf("list open conversations: %v", err)
 		}
@@ -104,12 +105,86 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by priority
-		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil, "")
+		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil, "", "")
 		if err != nil {
 			t.Fatalf("list high priority: %v", err)
 		}
 		if totalHigh != 1 {
 			t.Errorf("expected 1 high priority, got %d", totalHigh)
+		}
+	})
+
+	t.Run("List conversations paginates older results and search ignores recency", func(t *testing.T) {
+		ctx := context.Background()
+		searchWorkspaceID := "ws-test-support-search"
+		seedWorkspace(t, db, searchWorkspaceID, "Search Workspace", "support-search", "user-123")
+
+		oldConversation := &model.SupportConversation{
+			WorkspaceID:   searchWorkspaceID,
+			Subject:       "Legacy email thread",
+			Status:        model.SupportConversationStatusOpen,
+			Priority:      "medium",
+			Channel:       "email",
+			CustomerEmail: strPtr("matta.trisha@gmail.com"),
+		}
+		if err := repo.Create(ctx, oldConversation); err != nil {
+			t.Fatalf("create old conversation: %v", err)
+		}
+		oldUpdatedAt := time.Now().UTC().AddDate(0, 0, -10)
+		if err := db.Model(&model.SupportConversation{}).
+			Where("id = ?", oldConversation.ID).
+			Update("updated_at", oldUpdatedAt).Error; err != nil {
+			t.Fatalf("age old conversation: %v", err)
+		}
+
+		for i := 0; i < 55; i++ {
+			conversation := &model.SupportConversation{
+				WorkspaceID: searchWorkspaceID,
+				Subject:     fmt.Sprintf("Recent conversation %d", i),
+				Status:      model.SupportConversationStatusOpen,
+				Priority:    "medium",
+			}
+			if err := repo.Create(ctx, conversation); err != nil {
+				t.Fatalf("create recent conversation %d: %v", i, err)
+			}
+			recentUpdatedAt := time.Now().UTC().Add(-time.Duration(i) * time.Minute)
+			if err := db.Model(&model.SupportConversation{}).
+				Where("id = ?", conversation.ID).
+				Update("updated_at", recentUpdatedAt).Error; err != nil {
+				t.Fatalf("age recent conversation %d: %v", i, err)
+			}
+		}
+
+		pageTwo, total, err := repo.List(ctx, searchWorkspaceID, "", "", model.PMPagination{Page: 2, PerPage: 50}, "", model.RoleOwner, nil, "", "")
+		if err != nil {
+			t.Fatalf("list second page: %v", err)
+		}
+		if total != 56 {
+			t.Fatalf("expected 56 conversations, got %d", total)
+		}
+		if len(pageTwo) == 0 {
+			t.Fatal("expected older conversations on the second page")
+		}
+		foundOnPageTwo := false
+		for _, conversation := range pageTwo {
+			if conversation.ID == oldConversation.ID {
+				foundOnPageTwo = true
+				break
+			}
+		}
+		if !foundOnPageTwo {
+			t.Fatal("expected second page to include the older conversation")
+		}
+
+		searchResults, searchTotal, err := repo.List(ctx, searchWorkspaceID, "", "", model.PMPagination{Page: 1, PerPage: 50}, "", model.RoleOwner, nil, "", "matta.trisha@gmail.com")
+		if err != nil {
+			t.Fatalf("search conversations: %v", err)
+		}
+		if searchTotal != 1 || len(searchResults) != 1 {
+			t.Fatalf("expected one search result, got total=%d len=%d", searchTotal, len(searchResults))
+		}
+		if searchResults[0].ID != oldConversation.ID {
+			t.Fatalf("expected search result %q, got %q", oldConversation.ID, searchResults[0].ID)
 		}
 	})
 
@@ -157,7 +232,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("create new session: %v", err)
 		}
 
-		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "")
+		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "", "")
 		if err != nil {
 			t.Fatalf("list conversations: %v", err)
 		}
@@ -289,7 +364,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 1, 2 per page
-		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil, "")
+		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil, "", "")
 		if err != nil {
 			t.Fatalf("page 1: %v", err)
 		}
@@ -301,7 +376,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 3, 2 per page → 1 result
-		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil, "")
+		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil, "", "")
 		if err != nil {
 			t.Fatalf("page 3: %v", err)
 		}
@@ -375,7 +450,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatal("expected linked team member to have mailbox access")
 		}
 
-		teamConversations, total, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil, "")
+		teamConversations, total, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil, "", "")
 		if err != nil {
 			t.Fatalf("list conversations for linked team member: %v", err)
 		}
@@ -383,7 +458,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("expected linked team member to see private conversation, got total=%d conversations=%#v", total, teamConversations)
 		}
 
-		outsiderConversations, outsiderTotal, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil, "")
+		outsiderConversations, outsiderTotal, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil, "", "")
 		if err != nil {
 			t.Fatalf("list conversations for outsider: %v", err)
 		}
@@ -781,6 +856,7 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 	db := newTestDB(t)
 	ctx := context.Background()
 	now := time.Now()
+	ensureSupportModuleGrantsTable(t, db)
 
 	workspaceID := "ws-support-notifs"
 	ownerUserID := "user-owner"
@@ -833,8 +909,8 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 		repository.NewCRMContactRepository(db),
 		repository.NewUserRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
 	)
 	svc.SetNotificationService(notificationService, repository.NewWorkspaceRepository(db))
 
@@ -881,6 +957,186 @@ func TestCreateConversationMessage_CustomerReplyCreatesOwnedSupportNotification(
 	}
 	if len(emailer.sent) != 0 {
 		t.Fatalf("sent email count = %d, want 0", len(emailer.sent))
+	}
+}
+
+func TestCreateConversationMessage_CustomerReplySkipsUsersWithoutSupportAccess(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	ensureSupportModuleGrantsTable(t, db)
+
+	workspaceID := "ws-support-access-notifs"
+	ownerUserID := "zzz-owner-support-access"
+	supportUserID := "bbb-support-access"
+	marketingUserID := "aaa-marketing-access"
+
+	seedUser(t, db, ownerUserID, "owner-access@example.com", "Owner User", "hash")
+	seedUser(t, db, supportUserID, "support-access@example.com", "Support User", "hash")
+	seedUser(t, db, marketingUserID, "marketing-access@example.com", "Marketing User", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Access Notifications", "support-access-notifs", ownerUserID)
+	seedWorkspaceMember(t, db, "wm-owner-support-access", workspaceID, ownerUserID, "owner-access@example.com", "Owner User", model.RoleAdmin)
+	seedWorkspaceMember(t, db, "wm-support-access", workspaceID, supportUserID, "support-access@example.com", "Support User", model.RoleMember)
+	seedWorkspaceMember(t, db, "wm-marketing-access", workspaceID, marketingUserID, "marketing-access@example.com", "Marketing User", model.RoleMember)
+	seedSupportModuleGrant(t, db, "grant-support-access", workspaceID, model.ModuleGrantSubjectWorkspaceMember, "wm-support-access")
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	conv := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Routing question",
+		Status:      "open",
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	notificationService := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewWorkspaceRepository(db),
+		nil,
+		&stubEmailSender{},
+		"",
+	)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		repository.NewAgentRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		repository.NewSupportCannedResponseRepository(db),
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsHelpcenterRepository(db),
+	)
+	svc.SetNotificationService(notificationService, repository.NewWorkspaceRepository(db))
+
+	customerName := "Customer"
+	if _, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "Can someone help?", MessageType: "reply"},
+		"customer",
+		nil,
+		nil,
+		&customerName,
+	); err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	var notifications []model.Notification
+	if err := db.WithContext(ctx).Order("recipient_id ASC").Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("notification count = %d, want 1", len(notifications))
+	}
+	if notifications[0].RecipientID != supportUserID {
+		t.Fatalf("recipient_id = %q, want %q", notifications[0].RecipientID, supportUserID)
+	}
+	if notifications[0].RecipientID == marketingUserID {
+		t.Fatalf("marketing user received support notification")
+	}
+}
+
+func TestCreateConversationMessage_SupportMentionSkipsUsersWithoutSupportAccess(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	ensureSupportModuleGrantsTable(t, db)
+
+	workspaceID := "ws-support-mention-access"
+	actorID := "user-mention-actor"
+	supportUserID := "user-mention-support"
+	marketingUserID := "user-mention-marketing"
+
+	seedUser(t, db, actorID, "actor-mention@example.com", "Admin Actor", "hash")
+	seedUser(t, db, supportUserID, "support-mention@example.com", "Support Mention", "hash")
+	seedUser(t, db, marketingUserID, "marketing-mention@example.com", "Marketing Mention", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Mention Access", "support-mention-access", actorID)
+	seedWorkspaceMember(t, db, "wm-mention-actor", workspaceID, actorID, "actor-mention@example.com", "Admin Actor", model.RoleAdmin)
+	seedWorkspaceMember(t, db, "wm-mention-support", workspaceID, supportUserID, "support-mention@example.com", "Support Mention", model.RoleMember)
+	seedWorkspaceMember(t, db, "wm-mention-marketing", workspaceID, marketingUserID, "marketing-mention@example.com", "Marketing Mention", model.RoleMember)
+	seedSupportModuleGrant(t, db, "grant-mention-support", workspaceID, model.ModuleGrantSubjectWorkspaceMember, "wm-mention-support")
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	conv := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Mention question",
+		Status:      "open",
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	notificationService := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		workspaceRepo,
+		nil,
+		nil,
+		"",
+	)
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		repository.NewAgentRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		repository.NewSupportCannedResponseRepository(db),
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsHelpcenterRepository(db),
+	)
+	svc.SetNotificationService(notificationService, workspaceRepo)
+
+	if _, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "@support-mention @marketing-mention please look", MessageType: "note", IsInternal: true},
+		"user",
+		&actorID,
+		nil,
+		nil,
+	); err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	var notifications []model.Notification
+	if err := db.WithContext(ctx).Order("recipient_id ASC").Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("notification count = %d, want 1", len(notifications))
+	}
+	if notifications[0].RecipientID != supportUserID {
+		t.Fatalf("recipient_id = %q, want %q", notifications[0].RecipientID, supportUserID)
+	}
+	if notifications[0].EventType != "support_conversation.mentioned" {
+		t.Fatalf("event_type = %q, want support_conversation.mentioned", notifications[0].EventType)
 	}
 }
 
@@ -937,8 +1193,8 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 		repository.NewCRMContactRepository(db),
 		repository.NewUserRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
 	)
 	svc.SetNotificationService(notificationService, repository.NewWorkspaceRepository(db))
 
@@ -971,6 +1227,108 @@ func TestMarkConversationRead_MarksSupportReplyNotificationsRead(t *testing.T) {
 	}
 	if notification.ReadAt == nil {
 		t.Fatal("expected notification read_at to be set")
+	}
+}
+
+func TestCreateConversationMessage_PublicMentionsNotifyWorkspaceMembers(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	workspaceID := "ws-support-mentions"
+	senderUserID := "user-sender"
+	mentionedUserID := "user-mentioned"
+
+	seedUser(t, db, senderUserID, "sender@example.com", "Sender User", "hash")
+	seedUser(t, db, mentionedUserID, "mentioned@example.com", "Teammate Mentioned", "hash")
+	seedWorkspace(t, db, workspaceID, "Support Mentions", "support-mentions", senderUserID)
+	seedWorkspaceMember(t, db, "wm-sender", workspaceID, senderUserID, "sender@example.com", "Sender User", model.RoleAdmin)
+	seedWorkspaceMember(t, db, "wm-mentioned", workspaceID, mentionedUserID, "mentioned@example.com", "Teammate Mentioned", model.RoleMember)
+	for _, userID := range []string{senderUserID, mentionedUserID} {
+		mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"settings-"+userID, userID, false, "daily", "09:00", 1, false, "all", "UTC", now, now)
+	}
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	notificationService := NewNotificationService(
+		repository.NewNotificationRepository(db),
+		repository.NewNotificationPreferenceRepository(db),
+		repository.NewUserNotificationSettingsRepository(db),
+		repository.NewFollowerRepository(db),
+		repository.NewUserRepository(db),
+		workspaceRepo,
+		nil,
+		nil,
+		"",
+	)
+
+	conv := &model.SupportConversation{
+		WorkspaceID:    workspaceID,
+		Subject:        "Public mention",
+		Status:         model.SupportConversationStatusOpen,
+		OpenedByUserID: &senderUserID,
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		repository.NewAgentRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		repository.NewSupportCannedResponseRepository(db),
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsHelpcenterRepository(db),
+	).SetNotificationService(notificationService, workspaceRepo)
+
+	msg, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "@teammate.mentioned can you take this one?", MessageType: "reply"},
+		"user",
+		&senderUserID,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	if !strings.Contains(msg.Metadata, mentionedUserID) {
+		t.Fatalf("message metadata = %q, want mentioned user id %q", msg.Metadata, mentionedUserID)
+	}
+
+	var notifications []model.Notification
+	if err := db.WithContext(ctx).
+		Where("workspace_id = ? AND entity_type = ? AND entity_id = ?", workspaceID, "support_conversation", conv.ID).
+		Order("recipient_id ASC").
+		Find(&notifications).Error; err != nil {
+		t.Fatalf("load notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("notification count = %d, want 1", len(notifications))
+	}
+	if notifications[0].RecipientID != mentionedUserID {
+		t.Fatalf("recipient_id = %q, want %q", notifications[0].RecipientID, mentionedUserID)
+	}
+	if notifications[0].EventType != "support_conversation.mentioned" {
+		t.Fatalf("event_type = %q, want support_conversation.mentioned", notifications[0].EventType)
+	}
+	if notifications[0].LatestEventCategory != model.NotifCategorySupportMentions {
+		t.Fatalf("latest_event_category = %q, want %q", notifications[0].LatestEventCategory, model.NotifCategorySupportMentions)
 	}
 }
 

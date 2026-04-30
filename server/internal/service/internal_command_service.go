@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -23,17 +24,23 @@ type InternalCommandDefinition struct {
 }
 
 type InternalCommandService struct {
-	agentService        *AgentService
-	taskService         *PMTaskService
-	crmDealService      *CRMDealService
-	crmActivityService  *CRMActivityService
-	docsContentService  *DocsContentService
-	docsLinkService     *DocsLinkService
-	pmAutomationService *PMAutomationService
-	gitService          *GitService
-	taskRepo            *repository.PMTaskRepository
-	taskLinkRepo        *repository.PMTaskLinkRepository
-	definitions         map[string]InternalCommandDefinition
+	agentService         *AgentService
+	taskService          *PMTaskService
+	labelService         *PMLabelService
+	commentService       *PMCommentService
+	crmDealService       *CRMDealService
+	crmActivityService   *CRMActivityService
+	crmEnrichmentService *CRMEnrichmentService
+	docsDocumentService  *DocsDocumentService
+	docsContentService   *DocsContentService
+	docsBlockService     *DocsBlockService
+	docsContentRepo      *repository.DocsContentRepository
+	docsLinkService      *DocsLinkService
+	pmAutomationService  *PMAutomationService
+	gitService           *GitService
+	taskRepo             *repository.PMTaskRepository
+	taskLinkRepo         *repository.PMTaskLinkRepository
+	definitions          map[string]InternalCommandDefinition
 }
 
 // SetPMAutomationService sets the PM automation service (breaks circular dependency).
@@ -41,9 +48,41 @@ func (s *InternalCommandService) SetPMAutomationService(svc *PMAutomationService
 	s.pmAutomationService = svc
 }
 
+// SetPMLabelService sets the PM label service for command-backed label tools.
+func (s *InternalCommandService) SetPMLabelService(svc *PMLabelService) {
+	s.labelService = svc
+}
+
+// SetPMCommentService sets the PM comment service for command-backed comment tools.
+func (s *InternalCommandService) SetPMCommentService(svc *PMCommentService) {
+	s.commentService = svc
+}
+
 // SetGitService sets the git service for delivery commands.
 func (s *InternalCommandService) SetGitService(svc *GitService) {
 	s.gitService = svc
+}
+
+// SetCRMEnrichmentService sets guarded CRM enrichment dependencies.
+func (s *InternalCommandService) SetCRMEnrichmentService(svc *CRMEnrichmentService) {
+	s.crmEnrichmentService = svc
+}
+
+// SetDocsCreateDependencies wires document creation dependencies after service
+// construction so callers can avoid circular startup ordering.
+func (s *InternalCommandService) SetDocsCreateDependencies(documentSvc *DocsDocumentService, contentRepo *repository.DocsContentRepository) {
+	if s == nil {
+		return
+	}
+	s.docsDocumentService = documentSvc
+	s.docsContentRepo = contentRepo
+}
+
+func (s *InternalCommandService) SetDocsBlockService(blockSvc *DocsBlockService) {
+	if s == nil {
+		return
+	}
+	s.docsBlockService = blockSvc
 }
 
 func NewInternalCommandService(
@@ -160,15 +199,6 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
-		Name:                 "docs.ensure_story_plan_doc",
-		Module:               "docs",
-		Mutating:             true,
-		SupportedTargetTypes: []string{"task", "story"},
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "docs.ensure_task_plan_doc", input)
-		},
-	})
-	s.register(InternalCommandDefinition{
 		Name:                 "pm.approve_epic_spec",
 		Module:               "pm",
 		Mutating:             true,
@@ -196,7 +226,6 @@ func (s *InternalCommandService) registerDefaults() {
 		Tool:                 mustCommandToolMetadata("pm.create_task_batch"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				Stories       []model.ProposedTask `json:"stories"`
 				Tasks         []model.ProposedTask `json:"tasks"`
 				ProposedTasks []model.ProposedTask `json:"proposed_tasks"`
 				RunID         string               `json:"run_id,omitempty"`
@@ -204,21 +233,18 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse task batch input: %w", err)
 			}
-			if len(req.Stories) == 0 {
-				req.Stories = req.Tasks
+			if len(req.Tasks) == 0 {
+				req.Tasks = req.ProposedTasks
 			}
-			if len(req.Stories) == 0 {
-				req.Stories = req.ProposedTasks
-			}
-			if len(req.Stories) == 0 {
+			if len(req.Tasks) == 0 {
 				var legacy model.ConfirmPlanningRequest
 				if err := json.Unmarshal(input, &legacy); err != nil {
 					return nil, fmt.Errorf("tasks is required")
 				}
-				req.Stories = legacy.ProposedTasks
+				req.Tasks = legacy.ProposedTasks
 				req.RunID = legacy.RunID
 			}
-			if len(req.Stories) == 0 {
+			if len(req.Tasks) == 0 {
 				return nil, fmt.Errorf("tasks is required")
 			}
 
@@ -227,35 +253,25 @@ func (s *InternalCommandService) registerDefaults() {
 			if strings.TrimSpace(req.RunID) != "" {
 				legacy := model.ConfirmPlanningRequest{
 					RunID:         strings.TrimSpace(req.RunID),
-					ProposedTasks: req.Stories,
+					ProposedTasks: req.Tasks,
 				}
 				tasks, err = s.agentService.ConfirmEpicRun(ctx, meta.WorkspaceID, meta.TargetID, legacy.RunID, fallbackActor(meta), legacy)
 			} else {
-				tasks, err = s.agentService.CreateEpicTaskBatch(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta), req.Stories)
+				tasks, err = s.agentService.CreateEpicTaskBatch(ctx, meta.WorkspaceID, meta.TargetID, fallbackActor(meta), req.Tasks)
 			}
 			if err != nil {
 				return nil, err
 			}
 			results := make([]map[string]any, 0, len(tasks))
 			for idx, task := range tasks {
-				ref := strings.TrimSpace(req.Stories[idx].Ref)
+				ref := strings.TrimSpace(req.Tasks[idx].Ref)
 				results = append(results, map[string]any{
-					"ref":      ref,
-					"task_id":  task.ID,
-					"story_id": task.ID,
-					"name":     task.Name,
+					"ref":     ref,
+					"task_id": task.ID,
+					"name":    task.Name,
 				})
 			}
-			return mustJSON(map[string]any{"tasks": results, "stories": results}), nil
-		},
-	})
-	s.register(InternalCommandDefinition{
-		Name:                 "pm.create_story_batch",
-		Module:               "pm",
-		Mutating:             true,
-		SupportedTargetTypes: []string{"epic"},
-		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "pm.create_task_batch", input)
+			return mustJSON(map[string]any{"tasks": results}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -305,12 +321,95 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
-		Name:                 "pm.set_story_dependencies",
+		Name:                 "pm.create_task",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story"},
+		SupportedTargetTypes: []string{"workspace", "epic"},
+		Tool:                 mustCommandToolMetadata("pm.create_task"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "pm.set_task_dependencies", input)
+			var req struct {
+				Name          string   `json:"name"`
+				Description   *string  `json:"description"`
+				TaskType      string   `json:"task_type"`
+				Estimate      *int     `json:"estimate"`
+				Priority      *string  `json:"priority"`
+				EpicID        *string  `json:"epic_id"`
+				TeamID        string   `json:"team_id"`
+				WorkflowID    *string  `json:"workflow_id"`
+				StateID       *string  `json:"state_id"`
+				OwnerMemberID *string  `json:"owner_member_id"`
+				LabelIDs      []string `json:"label_ids"`
+				Deadline      *string  `json:"deadline"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse create task input: %w", err)
+			}
+
+			req.Name = strings.TrimSpace(req.Name)
+			req.TeamID = strings.TrimSpace(req.TeamID)
+			if req.Name == "" || req.TeamID == "" {
+				return nil, fmt.Errorf("name and team_id are required")
+			}
+
+			if req.EpicID == nil && strings.TrimSpace(meta.TargetType) == "epic" && strings.TrimSpace(meta.TargetID) != "" {
+				req.EpicID = stringPtrOrNil(meta.TargetID)
+			}
+			req.TaskType = strings.TrimSpace(req.TaskType)
+			req.Description = normalizeTaskDescriptionRichText(stringPtrOrNil(commandDerefString(req.Description)))
+			req.Priority = stringPtrOrNil(commandDerefString(req.Priority))
+			req.WorkflowID = stringPtrOrNil(commandDerefString(req.WorkflowID))
+			req.StateID = stringPtrOrNil(commandDerefString(req.StateID))
+			req.OwnerMemberID = stringPtrOrNil(commandDerefString(req.OwnerMemberID))
+
+			var deadline *time.Time
+			if req.Deadline != nil {
+				parsed, err := parseInternalCommandTaskDeadline(*req.Deadline)
+				if err != nil {
+					return nil, err
+				}
+				deadline = parsed
+			}
+
+			workflowID, stateID, err := s.resolveTaskCreationWorkflow(ctx, meta.WorkspaceID, req.TeamID, req.WorkflowID, req.StateID)
+			if err != nil {
+				return nil, err
+			}
+
+			createReq := model.CreateTaskRequest{
+				WorkspaceID:     meta.WorkspaceID,
+				Name:            req.Name,
+				Description:     req.Description,
+				TaskType:        req.TaskType,
+				WorkflowID:      workflowID,
+				WorkflowStateID: stateID,
+				EpicID:          req.EpicID,
+				TeamID:          stringPtrOrNil(req.TeamID),
+				OwnerMemberID:   req.OwnerMemberID,
+				Estimate:        req.Estimate,
+				Priority:        req.Priority,
+				Deadline:        deadline,
+				LabelIDs:        req.LabelIDs,
+			}
+			detail, err := s.taskService.Create(ctx, createReq, fallbackActor(meta))
+			if err != nil {
+				return nil, err
+			}
+			stateName := ""
+			if detail.State != nil {
+				stateName = strings.TrimSpace(detail.State.Name)
+			}
+			return mustJSON(map[string]any{
+				"task_id":      detail.Task.ID,
+				"display_id":   detail.Task.DisplayID,
+				"task_key":     detail.Task.TaskKey,
+				"name":         detail.Task.Name,
+				"team_id":      detail.Task.TeamID,
+				"workflow_id":  detail.Task.WorkflowID,
+				"state_id":     detail.Task.WorkflowStateID,
+				"state_name":   stateName,
+				"workspace_id": detail.Task.WorkspaceID,
+				"epic_id":      detail.Task.EpicID,
+			}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -324,12 +423,212 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
-		Name:                 "pm.assign_story_agent",
+		Name:                 "pm.ensure_label",
 		Module:               "pm",
 		Mutating:             true,
-		SupportedTargetTypes: []string{"epic", "task", "story"},
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story"},
+		Tool:                 mustCommandToolMetadata("pm.ensure_label"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
-			return s.Execute(ctx, meta, "pm.assign_task_agent", input)
+			if s.labelService == nil {
+				return nil, fmt.Errorf("label service is not configured")
+			}
+			var req struct {
+				Name        string  `json:"name"`
+				TeamID      *string `json:"team_id"`
+				Description *string `json:"description"`
+				Color       *string `json:"color"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse ensure label input: %w", err)
+			}
+			name := strings.TrimSpace(req.Name)
+			if name == "" {
+				return nil, fmt.Errorf("name is required")
+			}
+			teamID := stringPtrOrNil(commandDerefString(req.TeamID))
+			existing, err := s.labelService.labelRepo.GetByName(ctx, meta.WorkspaceID, teamID, name)
+			if err != nil {
+				return nil, err
+			}
+			created := false
+			label := existing
+			if label == nil {
+				label, err = s.labelService.Create(ctx, model.CreateLabelRequest{
+					WorkspaceID: meta.WorkspaceID,
+					TeamID:      teamID,
+					Name:        name,
+					Description: stringPtrOrNil(commandDerefString(req.Description)),
+					Color:       stringPtrOrNil(commandDerefString(req.Color)),
+				})
+				if err != nil {
+					return nil, err
+				}
+				created = true
+			} else if label.Archived {
+				archived := false
+				label, err = s.labelService.Update(ctx, label.ID, model.UpdateLabelRequest{Archived: &archived})
+				if err != nil {
+					return nil, err
+				}
+			}
+			return mustJSON(map[string]any{
+				"label_id":     label.ID,
+				"name":         label.Name,
+				"team_id":      label.TeamID,
+				"color":        label.Color,
+				"workspace_id": label.WorkspaceID,
+				"created":      created,
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.list_tasks",
+		Module:               "pm",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story"},
+		Tool:                 mustCommandToolMetadata("pm.list_tasks"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.taskService == nil {
+				return nil, fmt.Errorf("task service is not configured")
+			}
+			var req struct {
+				LabelID             string `json:"label_id"`
+				TeamID              string `json:"team_id"`
+				OpenOnly            bool   `json:"open_only"`
+				IncludeDescriptions bool   `json:"include_descriptions"`
+				IncludeComments     bool   `json:"include_comments"`
+				Limit               int    `json:"limit"`
+				DetailLevel         string `json:"detail_level"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse list tasks input: %w", err)
+				}
+			}
+			req.DetailLevel = strings.ToLower(strings.TrimSpace(req.DetailLevel))
+			if req.DetailLevel != "" && req.DetailLevel != "summary" && req.DetailLevel != "compact" && req.DetailLevel != "full" {
+				return nil, fmt.Errorf("detail_level must be summary, compact, or full")
+			}
+			limit := req.Limit
+			if limit <= 0 {
+				limit = 50
+			}
+			if limit > 100 {
+				limit = 100
+			}
+			archived := false
+			filters := model.PMTaskFilters{
+				LabelID:  stringPtrOrNil(req.LabelID),
+				TeamID:   stringPtrOrNil(req.TeamID),
+				Archived: &archived,
+			}
+			if req.OpenOnly {
+				completed := false
+				filters.Completed = &completed
+			}
+			tasks, total, err := s.taskService.List(ctx, meta.WorkspaceID, filters, model.PMPagination{Page: 1, PerPage: limit})
+			if err != nil {
+				return nil, err
+			}
+			commentsByTask := map[string][]model.CommentWithAuthor{}
+			if req.DetailLevel == "compact" || req.IncludeComments {
+				if s.commentService == nil {
+					return nil, fmt.Errorf("comment service is not configured")
+				}
+				taskIDs := make([]string, 0, len(tasks))
+				for _, task := range tasks {
+					taskIDs = append(taskIDs, task.ID)
+				}
+				commentsByTask, err = s.commentService.ListByEntityIDs(ctx, "task", taskIDs)
+				if err != nil {
+					return nil, err
+				}
+			}
+			results := make([]map[string]any, 0, len(tasks))
+			for _, task := range tasks {
+				if req.DetailLevel == "compact" {
+					results = append(results, buildCompactTaskItem(task, commentsByTask[task.ID]))
+					continue
+				}
+				item := map[string]any{
+					"task_id":     task.ID,
+					"display_id":  task.DisplayID,
+					"task_key":    task.TaskKey,
+					"name":        task.Name,
+					"team_id":     task.TeamID,
+					"state_id":    task.WorkflowStateID,
+					"state_name":  task.StateName,
+					"completed":   task.Completed,
+					"priority":    task.Priority,
+					"severity":    task.Severity,
+					"external_id": task.ExternalID,
+					"updated_at":  task.UpdatedAt,
+					"labels":      task.Labels,
+				}
+				if req.IncludeDescriptions {
+					item["description"] = task.Description
+				}
+				if req.IncludeComments {
+					item["comments"] = compactTaskComments(commentsByTask[task.ID], 10)
+				}
+				results = append(results, item)
+			}
+			if req.DetailLevel == "compact" {
+				return marshalCompactTaskResponse(results, total, limit)
+			}
+			response := map[string]any{
+				"tasks":        results,
+				"total":        total,
+				"limit":        limit,
+				"detail_level": req.DetailLevel,
+			}
+			return mustJSON(response), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "pm.add_task_comment",
+		Module:               "pm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"workspace", "task", "story"},
+		Tool:                 mustCommandToolMetadata("pm.add_task_comment"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.commentService == nil || s.taskService == nil {
+				return nil, fmt.Errorf("comment service is not configured")
+			}
+			var req struct {
+				TaskID  string `json:"task_id"`
+				Content string `json:"content"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse add task comment input: %w", err)
+			}
+			taskID := strings.TrimSpace(firstNonEmptyCommand(req.TaskID, meta.TargetID))
+			content := strings.TrimSpace(req.Content)
+			if taskID == "" || content == "" {
+				return nil, fmt.Errorf("task_id and content are required")
+			}
+			detail, err := s.taskService.GetByID(ctx, taskID)
+			if err != nil {
+				return nil, err
+			}
+			if detail.Task.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("task not found")
+			}
+			if normalized := normalizeTaskDescriptionRichText(&content); normalized != nil {
+				content = *normalized
+			}
+			comment, err := s.commentService.Create(ctx, model.CreateCommentRequest{
+				EntityType: "task",
+				EntityID:   taskID,
+				Body:       content,
+			}, fallbackActor(meta), meta.WorkspaceID)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{
+				"task_id":    taskID,
+				"comment_id": comment.Comment.ID,
+			}), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -361,11 +660,11 @@ func (s *InternalCommandService) registerDefaults() {
 				if taskType == "" {
 					taskType = model.PMTaskTypeChore
 				}
-				description := strings.TrimSpace(followup.Description)
+				description := normalizeTaskDescriptionRichText(stringPtrOrNil(strings.TrimSpace(followup.Description)))
 				createReq := model.CreateTaskRequest{
 					WorkspaceID: meta.WorkspaceID,
 					Name:        title,
-					Description: stringPtrOrNil(description),
+					Description: description,
 					TaskType:    taskType,
 					EpicID:      task.EpicID,
 					TeamID:      task.TeamID,
@@ -471,6 +770,103 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "docs.update_document_block",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"document"},
+		Tool:                 mustCommandToolMetadata("docs.update_document_block"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.docsBlockService == nil {
+				return nil, fmt.Errorf("docs block service is not available")
+			}
+			var req struct {
+				DocumentID string          `json:"document_id"`
+				BlockID    string          `json:"block_id"`
+				Revision   int             `json:"revision"`
+				Content    json.RawMessage `json:"content"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse document block input: %w", err)
+			}
+			if strings.TrimSpace(req.DocumentID) == "" {
+				return nil, fmt.Errorf("document_id is required")
+			}
+			if strings.TrimSpace(req.BlockID) == "" {
+				return nil, fmt.Errorf("block_id is required")
+			}
+			if req.Revision <= 0 {
+				return nil, fmt.Errorf("revision is required")
+			}
+			if len(req.Content) == 0 || strings.TrimSpace(string(req.Content)) == "" || strings.TrimSpace(string(req.Content)) == "null" {
+				return nil, fmt.Errorf("content is required")
+			}
+			content, err := s.docsBlockService.Patch(ctx, req.DocumentID, req.BlockID, req.Revision, req.Content, meta.ActorID)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{"document_id": req.DocumentID, "block_id": req.BlockID, "content_id": content.ID}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "docs.create_document",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"epic", "task", "story", "crm_deal", "workspace"},
+		Tool:                 mustCommandToolMetadata("docs.create_document"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			var req struct {
+				SpaceID      string          `json:"space_id"`
+				Title        string          `json:"title"`
+				CollectionID *string         `json:"collection_id,omitempty"`
+				Content      json.RawMessage `json:"content,omitempty"`
+				Icon         *string         `json:"icon,omitempty"`
+				Tags         []string        `json:"tags,omitempty"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse create document input: %w", err)
+			}
+			req.SpaceID = strings.TrimSpace(req.SpaceID)
+			req.Title = strings.TrimSpace(req.Title)
+			if req.SpaceID == "" {
+				return nil, fmt.Errorf("space_id is required")
+			}
+			if req.Title == "" {
+				return nil, fmt.Errorf("title is required")
+			}
+			if s.docsDocumentService == nil {
+				return nil, fmt.Errorf("docs document service is not available")
+			}
+
+			doc, err := s.docsDocumentService.Create(ctx, meta.WorkspaceID, model.CreateDocsDocumentRequest{
+				SpaceID:      req.SpaceID,
+				CollectionID: req.CollectionID,
+				Title:        req.Title,
+				Icon:         req.Icon,
+				Tags:         req.Tags,
+			}, fallbackActor(meta))
+			if err != nil {
+				return nil, err
+			}
+
+			docContent := normalizeInternalCommandDocumentContent(req.Content)
+			if !documentContentIsEffectivelyEmpty(docContent) {
+				if s.docsContentRepo == nil {
+					return nil, fmt.Errorf("docs content repository is not available")
+				}
+				if _, err := s.docsContentRepo.Upsert(ctx, doc.ID, docContent); err != nil {
+					return nil, err
+				}
+			}
+
+			return mustJSON(map[string]any{
+				"id":       doc.ID,
+				"title":    doc.Title,
+				"status":   doc.Status,
+				"space_id": doc.SpaceID,
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "docs.link_document_to_object",
 		Module:               "docs",
 		Mutating:             true,
@@ -555,6 +951,81 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, err
 			}
 			return mustJSON(map[string]any{"activity_id": activity.ID, "deal_id": dealID}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "crm.enrich_contact",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_contact"},
+		Tool:                 mustCommandToolMetadata("crm.enrich_contact"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnrichCRMContactRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse contact enrichment input: %w", err)
+			}
+			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
+			if req.ContactID == "" {
+				return nil, fmt.Errorf("contact_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnrichContact(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "crm.enrich_company",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_company"},
+		Tool:                 mustCommandToolMetadata("crm.enrich_company"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnrichCRMCompanyRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse company enrichment input: %w", err)
+			}
+			req.CompanyID = strings.TrimSpace(firstNonEmptyCommand(req.CompanyID, meta.TargetID))
+			if req.CompanyID == "" {
+				return nil, fmt.Errorf("company_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnrichCompany(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "crm.ensure_contact_company",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_contact"},
+		Tool:                 mustCommandToolMetadata("crm.ensure_contact_company"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnsureCRMContactCompanyRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse contact company input: %w", err)
+			}
+			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
+			if req.ContactID == "" {
+				return nil, fmt.Errorf("contact_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnsureContactCompany(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -676,6 +1147,9 @@ func (s *InternalCommandService) registerDefaults() {
 			if err := s.gitService.MergeBranch(ctx, meta.WorkspaceID, storyID, req.TargetBranch); err != nil {
 				return nil, err
 			}
+			if err := s.gitService.UpdateDeliveryStatusAfterMerge(ctx, meta.WorkspaceID, storyID, "merged"); err != nil {
+				return nil, err
+			}
 			return mustJSON(map[string]any{"task_id": storyID, "story_id": storyID, "target_branch": req.TargetBranch}), nil
 		},
 	})
@@ -775,6 +1249,24 @@ func documentContentIsEffectivelyEmpty(raw json.RawMessage) bool {
 	}
 }
 
+func normalizeInternalCommandDocumentContent(raw json.RawMessage) json.RawMessage {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil
+	}
+	content := json.RawMessage(trimmed)
+	if len(content) > 0 && content[0] == '"' {
+		var markdown string
+		if err := json.Unmarshal(content, &markdown); err == nil {
+			if strings.TrimSpace(markdown) == "" {
+				return nil
+			}
+			return tiptap.MarkdownToJSON(markdown)
+		}
+	}
+	return content
+}
+
 func documentNodeHasText(node map[string]any) bool {
 	if text, ok := node["text"].(string); ok && strings.TrimSpace(text) != "" {
 		return true
@@ -811,4 +1303,306 @@ func firstNonEmptyCommand(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (s *InternalCommandService) resolveTaskCreationWorkflow(ctx context.Context, workspaceID, teamID string, requestedWorkflowID, requestedStateID *string) (string, string, error) {
+	if s == nil || s.taskService == nil || s.taskService.workflowRepo == nil {
+		return "", "", fmt.Errorf("workflow service is not configured")
+	}
+	teamID = strings.TrimSpace(teamID)
+	if workspaceID == "" || teamID == "" {
+		return "", "", fmt.Errorf("workspace_id and team_id are required")
+	}
+
+	workflowID := commandDerefString(requestedWorkflowID)
+	stateID := commandDerefString(requestedStateID)
+
+	var workflow *model.WorkflowWithStates
+	if workflowID != "" {
+		loaded, err := s.taskService.workflowRepo.GetByID(ctx, workflowID)
+		if err != nil {
+			return "", "", fmt.Errorf("get workflow: %w", err)
+		}
+		if loaded == nil || loaded.Workflow.WorkspaceID != workspaceID {
+			return "", "", fmt.Errorf("workflow not found")
+		}
+		if loaded.Workflow.TeamID != nil && strings.TrimSpace(*loaded.Workflow.TeamID) != "" && strings.TrimSpace(*loaded.Workflow.TeamID) != teamID {
+			return "", "", fmt.Errorf("workflow_id does not belong to team_id")
+		}
+		workflow = loaded
+	} else {
+		resolved, err := s.taskService.workflowRepo.GetByTeamID(ctx, workspaceID, teamID)
+		if err != nil {
+			return "", "", fmt.Errorf("resolve team workflow: %w", err)
+		}
+		if resolved == nil {
+			resolved, err = s.taskService.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
+			if err != nil {
+				return "", "", fmt.Errorf("resolve default workflow: %w", err)
+			}
+			if resolved == nil {
+				resolved, err = s.taskService.workflowRepo.SeedDefaultWorkflow(ctx, workspaceID)
+				if err != nil {
+					return "", "", fmt.Errorf("seed default workflow: %w", err)
+				}
+			}
+		}
+		workflow = resolved
+	}
+	if workflow == nil {
+		return "", "", fmt.Errorf("workflow not found")
+	}
+
+	if workflowID == "" {
+		workflowID = strings.TrimSpace(workflow.Workflow.ID)
+	}
+	if workflowID == "" {
+		return "", "", fmt.Errorf("workflow_id could not be resolved")
+	}
+	if stateID == "" && workflow.Workflow.DefaultStateID != nil {
+		stateID = strings.TrimSpace(*workflow.Workflow.DefaultStateID)
+	}
+	if stateID == "" {
+		for _, state := range workflow.States {
+			if state.IsDefault {
+				stateID = strings.TrimSpace(state.ID)
+				break
+			}
+		}
+	}
+	if stateID == "" && len(workflow.States) > 0 {
+		stateID = strings.TrimSpace(workflow.States[0].ID)
+	}
+	if stateID == "" {
+		return "", "", fmt.Errorf("workflow has no usable default state")
+	}
+	var matchedState *model.PMWorkflowState
+	for idx := range workflow.States {
+		if strings.TrimSpace(workflow.States[idx].ID) == stateID {
+			matchedState = &workflow.States[idx]
+			break
+		}
+	}
+	if matchedState == nil {
+		return "", "", fmt.Errorf("state_id does not belong to workflow_id")
+	}
+	return workflowID, stateID, nil
+}
+
+func parseInternalCommandTaskDeadline(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	for _, layout := range []string{"2006-01-02", time.RFC3339, time.RFC3339Nano} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return &parsed, nil
+		}
+	}
+	return nil, fmt.Errorf("deadline must be YYYY-MM-DD or RFC3339")
+}
+
+func commandDerefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func compactTaskComments(comments []model.CommentWithAuthor, limit int) []map[string]any {
+	if limit <= 0 || limit > len(comments) {
+		limit = len(comments)
+	}
+	start := len(comments) - limit
+	out := make([]map[string]any, 0, limit)
+	for i := start; i < len(comments); i++ {
+		comment := comments[i].Comment
+		out = append(out, map[string]any{
+			"comment_id": comment.ID,
+			"author_id":  comment.AuthorID,
+			"body":       comment.Body,
+			"created_at": comment.CreatedAt,
+			"updated_at": comment.UpdatedAt,
+		})
+	}
+	return out
+}
+
+func helpinCommandCompactionHint() map[string]any {
+	return map[string]any{
+		"exempt":    true,
+		"max_runes": 30000,
+		"mode":      "bounded_index",
+	}
+}
+
+func buildCompactTaskItem(task model.BoardTask, comments []model.CommentWithAuthor) map[string]any {
+	description := commandDerefString(task.Description)
+	item := map[string]any{
+		"task_id":             task.ID,
+		"display_id":          task.DisplayID,
+		"task_key":            task.TaskKey,
+		"name":                task.Name,
+		"team_id":             task.TeamID,
+		"state_id":            task.WorkflowStateID,
+		"state_name":          task.StateName,
+		"completed":           task.Completed,
+		"priority":            task.Priority,
+		"severity":            task.Severity,
+		"external_id":         task.ExternalID,
+		"updated_at":          task.UpdatedAt,
+		"labels":              compactTaskLabels(task.Labels),
+		"description_excerpt": richTextPlainExcerpt(description, 500),
+		"comment_excerpts":    compactCommentExcerpts(comments, 3, 300),
+	}
+	return item
+}
+
+func marshalCompactTaskResponse(tasks []map[string]any, total int64, limit int) (json.RawMessage, error) {
+	response := map[string]any{
+		"_helpin_compaction": helpinCommandCompactionHint(),
+		"tasks":              tasks,
+		"total":              total,
+		"limit":              limit,
+		"returned_tasks":     len(tasks),
+		"detail_level":       "compact",
+	}
+	out, err := json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	if len([]rune(string(out))) <= 30000 {
+		return out, nil
+	}
+
+	response["bounded"] = true
+	response["has_more"] = true
+	response["warnings"] = []string{"compact_task_excerpts_bounded; load selected task details if more context is required"}
+	for _, task := range tasks {
+		if excerpt, ok := task["description_excerpt"].(string); ok {
+			task["description_excerpt"] = truncatePlainRunes(excerpt, 160)
+		}
+		task["comment_excerpts"] = []map[string]any{}
+	}
+	out, err = json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	if len([]rune(string(out))) <= 30000 {
+		return out, nil
+	}
+
+	for _, task := range tasks {
+		task["description_excerpt"] = ""
+	}
+	out, err = json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	if len([]rune(string(out))) <= 30000 {
+		return out, nil
+	}
+
+	for count := len(tasks); count >= 0; count-- {
+		response["tasks"] = tasks[:count]
+		response["returned_tasks"] = count
+		out, err = json.Marshal(response)
+		if err != nil {
+			return nil, err
+		}
+		if len([]rune(string(out))) <= 30000 {
+			return out, nil
+		}
+	}
+	return out, nil
+}
+
+func compactTaskLabels(labels []model.PMLabel) []map[string]any {
+	out := make([]map[string]any, 0, len(labels))
+	for _, label := range labels {
+		out = append(out, map[string]any{
+			"label_id": label.ID,
+			"name":     label.Name,
+		})
+	}
+	return out
+}
+
+func compactCommentExcerpts(comments []model.CommentWithAuthor, limit int, charBudget int) []map[string]any {
+	if limit <= 0 || limit > len(comments) {
+		limit = len(comments)
+	}
+	start := len(comments) - limit
+	out := make([]map[string]any, 0, limit)
+	for i := start; i < len(comments); i++ {
+		comment := comments[i].Comment
+		out = append(out, map[string]any{
+			"comment_id": comment.ID,
+			"author_id":  comment.AuthorID,
+			"excerpt":    richTextPlainExcerpt(comment.Body, charBudget),
+			"created_at": comment.CreatedAt,
+			"updated_at": comment.UpdatedAt,
+		})
+	}
+	return out
+}
+
+func richTextPlainExcerpt(value string, limit int) string {
+	plain := strings.Join(strings.Fields(stripHTMLPreservingComments(value)), " ")
+	if plain == "" {
+		plain = strings.Join(strings.Fields(value), " ")
+	}
+	return truncatePlainRunes(plain, limit)
+}
+
+func stripHTMLPreservingComments(value string) string {
+	if value == "" {
+		return ""
+	}
+	comments := extractHTMLComments(value)
+	plain := html.UnescapeString(tiptap.StripHTML(value))
+	if len(comments) == 0 {
+		return plain
+	}
+	return strings.Join(comments, " ") + " " + plain
+}
+
+func extractHTMLComments(value string) []string {
+	var comments []string
+	for {
+		start := strings.Index(value, "<!--")
+		if start < 0 {
+			break
+		}
+		remaining := value[start+4:]
+		relativeEnd := strings.Index(remaining, "-->")
+		if relativeEnd < 0 {
+			break
+		}
+		end := start + 4 + relativeEnd + len("-->")
+		comment := strings.TrimSpace(html.UnescapeString(value[start:end]))
+		if comment != "" {
+			comments = append(comments, comment)
+		}
+		value = value[end:]
+	}
+	return comments
+}
+
+func truncatePlainRunes(value string, limit int) string {
+	if limit <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 1 {
+		return string(runes[:limit])
+	}
+	if limit <= 3 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-3]) + "..."
 }

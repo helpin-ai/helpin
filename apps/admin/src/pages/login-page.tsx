@@ -11,10 +11,8 @@ import { useAuthStore } from '@/stores/authStore'
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const signIn = useAuthStore((state) => state.signIn)
   const signInWithPasskey = useAuthStore((state) => state.signInWithPasskey)
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const passkeySupported = passkeyService.isSupported()
@@ -57,28 +55,10 @@ export function LoginPage() {
     }
   }, [navigate, passkeySupported, rememberMe, signInWithPasskey])
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setSubmitting(true)
-
-    try {
-      passkeyService.cancelPendingAuthentication()
-      const { error } = await signIn(email, password, rememberMe)
-      if (error) {
-        toast.error('Sign in failed', { description: error })
-        return
-      }
-
-      await navigate({ to: '/chat-playground' })
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   const handlePasskeySignIn = async () => {
     setSubmitting(true)
     try {
-      const { error } = await signInWithPasskey(undefined, rememberMe)
+      const { error } = await signInWithPasskey(email, rememberMe)
       if (error) {
         toast.error('Passkey sign in failed', { description: error })
         return
@@ -100,13 +80,13 @@ export function LoginPage() {
           </div>
           <CardTitle className="text-2xl">Sign in</CardTitle>
           <CardDescription>
-            Use the same account you use in the main app. Admin tools stay workspace-scoped.
+            Use a registered platform admin passkey.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="space-y-5" onSubmit={handleSubmit}>
+          <div className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email optional</Label>
               <Input
                 id="email"
                 type="email"
@@ -115,20 +95,6 @@ export function LoginPage() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="name@company.com"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                name="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
               />
             </div>
 
@@ -142,12 +108,8 @@ export function LoginPage() {
               Keep me signed in
             </label>
 
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Signing in...' : 'Sign in'}
-            </Button>
-
             <Button type="button" variant="outline" className="w-full" disabled={submitting || !passkeySupported} onClick={() => void handlePasskeySignIn()}>
-              Sign in with passkey
+              {submitting ? 'Signing in...' : 'Sign in with passkey'}
             </Button>
 
             {!passkeySupported && (
@@ -155,7 +117,7 @@ export function LoginPage() {
                 This browser does not support passkeys.
               </p>
             )}
-          </form>
+          </div>
         </CardContent>
       </Card>
     </div>

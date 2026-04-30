@@ -38,8 +38,8 @@ function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType;
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
-      <span className="self-center text-xs text-muted-foreground">{label}</span>
-      <div className="min-w-0 self-center">{children}</div>
+      <span className="self-center text-[12px] text-muted-foreground">{label}</span>
+      <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
 }

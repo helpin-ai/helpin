@@ -1,4 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
+import { useDocsContext } from '@/contexts/DocsContext'
+import { prefixBasepath } from '@/lib/pathUtils'
 import { slugifyHeading, uniqueSlug } from '@/lib/toc'
 
 interface ArticleContentProps {
@@ -6,6 +8,7 @@ interface ArticleContentProps {
 }
 
 export function ArticleContent({ html }: ArticleContentProps) {
+  const { basepath } = useDocsContext()
   const contentRef = useRef<HTMLDivElement>(null)
 
   const enhanceContent = useCallback(() => {
@@ -59,11 +62,42 @@ export function ArticleContent({ html }: ArticleContentProps) {
     )
   }
 
+  const renderedHtml = rewriteInternalHelpCenterLinks(html, basepath)
+
   return (
     <div
       ref={contentRef}
       className="hc-prose"
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: renderedHtml }}
     />
+  )
+}
+
+function rewriteInternalHelpCenterLinks(html: string, basepath: string) {
+  if (!basepath) return html
+
+  return html.replace(
+    /\s(href)=("([^"]*)"|'([^']*)')/gi,
+    (match, attr: string, quoted: string, doubleValue?: string, singleValue?: string) => {
+      const value = doubleValue ?? singleValue ?? ''
+      if (!shouldPrefixHref(value, basepath)) return match
+
+      const quote = quoted.startsWith('"') ? '"' : "'"
+      return ` ${attr}=${quote}${prefixBasepath(basepath, value)}${quote}`
+    },
+  )
+}
+
+function shouldPrefixHref(href: string, basepath: string) {
+  if (!href.startsWith('/')) return false
+  if (href === basepath || href.startsWith(`${basepath}/`)) return false
+  if (href.startsWith('//')) return false
+
+  return (
+    href === '/search' ||
+    href.startsWith('/search?') ||
+    href.startsWith('/c/') ||
+    href.startsWith('/articles/') ||
+    /^\/[a-z]{2}(?:-[a-z0-9]+)?(?:\/(?:c|articles)\/|\/search(?:\/|\?|$))/i.test(href)
   )
 }

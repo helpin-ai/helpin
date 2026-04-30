@@ -52,6 +52,7 @@ export interface SupportConversation {
   ai_resolution_type?: 'confirmed' | 'assumed' | null;
   ai_turn_count?: number;
   customer_requested_human_at?: string;
+  human_takeover?: boolean | null;
   last_message?: string;
   unread_count?: number;
   mailbox_name?: string | null;
@@ -279,6 +280,7 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'triage_routed',
   'triage_dismissed',
   'ai_escalated',
+  'customer_requested_human',
   'resolved',
   'reopened',
   'closed',
@@ -308,6 +310,10 @@ export interface SupportMessage {
   html_body?: string;
   /** Markdown-friendly plaintext body — present only for inbound email messages. */
   stripped_text?: string;
+  /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
+  email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
+  /** Human-readable bounce or complaint description. Empty unless delivery failed. */
+  email_delivery_error?: string;
   created_at: string;
   updated_at: string;
 }
@@ -325,7 +331,10 @@ export interface SupportMessageEmailDetail {
   stripped_text?: string;
   html_body?: string;
   status: string;
+  delivered_at?: string;
   opened_at?: string;
+  bounced_at?: string;
+  error_message?: string;
   created_at: string;
 }
 
@@ -658,6 +667,7 @@ export interface SupportInboxSettings {
   email_fallback_enabled: boolean;
   email_fallback_delay_secs: number;
   email_fallback_from_name: string;
+  email_fallback_max_delivery_age_secs: number;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;

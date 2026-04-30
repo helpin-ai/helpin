@@ -1,0 +1,155 @@
+# Helpin Docs Module Roadmap
+
+## Status
+
+Planning.
+
+## Thesis
+
+Helpin Docs should not try to become a generic Confluence or Notion clone first. The wedge is workspace-native, agent-assisted documentation that is connected to PM execution, CRM context, and support knowledge gaps.
+
+The next roadmap should therefore ship one differentiated vertical slice early, then extract shared block infrastructure from the real requirements of that slice. The platform should be shaped by AI sections, entity embeds, comments, mentions, citations, and automation targets rather than designed abstractly before those features exist.
+
+## Priority Roadmap
+
+### P0: Differentiated Vertical Slice
+
+1. **AI section block**
+   - A region of a document owned by an agent.
+   - Supports regenerate, generated candidate preview, diff, approval, rejection, and last-generated metadata.
+   - Tracks enough provenance to answer who or what generated the section and from which sources.
+
+2. **Entity embed blocks**
+   - Ship PM task/story/epic and support conversation/ticket embeds in the first slice.
+   - Push CRM deal/contact/company embeds to late-P0 or early-P1 so the first slice stays bounded.
+   - Embeds should be live, permission-aware, click-through, and readable by agents.
+
+3. **Inline comments and mentions**
+   - Comments anchor to a block or selected text range.
+   - Support replies, resolve/reopen, and lightweight reactions.
+   - Mentions support `@user`, `@team`, and `@agent`, using the existing Helpin mention and notification patterns.
+
+4. **Docs and blocks as agent and automation targets**
+   - First-class targets: `doc`, `doc_block`, `ai_section`.
+   - Initial events: `ai_section.regenerated`, `ai_section.approved`, and `doc.published`.
+   - Later events such as `block.commented`, `block.stale`, and `doc.updated` should wait for P1 audit and review work.
+   - Automation rules should be able to launch agents against a doc or block target using the existing generic target contract.
+
+5. **Citations and sources for AI sections**
+   - Scope this narrowly to AI-generated sections first.
+   - Ship end-to-end citations for docs chunks and support conversations first.
+   - Treat CRM activity, PM objects, and broader agent retrieval traces as follow-up source types.
+   - Render provenance in the section UI without requiring a fully generic citation system on day one.
+
+6. **Doc-level versioning plus section diff**
+   - Keep existing document-level versioning as the primary rollback model.
+   - For AI sections, store generated candidate content and approved content so users can diff the section without requiring full block-level versioning.
+
+7. **Backlinks and references panel**
+   - Show docs, PM objects, CRM records, support conversations, comments, citations, and agent runs that reference the current doc or block.
+   - This should make the Helpin knowledge graph visible early.
+
+### P1: Stabilize The Block Platform
+
+1. **Typed block registry**
+   - Extract after the first vertical slice proves the shape.
+   - Registry entries should define kind, attrs schema, TipTap extension, renderer, serializer, search text, agent-readable form, permission behavior, and audit behavior.
+   - Agent-readable form means a structured JSON projection with block kind, stable ID, relevant attrs, plain text, linked entity refs, citation refs, and action affordances. Markdown can be a display/export fallback, not the agent contract.
+   - Migrate existing custom blocks into the registry incrementally: callout, image, video, HTML, code, table, entity embed, AI section.
+
+2. **Permission-aware block rendering and agent-readable forms**
+   - Blocks that reference PM, CRM, or support entities must degrade safely when the viewer lacks access.
+   - Agents should receive structured block forms, not markdown-only text.
+
+3. **Meaningful block audit events**
+   - Track comment created/resolved, mention created, AI section regenerated/approved/rejected, entity linked/unlinked, block marked stale, and doc published.
+   - Avoid exhaustive per-keystroke audit logs.
+
+4. **Support-to-docs feedback loop**
+   - First pass only marks relevant docs or blocks as stale from failed support answers, repeated ticket themes, or coverage gaps.
+   - Suggestion creation and automatic AI section regeneration should follow after stale markers are visible and auditable.
+   - Link stale markers back to the originating support evidence.
+
+5. **Saved-view embed block**
+   - Start narrower than a live query language.
+   - Embed an existing PM, CRM, or support saved view by reference and render it as a table/list/card set.
+   - Defer custom SQL or DSL until saved-view embeds prove demand.
+
+### P2: Editor Completeness
+
+1. **Semantic callouts**
+   - Map current color variants to `info`, `tip`, `warning`, `danger`, and `success`.
+
+2. **Task lists with assignee and due date**
+   - Support check state, assignee, due date, and optional PM task/story conversion.
+   - Mention and notification behavior should match PM checklist items where practical.
+
+3. **Toggle and collapsible sections**
+   - Useful for long agent-generated plans, specs, and support runbooks.
+
+4. **Image captions and file attachment blocks**
+   - Keep current image alt/alignment behavior.
+   - Add first-class captions and generic file blocks for PDFs, CSVs, logs, screenshots, and documents.
+
+5. **Table of contents**
+   - Provide sidebar and inline variants backed by stable heading and block anchors.
+
+6. **Tables v2**
+   - Add merge/split cells, sorting, row/column drag, and better CSV paste cleanup if usage justifies the work.
+
+7. **General rich embeds**
+   - Expand beyond video to rich unfurls for tools such as Figma, GitHub, Linear, Loom, YouTube, and Notion.
+
+## Integration Model
+
+### Project Management
+
+- Embed PM tasks, stories, epics, objectives, and sprints in docs.
+- Convert doc task-list items into PM work items.
+- Let specs, release notes, and planning docs publish status changes back to PM.
+- Use doc comments and mentions as part of PM notification loops.
+
+### CRM
+
+- Embed contacts, companies, deals, buyer signals, summaries, and CRM activity.
+- Generate deal briefs and account plans as AI sections.
+- Cite customer evidence from emails, calendar events, notes, and support conversations.
+- Let docs become reusable sales and success playbooks tied to live CRM data.
+
+### Support
+
+- Embed support tickets, conversations, coverage gaps, and help-center articles.
+- Use repeated support issues to mark blocks stale or trigger AI section regeneration.
+- Carry source provenance from support answers into docs.
+- Let help-center publishing and support answer quality form a closed feedback loop.
+
+### Agents And Automation
+
+- Docs, blocks, and AI sections should be targetable by manual runs, automation rules, and scheduled maintenance agents.
+- Agent action blocks should trigger Temporal workflows with audit logging.
+- Automation events should be explicit and reusable rather than hidden inside editor-specific code paths.
+
+## Deferred Or Cut
+
+- **KaTeX/math**: cut until there is clear customer pull. It adds schema, rendering, indexing, export, and test surface.
+- **Excalidraw/whiteboards**: defer indefinitely unless a strong workspace-planning use case appears.
+- **Columns/grid layout**: defer indefinitely; lower leverage than entity embeds and AI sections for Helpin's wedge.
+- **PlantUML, D2, draw.io**: defer. Mermaid plus future rich embeds should cover most near-term needs.
+- **Custom live query DSL or SQL block**: defer. Saved-view embeds are the lower-risk first version.
+- **Full block-level versioning**: defer. Use doc-level versions plus AI-section candidate/approval history first.
+
+## Implementation Notes
+
+- Do not start with a large abstract registry project. Build AI section, entity embed, comments, mentions, citations, and automation targeting first.
+- Keep using the current addressable block model and compatibility document aggregate while the vertical slice is built.
+- Extract the typed block registry once the first new native blocks reveal the required schema, render, serialization, permission, and agent-readable contracts.
+- Treat markdown as an import/export format, not the canonical representation for Helpin-native blocks.
+- Prefer saved references to existing PM/CRM/support objects over copied snapshots. Render snapshots only as fallbacks when permissions or deleted records require it.
+- AI section provenance must be permission-aware. If a viewer cannot access a cited support conversation, CRM record, PM object, or source chunk, show a redacted source label and confidence/status metadata, but do not expose restricted text or links.
+
+## Assumptions
+
+- The first product milestone is internal docs plus workspace-native docs, not a public help-center editor refresh.
+- PM and support embeds should ship before CRM embeds because they are closest to current docs, planning, and support coverage flows.
+- The AI section block is the main differentiator and should drive requirements for citations, diffs, approvals, and registry extraction.
+- The existing generic agent target contract should be extended to docs rather than adding bespoke docs-only launch paths.

@@ -77,6 +77,41 @@ func TestPMAttachmentService_PrepareAttachment_AllowsObjectiveAndSprintEntities(
 	}
 }
 
+func TestPMAttachmentService_PrepareAttachment_AllowsVideoUpTo50MB(t *testing.T) {
+	t.Parallel()
+
+	svc, _, _, workspaceID, userID := newAttachmentTestEnv(t)
+	ctx := context.Background()
+
+	attachment, err := svc.prepareAttachment(ctx, model.CreateAttachmentRequest{
+		EntityType:  "task",
+		EntityID:    "task-video",
+		FileName:    "recording.mp4",
+		FileSize:    maxFileSize,
+		ContentType: "video/mp4",
+	}, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("prepareAttachment(video/mp4): %v", err)
+	}
+	if attachment.ContentType != "video/mp4" {
+		t.Fatalf("content_type = %q, want video/mp4", attachment.ContentType)
+	}
+
+	_, err = svc.prepareAttachment(ctx, model.CreateAttachmentRequest{
+		EntityType:  "task",
+		EntityID:    "task-too-large",
+		FileName:    "too-large.webm",
+		FileSize:    maxFileSize + 1,
+		ContentType: "video/webm",
+	}, workspaceID, userID)
+	if err == nil {
+		t.Fatal("expected oversized video to be rejected")
+	}
+	if got := err.Error(); got != "file exceeds maximum size of 50MB" {
+		t.Fatalf("oversized error = %q", got)
+	}
+}
+
 func TestPMAttachmentRepository_ReassignToEntity(t *testing.T) {
 	t.Parallel()
 

@@ -191,7 +191,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 	if existingSummary.Proposal != nil {
 		proposal = *existingSummary.Proposal
 	} else if err := json.Unmarshal(run.OutputSummary, &proposal); err != nil {
-		return nil, fmt.Errorf("task plan output is invalid; regenerate the plan as JSON with \"summary\" and \"proposed_tasks\" or the legacy \"proposed_stories\"")
+		return nil, fmt.Errorf("task plan output is invalid; regenerate the plan as JSON with \"summary\" and \"proposed_tasks\"")
 	}
 
 	proposedStories := req.ProposedTasks
@@ -199,7 +199,7 @@ func (s *AgentService) ConfirmEpicRun(ctx context.Context, workspaceID, epicID, 
 		proposedStories = proposal.ProposedTasks
 	}
 	if len(proposedStories) == 0 {
-		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\" or the legacy \"proposed_stories\"")
+		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\"")
 	}
 	if err := validatePlanningTasks(proposedStories); err != nil {
 		return nil, err
@@ -422,7 +422,7 @@ func (s *AgentService) createStoriesFromProposal(ctx context.Context, workspaceI
 		return nil, fmt.Errorf("task service is not configured")
 	}
 	if len(proposedStories) == 0 {
-		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\" or the legacy \"proposed_stories\"")
+		return nil, fmt.Errorf("task plan must include at least one item in \"proposed_tasks\"")
 	}
 	if err := validatePlanningTasks(proposedStories); err != nil {
 		return nil, err
@@ -1022,13 +1022,7 @@ func renderPlannedTaskDescription(proposed model.ProposedTask) string {
 	if len(sections) == 0 {
 		return ""
 	}
-	markdown := strings.Join(sections, "\n\n")
-	rendered, err := tiptap.RenderHTML(tiptap.MarkdownToJSON(markdown))
-	if err != nil {
-		slog.Warn("failed to render planned task markdown to html", "error", err)
-		return markdown
-	}
-	return strings.TrimSpace(rendered)
+	return renderTaskDescriptionRichText(strings.Join(sections, "\n\n"))
 }
 
 func validateSpecClarifications(updated, current []model.SpecClarificationItem) ([]model.SpecClarificationItem, int, error) {

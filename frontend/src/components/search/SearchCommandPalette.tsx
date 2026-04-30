@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   BookOpen01Icon,
-  BotIcon,
   Briefcase01Icon,
   File01Icon,
   FolderKanbanIcon,
@@ -102,7 +101,6 @@ export function SearchCommandPalette({
     { label: 'CRM', icon: Briefcase01Icon, path: `/w/${slug}/crm/contacts` },
     { label: 'Support', icon: Message01Icon, path: `/w/${slug}/support` },
     { label: 'Docs', icon: File01Icon, path: `/w/${slug}/docs` },
-    { label: 'Automation', icon: BotIcon, path: `/w/${slug}/automation/flows` },
   ];
 
   const settingsNavItems = SETTINGS_ROUTE_SECTIONS.filter(
@@ -151,10 +149,11 @@ export function SearchCommandPalette({
       onOpenChange={onOpenChange}
       title="Search"
       description={`Search across ${workspace?.name ?? 'workspace'}`}
+      className="self-start justify-self-center border-border/70 shadow-xl sm:mt-[12vh] sm:max-w-2xl"
       showCloseButton={false}
     >
       <CommandInput
-        placeholder={`Search ${workspace?.name ?? 'workspace'}...`}
+        placeholder="Search tasks, epics, docs, people…"
         value={query}
         onValueChange={setQuery}
       />

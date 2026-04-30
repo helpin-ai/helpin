@@ -7,6 +7,12 @@ import {
 } from '@/components/ui/sheet';
 import { CodingSessionSurface } from './CodingSessionSurface';
 
+function stopOutsideDismissPropagation(event: Event) {
+  event.stopPropagation();
+  const originalEvent = (event as Event & { detail?: { originalEvent?: Event } }).detail?.originalEvent;
+  originalEvent?.stopPropagation();
+}
+
 export function CodingSessionDrawer({
   sessionId,
   open,
@@ -22,7 +28,13 @@ export function CodingSessionDrawer({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full border-l p-0 data-[side=right]:w-[78vw] data-[side=right]:sm:max-w-[78vw]">
+      <SheetContent
+        side="right"
+        className="z-[70] w-full border-l p-0 data-[side=right]:w-[78vw] data-[side=right]:sm:max-w-[78vw]"
+        overlayClassName="z-[70]"
+        onPointerDownOutside={stopOutsideDismissPropagation}
+        onInteractOutside={stopOutsideDismissPropagation}
+      >
         <SheetHeader className="sr-only">
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>

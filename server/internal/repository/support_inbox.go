@@ -424,7 +424,8 @@ func (r *SupportConversationRepository) maybeAcquireWorkspaceDisplayIDLock(tx *g
 }
 
 func conversationAIActiveCondition(alias string) string {
-	return fmt.Sprintf("(COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'pending'))",
+	return fmt.Sprintf("(COALESCE(%s.human_takeover, false) = false AND (COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'pending')))",
+		alias,
 		alias,
 		model.SupportConversationFlowStateAIHandling,
 		alias,
@@ -433,7 +434,8 @@ func conversationAIActiveCondition(alias string) string {
 }
 
 func conversationResolvedByAICondition(alias string) string {
-	return fmt.Sprintf("(COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'resolved'))",
+	return fmt.Sprintf("(COALESCE(%s.human_takeover, false) = false AND (COALESCE(%s.flow_state, '') = '%s' OR (COALESCE(%s.flow_state, '') = '' AND COALESCE(%s.ai_state, '') = 'resolved')))",
+		alias,
 		alias,
 		model.SupportConversationFlowStateResolvedByAI,
 		alias,
@@ -469,11 +471,12 @@ func applyConversationFlowState(query *gorm.DB, alias, flowState string) *gorm.D
 }
 
 // List returns conversations with optional filters and pagination.
-func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, flowState string, aiState ...string) ([]model.SupportConversation, int64, error) {
+func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, flowState, search string, aiState ...string) ([]model.SupportConversation, int64, error) {
 	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ?", workspaceID)
 	base = r.applyMailboxAccess(base, workspaceMemberID, role)
 	base = r.applyMailboxScope(base, mailboxID)
 	base = applyConversationFlowState(base, "support_conversations", flowState)
+	base = r.applyConversationSearch(base, strings.TrimSpace(search))
 
 	if status != "" {
 		base = base.Where("status = ?", status)
@@ -510,6 +513,7 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	fetch = r.applyMailboxAccess(fetch, workspaceMemberID, role)
 	fetch = r.applyMailboxScope(fetch, mailboxID)
 	fetch = applyConversationFlowState(fetch, "support_conversations", flowState)
+	fetch = r.applyConversationSearch(fetch, strings.TrimSpace(search))
 	if status != "" {
 		fetch = fetch.Where("support_conversations.status = ?", status)
 	}
@@ -556,6 +560,67 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
 	return conversations, total, nil
+}
+
+func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, limit int) ([]model.SupportConversation, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+
+	var conversations []model.SupportConversation
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Where("status <> ?", model.SupportConversationStatusSpam).
+		Where(`(
+			(updated_at >= ? AND updated_at < ?)
+			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
+		)`, windowStart, windowEnd, windowStart, windowEnd).
+		Order("updated_at ASC, id ASC").
+		Limit(limit).
+		Find(&conversations).Error
+	if err != nil {
+		return nil, fmt.Errorf("list coverage analysis candidates: %w", err)
+	}
+	return conversations, nil
+}
+
+func (r *SupportConversationRepository) ListWorkspacesForCoverageAnalysisCandidates(ctx context.Context, windowStart, windowEnd time.Time, limit int) ([]string, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 1000
+	}
+	var workspaceIDs []string
+	err := r.db.WithContext(ctx).
+		Model(&model.SupportConversation{}).
+		Distinct("workspace_id").
+		Where("status <> ?", model.SupportConversationStatusSpam).
+		Where(`(
+			(updated_at >= ? AND updated_at < ?)
+			OR (resolved_at IS NOT NULL AND resolved_at >= ? AND resolved_at < ?)
+		)`, windowStart, windowEnd, windowStart, windowEnd).
+		Order("workspace_id ASC").
+		Limit(limit).
+		Pluck("workspace_id", &workspaceIDs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list coverage analysis workspaces: %w", err)
+	}
+	return workspaceIDs, nil
+}
+
+func (r *SupportConversationRepository) applyConversationSearch(query *gorm.DB, search string) *gorm.DB {
+	if search == "" {
+		return query
+	}
+	escaped := escapeLike(search)
+	pattern := "%" + escaped + "%"
+	return query.Where(`(
+		support_conversations.subject ILIKE ? ESCAPE '\'
+		OR COALESCE(support_conversations.customer_name, '') ILIKE ? ESCAPE '\'
+		OR COALESCE(support_conversations.customer_email, '') ILIKE ? ESCAPE '\'
+		OR CAST(support_conversations.display_id AS TEXT) LIKE ? ESCAPE '\'
+	)`, pattern, pattern, pattern, pattern)
 }
 
 // GetByID returns a single conversation.

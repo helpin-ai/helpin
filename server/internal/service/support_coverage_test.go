@@ -36,11 +36,17 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 		`CREATE TABLE support_coverage_topics (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, issue_key TEXT NOT NULL,
 			title TEXT NOT NULL DEFAULT '', gap_count INTEGER NOT NULL DEFAULT 0,
-			created_at DATETIME, updated_at DATETIME, UNIQUE(workspace_id, issue_key)
+			cluster_key TEXT, canonical_title TEXT, last_enriched_at DATETIME,
+			cooldown_until DATETIME, created_at DATETIME, updated_at DATETIME,
+			UNIQUE(workspace_id, issue_key)
 		)`,
+		`CREATE UNIQUE INDEX idx_support_coverage_topics_workspace_cluster_key
+			ON support_coverage_topics(workspace_id, cluster_key)
+			WHERE cluster_key IS NOT NULL`,
 		`CREATE TABLE support_coverage_gaps (
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, topic_id TEXT,
-			dedupe_key TEXT NOT NULL, gap_category TEXT NOT NULL DEFAULT 'unknown',
+			dedupe_key TEXT NOT NULL, gap_kind TEXT NOT NULL DEFAULT 'content',
+			gap_category TEXT NOT NULL DEFAULT 'unknown',
 			v1_gap_type TEXT NOT NULL DEFAULT 'needs_review', title TEXT NOT NULL DEFAULT '',
 			issue_key TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open',
 			confidence REAL NOT NULL DEFAULT 0, evidence_count INTEGER NOT NULL DEFAULT 0,
@@ -48,8 +54,13 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			can_answer TEXT, can_resolve TEXT, metadata TEXT NOT NULL DEFAULT '{}',
 			first_seen_at DATETIME, last_seen_at DATETIME,
 			status_changed_by TEXT, status_changed_at DATETIME, issue_resolved BOOLEAN,
+			closed_at DATETIME, closed_evidence_count INTEGER, result_document_id TEXT,
+			rejection_reason TEXT,
 			created_at DATETIME, updated_at DATETIME
 		)`,
+		`CREATE UNIQUE INDEX idx_support_coverage_gaps_workspace_topic_open
+			ON support_coverage_gaps(workspace_id, topic_id)
+			WHERE status = 'open' AND topic_id IS NOT NULL`,
 		`CREATE TABLE support_gap_evidence (
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			evidence_type TEXT NOT NULL, conversation_id TEXT, message_id TEXT,
@@ -63,6 +74,7 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			title TEXT NOT NULL DEFAULT '', content TEXT, evidence_summary TEXT NOT NULL DEFAULT '',
 			target_space_id TEXT, target_collection_id TEXT, target_document_id TEXT,
 			result_document_id TEXT, result_article_id TEXT, applied_at DATETIME,
+			is_active BOOLEAN NOT NULL DEFAULT 1, superseded_at DATETIME,
 			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME, updated_at DATETIME
 		)`,
 		`CREATE TABLE support_coverage_gap_articles (
@@ -92,23 +104,83 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 	return eventSvc, coverageSvc, db
 }
 
+func TestSupportCoverageImpactTier(t *testing.T) {
+	tests := []struct {
+		evidence30d int
+		want        string
+	}{
+		{0, "low"},
+		{2, "low"},
+		{3, "medium"},
+		{9, "medium"},
+		{10, "high"},
+		{100, "high"},
+	}
+	for _, tt := range tests {
+		if got := ImpactTier(tt.evidence30d); got != tt.want {
+			t.Fatalf("ImpactTier(%d)=%q, want %q", tt.evidence30d, got, tt.want)
+		}
+	}
+}
+
+func TestSupportCoverage_AddDocumentToGapClosesWithResultDocument(t *testing.T) {
+	_, coverageSvc, db := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	now := time.Now()
+	repo := repository.NewSupportCoverageRepository(db)
+
+	_, _, err := repo.UpsertGapByDedupeKey(ctx, &model.SupportCoverageGap{
+		ID:          "gap-editor",
+		WorkspaceID: "ws-1",
+		DedupeKey:   "editor-handoff",
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+	})
+	if err != nil {
+		t.Fatalf("seed gap: %v", err)
+	}
+	if err := repo.CreateEvidence(ctx, &model.SupportGapEvidence{
+		GapID:        "gap-editor",
+		WorkspaceID:  "ws-1",
+		EvidenceType: model.SupportEventDocsIssueFeedback,
+		CreatedAt:    now,
+	}); err != nil {
+		t.Fatalf("seed evidence: %v", err)
+	}
+
+	if err := coverageSvc.AddDocumentToGap(ctx, "ws-1", "gap-editor", "doc-editor"); err != nil {
+		t.Fatalf("AddDocumentToGap: %v", err)
+	}
+
+	var gap model.SupportCoverageGap
+	if err := db.Where("id = ?", "gap-editor").First(&gap).Error; err != nil {
+		t.Fatalf("load gap: %v", err)
+	}
+	if gap.Status != model.SupportCoverageGapStatusDone {
+		t.Fatalf("status=%q, want done", gap.Status)
+	}
+	if gap.ResultDocumentID == nil || *gap.ResultDocumentID != "doc-editor" {
+		t.Fatalf("result_document_id=%v, want doc-editor", gap.ResultDocumentID)
+	}
+}
+
 func TestSupportCoverage_AIHandoff_NoRetrieval_CreatesGap(t *testing.T) {
 	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
 	ctx := context.Background()
 
 	err := eventSvc.RecordEvent(ctx, SupportEventInput{
-		WorkspaceID: "ws-1",
-		EventType:   model.SupportEventAIHandoffTriggered,
-		IssueKey:    "billing_refund",
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventAIHandoffTriggered,
+		IssueKey:     "billing_refund",
 		IssueSummary: "How do I get a refund?",
-		FailureMode: model.SupportCoverageFailureNoRetrieval,
+		FailureMode:  model.SupportCoverageFailureNoRetrieval,
 		SourceSignal: model.SupportCoverageSourceAIHandoff,
 	})
 	if err != nil {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if err != nil {
 		t.Fatalf("ListGaps: %v", err)
 	}
@@ -139,7 +211,7 @@ func TestSupportCoverage_AIHandoff_WeakRetrieval_CreatesWeakArticleGap(t *testin
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -164,7 +236,7 @@ func TestSupportCoverage_ArticleFeedback_CreatesWeakGap(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -188,7 +260,7 @@ func TestSupportCoverage_WidgetSearch_NoResults_CreatesGap(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -211,7 +283,7 @@ func TestSupportCoverage_WidgetSearch_NoResults_NoIssueKey_NeedsReview(t *testin
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -234,7 +306,7 @@ func TestSupportCoverage_DocsIssueFeedback_CreatesNeedsReview(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -256,12 +328,185 @@ func TestSupportCoverage_DuplicateEvents_IncrementEvidence(t *testing.T) {
 		})
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap (deduped), got %d", len(gaps))
 	}
 	if gaps[0].EvidenceCount != 3 {
 		t.Errorf("expected evidence_count=3, got %d", gaps[0].EvidenceCount)
+	}
+}
+
+func TestSupportCoverage_SpikeTriggerStartsEnrichmentOnFifthEvidence(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	runner := &fakeCoverageWorkflowRunner{}
+	coverageSvc.SetCoverageWorkflowRunner(runner)
+	ctx := context.Background()
+
+	for i := 0; i < 5; i++ {
+		if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+			WorkspaceID:  "ws-1",
+			EventType:    model.SupportEventHumanReplyAfterAI,
+			IssueSummary: "How do I reset my password?",
+			SourceSignal: model.SupportCoverageSourceHumanReply,
+		}); err != nil {
+			t.Fatalf("RecordEvent %d: %v", i, err)
+		}
+	}
+
+	if len(runner.topicIDs) != 1 {
+		t.Fatalf("workflow starts=%d, want 1", len(runner.topicIDs))
+	}
+	if runner.topicIDs[0] == "" {
+		t.Fatal("expected topic id")
+	}
+}
+
+func TestSupportCoverage_SpikeTriggerWaitsUntilFifthEvidence(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	runner := &fakeCoverageWorkflowRunner{}
+	coverageSvc.SetCoverageWorkflowRunner(runner)
+	ctx := context.Background()
+
+	for i := 0; i < 4; i++ {
+		if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+			WorkspaceID:  "ws-1",
+			EventType:    model.SupportEventHumanReplyAfterAI,
+			IssueSummary: "How do I reset my password?",
+			SourceSignal: model.SupportCoverageSourceHumanReply,
+		}); err != nil {
+			t.Fatalf("RecordEvent %d: %v", i, err)
+		}
+	}
+
+	if len(runner.topicIDs) != 0 {
+		t.Fatalf("workflow starts=%d, want 0", len(runner.topicIDs))
+	}
+}
+
+func TestSupportCoverage_SpikeTriggerRespectsTopicCooldown(t *testing.T) {
+	eventSvc, coverageSvc, db := setupCoverageTestEnv(t)
+	runner := &fakeCoverageWorkflowRunner{}
+	coverageSvc.SetCoverageWorkflowRunner(runner)
+	ctx := context.Background()
+
+	for i := 0; i < 4; i++ {
+		if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+			WorkspaceID:  "ws-1",
+			EventType:    model.SupportEventHumanReplyAfterAI,
+			IssueSummary: "How do I reset my password?",
+			SourceSignal: model.SupportCoverageSourceHumanReply,
+		}); err != nil {
+			t.Fatalf("RecordEvent %d: %v", i, err)
+		}
+	}
+	var topic model.SupportCoverageTopic
+	if err := db.First(&topic).Error; err != nil {
+		t.Fatalf("load topic: %v", err)
+	}
+	cooldown := time.Now().Add(time.Hour)
+	if err := db.Model(&model.SupportCoverageTopic{}).Where("id = ?", topic.ID).Update("cooldown_until", cooldown).Error; err != nil {
+		t.Fatalf("set cooldown: %v", err)
+	}
+	if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventHumanReplyAfterAI,
+		IssueSummary: "How do I reset my password?",
+		SourceSignal: model.SupportCoverageSourceHumanReply,
+	}); err != nil {
+		t.Fatalf("RecordEvent fifth: %v", err)
+	}
+
+	if len(runner.topicIDs) != 0 {
+		t.Fatalf("workflow starts=%d, want 0 during cooldown", len(runner.topicIDs))
+	}
+}
+
+func TestSupportCoverage_RegenerateGapEnqueuesUniqueWorkflow(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	runner := &fakeCoverageWorkflowRunner{}
+	coverageSvc.SetCoverageWorkflowRunner(runner)
+	ctx := context.Background()
+
+	if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:  "ws-1",
+		EventType:    model.SupportEventHumanReplyAfterAI,
+		IssueSummary: "How do I reset my password?",
+		SourceSignal: model.SupportCoverageSourceHumanReply,
+	}); err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+	gaps, _, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+
+	if err := coverageSvc.RegenerateGap(ctx, "ws-1", gaps[0].ID); err != nil {
+		t.Fatalf("RegenerateGap: %v", err)
+	}
+
+	if len(runner.topicIDs) != 1 {
+		t.Fatalf("workflow starts=%d, want 1", len(runner.topicIDs))
+	}
+	if !runner.unique[0] {
+		t.Fatal("manual regenerate should use a unique workflow id")
+	}
+}
+
+func TestSupportCoverage_RegenerateGapRejectsLegacyGapWithoutTopic(t *testing.T) {
+	_, coverageSvc, db := setupCoverageTestEnv(t)
+	coverageSvc.SetCoverageWorkflowRunner(&fakeCoverageWorkflowRunner{})
+	ctx := context.Background()
+	now := time.Now()
+	legacy := model.SupportCoverageGap{
+		ID:            "legacy-gap",
+		WorkspaceID:   "ws-1",
+		DedupeKey:     "legacy",
+		Status:        model.SupportCoverageGapStatusOpen,
+		EvidenceCount: 1,
+		Metadata:      []byte("{}"),
+		FirstSeenAt:   now,
+		LastSeenAt:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatalf("seed legacy gap: %v", err)
+	}
+
+	if err := coverageSvc.RegenerateGap(ctx, "ws-1", "legacy-gap"); err == nil {
+		t.Fatal("expected error for legacy gap without topic")
+	}
+}
+
+func TestSupportCoverage_NormalizedVariantsShareCluster(t *testing.T) {
+	eventSvc, coverageSvc, _ := setupCoverageTestEnv(t)
+	ctx := context.Background()
+
+	inputs := []string{
+		"How do I reset my password?",
+		"how to reset password",
+	}
+	for _, summary := range inputs {
+		if err := eventSvc.RecordEvent(ctx, SupportEventInput{
+			WorkspaceID:  "ws-1",
+			EventType:    model.SupportEventWidgetSearchPerformed,
+			IssueSummary: summary,
+			SourceSignal: "no_results",
+		}); err != nil {
+			t.Fatalf("RecordEvent(%q): %v", summary, err)
+		}
+	}
+
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected normalized variants to share one gap, got %d", total)
+	}
+	if gaps[0].EvidenceCount != 2 {
+		t.Errorf("evidence_count=%d, want 2", gaps[0].EvidenceCount)
 	}
 }
 
@@ -279,7 +524,7 @@ func TestSupportCoverage_NoIssueKey_NoRetrieval_NeedsReview(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap, got %d", len(gaps))
 	}
@@ -308,7 +553,7 @@ func TestSupportCoverage_HumanReplyAfterAI_AttachesToExistingGap(t *testing.T) {
 	}
 
 	// Verify: 1 gap, 1 evidence row.
-	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if err != nil {
 		t.Fatalf("ListGaps after handoff: %v", err)
 	}
@@ -334,7 +579,7 @@ func TestSupportCoverage_HumanReplyAfterAI_AttachesToExistingGap(t *testing.T) {
 	}
 
 	// Verify: still 1 gap (not 2).
-	gaps, total, err = coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, err = coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if err != nil {
 		t.Fatalf("ListGaps after human reply: %v", err)
 	}
@@ -383,7 +628,7 @@ func TestSupportCoverage_HumanReplyAfterAI_NoExistingGap_CreatesNew(t *testing.T
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if total != 1 {
 		t.Fatalf("expected 1 new gap for orphan human reply, got %d", total)
 	}
@@ -409,7 +654,7 @@ func TestSupportCoverage_ConversationResolvedByHuman_CreatesGap(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if total != 1 {
 		t.Fatalf("expected 1 gap for human-resolved conversation, got %d", total)
 	}
@@ -441,7 +686,7 @@ func TestSupportCoverage_ConversationResolved_WithoutSignal_NoGap(t *testing.T) 
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if total != 0 {
 		t.Fatalf("expected no gap for untagged conversation_resolved event, got %d", total)
 	}
@@ -465,7 +710,7 @@ func TestSupportCoverage_ConversationResolvedByHuman_AttachesToExistingGap(t *te
 	if err != nil {
 		t.Fatalf("RecordEvent (handoff): %v", err)
 	}
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("setup: expected 1 gap after handoff, got %d", len(gaps))
 	}
@@ -484,7 +729,7 @@ func TestSupportCoverage_ConversationResolvedByHuman_AttachesToExistingGap(t *te
 		t.Fatalf("RecordEvent (resolved): %v", err)
 	}
 
-	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	_, total, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if total != 1 {
 		t.Fatalf("expected 1 gap after human resolution (attached to existing), got %d", total)
 	}
@@ -521,8 +766,23 @@ func TestSupportCoverage_AsyncRecorder_Queues(t *testing.T) {
 	// Wait for async worker to drain and stop.
 	recorder.Close()
 
-	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{})
+	gaps, _, _ := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
 	if len(gaps) != 1 {
 		t.Fatalf("expected 1 gap from async recorder, got %d", len(gaps))
 	}
+}
+
+type fakeCoverageWorkflowRunner struct {
+	topicIDs []string
+	unique   []bool
+}
+
+func (f *fakeCoverageWorkflowRunner) StartEnrichment(ctx context.Context, topicID string, unique bool) error {
+	f.topicIDs = append(f.topicIDs, topicID)
+	f.unique = append(f.unique, unique)
+	return nil
+}
+
+func (f *fakeCoverageWorkflowRunner) StartDailyBatch(ctx context.Context) error {
+	return nil
 }

@@ -1,17 +1,84 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Copy01Icon, File01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
+import { CheckListIcon, Copy01Icon, File01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon, SparklesIcon, UserGroupIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { pmTaskTemplateService } from '@/lib/services/pmTaskTemplateService';
-import type { TaskTemplate } from '@/lib/pmTypes';
+import type { CreateTaskTemplateRequest, TaskTemplate } from '@/lib/pmTypes';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
+import { toast } from 'sonner';
 
 interface TaskTemplatesSettingsProps {
   workspaceId: string;
   initialTeamId?: string;
 }
+
+type StarterTemplate = {
+  key: string;
+  icon: typeof CheckListIcon;
+  label: string;
+  detail: string;
+  payload: Omit<CreateTaskTemplateRequest, 'workspace_id' | 'team_id'>;
+};
+
+const STARTER_TEMPLATES: StarterTemplate[] = [
+  {
+    key: 'bug-report',
+    icon: CheckListIcon,
+    label: 'Bug report',
+    detail: 'Severity, reproduction steps, expected behavior, and owner handoff.',
+    payload: {
+      name: 'Bug report',
+      description: '<p>Use this when something is broken, regressed, or behaving unexpectedly.</p>',
+      task_type: 'bug',
+      priority: 'high',
+      severity: 'major',
+      checklist_items: JSON.stringify([
+        { text: 'Add reproduction steps', position: 0 },
+        { text: 'Document expected behavior', position: 1 },
+        { text: 'Document actual behavior', position: 2 },
+        { text: 'Attach logs, screenshots, or a failing test', position: 3 },
+      ]),
+    },
+  },
+  {
+    key: 'customer-request',
+    icon: UserGroupIcon,
+    label: 'Customer request',
+    detail: 'Triage, customer context, acceptance criteria, and follow-up notes.',
+    payload: {
+      name: 'Customer request',
+      description: '<p>Use this to turn customer feedback or support conversations into trackable work.</p>',
+      task_type: 'feature',
+      priority: 'medium',
+      checklist_items: JSON.stringify([
+        { text: 'Summarize the customer need', position: 0 },
+        { text: 'Link the support conversation or CRM record', position: 1 },
+        { text: 'Define acceptance criteria', position: 2 },
+        { text: 'Confirm customer follow-up owner', position: 3 },
+      ]),
+    },
+  },
+  {
+    key: 'launch-task',
+    icon: SparklesIcon,
+    label: 'Launch task',
+    detail: 'Review steps, rollout checklist, owner, and launch-readiness defaults.',
+    payload: {
+      name: 'Launch task',
+      description: '<p>Use this for release, campaign, or operational launch work that needs a final readiness pass.</p>',
+      task_type: 'chore',
+      priority: 'medium',
+      checklist_items: JSON.stringify([
+        { text: 'Confirm scope and launch owner', position: 0 },
+        { text: 'Complete QA or peer review', position: 1 },
+        { text: 'Prepare rollout notes', position: 2 },
+        { text: 'Confirm post-launch monitoring plan', position: 3 },
+      ]),
+    },
+  },
+];
 
 function TemplateCard({
   template,
@@ -74,6 +141,87 @@ function TemplateCard({
   );
 }
 
+function TemplateEmptyState({
+  scopeLabel,
+  isFiltered,
+  onCreate,
+  onUseStarter,
+  creatingStarterKey,
+}: {
+  scopeLabel: string;
+  isFiltered: boolean;
+  onCreate: () => void;
+  onUseStarter: (starter: StarterTemplate) => void;
+  creatingStarterKey: string | null;
+}) {
+  const title = isFiltered ? `No templates for ${scopeLabel}` : 'No task templates yet';
+  const description = isFiltered
+    ? 'Create a team-specific template, or switch back to all templates to see shared templates from other teams.'
+    : 'Turn repeatable work into a reusable starting point with the fields, owner, labels, checklist, and links already filled in.';
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="flex flex-col items-start gap-5 p-6 sm:p-8">
+          <div className="flex h-11 w-11 items-center justify-center rounded-md border bg-muted/40">
+            <File01Icon className="h-5 w-5 text-muted-foreground" />
+          </div>
+
+          <div className="max-w-2xl">
+            <h3 className="text-base font-semibold">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{description}</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={onCreate}>
+              <PlusSignIcon className="h-3.5 w-3.5" />
+              Create template
+            </Button>
+            {isFiltered ? (
+              <p className="text-xs text-muted-foreground">This will open the template builder for the current workspace.</p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="border-t bg-muted/20 p-4 lg:border-t-0 lg:border-l">
+          <p className="px-1 pb-3 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            One-click starters
+          </p>
+          <div className="space-y-2">
+            {STARTER_TEMPLATES.map((starter) => {
+              const creating = creatingStarterKey === starter.key;
+              return (
+              <button
+                key={starter.key}
+                type="button"
+                className="group flex w-full gap-3 rounded-md border bg-background p-3 text-left transition-colors hover:border-border hover:bg-accent/40 disabled:cursor-wait disabled:opacity-70"
+                disabled={Boolean(creatingStarterKey)}
+                onClick={() => onUseStarter(starter)}
+              >
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted">
+                  {creating ? (
+                    <Loading01Icon className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : (
+                    <starter.icon className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{starter.label}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{starter.detail}</p>
+                </div>
+                <span className="self-center text-xs font-medium text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                  Create
+                </span>
+              </button>
+            );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTemplatesSettingsProps) {
   const { teams } = useAccessibleTeams(workspaceId);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
@@ -82,8 +230,22 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
   const [showCreate, setShowCreate] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [scopeFilter, setScopeFilter] = useState<string>(initialTeamId || '__all__');
+  const [creatingStarterKey, setCreatingStarterKey] = useState<string | null>(null);
 
   const teamMap = useMemo(() => new Map(teams.map((t) => [t.id, t.name])), [teams]);
+  const selectedScopeLabel = useMemo(() => {
+    if (scopeFilter === '__all__') return 'all templates';
+    if (scopeFilter === '__shared__') return 'shared templates';
+    return teamMap.get(scopeFilter) ?? 'this team';
+  }, [scopeFilter, teamMap]);
+  const openCreateModal = () => {
+    setEditingTemplate(null);
+    setShowCreate(true);
+  };
+  const starterTeamId = useMemo(() => {
+    if (scopeFilter !== '__all__' && scopeFilter !== '__shared__') return scopeFilter;
+    return initialTeamId ?? teams[0]?.id;
+  }, [initialTeamId, scopeFilter, teams]);
 
   const reload = useCallback(async () => {
     const teamId = scopeFilter === '__all__' || scopeFilter === '__shared__' ? undefined : scopeFilter;
@@ -125,6 +287,24 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
     if (!error) reload();
   };
 
+  const handleUseStarter = async (starter: StarterTemplate) => {
+    setCreatingStarterKey(starter.key);
+    const { error } = await pmTaskTemplateService.create({
+      workspace_id: workspaceId,
+      team_id: starterTeamId,
+      ...starter.payload,
+    });
+    setCreatingStarterKey(null);
+
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    toast.success(`${starter.label} template created`);
+    await reload();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -153,10 +333,7 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
           variant="outline"
           size="sm"
           className="ml-auto"
-          onClick={() => {
-            setEditingTemplate(null);
-            setShowCreate(true);
-          }}
+          onClick={openCreateModal}
         >
           <PlusSignIcon className="h-3.5 w-3.5" />
           Add template
@@ -164,28 +341,13 @@ export function TaskTemplatesSettings({ workspaceId, initialTeamId }: TaskTempla
       </div>
 
       {templates.length === 0 && (
-        <div className="flex flex-col items-center gap-3 py-12 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <File01Icon className="h-6 w-6 text-muted-foreground/60" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">No task templates yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Templates let you pre-fill task fields so your team can create consistent tasks faster.
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setEditingTemplate(null);
-              setShowCreate(true);
-            }}
-          >
-            <PlusSignIcon className="h-3.5 w-3.5" />
-            Create your first template
-          </Button>
-        </div>
+        <TemplateEmptyState
+          scopeLabel={selectedScopeLabel}
+          isFiltered={scopeFilter !== '__all__'}
+          onCreate={openCreateModal}
+          onUseStarter={handleUseStarter}
+          creatingStarterKey={creatingStarterKey}
+        />
       )}
 
       {templates.length > 0 && (

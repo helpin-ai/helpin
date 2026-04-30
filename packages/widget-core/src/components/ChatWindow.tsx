@@ -124,6 +124,10 @@ export const ChatWindow: FunctionComponent<ChatWindowProps> = ({
   }, [initialView]);
 
   useEffect(() => {
+    setHumanSupportRequested(false);
+  }, [activeConversation?.id]);
+
+  useEffect(() => {
     const requestedArticleKey = openArticleRequest?.articleKey ?? openArticleRequest?.articleSlug;
     if (!requestedArticleKey) {
       return;

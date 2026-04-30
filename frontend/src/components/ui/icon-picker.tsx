@@ -157,7 +157,7 @@ export function IconPicker({ value, onChange, placeholder = 'Icon' }: IconPicker
           {selected ? (
             <selected.Component className="h-4 w-4" />
           ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
+            <span className="text-[10px] text-muted-foreground">{placeholder}</span>
           )}
         </Button>
       </PopoverTrigger>

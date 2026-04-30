@@ -197,6 +197,7 @@ func (h *AutomationHandler) ListActivity(w http.ResponseWriter, r *http.Request)
 		BindingKind: queryStringPtrWithFallback(r, "binding_kind", "source"),
 		Status:      queryStringPtr(r, "status"),
 		ReferenceID: queryStringPtr(r, "reference_id"),
+		RunID:       queryStringPtr(r, "run_id"),
 		FiredAfter:  firedAfter,
 		FiredBefore: firedBefore,
 	}
@@ -243,6 +244,56 @@ func (h *AutomationHandler) ListTriggerCatalog(w http.ResponseWriter, r *http.Re
 // ListToolCatalog handles GET /api/automation/library/tools.
 func (h *AutomationHandler) ListToolCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.agentService.ListToolCatalog())
+}
+
+// ListAgentTemplates handles GET /api/automation/agent-templates.
+func (h *AutomationHandler) ListAgentTemplates(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	templates, err := h.agentService.ListAgentTemplates(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if templates == nil {
+		templates = []model.AgentTemplate{}
+	}
+	writeJSON(w, http.StatusOK, templates)
+}
+
+// GetAgentTemplate handles GET /api/automation/agent-templates/{id}.
+func (h *AutomationHandler) GetAgentTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	templateID := chi.URLParam(r, "id")
+	template, err := h.agentService.GetAgentTemplate(r.Context(), workspaceID, templateID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, template)
+}
+
+// CreateAgentFromTemplate handles POST /api/automation/agent-templates/{id}/create-agent.
+func (h *AutomationHandler) CreateAgentFromTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	templateID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateAgentFromTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.agentService.CreateAgentFromTemplate(r.Context(), workspaceID, templateID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
 }
 
 // ListSkillCatalog handles GET /api/automation/library/skills.

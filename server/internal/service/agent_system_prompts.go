@@ -39,7 +39,9 @@ func legacyPromptIsManaged(presetKey string, prompt *string) bool {
 			"1. `prd_draft`",
 			"2. `awaiting_prd_approval`",
 			"3. `persist_prd`",
-			"5. `awaiting_story_approval`",
+			"4. `task_plan`",
+			"5. `awaiting_task_approval`",
+			"6. `create_tasks`",
 			"The runtime will tell you the current planner phase.",
 			"Tool access is gated server-side by phase.",
 			"<approval_request phase=\"prd\">",
@@ -52,7 +54,6 @@ func legacyPromptIsManaged(presetKey string, prompt *string) bool {
 	case model.AgentPresetTaskPlanner:
 		for _, marker := range []string{
 			"You are Task Planner for Helpin.",
-			"You are Story Planner for Helpin.",
 			"`publish_preview`",
 			"`request_human_input`",
 			"`request_human_approval`",

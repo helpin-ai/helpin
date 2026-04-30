@@ -4,25 +4,66 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 func toolAddTaskComment(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
+		TaskID  string `json:"task_id"`
 		Content string `json:"content"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
 	}
 
-	if ctx.TaskID == "" {
-		return "", fmt.Errorf("no task associated with this run")
+	content := strings.TrimSpace(params.Content)
+	if content == "" {
+		return "", fmt.Errorf("content is required")
+	}
+	taskID := strings.TrimSpace(params.TaskID)
+	if taskID == "" {
+		taskID = strings.TrimSpace(ctx.TaskID)
+	}
+	if taskID == "" {
+		return "", fmt.Errorf("task_id is required when no task is associated with this run")
 	}
 
-	if err := ctx.Services.AddComment(ctx.Context, ctx.WorkspaceID, ctx.TaskID, ctx.AgentID, params.Content); err != nil {
+	commandInput, _ := json.Marshal(map[string]any{
+		"task_id": taskID,
+		"content": content,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "task", taskID, "pm.add_task_comment", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("add comment: %w", err)
+		}
+		return string(output), nil
+	}
+
+	if err := ctx.Services.AddComment(ctx.Context, ctx.WorkspaceID, taskID, ctx.AgentID, content); err != nil {
 		return "", fmt.Errorf("add comment: %w", err)
 	}
 
 	return "Comment added to task.", nil
+}
+
+func toolEnsureTaskLabel(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if output, ok, err := executeInternalCommand(ctx, "workspace", ctx.WorkspaceID, "pm.ensure_label", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("ensure task label: %w", err)
+		}
+		return string(output), nil
+	}
+	return "", fmt.Errorf("ensure_task_label requires internal commands")
+}
+
+func toolListTasks(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if output, ok, err := executeInternalCommand(ctx, "workspace", ctx.WorkspaceID, "pm.list_tasks", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("list tasks: %w", err)
+		}
+		return string(output), nil
+	}
+	return "", fmt.Errorf("list_tasks requires internal commands")
 }
 
 func toolUpdateTaskState(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -79,6 +120,132 @@ func toolListTaskChecklist(ctx *ExecutionContext, input json.RawMessage) (string
 	}
 
 	return toCompactJSONString(lines), nil
+}
+
+func toolCreateTask(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("execution context is required")
+	}
+	var params struct {
+		Name          string   `json:"name"`
+		Description   *string  `json:"description"`
+		TaskType      string   `json:"task_type"`
+		Estimate      *int     `json:"estimate"`
+		Priority      *string  `json:"priority"`
+		EpicID        *string  `json:"epic_id"`
+		TeamID        string   `json:"team_id"`
+		WorkflowID    *string  `json:"workflow_id"`
+		StateID       *string  `json:"state_id"`
+		OwnerMemberID *string  `json:"owner_member_id"`
+		LabelIDs      []string `json:"label_ids"`
+		Deadline      *string  `json:"deadline"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+
+	params.Name = strings.TrimSpace(params.Name)
+	params.TeamID = strings.TrimSpace(params.TeamID)
+	if params.Name == "" {
+		return "", fmt.Errorf("name is required")
+	}
+	if params.TeamID == "" {
+		return "", fmt.Errorf("team_id is required")
+	}
+
+	trimPtr := func(value **string) {
+		if *value == nil {
+			return
+		}
+		trimmed := strings.TrimSpace(**value)
+		if trimmed == "" {
+			*value = nil
+			return
+		}
+		**value = trimmed
+	}
+	trimPtr(&params.Description)
+	trimPtr(&params.Priority)
+	trimPtr(&params.EpicID)
+	trimPtr(&params.WorkflowID)
+	trimPtr(&params.StateID)
+	trimPtr(&params.OwnerMemberID)
+	trimPtr(&params.Deadline)
+
+	if params.EpicID == nil && strings.TrimSpace(ctx.TargetType) == "epic" && strings.TrimSpace(ctx.TargetID) != "" {
+		epicID := strings.TrimSpace(ctx.TargetID)
+		params.EpicID = &epicID
+	}
+
+	var deadline *time.Time
+	if params.Deadline != nil {
+		parsed, err := parseTaskToolDeadline(*params.Deadline)
+		if err != nil {
+			return "", err
+		}
+		deadline = parsed
+	}
+
+	commandInput, _ := json.Marshal(map[string]any{
+		"name":            params.Name,
+		"description":     params.Description,
+		"task_type":       strings.TrimSpace(params.TaskType),
+		"estimate":        params.Estimate,
+		"priority":        params.Priority,
+		"epic_id":         params.EpicID,
+		"team_id":         params.TeamID,
+		"workflow_id":     params.WorkflowID,
+		"state_id":        params.StateID,
+		"owner_member_id": params.OwnerMemberID,
+		"label_ids":       params.LabelIDs,
+		"deadline":        params.Deadline,
+	})
+	targetType, targetID := "workspace", ctx.WorkspaceID
+	if strings.TrimSpace(ctx.TargetType) == "epic" && strings.TrimSpace(ctx.TargetID) != "" {
+		targetType, targetID = "epic", strings.TrimSpace(ctx.TargetID)
+	}
+	if output, ok, err := executeInternalCommand(ctx, targetType, targetID, "pm.create_task", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("create task: %w", err)
+		}
+		return string(output), nil
+	}
+
+	if ctx.Services == nil || ctx.Services.CreateTask == nil {
+		return "", fmt.Errorf("task creation is not available for this agent")
+	}
+	result, err := ctx.Services.CreateTask(ctx.Context, ctx.WorkspaceID, ctx.AgentID, CreateTaskToolRequest{
+		Name:          params.Name,
+		Description:   params.Description,
+		TaskType:      strings.TrimSpace(params.TaskType),
+		Estimate:      params.Estimate,
+		Priority:      params.Priority,
+		EpicID:        params.EpicID,
+		TeamID:        params.TeamID,
+		WorkflowID:    params.WorkflowID,
+		StateID:       params.StateID,
+		OwnerMemberID: params.OwnerMemberID,
+		LabelIDs:      params.LabelIDs,
+		Deadline:      deadline,
+	})
+	if err != nil {
+		return "", fmt.Errorf("create task: %w", err)
+	}
+	return toCompactJSONString(result), nil
+}
+
+func parseTaskToolDeadline(value string) (*time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	for _, layout := range []string{"2006-01-02", time.RFC3339, time.RFC3339Nano} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return &parsed, nil
+		}
+	}
+	return nil, fmt.Errorf("deadline must be YYYY-MM-DD or RFC3339")
 }
 
 func toolListConversationMessages(ctx *ExecutionContext, input json.RawMessage) (string, error) {

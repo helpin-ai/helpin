@@ -72,7 +72,10 @@ import { timeAgo } from '@/lib/utils'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -82,6 +85,12 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { DocsEditor, type DocsEditingPresenceSignal } from '@/components/docs/DocsEditor'
+import {
+  buildCollectionTree,
+  collectionAncestorChain,
+  findCollectionNode,
+  type CollectionTreeNode,
+} from '@/components/docs/docsCollectionTree'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
@@ -96,11 +105,15 @@ import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
 import { buildHelpcenterPreviewUrlFromEnv } from '@/lib/helpcenterPreview'
 import { docsService } from '@/lib/services/docsService'
+import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import { queryKeys } from '@/lib/queryKeys'
 import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
 import { UserAvatar } from '@/components/pm/UserAvatar'
+import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
+import { useRegisterPageContext } from '@/components/command-bar/pageContext'
 
 function docStatusColor(status: string): string {
   switch (status) {
@@ -127,6 +140,13 @@ interface ArticleTranslationDraftState {
   slug: string
   excerpt: string
   content: JSONContent | null
+}
+
+interface SourceSocialDraftState {
+  og_title: string
+  og_description: string
+  og_image_url: string
+  og_image_alt: string
 }
 
 function emptyTranslationDraft(locale: string): ArticleTranslationDraftState {
@@ -185,7 +205,13 @@ function EditingIndicator() {
   )
 }
 
-export function DocsDocumentDetail() {
+export function DocsDocumentDetail({
+  fromGapId,
+  fromSuggestionId,
+}: {
+  fromGapId?: string
+  fromSuggestionId?: string
+} = {}) {
   const navigate = useNavigate()
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -193,12 +219,21 @@ export function DocsDocumentDetail() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
+  const coverageGapClosedRef = useRef(false)
+  const [coverageInitialContent] = useState(() =>
+    loadCoverageHandoffContent(fromGapId, fromSuggestionId),
+  )
 
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs, canPublishDocs, canAdminDocs, isAdmin } = usePermissions(access)
   const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
+  useRegisterPageContext(doc ? {
+    entity_type: 'document',
+    entity_id: doc.id,
+    display_title: doc.title,
+  } : null, 20)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
   const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
@@ -228,6 +263,14 @@ export function DocsDocumentDetail() {
 
   const toggleShare = useToggleDocShare(wsId)
   const toggleLock = useToggleDocLock(wsId)
+
+  const collectionBreadcrumbNodes = useMemo<CollectionTreeNode[]>(() => {
+    if (!doc?.space_id || !doc.collection_id || collections.length === 0) return []
+    const tree = buildCollectionTree(doc.space_id, collections, [])
+    const current = findCollectionNode(tree.topLevel, doc.collection_id)
+    if (!current) return []
+    return [...collectionAncestorChain(tree.topLevel, doc.collection_id), current]
+  }, [collections, doc?.collection_id, doc?.space_id])
 
   const activeDocViewers = useMemo(() => {
     return Object.entries(remoteViewers).map(([userId, viewer]) => {
@@ -321,6 +364,15 @@ export function DocsDocumentDetail() {
   const titleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [selectedLocaleState, setSelectedLocaleState] = useState<{ docId: string; locale: string } | null>(null)
   const [translationDrafts, setTranslationDrafts] = useState<Record<string, ArticleTranslationDraftState>>({})
+  const [sourceSocialDraft, setSourceSocialDraft] = useState<SourceSocialDraftState>({
+    og_title: '',
+    og_description: '',
+    og_image_url: '',
+    og_image_alt: '',
+  })
+  const [savingSourceSocial, setSavingSourceSocial] = useState(false)
+  const [uploadingSourceOGImage, setUploadingSourceOGImage] = useState(false)
+  const sourceOGImageInputRef = useRef<HTMLInputElement>(null)
   const translationSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const patchDoc = useCallback(
@@ -352,6 +404,49 @@ export function DocsDocumentDetail() {
   useEffect(() => () => {
     if (titleTimerRef.current) clearTimeout(titleTimerRef.current)
   }, [])
+
+  useEffect(() => {
+    setSourceSocialDraft({
+      og_title: doc?.hc_og_title ?? '',
+      og_description: doc?.hc_og_description ?? '',
+      og_image_url: doc?.hc_og_image_url ?? '',
+      og_image_alt: doc?.hc_og_image_alt ?? '',
+    })
+  }, [doc?.id, doc?.hc_og_title, doc?.hc_og_description, doc?.hc_og_image_url, doc?.hc_og_image_alt])
+
+  const handleSaveSourceSocial = useCallback(async () => {
+    setSavingSourceSocial(true)
+    try {
+      const res = await docsService.updateHelpcenterArticleMetadata(wsId, docId, sourceSocialDraft)
+      if (res.error) throw new Error(res.error)
+      toast.success('Social metadata saved')
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save social metadata')
+    } finally {
+      setSavingSourceSocial(false)
+    }
+  }, [docId, queryClient, sourceSocialDraft, wsId])
+
+  const handleUploadSourceOGImage = useCallback(async (file?: File | null) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+    setUploadingSourceOGImage(true)
+    try {
+      const res = await docsService.uploadHelpcenterAsset(wsId, 'og_image', file)
+      if (res.error || !res.data) throw new Error(res.error ?? 'Upload failed')
+      setSourceSocialDraft((prev) => ({ ...prev, og_image_url: res.data!.url }))
+      toast.success('Social image uploaded')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploadingSourceOGImage(false)
+      if (sourceOGImageInputRef.current) sourceOGImageInputRef.current.value = ''
+    }
+  }, [wsId])
 
   useEffect(() => {
     if (!docId || !wsSendRaw) return
@@ -388,12 +483,29 @@ export function DocsDocumentDetail() {
   const handleSave = useCallback(
     async (json: JSONContent) => {
       await saveContent.mutateAsync({ docId, content: json })
+      if (fromGapId && fromSuggestionId && !coverageGapClosedRef.current) {
+        coverageGapClosedRef.current = true
+        const result = await supportCoverageService.addDocumentToGap(wsId, fromGapId, {
+          route: 'update_article',
+          target_document_id: docId,
+        })
+        if (result.error) throw new Error(result.error)
+      }
       // Invalidate translation data so needs_review status updates promptly
       if (space?.type === 'external_capable' && (localesConfig?.enabled_locales?.length ?? 0) > 1) {
         queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
       }
     },
-    [saveContent, docId, space?.type, localesConfig?.enabled_locales?.length, queryClient, wsId],
+    [
+      saveContent,
+      docId,
+      fromGapId,
+      fromSuggestionId,
+      wsId,
+      space?.type,
+      localesConfig?.enabled_locales?.length,
+      queryClient,
+    ],
   )
 
   const isExternalHelpCenter = space?.type === 'external_capable'
@@ -455,6 +567,13 @@ export function DocsDocumentDetail() {
     : translationDrafts[translationDraftKey(docId, activeLocale)] ?? translationDraftFromTranslation(activeLocale, activeTranslation)
   const displayedTitle = isSourceLocaleActive ? titleDraft : activeTranslationDraft.title
 
+  const preparePublishedContent = useCallback(async (rawContent: JSONContent | null | undefined) => {
+    if (!isExternalHelpCenter || !rawContent) return undefined
+    return prepareDocsContentForPublish(rawContent, {
+      uploadConfig: { workspaceId: wsId, entityType: 'editor_upload', entityId: docId },
+    })
+  }, [docId, isExternalHelpCenter, wsId])
+
   useTitle(displayedTitle || 'Document')
 
   const handlePublish = async () => {
@@ -466,7 +585,8 @@ export function DocsDocumentDetail() {
       return
     }
     try {
-      await publishDoc.mutateAsync({ id: docId })
+      const publishedContent = await preparePublishedContent(content?.content as JSONContent | null | undefined)
+      await publishDoc.mutateAsync({ id: docId, published_content: publishedContent })
       toast.success('Document published')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to publish')
@@ -476,10 +596,18 @@ export function DocsDocumentDetail() {
   const handleConfirmPublish = async () => {
     try {
       if (pendingPublishLocale && pendingPublishLocale !== defaultLocale) {
-        await publishArticleTranslation.mutateAsync({ locale: pendingPublishLocale, slug: pendingSlug })
+        const draft = translationDrafts[translationDraftKey(docId, pendingPublishLocale)]
+          ?? translationDraftFromTranslation(pendingPublishLocale, articleTranslationsByLocale.get(pendingPublishLocale) ?? null)
+        const publishedContent = await preparePublishedContent(draft.content as JSONContent | null | undefined)
+        await publishArticleTranslation.mutateAsync({
+          locale: pendingPublishLocale,
+          slug: pendingSlug,
+          published_content: publishedContent,
+        })
         toast.success(`${getHelpcenterLocaleLabel(pendingPublishLocale)} translation published`)
       } else {
-        await publishDoc.mutateAsync({ id: docId, slug: pendingSlug })
+        const publishedContent = await preparePublishedContent(content?.content as JSONContent | null | undefined)
+        await publishDoc.mutateAsync({ id: docId, slug: pendingSlug, published_content: publishedContent })
         toast.success('Document published')
       }
       setSlugDialogOpen(false)
@@ -539,8 +667,12 @@ export function DocsDocumentDetail() {
       content: (draft.content as JSONContent | null) ?? { type: 'doc', content: [] },
       seo_title: title,
       seo_description: draft.excerpt.trim() || undefined,
+      og_title: activeTranslation?.og_title ?? undefined,
+      og_description: activeTranslation?.og_description ?? undefined,
+      og_image_url: activeTranslation?.og_image_url ?? undefined,
+      og_image_alt: activeTranslation?.og_image_alt ?? undefined,
     }
-  }, [])
+  }, [activeTranslation?.og_description, activeTranslation?.og_image_alt, activeTranslation?.og_image_url, activeTranslation?.og_title])
 
   const persistTranslationDraft = useCallback(async (draft: ArticleTranslationDraftState) => {
     const payload = buildTranslationPayload(draft)
@@ -658,7 +790,8 @@ export function DocsDocumentDetail() {
           await docsService.publishCollectionTranslation(wsId, doc.collection_id, activeLocale)
         }
       }
-      await publishArticleTranslation.mutateAsync({ locale: activeLocale })
+      const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
+      await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
       toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
       setParentPublishConfirmOpen(false)
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
@@ -667,7 +800,7 @@ export function DocsDocumentDetail() {
     } finally {
       setGeneratingParents(false)
     }
-  }, [activeLocale, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale, publishArticleTranslation, queryClient])
+  }, [activeLocale, activeTranslationDraft.content, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale, preparePublishedContent, publishArticleTranslation, queryClient])
 
   const activeLocaleShortLabel = activeLocale.toUpperCase()
   const sourceLivePublished = isExternalHelpCenter ? !!doc?.live_published_at : doc?.status === 'published'
@@ -704,6 +837,10 @@ export function DocsDocumentDetail() {
           content_text: '',
           seo_title: undefined,
           seo_description: undefined,
+          og_title: undefined,
+          og_description: undefined,
+          og_image_url: undefined,
+          og_image_alt: undefined,
           status: 'draft' as const,
           source_updated_at: undefined,
           source_synced: true,
@@ -719,6 +856,10 @@ export function DocsDocumentDetail() {
         excerpt: activeTranslationDraft.excerpt || undefined,
         seo_title: activeTranslationDraft.title || undefined,
         seo_description: activeTranslationDraft.excerpt || undefined,
+        og_title: activeTranslation?.og_title,
+        og_description: activeTranslation?.og_description,
+        og_image_url: activeTranslation?.og_image_url,
+        og_image_alt: activeTranslation?.og_image_alt,
         content: activeTranslationDraft.content,
       }
     : articleTranslationsByLocale.get(editingTranslationLocale ?? '') ?? null
@@ -787,17 +928,25 @@ export function DocsDocumentDetail() {
               </span>
             </button>
           )}
-          {doc.collection_id && (() => {
-            const col = collections.find((c) => c.id === doc.collection_id)
-            if (!col) return null
-            return (
-              <>
-                <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-                <DocCollectionIcon name={col.icon} />
-                <span className="truncate">{col.name}</span>
-              </>
-            )
-          })()}
+          {collectionBreadcrumbNodes.map((node) => (
+            <div key={node.collection.id} className="flex min-w-0 items-center gap-1">
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
+              <button
+                type="button"
+                onClick={() =>
+                  navigate({
+                    to: '/w/$slug/docs/spaces/$spaceId',
+                    params: { slug: wsSlug, spaceId: node.collection.space_id },
+                    search: { collection: node.collection.id },
+                  })
+                }
+                className="inline-flex min-w-0 items-center gap-1 truncate hover:text-foreground transition-colors"
+              >
+                <DocCollectionIcon name={node.collection.icon} />
+                <span className="truncate">{node.collection.name}</span>
+              </button>
+            </div>
+          ))}
         </nav>
 
         {!showLocalePills && !(isPublished && hasUnpublishedChanges) && (
@@ -886,7 +1035,7 @@ export function DocsDocumentDetail() {
               size="sm"
               variant={isPublished && !hasUnpublishedChanges ? 'secondary' : 'default'}
               className="h-7 gap-1.5 text-xs"
-              onClick={() => {
+              onClick={async () => {
                 if (isSourceLocaleActive) {
                   void handlePublish()
                   return
@@ -901,10 +1050,13 @@ export function DocsDocumentDetail() {
                   setParentPublishConfirmOpen(true)
                   return
                 }
-                publishArticleTranslation.mutate({ locale: activeLocale }, {
-                  onSuccess: () => toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`),
-                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
-                })
+                try {
+                  const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
+                  await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
+                  toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
+                }
               }}
               disabled={publishDisabled}
             >
@@ -1099,7 +1251,11 @@ export function DocsDocumentDetail() {
                       }
                     : undefined
               }
-              initialContent={isSourceLocaleActive ? (content?.content as JSONContent | null) : activeTranslationDraft.content}
+              initialContent={
+                isSourceLocaleActive
+                  ? coverageInitialContent ?? (content?.content as JSONContent | null)
+                  : activeTranslationDraft.content
+              }
               onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
               readOnly={effectiveReadOnly}
               uploadConfig={
@@ -1161,6 +1317,75 @@ export function DocsDocumentDetail() {
               </>
             )}
 
+            {/* ── Social metadata (source locale only) ── */}
+            {isExternalHelpCenter && isSourceLocaleActive && canEditDocs && (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-1.5">
+                    <GlobeIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">Social preview</span>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-title" className="text-[11px] text-muted-foreground">Title</Label>
+                    <Input
+                      id="doc-og-title"
+                      value={sourceSocialDraft.og_title}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_title: event.target.value }))}
+                      placeholder={titleDraft || 'Article title'}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-description" className="text-[11px] text-muted-foreground">Description</Label>
+                    <Textarea
+                      id="doc-og-description"
+                      value={sourceSocialDraft.og_description}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_description: event.target.value }))}
+                      placeholder={doc.excerpt || 'Article summary'}
+                      rows={3}
+                      className="min-h-20 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-image" className="text-[11px] text-muted-foreground">Image URL</Label>
+                    <div className="flex gap-1.5">
+                      <Input
+                        id="doc-og-image"
+                        value={sourceSocialDraft.og_image_url}
+                        onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_image_url: event.target.value }))}
+                        placeholder="https://..."
+                        className="h-8 text-xs"
+                      />
+                      <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs" disabled={uploadingSourceOGImage} onClick={() => sourceOGImageInputRef.current?.click()}>
+                        {uploadingSourceOGImage ? '...' : 'Upload'}
+                      </Button>
+                      <input
+                        ref={sourceOGImageInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(event) => void handleUploadSourceOGImage(event.target.files?.[0])}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-image-alt" className="text-[11px] text-muted-foreground">Image Alt</Label>
+                    <Input
+                      id="doc-og-image-alt"
+                      value={sourceSocialDraft.og_image_alt}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_image_alt: event.target.value }))}
+                      placeholder={titleDraft || 'Article preview image'}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <Button type="button" size="sm" className="h-8 w-full text-xs" disabled={savingSourceSocial || doc.is_locked} onClick={() => void handleSaveSourceSocial()}>
+                    {savingSourceSocial ? 'Saving...' : 'Save social preview'}
+                  </Button>
+                </div>
+                <Separator className="my-4" />
+              </>
+            )}
+
             {/* ── Sharing (source locale only) ── */}
             {isSourceLocaleActive && canEditDocs && (
               <>
@@ -1209,7 +1434,7 @@ export function DocsDocumentDetail() {
               {/* Owner (source only) */}
               {isSourceLocaleActive && (<>
               <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Owner</span>
+              <span className="text-[12px] text-muted-foreground self-center">Owner</span>
               <div className="min-w-0 self-center">
                 {canEditDocs && !doc.is_locked ? (
                   <MemberPickerPopover
@@ -1243,7 +1468,7 @@ export function DocsDocumentDetail() {
 
               {/* Created by */}
               <UserCheck01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Created by</span>
+              <span className="text-[12px] text-muted-foreground self-center">Created by</span>
               <div className="min-w-0 self-center">
                 {(() => {
                   const creator = members.find((m) => m.user_id === doc.created_by)
@@ -1258,7 +1483,7 @@ export function DocsDocumentDetail() {
               {/* Collection */}
               <FolderOpenIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
 
-              <span className="text-xs text-muted-foreground self-center">Collection</span>
+              <span className="text-[12px] text-muted-foreground self-center">Collection</span>
               <div className="min-w-0 self-center">
                 {canEditDocs && !doc.is_locked ? (
                   <Select
@@ -1304,14 +1529,14 @@ export function DocsDocumentDetail() {
 
               {/* Created */}
               <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Created</span>
+              <span className="text-[12px] text-muted-foreground self-center">Created</span>
               <div className="min-w-0 self-center">
                 <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.created_at ? activeTranslation.created_at : doc.created_at)}</span>
               </div>
 
               {/* Updated */}
               <Clock01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Updated</span>
+              <span className="text-[12px] text-muted-foreground self-center">Updated</span>
               <div className="min-w-0 self-center">
                 <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.updated_at ? activeTranslation.updated_at : doc.updated_at)}</span>
               </div>
@@ -1320,7 +1545,7 @@ export function DocsDocumentDetail() {
               {(isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at) && (
                 <>
                   <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                  <span className="text-xs text-muted-foreground self-center">Published</span>
+                  <span className="text-[12px] text-muted-foreground self-center">Published</span>
                   <div className="min-w-0 self-center">
                     <span className="text-xs">{timeAgo((isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at)!)}</span>
                   </div>

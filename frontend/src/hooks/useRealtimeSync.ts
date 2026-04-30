@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { useWebSocket, type DocsPresenceSnapshot, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
 import { logPMDnD } from '@/lib/pmDnDDebug'
+import type { Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
 const BOARD_ENTITIES = new Set(['task'])
-const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link'])
+const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link', 'task_git_link'])
 
 let notificationAudio: HTMLAudioElement | null = null
 function playNotificationSound() {
@@ -31,6 +34,119 @@ const AGENT_RUN_INVALIDATE_MS = 400
 /** Auto-clear typing indicator after this many ms without a refresh. */
 const TYPING_TIMEOUT_MS = 10_000
 const DOC_EDITING_TIMEOUT_MS = 20_000
+const AGENT_RUN_PAUSE_REASONS = new Set(['none', 'human_input', 'human_approval', 'authentication'])
+
+function normalizeAgentRunPauseReason(value: unknown): Task['latest_run_pause_reason'] {
+  if (typeof value !== 'string' || !value.trim()) return null
+  return AGENT_RUN_PAUSE_REASONS.has(value) ? value as Task['latest_run_pause_reason'] : null
+}
+
+function patchTaskLatestRun(task: Task, event: WSEvent, now: string): Task {
+  const agentId = typeof event.data?.agent_id === 'string' && event.data.agent_id.trim()
+    ? event.data.agent_id
+    : task.latest_run_agent_id
+  const status = typeof event.data?.status === 'string'
+    ? event.data.status
+    : task.latest_run_status
+  const pauseReason = event.data && 'pause_reason' in event.data
+    ? normalizeAgentRunPauseReason(event.data.pause_reason)
+    : task.latest_run_pause_reason
+
+  return {
+    ...task,
+    latest_run_id: event.entity_id || task.latest_run_id,
+    latest_run_agent_id: agentId,
+    latest_run_status: status,
+    latest_run_pause_reason: pauseReason,
+    latest_run_at: event.sent_at || now,
+  }
+}
+
+function patchAgentRunTaskColumns(columns: TaskStateColumn[], event: WSEvent, now: string): [TaskStateColumn[], boolean] {
+  let patched = false
+  const taskId = event.parent_id
+
+  const nextColumns = columns.map((column) => {
+    let columnPatched = false
+    const tasks = column.tasks.map((task) => {
+      if (task.id !== taskId) return task
+      columnPatched = true
+      patched = true
+      return patchTaskLatestRun(task, event, now)
+    })
+    const taskGroups = column.task_groups?.map((group) => {
+      let groupPatched = false
+      const groupTasks = group.tasks.map((task) => {
+        if (task.id !== taskId) return task
+        groupPatched = true
+        patched = true
+        return patchTaskLatestRun(task, event, now)
+      })
+      return groupPatched ? { ...group, tasks: groupTasks } : group
+    })
+
+    if (!columnPatched && !taskGroups?.some((group, index) => group !== column.task_groups?.[index])) {
+      return column
+    }
+
+    return {
+      ...column,
+      tasks,
+      task_groups: taskGroups,
+    }
+  })
+
+  return [patched ? nextColumns : columns, patched]
+}
+
+function patchAgentRunTaskMemberColumns(columns: TaskMemberColumn[], event: WSEvent, now: string): [TaskMemberColumn[], boolean] {
+  let patched = false
+  const taskId = event.parent_id
+
+  const nextColumns = columns.map((column) => {
+    let columnPatched = false
+    const tasks = column.tasks.map((task) => {
+      if (task.id !== taskId) return task
+      columnPatched = true
+      patched = true
+      return patchTaskLatestRun(task, event, now)
+    })
+
+    return columnPatched ? { ...column, tasks } : column
+  })
+
+  return [patched ? nextColumns : columns, patched]
+}
+
+function patchBoardTaskLatestRun(event: WSEvent) {
+  if (event.entity !== 'agent_run' || event.parent_type !== 'task' || !event.parent_id) return
+
+  const now = new Date().toISOString()
+  usePMBoardStore.setState((state) => {
+    const [columns, columnsPatched] = patchAgentRunTaskColumns(state.columns, event, now)
+    const [memberColumns, memberColumnsPatched] = patchAgentRunTaskMemberColumns(state.memberColumns, event, now)
+
+    if (!columnsPatched && !memberColumnsPatched) return state
+    return {
+      columns,
+      memberColumns,
+    }
+  })
+}
+
+function dispatchAgentRunCompatibilityEvents(event: WSEvent) {
+  if (event.entity !== 'agent_run') return
+
+  const detail = {
+    ...event,
+    agent_id: typeof event.data?.agent_id === 'string' ? event.data.agent_id : undefined,
+    status: typeof event.data?.status === 'string' ? event.data.status : undefined,
+    pause_reason: typeof event.data?.pause_reason === 'string' ? event.data.pause_reason : undefined,
+  }
+
+  window.dispatchEvent(new CustomEvent('agent_run-updated', { detail }))
+  window.dispatchEvent(new CustomEvent('agent_run-created', { detail }))
+}
 
 export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const queryClient = useQueryClient()
@@ -38,8 +154,11 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const agentRunInvalidateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingAgentRunInvalidations = useRef<Map<string, readonly unknown[]>>(new Map())
-  const selfIdRef = useRef<string | undefined>(useAuthStore.getState().user?.id)
-  selfIdRef.current = useAuthStore.getState().user?.id
+  const selfId = useAuthStore((state) => state.user?.id)
+  const selfIdRef = useRef<string | undefined>(selfId)
+  useEffect(() => {
+    selfIdRef.current = selfId
+  }, [selfId])
   const scheduleRefresh = useCallback(() => {
     clearTimeout(debounceTimer.current ?? undefined)
     debounceTimer.current = setTimeout(() => {
@@ -212,7 +331,35 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     } else if (event.entity === 'notification') {
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount(workspaceId) })
+
+      if (event.action === 'created') {
+        const data = event.data ?? {}
+        const eventType = typeof data.event_type === 'string' ? data.event_type : ''
+        const recipientId = typeof data.recipient_id === 'string' ? data.recipient_id : ''
+        const parentTaskId = typeof data.parent_task_id === 'string' ? data.parent_task_id : ''
+        const selfId = selfIdRef.current
+        if (
+          eventType === 'task.agent_attention_required'
+          && !!selfId
+          && recipientId === selfId
+          && event.actor_id !== selfId
+        ) {
+          const slug = useWorkspaceStore.getState().currentWorkspace?.slug
+          toast('Agent needs your attention', {
+            description: 'An agent has paused and is waiting for your input.',
+            duration: 10_000,
+            action: slug && parentTaskId ? {
+              label: 'Open task',
+              onClick: () => {
+                window.location.href = `/w/${slug}/pm/tasks?task=${parentTaskId}`
+              },
+            } : undefined,
+          })
+        }
+      }
     } else if (event.entity === 'agent_run') {
+      patchBoardTaskLatestRun(event)
+      dispatchAgentRunCompatibilityEvents(event)
       scheduleAgentRunInvalidation(queryKeys.automation.runsRoot(workspaceId))
       scheduleAgentRunInvalidation(queryKeys.automation.activityRoot(workspaceId))
       scheduleAgentRunInvalidation(queryKeys.automation.overview(workspaceId))
@@ -333,8 +480,12 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           s.clearOneAgentTyping(event.parent_id, event.actor_id)
         }
 
-        // Play notification sound for messages from others
-        if (event.actor_id !== selfIdRef.current) {
+        // Play notification sound for hydrated messages from others.
+        // Internal/data-less message events (e.g. internal system events
+        // accompanying an escalation) are refetch signals only — backend
+        // strips event.data for IsInternal rows, so skipping when data is
+        // absent prevents double pings on a single conversational event.
+        if (event.data && event.actor_id !== selfIdRef.current) {
           playNotificationSound()
         }
 
@@ -368,16 +519,23 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.attachments(workspaceId, event.parent_id) })
       } else if (event.entity === 'external_link') {
         queryClient.invalidateQueries({ queryKey: queryKeys.pm.externalLinks(workspaceId, event.parent_id) })
+        if (event.parent_type) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.pm.entityExternalLinks(workspaceId, event.parent_type, event.parent_id) })
+        }
+      } else if (event.entity === 'task_git_link') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.git.taskLinks(workspaceId, event.parent_id) })
       }
     }
 
     // Dispatch custom DOM events for any component that listens
     // e.g. "task-updated", "comment-created", "epic-deleted"
-    window.dispatchEvent(
-      new CustomEvent(`${event.entity}-${event.action}`, {
-        detail: event,
-      })
-    )
+    if (event.entity !== 'agent_run') {
+      window.dispatchEvent(
+        new CustomEvent(`${event.entity}-${event.action}`, {
+          detail: event,
+        })
+      )
+    }
 
     // Child entity events → also dispatch a parent update event
     // so that open task detail panels can refetch
@@ -396,13 +554,15 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     const store = useSupportPresenceStore.getState()
     const selfId = selfIdRef.current
 
-    const nextViewers = snapshot.viewers
+    const viewersArr = Array.isArray(snapshot.viewers) ? snapshot.viewers : []
+    const nextViewers = viewersArr
       .map((viewer) => viewer.user_id)
       .filter((uid) => uid && uid !== selfId)
     store.replaceViewingAgents(convId, nextViewers)
 
+    const typersObj = snapshot.typers && typeof snapshot.typers === 'object' ? snapshot.typers : {}
     const nextTypers = Object.fromEntries(
-      Object.entries(snapshot.typers)
+      Object.entries(typersObj)
         .filter(([uid]) => uid !== selfId)
         .map(([uid, typing]) => [uid, {
           content: typing.content ?? '',
@@ -428,8 +588,9 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     const docId = snapshot.document_id
     if (!docId) return
     const selfId = selfIdRef.current
+    const docViewersArr = Array.isArray(snapshot.viewers) ? snapshot.viewers : []
     const nextViewers = Object.fromEntries(
-      snapshot.viewers
+      docViewersArr
         .filter((viewer) => viewer.user_id && viewer.user_id !== selfId)
         .map((viewer) => [viewer.user_id, {
           name: viewer.name,
@@ -463,12 +624,13 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
   }, [])
 
   useEffect(() => {
+    const timers = typingTimers.current
     return () => {
       clearTimeout(debounceTimer.current ?? undefined)
       clearTimeout(agentRunInvalidateTimer.current ?? undefined)
       pendingAgentRunInvalidations.current.clear()
-      typingTimers.current.forEach((t) => clearTimeout(t))
-      typingTimers.current.clear()
+      timers.forEach((t) => clearTimeout(t))
+      timers.clear()
     }
   }, [])
 

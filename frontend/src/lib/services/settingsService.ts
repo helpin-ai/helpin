@@ -105,6 +105,7 @@ export const settingsService = {
       auto_sync_states?: boolean;
       review_state_id?: string;
       done_state_id?: string;
+      closed_state_id?: string;
     },
   ) => api.put<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default${qs(workspaceId)}`, data),
   getModuleAccess: (workspaceId: string) =>

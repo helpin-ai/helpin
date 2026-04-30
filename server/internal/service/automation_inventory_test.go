@@ -81,6 +81,8 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			preset_version_key TEXT,
 			source_preset_key TEXT,
 			source_preset_version_key TEXT,
+			source_template_id TEXT,
+			source_template_key TEXT NOT NULL DEFAULT '',
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT,
@@ -252,7 +254,6 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create automation health snapshot: %v", err)
 	}
-	schedule := "0 * * * *"
 	if err := db.Create(&model.Agent{
 		ID:          "agent-1",
 		WorkspaceID: workspaceID,
@@ -260,7 +261,6 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		Status:      "idle",
 		RuntimeKind: "opencode",
 		TriggerMode: "manual",
-		Schedule:    &schedule,
 	}).Error; err != nil {
 		t.Fatalf("create scheduled agent: %v", err)
 	}
@@ -300,6 +300,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		repository.NewAutomationHealthRepository(db),
 		repository.NewAutomationRuleRepository(db),
 		repository.NewAgentTriggerExecutionRepository(db),
+		repository.NewAgentRunRepository(db),
 		repository.NewAgentRepository(db),
 		nil,
 		nil,
@@ -380,11 +381,199 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		triggerCounts[entry.ID] = entry.BindingCount
 	}
 
-	if got := triggerCounts["agent.schedule"]; got != 1 {
-		t.Fatalf("expected agent.schedule count 1, got %d", got)
-	}
 	if got := triggerCounts["automation_rule.cron"]; got != 1 {
 		t.Fatalf("expected automation_rule.cron count 1, got %d", got)
+	}
+}
+
+func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
+	t.Parallel()
+
+	dbName := fmt.Sprintf("file:automation-activity-runs-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE agents (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			is_system BOOLEAN NOT NULL DEFAULT 0,
+			name TEXT NOT NULL,
+			preset_key TEXT,
+			status TEXT NOT NULL,
+			runtime_kind TEXT,
+			skills BLOB NOT NULL DEFAULT x'5b5d',
+			trigger_mode TEXT,
+			execution_config BLOB NOT NULL DEFAULT x'7b7d',
+			instruction_template_version TEXT NOT NULL DEFAULT '',
+			allowed_tools BLOB NOT NULL DEFAULT x'5b5d',
+			allowed_commands BLOB NOT NULL DEFAULT x'5b5d',
+			allowed_targets BLOB NOT NULL DEFAULT x'5b5d',
+			approval_mode TEXT NOT NULL DEFAULT 'preset_default',
+			max_concurrent_runs INTEGER NOT NULL DEFAULT 1,
+			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			task_id TEXT,
+			conversation_id TEXT,
+			target_type TEXT NOT NULL,
+			target_id TEXT NOT NULL,
+			runtime_kind TEXT NOT NULL,
+			invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+			parent_run_id TEXT,
+			handoff_state TEXT,
+			approval_state TEXT NOT NULL DEFAULT 'not_required',
+			pause_reason TEXT NOT NULL DEFAULT 'none',
+			triggered_by_user_id TEXT,
+			status TEXT NOT NULL,
+			workflow_id TEXT,
+			workflow_run_id TEXT,
+			task_queue TEXT,
+			runner_pool TEXT,
+			repository_id TEXT,
+			repo_full_name TEXT,
+			base_branch TEXT,
+			working_branch TEXT,
+			delivery_target_id TEXT,
+			execution_stage TEXT,
+			last_heartbeat_at DATETIME,
+			input BLOB,
+			output_summary BLOB NOT NULL DEFAULT x'7b7d',
+			cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			tokens_used INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_trigger_executions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			binding_id TEXT NOT NULL,
+			binding_kind TEXT NOT NULL,
+			trigger_type TEXT,
+			reference_id TEXT,
+			reference_type TEXT,
+			target_type TEXT,
+			target_id TEXT,
+			run_id TEXT,
+			status TEXT NOT NULL,
+			error_message TEXT,
+			fired_at DATETIME NOT NULL,
+			started_at DATETIME,
+			completed_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create test table: %v", err)
+		}
+	}
+
+	ctx := context.Background()
+	workspaceID := "ws-activity"
+	now := time.Now().UTC()
+	input, _ := json.Marshal(model.AgentRunInputPayload{
+		Trigger: &model.AgentRunTriggerContext{
+			Source:      model.AgentRunTriggerSourceCommandBar,
+			TriggerType: model.AgentRunTriggerTypeCommandBar,
+			FiredAt:     &now,
+		},
+		Target: &model.AgentRunTargetContext{TargetType: "workspace", TargetID: workspaceID},
+	})
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, name, status, runtime_kind, created_at, updated_at
+	) VALUES (?, ?, ?, 'idle', 'native_sdk', ?, ?)`, "agent-command", workspaceID, "Command Agent", now, now).Error; err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO agent_runs (
+		id, workspace_id, agent_id, target_type, target_id, runtime_kind, status, input, created_at, updated_at
+	) VALUES (?, ?, ?, 'workspace', ?, 'native_sdk', 'queued', ?, ?, ?)`,
+		"run-command", workspaceID, "agent-command", workspaceID, []byte(input), now, now,
+	).Error; err != nil {
+		t.Fatalf("create command run: %v", err)
+	}
+
+	svc := NewAutomationInventoryService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewAgentTriggerExecutionRepository(db),
+		repository.NewAgentRunRepository(db),
+		repository.NewAgentRepository(db),
+		nil,
+		nil,
+	)
+	result, err := svc.ListTriggerExecutions(ctx, workspaceID, model.TriggerExecutionListFilters{}, model.PMPagination{Page: 1, PerPage: 25})
+	if err != nil {
+		t.Fatalf("list activity: %v", err)
+	}
+	if result.Total != 1 || len(result.Data) != 1 {
+		t.Fatalf("expected one synthetic run activity row, got total=%d data=%#v", result.Total, result.Data)
+	}
+	item := result.Data[0]
+	if item.ExecutionID != "run:run-command" || item.RunID == nil || *item.RunID != "run-command" {
+		t.Fatalf("expected synthetic run id, got %#v", item)
+	}
+	if item.BindingKind != model.AgentRunTriggerSourceCommandBar || item.BindingID != "command_bar.run" {
+		t.Fatalf("expected command-bar activity source, got %s/%s", item.BindingKind, item.BindingID)
+	}
+
+	result, err = svc.ListTriggerExecutions(ctx, workspaceID, model.TriggerExecutionListFilters{BindingKind: testStringPtr(model.AgentRunTriggerSourceCommandBar)}, model.PMPagination{Page: 1, PerPage: 25})
+	if err != nil {
+		t.Fatalf("list command-bar activity by source: %v", err)
+	}
+	if result.Total != 1 || len(result.Data) != 1 || result.Data[0].BindingID != "command_bar.run" {
+		t.Fatalf("expected command-bar source filter to find synthetic row, got total=%d data=%#v", result.Total, result.Data)
+	}
+
+	result, err = svc.ListTriggerExecutions(ctx, workspaceID, model.TriggerExecutionListFilters{RunID: testStringPtr("run-command")}, model.PMPagination{Page: 1, PerPage: 25})
+	if err != nil {
+		t.Fatalf("list activity by run_id: %v", err)
+	}
+	if result.Total != 1 || len(result.Data) != 1 {
+		t.Fatalf("expected run_id filter to find synthetic row, got total=%d data=%#v", result.Total, result.Data)
+	}
+
+	manualInput, _ := json.Marshal(model.AgentRunInputPayload{
+		Trigger: &model.AgentRunTriggerContext{
+			Source:      model.AgentRunTriggerSourceManual,
+			TriggerType: model.AgentRunTriggerTypeManual,
+			FiredAt:     &now,
+		},
+		Target: &model.AgentRunTargetContext{TargetType: "task", TargetID: "task-1"},
+	})
+	if err := db.Exec(`INSERT INTO agent_runs (
+		id, workspace_id, agent_id, target_type, target_id, runtime_kind, status, input, created_at, updated_at
+	) VALUES (?, ?, ?, 'task', ?, 'native_sdk', 'queued', ?, ?, ?)`,
+		"run-manual-task", workspaceID, "agent-command", "task-1", []byte(manualInput), now.Add(time.Minute), now.Add(time.Minute),
+	).Error; err != nil {
+		t.Fatalf("create manual task run: %v", err)
+	}
+
+	result, err = svc.ListTriggerExecutions(ctx, workspaceID, model.TriggerExecutionListFilters{BindingID: testStringPtr("manual.task_run")}, model.PMPagination{Page: 1, PerPage: 25})
+	if err != nil {
+		t.Fatalf("list manual task activity by binding: %v", err)
+	}
+	if result.Total != 1 || len(result.Data) != 1 {
+		t.Fatalf("expected manual task binding filter to find synthetic row, got total=%d data=%#v", result.Total, result.Data)
+	}
+	item = result.Data[0]
+	if item.BindingKind != model.AgentRunTriggerSourceManual || item.BindingID != "manual.task_run" || item.TargetType == nil || *item.TargetType != "task" {
+		t.Fatalf("expected manual task activity source, got %#v", item)
 	}
 }
 

@@ -11,16 +11,61 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/ordering"
 )
 
 // DocsCollectionRepository handles DB operations for docs collections.
 type DocsCollectionRepository struct {
-	db *gorm.DB
+	db         *gorm.DB
+	useSortKey bool
 }
 
 // NewDocsCollectionRepository creates a new DocsCollectionRepository.
-func NewDocsCollectionRepository(db *gorm.DB) *DocsCollectionRepository {
-	return &DocsCollectionRepository{db: db}
+func NewDocsCollectionRepository(db *gorm.DB, useSortKey ...bool) *DocsCollectionRepository {
+	enabled := false
+	if len(useSortKey) > 0 {
+		enabled = useSortKey[0]
+	}
+	return &DocsCollectionRepository{db: db, useSortKey: enabled}
+}
+
+// collOrderBy returns the canonical ORDER BY clause for collections
+// within a bucket.
+func (r *DocsCollectionRepository) collOrderBy() string {
+	if r.useSortKey {
+		return "sort_key ASC, id ASC"
+	}
+	return "position ASC, created_at ASC, id ASC"
+}
+
+// LastSortKeyInBucket returns the highest sort_key among collections
+// in the given bucket, or "" if the bucket is empty.
+func (r *DocsCollectionRepository) LastSortKeyInBucket(ctx context.Context, spaceID string, parentCollectionID *string) (string, error) {
+	var key string
+	q := r.db.WithContext(ctx).
+		Model(&model.DocsCollection{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentCollectionID != nil {
+		q = q.Where("parent_collection_id = ?", *parentCollectionID)
+	} else {
+		q = q.Where("parent_collection_id IS NULL")
+	}
+	if err := q.Row().Scan(&key); err != nil {
+		return "", fmt.Errorf("last sort key in collection bucket: %w", err)
+	}
+	if key == "~" {
+		return "", nil
+	}
+	return key, nil
+}
+
+// UpdateSortKey sets the sort_key on a single collection.
+func (r *DocsCollectionRepository) UpdateSortKey(ctx context.Context, id, key string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.DocsCollection{}).
+		Where("id = ?", id).
+		Update("sort_key", key).Error
 }
 
 // DB returns the underlying *gorm.DB the repository was constructed
@@ -43,7 +88,11 @@ func (r *DocsCollectionRepository) Create(ctx context.Context, coll *model.DocsC
 	if coll.ID == "" {
 		coll.ID = uuid.NewString()
 	}
-	if err := r.db.WithContext(ctx).Create(coll).Error; err != nil {
+	q := r.db.WithContext(ctx)
+	if !r.useSortKey {
+		q = q.Omit("sort_key")
+	}
+	if err := q.Create(coll).Error; err != nil {
 		return nil, fmt.Errorf("create docs collection: %w", err)
 	}
 	return coll, nil
@@ -101,9 +150,21 @@ func (r *DocsCollectionRepository) ListBySpace(ctx context.Context, spaceID stri
 	var colls []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Order("position ASC, created_at ASC").
+		Order(r.collOrderBy()).
 		Find(&colls).Error; err != nil {
 		return nil, fmt.Errorf("list docs collections: %w", err)
+	}
+	return colls, nil
+}
+
+// ListByWorkspaceAndSpace returns all collections in a workspace space, ordered by position.
+func (r *DocsCollectionRepository) ListByWorkspaceAndSpace(ctx context.Context, workspaceID, spaceID string) ([]model.DocsCollection, error) {
+	var colls []model.DocsCollection
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND space_id = ? AND deleted_at IS NULL", workspaceID, spaceID).
+		Order("position ASC, created_at ASC").
+		Find(&colls).Error; err != nil {
+		return nil, fmt.Errorf("list docs collections by workspace and space: %w", err)
 	}
 	return colls, nil
 }
@@ -113,7 +174,7 @@ func (r *DocsCollectionRepository) ListByWorkspace(ctx context.Context, workspac
 	var colls []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND deleted_at IS NULL", workspaceID).
-		Order("space_id ASC, position ASC, created_at ASC").
+		Order("space_id ASC, " + r.collOrderBy()).
 		Find(&colls).Error; err != nil {
 		return nil, fmt.Errorf("list docs collections by workspace: %w", err)
 	}
@@ -162,7 +223,7 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 		var children []model.DocsCollection
 		if err := tx.
 			Where("parent_collection_id = ? AND deleted_at IS NULL", id).
-			Order("position ASC, created_at ASC, id ASC").
+			Order(r.collOrderBy()).
 			Find(&children).Error; err != nil {
 			return fmt.Errorf("load child collections for delete: %w", err)
 		}
@@ -185,11 +246,27 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 			return fmt.Errorf("count destination collection bucket: %w", err)
 		}
 
+		// When useSortKey is on, find the max sort_key across both collections
+		// and docs in the destination bucket so reparented items append after
+		// all existing siblings.
+		var lastSortKey string
+		if r.useSortKey {
+			lastSortKey = maxSortKeyInBucketTx(tx, coll.SpaceID, destParentID)
+		}
+
 		for i, child := range children {
 			updates := map[string]interface{}{
 				"parent_collection_id": destParentID,
 				"depth":                destDepth,
 				"position":             int(destCollCount) + i,
+			}
+			if r.useSortKey {
+				key, err := ordering.Between(lastSortKey, "")
+				if err != nil {
+					return fmt.Errorf("compute sort key for reparented collection %s: %w", child.ID, err)
+				}
+				updates["sort_key"] = key
+				lastSortKey = key
 			}
 			if err := tx.Model(&model.DocsCollection{}).
 				Where("id = ? AND deleted_at IS NULL", child.ID).
@@ -205,7 +282,7 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 		var docs []model.DocsDocument
 		if err := tx.
 			Where("collection_id = ? AND deleted_at IS NULL", id).
-			Order("position ASC, created_at ASC, id ASC").
+			Order(r.collOrderBy()).
 			Find(&docs).Error; err != nil {
 			return fmt.Errorf("list docs in collection for delete: %w", err)
 		}
@@ -226,6 +303,14 @@ func (r *DocsCollectionRepository) Delete(ctx context.Context, id string) error 
 			updates := map[string]interface{}{
 				"collection_id": destParentID,
 				"position":      int(destDocCount) + i,
+			}
+			if r.useSortKey {
+				key, err := ordering.Between(lastSortKey, "")
+				if err != nil {
+					return fmt.Errorf("compute sort key for reparented doc %s: %w", doc.ID, err)
+				}
+				updates["sort_key"] = key
+				lastSortKey = key
 			}
 			if err := tx.Model(&model.DocsDocument{}).
 				Where("id = ? AND deleted_at IS NULL", doc.ID).
@@ -330,7 +415,7 @@ func (r *DocsCollectionRepository) ListChildren(ctx context.Context, spaceID str
 	} else {
 		q = q.Where("parent_collection_id = ?", *parentID)
 	}
-	if err := q.Order("position ASC, created_at ASC, id ASC").Find(&colls).Error; err != nil {
+	if err := q.Order(r.collOrderBy()).Find(&colls).Error; err != nil {
 		return nil, fmt.Errorf("list docs collection children: %w", err)
 	}
 	return colls, nil
@@ -638,6 +723,44 @@ func recalculateDescendantDepthsTx(tx *gorm.DB, rootID string, rootDepth int) er
 		frontier = next
 	}
 	return nil
+}
+
+// maxSortKeyInBucketTx returns the largest sort_key across both
+// collections and documents in the given bucket, or "" if empty.
+// Used during reparent to append items after all existing siblings.
+func maxSortKeyInBucketTx(tx *gorm.DB, spaceID string, parentID *string) string {
+	var collKey, docKey string
+
+	cq := tx.Model(&model.DocsCollection{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentID == nil {
+		cq = cq.Where("parent_collection_id IS NULL")
+	} else {
+		cq = cq.Where("parent_collection_id = ?", *parentID)
+	}
+	_ = cq.Row().Scan(&collKey)
+
+	dq := tx.Model(&model.DocsDocument{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if parentID == nil {
+		dq = dq.Where("collection_id IS NULL")
+	} else {
+		dq = dq.Where("collection_id = ?", *parentID)
+	}
+	_ = dq.Row().Scan(&docKey)
+
+	if collKey > docKey {
+		if collKey == "~" {
+			return ""
+		}
+		return collKey
+	}
+	if docKey == "~" {
+		return ""
+	}
+	return docKey
 }
 
 func normalizeBucketTx(tx *gorm.DB, spaceID string, parentID *string) error {

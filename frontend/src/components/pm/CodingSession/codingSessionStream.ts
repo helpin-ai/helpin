@@ -429,23 +429,141 @@ function transcriptToolCallsFromPayload(payload: Record<string, unknown>, messag
 }
 
 function transcriptMessageFromEvent(event: CodingSessionEvent): CodingSessionTranscriptMessage | null {
-  if (!isTranscriptMessageEvent(event)) return null;
+  if (isTranscriptMessageEvent(event)) {
+    const payload = asRecord(event.payload) ?? {};
+    const role = event.type === 'user.message.completed' ? 'user' : 'assistant';
+
+    return {
+      event_id: event.id,
+      message_id: asString(payload.message_id),
+      role,
+      content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
+      message_type: asString(payload.message_type),
+      timestamp: event.timestamp,
+      sequence_no: event.sequence_no,
+      tool_calls: role === 'assistant'
+        ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
+        : undefined,
+      turn_segments: role === 'assistant' ? parseLiveTurnSegments(payload.turn_segments) : undefined,
+    };
+  }
+  const interactionTranscript = transcriptInteractionResolutionMessageFromEvent(event);
+  if (interactionTranscript) return interactionTranscript;
+  return null;
+}
+
+function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEvent): CodingSessionTranscriptMessage | null {
+  if (event.type !== 'interaction.resolved') return null;
   const payload = asRecord(event.payload) ?? {};
-  const role = event.type === 'user.message.completed' ? 'user' : 'assistant';
+  const interactionKind = asString(payload.interaction_kind);
+  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return null;
+
+  const content = interactionKind === 'approval_request'
+    ? approvalRequestResolutionTranscriptContent(asRecord(payload.request_payload), asRecord(payload.response_payload))
+    : reviewCheckpointResolutionTranscriptContent(
+      asRecord(payload.request_payload),
+      asRecord(payload.response_payload),
+    );
+  if (!content) return null;
+
+  const responsePayload = asRecord(payload.response_payload);
+  const resolverUserId =
+    asString(payload.resolved_by) ?? asString(responsePayload?.resolved_by);
 
   return {
     event_id: event.id,
-    message_id: asString(payload.message_id),
-    role,
-    content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
-    message_type: asString(payload.message_type),
+    message_id: asString(payload.interaction_id) ?? event.id,
+    role: 'user',
+    content,
+    message_type: interactionKind === 'approval_request' ? 'approval_request_resolution' : 'review_checkpoint_resolution',
     timestamp: event.timestamp,
     sequence_no: event.sequence_no,
-    tool_calls: role === 'assistant'
-      ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
-      : undefined,
-    turn_segments: role === 'assistant' ? parseLiveTurnSegments(payload.turn_segments) : undefined,
+    resolver_user_id: resolverUserId,
   };
+}
+
+function approvalRequestResolutionTranscriptContent(
+  requestPayload: Record<string, unknown> | null,
+  responsePayload: Record<string, unknown> | null,
+) {
+  if (!responsePayload) return '';
+  const decision = asString(responsePayload.decision);
+  if (!decision) return '';
+  const title = asString(requestPayload?.title) ?? 'approval request';
+  const note = asString(responsePayload.message);
+  const lines: string[] = [
+    decision === 'approve' ? `Approved ${title}.` : `Requested changes on ${title}.`,
+  ];
+  if (note) {
+    lines.push('');
+    lines.push(`Note: ${note}`);
+  }
+  return lines.join('\n');
+}
+
+function reviewCheckpointResolutionTranscriptContent(
+  requestPayload: Record<string, unknown> | null,
+  responsePayload: Record<string, unknown> | null,
+) {
+  if (!responsePayload) return '';
+  const decision = asString(responsePayload.decision);
+  if (!decision) return '';
+  const selectionMode = (asString(responsePayload.selection_mode) ?? '').toLowerCase();
+  const note = asString(responsePayload.message);
+  const findings = Array.isArray(requestPayload?.findings) ? requestPayload.findings : [];
+  const selectedFindingIDs = Array.isArray(responsePayload.selected_finding_ids)
+    ? responsePayload.selected_finding_ids.flatMap((value) => {
+      const id = asString(value);
+      return id ? [id] : [];
+    })
+    : [];
+
+  const normalizedFindings = findings.flatMap((rawFinding) => {
+    const finding = asRecord(rawFinding);
+    const id = asString(finding?.id);
+    const title = asString(finding?.title);
+    if (!id || !title) return [];
+    return [{
+      id,
+      title,
+      codeLocation: asString(finding?.code_location),
+    }];
+  });
+
+  const selectedFindings = selectionMode === 'selected'
+    ? normalizedFindings.filter((finding) => selectedFindingIDs.includes(finding.id))
+    : normalizedFindings;
+
+  const lines: string[] = [];
+  if (decision === 'approve') {
+    if (selectedFindings.length > 0) {
+      lines.push(selectionMode === 'selected'
+        ? 'Approved selected review findings for implementation:'
+        : 'Approved all review findings for implementation:');
+      lines.push(...selectedFindings.map((finding) => (
+        finding.codeLocation ? `- ${finding.title} \`${finding.codeLocation}\`` : `- ${finding.title}`
+      )));
+    } else {
+      lines.push('Approved the review checkpoint.');
+    }
+  } else {
+    if (selectedFindings.length > 0) {
+      lines.push(selectionMode === 'selected'
+        ? 'Requested changes on selected review findings:'
+        : 'Requested changes on the review findings:');
+      lines.push(...selectedFindings.map((finding) => (
+        finding.codeLocation ? `- ${finding.title} \`${finding.codeLocation}\`` : `- ${finding.title}`
+      )));
+    } else {
+      lines.push('Requested changes on the review checkpoint.');
+    }
+  }
+
+  if (note) {
+    lines.push('');
+    lines.push(`Note: ${note}`);
+  }
+  return lines.join('\n');
 }
 
 function liveAssistantMatchesTranscript(
@@ -473,7 +591,7 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
 }
 
 const TASK_PLAN_DOC_PUBLISH_TOOLS = new Set(['publish_task_plan_doc', 'publish_story_plan_doc']);
-const REVIEW_CHECKPOINT_TOOLS = new Set(['request_review_checkpoint', 'request_human_approval']);
+const APPROVAL_TOOLS = new Set(['request_approval', 'request_review_checkpoint', 'request_human_approval']);
 
 function parsePlanArtifactValue(value: unknown): RunPlanArtifact | null {
   if (typeof value === 'string') return parsePlanArtifact(value);
@@ -529,12 +647,13 @@ function isReviewStep(stepText: string) {
   return stepText.includes('publish') || stepText.includes('request') || stepText.includes('checkpoint') || stepText.includes('wait');
 }
 
-function hasReviewCheckpointEvent(events: CodingSessionEvent[]) {
+function hasApprovalEvent(events: CodingSessionEvent[]) {
   return events.some((event) => {
     if (event.type === 'approval.requested') return true;
     if (!event.type.startsWith('interaction.')) return false;
     const payload = asRecord(event.payload);
-    return asString(payload?.interaction_kind) === 'review_checkpoint';
+    const interactionKind = asString(payload?.interaction_kind);
+    return interactionKind === 'review_checkpoint' || interactionKind === 'approval_request';
   });
 }
 
@@ -552,10 +671,10 @@ function reconcileObservedPlanState(
   );
 
   const publishedTaskPlanDoc = [...TASK_PLAN_DOC_PUBLISH_TOOLS].some((toolName) => completedToolNames.has(toolName));
-  const requestedReviewCheckpoint = [...REVIEW_CHECKPOINT_TOOLS].some((toolName) => completedToolNames.has(toolName))
-    || hasReviewCheckpointEvent(events);
+  const requestedApproval = [...APPROVAL_TOOLS].some((toolName) => completedToolNames.has(toolName))
+    || hasApprovalEvent(events);
 
-  if (!publishedTaskPlanDoc && !requestedReviewCheckpoint) return plan;
+  if (!publishedTaskPlanDoc && !requestedApproval) return plan;
 
   let changed = false;
   const nextPlan: RunPlanArtifact = {
@@ -566,7 +685,7 @@ function reconcileObservedPlanState(
         changed = true;
         return { ...step, status: 'completed' };
       }
-      if (requestedReviewCheckpoint && step.status !== 'completed' && isReviewStep(normalizedStep)) {
+      if (requestedApproval && step.status !== 'completed' && isReviewStep(normalizedStep)) {
         changed = true;
         return { ...step, status: 'completed' };
       }

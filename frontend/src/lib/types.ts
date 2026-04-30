@@ -169,6 +169,8 @@ export interface WorkspaceAccess {
     user_id: string;
     role: 'owner' | 'admin' | 'member' | 'viewer';
     status: string;
+    support_default_team_id?: string;
+    support_task_dialog_dismissed: boolean;
   };
   permissions: Permission[];
   team_memberships: {
@@ -279,6 +281,7 @@ export interface TeamRepoDefault {
   auto_sync_states: boolean;
   review_state_id?: string;
   done_state_id?: string;
+  closed_state_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -361,6 +364,7 @@ export interface JobRoleCriteria {
 export interface Invitation {
   id: string;
   workspace_id: string;
+  workspace_member_id?: string;
   email: string;
   role: string;
   status: 'pending' | 'accepted' | 'revoked';
@@ -457,6 +461,7 @@ export interface AutomationTriggerExecutionFilters {
   status?: string;
   source?: string;
   reference_id?: string;
+  run_id?: string;
   fired_after?: string;
   fired_before?: string;
   page?: number;
@@ -475,6 +480,8 @@ export interface AutomationTriggerExecutionSearchPreset {
 export interface WorkflowRuleSearchPreset {
   show_trigger?: string;
   show_trigger_title?: string;
+  show_rule?: string;
+  show_rule_title?: string;
   template?: string;
   template_title?: string;
   template_description?: string;

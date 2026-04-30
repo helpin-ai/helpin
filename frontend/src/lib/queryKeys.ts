@@ -31,6 +31,8 @@ export const queryKeys = {
     triggerCatalog: (wsId: string) => ['automation', wsId, 'library', 'triggers'] as const,
     toolCatalog: (wsId: string) => ['automation', wsId, 'library', 'tools'] as const,
     skillCatalog: (wsId: string) => ['automation', wsId, 'library', 'skills'] as const,
+    agentTemplates: (wsId: string) => ['automation', wsId, 'agent-templates'] as const,
+    agentTemplate: (wsId: string, id: string) => ['automation', wsId, 'agent-templates', id] as const,
     agentsRoot: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agents: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agent: (wsId: string, id: string) => ['automation', wsId, 'agents', id] as const,
@@ -108,6 +110,8 @@ export const queryKeys = {
     checklists: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'checklists'] as const,
     attachments: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'attachments'] as const,
     externalLinks: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'externalLinks'] as const,
+    entityExternalLinks: (wsId: string, entityType: string, entityId: string) =>
+      ['pm', wsId, entityType, entityId, 'externalLinks'] as const,
 
     search: (wsId: string, query: string) => ['pm', wsId, 'search', query] as const,
   },
@@ -161,6 +165,7 @@ export const queryKeys = {
       filters ? (['docs', wsId, 'documents', filters] as const) : (['docs', wsId, 'documents'] as const),
     document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,
     content: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'content'] as const,
+    blocks: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'blocks'] as const,
     versions: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'versions'] as const,
     version: (wsId: string, docId: string, versionId: string) => ['docs', wsId, 'documents', docId, 'versions', versionId] as const,
     links: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'links'] as const,

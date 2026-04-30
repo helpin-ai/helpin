@@ -163,7 +163,12 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       });
     },
     setSelectedMailboxId: (mailboxId) => {
+      // Reset navFilter too: if the user was on "Mentions" / "Unassigned"
+      // / etc. and clicks a team inbox, they expect the full inbox view,
+      // not mentions-within-that-inbox. Mirrors setNavFilter which
+      // already resets selectedMailboxId.
       set({
+        navFilter: 'all',
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
         activePanel: 'list',

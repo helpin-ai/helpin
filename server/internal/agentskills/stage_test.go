@@ -39,7 +39,7 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	}
 	destRoot := filepath.Join(t.TempDir(), "skills")
 
-	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{worker.ToolRequestReviewCheckpoint}, nil, nil, destRoot)
+	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{worker.ToolRequestApproval, worker.ToolRequestReviewCheckpoint}, nil, nil, destRoot)
 	if err != nil {
 		t.Fatalf("stage skills: %v", err)
 	}
@@ -52,6 +52,85 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	}
 	if !strings.Contains(string(payload), "approval_protocol") {
 		t.Fatalf("expected staged skill markdown to contain skill key, got %q", string(payload))
+	}
+}
+
+func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
+	agent := &model.Agent{
+		RuntimeKind: "native_sdk",
+		Skills:      model.AgentSkillRefs{{Key: "dependency_auditor"}},
+	}
+	destRoot := filepath.Join(t.TempDir(), "skills")
+
+	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{
+		"update_plan",
+		"list_directory",
+		"read_file",
+		"read_files",
+		"read_file_range",
+		"search_files",
+		"ripgrep",
+		"grep",
+		"run_command",
+		"web_search_exa",
+		"create_task",
+	}, nil, nil, destRoot)
+	if err != nil {
+		t.Fatalf("stage dependency auditor skill: %v", err)
+	}
+	if len(resolution.Definitions) != 1 || resolution.Definitions[0].Key != "dependency_auditor" {
+		t.Fatalf("expected dependency_auditor definition, got %#v", resolution.Definitions)
+	}
+	for _, rel := range []string{
+		filepath.Join("01-dependency_auditor", "SKILL.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "go.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "rust.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "python.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "node.md"),
+		filepath.Join("01-dependency_auditor", "ecosystems", "java.md"),
+		filepath.Join("01-dependency_auditor", "verification.md"),
+	} {
+		if _, err := os.Stat(filepath.Join(destRoot, rel)); err != nil {
+			t.Fatalf("expected staged dependency auditor file %s: %v", rel, err)
+		}
+	}
+}
+
+func TestStageIntoStagesSecurityTriageBuiltInSkillPackage(t *testing.T) {
+	agent := &model.Agent{
+		RuntimeKind: "native_sdk",
+		Skills:      model.AgentSkillRefs{{Key: "security_triage"}},
+	}
+	destRoot := filepath.Join(t.TempDir(), "skills")
+
+	resolution, err := StageInto(context.Background(), "ws_123", agent, []string{
+		"update_plan",
+		"list_directory",
+		"read_file",
+		"read_files",
+		"read_file_range",
+		"search_files",
+		"ripgrep",
+		"grep",
+		"run_command",
+		"web_search_exa",
+		"create_task",
+	}, nil, nil, destRoot)
+	if err != nil {
+		t.Fatalf("stage security triage skill: %v", err)
+	}
+	if len(resolution.Definitions) != 1 || resolution.Definitions[0].Key != "security_triage" {
+		t.Fatalf("expected security_triage definition, got %#v", resolution.Definitions)
+	}
+	payload, err := os.ReadFile(filepath.Join(destRoot, "01-security_triage", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read staged security triage SKILL.md: %v", err)
+	}
+	if !strings.Contains(string(payload), "`scan_gitleaks`") || !strings.Contains(string(payload), "`ensure_task_label`") {
+		t.Fatalf("expected staged security triage skill to contain scanner and label tools, got %q", string(payload))
+	}
+	if _, err := os.Stat(filepath.Join(destRoot, "01-security_triage", "semgrep", "helpin-security.yml")); err != nil {
+		t.Fatalf("expected staged security triage semgrep rules: %v", err)
 	}
 }
 

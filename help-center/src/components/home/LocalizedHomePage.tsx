@@ -3,6 +3,7 @@ import { Search, Menu, ArrowRight } from 'lucide-react'
 import { useDocsContext } from '@/contexts/DocsContext'
 import { useSpaceNavigation } from '@/hooks/queries'
 import {
+  buildCanonicalArticlePath,
   buildCanonicalCollectionPath,
   buildCanonicalSpacePath,
 } from '@/lib/locale'
@@ -190,6 +191,22 @@ function FeaturedCard({
     return (
       <DocsLink
         to={buildCanonicalCollectionPath(
+          multilingualEnabled,
+          locale,
+          card.link_value,
+          card.public_id,
+        )}
+        className={cls}
+      >
+        {inner}
+      </DocsLink>
+    )
+  }
+
+  if (card.link_type === 'article' && card.public_id) {
+    return (
+      <DocsLink
+        to={buildCanonicalArticlePath(
           multilingualEnabled,
           locale,
           card.link_value,

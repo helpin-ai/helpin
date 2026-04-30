@@ -18,23 +18,23 @@ import (
 func newDocsHelpcenterPublicHandlerForTest(db *gorm.DB) *DocsHandler {
 	translationSvc := service.NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
 		repository.NewDocsRedirectRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		nil,
 	)
 
 	helpcenterSvc := service.NewDocsHelpcenterService(
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		nil,
 		nil,
 		nil,
@@ -148,8 +148,8 @@ func TestDocsHelpcenterPublicLocale_ConfigDoesNotMutateCollectionMirrors(t *test
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("Cache-Control = %q, want %q", got, "no-store")
+	if got := rec.Header().Get("Cache-Control"); got != helpcenterCachePublicRead {
+		t.Fatalf("Cache-Control = %q, want %q", got, helpcenterCachePublicRead)
 	}
 
 	var storedCollection model.DocsCollection

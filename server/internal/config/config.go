@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -56,7 +57,7 @@ type Config struct {
 
 	// Website content crawler (optional — controls crawl engine and proxy)
 	CrawlerMode      string // "cloudflare", "local", or "cloudflare_with_fallback" (default)
-	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler (e.g. Decodo/Smartproxy)
+	CrawlerProxyURLs string // comma-separated proxy URLs for local crawler and agent fetch/crawl tools (e.g. Decodo/Smartproxy)
 
 	// GitHub App (optional — required for shared-runner repo mutation).
 	// GITHUB_APP_PRIVATE_KEY should be provided as a base64-encoded PEM value.
@@ -77,10 +78,12 @@ type Config struct {
 	AppBaseURL                        string
 	WebAuthnRPID                      string
 	WebAuthnRPOrigins                 []string
+	PlatformAdminEmails               []string
 
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	TOTPEncryptionKey     string
 	CRMEncryptionKey      string
+	PMImportEncryptionKey string
 	GmailClientID         string
 	GmailClientSecret     string
 	GmailOAuthRedirectURL string
@@ -91,9 +94,15 @@ type Config struct {
 	CRMLLMBaseURL  string
 	CRMLLMModel    string
 
-	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.4-mini)
+	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.5)
 	QueryExpansionModel    string
 	QueryExpansionProvider string
+
+	// Command bar intent routing LLM (optional — defaults to router default provider)
+	CommandRouterLLMProvider  string
+	CommandRouterLLMModel     string
+	CommandRouterLLMMaxTokens int
+	CommandRouterLLMTimeoutMS int
 
 	// MaxMind GeoIP configuration (optional — enables GeoIP enrichment for support/widget traffic)
 	MaxMindAccountID   string
@@ -106,6 +115,10 @@ type Config struct {
 
 	// Agent preview debugging (optional — targeted diagnostics for preview persistence/apply)
 	AgentPreviewDebug bool
+
+	// Docs ordering: when true, reads/writes use fractional sort_key
+	// instead of integer position. Enable after backfill completes.
+	DocsOrderingUseSortKey bool
 }
 
 // Load reads configuration from environment variables.
@@ -217,8 +230,10 @@ func Load() (*Config, error) {
 		AppBaseURL:                        appBaseURL,
 		WebAuthnRPID:                      webAuthnRPID,
 		WebAuthnRPOrigins:                 webAuthnRPOrigins,
+		PlatformAdminEmails:               parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 		TOTPEncryptionKey:                 strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                  os.Getenv("CRM_ENCRYPTION_KEY"),
+		PMImportEncryptionKey:             strings.TrimSpace(os.Getenv("PM_IMPORT_ENCRYPTION_KEY")),
 		GmailClientID:                     os.Getenv("GMAIL_CLIENT_ID"),
 		GmailClientSecret:                 os.Getenv("GMAIL_CLIENT_SECRET"),
 		GmailOAuthRedirectURL:             os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
@@ -226,14 +241,19 @@ func Load() (*Config, error) {
 		CRMLLMAPIKey:                      os.Getenv("CRM_LLM_API_KEY"),
 		CRMLLMBaseURL:                     os.Getenv("CRM_LLM_BASE_URL"),
 		CRMLLMModel:                       os.Getenv("CRM_LLM_MODEL"),
-		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.4-mini")),
+		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.5")),
 		QueryExpansionProvider:            strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
+		CommandRouterLLMProvider:          strings.TrimSpace(os.Getenv("COMMAND_ROUTER_LLM_PROVIDER")),
+		CommandRouterLLMModel:             strings.TrimSpace(os.Getenv("COMMAND_ROUTER_LLM_MODEL")),
+		CommandRouterLLMMaxTokens:         parsePositiveIntEnv(os.Getenv("COMMAND_ROUTER_LLM_MAX_TOKENS"), 900),
+		CommandRouterLLMTimeoutMS:         parsePositiveIntEnv(os.Getenv("COMMAND_ROUTER_LLM_TIMEOUT_MS"), 2500),
 		MaxMindAccountID:                  strings.TrimSpace(os.Getenv("MAXMIND_ACCOUNT_ID")),
 		MaxMindDBPath:                     strings.TrimSpace(os.Getenv("MAXMIND_DB_PATH")),
 		MaxMindDownloadURL:                strings.TrimSpace(os.Getenv("MAXMIND_DOWNLOAD_URL")),
 		MaxMindLicenseKey:                 strings.TrimSpace(os.Getenv("MAXMIND_LICENSE_KEY")),
 		RedisURL:                          os.Getenv("REDIS_URL"),
 		AgentPreviewDebug:                 parseBoolEnv(os.Getenv("AGENT_PREVIEW_DEBUG")),
+		DocsOrderingUseSortKey:            parseBoolEnv(os.Getenv("DOCS_ORDERING_USE_SORT_KEY")),
 	}, nil
 }
 
@@ -244,6 +264,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func parsePositiveIntEnv(value string, fallback int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func parseCORSOrigins(value string) []string {
@@ -274,6 +302,25 @@ func parseOptionalOrigins(value string) []string {
 		}
 	}
 	return origins
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		cleaned := strings.TrimSpace(part)
+		if cleaned == "" {
+			continue
+		}
+		key := strings.ToLower(cleaned)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, cleaned)
+	}
+	return out
 }
 
 func originHost(value string) string {

@@ -76,3 +76,26 @@ func (r *PMExternalLinkRepository) Count(ctx context.Context, storyID string) (i
 	}
 	return count, nil
 }
+
+// ListByEntity returns external links for any entity type.
+func (r *PMExternalLinkRepository) ListByEntity(ctx context.Context, entityType, entityID string) ([]model.PMExternalLink, error) {
+	var links []model.PMExternalLink
+	if err := r.db.WithContext(ctx).
+		Where("entity_type = ? AND entity_id = ?", entityType, entityID).
+		Order("created_at ASC").
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("list external links by entity: %w", err)
+	}
+	return links, nil
+}
+
+// CountByEntity returns number of external links for any entity type.
+func (r *PMExternalLinkRepository) CountByEntity(ctx context.Context, entityType, entityID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.PMExternalLink{}).
+		Where("entity_type = ? AND entity_id = ?", entityType, entityID).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count external links by entity: %w", err)
+	}
+	return count, nil
+}

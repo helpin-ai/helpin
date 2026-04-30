@@ -114,7 +114,15 @@ export function scopedDocuments(
     return out
   }
   if (view.kind === 'collection') {
-    return view.node.documents.filter((d) => passesFilter(d, filter))
+    const out: DocsDocument[] = []
+    const walkNode = (node: CollectionTreeNode) => {
+      for (const doc of node.documents) {
+        if (passesFilter(doc, filter)) out.push(doc)
+      }
+      for (const child of node.children) walkNode(child)
+    }
+    walkNode(view.node)
+    return out
   }
   if (view.kind === 'uncategorized') {
     return tree.uncategorizedDocuments.filter((d) => passesFilter(d, filter))

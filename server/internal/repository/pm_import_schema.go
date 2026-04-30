@@ -48,6 +48,9 @@ END $$;`
 	if err := EnsurePMChecklistItemsTaskColumn(db); err != nil {
 		return err
 	}
+	if err := EnsurePMExternalLinksTaskColumn(db); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -63,20 +66,73 @@ func EnsurePMChecklistItemsTaskColumn(db *gorm.DB) error {
 	if !hasStoryID {
 		return nil
 	}
-
 	hasTaskID := db.Migrator().HasColumn(tableName, "task_id")
-	if !hasTaskID {
+	if hasStoryID && !hasTaskID {
 		if err := db.Migrator().RenameColumn(tableName, "story_id", "task_id"); err != nil {
 			return fmt.Errorf("rename %s.story_id to task_id: %w", tableName, err)
 		}
 		return nil
 	}
 
-	if err := db.Exec(`UPDATE pm_checklist_items SET task_id = story_id WHERE task_id IS NULL AND story_id IS NOT NULL`).Error; err != nil {
+	backfillChecklistTaskID := `UPDATE pm_checklist_items SET task_id = story_id WHERE task_id IS NULL AND story_id IS NOT NULL AND story_id <> ''`
+	if db.Dialector.Name() == "postgres" {
+		backfillChecklistTaskID = `UPDATE pm_checklist_items SET task_id = story_id::uuid WHERE task_id IS NULL AND story_id::text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`
+	}
+	if err := db.Exec(backfillChecklistTaskID).Error; err != nil {
 		return fmt.Errorf("backfill pm_checklist_items.task_id from story_id: %w", err)
 	}
 	if err := db.Exec(`ALTER TABLE pm_checklist_items DROP COLUMN story_id`).Error; err != nil {
 		return fmt.Errorf("drop legacy %s.story_id column: %w", tableName, err)
+	}
+	return nil
+}
+
+// EnsurePMExternalLinksTaskColumn reconciles legacy story_id drift and the
+// newer entity_type/entity_id columns so imports can write through the current
+// external-link model.
+func EnsurePMExternalLinksTaskColumn(db *gorm.DB) error {
+	tableName := model.PMExternalLink{}.TableName()
+	if !db.Migrator().HasTable(tableName) {
+		return nil
+	}
+
+	hasStoryID := db.Migrator().HasColumn(tableName, "story_id")
+	hasTaskID := db.Migrator().HasColumn(tableName, "task_id")
+	if hasStoryID && !hasTaskID {
+		if err := db.Migrator().RenameColumn(tableName, "story_id", "task_id"); err != nil {
+			return fmt.Errorf("rename %s.story_id to task_id: %w", tableName, err)
+		}
+	} else if hasStoryID {
+		backfillExternalLinkTaskID := `UPDATE pm_external_links SET task_id = story_id WHERE task_id IS NULL AND story_id IS NOT NULL AND story_id <> ''`
+		if db.Dialector.Name() == "postgres" {
+			backfillExternalLinkTaskID = `UPDATE pm_external_links SET task_id = story_id::uuid WHERE task_id IS NULL AND story_id::text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`
+		}
+		if err := db.Exec(backfillExternalLinkTaskID).Error; err != nil {
+			return fmt.Errorf("backfill pm_external_links.task_id from story_id: %w", err)
+		}
+		if err := db.Exec(`ALTER TABLE pm_external_links DROP COLUMN story_id`).Error; err != nil {
+			return fmt.Errorf("drop legacy %s.story_id column: %w", tableName, err)
+		}
+	}
+	if !db.Migrator().HasColumn(tableName, "entity_type") {
+		if err := db.Migrator().AddColumn(&model.PMExternalLink{}, "EntityType"); err != nil {
+			return fmt.Errorf("add %s.entity_type column: %w", tableName, err)
+		}
+	}
+	if !db.Migrator().HasColumn(tableName, "entity_id") {
+		if err := db.Migrator().AddColumn(&model.PMExternalLink{}, "EntityID"); err != nil {
+			return fmt.Errorf("add %s.entity_id column: %w", tableName, err)
+		}
+	}
+	if err := db.Exec(`UPDATE pm_external_links SET entity_type = COALESCE(NULLIF(entity_type, ''), 'task') WHERE entity_type IS NULL OR entity_type = ''`).Error; err != nil {
+		return fmt.Errorf("backfill pm_external_links.entity_type: %w", err)
+	}
+	backfillEntityID := `UPDATE pm_external_links SET entity_id = task_id WHERE (entity_id IS NULL OR entity_id = '') AND task_id IS NOT NULL AND task_id <> ''`
+	if db.Dialector.Name() == "postgres" {
+		backfillEntityID = `UPDATE pm_external_links SET entity_id = task_id::uuid WHERE entity_id IS NULL AND task_id::text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`
+	}
+	if err := db.Exec(backfillEntityID).Error; err != nil {
+		return fmt.Errorf("backfill pm_external_links.entity_id from task_id: %w", err)
 	}
 	return nil
 }

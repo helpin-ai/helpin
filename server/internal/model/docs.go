@@ -29,6 +29,13 @@ const (
 	SpaceVisibilityTeamOnly      = "team_only"
 )
 
+// Help center public URL modes.
+const (
+	HelpcenterPublicURLModeHostedSubdomain = "hosted_subdomain"
+	HelpcenterPublicURLModeCustomDomain    = "custom_domain"
+	HelpcenterPublicURLModeReverseProxy    = "reverse_proxy"
+)
+
 // Version type values.
 const (
 	VersionTypeManual  = "manual"
@@ -159,6 +166,7 @@ type DocsCollection struct {
 	Description        *string    `json:"description"`
 	Icon               *string    `json:"icon"`
 	Position           int        `json:"position" gorm:"not null;default:0;index:idx_docs_collections_space_parent_pos,priority:3"`
+	SortKey            string     `json:"sort_key" gorm:"not null;default:'~'"`
 	CreatedBy          string     `json:"created_by" gorm:"type:uuid;not null"`
 	CreatedAt          time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt          time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
@@ -183,6 +191,7 @@ type DocsDocument struct {
 	Icon             *string         `json:"icon"`
 	Tags             DocsStringArray `json:"tags" gorm:"type:text[]"`
 	Position         int             `json:"position" gorm:"not null;default:0"`
+	SortKey          string          `json:"sort_key" gorm:"not null;default:'~'"`
 	IsPinned         bool            `json:"is_pinned" gorm:"not null;default:false"`
 	IsPubliclyShared bool            `json:"is_publicly_shared" gorm:"not null;default:false"`
 	ShareToken       *string         `json:"share_token" gorm:"uniqueIndex"`
@@ -198,6 +207,10 @@ type DocsDocument struct {
 
 	// Transient fields (not stored in docs_documents, populated by handlers)
 	HCSlug                string     `json:"hc_slug,omitempty" gorm:"-"`
+	HCOGTitle             *string    `json:"hc_og_title,omitempty" gorm:"-"`
+	HCOGDescription       *string    `json:"hc_og_description,omitempty" gorm:"-"`
+	HCOGImageURL          *string    `json:"hc_og_image_url,omitempty" gorm:"-"`
+	HCOGImageAlt          *string    `json:"hc_og_image_alt,omitempty" gorm:"-"`
 	HasUnpublishedChanges bool       `json:"has_unpublished_changes" gorm:"-"`
 	LivePublishedAt       *time.Time `json:"live_published_at,omitempty" gorm:"-"`
 	LiveSlug              *string    `json:"live_slug,omitempty" gorm:"-"`
@@ -226,6 +239,29 @@ type DocsContent struct {
 
 func (DocsContent) TableName() string { return "docs_contents" }
 
+// DocsBlock stores one addressable top-level document block. The full
+// document JSON remains materialized in docs_contents during the compatibility
+// rollout; this table is the stable row model used by agents and future
+// block-level editing APIs.
+type DocsBlock struct {
+	ID           string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID  string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_block_ws_doc_sort,priority:1"`
+	DocumentID   string          `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_block_ws_doc_sort,priority:2;index:idx_docs_block_doc_deleted,priority:1"`
+	ParentID     *string         `json:"parent_id" gorm:"type:uuid;index"`
+	Type         string          `json:"type" gorm:"not null;index:idx_docs_block_type"`
+	Content      json.RawMessage `json:"content" gorm:"type:jsonb;not null"`
+	ContentText  string          `json:"content_text" gorm:"type:text"`
+	SortKey      string          `json:"sort_key" gorm:"not null;index:idx_docs_block_ws_doc_sort,priority:3"`
+	Revision     int             `json:"revision" gorm:"not null;default:1"`
+	AuthoredBy   *string         `json:"authored_by" gorm:"type:uuid"`
+	LastEditedBy *string         `json:"last_edited_by" gorm:"type:uuid"`
+	CreatedAt    time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt    time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	DeletedAt    *time.Time      `json:"deleted_at" gorm:"index:idx_docs_block_doc_deleted,priority:2"`
+}
+
+func (DocsBlock) TableName() string { return "docs_blocks" }
+
 // DocsVersion stores saved snapshots.
 type DocsVersion struct {
 	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -246,6 +282,7 @@ type DocsLink struct {
 	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_link_ws_obj,priority:1"`
 	DocumentID       string    `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_link_doc_type,priority:1"`
+	BlockID          *string   `json:"block_id,omitempty" gorm:"type:uuid;index"`
 	LinkedObjectType string    `json:"linked_object_type" gorm:"not null;index:idx_docs_link_doc_type,priority:2;index:idx_docs_link_obj,priority:1;index:idx_docs_link_ws_obj,priority:2"`
 	LinkedObjectID   string    `json:"linked_object_id" gorm:"type:uuid;not null;index:idx_docs_link_obj,priority:2;index:idx_docs_link_ws_obj,priority:3"`
 	LinkContext      string    `json:"link_context" gorm:"not null;default:'attached'"`
@@ -311,6 +348,9 @@ type DocsHelpcenterConfig struct {
 	WorkspaceID             string          `json:"workspace_id" gorm:"type:uuid;not null;uniqueIndex"`
 	Subdomain               string          `json:"subdomain" gorm:"not null"`
 	CustomDomain            *string         `json:"custom_domain"`
+	PublicURLMode           string          `json:"public_url_mode" gorm:"not null;default:'hosted_subdomain'"`
+	ReverseProxyHost        *string         `json:"reverse_proxy_host"`
+	ReverseProxyBasePath    *string         `json:"reverse_proxy_base_path"`
 	BrandName               string          `json:"brand_name" gorm:"not null"`
 	BrandLogoURL            *string         `json:"brand_logo_url"`
 	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
@@ -330,6 +370,10 @@ type DocsHelpcenterConfig struct {
 	IsPublished             bool            `json:"is_published" gorm:"not null;default:false"`
 	SEOTitle                *string         `json:"seo_title"`
 	SEODescription          *string         `json:"seo_description"`
+	OGTitle                 *string         `json:"og_title"`
+	OGDescription           *string         `json:"og_description"`
+	OGImageURL              *string         `json:"og_image_url"`
+	OGImageAlt              *string         `json:"og_image_alt"`
 	SupportEmail            *string         `json:"support_email"`
 	CreatedAt               time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt               time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
@@ -345,6 +389,10 @@ type DocsHelpcenterArticle struct {
 	Slug              string     `json:"slug" gorm:"not null;default:''"`
 	SEOTitle          *string    `json:"seo_title"`
 	SEODescription    *string    `json:"seo_description"`
+	OGTitle           *string    `json:"og_title"`
+	OGDescription     *string    `json:"og_description"`
+	OGImageURL        *string    `json:"og_image_url"`
+	OGImageAlt        *string    `json:"og_image_alt"`
 	HelpfulCount      int        `json:"helpful_count" gorm:"not null;default:0"`
 	NotHelpfulCount   int        `json:"not_helpful_count" gorm:"not null;default:0"`
 	ViewCount         int        `json:"view_count" gorm:"not null;default:0"`
@@ -534,6 +582,33 @@ type ReorderDocsChildrenRequest struct {
 	Items              []ReorderDocsChildItem `json:"items"`
 }
 
+// MoveDocsItemRequest is the payload for moving a single item
+// (doc or collection) to a new position within a bucket.
+type MoveDocsItemRequest struct {
+	Item         MoveDocsItemRef     `json:"item"`
+	TargetBucket MoveDocsBucketRef   `json:"target_bucket"`
+	Position     MoveDocsPositionRef `json:"position"`
+}
+
+// MoveDocsItemRef identifies an item by type and ID.
+type MoveDocsItemRef struct {
+	Type string `json:"type"` // "doc" or "collection"
+	ID   string `json:"id"`
+}
+
+// MoveDocsBucketRef identifies the target bucket.
+type MoveDocsBucketRef struct {
+	SpaceID            string  `json:"space_id"`
+	ParentCollectionID *string `json:"parent_collection_id"`
+}
+
+// MoveDocsPositionRef specifies where to insert the item relative to
+// its neighbors. Both nil = append to end.
+type MoveDocsPositionRef struct {
+	Before *MoveDocsItemRef `json:"before"`
+	After  *MoveDocsItemRef `json:"after"`
+}
+
 // UpdateDocsDocumentRequest is the payload for updating a document.
 type UpdateDocsDocumentRequest struct {
 	Title        *string  `json:"title"`
@@ -555,6 +630,25 @@ type MoveDocsDocumentRequest struct {
 // SaveDocsContentRequest is the payload for saving document content.
 type SaveDocsContentRequest struct {
 	Content json.RawMessage `json:"content"`
+}
+
+// DocsBlockPatchRequest updates one addressable document block. Revision is
+// required for optimistic concurrency.
+type DocsBlockPatchRequest struct {
+	Revision int             `json:"revision"`
+	Content  json.RawMessage `json:"content"`
+}
+
+// CreateDocsBlockRequest inserts a new top-level block. AfterBlockID is
+// optional; omitted appends the block to the end.
+type CreateDocsBlockRequest struct {
+	AfterBlockID *string         `json:"after_block_id"`
+	Content      json.RawMessage `json:"content"`
+}
+
+// ReorderDocsBlocksRequest replaces the top-level block order.
+type ReorderDocsBlocksRequest struct {
+	BlockIDs []string `json:"block_ids"`
 }
 
 // SaveDocsMarkdownRequest is the payload for saving document content from Markdown.
@@ -583,15 +677,19 @@ type UpdateDocsVersionRequest struct {
 
 // CreateDocsLinkRequest is the payload for creating a document link.
 type CreateDocsLinkRequest struct {
-	LinkedObjectType string `json:"linked_object_type"`
-	LinkedObjectID   string `json:"linked_object_id"`
-	LinkContext      string `json:"link_context"`
+	LinkedObjectType string  `json:"linked_object_type"`
+	LinkedObjectID   string  `json:"linked_object_id"`
+	LinkContext      string  `json:"link_context"`
+	BlockID          *string `json:"block_id,omitempty"`
 }
 
 // UpdateDocsHelpcenterConfigRequest is the payload for updating help center config.
 type UpdateDocsHelpcenterConfigRequest struct {
 	Subdomain               *string         `json:"subdomain"`
 	CustomDomain            *string         `json:"custom_domain"`
+	PublicURLMode           *string         `json:"public_url_mode"`
+	ReverseProxyHost        *string         `json:"reverse_proxy_host"`
+	ReverseProxyBasePath    *string         `json:"reverse_proxy_base_path"`
 	BrandName               *string         `json:"brand_name"`
 	BrandLogoURL            *string         `json:"brand_logo_url"`
 	BrandLogoDarkURL        *string         `json:"brand_logo_dark_url"`
@@ -611,7 +709,19 @@ type UpdateDocsHelpcenterConfigRequest struct {
 	IsPublished             *bool           `json:"is_published"`
 	SEOTitle                *string         `json:"seo_title"`
 	SEODescription          *string         `json:"seo_description"`
+	OGTitle                 *string         `json:"og_title"`
+	OGDescription           *string         `json:"og_description"`
+	OGImageURL              *string         `json:"og_image_url"`
+	OGImageAlt              *string         `json:"og_image_alt"`
 	SupportEmail            *string         `json:"support_email"`
+}
+
+// UpdateDocsHelpcenterArticleMetadataRequest updates source-locale social metadata.
+type UpdateDocsHelpcenterArticleMetadataRequest struct {
+	OGTitle       *string `json:"og_title"`
+	OGDescription *string `json:"og_description"`
+	OGImageURL    *string `json:"og_image_url"`
+	OGImageAlt    *string `json:"og_image_alt"`
 }
 
 // DocsArticleFeedbackRequest is the payload for submitting article feedback.
@@ -655,6 +765,7 @@ type PublicNavArticle struct {
 	Slug        string  `json:"slug"`
 	PublicID    string  `json:"public_id"`
 	Position    int     `json:"position"`
+	SortKey     string  `json:"sort_key"`
 	PublishedAt *string `json:"published_at"`
 }
 
@@ -671,6 +782,7 @@ type PublicNavCollection struct {
 	ParentCollectionID *string            `json:"parent_collection_id"`
 	Depth              int                `json:"depth"`
 	Position           int                `json:"position"`
+	SortKey            string             `json:"sort_key"`
 	Articles           []PublicNavArticle `json:"articles"`
 }
 
@@ -705,6 +817,10 @@ type PublicArticleResponse struct {
 	PublishedAt        *string `json:"published_at"`
 	SEOTitle           *string `json:"seo_title"`
 	SEODescription     *string `json:"seo_description"`
+	OGTitle            *string `json:"og_title"`
+	OGDescription      *string `json:"og_description"`
+	OGImageURL         *string `json:"og_image_url"`
+	OGImageAlt         *string `json:"og_image_alt"`
 	HelpfulCount       int     `json:"helpful_count"`
 	NotHelpfulCount    int     `json:"not_helpful_count"`
 	ViewCount          int     `json:"view_count"`

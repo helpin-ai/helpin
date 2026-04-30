@@ -4,15 +4,15 @@ import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
   BotIcon,
   SourceCodeIcon,
+  File01Icon,
   Loading01Icon,
   ArrowUp02Icon,
   TerminalIcon,
-  UserIcon,
   CancelCircleIcon,
   LockKeyIcon,
   RadioIcon,
   Wrench01Icon,
-  File01Icon,
+  Globe02Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type {
+  AgentRunArtifact,
   CodingSession,
   CodingSessionActor,
   CodingSessionInteraction,
@@ -30,8 +31,10 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { useWorkspaceMembers } from '@/hooks/queries';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
+import { AgentRunArtifactView } from '@/components/pm/AgentRunArtifactView';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
@@ -80,6 +83,8 @@ function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): Segmen
 }
 
 export function CodingTranscriptPane({
+  promptArtifact,
+  reviewArtifacts = [],
   transcriptMessages,
   liveAssistantMessage,
   liveReasoningMessage,
@@ -91,10 +96,17 @@ export function CodingTranscriptPane({
   session,
   activeInteraction,
   acting,
+  availablePreviewPanelKey,
+  onViewPreview,
   onAuthStart,
   onAuthCancel,
   onResolveInteraction,
 }: {
+  promptArtifact?: AgentRunArtifact | null;
+  reviewArtifacts?: Array<{
+    artifact: AgentRunArtifact;
+    decisionArtifact?: AgentRunArtifact | null;
+  }>;
   transcriptMessages: CodingSessionTranscriptMessage[];
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
   liveReasoningMessage: CodingSessionLiveReasoningMessage | null;
@@ -106,6 +118,8 @@ export function CodingTranscriptPane({
   session?: CodingSession | null;
   activeInteraction?: CodingSessionInteraction | null;
   acting?: string | null;
+  availablePreviewPanelKey?: string | null;
+  onViewPreview?: (panelKey: string) => void;
   onAuthStart?: () => void;
   onAuthCancel?: () => void;
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
@@ -119,10 +133,38 @@ export function CodingTranscriptPane({
     return segment.tool_call.tool_name !== 'update_plan';
   });
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
+  const promptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
+    const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
+    const developerPrompt = sections.find((section) => section.label === 'Developer prompt');
+    if (developerPrompt) {
+      return {
+        event_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+        message_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+        role: 'user',
+        message_type: 'developer_prompt',
+        content: developerPrompt.content,
+        timestamp: promptArtifact?.created_at ?? new Date().toISOString(),
+        sequence_no: Number.MIN_SAFE_INTEGER,
+      };
+    }
+
+    const systemPrompt = session?.system_prompt?.trim();
+    if (!systemPrompt) return null;
+    return {
+      event_id: `prompt:${session?.run_id ?? 'system'}`,
+      message_id: `prompt:${session?.run_id ?? 'system'}`,
+      role: 'user',
+      message_type: 'system_prompt',
+      content: systemPrompt,
+      timestamp: session?.created_at ?? new Date().toISOString(),
+      sequence_no: Number.MIN_SAFE_INTEGER,
+    };
+  }, [promptArtifact, session?.created_at, session?.run_id, session?.system_prompt]);
 
   // Build a flat list of all renderable items for the virtualizer.
   type VirtualItem =
     | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
+    | { kind: 'review-artifact'; artifact: AgentRunArtifact; decisionArtifact?: AgentRunArtifact | null }
     | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
     | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
@@ -131,8 +173,18 @@ export function CodingTranscriptPane({
 
   const items = useMemo((): VirtualItem[] => {
     const list: VirtualItem[] = [];
+    if (promptMessage) {
+      list.push({ kind: 'transcript', message: promptMessage });
+    }
     for (const message of transcriptMessages) {
       list.push({ kind: 'transcript', message });
+    }
+    for (const reviewArtifact of reviewArtifacts) {
+      list.push({
+        kind: 'review-artifact',
+        artifact: reviewArtifact.artifact,
+        decisionArtifact: reviewArtifact.decisionArtifact,
+      });
     }
     if (liveReasoningMessage) {
       list.push({ kind: 'thinking', reasoning: liveReasoningMessage });
@@ -152,7 +204,7 @@ export function CodingTranscriptPane({
       list.push({ kind: 'empty' });
     }
     return list;
-  }, [transcriptMessages, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+  }, [promptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -215,13 +267,44 @@ export function CodingTranscriptPane({
   }, [streamingSignature, items.length, scrollToTail]);
 
   const triggeredBy = session?.triggered_by_user ?? null;
+  const { data: workspaceMembers } = useWorkspaceMembers(session?.workspace_id ?? '');
+
+  const memberActorByUserId = useMemo(() => {
+    const map = new Map<string, CodingSessionActor>();
+    for (const member of workspaceMembers ?? []) {
+      if (!member.user_id) continue;
+      map.set(member.user_id, {
+        id: member.user_id,
+        email: member.email,
+        full_name: member.full_name,
+        avatar_url: member.avatar_url,
+      });
+    }
+    return map;
+  }, [workspaceMembers]);
+
+  const actorForMessage = useCallback(
+    (message: CodingSessionTranscriptMessage): CodingSessionActor | null => {
+      const isResolution =
+        message.message_type === 'review_checkpoint_resolution' ||
+        message.message_type === 'approval_request_resolution';
+      if (isResolution && message.resolver_user_id) {
+        const resolver = memberActorByUserId.get(message.resolver_user_id);
+        if (resolver) return resolver;
+      }
+      return triggeredBy;
+    },
+    [memberActorByUserId, triggeredBy],
+  );
 
   const renderItem = useCallback((item: VirtualItem) => {
     switch (item.kind) {
       case 'transcript':
-        return <TranscriptEntry message={item.message} actor={triggeredBy} />;
+        return <TranscriptEntry message={item.message} actor={actorForMessage(item.message)} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
+      case 'review-artifact':
+        return <ReviewArtifactEntry artifact={item.artifact} decisionArtifact={item.decisionArtifact} />;
       case 'live-message': {
         const seg = item.segment;
         if (seg.kind !== 'assistant_message') return null;
@@ -272,7 +355,7 @@ export function CodingTranscriptPane({
           </div>
         );
     }
-  }, [liveAssistantMessage, triggeredBy]);
+  }, [liveAssistantMessage, actorForMessage]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
@@ -282,15 +365,16 @@ export function CodingTranscriptPane({
           Transcript
         </div>
         <Badge variant="outline" className="text-[10px]">
-          {transcriptMessages.length + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
+          {transcriptMessages.length + (promptMessage ? 1 : 0) + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
         </Badge>
       </div>
 
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
-        <div
-          className="relative mx-auto w-full max-w-4xl px-4"
-          style={{ height: virtualizer.getTotalSize() }}
-        >
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4">
+          <div
+            className="relative w-full"
+            style={{ height: virtualizer.getTotalSize() }}
+          >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const item = items[virtualRow.index];
             return (
@@ -313,6 +397,7 @@ export function CodingTranscriptPane({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 
@@ -323,6 +408,8 @@ export function CodingTranscriptPane({
           session={session ?? null}
           activeInteraction={activeInteraction ?? null}
           acting={acting ?? null}
+          availablePreviewPanelKey={availablePreviewPanelKey ?? null}
+          onViewPreview={onViewPreview}
           onAuthStart={onAuthStart ?? (() => {})}
           onAuthCancel={onAuthCancel ?? (() => {})}
           onResolveInteraction={onResolveInteraction ?? (() => {})}
@@ -336,10 +423,84 @@ export function CodingTranscriptPane({
   );
 }
 
+function ReviewArtifactEntry({
+  artifact,
+  decisionArtifact,
+}: {
+  artifact: AgentRunArtifact;
+  decisionArtifact?: AgentRunArtifact | null;
+}) {
+  return (
+    <div className="ml-auto w-full max-w-[90%] rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Review history
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          {formatCodingSessionRelative(artifact.created_at)}
+        </div>
+      </div>
+      <AgentRunArtifactView artifact={artifact} reviewDecisionArtifact={decisionArtifact} maxContentHeight="max-h-96" />
+    </div>
+  );
+}
+
+function parsePromptArtifactSections(raw: string | null | undefined) {
+  if (!raw) return [] as Array<{ label: string; content: string }>;
+
+  const lines = raw.split('\n');
+  const sections: Array<{ label: string; content: string }> = [];
+  let currentLabel: string | null = null;
+  let currentLines: string[] = [];
+
+  const normalizeLabel = (line: string) => {
+    switch (line) {
+      case 'Developer instructions:':
+      case 'Developer prompt:':
+        return 'Developer prompt';
+      case 'Turn input:':
+      case 'User prompt:':
+        return 'User prompt';
+      case 'Pending request replay:':
+        return 'Pending request replay';
+      default:
+        return line.slice(0, -1);
+    }
+  };
+
+  const flush = () => {
+    if (!currentLabel) return;
+    const content = currentLines.join('\n').trim();
+    if (content) {
+      sections.push({ label: currentLabel, content });
+    }
+  };
+
+  for (const line of lines) {
+    if (
+      line === 'Developer instructions:'
+      || line === 'Developer prompt:'
+      || line === 'Turn input:'
+      || line === 'User prompt:'
+      || line === 'Pending request replay:'
+    ) {
+      flush();
+      currentLabel = normalizeLabel(line);
+      currentLines = [];
+      continue;
+    }
+    currentLines.push(line);
+  }
+  flush();
+  return sections;
+}
+
 function InterruptionOverlay({
   session,
   activeInteraction,
   acting,
+  availablePreviewPanelKey,
+  onViewPreview,
   onAuthStart,
   onAuthCancel,
   onResolveInteraction,
@@ -347,6 +508,8 @@ function InterruptionOverlay({
   session: CodingSession | null;
   activeInteraction: CodingSessionInteraction | null;
   acting: string | null;
+  availablePreviewPanelKey?: string | null;
+  onViewPreview?: (panelKey: string) => void;
   onAuthStart: () => void;
   onAuthCancel: () => void;
   onResolveInteraction: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
@@ -372,7 +535,7 @@ function InterruptionOverlay({
       {/* Colour fade on top of the blur layers */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-48 bg-gradient-to-t from-card to-transparent" />
 
-      <div className="border-t border-border/80 bg-card/95 px-4 py-4 backdrop-blur-md">
+      <div className="max-h-[70vh] overflow-y-auto border-t border-border/80 bg-card/95 px-4 py-4 backdrop-blur-md">
       {session?.pause_reason === 'authentication' ? (
         <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/20">
           <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
@@ -420,6 +583,8 @@ function InterruptionOverlay({
           interaction={activeInteraction}
           acting={acting}
           onResolve={onResolveInteraction}
+          availablePreviewPanelKey={availablePreviewPanelKey}
+          onViewPreview={onViewPreview}
           compact
         />
       ) : null}
@@ -595,6 +760,20 @@ function TranscriptEntry({
     );
   }
 
+  if (message.message_type === 'developer_prompt' || message.message_type === 'system_prompt') {
+    return (
+      <PromptTranscriptCard
+        content={message.content}
+        timestamp={message.timestamp}
+        label={message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt'}
+      />
+    );
+  }
+
+  if (message.message_type === 'review_checkpoint_resolution' || message.message_type === 'approval_request_resolution') {
+    return <ReviewDecisionTranscriptCard content={message.content} timestamp={message.timestamp} actor={actor ?? null} />;
+  }
+
   const actorLabel = actor?.full_name || actor?.email || 'User';
 
   return (
@@ -602,18 +781,12 @@ function TranscriptEntry({
       <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(message.timestamp)}</span>
         <span className="font-medium">{actorLabel}</span>
-        {actor ? (
-          <UserAvatar
-            name={actorLabel}
-            avatarUrl={actor.avatar_url}
-            className="h-6 w-6"
-            fallbackClassName="text-[10px]"
-          />
-        ) : (
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
-            <UserIcon className="h-3 w-3" />
-          </span>
-        )}
+        <UserAvatar
+          name={actorLabel}
+          avatarUrl={actor?.avatar_url}
+          className="h-6 w-6"
+          fallbackClassName="text-[10px]"
+        />
       </div>
 
       {message.content.trim() ? (
@@ -623,6 +796,62 @@ function TranscriptEntry({
           placeholder={placeholder}
         />
       ) : null}
+    </div>
+  );
+}
+
+function PromptTranscriptCard({
+  content,
+  timestamp,
+  label,
+}: {
+  content: string;
+  timestamp: string;
+  label: string;
+}) {
+  return (
+    <div className="w-full max-w-[90%]">
+      <div className="mb-2 flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(timestamp)}</span>
+        <span className="font-medium">{label}</span>
+      </div>
+      <details className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3">
+        <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </summary>
+        <pre className="mt-3 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground">
+          {content}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function ReviewDecisionTranscriptCard({
+  content,
+  timestamp,
+  actor,
+}: {
+  content: string;
+  timestamp: string;
+  actor: CodingSessionActor | null;
+}) {
+  const reviewerName = actor?.full_name || actor?.email || 'Reviewer';
+  return (
+    <div className="ml-auto w-full max-w-[90%]">
+      <div className="mb-2 flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(timestamp)}</span>
+        <span className="font-medium">{reviewerName} reviewed</span>
+        <UserAvatar
+          name={reviewerName}
+          avatarUrl={actor?.avatar_url}
+          className="h-6 w-6"
+          fallbackClassName="text-[10px]"
+        />
+      </div>
+      <div className="rounded-2xl rounded-br-sm bg-blue-50 px-3.5 py-2.5 text-sm leading-relaxed text-foreground/85 shadow-sm dark:bg-blue-950/40 dark:text-foreground">
+        <MarkdownContent content={content} className="text-inherit" />
+      </div>
     </div>
   );
 }
@@ -638,18 +867,18 @@ function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall) {
 
 const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
 
-function CollapsibleMarkdown({ content }: { content: string }) {
+function CollapsibleMarkdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
 
   if (!isLong) {
-    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />;
+    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />;
   }
 
   return (
     <div>
       <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
-        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />
+        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />
         {!expanded && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
         )}
@@ -701,7 +930,7 @@ function AssistantTimelineRow({
         {placeholder ? (
           <div className="whitespace-pre-wrap text-[13px] leading-6 text-muted-foreground">{content}</div>
         ) : (
-          <CollapsibleMarkdown content={content} />
+          <CollapsibleMarkdown content={content} streaming={live && streaming} />
         )}
       </div>
     </div>
@@ -724,8 +953,8 @@ function AssistantMessageBubble({
     <div className={cn(
       'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
       isAssistant
-        ? 'rounded-bl-sm border border-border/60 bg-background text-foreground'
-        : 'rounded-br-sm bg-blue-600 text-white dark:bg-blue-500',
+        ? 'rounded-bl-sm border border-border/60 bg-background text-foreground/85 dark:text-foreground'
+        : 'rounded-br-sm bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground',
       placeholder && 'border-dashed text-muted-foreground',
     )}>
       {placeholder ? (
@@ -737,7 +966,7 @@ function AssistantMessageBubble({
             {!expanded && (
               <div className={cn(
                 'pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t to-transparent',
-                isAssistant ? 'from-background' : 'from-blue-600 dark:from-blue-500',
+                isAssistant ? 'from-background' : 'from-blue-50 dark:from-blue-950/40',
               )} />
             )}
           </div>
@@ -787,7 +1016,7 @@ function RunningIndicator({ since }: { since: string }) {
   const elapsed = useElapsedMs(since);
   return (
     <div className="flex items-center gap-2.5 border-t border-border bg-muted/50 px-4 py-2">
-      <Loading01Icon className="h-3.5 w-3.5 animate-spin text-primary" />
+      <UnicodeSpinner name="braille" className="text-sm text-primary" />
       <span className="text-xs font-medium text-primary">Running</span>
       <span className="ml-auto text-xs tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
     </div>
@@ -810,6 +1039,12 @@ function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { 
     };
   }
   const name = toolName.toLowerCase();
+  if (name.includes('web_search')) {
+    return {
+      icon: <Globe02Icon className="h-3.5 w-3.5" />,
+      iconClass: 'bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-900/50 text-sky-600 dark:text-sky-400',
+    };
+  }
   if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) {
     return {
       icon: <TerminalIcon className="h-3.5 w-3.5" />,

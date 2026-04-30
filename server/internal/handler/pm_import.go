@@ -62,6 +62,12 @@ func (h *PMImportHandler) ExecuteShortcut(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	if raw := r.FormValue("team_mappings"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &req.TeamMappings); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid team_mappings")
+			return
+		}
+	}
 	if raw := r.FormValue("workflow_state_mappings"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &req.WorkflowStateMappings); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid workflow_state_mappings")
@@ -69,17 +75,12 @@ func (h *PMImportHandler) ExecuteShortcut(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if raw := r.FormValue("options"); raw != "" {
-		var parsed map[string]bool
+		parsed := req.Options
 		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid options")
 			return
 		}
-		if value, ok := parsed["import_archived"]; ok {
-			req.Options.ImportArchived = value
-		}
-		if value, ok := parsed["import_completed"]; ok {
-			req.Options.ImportCompleted = value
-		}
+		req.Options = parsed
 	}
 	req.APIToken = r.FormValue("api_token")
 
@@ -102,6 +103,89 @@ func (h *PMImportHandler) ShortcutStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PMImportHandler) ShortcutStatusDetail(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	importID := chi.URLParam(r, "importId")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.GetShortcutStatusDetail(r.Context(), workspaceID, userID, importID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PMImportHandler) ListShortcutStatuses(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.ListShortcutStatuses(r.Context(), workspaceID, userID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PMImportHandler) CancelShortcutImport(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	importID := chi.URLParam(r, "importId")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.CancelShortcutImport(r.Context(), workspaceID, userID, importID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PMImportHandler) RetryShortcutImport(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	importID := chi.URLParam(r, "importId")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.RetryShortcutImport(r.Context(), workspaceID, userID, importID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
+func (h *PMImportHandler) PreviewShortcutAPI(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+	var req model.ShortcutAPIImportPreviewRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.importService.PreviewShortcutAPI(r.Context(), workspaceID, userID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PMImportHandler) ExecuteShortcutAPI(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+	var req model.ShortcutAPIImportExecuteRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.importService.ExecuteShortcutAPI(r.Context(), workspaceID, userID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
 }
 
 func readShortcutImportFile(r *http.Request) ([]byte, string, error) {

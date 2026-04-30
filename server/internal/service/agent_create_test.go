@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -96,7 +97,7 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	svc := &AgentService{agentRepo: agentRepo}
 
 	now := time.Now().UTC()
-	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `story_plan`\n5. `awaiting_story_approval`\n6. `create_stories`"
+	legacyPrompt := "1. `prd_draft`\n2. `awaiting_prd_approval`\n3. `persist_prd`\n4. `task_plan`\n5. `awaiting_task_approval`\n6. `create_tasks`"
 	if err := db.Exec(`INSERT INTO agents (
 		id, workspace_id, is_system, name, preset_key, role, status, runtime_kind,
 		skills, trigger_mode, system_prompt, allowed_tools, allowed_commands, allowed_targets,
@@ -115,10 +116,10 @@ func TestEnsureSystemProductPlannerAgentRefreshesLegacyPrompt(t *testing.T) {
 	if updated.SystemPrompt == nil || *updated.SystemPrompt == "" {
 		t.Fatal("expected refreshed system prompt")
 	}
-	if strings.Contains(*updated.SystemPrompt, "awaiting_prd_approval") || strings.Contains(*updated.SystemPrompt, "awaiting_story_approval") {
+	if strings.Contains(*updated.SystemPrompt, "awaiting_prd_approval") || strings.Contains(*updated.SystemPrompt, "awaiting_task_approval") {
 		t.Fatalf("expected refreshed prompt to remove legacy approval phases, got %q", *updated.SystemPrompt)
 	}
-	if !strings.Contains(*updated.SystemPrompt, "Approval checkpoints happen inline in the same chat.") {
+	if !strings.Contains(*updated.SystemPrompt, "Approval requests happen inline in the same chat.") {
 		t.Fatalf("expected refreshed prompt to include inline approval guidance, got %q", *updated.SystemPrompt)
 	}
 	if updated.Name != defaultSystemEpicPlannerName {
@@ -187,8 +188,8 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent) {
 		t.Fatalf("expected review preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent), updated.PresetVersionKey)
 	}
-	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "`request_user_input`") {
-		t.Fatalf("expected refreshed review prompt with request_user_input, got %+v", updated.SystemPrompt)
+	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "`request_user_input`") || !strings.Contains(*updated.SystemPrompt, "`request_review_checkpoint`") {
+		t.Fatalf("expected refreshed review prompt with interactive loop tools, got %+v", updated.SystemPrompt)
 	}
 	var tools []string
 	if err := json.Unmarshal(updated.AllowedTools, &tools); err != nil {
@@ -196,6 +197,9 @@ func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	}
 	if !slices.Contains(tools, worker.ToolRequestUserInput) {
 		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestUserInput, tools)
+	}
+	if !slices.Contains(tools, worker.ToolRequestReviewCheckpoint) {
+		t.Fatalf("expected review agent tools to include %q, got %v", worker.ToolRequestReviewCheckpoint, tools)
 	}
 	if updated.DefaultInvocationMode != model.InvocationModeInteractive {
 		t.Fatalf("expected review agent default invocation mode interactive, got %q", updated.DefaultInvocationMode)
@@ -360,8 +364,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if forge.Provider == nil || *forge.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected forge provider openai, got %+v", forge.Provider)
 	}
-	if forge.Model == nil || *forge.Model != "gpt-5.4" {
-		t.Fatalf("expected forge model gpt-5.4, got %+v", forge.Model)
+	if forge.Model == nil || *forge.Model != "gpt-5.5" {
+		t.Fatalf("expected forge model gpt-5.5, got %+v", forge.Model)
 	}
 	lens, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetReviewAgent)
 	if err != nil {
@@ -376,8 +380,8 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	if lens.Provider == nil || *lens.Provider != model.AgentModelProviderOpenAI {
 		t.Fatalf("expected lens provider openai, got %+v", lens.Provider)
 	}
-	if lens.Model == nil || *lens.Model != "gpt-5.4" {
-		t.Fatalf("expected lens model gpt-5.4, got %+v", lens.Model)
+	if lens.Model == nil || *lens.Model != "gpt-5.5" {
+		t.Fatalf("expected lens model gpt-5.5, got %+v", lens.Model)
 	}
 
 	custom, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-custom-code-builder")
@@ -455,7 +459,7 @@ func TestUpdateAgent_PreservesSystemAgentPresetFamily(t *testing.T) {
 		activitySvc: activitySvc,
 		wsPublisher: nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -500,7 +504,7 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 		activitySvc:                activitySvc,
 		wsPublisher:                nil,
 	}
-	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
 
 	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
 	if err != nil {
@@ -717,6 +721,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 		agentRepo:                  agentRepo,
 		workspacePresetVersionRepo: workspacePresetVersionRepo,
 	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
 
 	req := model.CreateWorkspaceAgentPresetVersionRequest{
 		WorkspaceID:      "ws-test",
@@ -814,6 +819,455 @@ func TestCreateWorkspacePresetVersion_PreservesExplicitBlankModel(t *testing.T) 
 	t.Fatalf("expected workspace preset version %q in preset list", version.VersionKey)
 }
 
+func TestEnsureBuiltInAgent_PreservesWorkspacePresetVersionDuringReconcile(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+		activitySvc:                activitySvc,
+		wsPublisher:                nil,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetReviewAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if err := workspacePresetVersionRepo.Create(context.Background(), &model.WorkspaceAgentPresetVersion{
+		WorkspaceID:           "ws-test",
+		FamilyKey:             model.AgentPresetReviewAgent,
+		VersionKey:            "review_agent_workspace_checks",
+		Label:                 "Workspace Checks",
+		RuntimeKind:           "codex",
+		Provider:              agentTestStringPtr(model.AgentModelProviderOpenAI),
+		Model:                 agentTestStringPtr("gpt-5.5"),
+		SystemPrompt:          agentTestStringPtr("Run extra workspace review checks."),
+		InstructionSkills:     mustJSONStringSlice(nil),
+		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}); err != nil {
+		t.Fatalf("create workspace preset version: %v", err)
+	}
+
+	versionKey := "review_agent_workspace_checks"
+	if _, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		PresetVersionKey: &versionKey,
+	}, "user-1"); err != nil {
+		t.Fatalf("pin workspace preset version: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetReviewAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent during reconcile returned error: %v", err)
+	}
+	if reconciled.PresetVersionKey != versionKey {
+		t.Fatalf("expected workspace preset version %q to survive reconcile, got %q", versionKey, reconciled.PresetVersionKey)
+	}
+}
+
+func TestEnsureBuiltInAgent_FallsBackWhenWorkspacePresetVersionDeleted(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+		activitySvc:                activitySvc,
+		wsPublisher:                nil,
+	}
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	version := &model.WorkspaceAgentPresetVersion{
+		WorkspaceID:           "ws-test",
+		FamilyKey:             model.AgentPresetCodeBuilder,
+		VersionKey:            "code_builder_workspace_tuned",
+		Label:                 "Workspace Tuned",
+		RuntimeKind:           "codex",
+		Provider:              agentTestStringPtr(model.AgentModelProviderOpenAI),
+		Model:                 agentTestStringPtr("gpt-5.5"),
+		SystemPrompt:          agentTestStringPtr("Workspace tuned code builder."),
+		InstructionSkills:     mustJSONStringSlice(nil),
+		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+	if err := workspacePresetVersionRepo.Create(context.Background(), version); err != nil {
+		t.Fatalf("create workspace preset version: %v", err)
+	}
+
+	versionKey := version.VersionKey
+	if _, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		PresetVersionKey: &versionKey,
+	}, "user-1"); err != nil {
+		t.Fatalf("pin workspace preset version: %v", err)
+	}
+	if err := workspacePresetVersionRepo.Delete(context.Background(), "ws-test", version.ID); err != nil {
+		t.Fatalf("soft delete workspace preset version: %v", err)
+	}
+
+	reconciled, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent during reconcile returned error: %v", err)
+	}
+	expected := defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)
+	if reconciled.PresetVersionKey != expected {
+		t.Fatalf("expected fallback preset version %q, got %q", expected, reconciled.PresetVersionKey)
+	}
+}
+
+func TestUpdateWorkspacePresetVersion(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetCodeBuilder,
+		Label:            "Engineering v2",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
+		RuntimeKind:      agentTestStringPtr("codex"),
+		Provider:         agentTestStringPtr(model.AgentModelProviderOpenAI),
+		Model:            agentTestStringPtr("gpt-5.5"),
+		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	newLabel := "Engineering v3"
+	newDescription := "Stricter code review rules."
+	blankModel := ""
+	updateReq := model.UpdateWorkspaceAgentPresetVersionRequest{
+		Label:             &newLabel,
+		Description:       &newDescription,
+		Model:             &blankModel,
+		AllowedTools:      mustJSONStringSlice([]string{"read_file"}),
+		SupportedModes:    mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
+		InstructionSkills: mustJSONStringSlice([]string{"system/general_agent_behavior"}),
+	}
+	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, updateReq, "user-2")
+	if err != nil {
+		t.Fatalf("UpdateWorkspacePresetVersion returned error: %v", err)
+	}
+	if updated.VersionLabel != newLabel {
+		t.Fatalf("expected updated label %q, got %q", newLabel, updated.VersionLabel)
+	}
+	if updated.Description != newDescription {
+		t.Fatalf("expected updated description %q, got %q", newDescription, updated.Description)
+	}
+	if updated.Model == nil || *updated.Model != "" {
+		t.Fatalf("expected explicit blank model preserved, got %+v", updated.Model)
+	}
+	if !slices.Equal(updated.AllowedTools, []string{"read_file"}) {
+		t.Fatalf("expected updated allowed tools, got %v", updated.AllowedTools)
+	}
+	if !slices.Equal(updated.SupportedModes, []string{model.InvocationModeAutonomous, model.InvocationModeInteractive}) {
+		t.Fatalf("expected updated supported modes, got %v", updated.SupportedModes)
+	}
+}
+
+func TestUpdateWorkspacePresetVersion_PersistsPromptOnlyEditAndExplicitEmptyLists(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetEpicPlanner,
+		Label:            "Workspace Atlas",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
+		SystemPrompt:     agentTestStringPtr("Workspace atlas v1"),
+		AllowedTools:     mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeInteractive}),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	updatedPrompt := "Workspace atlas v2"
+	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		SystemPrompt: &updatedPrompt,
+	}, "user-2")
+	if err != nil {
+		t.Fatalf("UpdateWorkspacePresetVersion returned error: %v", err)
+	}
+	if updated.SystemPrompt == nil || *updated.SystemPrompt != updatedPrompt {
+		t.Fatalf("expected updated system prompt %q, got %+v", updatedPrompt, updated.SystemPrompt)
+	}
+
+	blankPreamble := ""
+	cleared, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		InstructionPreamble: &blankPreamble,
+		InstructionSkills:   mustJSONStringSlice([]string{}),
+		AllowedTools:        mustJSONStringSlice([]string{}),
+	}, "user-2")
+	if err != nil {
+		t.Fatalf("UpdateWorkspacePresetVersion clear-lists returned error: %v", err)
+	}
+	if len(cleared.AllowedTools) != 0 {
+		t.Fatalf("expected empty allowed tools, got %v", cleared.AllowedTools)
+	}
+	if len(cleared.InstructionSkills) != 0 {
+		t.Fatalf("expected empty instruction skills, got %v", cleared.InstructionSkills)
+	}
+
+	stored, err := workspacePresetVersionRepo.GetByID(context.Background(), "ws-test", *created.ID)
+	if err != nil {
+		t.Fatalf("GetByID returned error: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected stored workspace preset version")
+	}
+	if len(parseJSONStringSlice(stored.AllowedTools)) != 0 {
+		t.Fatalf("expected stored allowed tools to be empty, got %v", parseJSONStringSlice(stored.AllowedTools))
+	}
+	if len(parseJSONStringSlice(stored.InstructionSkills)) != 0 {
+		t.Fatalf("expected stored instruction skills to be empty, got %v", parseJSONStringSlice(stored.InstructionSkills))
+	}
+}
+
+func TestUpdateWorkspacePresetVersion_PropagatesToPinnedSystemAgent(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+		activitySvc:                activitySvc,
+		wsPublisher:                nil,
+	}
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetCodeBuilder,
+		Label:            "Workspace Forge",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
+		RuntimeKind:      agentTestStringPtr("codex"),
+		Provider:         agentTestStringPtr(model.AgentModelProviderOpenAI),
+		Model:            agentTestStringPtr("gpt-5.5"),
+		ExecutionConfig:  json.RawMessage(`{"reasoning_effort":"low","service_tier":"flex"}`),
+		SystemPrompt:     agentTestStringPtr("Workspace forge v1"),
+		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	if _, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		PresetVersionKey: &created.VersionKey,
+	}, "user-1"); err != nil {
+		t.Fatalf("pin workspace preset version: %v", err)
+	}
+
+	updatedPrompt := "Workspace forge v2"
+	blankModel := ""
+	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		Model:                 &blankModel,
+		SystemPrompt:          &updatedPrompt,
+		ExecutionConfig:       json.RawMessage(`{"reasoning_effort":"high","service_tier":"fast"}`),
+		AllowedTools:          mustJSONStringSlice([]string{"read_file"}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
+		DefaultInvocationMode: agentTestStringPtr(model.InvocationModeInteractive),
+	}, "user-2")
+	if err != nil {
+		t.Fatalf("UpdateWorkspacePresetVersion returned error: %v", err)
+	}
+	if updated.Model == nil || *updated.Model != "" {
+		t.Fatalf("expected updated preset model to be explicit blank, got %+v", updated.Model)
+	}
+
+	refetched, err := agentRepo.GetByID(context.Background(), "ws-test", systemAgent.ID)
+	if err != nil {
+		t.Fatalf("GetByID returned error: %v", err)
+	}
+	if refetched == nil {
+		t.Fatal("expected pinned system agent")
+	}
+	if refetched.Model != nil {
+		t.Fatalf("expected pinned agent model to be cleared, got %+v", refetched.Model)
+	}
+	if refetched.SystemPrompt == nil || *refetched.SystemPrompt != updatedPrompt {
+		t.Fatalf("expected pinned agent prompt %q, got %+v", updatedPrompt, refetched.SystemPrompt)
+	}
+	if strings.TrimSpace(string(refetched.ExecutionConfig)) != `{"reasoning_effort":"high","service_tier":"fast"}` {
+		t.Fatalf("expected pinned agent execution config to update, got %s", refetched.ExecutionConfig)
+	}
+	if !slices.Equal(parseJSONStringSlice(refetched.AllowedTools), []string{"read_file"}) {
+		t.Fatalf("expected pinned agent allowed tools to update, got %v", parseJSONStringSlice(refetched.AllowedTools))
+	}
+	if refetched.DefaultInvocationMode != model.InvocationModeInteractive {
+		t.Fatalf("expected pinned agent default invocation mode %q, got %q", model.InvocationModeInteractive, refetched.DefaultInvocationMode)
+	}
+}
+
+func TestUpdateWorkspacePresetVersion_RejectsInvalidRouting(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetCodeBuilder,
+		Label:            "Workspace Forge",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
+		RuntimeKind:      agentTestStringPtr("codex"),
+		Provider:         agentTestStringPtr(model.AgentModelProviderOpenAI),
+		Model:            agentTestStringPtr("gpt-5.5"),
+		AllowedTools:     mustJSONStringSlice([]string{"read_file"}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	invalidProvider := model.AgentModelProviderAnthropic
+	if _, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		Provider: &invalidProvider,
+	}, "user-2"); err == nil {
+		t.Fatal("expected invalid routing error")
+	}
+
+	stored, err := workspacePresetVersionRepo.GetByID(context.Background(), "ws-test", *created.ID)
+	if err != nil {
+		t.Fatalf("GetByID returned error: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected stored workspace preset version")
+	}
+	if stored.Provider == nil || *stored.Provider != model.AgentModelProviderOpenAI {
+		t.Fatalf("expected provider to remain openai after failed update, got %+v", stored.Provider)
+	}
+}
+
+func TestDeleteWorkspacePresetVersionRejectsPinnedVersion(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	activitySvc := NewPMActivityService(repository.NewPMActivityRepository(db))
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+		activitySvc:                activitySvc,
+		wsPublisher:                nil,
+	}
+	svc.SetModelProviderConfig("", "test-openai-key", "", "", false, "", "")
+
+	systemAgent, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCodeBuilder)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetCodeBuilder,
+		Label:            "Pinned Version",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder)),
+		RuntimeKind:      agentTestStringPtr("codex"),
+		AllowedTools:     mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeAutonomous}),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	if _, err := svc.UpdateAgent(context.Background(), "ws-test", systemAgent.ID, model.UpdateAgentRequest{
+		PresetVersionKey: &created.VersionKey,
+	}, "user-1"); err != nil {
+		t.Fatalf("pin workspace preset version: %v", err)
+	}
+	err = svc.DeleteWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, "user-1")
+	if !errors.Is(err, ErrWorkspacePresetVersionPinned) {
+		t.Fatalf("expected pinned error, got %v", err)
+	}
+}
+
+func TestDeleteWorkspacePresetVersionSoftDeletesAndHidesFromList(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:           "ws-test",
+		FamilyKey:             model.AgentPresetReviewAgent,
+		Label:                 "Delete Me",
+		SourceVersionKey:      agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetReviewAgent)),
+		RuntimeKind:           agentTestStringPtr("codex"),
+		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeAutonomous, model.InvocationModeInteractive}),
+		DefaultInvocationMode: agentTestStringPtr(model.InvocationModeInteractive),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	if err := svc.DeleteWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, "user-1"); err != nil {
+		t.Fatalf("DeleteWorkspacePresetVersion returned error: %v", err)
+	}
+
+	presets := svc.ListAgentPresets(context.Background(), "ws-test")
+	for _, preset := range presets {
+		if preset.VersionKey == created.VersionKey {
+			t.Fatalf("expected deleted preset version %q to be hidden from list", created.VersionKey)
+		}
+	}
+}
+
 func TestEnsureBuiltInAgent_AppliesDefaultExecutionConfigForForgeAndLens(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -864,6 +1318,12 @@ func TestListAgentPresetsIncludesWorkspaceVersions(t *testing.T) {
 	presets := svc.ListAgentPresets(context.Background(), "ws-test")
 	found := false
 	for _, preset := range presets {
+		if preset.Scope == "product" {
+			if preset.ID != nil {
+				t.Fatalf("expected product preset %q to have nil id, got %q", preset.VersionKey, *preset.ID)
+			}
+			continue
+		}
 		if preset.VersionKey != "epic_planner_workspace_v2" {
 			continue
 		}
@@ -873,6 +1333,9 @@ func TestListAgentPresetsIncludesWorkspaceVersions(t *testing.T) {
 		}
 		if preset.WorkspaceID == nil || *preset.WorkspaceID != "ws-test" {
 			t.Fatalf("expected workspace id ws-test, got %+v", preset.WorkspaceID)
+		}
+		if preset.ID == nil || strings.TrimSpace(*preset.ID) == "" {
+			t.Fatal("expected workspace preset version to include id")
 		}
 		if preset.SystemPrompt == nil || *preset.SystemPrompt != "Plan with explicit operational checkpoints." {
 			t.Fatalf("expected workspace system prompt, got %+v", preset.SystemPrompt)
@@ -915,6 +1378,8 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			preset_version_key TEXT,
 			source_preset_key TEXT,
 			source_preset_version_key TEXT,
+			source_template_id TEXT,
+			source_template_key TEXT NOT NULL DEFAULT '',
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
@@ -964,6 +1429,9 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			approval_mode TEXT NOT NULL DEFAULT 'preset_default',
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 			created_by TEXT,
+			updated_by TEXT,
+			last_edited_at DATETIME,
+			deleted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

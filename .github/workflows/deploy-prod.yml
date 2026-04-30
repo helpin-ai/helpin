@@ -31,7 +31,7 @@ env:
 jobs:
   changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     outputs:
       server: ${{ steps.filter.outputs.server }}
@@ -85,7 +85,7 @@ jobs:
 
   version:
     name: Determine Release Versions
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: changes
     if: needs.changes.outputs.server == 'true' || needs.changes.outputs.helpcenter == 'true'
     outputs:
@@ -160,7 +160,7 @@ jobs:
 
   build-server:
     name: Build Server Image
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: [version, changes]
     if: needs.changes.outputs.server == 'true' && needs.version.outputs.server_tag != ''
     steps:
@@ -169,22 +169,46 @@ jobs:
         with:
           path: build-prod-server
 
+      - name: Prepare Docker socket
+        run: |
+          if [ -S /var/run/docker.sock ]; then
+            sudo chmod 666 /var/run/docker.sock || true
+          fi
+          docker version
+
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Build and push server image
+      - name: Build and push server images
         run: |
           docker buildx build \
             -f build-prod-server/server/Dockerfile \
+            --target api \
             -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/server:prod-latest \
             --push \
             build-prod-server/server/
+          docker buildx build \
+            -f build-prod-server/server/Dockerfile \
+            --target temporal-worker \
+            -t ${{ env.IMAGE_PREFIX }}/temporal-worker:${{ needs.version.outputs.server_tag }} \
+            -t ${{ env.IMAGE_PREFIX }}/temporal-worker:sha-${{ github.sha }} \
+            -t ${{ env.IMAGE_PREFIX }}/temporal-worker:prod-latest \
+            --push \
+            build-prod-server/server/
+          docker buildx build \
+            -f build-prod-server/server/Dockerfile \
+            --target migrate \
+            -t ${{ env.IMAGE_PREFIX }}/server-migrate:${{ needs.version.outputs.server_tag }} \
+            -t ${{ env.IMAGE_PREFIX }}/server-migrate:sha-${{ github.sha }} \
+            -t ${{ env.IMAGE_PREFIX }}/server-migrate:prod-latest \
+            --push \
+            build-prod-server/server/
 
   build-helpcenter:
     name: Build Help Center Image
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: [version, changes]
     if: needs.changes.outputs.helpcenter == 'true' && needs.version.outputs.helpcenter_tag != ''
     steps:
@@ -192,6 +216,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: build-prod-helpcenter
+
+      - name: Prepare Docker socket
+        run: |
+          if [ -S /var/run/docker.sock ]; then
+            sudo chmod 666 /var/run/docker.sock || true
+          fi
+          docker version
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -208,7 +239,7 @@ jobs:
 
   deploy-netlify:
     name: Build & Deploy Frontend to Netlify
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
@@ -234,11 +265,17 @@ jobs:
         with:
           version: 10
 
-      - name: Install and build all packages
+      - name: Install and build frontend
         run: |
           cd build-prod-netlify
           pnpm install --no-frozen-lockfile
-          NODE_OPTIONS=--max-old-space-size=8192 pnpm build
+          NODE_OPTIONS=--max-old-space-size=8192 pnpm \
+            --filter @helpin-ai/sdk-js... \
+            --filter @helpin-ai/widget-embed... \
+            --filter @helpin-ai/react... \
+            --filter @helpin-ai/nextjs... \
+            --filter frontend... \
+            build
 
       - name: Link Netlify site
         working-directory: build-prod-netlify
@@ -256,7 +293,7 @@ jobs:
 
   release:
     name: Create Official Release
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: [version, changes, build-server, build-helpcenter]
     if: |
       always() &&
@@ -327,12 +364,30 @@ jobs:
           echo "</details>" >> release_notes.md
           echo "" >> release_notes.md
           echo "### Images" >> release_notes.md
-          [ -n "$SERVER_TAG" ] && echo "- \`${{ env.IMAGE_PREFIX }}/server:$SERVER_TAG\`" >> release_notes.md
+          if [ -n "$SERVER_TAG" ]; then
+            echo "- \`${{ env.IMAGE_PREFIX }}/server:$SERVER_TAG\`" >> release_notes.md
+            echo "- \`${{ env.IMAGE_PREFIX }}/temporal-worker:$SERVER_TAG\`" >> release_notes.md
+            echo "- \`${{ env.IMAGE_PREFIX }}/server-migrate:$SERVER_TAG\`" >> release_notes.md
+          fi
           [ -n "$HELPCENTER_TAG" ] && echo "- \`${{ env.IMAGE_PREFIX }}/helpcenter:$HELPCENTER_TAG\`" >> release_notes.md
           echo "" >> release_notes.md
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-HEAD~10}...$RELEASE_NAME" >> release_notes.md
 
           echo "RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
+
+      - name: Install GitHub CLI
+        run: |
+          if command -v gh >/dev/null 2>&1; then
+            gh --version
+            exit 0
+          fi
+          sudo mkdir -p -m 755 /etc/apt/keyrings
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+          sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y gh
+          gh --version
 
       - name: Create GitHub release
         working-directory: prod-release
@@ -354,9 +409,13 @@ jobs:
 
           if [ -n "$SERVER_TAG" ]; then
             SERVER_IMAGE="${{ env.IMAGE_PREFIX }}/server:${SERVER_TAG}"
-            find "$MANIFEST_DIR" -name "*.yaml" -exec \
-              sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" {} +
-            UPDATED="${UPDATED:+$UPDATED, }server→$SERVER_TAG"
+            TEMPORAL_IMAGE="${{ env.IMAGE_PREFIX }}/temporal-worker:${SERVER_TAG}"
+            MIGRATE_IMAGE="${{ env.IMAGE_PREFIX }}/server-migrate:${SERVER_TAG}"
+            sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" "$MANIFEST_DIR/server.yaml"
+            sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${SERVER_IMAGE}|g" "$MANIFEST_DIR/git-pr-status-reconciler.yaml"
+            sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${MIGRATE_IMAGE}|g; s|ghcr\.io/helpin-ai/helpin/server-migrate:[^ \"]+|${MIGRATE_IMAGE}|g" "$MANIFEST_DIR/server-migrate.yaml"
+            sed -i -E "s|ghcr\.io/helpin-ai/helpin/server:[^ \"]+|${TEMPORAL_IMAGE}|g; s|ghcr\.io/helpin-ai/helpin/temporal-worker:[^ \"]+|${TEMPORAL_IMAGE}|g" "$MANIFEST_DIR/temporal-worker.yaml"
+            UPDATED="${UPDATED:+$UPDATED, }server-family→$SERVER_TAG"
           fi
 
           if [ -n "$HELPCENTER_TAG" ]; then

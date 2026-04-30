@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/dialog'
 import { useSearchArticles } from '@/hooks/queries'
 import { useDocsContext } from '@/contexts/DocsContext'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { SearchResultItem } from './SearchResultItem'
 
 interface SearchDialogProps {
@@ -18,19 +19,29 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
   const { subdomain, locale, multilingualEnabled } = useDocsContext()
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const normalizedQuery = query.trim()
+  const debouncedQuery = useDebouncedValue(normalizedQuery, 300)
+  const searchQuery =
+    open && normalizedQuery.length >= 2 && normalizedQuery === debouncedQuery
+      ? debouncedQuery
+      : ''
+  const isDebouncing =
+    open && normalizedQuery.length >= 2 && normalizedQuery !== debouncedQuery
   const { data: results, isLoading } = useSearchArticles(
     subdomain,
     locale,
-    query,
+    searchQuery,
     multilingualEnabled,
   )
 
-  // Focus input and reset query on open
   useEffect(() => {
-    if (open) {
+    if (!open) {
       setQuery('')
-      requestAnimationFrame(() => inputRef.current?.focus())
+      return
     }
+
+    setQuery('')
+    requestAnimationFrame(() => inputRef.current?.focus())
   }, [open])
 
   return (
@@ -56,11 +67,11 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
 
         {/* Results */}
         <div className="max-h-[60vh] overflow-y-auto">
-          {query.length < 2 ? (
+          {normalizedQuery.length < 2 ? (
             <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">
               Type to search documentation...
             </div>
-          ) : isLoading ? (
+          ) : isDebouncing || isLoading ? (
             <div className="px-4 py-10 text-center">
               <div className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             </div>
@@ -76,6 +87,7 @@ export function SearchDialog({ open, onClose }: SearchDialogProps) {
                   locale={locale}
                   result={result}
                   variant="compact"
+                  multilingualEnabled={multilingualEnabled}
                   onClick={onClose}
                 />
               ))}

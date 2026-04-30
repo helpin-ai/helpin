@@ -115,13 +115,114 @@ func TestBuildCodexPromptIncludesRuntimeSpecificEngineerInstructions(t *testing.
 
 	for _, snippet := range []string{
 		"running inside the Codex CLI runtime",
-		"Do not wait for Helpin-native tool calls",
-		"Do not push the branch or open a pull request from Codex",
+		"Use the local shell and file-editing capabilities available in this workspace directly.",
+		"Do not rely on Helpin-specific tool wrappers or orchestration commands",
+		"Do not push the branch or open a pull request from this runtime",
 		"must make concrete repository changes",
 		"text-only analysis with no file modifications is a failed outcome",
 	} {
 		if !strings.Contains(prompt, snippet) {
 			t.Fatalf("expected codex prompt to contain %q, got:\n%s", snippet, prompt)
+		}
+	}
+}
+
+func TestBuildCodexRuntimeInstructionsInteractiveDoesNotRequireFileChanges(t *testing.T) {
+	instructions := buildCodexRuntimeInstructions(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetCodeBuilder,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		Task: &model.PMTask{Name: "Implement metrics"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive})
+
+	for _, expected := range []string{
+		"This is an interactive run. Continue from the latest human reply instead of restarting from scratch.",
+		"Make repository changes when they materially advance the task, but they are not required on every turn.",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected interactive instructions to contain %q, got:\n%s", expected, instructions)
+		}
+	}
+	for _, unexpected := range []string{
+		"must make concrete repository changes",
+		"text-only analysis with no file modifications is a failed outcome",
+	} {
+		if strings.Contains(instructions, unexpected) {
+			t.Fatalf("did not expect interactive instructions to contain %q, got:\n%s", unexpected, instructions)
+		}
+	}
+}
+
+func TestBuildCodexRuntimeInstructionsAutonomousReviewStaysGeneric(t *testing.T) {
+	instructions := buildCodexRuntimeInstructions(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetReviewAgent,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"codex": {Type: InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+		Task: &model.PMTask{Name: "Review metrics recorder"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeAutonomous})
+
+	if !strings.Contains(instructions, "This is an autonomous run. Make durable progress on the assigned task before stopping.") {
+		t.Fatalf("expected autonomous generic instructions, got:\n%s", instructions)
+	}
+	for _, unexpected := range []string{
+		"must make concrete repository changes",
+		"text-only analysis with no file modifications is a failed outcome",
+	} {
+		if strings.Contains(instructions, unexpected) {
+			t.Fatalf("did not expect autonomous review instructions to contain %q, got:\n%s", unexpected, instructions)
+		}
+	}
+	for _, expected := range []string{
+		"fenced code block labeled `helpin-review`",
+		"`review_checkpoint_v1` schema",
+		"\"phase\":\"...\"",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected autonomous review instructions to contain %q, got:\n%s", expected, instructions)
+		}
+	}
+}
+
+func TestBuildCodexRuntimeInstructionsUsesInteractionContractForAnySkill(t *testing.T) {
+	instructions := buildCodexRuntimeInstructions(&ExecutionContext{
+		Agent: &model.Agent{
+			PresetKey:    model.AgentPresetCodeBuilder,
+			AllowedTools: []byte(`["write_file","run_command"]`),
+		},
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindReviewCheckpoint,
+					Schema: "review_checkpoint_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"codex": {Type: InteractionTransportTypeFencedJSON, BlockLabel: "helpin-review"},
+					},
+				},
+			},
+		},
+		Task: &model.PMTask{Name: "Review metrics recorder"},
+	}, &model.AgentRun{InvocationMode: model.InvocationModeInteractive})
+
+	for _, expected := range []string{
+		"fenced code block labeled `helpin-review`",
+		"`review_checkpoint_v1` schema",
+		"\"phase\":\"...\"",
+	} {
+		if !strings.Contains(instructions, expected) {
+			t.Fatalf("expected Codex contract instructions to contain %q, got:\n%s", expected, instructions)
 		}
 	}
 }
@@ -546,9 +647,9 @@ func TestBuildCodexConfigArtifactUsesExplicitSandboxOverride(t *testing.T) {
 
 func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 	provider := model.AgentModelProviderOpenAI
-	modelName := "gpt-5.4"
+	modelName := "gpt-5.5"
 	executor := NewCodexExecutor("codex", CodexRuntimeConfig{
-		DefaultModel:   "gpt-5.4",
+		DefaultModel:   "gpt-5.5",
 		OpenAIAPIKey:   "openai-secret",
 		OpenAIAuthMode: codexOpenAIAuthModeAPIKey,
 	}, nil, nil, nil)
@@ -574,7 +675,7 @@ func TestBuildCodexConfigArtifactIncludesOpenAIExecutionConfig(t *testing.T) {
 	if err := toml.Unmarshal([]byte(payload), &decoded); err != nil {
 		t.Fatalf("unmarshal config artifact: %v", err)
 	}
-	if decoded.Model != "gpt-5.4" {
+	if decoded.Model != "gpt-5.5" {
 		t.Fatalf("expected model to be preserved, got %q", decoded.Model)
 	}
 	if decoded.ModelReasoningEffort != "high" {
@@ -609,6 +710,13 @@ func TestCodexApprovalPolicyForInteractiveRunUsesOnRequest(t *testing.T) {
 	run := &model.AgentRun{InvocationMode: model.InvocationModeInteractive}
 	if got := codexApprovalPolicyForRun(run); got != "on-request" {
 		t.Fatalf("expected interactive codex approval policy on-request, got %q", got)
+	}
+}
+
+func TestCodexApprovalPolicyForAutonomousRunUsesNever(t *testing.T) {
+	run := &model.AgentRun{InvocationMode: model.InvocationModeAutonomous}
+	if got := codexApprovalPolicyForRun(run); got != "never" {
+		t.Fatalf("expected autonomous codex approval policy never, got %q", got)
 	}
 }
 
@@ -694,7 +802,7 @@ func TestAppendInteractivePlainTextQuestionInputRequestCreatesStructuredPause(t 
 `),
 	}
 
-	appendInteractivePlainTextQuestionInputRequest(result)
+	appendInteractivePlainTextQuestionInputRequest(&ExecutionContext{}, result)
 
 	request := ExtractLatestHumanInputRequest(result.ToolInvocations)
 	if request == nil {
@@ -713,10 +821,37 @@ func TestAppendInteractivePlainTextQuestionInputRequestIgnoresNormalCompletionTe
 		AssistantText: "Implemented the auth changes and added tests. Anything else?",
 	}
 
-	appendInteractivePlainTextQuestionInputRequest(result)
+	appendInteractivePlainTextQuestionInputRequest(&ExecutionContext{}, result)
 
 	if request := ExtractLatestHumanInputRequest(result.ToolInvocations); request != nil {
 		t.Fatalf("did not expect a structured human-input request, got %#v", request)
+	}
+}
+
+func TestAppendInteractivePlainTextQuestionInputRequestHonorsContractTransport(t *testing.T) {
+	result := &ExecutionResult{
+		AssistantText: strings.TrimSpace(`
+1. Should the retry path keep exponential backoff?
+2. Do you want result labels on the auth duration metric?
+`),
+	}
+
+	appendInteractivePlainTextQuestionInputRequest(&ExecutionContext{
+		SkillPolicy: SkillPolicy{
+			InteractionContracts: []SkillInteractionContract{
+				{
+					Kind:   InteractionKindRequestUserInput,
+					Schema: "request_user_input_v1",
+					Transports: map[string]SkillInteractionTransport{
+						"codex": {Type: InteractionTransportTypeToolCall, ToolName: ToolRequestUserInput},
+					},
+				},
+			},
+		},
+	}, result)
+
+	if request := ExtractLatestHumanInputRequest(result.ToolInvocations); request != nil {
+		t.Fatalf("did not expect a structured human-input request when the codex contract is not a runtime bridge, got %#v", request)
 	}
 }
 

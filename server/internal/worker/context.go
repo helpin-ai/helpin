@@ -12,57 +12,70 @@ import (
 
 // ExecutionContext holds all state for a single agent run execution.
 type ExecutionContext struct {
-	Context                 context.Context
-	WorkDir                 string // path to cloned repo on disk
-	WorkspaceID             string
-	AgentID                 string
-	RunID                   string
-	TargetType              string
-	TargetID                string
-	TaskID                  string
-	ConversationID          string
-	Agent                   *model.Agent
-	Task                    *model.PMTask
-	Epic                    *model.PMEpic
-	EpicTasks               []model.PMTask
-	Conversation            *model.SupportConversation
-	GitIntegration          *model.GitIntegration
-	GitAccessToken          string
-	Repo                    string // e.g. "owner/repo"
-	BaseBranch              string
-	WorkingBranch           string
-	BranchSyncStatus        string
-	BranchSyncConflictFiles []string
-	InitialInstructions     string
-	PlanningStage           string
-	PlanningMethodology     string
-	PlanningSpecDocumentID  string
-	PlanningSpecVersionID   string
-	Config                  *WorkflowConfig
-	ResolvedProfile         ResolvedProfile
-	AllowedTools            map[string]bool
-	Services                *ServiceBridge
-	PendingSupportDraft     *SupportDraftReply
-	LatestPRMetadata        *PRMetadata
-	LocalGitCommit          *GitCommitMetadata
-	Heartbeat               func(stage string) error
-	OnExecutionEvent        func(event ExecutionEvent)
-	OnGitPush               func(branch, sha string) error
-	OnPROpen                func(metadata PRMetadata, title string) error
-	HeartbeatStageProvider  func() string
-	HandleInteractivePause  func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
-	PlanningTurnKind        string
-	PlanningTurnAttempt     int
-	RunFacts                map[string]string
-	ArtifactContext         *ArtifactContext
-	ProviderContinuation    *ProviderContinuation
-	ConversationHistory     []ExecutionMessage
-	LastExecutionResult     *ExecutionResult
-	StagedRuntimeSkillRoot  string
-	ToolFileState           *ToolFileState
-	toolFileStateMu         sync.Mutex
-	PublishedPreviews       map[string]PublishedPreview
-	CurrentAssistantText    string
+	Context                    context.Context
+	WorkDir                    string // path to cloned repo on disk
+	WorkspaceID                string
+	AgentID                    string
+	RunID                      string
+	TargetType                 string
+	TargetID                   string
+	TaskID                     string
+	ConversationID             string
+	Agent                      *model.Agent
+	Task                       *model.PMTask
+	Epic                       *model.PMEpic
+	EpicTasks                  []model.PMTask
+	Conversation               *model.SupportConversation
+	GitIntegration             *model.GitIntegration
+	GitAccessToken             string
+	Repo                       string // e.g. "owner/repo"
+	BaseBranch                 string
+	WorkingBranch              string
+	BranchSyncStatus           string
+	BranchSyncConflictFiles    []string
+	InitialInstructions        string
+	PhaseGuidance              string
+	RepairGuidance             string
+	RepairGuidanceSource       string
+	RepairGuidanceClass        string
+	PlanningStage              string
+	PlanningMethodology        string
+	PlanningSpecDocumentID     string
+	PlanningSpecVersionID      string
+	RunInput                   *model.AgentRunInputPayload
+	Config                     *WorkflowConfig
+	ResolvedProfile            ResolvedProfile
+	RuntimeSkillRefs           model.AgentSkillRefs
+	ActiveRuntimeSkillRefs     model.AgentSkillRefs
+	ActiveSkillInstructions    string
+	SkillPolicy                SkillPolicy
+	NativeSelectivePathEnabled bool
+	AllowedTools               map[string]bool
+	Services                   *ServiceBridge
+	PendingSupportDraft        *SupportDraftReply
+	LatestPRMetadata           *PRMetadata
+	LocalGitCommit             *GitCommitMetadata
+	Heartbeat                  func(stage string) error
+	OnExecutionEvent           func(event ExecutionEvent)
+	OnGitPush                  func(branch, sha string) error
+	OnPROpen                   func(metadata PRMetadata, title string) error
+	HeartbeatStageProvider     func() string
+	HandleInteractivePause     func(result *ExecutionResult) (*LiveExecutionResumeSignal, error)
+	PlanningTurnKind           string
+	PlanningTurnAttempt        int
+	TurnLocalInstructions      string
+	RunFacts                   map[string]string
+	ArtifactContext            *ArtifactContext
+	ProviderContinuation       *ProviderContinuation
+	ConversationHistory        []ExecutionMessage
+	LastExecutionResult        *ExecutionResult
+	StagedRuntimeSkillRoot     string
+	ToolFileState              *ToolFileState
+	toolFileStateMu            sync.Mutex
+	securityScannerCache       map[string]securityScannerCacheEntry
+	securityScannerCacheMu     sync.Mutex
+	PublishedPreviews          map[string]PublishedPreview
+	CurrentAssistantText       string
 }
 
 type LiveExecutionResumeSignal struct {
@@ -121,10 +134,10 @@ func DefaultWorkflowConfig() *WorkflowConfig {
 }
 
 // DefaultWorkflowConfigForAgent returns runtime defaults, including higher
-// native planner tool budgets for Atlas and Scribe.
+// tool budgets for custom agents and native planners.
 func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
 	maxIterations := defaultWorkflowMaxIterations
-	if isHighToolBudgetNativePlanner(agent) {
+	if isHighToolBudgetAgent(agent) {
 		maxIterations = plannerWorkflowMaxIterations
 	}
 	return &WorkflowConfig{
@@ -132,6 +145,16 @@ func DefaultWorkflowConfigForAgent(agent *model.Agent) *WorkflowConfig {
 		TimeoutMinutes: defaultWorkflowTimeoutMinutes,
 		CommandTimeout: defaultWorkflowCommandTimeout,
 	}
+}
+
+func isHighToolBudgetAgent(agent *model.Agent) bool {
+	if agent == nil {
+		return false
+	}
+	if !agent.IsSystem {
+		return true
+	}
+	return isHighToolBudgetNativePlanner(agent)
 }
 
 func isHighToolBudgetNativePlanner(agent *model.Agent) bool {
@@ -159,7 +182,9 @@ type ServiceBridge struct {
 	SetTaskDependencies func(ctx context.Context, workspaceID, actorID string, dependencies []TaskDependencyLink) error
 	ListEpicTasks       func(ctx context.Context, workspaceID, epicID string) ([]EpicTaskSummary, error)
 	ListWorkspaceTeams  func(ctx context.Context, workspaceID string) ([]WorkspaceTeamSummary, error)
+	ListTeamWorkflows   func(ctx context.Context, workspaceID string, teamID *string) ([]TeamWorkflowSummary, error)
 	ApproveEpicSpec     func(ctx context.Context, workspaceID, epicID, actorID string, versionID *string) (*model.ApprovedSpecSummary, error)
+	CreateTask          func(ctx context.Context, workspaceID, actorID string, req CreateTaskToolRequest) (*CreateTaskToolResult, error)
 
 	// Support
 	ListConversationMessages func(ctx context.Context, workspaceID, conversationID string) ([]model.SupportMessage, error)
@@ -175,13 +200,24 @@ type ServiceBridge struct {
 
 	// Docs
 	GetDocument          func(ctx context.Context, id string) (*model.DocsDocument, error)
+	GetDocumentKey       func(ctx context.Context, workspaceID, keyType, key string) (*model.DocsDocumentKey, error)
+	ListCollections      func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error)
 	ListDocuments        func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
 	SearchDocuments      func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
+	CreateDocument       func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error)
 	EnsureEpicSpecDoc    func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error)
 	EnsureTaskPlanDoc    func(ctx context.Context, workspaceID, taskID, actorID string) (*model.DocsDocument, error)
 	GetDocumentContent   func(ctx context.Context, documentID string) (string, error)
+	ListDocumentBlocks   func(ctx context.Context, documentID string) ([]model.DocsBlock, error)
+	UpdateDocumentBlock  func(ctx context.Context, documentID, blockID string, revision int, content json.RawMessage, actorID string) (*model.DocsContent, error)
 	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
 	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
+	UpsertDocumentKey    func(ctx context.Context, record *model.DocsDocumentKey) error
+
+	// Release facts
+	GetReleaseContext      func(ctx context.Context, workspaceID string, req model.GetReleaseContextRequest) (*model.ReleaseContextResult, error)
+	FindTasksForGitChanges func(ctx context.Context, workspaceID string, req model.FindTasksForGitChangesRequest) (*model.FindTasksForGitChangesResult, error)
+	GetTaskContext         func(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
 }
 
 // DocsSearchHit is a simplified search result for tool responses.
@@ -223,6 +259,52 @@ type WorkspaceTeamSummary struct {
 	Handle          *string `json:"handle,omitempty"`
 	TeamType        string  `json:"team_type,omitempty"`
 	DefaultTaskType string  `json:"default_task_type,omitempty"`
+}
+
+type WorkflowStageSummary struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	StateType string `json:"state_type"`
+	Position  int    `json:"position"`
+	IsDefault bool   `json:"is_default"`
+}
+
+type TeamWorkflowSummary struct {
+	TeamID           string                 `json:"team_id"`
+	TeamName         string                 `json:"team_name"`
+	WorkflowID       string                 `json:"workflow_id"`
+	WorkflowName     string                 `json:"workflow_name"`
+	DefaultStateID   *string                `json:"default_state_id,omitempty"`
+	UsesTeamWorkflow bool                   `json:"uses_team_workflow"`
+	Stages           []WorkflowStageSummary `json:"stages"`
+}
+
+type CreateTaskToolRequest struct {
+	Name          string     `json:"name"`
+	Description   *string    `json:"description,omitempty"`
+	TaskType      string     `json:"task_type,omitempty"`
+	Estimate      *int       `json:"estimate,omitempty"`
+	Priority      *string    `json:"priority,omitempty"`
+	EpicID        *string    `json:"epic_id,omitempty"`
+	TeamID        string     `json:"team_id"`
+	WorkflowID    *string    `json:"workflow_id,omitempty"`
+	StateID       *string    `json:"state_id,omitempty"`
+	OwnerMemberID *string    `json:"owner_member_id,omitempty"`
+	LabelIDs      []string   `json:"label_ids,omitempty"`
+	Deadline      *time.Time `json:"deadline,omitempty"`
+}
+
+type CreateTaskToolResult struct {
+	TaskID      string  `json:"task_id"`
+	DisplayID   int     `json:"display_id,omitempty"`
+	TaskKey     string  `json:"task_key,omitempty"`
+	Name        string  `json:"name"`
+	TeamID      *string `json:"team_id,omitempty"`
+	WorkflowID  string  `json:"workflow_id"`
+	StateID     string  `json:"state_id"`
+	StateName   string  `json:"state_name,omitempty"`
+	WorkspaceID string  `json:"workspace_id,omitempty"`
+	EpicID      *string `json:"epic_id,omitempty"`
 }
 
 // ChecklistItem is a simplified checklist item for tool responses.

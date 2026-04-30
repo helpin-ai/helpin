@@ -3,8 +3,11 @@ package service
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -125,11 +128,11 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 	if result.TeamsCreated != 2 {
 		t.Fatalf("expected 2 teams created, got %d", result.TeamsCreated)
 	}
-	if result.WorkflowsCreated != 1 {
-		t.Fatalf("expected 1 workflow created, got %d", result.WorkflowsCreated)
+	if result.WorkflowsCreated != 3 {
+		t.Fatalf("expected 3 team-scoped workflows created, got %d", result.WorkflowsCreated)
 	}
-	if result.WorkflowStatesCreated != 2 {
-		t.Fatalf("expected 2 workflow states created, got %d", result.WorkflowStatesCreated)
+	if result.WorkflowStatesCreated != 6 {
+		t.Fatalf("expected 6 team-scoped workflow states created, got %d", result.WorkflowStatesCreated)
 	}
 	if result.ObjectivesCreated != 1 || result.EpicsCreated != 1 || result.SprintsCreated != 3 {
 		t.Fatalf("unexpected entity counts: objectives=%d epics=%d sprints=%d", result.ObjectivesCreated, result.EpicsCreated, result.SprintsCreated)
@@ -164,6 +167,467 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 	}
 	if secondResult.EpicsCreated != 0 || secondResult.ObjectivesCreated != 0 || secondResult.SprintsCreated != 0 {
 		t.Fatalf("expected no new deduped entities on second import, got epics=%d objectives=%d sprints=%d", secondResult.EpicsCreated, secondResult.ObjectivesCreated, secondResult.SprintsCreated)
+	}
+}
+
+func TestPMImportServiceShortcutAPIEndToEndAndIdempotency(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+	docsSpaceID := "docs-space-shortcut"
+	if err := db.Create(&model.DocsSpace{
+		ID:          docsSpaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Imported Shortcut Docs",
+		Slug:        "imported-shortcut-docs",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeInternal,
+		CreatedBy:   adminID,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatalf("seed docs space: %v", err)
+	}
+	svc.SetDocsImportDependencies(
+		NewDocsDocumentService(repository.NewDocsDocumentRepository(db), repository.NewDocsSpaceRepository(db), nil, false),
+		NewDocsContentService(repository.NewDocsContentRepository(db), repository.NewDocsDocumentRepository(db), nil),
+	)
+	handler := newShortcutAPITestHandler(t)
+
+	prevBaseURL := shortcutAPIBaseURL
+	prevHTTPClientFactory := shortcutHTTPClientFactory
+	shortcutAPIBaseURL = "https://shortcut.test"
+	shortcutHTTPClientFactory = func() *http.Client {
+		return &http.Client{Transport: handlerRoundTripper{handler: handler}}
+	}
+	t.Cleanup(func() {
+		shortcutAPIBaseURL = prevBaseURL
+		shortcutHTTPClientFactory = prevHTTPClientFactory
+	})
+
+	preview, err := svc.PreviewShortcutAPI(context.Background(), workspaceID, adminID, model.ShortcutAPIImportPreviewRequest{
+		APIToken: "test-token",
+		Options:  model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true, ImportDocs: true},
+	})
+	if err != nil {
+		t.Fatalf("preview Shortcut API import: %v", err)
+	}
+	if preview.Summary.TotalTasks != 2 {
+		t.Fatalf("expected 2 API stories in preview, got %d", preview.Summary.TotalTasks)
+	}
+	if preview.Summary.EpicsCount != 1 || preview.Summary.ObjectivesCount != 1 || preview.Summary.SprintsCount != 1 {
+		t.Fatalf("unexpected preview hierarchy counts: epics=%d objectives=%d sprints=%d", preview.Summary.EpicsCount, preview.Summary.ObjectivesCount, preview.Summary.SprintsCount)
+	}
+	if len(preview.Workflows) != 1 || preview.Workflows[0].ID != "500" {
+		t.Fatalf("expected workflow 500 in preview, got %+v", preview.Workflows)
+	}
+	if preview.Summary.DocsCount != 1 {
+		t.Fatalf("expected 1 Shortcut doc in preview, got %d", preview.Summary.DocsCount)
+	}
+
+	req := model.ShortcutAPIImportExecuteRequest{
+		APIToken: "test-token",
+		UserMappings: map[string]string{
+			"owner.one@example.com": "user-owner-one",
+			"owner.two@example.com": "user-owner-two",
+		},
+		WorkflowStateMappings: []model.ShortcutWorkflowStateMappingPayload{
+			{
+				ShortcutWorkflowID:   "500",
+				ShortcutWorkflowName: "Product Development",
+				Mode:                 "create_new",
+				NewWorkflowName:      "Product Development",
+				States: []struct {
+					ShortcutState   string `json:"shortcut_state"`
+					NewStateName    string `json:"new_state_name,omitempty"`
+					StateType       string `json:"state_type,omitempty"`
+					Position        int    `json:"position,omitempty"`
+					ExistingStateID string `json:"existing_state_id,omitempty"`
+				}{
+					{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+					{ShortcutState: "Done", NewStateName: "Done", StateType: model.PMStateTypeDone, Position: 1},
+				},
+			},
+		},
+		Options: model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true, ImportDocs: true, DocsSpaceID: docsSpaceID},
+	}
+
+	result, totalRows, err := svc.executeShortcutAPIImport(context.Background(), workspaceID, adminID, req, "")
+	if err != nil {
+		t.Fatalf("execute Shortcut API import: %v", err)
+	}
+	if totalRows != 2 || result.TasksCreated != 2 {
+		t.Fatalf("expected 2 API tasks created, got rows=%d created=%d", totalRows, result.TasksCreated)
+	}
+	if result.CommentsCreated != 1 {
+		t.Fatalf("expected 1 comment created, got %d warnings=%v", result.CommentsCreated, result.Warnings)
+	}
+	if result.ChecklistItemsCreated != 1 {
+		t.Fatalf("expected 1 checklist item created, got %d", result.ChecklistItemsCreated)
+	}
+	if result.TaskLinksCreated != 1 {
+		t.Fatalf("expected 1 task link created, got %d", result.TaskLinksCreated)
+	}
+	if result.ExternalLinksCreated != 4 {
+		t.Fatalf("expected 4 external links created, got %d", result.ExternalLinksCreated)
+	}
+	if result.SprintsCreated != 1 {
+		t.Fatalf("expected 1 sprint created from Shortcut iteration, got %d", result.SprintsCreated)
+	}
+	if result.DocsCreated != 1 || result.DocsSkipped != 0 {
+		t.Fatalf("expected 1 Shortcut doc created, got created=%d skipped=%d warnings=%v", result.DocsCreated, result.DocsSkipped, result.Warnings)
+	}
+	var docs []model.DocsDocument
+	if err := db.Where("workspace_id = ?", workspaceID).Find(&docs).Error; err != nil {
+		t.Fatalf("load imported docs: %v", err)
+	}
+	if len(docs) != 1 || docs[0].Title != "Shortcut Launch Plan" {
+		t.Fatalf("expected imported Shortcut doc, got %+v", docs)
+	}
+	var docContent model.DocsContent
+	if err := db.Where("document_id = ?", docs[0].ID).First(&docContent).Error; err != nil {
+		t.Fatalf("load imported doc content: %v", err)
+	}
+	if docContent.ImportSourceSystem == nil || *docContent.ImportSourceSystem != shortcutDocsSourceSystem || docContent.ImportSourceObjectID == nil || *docContent.ImportSourceObjectID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("expected Shortcut provenance, got system=%v object=%v", docContent.ImportSourceSystem, docContent.ImportSourceObjectID)
+	}
+
+	var tasks []model.PMTask
+	if err := db.Order("external_id ASC").Find(&tasks).Error; err != nil {
+		t.Fatalf("load imported tasks: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 imported tasks, got %d", len(tasks))
+	}
+	if tasks[0].ExternalID == nil || *tasks[0].ExternalID != "1001" {
+		t.Fatalf("expected first task external id 1001, got %+v", tasks[0].ExternalID)
+	}
+	if tasks[0].TeamID == nil {
+		t.Fatal("expected API group to map to a Helpin team")
+	}
+	for _, task := range tasks {
+		if task.SprintID == nil {
+			t.Fatalf("expected task %s to be assigned to imported sprint", task.ID)
+		}
+	}
+
+	var comments int64
+	if err := db.Model(&model.PMComment{}).Count(&comments).Error; err != nil {
+		t.Fatalf("count comments: %v", err)
+	}
+	if comments != 1 {
+		t.Fatalf("expected 1 stored comment, got %d", comments)
+	}
+	var taskLinks int64
+	if err := db.Model(&model.PMTaskLink{}).Count(&taskLinks).Error; err != nil {
+		t.Fatalf("count task links: %v", err)
+	}
+	if taskLinks != 1 {
+		t.Fatalf("expected 1 stored task link, got %d", taskLinks)
+	}
+	if err := db.Model(&model.PMTask{}).Where("workspace_id = ?", workspaceID).Update("sprint_id", nil).Error; err != nil {
+		t.Fatalf("clear imported task sprint assignment: %v", err)
+	}
+
+	secondResult, _, err := svc.executeShortcutAPIImport(context.Background(), workspaceID, adminID, req, "")
+	if err != nil {
+		t.Fatalf("execute Shortcut API import second run: %v", err)
+	}
+	if secondResult.TasksCreated != 0 || secondResult.TasksSkipped != 2 {
+		t.Fatalf("expected API rerun to skip tasks, got created=%d skipped=%d", secondResult.TasksCreated, secondResult.TasksSkipped)
+	}
+	if secondResult.DocsCreated != 0 || secondResult.DocsSkipped != 1 {
+		t.Fatalf("expected API rerun to skip Shortcut doc, got created=%d skipped=%d", secondResult.DocsCreated, secondResult.DocsSkipped)
+	}
+	if err := db.Model(&model.PMComment{}).Count(&comments).Error; err != nil {
+		t.Fatalf("count comments after rerun: %v", err)
+	}
+	if comments != 1 {
+		t.Fatalf("expected comment import to be idempotent, got %d comments", comments)
+	}
+	if err := db.Where("workspace_id = ?", workspaceID).Find(&tasks).Error; err != nil {
+		t.Fatalf("reload imported tasks after rerun: %v", err)
+	}
+	for _, task := range tasks {
+		if task.SprintID == nil {
+			t.Fatalf("expected rerun to repair sprint assignment for task %s", task.ID)
+		}
+	}
+}
+
+func TestPMImportServiceShortcutAPIRepairsLegacyExternalLinksStoryIDColumn(t *testing.T) {
+	db := newImportTestDB(t)
+	if err := db.Exec(`DROP TABLE pm_external_links`).Error; err != nil {
+		t.Fatalf("drop external links table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE pm_external_links (
+		id TEXT PRIMARY KEY,
+		task_id TEXT,
+		story_id TEXT NOT NULL,
+		title TEXT NOT NULL,
+		url TEXT NOT NULL,
+		created_by_id TEXT NOT NULL,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create legacy external links table: %v", err)
+	}
+
+	svc, workspaceID, adminID := newImportTestService(t, db)
+	handler := newShortcutAPITestHandler(t)
+
+	prevBaseURL := shortcutAPIBaseURL
+	prevHTTPClientFactory := shortcutHTTPClientFactory
+	shortcutAPIBaseURL = "https://shortcut.test"
+	shortcutHTTPClientFactory = func() *http.Client {
+		return &http.Client{Transport: handlerRoundTripper{handler: handler}}
+	}
+	t.Cleanup(func() {
+		shortcutAPIBaseURL = prevBaseURL
+		shortcutHTTPClientFactory = prevHTTPClientFactory
+	})
+
+	req := model.ShortcutAPIImportExecuteRequest{
+		APIToken: "test-token",
+		UserMappings: map[string]string{
+			"owner.one@example.com": "user-owner-one",
+			"owner.two@example.com": "user-owner-two",
+		},
+		WorkflowStateMappings: shortcutAPIImportWorkflowMappings(),
+		Options:               model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true},
+	}
+	result, _, err := svc.executeShortcutAPIImport(context.Background(), workspaceID, adminID, req, "")
+	if err != nil {
+		t.Fatalf("execute Shortcut API import with legacy external links schema: %v", err)
+	}
+	if result.ExternalLinksCreated != 4 {
+		t.Fatalf("expected 4 external links created, got %d", result.ExternalLinksCreated)
+	}
+	if db.Migrator().HasColumn("pm_external_links", "story_id") {
+		t.Fatal("expected legacy story_id column to be removed from pm_external_links")
+	}
+
+	var count int64
+	if err := db.Model(&model.PMExternalLink{}).Count(&count).Error; err != nil {
+		t.Fatalf("count external links: %v", err)
+	}
+	if count != 4 {
+		t.Fatalf("expected 4 stored external links, got %d", count)
+	}
+}
+
+func TestPMImportServiceShortcutAPIUsesExplicitTeamMappingAndTeamWorkflow(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+	targetTeam := model.WorkspaceTeam{ID: uuid.NewString(), WorkspaceID: workspaceID, Name: "Platform"}
+	if err := db.Create(&targetTeam).Error; err != nil {
+		t.Fatalf("seed target team: %v", err)
+	}
+	handler := newShortcutAPITestHandler(t)
+
+	prevBaseURL := shortcutAPIBaseURL
+	prevHTTPClientFactory := shortcutHTTPClientFactory
+	shortcutAPIBaseURL = "https://shortcut.test"
+	shortcutHTTPClientFactory = func() *http.Client {
+		return &http.Client{Transport: handlerRoundTripper{handler: handler}}
+	}
+	t.Cleanup(func() {
+		shortcutAPIBaseURL = prevBaseURL
+		shortcutHTTPClientFactory = prevHTTPClientFactory
+	})
+
+	req := model.ShortcutAPIImportExecuteRequest{
+		APIToken: "test-token",
+		UserMappings: map[string]string{
+			"owner.one@example.com": "user-owner-one",
+			"owner.two@example.com": "user-owner-two",
+		},
+		TeamMappings: map[string]string{
+			"Dev Team": "existing:" + targetTeam.ID,
+		},
+		WorkflowStateMappings: shortcutAPIImportWorkflowMappings(),
+		Options:               model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true},
+	}
+	result, _, err := svc.executeShortcutAPIImport(context.Background(), workspaceID, adminID, req, "")
+	if err != nil {
+		t.Fatalf("execute Shortcut API import with explicit team mapping: %v", err)
+	}
+	if result.TeamsCreated != 0 {
+		t.Fatalf("expected no teams created when mapped to existing team, got %d", result.TeamsCreated)
+	}
+	if result.WorkflowsCreated != 1 {
+		t.Fatalf("expected one team-scoped workflow, got %d", result.WorkflowsCreated)
+	}
+
+	var tasks []model.PMTask
+	if err := db.Where("workspace_id = ?", workspaceID).Find(&tasks).Error; err != nil {
+		t.Fatalf("load imported tasks: %v", err)
+	}
+	for _, task := range tasks {
+		if task.TeamID == nil || *task.TeamID != targetTeam.ID {
+			t.Fatalf("expected task %s to map to Platform team, got %v", task.ID, task.TeamID)
+		}
+	}
+
+	var workflow model.PMWorkflow
+	if err := db.Where("workspace_id = ? AND name = ?", workspaceID, "Product Development").First(&workflow).Error; err != nil {
+		t.Fatalf("load imported workflow: %v", err)
+	}
+	if workflow.TeamID == nil || *workflow.TeamID != targetTeam.ID {
+		t.Fatalf("expected imported workflow to be scoped to Platform team, got %v", workflow.TeamID)
+	}
+
+	var devTeamCount int64
+	if err := db.Model(&model.WorkspaceTeam{}).Where("workspace_id = ? AND name = ?", workspaceID, "Dev Team").Count(&devTeamCount).Error; err != nil {
+		t.Fatalf("count Dev Team rows: %v", err)
+	}
+	if devTeamCount != 0 {
+		t.Fatalf("expected no auto-created Dev Team when explicit mapping exists, got %d", devTeamCount)
+	}
+}
+
+func TestPMImportServiceShortcutAPIRerunRemapsExistingStoriesToExplicitTeam(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+	targetTeam := model.WorkspaceTeam{ID: uuid.NewString(), WorkspaceID: workspaceID, Name: "Platform"}
+	if err := db.Create(&targetTeam).Error; err != nil {
+		t.Fatalf("seed target team: %v", err)
+	}
+	handler := newShortcutAPITestHandler(t)
+
+	prevBaseURL := shortcutAPIBaseURL
+	prevHTTPClientFactory := shortcutHTTPClientFactory
+	shortcutAPIBaseURL = "https://shortcut.test"
+	shortcutHTTPClientFactory = func() *http.Client {
+		return &http.Client{Transport: handlerRoundTripper{handler: handler}}
+	}
+	t.Cleanup(func() {
+		shortcutAPIBaseURL = prevBaseURL
+		shortcutHTTPClientFactory = prevHTTPClientFactory
+	})
+
+	baseReq := model.ShortcutAPIImportExecuteRequest{
+		APIToken: "test-token",
+		UserMappings: map[string]string{
+			"owner.one@example.com": "user-owner-one",
+			"owner.two@example.com": "user-owner-two",
+		},
+		WorkflowStateMappings: shortcutAPIImportWorkflowMappings(),
+		Options:               model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true},
+	}
+	firstResult, _, err := svc.executeShortcutAPIImport(context.Background(), workspaceID, adminID, baseReq, "")
+	if err != nil {
+		t.Fatalf("execute initial Shortcut API import: %v", err)
+	}
+	if firstResult.TeamsCreated != 1 || firstResult.TasksCreated != 2 {
+		t.Fatalf("expected initial import to create Dev Team and 2 tasks, got teams=%d tasks=%d", firstResult.TeamsCreated, firstResult.TasksCreated)
+	}
+
+	mappedReq := baseReq
+	mappedReq.TeamMappings = map[string]string{"Dev Team": "existing:" + targetTeam.ID}
+	secondResult, _, err := svc.executeShortcutAPIImport(context.Background(), workspaceID, adminID, mappedReq, "")
+	if err != nil {
+		t.Fatalf("execute remapping Shortcut API import: %v", err)
+	}
+	if secondResult.TasksCreated != 0 || secondResult.TasksSkipped != 2 {
+		t.Fatalf("expected rerun to skip existing tasks, got created=%d skipped=%d", secondResult.TasksCreated, secondResult.TasksSkipped)
+	}
+
+	var platformWorkflow model.PMWorkflow
+	if err := db.Where("workspace_id = ? AND name = ? AND team_id = ?", workspaceID, "Product Development", targetTeam.ID).First(&platformWorkflow).Error; err != nil {
+		t.Fatalf("load Platform workflow: %v", err)
+	}
+	var tasks []model.PMTask
+	if err := db.Where("workspace_id = ?", workspaceID).Find(&tasks).Error; err != nil {
+		t.Fatalf("load imported tasks: %v", err)
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 imported tasks after rerun, got %d", len(tasks))
+	}
+	for _, task := range tasks {
+		if task.TeamID == nil || *task.TeamID != targetTeam.ID {
+			t.Fatalf("expected existing task %s to remap to Platform team, got %v", task.ID, task.TeamID)
+		}
+		if task.WorkflowID != platformWorkflow.ID {
+			t.Fatalf("expected existing task %s to remap to Platform workflow, got %s", task.ID, task.WorkflowID)
+		}
+	}
+}
+
+func TestShortcutAPIClientListAllStoriesAppliesScopeAndMaxStories(t *testing.T) {
+	var bodies []map[string]any
+	detailFetches := map[string]int{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/stories/search", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode stories search body: %v", err)
+		}
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		if archived, _ := body["archived"].(bool); archived {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[
+			{"id":1001,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z"},
+			{"id":1002,"created_at":"2026-02-01T00:00:00Z","updated_at":"2026-02-03T00:00:00Z"}
+		]`))
+	})
+	mux.HandleFunc("/stories/1001", func(w http.ResponseWriter, r *http.Request) {
+		detailFetches["1001"]++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1001,"name":"older","updated_at":"2026-01-02T00:00:00Z"}`))
+	})
+	mux.HandleFunc("/stories/1002", func(w http.ResponseWriter, r *http.Request) {
+		detailFetches["1002"]++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":1002,"name":"newer","updated_at":"2026-02-03T00:00:00Z"}`))
+	})
+
+	client := NewShortcutAPIClientWithBaseURL("test-token", "https://shortcut.test")
+	client.client = &http.Client{Transport: handlerRoundTripper{handler: mux}}
+	stories, total, err := client.ListAllStories(context.Background(), shortcutAPIStorySearchOptions{
+		UpdatedAtStart: "2026-01-01T00:00:00Z",
+		MaxStories:     1,
+		SortField:      "updated_at",
+	})
+	if err != nil {
+		t.Fatalf("list scoped stories: %v", err)
+	}
+	if total != 1 || len(stories) != 1 || stories[0].ID != 1002 {
+		t.Fatalf("expected newest story only, total=%d stories=%+v", total, stories)
+	}
+	if detailFetches["1001"] != 0 || detailFetches["1002"] != 1 {
+		t.Fatalf("expected only newest story detail fetch, got %+v", detailFetches)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("expected active and archived search bodies, got %d", len(bodies))
+	}
+	for _, body := range bodies {
+		if body["updated_at_start"] != "2026-01-01T00:00:00Z" {
+			t.Fatalf("expected updated_at_start in query body, got %+v", body)
+		}
+	}
+}
+
+func shortcutAPIImportWorkflowMappings() []model.ShortcutWorkflowStateMappingPayload {
+	return []model.ShortcutWorkflowStateMappingPayload{
+		{
+			ShortcutWorkflowID:   "500",
+			ShortcutWorkflowName: "Product Development",
+			Mode:                 "create_new",
+			NewWorkflowName:      "Product Development",
+			States: []struct {
+				ShortcutState   string `json:"shortcut_state"`
+				NewStateName    string `json:"new_state_name,omitempty"`
+				StateType       string `json:"state_type,omitempty"`
+				Position        int    `json:"position,omitempty"`
+				ExistingStateID string `json:"existing_state_id,omitempty"`
+			}{
+				{ShortcutState: "Backlog", NewStateName: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
+				{ShortcutState: "Done", NewStateName: "Done", StateType: model.PMStateTypeDone, Position: 1},
+			},
+		},
 	}
 }
 
@@ -527,6 +991,70 @@ func TestPMImportServiceRewriteShortcutMediaBody(t *testing.T) {
 	}
 }
 
+func TestPMImportServiceRewriteShortcutMediaBodyPreservesFailedMediaAsVisibleLink(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	body := `<p>Video</p><p><img src="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4" alt="demo.mp4"></p><p><a href="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4">open</a></p>`
+	rewritten, created, warnings := svc.rewriteShortcutMediaBody(context.Background(), workspaceID, adminID, "story", "story-123", body, "shortcut-token")
+
+	if created != 0 {
+		t.Fatalf("expected no attachment for failed media, got %d", created)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", warnings)
+	}
+	if !strings.Contains(rewritten, `href="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4"`) {
+		t.Fatalf("expected original Shortcut URL to remain as link, got %s", rewritten)
+	}
+	if strings.Contains(rewritten, `<img`) {
+		t.Fatalf("expected failed image embed to become a visible link, got %s", rewritten)
+	}
+	if !strings.Contains(rewritten, "Shortcut media not copied: demo.mp4") {
+		t.Fatalf("expected visible failed-media label, got %s", rewritten)
+	}
+}
+
+func TestPMImportServiceRewriteShortcutMediaTextPreservesFailedMarkdownMediaAsLink(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	rawURL := "https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.webm"
+	text := "Review this recording ![demo.webm](" + rawURL + ")"
+	rewritten, created, warnings := svc.rewriteShortcutMediaText(context.Background(), workspaceID, adminID, "task", "story-123", text, "shortcut-token")
+
+	if created != 0 {
+		t.Fatalf("expected no attachment for failed media, got %d", created)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", warnings)
+	}
+	if strings.Contains(rewritten, "![demo.webm]") {
+		t.Fatalf("expected failed image markdown to become a normal link, got %s", rewritten)
+	}
+	if !strings.Contains(rewritten, "[Shortcut media not copied: demo.webm") || !strings.Contains(rewritten, "]("+rawURL+")") {
+		t.Fatalf("expected visible fallback markdown link, got %s", rewritten)
+	}
+}
+
 func TestPMImportServiceImportShortcutStoryMediaUpdatesDescriptions(t *testing.T) {
 	db := newImportTestDB(t)
 	svc, workspaceID, adminID := newImportTestService(t, db)
@@ -787,6 +1315,10 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			avatar_background_mode TEXT,
 			avatar_background_color TEXT,
 			default_workspace_id TEXT,
+			totp_secret_encrypted TEXT,
+			totp_verified BOOLEAN NOT NULL DEFAULT 0,
+			recovery_codes_encrypted TEXT,
+			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -829,6 +1361,64 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			default_task_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
 			sprints_enabled BOOLEAN NOT NULL DEFAULT 1,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE docs_spaces (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			team_id TEXT,
+			name TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			icon TEXT,
+			visibility TEXT NOT NULL DEFAULT 'workspace_wide',
+			type TEXT NOT NULL DEFAULT 'internal',
+			default_review_days INTEGER,
+			is_system BOOLEAN NOT NULL DEFAULT 0,
+			position INTEGER NOT NULL DEFAULT 0,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE docs_documents (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			collection_id TEXT,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'draft',
+			visibility TEXT NOT NULL DEFAULT 'workspace_wide',
+			owner_id TEXT,
+			team_id TEXT,
+			template_key TEXT,
+			excerpt TEXT,
+			icon TEXT,
+			tags TEXT,
+			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
+			is_pinned BOOLEAN NOT NULL DEFAULT 0,
+			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
+			share_token TEXT,
+			is_locked BOOLEAN NOT NULL DEFAULT 0,
+			locked_by TEXT,
+			last_reviewed_at DATETIME,
+			next_review_at DATETIME,
+			published_at DATETIME,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE docs_contents (
+			id TEXT PRIMARY KEY,
+			document_id TEXT NOT NULL,
+			content JSON,
+			content_text TEXT,
+			word_count INTEGER NOT NULL DEFAULT 0,
+			import_source_html TEXT,
+			import_source_system TEXT,
+			import_source_object_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -1030,6 +1620,35 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE pm_comments (
+			id TEXT PRIMARY KEY,
+			entity_type TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			author_id TEXT NOT NULL,
+			body TEXT NOT NULL,
+			parent_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_external_links (
+			id TEXT PRIMARY KEY,
+			task_id TEXT NOT NULL,
+			title TEXT NOT NULL,
+			url TEXT NOT NULL,
+			created_by_id TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_task_links (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			source_task_id TEXT NOT NULL,
+			target_task_id TEXT NOT NULL,
+			link_type TEXT NOT NULL,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE pm_import_jobs (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -1127,6 +1746,250 @@ func newImportTestService(t *testing.T, db *gorm.DB) (*PMImportService, string, 
 	}
 
 	return NewPMImportService(db, repository.NewWorkspaceRepository(db), repository.NewPMWorkflowRepository(db), nil), workspaceID, adminID
+}
+
+type handlerRoundTripper struct {
+	handler http.Handler
+}
+
+func (h handlerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	rec := httptest.NewRecorder()
+	h.handler.ServeHTTP(rec, req)
+	return rec.Result(), nil
+}
+
+func newShortcutAPITestHandler(t *testing.T) http.Handler {
+	t.Helper()
+	mux := http.NewServeMux()
+	write := func(w http.ResponseWriter, value any) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(value); err != nil {
+			t.Fatalf("encode Shortcut API fixture: %v", err)
+		}
+	}
+	requireToken := func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Header.Get("Shortcut-Token") != "test-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
+			return false
+		}
+		return true
+	}
+
+	mux.HandleFunc("/member", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, map[string]any{
+			"id": "member-admin",
+			"workspace2": map[string]any{
+				"id":                  "shortcut-workspace",
+				"name":                "Shortcut Workspace",
+				"url_slug":            "shortcut-workspace",
+				"default_workflow_id": 500,
+			},
+		})
+	})
+	mux.HandleFunc("/members", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{
+			{"id": "member-requester", "profile": map[string]any{"email_address": "azhar@contentstudio.io", "name": "Azhar K"}},
+			{"id": "member-owner-one", "profile": map[string]any{"email_address": "owner.one@example.com", "name": "Owner One"}},
+			{"id": "member-owner-two", "profile": map[string]any{"email_address": "owner.two@example.com", "name": "Owner Two"}},
+		})
+	})
+	mux.HandleFunc("/workflows", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{
+			"id":   500,
+			"name": "Product Development",
+			"states": []map[string]any{
+				{"id": 10, "name": "Backlog", "type": "backlog", "position": 0},
+				{"id": 20, "name": "Done", "type": "done", "position": 1},
+			},
+		}})
+	})
+	mux.HandleFunc("/labels", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{"id": 700, "name": "frontend", "color": "#3b82f6"}})
+	})
+	mux.HandleFunc("/groups", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{"id": "group-dev", "name": "Dev Team", "mention_name": "dev"}})
+	})
+	mux.HandleFunc("/projects", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{})
+	})
+	mux.HandleFunc("/documents", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{
+			"id":      "11111111-1111-1111-1111-111111111111",
+			"title":   "Shortcut Launch Plan",
+			"app_url": "https://app.shortcut.com/acme/doc/11111111-1111-1111-1111-111111111111",
+		}})
+	})
+	mux.HandleFunc("/documents/11111111-1111-1111-1111-111111111111", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		if r.URL.Query().Get("content_format") != "html" {
+			http.Error(w, "expected content_format=html", http.StatusBadRequest)
+			return
+		}
+		write(w, map[string]any{
+			"id":               "11111111-1111-1111-1111-111111111111",
+			"title":            "Shortcut Launch Plan",
+			"app_url":          "https://app.shortcut.com/acme/doc/11111111-1111-1111-1111-111111111111",
+			"content_html":     "<h1>Launch Plan</h1><p>Imported doc body.</p>",
+			"content_markdown": "# Launch Plan\n\nImported doc body.",
+			"created_at":       "2026-01-01T00:00:00Z",
+			"updated_at":       "2026-01-02T00:00:00Z",
+		})
+	})
+	mux.HandleFunc("/iterations", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{
+			"id":         400,
+			"name":       "Sprint 1",
+			"start_date": "2026-01-01T00:00:00Z",
+			"end_date":   "2026-01-14T00:00:00Z",
+			"status":     "done",
+			"group_ids":  []string{"group-dev"},
+		}})
+	})
+	mux.HandleFunc("/iterations/400/stories", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		if r.URL.RawQuery != "" {
+			http.Error(w, "iteration stories endpoint should not include query params", http.StatusBadRequest)
+			return
+		}
+		write(w, []map[string]any{{"id": 1001}, {"id": 1002}})
+	})
+	mux.HandleFunc("/objectives", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{
+			"id":          300,
+			"name":        "Q1 Launch",
+			"description": "Launch objective",
+			"started":     true,
+			"created_at":  "2026-01-01T00:00:00Z",
+			"updated_at":  "2026-01-02T00:00:00Z",
+		}})
+	})
+	mux.HandleFunc("/epics", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{
+			"id":                 200,
+			"name":               "Import Epic",
+			"description":        "Epic description",
+			"started":            true,
+			"objective_ids":      []int{300},
+			"group_id":           "group-dev",
+			"planned_start_date": "2026-01-01T00:00:00Z",
+			"deadline":           "2026-02-01T00:00:00Z",
+			"created_at":         "2026-01-01T00:00:00Z",
+			"updated_at":         "2026-01-02T00:00:00Z",
+			"labels":             []map[string]any{{"id": 700, "name": "frontend", "color": "#3b82f6"}},
+		}})
+	})
+	mux.HandleFunc("/stories/search", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if archived, _ := body["archived"].(bool); archived {
+			write(w, []map[string]any{})
+			return
+		}
+		write(w, []map[string]any{{"id": 1001}, {"id": 1002}})
+	})
+	mux.HandleFunc("/search/stories", func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("legacy /search/stories endpoint should not be used for full API imports")
+	})
+	mux.HandleFunc("/stories/1001", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, map[string]any{
+			"id":                1001,
+			"app_url":           "https://app.shortcut.com/acme/story/1001",
+			"name":              "API Story One",
+			"description":       "Imported from API",
+			"story_type":        "feature",
+			"workflow_id":       500,
+			"workflow_state_id": 10,
+			"requested_by_id":   "member-requester",
+			"owner_ids":         []string{"member-owner-one"},
+			"epic_id":           200,
+			"group_id":          "group-dev",
+			"labels":            []map[string]any{{"id": 700, "name": "frontend", "color": "#3b82f6"}},
+			"tasks":             []map[string]any{{"id": 9001, "description": "Checklist from API", "complete": true, "position": 0}},
+			"comments":          []map[string]any{{"id": 8001, "text": "Looks good", "author_id": "member-owner-one", "story_id": 1001, "created_at": "2026-01-03T00:00:00Z", "updated_at": "2026-01-03T00:00:00Z"}},
+			"story_links":       []map[string]any{{"id": 6001, "subject_id": 1001, "object_id": 1002, "verb": "blocks"}},
+			"external_links":    []string{"https://example.com/spec"},
+			"files":             []map[string]any{{"id": 5001, "name": "design.png", "url": "https://files.example.com/design.png"}},
+			"created_at":        "2026-01-03T00:00:00Z",
+			"updated_at":        "2026-01-04T00:00:00Z",
+		})
+	})
+	mux.HandleFunc("/stories/1002", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, map[string]any{
+			"id":                1002,
+			"app_url":           "https://app.shortcut.com/acme/story/1002",
+			"name":              "API Story Two",
+			"description":       "Second story",
+			"story_type":        "bug",
+			"workflow_id":       500,
+			"workflow_state_id": 20,
+			"requested_by_id":   "member-requester",
+			"owner_ids":         []string{"member-owner-two"},
+			"epic_id":           200,
+			"group_id":          "group-dev",
+			"completed":         true,
+			"created_at":        "2026-01-05T00:00:00Z",
+			"updated_at":        "2026-01-06T00:00:00Z",
+			"completed_at":      "2026-01-06T00:00:00Z",
+		})
+	})
+	mux.HandleFunc("/stories/1001/comments", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{"id": 8001, "text": "Looks good", "author_id": "member-owner-one", "story_id": 1001, "created_at": "2026-01-03T00:00:00Z", "updated_at": "2026-01-03T00:00:00Z"}})
+	})
+	mux.HandleFunc("/stories/1002/comments", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{})
+	})
+
+	return mux
 }
 
 func shortcutImportTestCSV() string {

@@ -126,6 +126,12 @@ func (s *PMTaskService) getWorkspaceKey(ctx context.Context, workspaceID string)
 	return ws.WorkspaceKey
 }
 
+// GetWorkspaceKey exposes the workspace key lookup for callers outside this
+// service that need to format task keys (e.g. enriching agent run payloads).
+func (s *PMTaskService) GetWorkspaceKey(ctx context.Context, workspaceID string) string {
+	return s.getWorkspaceKey(ctx, workspaceID)
+}
+
 // populateTaskKey sets the computed TaskKey field on a single PMTask.
 func (s *PMTaskService) populateTaskKey(ctx context.Context, task *model.PMTask) {
 	if task.WorkspaceID == "" {
@@ -460,8 +466,11 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 					title = u.Hostname()
 				}
 			}
+			taskID := newTask.ID
 			link := &model.PMExternalLink{
-				TaskID:      newTask.ID,
+				TaskID:      &taskID,
+				EntityType:  "task",
+				EntityID:    newTask.ID,
 				URL:         linkURL,
 				Title:       title,
 				CreatedByID: actorID,

@@ -229,9 +229,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   // Toolbar visibility — show when the editor is focused, or while interacting
   // with the toolbar itself, or when the link modal is open.
-  const [editorFocused, setEditorFocused] = useState(false);
+  const [, setEditorFocused] = useState(false);
   const toolbarHasPointerRef = useRef(false);
-  const showToolbar = editorFocused || toolbarHasPointerRef.current || linkModalOpen;
+  // toolbarHasPointerRef still used by the merged bottom bar to keep editor focus state
 
   useEffect(() => {
     setSkipOfflineEmailConfirm(loadSkipOfflineEmailConfirm(offlineEmailConfirmStorageKey));
@@ -349,7 +349,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
       transformCopiedText: true,
     }),
     Placeholder.configure({
-      placeholder: () => isNoteRef.current ? 'Add an internal note...' : 'Write a reply...',
+      placeholder: () => isNoteRef.current ? 'Add an internal note... (@ to mention)' : 'Write a reply... (@ to mention)',
     }),
     MentionHighlight,
   ], []);
@@ -643,12 +643,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   return (
     <div
       className={cn(
-        'relative border-t transition-colors',
-        isNote && 'border-l-2 border-l-amber-400 bg-amber-50/50 dark:bg-amber-950/10'
+        'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card shadow-lg transition-all',
+        isNote && 'bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
       {emailFallbackHint && !isNote && (
-        <div className="flex items-start gap-2 border-b border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <div className="flex items-start gap-2 border-b border-border/20 bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground rounded-t-xl">
           <Mail01Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
           <p>
             User is offline. Replies sent here will also be queued as an email to{' '}
@@ -659,7 +659,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
       {/* Mention suggestions popover — floats above the composer */}
       {mentionState && mentionState.items.length > 0 && (
-        <div className="absolute bottom-full left-0 right-0 z-50 mb-1.5 px-3">
+        <div className="absolute bottom-full left-0 right-0 z-50 mb-2 px-1">
           <div className="max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
             <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
               Suggestions
@@ -686,7 +686,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
       )}
 
       {/* Mode toggle */}
-      <div className="flex items-center gap-0.5 px-3 pt-2.5">
+      <div className="flex items-center gap-1 px-4 pt-3">
         <button
           type="button"
           onClick={() => setReplyMode('reply')}
@@ -714,27 +714,36 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           Note
         </button>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!canUseAITools}
-              className={cn(
-                'h-auto rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                canUseAITools
-                  ? 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                  : 'text-muted-foreground/50'
-              )}
-            >
-              {rewriteMutation.isPending ? (
-                <Loading01Icon className="h-3 w-3 animate-spin" />
-              ) : (
-                <SparklesIcon className="h-3 w-3" />
-              )}
-              AI Tools
-              <ArrowUp01Icon className="h-3 w-3 rotate-180" />
-            </Button>
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={!canUseAITools}
+                    className={cn(
+                      'h-auto rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                      canUseAITools
+                        ? 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                        : 'text-muted-foreground/50'
+                    )}
+                  >
+                    {rewriteMutation.isPending ? (
+                      <Loading01Icon className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <SparklesIcon className="h-3 w-3" />
+                    )}
+                    AI Tools
+                    <ArrowUp01Icon className="h-3 w-3 rotate-180" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </span>
+            </TooltipTrigger>
+            {!canUseAITools && (
+              <TooltipContent side="top" className="text-xs">Write something first to use AI tools</TooltipContent>
+            )}
+          </Tooltip>
           <DropdownMenuContent align="start" className="w-48">
             {aiTools.slice(0, 3).map((tool) => {
               const Icon = tool.icon;
@@ -759,93 +768,9 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         </DropdownMenu>
       </div>
 
-      {/* Formatting toolbar — appears when the editor is focused */}
-      <div
-        className={cn(
-          'grid overflow-hidden transition-[grid-template-rows,opacity] duration-150 ease-out',
-          showToolbar ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
-        )}
-        aria-hidden={!showToolbar}
-      >
-      <div
-        className="flex flex-wrap items-center gap-0.5 px-3 pt-1.5 min-h-0"
-        onMouseEnter={() => { toolbarHasPointerRef.current = true; }}
-        onMouseLeave={() => {
-          toolbarHasPointerRef.current = false;
-          if (!editor.isFocused) setEditorFocused(false);
-        }}
-      >
-        <FormatButton
-          title="Bold (Ctrl+B)"
-          active={editor.isActive('bold')}
-          onClick={() => editor.chain().focus().toggleBold().run()}
-        >
-          <TextBoldIcon className="h-3.5 w-3.5" />
-        </FormatButton>
-        <FormatButton
-          title="Italic (Ctrl+I)"
-          active={editor.isActive('italic')}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-        >
-          <TextItalicIcon className="h-3.5 w-3.5" />
-        </FormatButton>
-        <FormatButton
-          title="Underline (Ctrl+U)"
-          active={editor.isActive('underline')}
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
-        >
-          <TextUnderlineIcon className="h-3.5 w-3.5" />
-        </FormatButton>
-        <FormatButton
-          title="Strikethrough"
-          active={editor.isActive('strike')}
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-        >
-          <TextStrikethroughIcon className="h-3.5 w-3.5" />
-        </FormatButton>
-        <FormatButton
-          title="Inline code"
-          active={editor.isActive('code')}
-          onClick={() => editor.chain().focus().toggleCode().run()}
-        >
-          <CodeIcon className="h-3.5 w-3.5" />
-        </FormatButton>
-        <div className="mx-1 h-4 w-px bg-border/60" />
-        <FormatButton
-          title="Bullet list"
-          active={editor.isActive('bulletList')}
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-        >
-          <LeftToRightListBulletIcon className="h-3.5 w-3.5" />
-        </FormatButton>
-        <FormatButton
-          title="Numbered list"
-          active={editor.isActive('orderedList')}
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        >
-          <LeftToRightListNumberIcon className="h-3.5 w-3.5" />
-        </FormatButton>
-        <FormatButton
-          title="Quote"
-          active={editor.isActive('blockquote')}
-          onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        >
-          <QuoteDownIcon className="h-3.5 w-3.5" />
-        </FormatButton>
-        <div className="mx-1 h-4 w-px bg-border/60" />
-        <FormatButton
-          title="Insert link"
-          active={editor.isActive('link')}
-          onClick={openLinkModal}
-        >
-          <Link01Icon className="h-3.5 w-3.5" />
-        </FormatButton>
-      </div>
-      </div>
-
       {/* TipTap Editor */}
       <div
-        className="px-3 py-1.5"
+        className="px-4 py-3"
         onClickCapture={(e) => {
           const target = e.target as HTMLElement | null;
           const anchor = target?.closest('a');
@@ -871,7 +796,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
       {/* Attachment preview strip */}
       {pendingAttachments.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto px-3 pb-1.5">
+        <div className="flex gap-2 overflow-x-auto px-4 pb-2">
           {pendingAttachments.map((att) => (
             <div key={att.localId} className="relative flex-shrink-0">
               {att.previewUrl ? (
@@ -904,9 +829,16 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         </div>
       )}
 
-      {/* Bottom toolbar */}
-      <div className="flex items-center justify-between px-3 pb-2.5">
-        <div className="flex items-center gap-1">
+      {/* Bottom toolbar — formatting + actions in one row */}
+      <div
+        className="flex items-center justify-between px-4 pb-3"
+        onMouseEnter={() => { toolbarHasPointerRef.current = true; }}
+        onMouseLeave={() => {
+          toolbarHasPointerRef.current = false;
+          if (!editor.isFocused) setEditorFocused(false);
+        }}
+      >
+        <div className="flex items-center gap-0.5">
           <EmojiPicker
             onEmojiSelect={(emoji) => {
               if (editorRef.current) {
@@ -916,7 +848,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           />
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => fileInputRef.current?.click()}>
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/60 hover:text-foreground transition-colors" onClick={() => fileInputRef.current?.click()}>
                 <AttachmentIcon className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
@@ -930,16 +862,77 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
             accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.zip,.gz,.tar,.md"
             onChange={(e) => handleFileSelect(e.target.files)}
           />
-          {members.length > 0 && (
-            <span className="ml-1 text-[10px] text-muted-foreground">
-              Type @ to mention
-            </span>
-          )}
+          <div className="mx-0.5 h-4 w-px bg-border/40" />
+          <FormatButton
+            title="Bold (Ctrl+B)"
+            active={editor.isActive('bold')}
+            onClick={() => editor.chain().focus().toggleBold().run()}
+          >
+            <TextBoldIcon className="h-3.5 w-3.5" />
+          </FormatButton>
+          <FormatButton
+            title="Italic (Ctrl+I)"
+            active={editor.isActive('italic')}
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+          >
+            <TextItalicIcon className="h-3.5 w-3.5" />
+          </FormatButton>
+          <FormatButton
+            title="Underline (Ctrl+U)"
+            active={editor.isActive('underline')}
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+          >
+            <TextUnderlineIcon className="h-3.5 w-3.5" />
+          </FormatButton>
+          <FormatButton
+            title="Insert link"
+            active={editor.isActive('link')}
+            onClick={openLinkModal}
+          >
+            <Link01Icon className="h-3.5 w-3.5" />
+          </FormatButton>
+          <div className="mx-0.5 h-4 w-px bg-border/40" />
+          <FormatButton
+            title="Bullet list"
+            active={editor.isActive('bulletList')}
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+          >
+            <LeftToRightListBulletIcon className="h-3.5 w-3.5" />
+          </FormatButton>
+          <FormatButton
+            title="Numbered list"
+            active={editor.isActive('orderedList')}
+            onClick={() => editor.chain().focus().toggleOrderedList().run()}
+          >
+            <LeftToRightListNumberIcon className="h-3.5 w-3.5" />
+          </FormatButton>
+          <FormatButton
+            title="Quote"
+            active={editor.isActive('blockquote')}
+            onClick={() => editor.chain().focus().toggleBlockquote().run()}
+          >
+            <QuoteDownIcon className="h-3.5 w-3.5" />
+          </FormatButton>
+          <div className="mx-0.5 h-4 w-px bg-border/40" />
+          <FormatButton
+            title="Inline code"
+            active={editor.isActive('code')}
+            onClick={() => editor.chain().focus().toggleCode().run()}
+          >
+            <CodeIcon className="h-3.5 w-3.5" />
+          </FormatButton>
+          <FormatButton
+            title="Strikethrough"
+            active={editor.isActive('strike')}
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+          >
+            <TextStrikethroughIcon className="h-3.5 w-3.5" />
+          </FormatButton>
         </div>
 
         <div className="flex items-center gap-2">
-          <kbd className="hidden text-[10px] text-muted-foreground/50 sm:inline">
-            {navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'}{'+\u21B5'}
+          <kbd className="hidden text-xs leading-none text-muted-foreground sm:inline">
+            {navigator.platform?.includes('Mac') ? '\u2318' : 'Ctrl'}{'\u21B5'}
           </kbd>
           <Button
             size="sm"

@@ -4,9 +4,12 @@ import "time"
 
 const (
 	PMImportStatusPending    = "pending"
+	PMImportStatusScanning   = "scanning"
+	PMImportStatusReady      = "ready"
 	PMImportStatusProcessing = "processing"
 	PMImportStatusCompleted  = "completed"
 	PMImportStatusFailed     = "failed"
+	PMImportStatusCanceled   = "canceled"
 
 	PMImportSourceShortcut = "shortcut"
 )
@@ -26,6 +29,8 @@ type PMImportJob struct {
 	EntitiesTotal     int        `json:"entities_total" gorm:"not null;default:0"`
 	Result            *string    `json:"result"`
 	Error             *string    `json:"error"`
+	PayloadEncrypted  *string    `json:"-" gorm:"type:text"`
+	WorkflowID        *string    `json:"workflow_id,omitempty" gorm:"index"`
 	StartedBy         string     `json:"started_by" gorm:"type:uuid;not null"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
@@ -53,10 +58,16 @@ type ShortcutTeamPreview struct {
 }
 
 type ShortcutUserMatch struct {
-	Email         string  `json:"email"`
-	MatchedUserID *string `json:"matched_user_id"`
-	MatchedName   *string `json:"matched_name"`
-	ShortcutName  *string `json:"shortcut_name,omitempty"`
+	Email               string  `json:"email"`
+	ShortcutMemberID    *string `json:"shortcut_member_id,omitempty"`
+	MatchedUserID       *string `json:"matched_user_id"`
+	MatchedMemberID     *string `json:"matched_member_id,omitempty"`
+	MatchedMemberStatus *string `json:"matched_member_status,omitempty"`
+	MatchedName         *string `json:"matched_name"`
+	ShortcutName        *string `json:"shortcut_name,omitempty"`
+	StoryCount          int     `json:"story_count"`
+	OwnerCount          int     `json:"owner_count"`
+	RequesterCount      int     `json:"requester_count"`
 }
 
 type ShortcutImportPreviewSummary struct {
@@ -66,6 +77,7 @@ type ShortcutImportPreviewSummary struct {
 	ObjectivesCount     int            `json:"objectives_count"`
 	SprintsCount        int            `json:"sprints_count"`
 	LabelsCount         int            `json:"labels_count"`
+	DocsCount           int            `json:"docs_count"`
 	TeamsCount          int            `json:"teams_count"`
 	WorkflowsCount      int            `json:"workflows_count"`
 	WorkflowStatesCount int            `json:"workflow_states_count"`
@@ -119,12 +131,23 @@ type ShortcutWorkflowStateMappingPayload struct {
 }
 
 type ShortcutImportOptions struct {
-	ImportArchived  bool `json:"import_archived"`
-	ImportCompleted bool `json:"import_completed"`
+	ImportArchived          bool   `json:"import_archived"`
+	ImportCompleted         bool   `json:"import_completed"`
+	ImportDocs              bool   `json:"import_docs,omitempty"`
+	DocsSpaceID             string `json:"docs_space_id,omitempty"`
+	DocsCollectionID        string `json:"docs_collection_id,omitempty"`
+	DocsLookbackMonths      int    `json:"docs_lookback_months,omitempty"`
+	StoryDateField          string `json:"story_date_field,omitempty"`
+	StoryLookbackMonths     int    `json:"story_lookback_months,omitempty"`
+	EpicLookbackMonths      int    `json:"epic_lookback_months,omitempty"`
+	ObjectiveLookbackMonths int    `json:"objective_lookback_months,omitempty"`
+	MaxStories              int    `json:"max_stories,omitempty"`
 }
 
 type ShortcutImportExecuteRequest struct {
 	UserMappings          map[string]string                     `json:"user_mappings"`
+	MemberMappings        map[string]string                     `json:"member_mappings,omitempty"`
+	TeamMappings          map[string]string                     `json:"team_mappings,omitempty"`
 	WorkflowStateMappings []ShortcutWorkflowStateMappingPayload `json:"workflow_state_mappings"`
 	Options               ShortcutImportOptions                 `json:"options"`
 	APIToken              string                                `json:"api_token,omitempty"`
@@ -145,9 +168,13 @@ type ShortcutImportResult struct {
 	SprintsCreated        int      `json:"sprints_created"`
 	TasksCreated          int      `json:"tasks_created"`
 	TasksSkipped          int      `json:"tasks_skipped"`
+	DocsCreated           int      `json:"docs_created"`
+	DocsSkipped           int      `json:"docs_skipped"`
 	ChecklistItemsCreated int      `json:"checklist_items_created"`
 	OwnerLinksCreated     int      `json:"owner_links_created"`
 	LabelLinksCreated     int      `json:"label_links_created"`
+	ExternalLinksCreated  int      `json:"external_links_created"`
+	TaskLinksCreated      int      `json:"task_links_created"`
 	AttachmentsCreated    int      `json:"attachments_created"`
 	CommentsCreated       int      `json:"comments_created"`
 	Warnings              []string `json:"warnings"`
@@ -162,9 +189,61 @@ type ShortcutImportStatusProgress struct {
 }
 
 type ShortcutImportStatusResponse struct {
-	ImportID string                       `json:"import_id"`
-	Status   string                       `json:"status"`
-	Progress ShortcutImportStatusProgress `json:"progress"`
-	Result   *ShortcutImportResult        `json:"result,omitempty"`
-	Error    *string                      `json:"error,omitempty"`
+	ImportID    string                       `json:"import_id"`
+	Status      string                       `json:"status"`
+	FileName    string                       `json:"file_name,omitempty"`
+	TotalRows   int                          `json:"total_rows,omitempty"`
+	Progress    ShortcutImportStatusProgress `json:"progress"`
+	Result      *ShortcutImportResult        `json:"result,omitempty"`
+	Error       *string                      `json:"error,omitempty"`
+	CreatedAt   *time.Time                   `json:"created_at,omitempty"`
+	UpdatedAt   *time.Time                   `json:"updated_at,omitempty"`
+	CompletedAt *time.Time                   `json:"completed_at,omitempty"`
 }
+
+type ShortcutImportCount struct {
+	Entity string `json:"entity"`
+	Count  int    `json:"count"`
+}
+
+type ShortcutImportWarningGroup struct {
+	Type     string   `json:"type"`
+	Count    int      `json:"count"`
+	Warnings []string `json:"warnings"`
+}
+
+type ShortcutImportDiagnosticItem struct {
+	Type      string `json:"type"`
+	Key       string `json:"key,omitempty"`
+	Message   string `json:"message"`
+	Count     int    `json:"count,omitempty"`
+	Retryable bool   `json:"retryable"`
+}
+
+type ShortcutImportDiagnostics struct {
+	Counts               []ShortcutImportCount          `json:"counts"`
+	WarningGroups        []ShortcutImportWarningGroup   `json:"warning_groups"`
+	FailedMedia          []ShortcutImportDiagnosticItem `json:"failed_media"`
+	UnmappedMembers      []ShortcutImportDiagnosticItem `json:"unmapped_members"`
+	UnmappedStates       []ShortcutImportDiagnosticItem `json:"unmapped_states"`
+	UnmappedTeams        []ShortcutImportDiagnosticItem `json:"unmapped_teams"`
+	RetryableFailures    []ShortcutImportDiagnosticItem `json:"retryable_failures"`
+	NonRetryableFailures []ShortcutImportDiagnosticItem `json:"non_retryable_failures"`
+}
+
+type ShortcutImportDetailResponse struct {
+	ShortcutImportStatusResponse
+	Options            *ShortcutImportOptions    `json:"options,omitempty"`
+	Diagnostics        ShortcutImportDiagnostics `json:"diagnostics"`
+	Retryable          bool                      `json:"retryable"`
+	RetryBlockedReason string                    `json:"retry_blocked_reason,omitempty"`
+	Cancelable         bool                      `json:"cancelable"`
+}
+
+type ShortcutAPIImportPreviewRequest struct {
+	APIToken string                `json:"api_token"`
+	Options  ShortcutImportOptions `json:"options"`
+	ScanID   string                `json:"scan_id,omitempty"`
+}
+
+type ShortcutAPIImportExecuteRequest = ShortcutImportExecuteRequest

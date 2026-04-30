@@ -168,6 +168,9 @@ func (m *codexEventMapper) HandleNotification(ctx context.Context, method string
 func (m *codexEventMapper) HandleRequest(method string, id json.RawMessage, params json.RawMessage) error {
 	switch strings.TrimSpace(method) {
 	case "item/tool/requestUserInput":
+		if m.execCtx != nil && !RequestUserInputUsesRuntimeBridge(m.execCtx.SkillPolicy, "codex") {
+			return nil
+		}
 		var payload codexToolRequestUserInputParams
 		if err := json.Unmarshal(params, &payload); err != nil {
 			return err

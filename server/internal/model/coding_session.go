@@ -17,6 +17,7 @@ type CodingSession struct {
 	ErrorMessage        *string                      `json:"error_message,omitempty"`
 	Title               string                       `json:"title"`
 	Summary             *string                      `json:"summary,omitempty"`
+	SystemPrompt        *string                      `json:"system_prompt,omitempty"`
 	Capabilities        CodingSessionCapabilities    `json:"capabilities"`
 	Repo                CodingSessionRepoState       `json:"repo"`
 	CachedInputTokens   int                          `json:"cached_input_tokens"`

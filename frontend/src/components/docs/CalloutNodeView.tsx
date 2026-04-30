@@ -57,7 +57,7 @@ export function CalloutNodeView({ node, updateAttributes, editor, getPos }: Node
     <NodeViewWrapper>
       <aside
         ref={nodeViewRef}
-        className={`relative my-3 rounded-md border-l-4 px-4 py-3 transition-shadow ${styles.bg} ${styles.border} ${
+        className={`docs-callout relative my-5 rounded-md border-l-4 px-4 py-3 transition-shadow ${styles.bg} ${styles.border} ${
           focused ? 'ring-2 ring-primary/40' : ''
         }`}
       >

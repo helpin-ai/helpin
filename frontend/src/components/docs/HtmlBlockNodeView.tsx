@@ -84,7 +84,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
       <div
         ref={nodeViewRef}
         onClick={() => { if (editable && !focused) setFocused(true); }}
-        className={`group/html relative my-3 rounded-lg transition-all ${
+        className={`docs-html-block group/html relative my-6 rounded-lg transition-all ${
           focused
             ? 'border border-border ring-2 ring-primary'
             : hasContent

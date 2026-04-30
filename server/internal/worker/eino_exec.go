@@ -43,12 +43,19 @@ const (
 	modelVisibleRipgrepOutputHeadRunes = 2_100
 	modelVisibleRipgrepOutputTailRunes = 500
 
+	boundedToolOutputCompactionMaxRunes = 30_000
+
 	toolResultNoOutputPlaceholder = "[tool returned no output]"
 )
 
 var (
 	ErrMaxToolStepsReached    = errors.New("agent reached max tool steps")
 	ErrInitialResponseTimeout = errors.New("initial_response_timeout")
+)
+
+const (
+	defaultOpenAIResponsesBaseURL = "https://api.openai.com/v1"
+	defaultOpenRouterBaseURL      = "https://openrouter.ai/api/v1"
 )
 
 type ExecutionBlock struct {
@@ -125,6 +132,12 @@ type modelVisibleToolOutput struct {
 	Compacted     bool
 }
 
+type helpinCompactionHint struct {
+	Exempt   bool   `json:"exempt"`
+	MaxRunes int    `json:"max_runes,omitempty"`
+	Mode     string `json:"mode,omitempty"`
+}
+
 type executedToolCall struct {
 	ToolCallID string
 	ToolName   string
@@ -192,7 +205,7 @@ func (f *EinoModelFactory) resolveBaseModel(ctx context.Context, provider, model
 		return einoclaude.NewChatModel(ctx, &einoclaude.Config{
 			APIKey:    f.AnthropicAPIKey,
 			Model:     modelName,
-			MaxTokens: defaultMaxTokensForProvider(provider),
+			MaxTokens: defaultNativeMaxTokensForProvider(provider),
 		})
 	default:
 		if providerUsesAgenticResponses(provider) {
@@ -208,27 +221,43 @@ func (f *EinoModelFactory) resolveAgenticBaseModel(ctx context.Context, provider
 		if strings.TrimSpace(f.OpenAIAPIKey) == "" {
 			return nil, fmt.Errorf("openai API key is not configured")
 		}
+		maxTokens := defaultNativeMaxTokensForProvider(provider)
 		return agenticopenai.New(ctx, &agenticopenai.Config{
-			APIKey:  f.OpenAIAPIKey,
-			BaseURL: strings.TrimSpace(f.OpenAIBaseURL),
-			Model:   modelName,
+			APIKey:    f.OpenAIAPIKey,
+			BaseURL:   resolveOpenAIResponsesBaseURL(f.OpenAIBaseURL),
+			Model:     modelName,
+			MaxTokens: &maxTokens,
 		})
 	case appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
 		if strings.TrimSpace(f.OpenRouterKey) == "" {
 			return nil, fmt.Errorf("openrouter API key is not configured")
 		}
-		baseURL := strings.TrimSpace(f.OpenRouterURL)
-		if baseURL == "" {
-			baseURL = "https://openrouter.ai/api/v1"
-		}
+		maxTokens := defaultNativeMaxTokensForProvider(provider)
 		return agenticopenai.New(ctx, &agenticopenai.Config{
-			APIKey:  f.OpenRouterKey,
-			BaseURL: baseURL,
-			Model:   modelName,
+			APIKey:    f.OpenRouterKey,
+			BaseURL:   resolveOpenRouterBaseURL(f.OpenRouterURL),
+			Model:     modelName,
+			MaxTokens: &maxTokens,
 		})
 	default:
 		return nil, fmt.Errorf("provider %q does not support the Responses-based agentic model path", provider)
 	}
+}
+
+func resolveOpenAIResponsesBaseURL(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return defaultOpenAIResponsesBaseURL
+	}
+	return baseURL
+}
+
+func resolveOpenRouterBaseURL(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return defaultOpenRouterBaseURL
+	}
+	return baseURL
 }
 
 func resolveProviderAndModel(agent *appmodel.Agent) (string, string) {
@@ -256,7 +285,13 @@ func providerUsesAgenticResponses(provider string) bool {
 }
 
 func ProviderSupportsResponseContinuation(provider string) bool {
-	return strings.TrimSpace(provider) == appmodel.AgentModelProviderOpenAI
+	// OpenAI Responses continuation is stricter than OpenRouter-compatible
+	// replay: when previous_response_id is used, Eino can preserve provider
+	// output item IDs on self-generated blocks, and OpenAI rejects those as
+	// duplicate input items on resumed/tool-followup turns. Keep OpenAI on full
+	// sanitized transcript replay until the adapter exposes a clean delta-only
+	// continuation transport.
+	return false
 }
 
 func defaultModelForProvider(provider string) string {
@@ -270,10 +305,10 @@ func defaultModelForProvider(provider string) string {
 	}
 }
 
-func defaultMaxTokensForProvider(provider string) int {
+func defaultNativeMaxTokensForProvider(provider string) int {
 	switch provider {
-	case "anthropic":
-		return 4096
+	case appmodel.AgentModelProviderAnthropic, appmodel.AgentModelProviderOpenAI, appmodel.AgentModelProviderOpenRouter, appmodel.AgentModelProviderOpenRouterResponses:
+		return 16384
 	default:
 		return 0
 	}
@@ -290,6 +325,7 @@ func ExecuteWithEino(
 	registry *ToolRegistry,
 	maxSteps int,
 	onEvent func(ExecutionEvent),
+	turnLocalInstructions string,
 ) (*ExecutionResult, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("eino model factory is not configured")
@@ -309,7 +345,7 @@ func ExecuteWithEino(
 		"tool_count", len(tools),
 	)
 	if providerUsesAgenticResponses(provider) {
-		return executeWithEinoAgentic(ctx, factory, agent, systemPrompt, history, tools, execCtx, registry, maxSteps, onEvent)
+		return executeWithEinoAgentic(ctx, factory, agent, systemPrompt, history, tools, execCtx, registry, maxSteps, onEvent, turnLocalInstructions)
 	}
 
 	modelWithTools, _, err := factory.Resolve(ctx, agent, tools)
@@ -317,7 +353,7 @@ func ExecuteWithEino(
 		return nil, err
 	}
 
-	messages, err := toSchemaMessages(systemPrompt, history)
+	messages, err := toSchemaMessagesWithTurnLocalInstructions(systemPrompt, history, turnLocalInstructions)
 	if err != nil {
 		return nil, err
 	}
@@ -406,6 +442,7 @@ func executeWithEinoAgentic(
 	registry *ToolRegistry,
 	maxSteps int,
 	onEvent func(ExecutionEvent),
+	turnLocalInstructions string,
 ) (*ExecutionResult, error) {
 	modelWithTools, _, err := factory.ResolveAgentic(ctx, agent, tools)
 	if err != nil {
@@ -415,22 +452,20 @@ func executeWithEinoAgentic(
 	provider, _ := resolveProviderAndModel(agent)
 	effectiveSystemPrompt := systemPrompt
 	effectiveHistory := history
-	agenticOpts := make([]einomodel.Option, 0, 1)
+	continuationResponseID := ""
 	if continuation := execCtx.ProviderContinuation; continuation != nil && strings.TrimSpace(continuation.ResponseID) != "" && ProviderSupportsResponseContinuation(provider) {
 		effectiveSystemPrompt = ""
 		effectiveHistory = filterExecutionHistoryAfterSequence(history, continuation.AfterSequenceNo)
-		agenticOpts = append(agenticOpts, agenticopenai.WithExtraFields(map[string]any{
-			"previous_response_id": strings.TrimSpace(continuation.ResponseID),
-		}))
+		continuationResponseID = strings.TrimSpace(continuation.ResponseID)
 		slog.InfoContext(ctx, "native runtime using provider continuation",
 			"provider", provider,
-			"response_id", strings.TrimSpace(continuation.ResponseID),
+			"response_id", continuationResponseID,
 			"after_sequence_no", continuation.AfterSequenceNo,
 			"effective_history_messages", len(effectiveHistory),
 		)
 	}
 
-	messages, err := toAgenticMessages(effectiveSystemPrompt, effectiveHistory)
+	messages, err := buildAgenticReplayMessages(provider, effectiveSystemPrompt, effectiveHistory, turnLocalInstructions, continuationResponseID != "")
 	if err != nil {
 		return nil, err
 	}
@@ -440,7 +475,7 @@ func executeWithEinoAgentic(
 	}
 
 	for step := 0; step < maxSteps; step++ {
-		assistantMsg, assistantBlocks, usage, continuation, assistantMessageID, err := generateAssistantAgenticMessage(ctx, modelWithTools, messages, onEvent, agenticOpts...)
+		assistantMsg, assistantBlocks, usage, continuation, assistantMessageID, err := generateAssistantAgenticMessage(ctx, modelWithTools, messages, onEvent, continuationAgenticOptions(continuationResponseID)...)
 		if err != nil {
 			return nil, err
 		}
@@ -455,7 +490,6 @@ func executeWithEinoAgentic(
 			Content: result.AssistantText,
 			Blocks:  assistantBlocks,
 		})
-		messages = append(messages, assistantMsg)
 
 		toolCalls := executionToolCalls(assistantBlocks)
 		if len(toolCalls) == 0 {
@@ -463,6 +497,7 @@ func executeWithEinoAgentic(
 		}
 
 		stopAfterToolRound := false
+		toolResultMessages := make([]*schema.AgenticMessage, 0, len(toolCalls))
 		for _, executed := range executeToolCallsForRound(execCtx, registry, toolCalls, assistantMessageID, onEvent) {
 			summary := truncate(executed.Output, 500)
 			result.ToolInvocations = append(result.ToolInvocations, appmodel.ToolInvocation{
@@ -486,11 +521,12 @@ func executeWithEinoAgentic(
 			})
 			modelVisibleOutput := prepareToolResultForModel(executed.ToolName, executed.Output, executed.IsError)
 			logNativeToolResultForModel(ctx, execCtx, executed, modelVisibleOutput)
-			messages = append(messages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, modelVisibleOutput.Content))
+			toolResultMessages = append(toolResultMessages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, modelVisibleOutput.Content))
 			if IsHumanInteractionTool(executed.ToolName) {
 				stopAfterToolRound = true
 			}
 		}
+		continuationResponseID, messages = nextAgenticStepState(messages, assistantMsg, toolResultMessages, continuationResponseID, continuation)
 		if stopAfterToolRound {
 			return result, nil
 		}
@@ -498,6 +534,38 @@ func executeWithEinoAgentic(
 
 	result.MaxStepsReached = true
 	return result, ErrMaxToolStepsReached
+}
+
+func continuationAgenticOptions(responseID string) []einomodel.Option {
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		return nil
+	}
+	return []einomodel.Option{
+		agenticopenai.WithExtraFields(map[string]any{
+			"previous_response_id": responseID,
+		}),
+	}
+}
+
+func nextAgenticStepState(
+	currentMessages []*schema.AgenticMessage,
+	assistantMsg *schema.AgenticMessage,
+	toolResultMessages []*schema.AgenticMessage,
+	currentContinuationResponseID string,
+	continuation *ProviderContinuation,
+) (string, []*schema.AgenticMessage) {
+	if strings.TrimSpace(currentContinuationResponseID) == "" {
+		nextMessages := append(currentMessages, assistantMsg)
+		nextMessages = append(nextMessages, toolResultMessages...)
+		return "", nextMessages
+	}
+
+	nextResponseID := strings.TrimSpace(currentContinuationResponseID)
+	if continuation != nil && strings.TrimSpace(continuation.ResponseID) != "" {
+		nextResponseID = strings.TrimSpace(continuation.ResponseID)
+	}
+	return nextResponseID, append([]*schema.AgenticMessage(nil), toolResultMessages...)
 }
 
 func streamAssistantMessage(
@@ -652,11 +720,31 @@ func generateAssistantAgenticMessage(
 	return finalMsg, blocks, usage, providerContinuationFromAgenticMessage(finalMsg), assistantMessageID, nil
 }
 
+func buildAgenticReplayMessages(
+	provider string,
+	systemPrompt string,
+	history []ExecutionMessage,
+	turnLocalInstructions string,
+	continuationMode bool,
+) ([]*schema.AgenticMessage, error) {
+	if continuationMode && strings.TrimSpace(provider) == appmodel.AgentModelProviderOpenAI {
+		return toOpenAIContinuationAgenticMessages(history, turnLocalInstructions)
+	}
+	return toAgenticMessagesWithTurnLocalInstructions(systemPrompt, history, turnLocalInstructions)
+}
+
 func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.Message, error) {
+	return toSchemaMessagesWithTurnLocalInstructions(systemPrompt, history, "")
+}
+
+func toSchemaMessagesWithTurnLocalInstructions(systemPrompt string, history []ExecutionMessage, turnLocalInstructions string) ([]*schema.Message, error) {
 	history = sanitizeExecutionHistoryForReplay(history)
-	messages := make([]*schema.Message, 0, len(history)+1)
+	messages := make([]*schema.Message, 0, len(history)+2)
 	if strings.TrimSpace(systemPrompt) != "" {
 		messages = append(messages, schema.SystemMessage(systemPrompt))
+	}
+	if instructionMessage := buildTurnLocalInstructionMessage(turnLocalInstructions); instructionMessage != "" {
+		messages = append(messages, schema.UserMessage(instructionMessage))
 	}
 	for _, msg := range history {
 		switch msg.Role {
@@ -723,10 +811,56 @@ func toSchemaMessages(systemPrompt string, history []ExecutionMessage) ([]*schem
 }
 
 func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*schema.AgenticMessage, error) {
-	history = sanitizeExecutionHistoryForReplay(history)
+	return toAgenticMessagesWithTurnLocalInstructions(systemPrompt, history, "")
+}
+
+func toOpenAIContinuationAgenticMessages(history []ExecutionMessage, turnLocalInstructions string) ([]*schema.AgenticMessage, error) {
 	messages := make([]*schema.AgenticMessage, 0, len(history)+1)
+	if instructionMessage := buildTurnLocalInstructionMessage(turnLocalInstructions); instructionMessage != "" {
+		messages = append(messages, schema.UserAgenticMessage(instructionMessage))
+	}
+	for _, msg := range history {
+		switch msg.Role {
+		case "user":
+			content := nonEmptyText(msg.Content, extractTextFromExecutionBlocks(msg.Blocks))
+			if strings.TrimSpace(content) == "" {
+				continue
+			}
+			messages = append(messages, schema.UserAgenticMessage(content))
+		case "tool":
+			if len(msg.Blocks) == 0 {
+				continue
+			}
+			for _, block := range msg.Blocks {
+				if block.Type != ExecutionBlockTypeToolResult {
+					continue
+				}
+				modelVisibleOutput := prepareToolResultForModel(block.ToolName, block.Output, block.IsError)
+				if strings.TrimSpace(modelVisibleOutput.Content) == "" {
+					continue
+				}
+				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, modelVisibleOutput.Content))
+			}
+		case "assistant":
+			// With previous_response_id, OpenAI already has prior assistant output in
+			// the referenced response chain. Replaying assistant tool-call items here
+			// can duplicate provider-owned function_call items.
+			continue
+		default:
+			return nil, fmt.Errorf("unsupported execution message role %q", msg.Role)
+		}
+	}
+	return messages, nil
+}
+
+func toAgenticMessagesWithTurnLocalInstructions(systemPrompt string, history []ExecutionMessage, turnLocalInstructions string) ([]*schema.AgenticMessage, error) {
+	history = sanitizeExecutionHistoryForReplay(history)
+	messages := make([]*schema.AgenticMessage, 0, len(history)+2)
 	if strings.TrimSpace(systemPrompt) != "" {
 		messages = append(messages, schema.SystemAgenticMessage(systemPrompt))
+	}
+	if instructionMessage := buildTurnLocalInstructionMessage(turnLocalInstructions); instructionMessage != "" {
+		messages = append(messages, schema.UserAgenticMessage(instructionMessage))
 	}
 	for _, msg := range history {
 		switch msg.Role {
@@ -784,6 +918,14 @@ func toAgenticMessages(systemPrompt string, history []ExecutionMessage) ([]*sche
 	return messages, nil
 }
 
+func buildTurnLocalInstructionMessage(turnLocalInstructions string) string {
+	turnLocalInstructions = strings.TrimSpace(turnLocalInstructions)
+	if turnLocalInstructions == "" {
+		return ""
+	}
+	return "Execution-local instructions for this turn only:\n" + turnLocalInstructions
+}
+
 func compactToolOutputForModel(toolName, output string) string {
 	return analyzeToolOutputForModel(toolName, output).Content
 }
@@ -819,6 +961,9 @@ func analyzeToolOutputForModel(toolName, output string) modelVisibleToolOutput {
 		VisibleLines:  countToolOutputLines(output),
 		Compacted:     false,
 	}
+	if outputHasCompactionExemption(output, len(runes)) {
+		return analysis
+	}
 	if len(runes) <= maxRunes {
 		return analysis
 	}
@@ -850,6 +995,23 @@ func analyzeToolOutputForModel(toolName, output string) modelVisibleToolOutput {
 	}
 }
 
+func outputHasCompactionExemption(output string, runeCount int) bool {
+	if !strings.Contains(output, "_helpin_compaction") {
+		return false
+	}
+	var envelope struct {
+		Hint *helpinCompactionHint `json:"_helpin_compaction"`
+	}
+	if err := json.Unmarshal([]byte(output), &envelope); err != nil || envelope.Hint == nil || !envelope.Hint.Exempt {
+		return false
+	}
+	maxRunes := envelope.Hint.MaxRunes
+	if maxRunes <= 0 || maxRunes > boundedToolOutputCompactionMaxRunes {
+		maxRunes = boundedToolOutputCompactionMaxRunes
+	}
+	return runeCount <= maxRunes
+}
+
 func toolOutputCompactionLimits(toolName string) (maxRunes, headRunes, tailRunes int) {
 	switch strings.TrimSpace(toolName) {
 	case "read_file", "read_files":
@@ -878,9 +1040,18 @@ func isHighVolumeToolOutput(toolName string) bool {
 		"list_symbols",
 		"run_command",
 		"read_document",
+		"get_document_blocks",
+		"get_release_context",
+		"get_task_context",
 		"search_documents",
+		"find_tasks_for_git_changes",
+		ToolScanSemgrep,
+		ToolScanTrivy,
+		ToolScanGitleaks,
 		"web_search_brave",
-		"web_search_exa":
+		"web_search_exa",
+		"fetch_url",
+		"crawl_url":
 		return true
 	default:
 		return false
@@ -1463,10 +1634,11 @@ func canExecuteToolCallsInParallel(toolCalls []ExecutionBlock) bool {
 func isParallelSafeTool(name string) bool {
 	switch strings.TrimSpace(name) {
 	case "read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols",
-		"web_search_brave", "web_search_exa",
-		"list_task_checklist", "list_workspace_teams", "list_conversation_messages",
+		"web_search_brave", "web_search_exa", "fetch_url", "crawl_url",
+		"list_task_checklist", "list_workspace_teams", "list_team_workflows_with_stages", "list_conversation_messages",
 		"list_deals", "list_contacts", "list_buyer_signals",
-		"list_documents", "read_document", "search_documents", "list_epic_tasks":
+		"list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents", "list_epic_tasks",
+		"get_release_context", "find_tasks_for_git_changes", "get_task_context":
 		return true
 	default:
 		return false
@@ -1547,18 +1719,7 @@ func toToolParams(inputSchema any) (map[string]*schema.ParameterInfo, error) {
 		return nil, nil
 	}
 	props, _ := schemaMap["properties"].(map[string]interface{})
-	requiredSet := map[string]bool{}
-	if required, ok := schemaMap["required"].([]string); ok {
-		for _, name := range required {
-			requiredSet[name] = true
-		}
-	} else if required, ok := schemaMap["required"].([]interface{}); ok {
-		for _, entry := range required {
-			if name, ok := entry.(string); ok {
-				requiredSet[name] = true
-			}
-		}
-	}
+	requiredSet := jsonSchemaRequiredSet(schemaMap)
 	params := make(map[string]*schema.ParameterInfo, len(props))
 	for name, raw := range props {
 		propMap, _ := raw.(map[string]interface{})
@@ -1583,14 +1744,7 @@ func toParameterInfo(raw map[string]interface{}) (*schema.ParameterInfo, error) 
 		info.Type = schema.Object
 		props, _ := raw["properties"].(map[string]interface{})
 		if len(props) > 0 {
-			requiredSet := map[string]bool{}
-			if required, ok := raw["required"].([]interface{}); ok {
-				for _, item := range required {
-					if name, ok := item.(string); ok {
-						requiredSet[name] = true
-					}
-				}
-			}
+			requiredSet := jsonSchemaRequiredSet(raw)
 			info.SubParams = make(map[string]*schema.ParameterInfo, len(props))
 			for name, value := range props {
 				childMap, _ := value.(map[string]interface{})
@@ -1637,4 +1791,21 @@ func toParameterInfo(raw map[string]interface{}) (*schema.ParameterInfo, error) 
 func stringValue(value any) string {
 	text, _ := value.(string)
 	return text
+}
+
+func jsonSchemaRequiredSet(raw map[string]interface{}) map[string]bool {
+	requiredSet := map[string]bool{}
+	switch required := raw["required"].(type) {
+	case []string:
+		for _, name := range required {
+			requiredSet[name] = true
+		}
+	case []interface{}:
+		for _, entry := range required {
+			if name, ok := entry.(string); ok {
+				requiredSet[name] = true
+			}
+		}
+	}
+	return requiredSet
 }

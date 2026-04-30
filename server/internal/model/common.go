@@ -5,6 +5,7 @@ import "time"
 // APIError represents a standard error response.
 type APIError struct {
 	Error string `json:"error"`
+	Code  string `json:"code,omitempty"`
 }
 
 // MessageResponse represents a simple success message.

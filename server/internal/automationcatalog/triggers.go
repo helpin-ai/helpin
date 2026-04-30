@@ -80,9 +80,11 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 			return "manual.epic_run", "manual", true
 		case "support_conversation":
 			return "manual.support_run", "manual", true
+		case "repository":
+			return "manual.repository_run", "manual", true
+		case "workspace":
+			return "manual.workspace_run", "manual", true
 		}
-	case model.AgentRunTriggerSourceSchedule:
-		return "agent.schedule", "schedule", true
 	case model.AgentRunTriggerSourceAutomationRule:
 		if triggerType == model.TriggerCron {
 			return "automation_rule.cron", "automation_rule", true
@@ -95,6 +97,8 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 		case "support.auto":
 			return "support.widget_message", "support_widget", true
 		}
+	case model.AgentRunTriggerSourceCommandBar:
+		return "command_bar.run", "command_bar", true
 	}
 
 	return "", "", false
@@ -168,10 +172,6 @@ func executionSearchPresetForDefinition(def triggerBindingDefinition, referenceI
 			BindingID: strPtr(def.catalogID),
 			Source:    strPtr(def.bindingKind),
 		}
-	case "schedule":
-		return &model.TriggerExecutionSearchPreset{
-			Source: strPtr(def.bindingKind),
-		}
 	case "automation_rule":
 		preset := &model.TriggerExecutionSearchPreset{
 			Source:      strPtr(def.bindingKind),
@@ -198,7 +198,6 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 	workflowsPath := strPtr("/w/$slug/automation/flows")
 	chatPath := strPtr("/w/$slug/settings/chat-general")
 	agentsPath := strPtr("/w/$slug/automation/agents")
-
 	return []triggerBindingDefinition{
 		{
 			catalogID:        "manual.task_run",
@@ -230,6 +229,28 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			title:            "Manual Support Run",
 			description:      "A human starts the assigned support agent from a conversation.",
 			sourceSurface:    "Support inbox run-agent actions",
+			configSurface:    agentsPath,
+			supportsAgentRun: true,
+		},
+		{
+			catalogID:        "manual.repository_run",
+			bindingKind:      "manual",
+			category:         "manual",
+			triggerType:      model.AgentRunTriggerTypeManual,
+			title:            "Manual Repository Run",
+			description:      "A human starts an agent directly against a repository.",
+			sourceSurface:    "Agents page run-now actions",
+			configSurface:    agentsPath,
+			supportsAgentRun: true,
+		},
+		{
+			catalogID:        "manual.workspace_run",
+			bindingKind:      "manual",
+			category:         "manual",
+			triggerType:      model.AgentRunTriggerTypeManual,
+			title:            "Manual Workspace Run",
+			description:      "A human starts a custom agent directly from the workspace.",
+			sourceSurface:    "Agents page run-now actions",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},
@@ -333,6 +354,26 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			},
 		},
 		{
+			catalogID:        "github.pull_request_closed",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitHubPRClosed,
+			title:            "GitHub Pull Request Closed",
+			description:      "Fires when the GitHub integration receives a pull request closed webhook for a PR that was closed without merging. Filters can scope by repository and PR base branch.",
+			sourceSurface:    "GitHub App webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerGitHubPRClosed),
+				ShowTriggerTitle: strPtr("GitHub Pull Request Closed"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerGitHubPRClosed),
+				BaseBranch:      strPtr("main"),
+			},
+		},
+		{
 			catalogID:        "github.pull_request_review_requested",
 			bindingKind:      "automation_rule",
 			category:         "automation_rule",
@@ -390,18 +431,6 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			},
 		},
 		{
-			catalogID:        "agent.schedule",
-			bindingKind:      "schedule",
-			category:         "agent",
-			triggerType:      model.TriggerCron,
-			title:            "Agent Schedule",
-			description:      "Runs an agent directly from its own cron schedule.",
-			sourceSurface:    "Agent configuration",
-			configSurface:    agentsPath,
-			supportsAgentRun: true,
-			aliases:          []string{"agent_schedule"},
-		},
-		{
 			catalogID:        "support.widget_message",
 			bindingKind:      "support_widget",
 			category:         "support",
@@ -419,7 +448,7 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			category:         "automation_rule",
 			triggerType:      model.TriggerCron,
 			title:            "Automation Rule Cron",
-			description:      "Runs a start-agent-run automation rule on a backend cron category. The engine supports it, but Flows does not yet surface cron authoring.",
+			description:      "Runs a start-agent-run automation rule on a recurring schedule managed from Flows.",
 			sourceSurface:    "Rule engine backend",
 			configSurface:    workflowsPath,
 			supportsAgentRun: true,

@@ -93,12 +93,53 @@ func (s *DocsHelpcenterService) GetConfig(ctx context.Context, workspaceID strin
 
 // UpsertConfig creates or updates the help center config.
 func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID string, req model.UpdateDocsHelpcenterConfigRequest) (*model.DocsHelpcenterConfig, error) {
+	existing, err := s.hcRepo.GetConfig(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	mode := model.HelpcenterPublicURLModeHostedSubdomain
+	var customDomain, reverseProxyHost, reverseProxyBasePath *string
+	if existing != nil {
+		mode = strings.TrimSpace(existing.PublicURLMode)
+		customDomain = existing.CustomDomain
+		reverseProxyHost = existing.ReverseProxyHost
+		reverseProxyBasePath = existing.ReverseProxyBasePath
+		if mode == "" {
+			mode = model.HelpcenterPublicURLModeHostedSubdomain
+		}
+	}
+
 	updates := map[string]interface{}{}
 	if req.Subdomain != nil {
 		updates["subdomain"] = *req.Subdomain
 	}
 	if req.CustomDomain != nil {
-		updates["custom_domain"] = req.CustomDomain
+		normalized, err := normalizeHelpcenterPublicHost(req.CustomDomain, "custom domain")
+		if err != nil {
+			return nil, err
+		}
+		customDomain = normalized
+		updates["custom_domain"] = normalized
+	}
+	if req.PublicURLMode != nil {
+		mode = strings.TrimSpace(*req.PublicURLMode)
+		updates["public_url_mode"] = mode
+	}
+	if req.ReverseProxyHost != nil {
+		normalized, err := normalizeHelpcenterPublicHost(req.ReverseProxyHost, "reverse proxy host")
+		if err != nil {
+			return nil, err
+		}
+		reverseProxyHost = normalized
+		updates["reverse_proxy_host"] = normalized
+	}
+	if req.ReverseProxyBasePath != nil {
+		normalized, err := normalizeHelpcenterBasePath(req.ReverseProxyBasePath)
+		if err != nil {
+			return nil, err
+		}
+		reverseProxyBasePath = normalized
+		updates["reverse_proxy_base_path"] = normalized
 	}
 	if req.BrandName != nil {
 		updates["brand_name"] = *req.BrandName
@@ -120,6 +161,18 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	}
 	if req.SEODescription != nil {
 		updates["seo_description"] = req.SEODescription
+	}
+	if req.OGTitle != nil {
+		updates["og_title"] = nullableTrimmedString(req.OGTitle)
+	}
+	if req.OGDescription != nil {
+		updates["og_description"] = nullableTrimmedString(req.OGDescription)
+	}
+	if req.OGImageURL != nil {
+		updates["og_image_url"] = nullableTrimmedString(req.OGImageURL)
+	}
+	if req.OGImageAlt != nil {
+		updates["og_image_alt"] = nullableTrimmedString(req.OGImageAlt)
 	}
 	if req.SupportEmail != nil {
 		updates["support_email"] = req.SupportEmail
@@ -160,6 +213,16 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 	if req.FallbackToDefaultLocale != nil {
 		updates["fallback_to_default_locale"] = *req.FallbackToDefaultLocale
 	}
+	if req.PublicURLMode == nil && existing == nil && mode == model.HelpcenterPublicURLModeHostedSubdomain && stringPtrTrimmed(customDomain) != "" {
+		mode = model.HelpcenterPublicURLModeCustomDomain
+		updates["public_url_mode"] = mode
+	}
+	if err := validateHelpcenterPublicURLConfig(mode, customDomain, reverseProxyHost, reverseProxyBasePath); err != nil {
+		return nil, err
+	}
+	if _, ok := updates["public_url_mode"]; !ok && existing == nil {
+		updates["public_url_mode"] = mode
+	}
 	config, err := s.hcRepo.UpsertConfig(ctx, workspaceID, updates)
 	if err == nil && config != nil {
 		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_helpcenter_config", workspaceID, workspaceID, "")
@@ -169,7 +232,12 @@ func (s *DocsHelpcenterService) UpsertConfig(ctx context.Context, workspaceID st
 }
 
 // PublishExternally publishes a help center article externally.
-func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentID string, slug string) error {
+func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentID string, slug string, publishedContent json.RawMessage) error {
+	publishedContent, err := validatePublicationSnapshotContent(publishedContent)
+	if err != nil {
+		return err
+	}
+
 	doc, err := s.docRepo.GetByID(ctx, documentID)
 	if err != nil {
 		return err
@@ -243,7 +311,7 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 		return err
 	}
 
-	publication, err := s.buildSourceArticlePublication(ctx, doc, art, defaultLocale, slug)
+	publication, err := s.buildSourceArticlePublication(ctx, doc, art, defaultLocale, slug, publishedContent)
 	if err != nil {
 		return err
 	}
@@ -370,6 +438,59 @@ func (s *DocsHelpcenterService) GetArticle(ctx context.Context, documentID strin
 	return s.hcRepo.GetArticle(ctx, documentID)
 }
 
+func (s *DocsHelpcenterService) UpdateArticleMetadata(ctx context.Context, workspaceID, documentID string, req model.UpdateDocsHelpcenterArticleMetadataRequest) (*model.DocsHelpcenterArticle, error) {
+	doc, err := s.docRepo.GetByID(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if doc == nil || doc.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("document not found")
+	}
+
+	art, err := s.hcRepo.GetArticle(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if art == nil {
+		publicID, err := s.ensureUniqueHelpcenterPublicID(ctx, documentID)
+		if err != nil {
+			return nil, err
+		}
+		art = &model.DocsHelpcenterArticle{
+			DocumentID: documentID,
+			PublicID:   publicID,
+		}
+		if _, err := s.hcRepo.CreateArticle(ctx, art); err != nil {
+			return nil, err
+		}
+	}
+
+	updates := map[string]interface{}{}
+	if req.OGTitle != nil {
+		updates["og_title"] = nullableTrimmedString(req.OGTitle)
+	}
+	if req.OGDescription != nil {
+		updates["og_description"] = nullableTrimmedString(req.OGDescription)
+	}
+	if req.OGImageURL != nil {
+		updates["og_image_url"] = nullableTrimmedString(req.OGImageURL)
+	}
+	if req.OGImageAlt != nil {
+		updates["og_image_alt"] = nullableTrimmedString(req.OGImageAlt)
+	}
+	if len(updates) == 0 {
+		return art, nil
+	}
+
+	updated, err := s.hcRepo.UpdateArticleMetadata(ctx, documentID, updates)
+	if err != nil {
+		return nil, err
+	}
+	publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, workspaceID, "")
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
+	return updated, nil
+}
+
 func (s *DocsHelpcenterService) EnrichDocumentPublishState(ctx context.Context, doc *model.DocsDocument) error {
 	if doc == nil {
 		return nil
@@ -380,6 +501,12 @@ func (s *DocsHelpcenterService) EnrichDocumentPublishState(ctx context.Context, 
 	}
 	if art != nil && art.Slug != "" {
 		doc.HCSlug = art.Slug
+	}
+	if art != nil {
+		doc.HCOGTitle = art.OGTitle
+		doc.HCOGDescription = art.OGDescription
+		doc.HCOGImageURL = art.OGImageURL
+		doc.HCOGImageAlt = art.OGImageAlt
 	}
 	if art == nil || art.PublicPublishedAt == nil {
 		doc.HasUnpublishedChanges = false
@@ -440,7 +567,7 @@ func (s *DocsHelpcenterService) GetConfigBySubdomain(ctx context.Context, subdom
 }
 
 // ResolveConfig resolves a help center config by subdomain first, then by custom domain.
-func (s *DocsHelpcenterService) ResolveConfig(ctx context.Context, identifier string) (*model.DocsHelpcenterConfig, error) {
+func (s *DocsHelpcenterService) resolveConfigUncached(ctx context.Context, identifier string) (*model.DocsHelpcenterConfig, error) {
 	// Try subdomain first.
 	cfg, err := s.hcRepo.GetConfigBySubdomain(ctx, identifier)
 	if err != nil {
@@ -646,11 +773,146 @@ func compactJSON(raw json.RawMessage) []byte {
 	return raw
 }
 
+func validatePublicationSnapshotContent(raw json.RawMessage) (json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil, nil
+	}
+	if !json.Valid(trimmed) {
+		return nil, fmt.Errorf("published_content must be valid JSON")
+	}
+	var node tiptap.Node
+	if err := json.Unmarshal(trimmed, &node); err != nil {
+		return nil, fmt.Errorf("published_content must be TipTap JSON: %w", err)
+	}
+	if node.Type != "doc" {
+		return nil, fmt.Errorf("published_content root must be a doc node")
+	}
+	if _, err := tiptap.RenderHTML(trimmed); err != nil {
+		return nil, fmt.Errorf("published_content cannot be rendered: %w", err)
+	}
+	return json.RawMessage(compactJSON(trimmed)), nil
+}
+
+func publicationContentEqual(current json.RawMessage, published json.RawMessage) bool {
+	return bytes.Equal(compactJSON(normalizePublishedSourceContent(current)), compactJSON(normalizePublishedSourceContent(published)))
+}
+
+func normalizePublishedSourceContent(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var node tiptap.Node
+	if err := json.Unmarshal(raw, &node); err != nil {
+		return raw
+	}
+	normalized := normalizePublishedSourceNode(node)
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return raw
+	}
+	return payload
+}
+
+func normalizePublishedSourceNode(node tiptap.Node) tiptap.Node {
+	if node.Attrs != nil {
+		if source, ok := node.Attrs["publishedFrom"]; ok {
+			payload, err := json.Marshal(source)
+			if err == nil {
+				var sourceNode tiptap.Node
+				if err := json.Unmarshal(payload, &sourceNode); err == nil && sourceNode.Type != "" {
+					return normalizePublishedSourceNode(sourceNode)
+				}
+			}
+		}
+	}
+	if len(node.Content) > 0 {
+		for i := range node.Content {
+			node.Content[i] = normalizePublishedSourceNode(node.Content[i])
+		}
+	}
+	return node
+}
+
 func stringPtrTrimmed(value *string) string {
 	if value == nil {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func normalizeHelpcenterPublicHost(value *string, label string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "://") || strings.ContainsAny(lower, `/\`) || strings.ContainsAny(lower, " \t\r\n") {
+		return nil, fmt.Errorf("%s must be a hostname without scheme or path", label)
+	}
+	return &lower, nil
+}
+
+func normalizeHelpcenterBasePath(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" || trimmed == "/" {
+		return nil, nil
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	trimmed = strings.TrimRight(trimmed, "/")
+	if trimmed == "" || trimmed == "/" {
+		return nil, nil
+	}
+	if strings.Contains(trimmed, "//") || strings.Contains(trimmed, `\`) {
+		return nil, fmt.Errorf("reverse proxy base path is invalid")
+	}
+	for _, segment := range strings.Split(trimmed, "/") {
+		if segment == "." || segment == ".." {
+			return nil, fmt.Errorf("reverse proxy base path is invalid")
+		}
+	}
+	return &trimmed, nil
+}
+
+func validateHelpcenterPublicURLConfig(mode string, customDomain, reverseProxyHost, reverseProxyBasePath *string) error {
+	switch mode {
+	case "", model.HelpcenterPublicURLModeHostedSubdomain:
+		return nil
+	case model.HelpcenterPublicURLModeCustomDomain:
+		if stringPtrTrimmed(customDomain) == "" {
+			return fmt.Errorf("custom domain public URL mode requires a custom domain")
+		}
+		return nil
+	case model.HelpcenterPublicURLModeReverseProxy:
+		if stringPtrTrimmed(reverseProxyHost) == "" {
+			return fmt.Errorf("reverse proxy public URL mode requires a public host")
+		}
+		if stringPtrTrimmed(reverseProxyBasePath) == "" {
+			return fmt.Errorf("reverse proxy public URL mode requires a public base path")
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid public URL mode %q", mode)
+	}
+}
+
+func nullableTrimmedString(value *string) interface{} {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return trimmed
 }
 
 func derivedSEOTitle(title string, override *string) *string {
@@ -680,7 +942,7 @@ func derivedSEODescription(excerpt *string, override *string) *string {
 	return &excerptValue
 }
 
-func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Context, doc *model.DocsDocument, art *model.DocsHelpcenterArticle, locale, slug string) (*model.DocsHelpcenterArticlePublication, error) {
+func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Context, doc *model.DocsDocument, art *model.DocsHelpcenterArticle, locale, slug string, publishedContent json.RawMessage) (*model.DocsHelpcenterArticlePublication, error) {
 	content, err := s.contentRepo.GetByDocumentID(ctx, doc.ID)
 	if err != nil {
 		return nil, err
@@ -697,11 +959,18 @@ func (s *DocsHelpcenterService) buildSourceArticlePublication(ctx context.Contex
 		Excerpt:        doc.Excerpt,
 		SEOTitle:       derivedSEOTitle(doc.Title, art.SEOTitle),
 		SEODescription: derivedSEODescription(doc.Excerpt, art.SEODescription),
+		OGTitle:        art.OGTitle,
+		OGDescription:  art.OGDescription,
+		OGImageURL:     art.OGImageURL,
+		OGImageAlt:     art.OGImageAlt,
 		PublishedAt:    time.Now().UTC(),
 	}
 	if content != nil {
 		publication.Content = content.Content
 		publication.ContentText = content.ContentText
+	}
+	if len(publishedContent) > 0 {
+		publication.Content = publishedContent
 	}
 	return publication, nil
 }
@@ -727,12 +996,24 @@ func (s *DocsHelpcenterService) sourceArticleHasUnpublishedChanges(ctx context.C
 	if stringPtrTrimmed(derivedSEODescription(doc.Excerpt, art.SEODescription)) != stringPtrTrimmed(publication.SEODescription) {
 		return true, nil
 	}
+	if stringPtrTrimmed(art.OGTitle) != stringPtrTrimmed(publication.OGTitle) {
+		return true, nil
+	}
+	if stringPtrTrimmed(art.OGDescription) != stringPtrTrimmed(publication.OGDescription) {
+		return true, nil
+	}
+	if stringPtrTrimmed(art.OGImageURL) != stringPtrTrimmed(publication.OGImageURL) {
+		return true, nil
+	}
+	if stringPtrTrimmed(art.OGImageAlt) != stringPtrTrimmed(publication.OGImageAlt) {
+		return true, nil
+	}
 
 	var currentContent json.RawMessage
 	if content != nil {
 		currentContent = content.Content
 	}
-	if !bytes.Equal(compactJSON(currentContent), compactJSON(publication.Content)) {
+	if !publicationContentEqual(currentContent, publication.Content) {
 		return true, nil
 	}
 	return false, nil
@@ -895,9 +1176,9 @@ func (s *DocsHelpcenterService) UpdateCollectionSlug(ctx context.Context, collec
 
 	var updated *model.DocsCollection
 	txErr := s.collectionRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		txCollectionRepo := repository.NewDocsCollectionRepository(tx)
+		txCollectionRepo := repository.NewDocsCollectionRepository(tx, false)
 		txRedirectRepo := repository.NewDocsRedirectRepository(tx)
-		txHcRepo := repository.NewDocsHelpcenterRepository(tx)
+		txHcRepo := repository.NewDocsHelpcenterRepository(tx, false)
 
 		// Collection-level redirect: old /:slug -> new /:slug.
 		if oldSlug != "" {
@@ -1227,7 +1508,7 @@ func (s *DocsHelpcenterService) resolvePublicArticleTranslationBySlug(ctx contex
 }
 
 // ListPublicSpaces returns external-capable spaces for the public help center.
-func (s *DocsHelpcenterService) ListPublicSpaces(ctx context.Context, workspaceID, requestedLocale string) ([]model.PublicSpaceResponse, error) {
+func (s *DocsHelpcenterService) listPublicSpacesUncached(ctx context.Context, workspaceID, requestedLocale string) ([]model.PublicSpaceResponse, error) {
 	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -1473,7 +1754,7 @@ func (s *DocsHelpcenterService) getSpaceNavigationUncached(ctx context.Context, 
 }
 
 // GetPublicArticle returns the full article detail for the locale-aware public help center.
-func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleUncached(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
 	cfg, _, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -1568,6 +1849,10 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 		PublishedAt:        publishedAt,
 		SEOTitle:           translation.SEOTitle,
 		SEODescription:     translation.SEODescription,
+		OGTitle:            translation.OGTitle,
+		OGDescription:      translation.OGDescription,
+		OGImageURL:         translation.OGImageURL,
+		OGImageAlt:         translation.OGImageAlt,
 		HelpfulCount:       translation.HelpfulCount,
 		NotHelpfulCount:    translation.NotHelpfulCount,
 		ViewCount:          translation.ViewCount,
@@ -1576,7 +1861,7 @@ func (s *DocsHelpcenterService) GetPublicArticle(ctx context.Context, workspaceI
 }
 
 // GetPublicLocalizedCollection returns a translated collection page and its translated articles.
-func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
+func (s *DocsHelpcenterService) getPublicLocalizedCollectionUncached(ctx context.Context, workspaceID, requestedLocale, spaceSlug, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
 	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
@@ -1665,7 +1950,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollection(ctx context.Context
 	}, articles, nil
 }
 
-func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx context.Context, workspaceID, requestedLocale, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
+func (s *DocsHelpcenterService) getPublicLocalizedCollectionByCanonicalPathUncached(ctx context.Context, workspaceID, requestedLocale, collectionSlug string) (*model.PublicNavCollection, []model.PublicNavArticle, error) {
 	cfg, defaultLocale, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
@@ -1760,7 +2045,7 @@ func (s *DocsHelpcenterService) GetPublicLocalizedCollectionByCanonicalPath(ctx 
 	}, articles, nil
 }
 
-func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx context.Context, workspaceID, requestedLocale, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalPathUncached(ctx context.Context, workspaceID, requestedLocale, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
 	cfg, _, err := s.getPublicLocaleConfig(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -1874,6 +2159,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx con
 		PublishedAt:        publishedAt,
 		SEOTitle:           translation.SEOTitle,
 		SEODescription:     translation.SEODescription,
+		OGTitle:            translation.OGTitle,
+		OGDescription:      translation.OGDescription,
+		OGImageURL:         translation.OGImageURL,
+		OGImageAlt:         translation.OGImageAlt,
 		HelpfulCount:       translation.HelpfulCount,
 		NotHelpfulCount:    translation.NotHelpfulCount,
 		ViewCount:          translation.ViewCount,
@@ -1881,7 +2170,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalPath(ctx con
 	}, nil
 }
 
-func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx context.Context, workspaceID, requestedLocale, articleKey string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalKeyUncached(ctx context.Context, workspaceID, requestedLocale, articleKey string) (*model.PublicArticleResponse, error) {
 	_, publicID, ok := parseDocsHelpcenterArticleKey(articleKey)
 	if !ok {
 		return nil, fmt.Errorf("article not found")
@@ -2007,6 +2296,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx cont
 		PublishedAt:        publishedAt,
 		SEOTitle:           translation.SEOTitle,
 		SEODescription:     translation.SEODescription,
+		OGTitle:            translation.OGTitle,
+		OGDescription:      translation.OGDescription,
+		OGImageURL:         translation.OGImageURL,
+		OGImageAlt:         translation.OGImageAlt,
 		HelpfulCount:       translation.HelpfulCount,
 		NotHelpfulCount:    translation.NotHelpfulCount,
 		ViewCount:          translation.ViewCount,
@@ -2015,7 +2308,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByLocalizedCanonicalKey(ctx cont
 }
 
 // GetPublicArticleByCanonicalPath returns a public article by collection slug and article slug.
-func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleByCanonicalPathUncached(ctx context.Context, workspaceID, collectionSlug, articleSlug string) (*model.PublicArticleResponse, error) {
 	var (
 		doc     *model.DocsDocument
 		ha      *model.DocsHelpcenterArticle
@@ -2098,6 +2391,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 		PublishedAt:        publishedAt,
 		SEOTitle:           ha.SEOTitle,
 		SEODescription:     ha.SEODescription,
+		OGTitle:            ha.OGTitle,
+		OGDescription:      ha.OGDescription,
+		OGImageURL:         ha.OGImageURL,
+		OGImageAlt:         ha.OGImageAlt,
 		HelpfulCount:       ha.HelpfulCount,
 		NotHelpfulCount:    ha.NotHelpfulCount,
 		ViewCount:          ha.ViewCount,
@@ -2105,7 +2402,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalPath(ctx context.Cont
 	}, nil
 }
 
-func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Context, workspaceID, articleKey string) (*model.PublicArticleResponse, error) {
+func (s *DocsHelpcenterService) getPublicArticleByCanonicalKeyUncached(ctx context.Context, workspaceID, articleKey string) (*model.PublicArticleResponse, error) {
 	_, publicID, ok := parseDocsHelpcenterArticleKey(articleKey)
 	if !ok {
 		return nil, nil
@@ -2176,6 +2473,10 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Conte
 		PublishedAt:        publishedAt,
 		SEOTitle:           ha.SEOTitle,
 		SEODescription:     ha.SEODescription,
+		OGTitle:            ha.OGTitle,
+		OGDescription:      ha.OGDescription,
+		OGImageURL:         ha.OGImageURL,
+		OGImageAlt:         ha.OGImageAlt,
 		HelpfulCount:       ha.HelpfulCount,
 		NotHelpfulCount:    ha.NotHelpfulCount,
 		ViewCount:          ha.ViewCount,
@@ -2184,7 +2485,7 @@ func (s *DocsHelpcenterService) GetPublicArticleByCanonicalKey(ctx context.Conte
 }
 
 // GetPublicCollection returns a collection, its published articles, and the parent space slug by workspace and collection key.
-func (s *DocsHelpcenterService) GetPublicCollection(ctx context.Context, workspaceID, collectionKey string) (*model.DocsCollection, []model.PublicNavArticle, string, error) {
+func (s *DocsHelpcenterService) getPublicCollectionUncached(ctx context.Context, workspaceID, collectionKey string) (*model.DocsCollection, []model.PublicNavArticle, string, error) {
 	var (
 		coll     *model.DocsCollection
 		articles []model.PublicNavArticle
@@ -2312,6 +2613,7 @@ func (s *DocsHelpcenterService) CreateRedirect(ctx context.Context, workspaceID 
 			slog.WarnContext(ctx, "persist redirect target_path failed", "redirect_id", redirect.ID, "error", err)
 		}
 	}
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, workspaceID)
 	return redirect, nil
 }
 
@@ -2361,15 +2663,26 @@ func (s *DocsHelpcenterService) UpdateRedirect(ctx context.Context, id string, r
 			slog.WarnContext(ctx, "persist redirect target_path failed", "redirect_id", redirect.ID, "error", err)
 		}
 	}
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, redirect.WorkspaceID)
 	return redirect, nil
 }
 
 func (s *DocsHelpcenterService) DeleteRedirect(ctx context.Context, id string) error {
-	return s.redirectRepo.Delete(ctx, id)
+	redirect, err := s.redirectRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.redirectRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if redirect != nil {
+		s.InvalidateHelpcenterCacheForWorkspace(ctx, redirect.WorkspaceID)
+	}
+	return nil
 }
 
 // ResolvePublicPath resolves a legacy or imported URL path to a redirect target.
-func (s *DocsHelpcenterService) ResolvePublicPath(ctx context.Context, workspaceID, path string) (string, error) {
+func (s *DocsHelpcenterService) resolvePublicPathUncached(ctx context.Context, workspaceID, path string) (string, error) {
 	cfg, err := s.hcRepo.GetConfig(ctx, workspaceID)
 	if err != nil {
 		return "", err
@@ -2392,7 +2705,11 @@ func (s *DocsHelpcenterService) SubmitFeedback(ctx context.Context, documentID s
 	if _, err := s.hcRepo.CreateFeedback(ctx, fb); err != nil {
 		return err
 	}
-	return s.hcRepo.IncrementFeedbackCount(ctx, documentID, req.IsHelpful)
+	if err := s.hcRepo.IncrementFeedbackCount(ctx, documentID, req.IsHelpful); err != nil {
+		return err
+	}
+	s.invalidateHelpcenterCacheForDocument(ctx, documentID)
+	return nil
 }
 
 func (s *DocsHelpcenterService) SubmitFeedbackForLocale(ctx context.Context, documentID, locale string, req model.DocsArticleFeedbackRequest) error {
@@ -2402,7 +2719,22 @@ func (s *DocsHelpcenterService) SubmitFeedbackForLocale(ctx context.Context, doc
 	if locale == "" {
 		return nil
 	}
-	return s.hcRepo.IncrementTranslatedFeedbackCount(ctx, documentID, locale, req.IsHelpful)
+	if err := s.hcRepo.IncrementTranslatedFeedbackCount(ctx, documentID, locale, req.IsHelpful); err != nil {
+		return err
+	}
+	s.invalidateHelpcenterCacheForDocument(ctx, documentID)
+	return nil
+}
+
+func (s *DocsHelpcenterService) invalidateHelpcenterCacheForDocument(ctx context.Context, documentID string) {
+	doc, err := s.docRepo.GetByID(ctx, documentID)
+	if err != nil || doc == nil {
+		if err != nil {
+			slog.WarnContext(ctx, "hc cache: document invalidation lookup failed", "document_id", documentID, "error", err)
+		}
+		return
+	}
+	s.InvalidateHelpcenterCacheForWorkspace(ctx, doc.WorkspaceID)
 }
 
 func formatPublicPublishedAt(value *time.Time) *string {

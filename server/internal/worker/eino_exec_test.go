@@ -29,6 +29,41 @@ func TestProviderUsesAgenticResponses(t *testing.T) {
 	}
 }
 
+func TestDefaultNativeMaxTokensSupportsLargePlannerToolCalls(t *testing.T) {
+	for _, provider := range []string{
+		model.AgentModelProviderAnthropic,
+		model.AgentModelProviderOpenAI,
+		model.AgentModelProviderOpenRouter,
+		model.AgentModelProviderOpenRouterResponses,
+	} {
+		if got := defaultNativeMaxTokensForProvider(provider); got < 16000 {
+			t.Fatalf("expected large native output budget for %q, got %d", provider, got)
+		}
+	}
+}
+
+func TestResolveOpenAIResponsesBaseURLDefaultsToOpenAIAPI(t *testing.T) {
+	if got := resolveOpenAIResponsesBaseURL(""); got != defaultOpenAIResponsesBaseURL {
+		t.Fatalf("expected default openai responses base url %q, got %q", defaultOpenAIResponsesBaseURL, got)
+	}
+	if got := resolveOpenAIResponsesBaseURL("  "); got != defaultOpenAIResponsesBaseURL {
+		t.Fatalf("expected blank openai responses base url to fall back to %q, got %q", defaultOpenAIResponsesBaseURL, got)
+	}
+}
+
+func TestResolveOpenAIResponsesBaseURLPreservesExplicitValue(t *testing.T) {
+	want := "https://proxy.example/v1"
+	if got := resolveOpenAIResponsesBaseURL("  " + want + "  "); got != want {
+		t.Fatalf("expected explicit openai responses base url %q, got %q", want, got)
+	}
+}
+
+func TestResolveOpenRouterBaseURLDefaultsToOpenRouterAPI(t *testing.T) {
+	if got := resolveOpenRouterBaseURL(""); got != defaultOpenRouterBaseURL {
+		t.Fatalf("expected default openrouter base url %q, got %q", defaultOpenRouterBaseURL, got)
+	}
+}
+
 func TestProviderContinuationFromAgenticMessage(t *testing.T) {
 	msg := &schema.AgenticMessage{
 		Role: schema.AgenticRoleTypeAssistant,
@@ -77,6 +112,93 @@ func TestFilterExecutionHistoryAfterSequence(t *testing.T) {
 	}
 }
 
+func TestContinuationAgenticOptionsEmptyWithoutResponseID(t *testing.T) {
+	if opts := continuationAgenticOptions(""); len(opts) != 0 {
+		t.Fatalf("expected no continuation options without response id, got %#v", opts)
+	}
+}
+
+func TestNextAgenticStepStateUsesIncrementalToolResultsForContinuation(t *testing.T) {
+	currentMessages := []*schema.AgenticMessage{
+		schema.UserAgenticMessage("latest human reply"),
+	}
+	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
+	toolResultMessages := []*schema.AgenticMessage{
+		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+	}
+
+	nextResponseID, nextMessages := nextAgenticStepState(
+		currentMessages,
+		assistantMsg,
+		toolResultMessages,
+		"resp_old",
+		&ProviderContinuation{ResponseID: "resp_new"},
+	)
+
+	if nextResponseID != "resp_new" {
+		t.Fatalf("expected continuation response id to advance, got %q", nextResponseID)
+	}
+	if len(nextMessages) != 1 {
+		t.Fatalf("expected only incremental tool-result messages, got %#v", nextMessages)
+	}
+	if nextMessages[0].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected tool result message role, got %#v", nextMessages[0])
+	}
+}
+
+func TestNextAgenticStepStateAppendsAssistantAndToolsWithoutContinuation(t *testing.T) {
+	currentMessages := []*schema.AgenticMessage{
+		schema.UserAgenticMessage("latest human reply"),
+	}
+	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
+	toolResultMessages := []*schema.AgenticMessage{
+		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+	}
+
+	nextResponseID, nextMessages := nextAgenticStepState(
+		currentMessages,
+		assistantMsg,
+		toolResultMessages,
+		"",
+		nil,
+	)
+
+	if nextResponseID != "" {
+		t.Fatalf("expected no continuation response id, got %q", nextResponseID)
+	}
+	if len(nextMessages) != 3 {
+		t.Fatalf("expected transcript-style append behavior, got %#v", nextMessages)
+	}
+}
+
+func TestNextAgenticStepStateDoesNotDuplicateAssistantWithoutContinuation(t *testing.T) {
+	currentMessages := []*schema.AgenticMessage{
+		schema.UserAgenticMessage("latest human reply"),
+	}
+	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
+	toolResultMessages := []*schema.AgenticMessage{
+		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+	}
+
+	_, nextMessages := nextAgenticStepState(
+		currentMessages,
+		assistantMsg,
+		toolResultMessages,
+		"",
+		nil,
+	)
+
+	assistantCount := 0
+	for _, msg := range nextMessages {
+		if msg.Role == schema.AgenticRoleTypeAssistant {
+			assistantCount++
+		}
+	}
+	if assistantCount != 1 {
+		t.Fatalf("expected exactly one assistant message, got %d in %#v", assistantCount, nextMessages)
+	}
+}
+
 func TestToAgenticMessagesIncludesToolResults(t *testing.T) {
 	history := []ExecutionMessage{
 		{
@@ -112,6 +234,134 @@ func TestToAgenticMessagesIncludesToolResults(t *testing.T) {
 	}
 }
 
+func TestBuildAgenticReplayMessagesUsesOpenAIContinuationDeltaOnly(t *testing.T) {
+	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeText, Text: "Need a tool"},
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: "package main"},
+			},
+		},
+		{Role: "user", Content: "continue with the implementation"},
+	}
+
+	msgs, err := buildAgenticReplayMessages(model.AgentModelProviderOpenAI, "", history, "repair and continue", true)
+	if err != nil {
+		t.Fatalf("buildAgenticReplayMessages returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected turn-local message plus tool result and user delta, got %#v", msgs)
+	}
+	if msgs[0].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected turn-local instructions as user message, got %#v", msgs[0])
+	}
+	if msgs[1].Role != schema.AgenticRoleTypeUser || len(msgs[1].ContentBlocks) != 1 || msgs[1].ContentBlocks[0].FunctionToolResult == nil {
+		t.Fatalf("expected tool result delta message, got %#v", msgs[1])
+	}
+	if msgs[2].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected latest human reply to remain, got %#v", msgs[2])
+	}
+}
+
+func TestBuildAgenticReplayMessagesKeepsGenericReplayForOpenRouter(t *testing.T) {
+	history := []ExecutionMessage{
+		{
+			Role: "assistant",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeText, Text: "Need a tool"},
+				{Type: ExecutionBlockTypeToolCall, ToolCallID: "call-1", ToolName: "read_file", Input: json.RawMessage(`{"path":"a.go"}`)},
+			},
+		},
+		{
+			Role: "tool",
+			Blocks: []ExecutionBlock{
+				{Type: ExecutionBlockTypeToolResult, ToolCallID: "call-1", ToolName: "read_file", Output: "package main"},
+			},
+		},
+	}
+
+	msgs, err := buildAgenticReplayMessages(model.AgentModelProviderOpenRouter, "", history, "", true)
+	if err != nil {
+		t.Fatalf("buildAgenticReplayMessages returned error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected assistant/tool replay pair for non-OpenAI continuation path, got %#v", msgs)
+	}
+	if msgs[0].Role != schema.AgenticRoleTypeAssistant {
+		t.Fatalf("expected assistant replay message, got %#v", msgs[0])
+	}
+	if msgs[1].Role != schema.AgenticRoleTypeUser || len(msgs[1].ContentBlocks) != 1 || msgs[1].ContentBlocks[0].FunctionToolResult == nil {
+		t.Fatalf("expected tool result replay message, got %#v", msgs[1])
+	}
+}
+
+func TestToSchemaMessagesIncludesTurnLocalInstructionsWithoutMutatingHistory(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user", Content: "human reply"},
+	}
+
+	msgs, err := toSchemaMessagesWithTurnLocalInstructions("system prompt", history, "use the active contract only")
+	if err != nil {
+		t.Fatalf("toSchemaMessagesWithTurnLocalInstructions returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected system prompt, execution-local message, and history message, got %#v", msgs)
+	}
+	if msgs[1].Role != schema.User || !strings.Contains(msgs[1].Content, "Execution-local instructions for this turn only") {
+		t.Fatalf("expected execution-local user message, got %#v", msgs[1])
+	}
+	if msgs[2].Role != schema.User || msgs[2].Content != "human reply" {
+		t.Fatalf("expected original history message to remain after execution-local instructions, got %#v", msgs[2])
+	}
+	if len(history) != 1 || history[0].Content != "human reply" {
+		t.Fatalf("expected original history slice to remain unchanged, got %#v", history)
+	}
+}
+
+func TestToAgenticMessagesIncludesTurnLocalInstructionsWithoutMutatingHistory(t *testing.T) {
+	history := []ExecutionMessage{
+		{Role: "user", Content: "human reply"},
+	}
+
+	msgs, err := toAgenticMessagesWithTurnLocalInstructions("system prompt", history, "repair the failed contract and continue")
+	if err != nil {
+		t.Fatalf("toAgenticMessagesWithTurnLocalInstructions returned error: %v", err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected system prompt, execution-local message, and history message, got %#v", msgs)
+	}
+	if msgs[1].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected execution-local user agentic message, got %#v", msgs[1])
+	}
+	executionLocalJSON, err := json.Marshal(msgs[1])
+	if err != nil {
+		t.Fatalf("marshal execution-local agentic message: %v", err)
+	}
+	if !strings.Contains(string(executionLocalJSON), "Execution-local instructions for this turn only") {
+		t.Fatalf("expected execution-local instruction marker, got %s", string(executionLocalJSON))
+	}
+	if msgs[2].Role != schema.AgenticRoleTypeUser {
+		t.Fatalf("expected original history message to remain after execution-local instructions, got %#v", msgs[2])
+	}
+	historyJSON, err := json.Marshal(msgs[2])
+	if err != nil {
+		t.Fatalf("marshal history agentic message: %v", err)
+	}
+	if !strings.Contains(string(historyJSON), "human reply") {
+		t.Fatalf("expected original history text to remain after execution-local instructions, got %s", string(historyJSON))
+	}
+	if len(history) != 1 || history[0].Content != "human reply" {
+		t.Fatalf("expected original history slice to remain unchanged, got %#v", history)
+	}
+}
+
 func TestCompactToolOutputForModelCompactsLargeReadResults(t *testing.T) {
 	output := strings.Repeat("line of file contents\n", 500)
 
@@ -144,6 +394,32 @@ func TestAnalyzeToolOutputForModelTracksCompactionMetadata(t *testing.T) {
 	}
 	if !strings.Contains(analysis.Content, "truncated") {
 		t.Fatalf("expected compaction marker in output, got %q", analysis.Content)
+	}
+}
+
+func TestAnalyzeToolOutputForModelHonorsBoundedJSONCompactionExemption(t *testing.T) {
+	output := `{"_helpin_compaction":{"exempt":true,"max_runes":30000,"mode":"bounded_index"},"rows":["` + strings.Repeat("x", 9000) + `"]}`
+
+	analysis := analyzeToolOutputForModel("scan_trivy", output)
+
+	if analysis.Compacted {
+		t.Fatalf("expected bounded JSON to avoid compaction, got %#v", analysis)
+	}
+	if analysis.Content != output {
+		t.Fatal("expected original output to be preserved")
+	}
+}
+
+func TestAnalyzeToolOutputForModelIgnoresOverCapCompactionExemption(t *testing.T) {
+	output := `{"_helpin_compaction":{"exempt":true,"max_runes":30000,"mode":"bounded_index"},"rows":["` + strings.Repeat("x", 31000) + `"]}`
+
+	analysis := analyzeToolOutputForModel("scan_trivy", output)
+
+	if !analysis.Compacted {
+		t.Fatalf("expected over-cap bounded JSON to compact, got %#v", analysis)
+	}
+	if !strings.Contains(analysis.Content, "truncated") {
+		t.Fatalf("expected compaction marker, got %q", analysis.Content)
 	}
 }
 
@@ -513,6 +789,34 @@ func TestSanitizeSchemaMessageToolCallsNormalizesInvalidArguments(t *testing.T) 
 
 	if got := msg.ToolCalls[0].Function.Arguments; got != "{}" {
 		t.Fatalf("expected normalized tool args, got %q", got)
+	}
+}
+
+func TestToEinoToolInfosPreservesNestedRequiredFields(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	defs := registry.DefinitionsFor(map[string]bool{ToolPublishTaskPlan: true})
+	infos, err := toEinoToolInfos(defs)
+	if err != nil {
+		t.Fatalf("toEinoToolInfos returned error: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("expected one tool info, got %d", len(infos))
+	}
+
+	toolSchema, err := infos[0].ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema returned error: %v", err)
+	}
+	encoded, _ := json.Marshal(toolSchema)
+	schemaJSON := string(encoded)
+	for _, snippet := range []string{
+		`"required":["content"]`,
+		`"required":["proposed_tasks","summary"]`,
+		`"required":["acceptance_criteria","dependency_refs","description","name","task_type"]`,
+	} {
+		if !strings.Contains(schemaJSON, snippet) {
+			t.Fatalf("expected converted schema to contain %s, got %s", snippet, schemaJSON)
+		}
 	}
 }
 

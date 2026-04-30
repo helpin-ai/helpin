@@ -34,18 +34,135 @@ type nativeToolPressureSummary struct {
 	TopToolsByPressure []string
 }
 
+func nativeContinuationMode(continuation *ProviderContinuation) string {
+	if continuation == nil {
+		return "fresh"
+	}
+	if strings.TrimSpace(continuation.ResponseID) != "" {
+		return "response_id"
+	}
+	if strings.TrimSpace(continuation.PreviousResponseID) != "" {
+		return "previous_response_id"
+	}
+	return "fresh"
+}
+
+func resolveNativeSystemPrompt(execCtx *ExecutionContext, config *WorkflowConfig) (string, bool) {
+	if execCtx == nil {
+		return BuildSystemPrompt(nil, nil, nil, nil, "", "", config), true
+	}
+	options := defaultSystemPromptOptions()
+	if execCtx.NativeSelectivePathEnabled {
+		options.IncludeResolvedSkillText = false
+	}
+	return buildSystemPromptWithOptions(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config, options), options.IncludeResolvedSkillText
+}
+
+func resolveNativeInitialInstructionTransport(execCtx *ExecutionContext) (string, string, string) {
+	if execCtx == nil {
+		return "", "", "none"
+	}
+	initialInstructions := strings.TrimSpace(execCtx.InitialInstructions)
+	phaseGuidance := strings.TrimSpace(execCtx.PhaseGuidance)
+	if initialInstructions == "" && phaseGuidance == "" {
+		return "", "", "none"
+	}
+	if execCtx.NativeSelectivePathEnabled {
+		if phaseGuidance == "" {
+			return "", "", "none"
+		}
+		return "", "Current phase guidance for this turn:\n" + phaseGuidance, "turn_local"
+	}
+	return initialInstructions, "", "user_prompt"
+}
+
+func resolveNativeRepairGuidanceTransport(execCtx *ExecutionContext) (string, string) {
+	if execCtx == nil || !execCtx.NativeSelectivePathEnabled {
+		return "", "none"
+	}
+	repairGuidance := strings.TrimSpace(execCtx.RepairGuidance)
+	if repairGuidance == "" {
+		return "", "none"
+	}
+	return "Repair guidance for this turn:\n" + repairGuidance, "turn_local"
+}
+
+func resolveNativeSupplementTransport(run *model.AgentRun, execCtx *ExecutionContext, systemPrompt string) (string, string, string) {
+	trimmedSystemPrompt := strings.TrimSpace(systemPrompt)
+	turnLocalInstructions := ""
+	if execCtx != nil {
+		turnLocalInstructions = strings.TrimSpace(execCtx.TurnLocalInstructions)
+	}
+	activeSkillInstructions := ""
+	if execCtx != nil {
+		activeSkillInstructions = buildActiveSkillInstructionSection(execCtx.ActiveSkillInstructions)
+	}
+
+	supplement := BuildExecutionSupplementPrompt(run, executionContextRunFacts(execCtx), executionContextArtifactContext(execCtx))
+	if execCtx != nil && execCtx.NativeSelectivePathEnabled {
+		if strings.TrimSpace(supplement) == "" {
+			if strings.TrimSpace(activeSkillInstructions) == "" {
+				return trimmedSystemPrompt, turnLocalInstructions, "none"
+			}
+			return trimmedSystemPrompt, joinInstructionSections(turnLocalInstructions, activeSkillInstructions), "turn_local"
+		}
+		return trimmedSystemPrompt, joinInstructionSections(turnLocalInstructions, activeSkillInstructions, supplement), "turn_local"
+	}
+	if supplement == "" {
+		return trimmedSystemPrompt, turnLocalInstructions, "none"
+	}
+	return strings.TrimSpace(trimmedSystemPrompt + "\n\n## Current Run State\n" + supplement), turnLocalInstructions, "system"
+}
+
+func buildActiveSkillInstructionSection(activeSkillInstructions string) string {
+	activeSkillInstructions = strings.TrimSpace(activeSkillInstructions)
+	if activeSkillInstructions == "" {
+		return ""
+	}
+	return "Active skill instructions for this turn:\n" + activeSkillInstructions
+}
+
+func joinInstructionSections(parts ...string) string {
+	sections := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		sections = append(sections, part)
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+func executionContextRunFacts(execCtx *ExecutionContext) map[string]string {
+	if execCtx == nil {
+		return nil
+	}
+	return execCtx.RunFacts
+}
+
+func executionContextArtifactContext(execCtx *ExecutionContext) *ArtifactContext {
+	if execCtx == nil {
+		return nil
+	}
+	return execCtx.ArtifactContext
+}
+
 func NewEinoExecutor(
 	kind string,
 	modelFactory *EinoModelFactory,
 	webSearch WebSearchClient,
 	exaSearch *ExaSearchClient,
+	webFetchProxyURLs string,
 	runRepo *repository.AgentRunRepository,
 	artifactRepo *repository.AgentRunArtifactRepository,
 ) *EinoExecutor {
+	tools := NewToolRegistry(webSearch, exaSearch)
+	tools.SetWebFetchProxyURLs(webFetchProxyURLs)
 	return &EinoExecutor{
 		kind:         kind,
 		modelFactory: modelFactory,
-		tools:        NewToolRegistry(webSearch, exaSearch),
+		tools:        tools,
 		runRepo:      runRepo,
 		artifactRepo: artifactRepo,
 	}
@@ -68,7 +185,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		execCtx.AllowedTools = allowedToolSet(execCtx.ResolvedProfile)
 	}
 
-	systemPrompt := BuildSystemPrompt(execCtx.Agent, execCtx.Task, execCtx.Epic, execCtx.Conversation, execCtx.PlanningStage, execCtx.PlanningMethodology, config)
+	systemPrompt, includesResolvedSkillText := resolveNativeSystemPrompt(execCtx, config)
 
 	var checklist []model.PMChecklistItem
 	if execCtx.TaskID != "" && execCtx.Services != nil {
@@ -98,6 +215,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		}
 	}
 
+	userPromptInitialInstructions, initialTurnLocalInstructions, initialInstructionTransport := resolveNativeInitialInstructionTransport(execCtx)
 	userPrompt := BuildUserPrompt(
 		execCtx.Agent,
 		execCtx.Task,
@@ -108,13 +226,13 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		checklist,
 		execCtx.ArtifactContext,
 		execCtx.PlanningStage,
-		execCtx.InitialInstructions,
+		userPromptInitialInstructions,
 	)
 
 	history := append([]ExecutionMessage(nil), execCtx.ConversationHistory...)
-	if supplement := BuildExecutionSupplementPrompt(run, execCtx.RunFacts, execCtx.ArtifactContext); supplement != "" {
-		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n## Current Run State\n" + supplement)
-	}
+	repairTurnLocalInstructions, repairTransport := resolveNativeRepairGuidanceTransport(execCtx)
+	systemPrompt, turnLocalInstructions, supplementTransport := resolveNativeSupplementTransport(run, execCtx, systemPrompt)
+	turnLocalInstructions = joinInstructionSections(initialTurnLocalInstructions, repairTurnLocalInstructions, turnLocalInstructions)
 	if len(history) == 0 {
 		history = []ExecutionMessage{{
 			Role:    "user",
@@ -123,6 +241,11 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 	}
 	provider, modelName := resolveProviderAndModel(execCtx.Agent)
 	toolDefs := e.tools.DefinitionsFor(execCtx.AllowedTools)
+	trimmedTurnLocalInstructions := strings.TrimSpace(turnLocalInstructions)
+	trimmedActiveSkillInstructions := strings.TrimSpace(execCtx.ActiveSkillInstructions)
+	trimmedInitialInstructions := strings.TrimSpace(execCtx.InitialInstructions)
+	trimmedPhaseGuidance := strings.TrimSpace(execCtx.PhaseGuidance)
+	trimmedRepairGuidance := strings.TrimSpace(execCtx.RepairGuidance)
 	slog.InfoContext(execCtx.Context, "native runtime execution starting",
 		"workspace_id", execCtx.WorkspaceID,
 		"run_id", execCtx.RunID,
@@ -130,10 +253,26 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		"provider", provider,
 		"model", modelName,
 		"runtime_kind", e.kind,
+		"preset_key", strings.TrimSpace(execCtx.Agent.EffectivePresetKey()),
+		"target_type", strings.TrimSpace(execCtx.TargetType),
+		"native_selective_path_enabled", execCtx.NativeSelectivePathEnabled,
+		"system_prompt_includes_resolved_skill_text", includesResolvedSkillText,
+		"initial_instruction_transport", initialInstructionTransport,
+		"initial_instruction_chars", len([]rune(trimmedInitialInstructions)),
+		"phase_guidance_chars", len([]rune(trimmedPhaseGuidance)),
+		"repair_transport", repairTransport,
+		"repair_guidance_chars", len([]rune(trimmedRepairGuidance)),
+		"runtime_skill_ref_count", len(execCtx.RuntimeSkillRefs),
+		"active_skill_ref_count", len(execCtx.ActiveRuntimeSkillRefs),
+		"active_skill_instruction_chars", len([]rune(trimmedActiveSkillInstructions)),
+		"active_policy_required_interactions", SortedUniqueStrings(execCtx.SkillPolicy.CompletionRequiresInteractionKinds),
+		"supplement_transport", supplementTransport,
+		"turn_local_instructions_present", trimmedTurnLocalInstructions != "",
+		"turn_local_instruction_chars", len([]rune(trimmedTurnLocalInstructions)),
 		"history_messages", len(history),
 		"artifact_entries", lenArtifactEntries(execCtx.ArtifactContext),
 		"tool_count", len(toolDefs),
-		"continuation_present", execCtx.ProviderContinuation != nil && strings.TrimSpace(execCtx.ProviderContinuation.ResponseID) != "",
+		"continuation_mode", nativeContinuationMode(execCtx.ProviderContinuation),
 	)
 
 	timeout := time.Duration(config.TimeoutMinutes) * time.Minute
@@ -142,6 +281,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 
 	runCtx := *execCtx
 	runCtx.Context = ctx
+	runCtx.TurnLocalInstructions = turnLocalInstructions
 	if execCtx.Heartbeat != nil {
 		_ = execCtx.Heartbeat("native_sdk_starting")
 	}
@@ -182,7 +322,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 		case "tool_call_started":
 			_ = execCtx.Heartbeat("tool_" + event.ToolName)
 		}
-	})
+	}, turnLocalInstructions)
 	stopHeartbeat()
 	if execErr != nil && !errors.Is(execErr, ErrMaxToolStepsReached) {
 		slog.ErrorContext(execCtx.Context, "native runtime execution failed",
@@ -337,7 +477,7 @@ func (e *EinoExecutor) Execute(execCtx *ExecutionContext, run *model.AgentRun) e
 			_ = e.runRepo.Update(ctx, run)
 
 			seqNo++
-			e.saveArtifact(ctx, run, "story_plan_proposal", "json", string(payload), seqNo)
+			e.saveArtifact(ctx, run, "task_plan_proposal", "json", string(payload), seqNo)
 			seqNo++
 			e.saveArtifact(ctx, run, "orchestration_proposal", "json", string(payload), seqNo)
 		case "":

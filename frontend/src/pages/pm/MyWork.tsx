@@ -3,14 +3,20 @@ import { differenceInDays, parseISO, format } from 'date-fns';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import {
   AlertCircleIcon,
+  CancelCircleIcon,
   ChartColumnIcon,
   Calendar03Icon,
+  CheckmarkCircle02Icon,
   Clock01Icon,
+  Key01Icon,
+  Loading01Icon,
+  MessagePreview01Icon,
   PencilEdit02Icon,
   Timer01Icon,
   UserGroupIcon,
   ClipboardIcon,
   RecordIcon,
+  SecurityCheckIcon,
 } from '@/lib/icons';
 import { useTitle } from '@/hooks/useTitle';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -24,6 +30,16 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 type Mode = 'assigned' | 'requested';
 type DeadlineStatus = 'overdue' | 'approaching' | 'normal';
+type AgentRunEventDetail = {
+  entity?: string;
+  entity_id?: string;
+  parent_type?: string;
+  parent_id?: string;
+  sent_at?: string;
+  agent_id?: string;
+  status?: string;
+  pause_reason?: Task['latest_run_pause_reason'];
+};
 
 const DEADLINE_PILL_STYLE: Record<DeadlineStatus, string> = {
   overdue: 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400',
@@ -36,6 +52,42 @@ const DEADLINE_TOOLTIP: Record<DeadlineStatus, string> = {
   approaching: 'Due soon',
   normal: 'Due date',
 };
+
+const AGENT_RUN_PILL_STYLE: Record<string, string> = {
+  queued: 'border-border bg-muted/50 text-muted-foreground',
+  running: 'border-foreground/20 bg-foreground/5 text-foreground',
+  paused: 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300',
+  completed: 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300',
+  failed: 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400',
+  cancelled: 'border-border bg-muted/50 text-muted-foreground',
+};
+
+const AGENT_RUN_LABEL: Record<string, string> = {
+  queued: 'Agent queued',
+  running: 'Agent running',
+  completed: 'Agent completed',
+  failed: 'Agent failed',
+  cancelled: 'Agent cancelled',
+};
+
+function getAgentRunLabel(task: Task) {
+  if (!task.latest_run_status) return null;
+  if (task.latest_run_status === 'paused') {
+    if (task.latest_run_pause_reason === 'human_approval') return 'Agent needs approval';
+    if (task.latest_run_pause_reason === 'authentication') return 'Agent needs auth';
+    return 'Agent needs input';
+  }
+  return AGENT_RUN_LABEL[task.latest_run_status] ?? `Agent ${task.latest_run_status}`;
+}
+
+function normalizePauseReason(value: AgentRunEventDetail['pause_reason']) {
+  if (!value || value === 'none') return null;
+  return value;
+}
+
+function isAgentRunEventDetail(value: unknown): value is AgentRunEventDetail {
+  return typeof value === 'object' && value !== null;
+}
 
 
 
@@ -75,6 +127,36 @@ export function MyWorkPage() {
       })
       .finally(() => setLoading(false));
   }, [workspaceId, memberId, mode, refreshKey]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    const handleAgentRunEvent = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (!isAgentRunEventDetail(detail) || detail.entity !== 'agent_run' || detail.parent_type !== 'task' || !detail.parent_id) return;
+
+      setTasks((currentTasks) => currentTasks.map((task) => {
+        if (task.id !== detail.parent_id) return task;
+        const nextPauseReason =
+          detail.status && detail.status !== 'paused'
+            ? null
+            : Object.prototype.hasOwnProperty.call(detail, 'pause_reason')
+              ? normalizePauseReason(detail.pause_reason)
+              : task.latest_run_pause_reason;
+
+        return {
+          ...task,
+          latest_run_id: detail.entity_id || task.latest_run_id,
+          latest_run_agent_id: detail.agent_id || task.latest_run_agent_id,
+          latest_run_status: detail.status || task.latest_run_status,
+          latest_run_pause_reason: nextPauseReason,
+          latest_run_at: detail.sent_at || new Date().toISOString(),
+        };
+      }));
+    };
+
+    window.addEventListener('agent_run-updated', handleAgentRunEvent);
+    return () => window.removeEventListener('agent_run-updated', handleAgentRunEvent);
+  }, [workspaceId]);
 
     // Refresh list when a task is updated or archived via the global panel
   useEffect(() => {
@@ -376,6 +458,16 @@ function TaskRow({ task, onClick, teamName }: {
       days < 0 ? 'overdue' : days <= 3 ? 'approaching' : 'normal';
     return { label: format(d, 'MMM d'), status };
   }, [task.deadline]);
+  const agentRunLabel = getAgentRunLabel(task);
+  const agentRunStatus = task.latest_run_status ?? 'queued';
+  const AgentRunIcon =
+    agentRunStatus === 'running' ? Loading01Icon
+      : agentRunStatus === 'completed' ? CheckmarkCircle02Icon
+        : agentRunStatus === 'failed' || agentRunStatus === 'cancelled' ? CancelCircleIcon
+          : agentRunStatus === 'paused' && task.latest_run_pause_reason === 'human_approval' ? SecurityCheckIcon
+            : agentRunStatus === 'paused' && task.latest_run_pause_reason === 'authentication' ? Key01Icon
+              : agentRunStatus === 'paused' ? MessagePreview01Icon
+                : Clock01Icon;
 
   return (
     <button
@@ -415,6 +507,18 @@ function TaskRow({ task, onClick, teamName }: {
           <span className="flex h-5 items-center gap-1 rounded-sm border-[0.5px] border-red-300 bg-red-50 px-2 text-[11px] font-medium text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 shrink-0">
             Blocked
           </span>
+        )}
+
+        {agentRunLabel && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`flex h-5 items-center gap-1 rounded-sm border-[0.5px] px-2 text-[11px] font-medium shrink-0 ${AGENT_RUN_PILL_STYLE[agentRunStatus] ?? AGENT_RUN_PILL_STYLE.queued}`}>
+                <AgentRunIcon className={`h-3 w-3 ${agentRunStatus === 'running' ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{agentRunLabel}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">{agentRunLabel}</TooltipContent>
+          </Tooltip>
         )}
 
         {deadlineInfo && (

@@ -34,6 +34,7 @@ func newNotificationCRUDTestDB(t *testing.T) *gorm.DB {
 			avatar_background_mode TEXT,
 			avatar_background_color TEXT,
 			default_workspace_id TEXT,
+			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 func toolListDocuments(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -36,6 +39,43 @@ func toolListDocuments(ctx *ExecutionContext, input json.RawMessage) (string, er
 	return toCompactJSONString(summaries), nil
 }
 
+func toolListCollections(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.ListCollections == nil {
+		return "", fmt.Errorf("docs access is not available for this agent")
+	}
+	var params struct {
+		SpaceID *string `json:"space_id"`
+	}
+	_ = json.Unmarshal(input, &params)
+
+	collections, err := ctx.Services.ListCollections(ctx.Context, ctx.WorkspaceID, params.SpaceID)
+	if err != nil {
+		return "", fmt.Errorf("list collections: %w", err)
+	}
+	if len(collections) == 0 {
+		return "No collections found.", nil
+	}
+
+	type collectionSummary struct {
+		ID                 string  `json:"id"`
+		Name               string  `json:"name"`
+		Slug               string  `json:"slug"`
+		SpaceID            string  `json:"space_id"`
+		ParentCollectionID *string `json:"parent_collection_id,omitempty"`
+	}
+	summaries := make([]collectionSummary, 0, len(collections))
+	for _, c := range collections {
+		summaries = append(summaries, collectionSummary{
+			ID:                 c.ID,
+			Name:               c.Name,
+			Slug:               c.Slug,
+			SpaceID:            c.SpaceID,
+			ParentCollectionID: c.ParentCollectionID,
+		})
+	}
+	return toCompactJSONString(summaries), nil
+}
+
 func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.Services == nil || ctx.Services.GetDocument == nil {
 		return "", fmt.Errorf("docs access is not available for this agent")
@@ -59,11 +99,12 @@ func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, err
 	}
 
 	type docDetail struct {
-		ID          string  `json:"id"`
-		Title       string  `json:"title"`
-		Status      string  `json:"status"`
-		TeamID      *string `json:"team_id,omitempty"`
-		ContentText string  `json:"content_text,omitempty"`
+		ID          string              `json:"id"`
+		Title       string              `json:"title"`
+		Status      string              `json:"status"`
+		TeamID      *string             `json:"team_id,omitempty"`
+		ContentText string              `json:"content_text,omitempty"`
+		Blocks      []documentBlockView `json:"blocks,omitempty"`
 	}
 	detail := docDetail{ID: doc.ID, Title: doc.Title, Status: doc.Status, TeamID: doc.TeamID}
 
@@ -72,8 +113,119 @@ func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, err
 			detail.ContentText = text
 		}
 	}
+	if ctx.Services.ListDocumentBlocks != nil {
+		if blocks, err := ctx.Services.ListDocumentBlocks(ctx.Context, params.DocumentID); err == nil {
+			detail.Blocks = compactDocumentBlocks(blocks)
+		}
+	}
 
 	return toCompactJSONString(detail), nil
+}
+
+type documentBlockView struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Revision    int    `json:"revision"`
+	ContentText string `json:"content_text,omitempty"`
+}
+
+type documentBlockDetailView struct {
+	ID          string          `json:"id"`
+	Type        string          `json:"type"`
+	Revision    int             `json:"revision"`
+	ContentText string          `json:"content_text,omitempty"`
+	Content     json.RawMessage `json:"content,omitempty"`
+}
+
+const maxFullDocumentBlocksToolFetch = 20
+
+func compactDocumentBlocks(blocks []model.DocsBlock) []documentBlockView {
+	out := make([]documentBlockView, 0, len(blocks))
+	for _, block := range blocks {
+		out = append(out, documentBlockView{
+			ID:          block.ID,
+			Type:        block.Type,
+			Revision:    block.Revision,
+			ContentText: truncateDocsToolText(block.ContentText, 500),
+		})
+	}
+	return out
+}
+
+func truncateDocsToolText(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if max <= 0 || len(value) <= max {
+		return value
+	}
+	return strings.TrimSpace(value[:max]) + "..."
+}
+
+func toolGetDocumentBlocks(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.ListDocumentBlocks == nil {
+		return "", fmt.Errorf("docs block access is not available for this agent")
+	}
+	var params struct {
+		DocumentID     string   `json:"document_id"`
+		BlockIDs       []string `json:"block_ids"`
+		IncludeContent bool     `json:"include_content"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	params.DocumentID = strings.TrimSpace(params.DocumentID)
+	if params.DocumentID == "" {
+		return "", fmt.Errorf("document_id is required")
+	}
+
+	blocks, err := ctx.Services.ListDocumentBlocks(ctx.Context, params.DocumentID)
+	if err != nil {
+		return "", fmt.Errorf("get document blocks: %w", err)
+	}
+
+	filtered := blocks
+	if len(params.BlockIDs) > 0 {
+		requested := make(map[string]struct{}, len(params.BlockIDs))
+		for _, id := range params.BlockIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			requested[id] = struct{}{}
+		}
+		filtered = make([]model.DocsBlock, 0, len(requested))
+		found := make(map[string]struct{}, len(requested))
+		for _, block := range blocks {
+			if _, ok := requested[block.ID]; !ok {
+				continue
+			}
+			filtered = append(filtered, block)
+			found[block.ID] = struct{}{}
+		}
+		for id := range requested {
+			if _, ok := found[id]; !ok {
+				return "", fmt.Errorf("block %s not found", id)
+			}
+		}
+	}
+
+	if !params.IncludeContent {
+		return toCompactJSONString(compactDocumentBlocks(filtered)), nil
+	}
+	if len(filtered) > maxFullDocumentBlocksToolFetch {
+		return "", fmt.Errorf("include_content is limited to %d blocks; provide block_ids to fetch a smaller set", maxFullDocumentBlocksToolFetch)
+	}
+
+	out := make([]documentBlockDetailView, 0, len(filtered))
+	for _, block := range filtered {
+		out = append(out, documentBlockDetailView{
+			ID:          block.ID,
+			Type:        block.Type,
+			Revision:    block.Revision,
+			ContentText: block.ContentText,
+			Content:     block.Content,
+		})
+	}
+	return toCompactJSONString(out), nil
 }
 
 func toolSearchDocuments(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -103,6 +255,138 @@ func toolSearchDocuments(ctx *ExecutionContext, input json.RawMessage) (string, 
 	}
 
 	return toCompactJSONString(hits), nil
+}
+
+func toolCreateDocument(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		SpaceID      string          `json:"space_id"`
+		Title        string          `json:"title"`
+		CollectionID *string         `json:"collection_id"`
+		Content      json.RawMessage `json:"content"`
+		Icon         *string         `json:"icon"`
+		Tags         []string        `json:"tags"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	params.SpaceID = strings.TrimSpace(params.SpaceID)
+	params.Title = strings.TrimSpace(params.Title)
+	if params.SpaceID == "" {
+		return "", fmt.Errorf("space_id is required")
+	}
+	if params.Title == "" {
+		return "", fmt.Errorf("title is required")
+	}
+	if existing, ok, err := existingOutputDocument(ctx, params.SpaceID, params.CollectionID); err != nil {
+		return "", err
+	} else if ok {
+		return existing, nil
+	}
+
+	content := normalizeDocumentToolContent(params.Content)
+	commandInput, _ := json.Marshal(map[string]any{
+		"space_id":      params.SpaceID,
+		"title":         params.Title,
+		"collection_id": params.CollectionID,
+		"content":       content,
+		"icon":          params.Icon,
+		"tags":          params.Tags,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "workspace", ctx.WorkspaceID, "docs.create_document", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("create document: %w", err)
+		}
+		if err := persistOutputDocumentKey(ctx, output); err != nil {
+			return "", err
+		}
+		return string(output), nil
+	}
+
+	if ctx.Services == nil || ctx.Services.CreateDocument == nil {
+		return "", fmt.Errorf("docs creation is not available for this agent")
+	}
+	doc, err := ctx.Services.CreateDocument(ctx.Context, ctx.WorkspaceID, ctx.AgentID, model.CreateDocsDocumentRequest{
+		SpaceID:      params.SpaceID,
+		CollectionID: params.CollectionID,
+		Title:        params.Title,
+		Icon:         params.Icon,
+		Tags:         params.Tags,
+	}, content)
+	if err != nil {
+		return "", fmt.Errorf("create document: %w", err)
+	}
+	output := toCompactJSONString(map[string]any{
+		"id":       doc.ID,
+		"title":    doc.Title,
+		"status":   doc.Status,
+		"space_id": doc.SpaceID,
+	})
+	if err := persistOutputDocumentKey(ctx, json.RawMessage(output)); err != nil {
+		return "", err
+	}
+	return output, nil
+}
+
+func existingOutputDocument(ctx *ExecutionContext, spaceID string, collectionID *string) (string, bool, error) {
+	if ctx == nil || ctx.RunInput == nil || ctx.RunInput.Output == nil || ctx.Services == nil || ctx.Services.GetDocumentKey == nil || ctx.Services.GetDocument == nil {
+		return "", false, nil
+	}
+	output := ctx.RunInput.Output
+	if !strings.EqualFold(strings.TrimSpace(output.Type), "docs_document") || strings.TrimSpace(output.IdempotencyKey) == "" {
+		return "", false, nil
+	}
+	if strings.TrimSpace(output.SpaceID) != "" && strings.TrimSpace(output.SpaceID) != strings.TrimSpace(spaceID) {
+		return "", false, nil
+	}
+	if output.CollectionID != nil && collectionID != nil && strings.TrimSpace(*output.CollectionID) != strings.TrimSpace(*collectionID) {
+		return "", false, nil
+	}
+	record, err := ctx.Services.GetDocumentKey(ctx.Context, ctx.WorkspaceID, model.DocsDocumentKeyTypeReleaseNotes, output.IdempotencyKey)
+	if err != nil {
+		return "", false, fmt.Errorf("get existing output document: %w", err)
+	}
+	if record == nil || record.DocumentID == nil || strings.TrimSpace(*record.DocumentID) == "" {
+		return "", false, nil
+	}
+	doc, err := ctx.Services.GetDocument(ctx.Context, strings.TrimSpace(*record.DocumentID))
+	if err != nil {
+		return "", false, fmt.Errorf("load existing output document: %w", err)
+	}
+	if doc == nil {
+		return "", false, nil
+	}
+	return toCompactJSONString(map[string]any{
+		"id":       doc.ID,
+		"title":    doc.Title,
+		"status":   doc.Status,
+		"space_id": doc.SpaceID,
+	}), true, nil
+}
+
+func persistOutputDocumentKey(ctx *ExecutionContext, raw json.RawMessage) error {
+	if ctx == nil || ctx.RunInput == nil || ctx.RunInput.Output == nil || ctx.Services == nil || ctx.Services.UpsertDocumentKey == nil {
+		return nil
+	}
+	output := ctx.RunInput.Output
+	if !strings.EqualFold(strings.TrimSpace(output.Type), "docs_document") || strings.TrimSpace(output.IdempotencyKey) == "" {
+		return nil
+	}
+	var payload struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("parse created document output: %w", err)
+	}
+	if strings.TrimSpace(payload.ID) == "" {
+		return fmt.Errorf("created document output did not include id")
+	}
+	documentID := strings.TrimSpace(payload.ID)
+	return ctx.Services.UpsertDocumentKey(ctx.Context, &model.DocsDocumentKey{
+		WorkspaceID: ctx.WorkspaceID,
+		KeyType:     model.DocsDocumentKeyTypeReleaseNotes,
+		Key:         strings.TrimSpace(output.IdempotencyKey),
+		DocumentID:  &documentID,
+	})
 }
 
 func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -140,6 +424,69 @@ func toolWriteDocumentContent(ctx *ExecutionContext, input json.RawMessage) (str
 		return "", fmt.Errorf("write document content: %w", err)
 	}
 	return fmt.Sprintf("Document %s updated.", params.DocumentID), nil
+}
+
+func toolUpdateDocumentBlock(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	var params struct {
+		DocumentID string          `json:"document_id"`
+		BlockID    string          `json:"block_id"`
+		Revision   int             `json:"revision"`
+		Content    json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return "", fmt.Errorf("parse input: %w", err)
+	}
+	params.DocumentID = strings.TrimSpace(params.DocumentID)
+	params.BlockID = strings.TrimSpace(params.BlockID)
+	if params.DocumentID == "" {
+		return "", fmt.Errorf("document_id is required")
+	}
+	if params.BlockID == "" {
+		return "", fmt.Errorf("block_id is required")
+	}
+	if params.Revision <= 0 {
+		return "", fmt.Errorf("revision is required")
+	}
+	if len(params.Content) == 0 || strings.TrimSpace(string(params.Content)) == "" || strings.TrimSpace(string(params.Content)) == "null" {
+		return "", fmt.Errorf("content is required")
+	}
+	commandInput, _ := json.Marshal(map[string]any{
+		"document_id": params.DocumentID,
+		"block_id":    params.BlockID,
+		"revision":    params.Revision,
+		"content":     params.Content,
+	})
+	if output, ok, err := executeInternalCommand(ctx, "document", params.DocumentID, "docs.update_document_block", commandInput); ok {
+		if err != nil {
+			return "", fmt.Errorf("update document block: %w", err)
+		}
+		return string(output), nil
+	}
+	if ctx.Services == nil || ctx.Services.UpdateDocumentBlock == nil {
+		return "", fmt.Errorf("docs block mutation is not available for this agent")
+	}
+	if _, err := ctx.Services.UpdateDocumentBlock(ctx.Context, params.DocumentID, params.BlockID, params.Revision, params.Content, ctx.AgentID); err != nil {
+		return "", fmt.Errorf("update document block: %w", err)
+	}
+	return fmt.Sprintf("Block %s updated.", params.BlockID), nil
+}
+
+func normalizeDocumentToolContent(raw json.RawMessage) json.RawMessage {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil
+	}
+	content := json.RawMessage(trimmed)
+	if len(content) > 0 && content[0] == '"' {
+		var markdown string
+		if err := json.Unmarshal(content, &markdown); err == nil {
+			if strings.TrimSpace(markdown) == "" {
+				return nil
+			}
+			return tiptap.MarkdownToJSON(markdown)
+		}
+	}
+	return content
 }
 
 func latestApprovedMarkdownArtifactContent(ctx *ExecutionContext) (json.RawMessage, bool) {

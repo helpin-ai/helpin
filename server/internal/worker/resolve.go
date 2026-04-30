@@ -93,7 +93,7 @@ func ResolveApprovalState(resolved ResolvedProfile) string {
 
 func defaultProfileNameForPreset(presetKey string, isSystem bool) string {
 	switch strings.TrimSpace(presetKey) {
-	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator:
+	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetCommandAgent:
 		return model.AgentPresetEpicPlanner
 	case model.AgentPresetSupportAgent:
 		return model.AgentPresetSupportAgent
@@ -136,6 +136,7 @@ func hasRepoTools(tools []string) bool {
 		"list_directory": true, "search_files": true, "ripgrep": true,
 		"grep": true, "list_symbols": true, "run_command": true,
 		"create_branch": true, "commit_and_push": true, "open_pr": true,
+		ToolScanSemgrep: true, ToolScanTrivy: true, ToolScanGitleaks: true,
 	}
 	for _, t := range tools {
 		if repoTools[t] {

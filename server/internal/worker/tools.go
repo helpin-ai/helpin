@@ -13,6 +13,7 @@ type ToolRegistry struct {
 	defs      []ToolDefinition
 	webSearch WebSearchClient
 	exaSearch *ExaSearchClient
+	webFetch  *WebFetchClient
 }
 
 // ToolFunc is a function that executes a tool and returns its result.
@@ -28,6 +29,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		tools:     make(map[string]ToolFunc),
 		webSearch: webSearch,
 		exaSearch: exaClient,
+		webFetch:  NewWebFetchClient(""),
 	}
 
 	// Filesystem tools
@@ -261,6 +263,10 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{},
 	}, toolRunCommand)
 
+	r.register(ToolScanSemgrep, "Run Semgrep against the checked-out repository and return normalized SAST findings. Scanner output is parsed and compacted server-side.", securityScannerToolSchema(ToolScanSemgrep), toolScanSemgrep)
+	r.register(ToolScanTrivy, "Run Trivy filesystem scanning against the checked-out repository and return normalized dependency, misconfiguration, and secret findings.", securityScannerToolSchema(ToolScanTrivy), toolScanTrivy)
+	r.register(ToolScanGitleaks, "Run Gitleaks against the checked-out repository and return normalized secret findings with raw secret values redacted.", securityScannerToolSchema(ToolScanGitleaks), toolScanGitleaks)
+
 	if webSearch != nil {
 		r.register("web_search_brave", webSearchBraveToolDescription(), webSearchBraveToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 			return r.toolWebSearchBrave(ctx, input)
@@ -271,6 +277,12 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 			return r.toolWebSearchExa(ctx, input)
 		})
 	}
+	r.register("fetch_url", fetchURLToolDescription(), fetchURLToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		return r.toolFetchURL(ctx, input)
+	})
+	r.register("crawl_url", crawlURLToolDescription(), crawlURLToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		return r.toolCrawlURL(ctx, input)
+	})
 
 	// Git tools
 	r.register("create_branch", "Create a new git branch and switch to it.", map[string]interface{}{
@@ -386,23 +398,57 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolRequestHumanInput)
 
+	r.register(ToolRequestApproval, "Request inline approval or change feedback for a proposed artifact or plan in the interactive run drawer and wait for the human response.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"phase":             map[string]interface{}{"type": "string", "description": "Short workflow phase label such as prd, tasks, or task_doc."},
+			"preview_panel_key": map[string]interface{}{"type": "string", "description": "Optional preview panel key this approval request refers to."},
+			"title":             map[string]interface{}{"type": "string", "description": "User-facing title for the approval request."},
+			"summary":           map[string]interface{}{"type": "string", "description": "Optional short approval summary."},
+		},
+		"required":             []string{"title"},
+		"additionalProperties": false,
+	}, toolRequestApproval)
+
 	r.register(ToolRequestReviewCheckpoint, "Request an inline product review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"phase":   map[string]interface{}{"type": "string", "description": "Short product workflow phase label such as prd, stories, or story_doc."},
-			"title":   map[string]interface{}{"type": "string", "description": "User-facing title for the checkpoint."},
-			"summary": map[string]interface{}{"type": "string", "description": "Optional short review summary."},
+			"phase":             map[string]interface{}{"type": "string", "description": "Short product workflow phase label such as code_review or findings."},
+			"preview_panel_key": map[string]interface{}{"type": "string", "description": "Optional preview panel key this checkpoint refers to."},
+			"title":             map[string]interface{}{"type": "string", "description": "User-facing title for the checkpoint."},
+			"summary":           map[string]interface{}{"type": "string", "description": "Optional short review summary."},
+			"findings": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional structured review findings to persist alongside the checkpoint.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"id":            map[string]interface{}{"type": "string"},
+						"title":         map[string]interface{}{"type": "string"},
+						"body":          map[string]interface{}{"type": "string"},
+						"priority":      map[string]interface{}{"type": "string"},
+						"confidence":    map[string]interface{}{"type": "number"},
+						"code_location": map[string]interface{}{"type": "string"},
+					},
+					"required":             []string{"title", "body"},
+					"additionalProperties": false,
+				},
+			},
+			"overall_correctness":      map[string]interface{}{"type": "string"},
+			"overall_explanation":      map[string]interface{}{"type": "string"},
+			"overall_confidence_score": map[string]interface{}{"type": "number"},
 		},
 		"required":             []string{"title"},
 		"additionalProperties": false,
 	}, toolRequestReviewCheckpoint)
 
-	r.register(ToolRequestHumanApproval, "Legacy alias for request_review_checkpoint. Request an inline human approval or review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
+	r.register(ToolRequestHumanApproval, "Legacy alias for request_approval. Request an inline human approval in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"phase":   map[string]interface{}{"type": "string"},
-			"title":   map[string]interface{}{"type": "string"},
-			"summary": map[string]interface{}{"type": "string"},
+			"phase":             map[string]interface{}{"type": "string"},
+			"preview_panel_key": map[string]interface{}{"type": "string"},
+			"title":             map[string]interface{}{"type": "string"},
+			"summary":           map[string]interface{}{"type": "string"},
 		},
 		"required":             []string{"title"},
 		"additionalProperties": false,
@@ -485,13 +531,86 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"properties": map[string]interface{}{
 			"title": map[string]interface{}{"type": "string"},
 			"content": map[string]interface{}{
-				"description": "Task plan JSON object with summary and proposed_stories. Pass structured JSON, not a stringified blob.",
+				"description": "Task plan JSON object with summary and proposed_tasks. Pass structured JSON, not a stringified blob.",
 				"type":        "object",
 				"properties": map[string]interface{}{
-					"summary":          map[string]interface{}{"type": "string"},
-					"proposed_stories": map[string]interface{}{"type": "array"},
+					"summary": map[string]interface{}{
+						"type": "string",
+					},
+					"proposed_tasks": map[string]interface{}{
+						"type":     "array",
+						"minItems": 1,
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"ref":         map[string]interface{}{"type": "string"},
+								"name":        map[string]interface{}{"type": "string"},
+								"description": map[string]interface{}{"type": "string"},
+								"task_type":   map[string]interface{}{"type": "string"},
+								"acceptance_criteria": map[string]interface{}{
+									"type":     "array",
+									"minItems": 1,
+									"items":    map[string]interface{}{"type": "string"},
+								},
+								"dependency_refs": map[string]interface{}{
+									"type":  "array",
+									"items": map[string]interface{}{"type": "string"},
+								},
+								"slice_type": map[string]interface{}{"type": "string"},
+								"implementation_brief": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"approach": map[string]interface{}{"type": "string"},
+										"files_to_modify": map[string]interface{}{
+											"type": "array",
+											"items": map[string]interface{}{
+												"type": "object",
+												"properties": map[string]interface{}{
+													"path":        map[string]interface{}{"type": "string"},
+													"action":      map[string]interface{}{"type": "string"},
+													"description": map[string]interface{}{"type": "string"},
+												},
+												"required":             []string{"path", "action", "description"},
+												"additionalProperties": false,
+											},
+										},
+										"test_strategy": map[string]interface{}{
+											"oneOf": []map[string]interface{}{
+												{"type": "string"},
+												{
+													"type":  "array",
+													"items": map[string]interface{}{"type": "string"},
+												},
+											},
+										},
+										"vertical_layers": map[string]interface{}{
+											"type":  "array",
+											"items": map[string]interface{}{"type": "string"},
+										},
+										"depends_on_files": map[string]interface{}{
+											"type":  "array",
+											"items": map[string]interface{}{"type": "string"},
+										},
+									},
+									"required":             []string{"approach", "files_to_modify", "test_strategy"},
+									"additionalProperties": false,
+								},
+							},
+							"required":             []string{"name", "description", "task_type", "acceptance_criteria", "dependency_refs"},
+							"additionalProperties": false,
+						},
+					},
+					"open_questions": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
+					"risks": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
 				},
-				"required": []string{"summary", "proposed_stories"},
+				"required":             []string{"summary", "proposed_tasks"},
+				"additionalProperties": false,
 			},
 			"replace": map[string]interface{}{"type": "boolean"},
 		},
@@ -539,17 +658,6 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolPublishPreview)
 
-	r.register("add_task_comment", "Add a comment to the current task visible in Helpin.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"content": map[string]interface{}{
-				"type":        "string",
-				"description": "The comment text (supports markdown)",
-			},
-		},
-		"required": []string{"content"},
-	}, toolAddTaskComment)
-
 	r.register("list_task_checklist", "List the checklist items for the current task.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
@@ -559,6 +667,16 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"type":       "object",
 		"properties": map[string]interface{}{},
 	}, toolListWorkspaceTeams)
+
+	r.register("list_team_workflows_with_stages", "List the resolved workflow and ordered stages for one team or all workspace teams. Use this to choose a valid workflow stage before creating a task.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"team_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional team ID. Omit to return workflow summaries for all workspace teams.",
+			},
+		},
+	}, toolListTeamWorkflowsWithStages)
 
 	r.register("list_conversation_messages", "List the current support conversation messages.", map[string]interface{}{
 		"type":       "object",
@@ -641,7 +759,17 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		},
 	}, toolListDocuments)
 
-	r.register("read_document", "Read the metadata of a specific document by ID.", map[string]interface{}{
+	r.register("list_collections", "List doc collections in the workspace, optionally filtered by space. Returns collection ID, name, slug, space ID, and parent collection ID.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"space_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional space ID to filter collections",
+			},
+		},
+	}, toolListCollections)
+
+	r.register("read_document", "Read a document by ID, including metadata, plain text, and compact addressable blocks with IDs and revisions.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"document_id": map[string]interface{}{
@@ -651,6 +779,27 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		},
 		"required": []string{"document_id"},
 	}, toolReadDocument)
+
+	r.register("get_document_blocks", "Fetch addressable blocks for a document. By default returns compact block metadata; set include_content with selected block_ids to retrieve full block JSON for precise edits.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID whose blocks should be fetched",
+			},
+			"block_ids": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional stable block IDs to fetch. Use this when include_content is true.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"include_content": map[string]interface{}{
+				"type":        "boolean",
+				"description": "When true, include the full block node JSON. Limited to 20 blocks per call.",
+			},
+		},
+		"required":             []string{"document_id"},
+		"additionalProperties": false,
+	}, toolGetDocumentBlocks)
 
 	r.register("search_documents", "Search documents by keyword across the workspace.", map[string]interface{}{
 		"type": "object",
@@ -667,26 +816,144 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{"query"},
 	}, toolSearchDocuments)
 
+	r.register("get_release_context", "Load release metadata, compare commits/files against the previous published release, and resolve related tasks. Defaults from the current repository-targeted run and GitHub release event when available.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"repository_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository ID. Defaults from the current repository target when omitted.",
+			},
+			"repo_full_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository full name like owner/repo. Defaults from the current GitHub event when omitted.",
+			},
+			"tag_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional release tag name. Defaults from the current GitHub release event when omitted.",
+			},
+			"include_changed_files": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include changed files from the release comparison.",
+			},
+			"max_commits": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of commits to return. Default 100, max 200.",
+			},
+			"max_files": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of changed files to return when include_changed_files is true. Default 200, max 500.",
+			},
+		},
+		"additionalProperties": false,
+	}, toolGetReleaseContext)
+
+	r.register("find_tasks_for_git_changes", "Resolve tasks related to PRs, branches, commits, and text references for a repository. Returns evidence and confidence for each match.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"repository_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository ID. Defaults from the current repository target when omitted.",
+			},
+			"repo_full_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository full name like owner/repo. Defaults from the current GitHub event when omitted.",
+			},
+			"pr_numbers": map[string]interface{}{
+				"type":        "array",
+				"description": "Pull request numbers to resolve. Max 50.",
+				"items":       map[string]interface{}{"type": "integer"},
+			},
+			"commit_shas": map[string]interface{}{
+				"type":        "array",
+				"description": "Commit SHAs to resolve. Max 200.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"branches": map[string]interface{}{
+				"type":        "array",
+				"description": "Branch names to resolve. Max 50.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"texts": map[string]interface{}{
+				"type":        "array",
+				"description": "Free text to scan for task keys. Max 100.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+		},
+		"additionalProperties": false,
+	}, toolFindTasksForGitChanges)
+
+	r.register("get_task_context", "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"task_ids": map[string]interface{}{
+				"type":        "array",
+				"description": "Task IDs to load. Max 50.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"include_linked_docs": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include linked document metadata.",
+			},
+			"include_document_content": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include linked document content text. Only used when include_linked_docs is true.",
+			},
+			"include_comments": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include task comments.",
+			},
+			"include_git_links": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include git links for each task.",
+			},
+		},
+		"required":             []string{"task_ids"},
+		"additionalProperties": false,
+	}, toolGetTaskContext)
+
 	r.register("list_epic_tasks", "List all non-archived tasks linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
 	}, toolListEpicTasks)
 
 	r.registerSharedCommandTools(map[string]ToolFunc{
-		"update_task_state":       toolUpdateTaskState,
-		"update_deal_stage":       toolUpdateDealStage,
-		"add_deal_note":           toolAddDealNote,
-		"write_document_content":  toolWriteDocumentContent,
-		"link_document_to_object": toolLinkDocumentToObject,
-		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,
-		"ensure_task_plan_doc":    toolEnsureTaskPlanDoc,
-		"approve_epic_spec":       toolApproveEpicSpec,
-		"create_task_batch":       toolCreateTaskBatch,
-		"assign_task_agent":       toolAssignTaskAgent,
-		"set_task_dependencies":   toolSetTaskDependencies,
+		"update_task_state":          toolUpdateTaskState,
+		"ensure_task_label":          toolEnsureTaskLabel,
+		"list_tasks":                 toolListTasks,
+		"add_task_comment":           toolAddTaskComment,
+		"update_deal_stage":          toolUpdateDealStage,
+		"add_deal_note":              toolAddDealNote,
+		"ensure_crm_contact_company": toolEnsureCRMContactCompany,
+		"enrich_crm_contact":         toolEnrichCRMContact,
+		"enrich_crm_company":         toolEnrichCRMCompany,
+		"create_document":            toolCreateDocument,
+		"create_task":                toolCreateTask,
+		"write_document_content":     toolWriteDocumentContent,
+		"update_document_block":      toolUpdateDocumentBlock,
+		"link_document_to_object":    toolLinkDocumentToObject,
+		"ensure_epic_spec_doc":       toolEnsureEpicSpecDoc,
+		"ensure_task_plan_doc":       toolEnsureTaskPlanDoc,
+		"approve_epic_spec":          toolApproveEpicSpec,
+		"create_task_batch":          toolCreateTaskBatch,
+		"assign_task_agent":          toolAssignTaskAgent,
+		"set_task_dependencies":      toolSetTaskDependencies,
 	})
 
 	return r
+}
+
+func (r *ToolRegistry) SetWebFetchProxyURLs(proxyURLs string) {
+	if r == nil {
+		return
+	}
+	r.webFetch = NewWebFetchClient(proxyURLs)
+}
+
+func (r *ToolRegistry) webFetchClient() *WebFetchClient {
+	if r == nil || r.webFetch == nil {
+		return NewWebFetchClient("")
+	}
+	return r.webFetch
 }
 
 func (r *ToolRegistry) register(name, description string, schema interface{}, fn ToolFunc) {
@@ -757,5 +1024,8 @@ func (r *ToolRegistry) ExecuteAllowed(ctx *ExecutionContext, name string, input 
 		}
 		return "", fmt.Errorf("tool %q is not allowed for the current agent policy", name)
 	}
-	return r.Execute(ctx, name, input)
+	if _, ok := r.tools[name]; ok {
+		return r.Execute(ctx, name, input)
+	}
+	return r.Execute(ctx, canonicalName, input)
 }

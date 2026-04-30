@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspacesService } from '@/lib/services/workspacesService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
@@ -110,6 +110,19 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
  * useSessionRole provides backward-compatible role booleans from a WorkspaceMember.
  * @deprecated Prefer usePermissions(useWorkspaceAccess(wsId).data) for new code.
  */
+export function useUpdateSupportTaskPreferences(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      support_default_team_id?: string
+      support_task_dialog_dismissed?: boolean
+    }) => workspacesService.updateSupportTaskPreferences(workspaceId, data).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.access(workspaceId) })
+    },
+  })
+}
+
 export function useSessionRole(membership: WorkspaceMember | null | undefined) {
   const role = membership?.role || ''
   return {

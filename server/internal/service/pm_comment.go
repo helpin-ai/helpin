@@ -16,7 +16,7 @@ import (
 // PMCommentService contains comment business logic.
 type PMCommentService struct {
 	commentRepo         *repository.PMCommentRepository
-	taskRepo           *repository.PMTaskRepository
+	taskRepo            *repository.PMTaskRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
@@ -30,7 +30,7 @@ type PMCommentService struct {
 func NewPMCommentService(commentRepo *repository.PMCommentRepository, taskRepo *repository.PMTaskRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository, s3Client *storage.S3Client) *PMCommentService {
 	return &PMCommentService{
 		commentRepo:         commentRepo,
-		taskRepo:           taskRepo,
+		taskRepo:            taskRepo,
 		attachmentRepo:      attachmentRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
@@ -57,6 +57,27 @@ func (s *PMCommentService) List(ctx context.Context, entityType, entityID string
 		}
 	}
 	return comments, nil
+}
+
+// ListByEntityIDs returns comments grouped by entity ID with attachment URLs resolved.
+func (s *PMCommentService) ListByEntityIDs(ctx context.Context, entityType string, entityIDs []string) (map[string][]model.CommentWithAuthor, error) {
+	if entityType == "" {
+		return nil, fmt.Errorf("entity_type is required")
+	}
+	commentsByEntity, err := s.commentRepo.ListByEntityIDs(ctx, entityType, entityIDs)
+	if err != nil {
+		return nil, err
+	}
+	for entityID, comments := range commentsByEntity {
+		for i := range comments {
+			s.resolveAttachmentURLs(comments[i].Attachments)
+			for j := range comments[i].Replies {
+				s.resolveAttachmentURLs(comments[i].Replies[j].Attachments)
+			}
+		}
+		commentsByEntity[entityID] = comments
+	}
+	return commentsByEntity, nil
 }
 
 // resolveAttachmentURLs populates URL / PublicURL on attachment responses so
@@ -322,20 +343,23 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
 			}
 		}
-		if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
-			WorkspaceID:      workspaceID,
-			ActorID:          actorID,
-			Body:             comment.Body,
-			EventType:        "comment.mention",
-			EntityType:       comment.EntityType,
-			EntityID:         comment.EntityID,
-			Title:            "mentioned you in a comment on " + entityTitle,
-			TeamID:           entityTeamID,
-			ReadableTeamIDs:  readableTeamIDs,
-			EntitySnapshot:   model.JSONB{"title": entityTitle},
-			NotificationBody: truncate(tiptap.StripHTML(comment.Body), 200),
-		}); err != nil {
-			s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+		addedMentions := diffMentionHandles(extractMentions(oldValue), extractMentions(comment.Body))
+		if len(addedMentions) > 0 {
+			if _, err := emitMentionNotificationForHandles(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:      workspaceID,
+				ActorID:          actorID,
+				Body:             comment.Body,
+				EventType:        "comment.mention",
+				EntityType:       comment.EntityType,
+				EntityID:         comment.EntityID,
+				Title:            "mentioned you in a comment on " + entityTitle,
+				TeamID:           entityTeamID,
+				ReadableTeamIDs:  readableTeamIDs,
+				EntitySnapshot:   model.JSONB{"title": entityTitle},
+				NotificationBody: truncate(tiptap.StripHTML(comment.Body), 200),
+			}, addedMentions); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+			}
 		}
 	}
 	s.logger.InfoContext(ctx, "comment updated", "comment_id", id, "entity_type", comment.EntityType, "entity_id", comment.EntityID, "workspace_id", workspaceID, "actor_id", actorID)

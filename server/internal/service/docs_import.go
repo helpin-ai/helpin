@@ -590,7 +590,7 @@ func (s *DocsImportService) importArticle(
 		if _, err := s.documentSvc.Publish(ctx, doc.ID); err != nil {
 			return nil, fmt.Errorf("publish imported article internally %s: %w", ref.ID, err)
 		}
-		if err := s.helpcenterSvc.PublishExternally(ctx, doc.ID, article.Slug); err != nil {
+		if err := s.helpcenterSvc.PublishExternally(ctx, doc.ID, article.Slug, nil); err != nil {
 			return nil, fmt.Errorf("publish imported article externally %s: %w", ref.ID, err)
 		}
 		stats.Published = true

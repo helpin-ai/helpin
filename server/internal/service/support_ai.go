@@ -196,6 +196,7 @@ type AIMessageMetadata struct {
 // AISource is a single source citation in AI message metadata.
 type AISource struct {
 	DocID      string  `json:"docId"`
+	BlockID    string  `json:"blockId,omitempty"`
 	Title      string  `json:"title"`
 	Snippet    string  `json:"snippet"`
 	Confidence float64 `json:"confidence"`
@@ -208,6 +209,7 @@ type KnowledgeSearchResult struct {
 	ReferenceID   string
 	SourceType    string
 	DocumentID    string
+	BlockID       string
 	SourceID      string
 	ChunkIndex    int
 	Title         string
@@ -282,6 +284,7 @@ type SupportAIService struct {
 	redis                  *redis.Client
 	db                     *gorm.DB
 	supportEventRecorder   SupportEventRecorder
+	traceRecorder          SupportAIRetrievalTraceRecorder
 }
 
 // NewSupportAIService creates a new SupportAIService with all dependencies.
@@ -361,11 +364,38 @@ func (s *SupportAIService) SetSupportEventRecorder(r SupportEventRecorder) {
 	s.supportEventRecorder = r
 }
 
+func (s *SupportAIService) SetSupportAIRetrievalTraceRecorder(r SupportAIRetrievalTraceRecorder) *SupportAIService {
+	if s == nil {
+		return nil
+	}
+	s.traceRecorder = r
+	return s
+}
+
 func (s *SupportAIService) recordSupportEvent(input SupportEventInput) {
 	if s.supportEventRecorder == nil {
 		return
 	}
 	s.supportEventRecorder.RecordEventBestEffort(input)
+}
+
+func (s *SupportAIService) recordSupportAIRetrievalTraceBestEffort(trace *model.SupportAIRetrievalTrace) {
+	if s == nil || s.traceRecorder == nil || trace == nil {
+		return
+	}
+	traceCopy := *trace
+	go func(trace model.SupportAIRetrievalTrace) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.traceRecorder.RecordSupportAIRetrievalTrace(ctx, &trace); err != nil {
+			slog.WarnContext(ctx, "record support AI retrieval trace failed",
+				"error", err,
+				"workspace_id", trace.WorkspaceID,
+				"conversation_id", trace.ConversationID,
+				"message_id", trace.MessageID,
+			)
+		}
+	}(traceCopy)
 }
 
 func (s *SupportAIService) SetTriageService(triageService *SupportInboxTriageService) *SupportAIService {
@@ -444,6 +474,18 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil || conv == nil {
 		return fmt.Errorf("get conversation: %w", err)
+	}
+	if conv.HumanTakeover != nil && *conv.HumanTakeover {
+		if conv.AIState != nil && *conv.AIState == "resolved" {
+			pending := "pending"
+			_ = s.conversationRepo.UpdateFields(ctx, workspaceID, conversationID, map[string]any{
+				"ai_state":           &pending,
+				"ai_resolved_at":     nil,
+				"ai_resolution_type": nil,
+				"flow_state":         model.SupportConversationFlowStateAssignedToHuman,
+			})
+		}
+		return nil // human already handling
 	}
 	if conv.OpenedByUserID != nil {
 		return nil // human already handling
@@ -726,6 +768,24 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 	// 16. Record token usage atomically
 	s.recordTokenUsage(ctx, agent.ID, totalTokens)
 
+	// If the model tries to repeat handoff language after the customer has
+	// already seen it in this conversation, suppress the duplicate reply.
+	if hasEscalationMessageInHistory(history) && containsHandoffLanguage(response.Content) {
+		slog.InfoContext(ctx, "support AI handoff response suppressed because escalation was already communicated",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"message_id", msg.ID,
+			"response_preview", safeLogPreview(response.Content, 160),
+		)
+		if conv.AIState == nil || *conv.AIState != "escalated" {
+			if err := s.EscalateToHumanForMessage(ctx, workspaceID, conversationID, msg.ID, "redundant_handoff_response"); err != nil {
+				return err
+			}
+		}
+		_ = s.processingRepo.MarkCompleted(ctx, processing.ID, nil, totalTokens)
+		return nil
+	}
+
 	// 17. Multi-signal confidence evaluation
 	confidence := evaluateConfidence(searchResults, response)
 	slog.InfoContext(ctx, "support AI response evaluated",
@@ -795,6 +855,36 @@ func (s *SupportAIService) HandleIncomingMessage(ctx context.Context, workspaceI
 		}
 		if err := s.messageRepo.Create(ctx, aiMsg); err != nil {
 			return fmt.Errorf("create AI message: %w", err)
+		}
+		canAnswer := fmt.Sprintf("%t", response.CanAnswer)
+		canResolve := canAnswer
+		trace, traceErr := BuildSupportAIRetrievalTrace(SupportAIRetrievalTraceInput{
+			WorkspaceID:    workspaceID,
+			ConversationID: conversationID,
+			MessageID:      aiMsg.ID,
+			SearchQueries:  queryPlan.SearchQueries,
+			SearchResults:  searchResults,
+			CitedSourceIDs: response.SourceDocIDs,
+			AIConfidence:   confidence,
+			CanAnswer:      &canAnswer,
+			CanResolve:     &canResolve,
+			Metadata: map[string]any{
+				"agent_id":           agentID,
+				"trigger_message_id": msg.ID,
+				"reply_kind":         answerReplyKind,
+				"issue_key":          queryPlan.IssueKey,
+				"progress_state":     answerProgressState,
+			},
+		})
+		if traceErr != nil {
+			slog.WarnContext(ctx, "build support AI retrieval trace failed",
+				"error", traceErr,
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", aiMsg.ID,
+			)
+		} else {
+			s.recordSupportAIRetrievalTraceBestEffort(trace)
 		}
 
 		s.recordSupportEvent(SupportEventInput{
@@ -867,6 +957,17 @@ func (s *SupportAIService) EscalateToHumanForMessageWithIssue(ctx context.Contex
 }
 
 func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, conversationID, messageID, reason, issueKey, issueSummary string) error {
+	escalationLockKey := "support:ai:escalation-lock:" + conversationID
+	if !s.acquireLock(ctx, escalationLockKey) {
+		slog.InfoContext(ctx, "support escalation skipped — escalation already in progress",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"reason", reason,
+		)
+		return nil
+	}
+	defer s.releaseLock(ctx, escalationLockKey)
+
 	conv, err := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
 	if err != nil {
 		return fmt.Errorf("get conversation for escalation: %w", err)
@@ -895,23 +996,62 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		availability = resolveSupportAvailability(settings, now)
 	}
 
-	// 1. Create system message — use customizable escalation message from settings
-	escalationContent := "Let me connect you with a team member who can help further."
-	if strings.TrimSpace(settings.EscalationMessage) != "" {
-		escalationContent = settings.EscalationMessage
+	var replyMsg *model.SupportMessage
+	var escalationSystemMsg *model.SupportMessage
+	escalationAlreadyMessaged := false
+	// Load with includeInternal=true so dedupe can see the new internal
+	// handoff system events (and the legacy ai_escalated rows that were
+	// public but are still recognized).
+	history, historyErr := s.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
+	if historyErr != nil {
+		slog.WarnContext(ctx, "load conversation history for escalation dedupe failed",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"error", historyErr,
+		)
+	} else {
+		escalationAlreadyMessaged = hasEscalationMessageInHistory(history)
 	}
 
-	systemMsg := &model.SupportMessage{
-		WorkspaceID:       workspaceID,
-		ConversationID:    conversationID,
-		SenderType:        "agent",
-		MessageType:       "system",
-		SystemEventType:   model.SupportSystemEventTypeStrPtr(model.SystemEventAIEscalated),
-		SenderDisplayName: strPtr(helpinAIDisplayName),
-		Content:           escalationContent,
-	}
-	if err := s.messageRepo.Create(ctx, systemMsg); err != nil {
-		return fmt.Errorf("create escalation system message: %w", err)
+	// 1. Create escalation messages — a customer-facing reply plus an
+	// internal-only system event describing why the escalation happened.
+	if !escalationAlreadyMessaged {
+		escalationContent := "Let me connect you with a team member who can help further."
+		if strings.TrimSpace(settings.EscalationMessage) != "" {
+			escalationContent = settings.EscalationMessage
+		}
+
+		replyMsg = &model.SupportMessage{
+			WorkspaceID:       workspaceID,
+			ConversationID:    conversationID,
+			SenderType:        "ai",
+			MessageType:       "reply",
+			SenderDisplayName: strPtr(helpinAIDisplayName),
+			Content:           escalationContent,
+		}
+		if err := s.messageRepo.Create(ctx, replyMsg); err != nil {
+			return fmt.Errorf("create escalation reply: %w", err)
+		}
+
+		escalationSystemMsg = &model.SupportMessage{
+			WorkspaceID:       workspaceID,
+			ConversationID:    conversationID,
+			SenderType:        "agent",
+			MessageType:       "system",
+			SystemEventType:   model.SupportSystemEventTypeStrPtr(systemEventForEscalationReason(reason)),
+			SenderDisplayName: strPtr(helpinAIDisplayName),
+			Content:           "",
+			IsInternal:        true,
+		}
+		if err := s.messageRepo.Create(ctx, escalationSystemMsg); err != nil {
+			return fmt.Errorf("create escalation system event: %w", err)
+		}
+	} else {
+		slog.InfoContext(ctx, "support escalation system message skipped — already present",
+			"workspace_id", workspaceID,
+			"conversation_id", conversationID,
+			"reason", reason,
+		)
 	}
 
 	handoffMailboxID, mailboxSelectionSource := s.resolveEscalationMailbox(ctx, workspaceID, conversationID, messageID, conv, settings)
@@ -1013,7 +1153,18 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 	s.recordSupportEvent(handoffEvent)
 
 	// 4. Broadcast events
-	s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, systemMsg, "ai:escalation"))
+	// Publish the customer-facing reply first — SupportMessageEvent only
+	// attaches Data for non-internal messages, so this is the row that
+	// actually carries payload to widget and admin clients.
+	if replyMsg != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, replyMsg, "ai:escalation"))
+	}
+	// Then publish the internal system event so the inbox renders the
+	// handoff pill. The websocket factory strips Data for internal rows;
+	// inbox clients refetch on this signal.
+	if escalationSystemMsg != nil {
+		s.wsPublisher.Publish(websocket.SupportMessageEvent(workspaceID, escalationSystemMsg, "ai:escalation"))
+	}
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "escalated",
 		Entity:      "support_conversation",
@@ -1629,6 +1780,77 @@ func sanitizeConversationHistory(history []model.SupportMessage, currentMessageI
 	return sanitized
 }
 
+func hasEscalationMessageInHistory(history []model.SupportMessage) bool {
+	for _, msg := range history {
+		if isEscalationSystemEvent(msg) {
+			return true
+		}
+		if (msg.SenderType == "ai" || (msg.SenderType == "agent" && msg.MessageType == "system")) && containsHandoffLanguage(msg.Content) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEscalationSystemEventInHistory(history []model.SupportMessage) bool {
+	for _, msg := range history {
+		if isEscalationSystemEvent(msg) {
+			return true
+		}
+	}
+	return false
+}
+
+// systemEventForEscalationReason maps the reason argument passed to
+// EscalateToHuman to the appropriate internal-only system event type.
+// Customer-driven reasons surface as "customer_requested_human"; AI-driven
+// reasons (low_confidence, stuck, etc.) surface as "ai_escalated".
+func systemEventForEscalationReason(reason string) model.SupportSystemEventType {
+	if reason == "customer_requested" || reason == "customer_requested_human" {
+		return model.SystemEventCustomerRequestedHuman
+	}
+	return model.SystemEventAIEscalated
+}
+
+func isEscalationSystemEvent(msg model.SupportMessage) bool {
+	if msg.SystemEventType == nil {
+		return false
+	}
+	switch *msg.SystemEventType {
+	case model.SystemEventAIEscalated,
+		model.SystemEventCustomerRequestedHuman:
+		return true
+	}
+	return false
+}
+
+func containsHandoffLanguage(content string) bool {
+	lower := strings.ToLower(strings.TrimSpace(content))
+	if lower == "" {
+		return false
+	}
+	handoffPhrases := []string{
+		"connect you with a team member",
+		"connect you to a team member",
+		"connect you with our team",
+		"connect you to our team",
+		"let me connect you",
+		"hand you over",
+		"handover to",
+		"hand off to",
+		"transfer you",
+		"pass you to",
+		"real person",
+		"human agent",
+	}
+	for _, phrase := range handoffPhrases {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 func buildConversationMessages(history []model.SupportMessage) []llm.Message {
 	if len(history) == 0 {
 		return nil
@@ -2028,6 +2250,7 @@ func buildAISystemPrompt(agent *model.Agent, knowledgeContext string) string {
 - Only set can_answer=false when the knowledge chunks contain absolutely nothing relevant to the question — not even a partial answer or a useful pointer.
 - Never use general knowledge to invent product behavior, workflows, integrations, pricing, policies, or troubleshooting steps.
 - Ask a human to take over whenever the customer needs account-specific actions (billing changes, password resets, accessing their data) or when the knowledge contains nothing relevant at all.
+- If you have already told the customer you will connect them with a team member, do not repeat that message. Acknowledge their follow-up briefly, for example: "A team member will be with you shortly."
 - Be concise, friendly, and helpful. Use markdown for formatting.
 - Only include document IDs from the provided knowledge chunks in source_doc_ids.
 - NEVER include customer email addresses, phone numbers, account IDs, or payment details in your response.
@@ -2178,6 +2401,7 @@ func (s *SupportAIService) searchSingleQuery(
 				ReferenceID:   knowledgeReferenceID(knowledgeSourceTypeDocs, result.DocumentID),
 				SourceType:    knowledgeSourceTypeDocs,
 				DocumentID:    result.DocumentID,
+				BlockID:       derefString(result.BlockID),
 				SourceID:      result.SpaceID,
 				ChunkIndex:    result.ChunkIndex,
 				Title:         result.Title,
@@ -2367,6 +2591,7 @@ func buildAISources(sourceDocIDs []string, searchResults []KnowledgeSearchResult
 		seenDocs[docID] = struct{}{}
 		sources = append(sources, AISource{
 			DocID:      docID,
+			BlockID:    result.BlockID,
 			Title:      result.Title,
 			Snippet:    excerptText(result.Content, 180),
 			Confidence: clamp01(maxFloat(result.VectorScore, clamp01(result.LexicalScore/0.35))),

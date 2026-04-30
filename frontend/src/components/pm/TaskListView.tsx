@@ -402,10 +402,23 @@ export function TaskListView({
     return map;
   }, [availableWorkflows]);
   const stateMap = useMemo(() => {
-    const map = new Map<string, { name: string; stateType: string }>();
+    const stateNameCounts = new Map<string, number>();
     for (const wf of availableWorkflows) {
       for (const s of wf.states) {
-        map.set(s.id, { name: s.name, stateType: s.state_type });
+        stateNameCounts.set(s.name, (stateNameCounts.get(s.name) ?? 0) + 1);
+      }
+    }
+
+    const map = new Map<string, { name: string; stateType: string; groupLabel: string; position: number }>();
+    for (const wf of availableWorkflows) {
+      for (const s of wf.states) {
+        const duplicateName = (stateNameCounts.get(s.name) ?? 0) > 1;
+        map.set(s.id, {
+          name: s.name,
+          stateType: s.state_type,
+          groupLabel: duplicateName ? `${s.name} · ${wf.workflow.name}` : s.name,
+          position: s.position,
+        });
       }
     }
     return map;
@@ -712,13 +725,21 @@ export function TaskListView({
           </button>
         ),
       }),
-      // Hidden grouping columns (values shown in group headers, not as table columns)
+      // Group by state identity, not state name, because different workflows can
+      // have separate states with the same visible label and independent order.
       columnHelper.accessor(
-        (row) => stateMap.get(row.workflow_state_id)?.name ?? 'Unknown',
+        (row) => row.workflow_state_id,
         {
           id: 'stateName',
           header: 'State',
           size: 190,
+          sortingFn: (a, b) => {
+            const aState = stateMap.get(a.original.workflow_state_id);
+            const bState = stateMap.get(b.original.workflow_state_id);
+            const labelCompare = (aState?.groupLabel ?? '').localeCompare(bState?.groupLabel ?? '');
+            if (labelCompare !== 0) return labelCompare;
+            return (aState?.position ?? 0) - (bState?.position ?? 0);
+          },
           cell: (info) => (
             <InlineStateCell
               task={info.row.original}
@@ -1152,8 +1173,13 @@ export function TaskListView({
         groupBy === 'workflow_state' && subRows[0]
           ? (stateMap.get(subRows[0].original.workflow_state_id)?.stateType as StateType | undefined)
           : undefined;
+      const groupLabel =
+        groupBy === 'workflow_state' && subRows[0]
+          ? (stateMap.get(subRows[0].original.workflow_state_id)?.groupLabel ?? String(row.groupingValue))
+          : String(row.groupingValue);
 
       summaries.set(row.id, {
+        groupLabel,
         storyCount,
         totalPoints,
         completedPoints,
@@ -1391,6 +1417,7 @@ function arePMGroupRowPropsEqual(prev: PMGroupRowProps, next: PMGroupRowProps): 
     prev.row.id === next.row.id &&
     prev.row.getIsExpanded() === next.row.getIsExpanded() &&
     prev.row.subRows.length === next.row.subRows.length &&
+    prev.summary?.groupLabel === next.summary?.groupLabel &&
     prev.summary?.storyCount === next.summary?.storyCount &&
     prev.summary?.totalPoints === next.summary?.totalPoints &&
     prev.summary?.completedPoints === next.summary?.completedPoints &&
@@ -1406,6 +1433,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   const totalPoints = summary?.totalPoints ?? 0;
   const completedPoints = summary?.completedPoints ?? 0;
   const stateType = summary?.stateType;
+  const groupLabel = summary?.groupLabel ?? String(row.groupingValue);
 
   return (
     <button
@@ -1418,7 +1446,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
         <TaskListChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
       )}
       {stateType && <TaskListStateTypeIcon stateType={stateType} className="h-4 w-4" />}
-      <span>{String(row.groupingValue)}</span>
+      <span>{groupLabel}</span>
       <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
         <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
           <span className="flex items-center gap-1">
@@ -1441,6 +1469,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 }, arePMGroupRowPropsEqual);
 
 interface PMGroupSummary {
+  groupLabel: string;
   storyCount: number;
   totalPoints: number;
   completedPoints: number;

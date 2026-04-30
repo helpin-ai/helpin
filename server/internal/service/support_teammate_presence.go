@@ -45,11 +45,7 @@ func (s *SupportInboxService) GetTeammatePresence(ctx context.Context, workspace
 			return &result, nil
 		}
 	}
-	return &model.SupportTeammatePresenceStatus{
-		UserID: userID,
-		Status: model.SupportTeammateStatusOffline,
-		Source: model.SupportTeammateStatusSourceAuto,
-	}, nil
+	return nil, nil
 }
 
 func (s *SupportInboxService) UpdateMyTeammatePresence(ctx context.Context, workspaceID, userID string, manualStatus *string) (*model.SupportTeammatePresenceStatus, error) {

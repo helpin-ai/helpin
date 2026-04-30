@@ -14,19 +14,45 @@ const QUOTE_ATTR = 'data-helpin-quote';
 // Minimal iframe baseline. We want author stylesheets to win, so we only
 // set inherit-able defaults on the document root — email inline styles and
 // <style> blocks override for anything specific.
+// Email HTML is authored for light backgrounds. Force a white canvas inside
+// the iframe so author colors remain readable when the host app is in dark
+// mode (matches Gmail/Outlook behavior).
 const IFRAME_STYLES = `
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
   html, body {
     margin: 0;
     padding: 0;
-    background: transparent;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    background: #ffffff;
     color: #111827;
+    color-scheme: light;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 14px;
     line-height: 1.5;
-    word-wrap: break-word;
-    overflow-wrap: anywhere;
+    word-wrap: break-word !important;
+    overflow-wrap: anywhere !important;
+    overflow-x: hidden;
   }
-  img { max-width: 100%; height: auto; }
+  body, p, div, span, a, li, td, th, blockquote {
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word;
+  }
+  pre {
+    max-width: 100% !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere !important;
+  }
+  table {
+    max-width: 100% !important;
+  }
+  td, th {
+    min-width: 0 !important;
+  }
+  img { max-width: 100% !important; height: auto; }
 `;
 
 function buildSrcDoc(safeHtml: string): string {
@@ -92,7 +118,7 @@ export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
   }, [ready, measure]);
 
   return (
-    <div className="w-full max-h-[60vh] overflow-auto">
+    <div className="min-w-0 max-h-[60vh] w-full max-w-full overflow-auto">
       <iframe
         ref={iframeRef}
         srcDoc={srcDoc}
@@ -102,7 +128,7 @@ export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
         // No allow-scripts — author script is neutralized.
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         title="Email body"
-        style={{ width: '100%', minWidth: '602px', border: 'none', height: `${height}px` }}
+        style={{ display: 'block', width: '100%', maxWidth: '100%', minWidth: 0, border: 'none', height: `${height}px` }}
       />
     </div>
   );

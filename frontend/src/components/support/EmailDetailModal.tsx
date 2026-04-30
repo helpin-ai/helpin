@@ -161,7 +161,10 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                   <dl className="mt-3 space-y-1.5 rounded-md bg-muted/40 p-3 text-xs">
                     <TechRow label="Direction" value={data.direction} />
                     <TechRow label="Status" value={data.status} />
+                    {data.delivered_at && <TechRow label="Delivered" value={formatFullTimestamp(data.delivered_at)} />}
                     {data.opened_at && <TechRow label="Opened" value={formatFullTimestamp(data.opened_at)} />}
+                    {data.bounced_at && <TechRow label="Bounced" value={formatFullTimestamp(data.bounced_at)} />}
+                    {data.error_message && <TechRow label="Error" value={data.error_message} />}
                     {data.rfc_message_id && <TechRow label="Message-ID" value={data.rfc_message_id} mono />}
                     {data.in_reply_to && <TechRow label="In-Reply-To" value={data.in_reply_to} mono />}
                     {data.references_header && <TechRow label="References" value={data.references_header} mono />}

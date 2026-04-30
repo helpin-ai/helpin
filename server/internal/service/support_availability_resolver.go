@@ -143,11 +143,11 @@ func resolveSupportTeammatePresenceStatuses(
 		return []model.SupportTeammatePresenceStatus{}, nil
 	}
 
-	members, err := workspaceRepo.ListMembers(ctx, workspaceID)
+	supportUserIDs, err := workspaceRepo.ListSupportAccessibleUserIDs(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	if len(members) == 0 {
+	if len(supportUserIDs) == 0 {
 		return []model.SupportTeammatePresenceStatus{}, nil
 	}
 
@@ -178,27 +178,28 @@ func resolveSupportTeammatePresenceStatuses(
 	}
 
 	now = now.UTC()
-	statuses := make([]model.SupportTeammatePresenceStatus, 0, len(members))
-	for _, member := range members {
-		if member.UserID == "" {
+	statuses := make([]model.SupportTeammatePresenceStatus, 0, len(supportUserIDs))
+	for _, rawUserID := range supportUserIDs {
+		userID := strings.TrimSpace(rawUserID)
+		if userID == "" {
 			continue
 		}
 		entry := model.SupportTeammatePresenceStatus{
-			UserID: member.UserID,
+			UserID: userID,
 			Status: model.SupportTeammateStatusOffline,
 			Source: model.SupportTeammateStatusSourceAuto,
 		}
-		if ts, ok := lastSeen[member.UserID]; ok && !ts.IsZero() {
+		if ts, ok := lastSeen[userID]; ok && !ts.IsZero() {
 			t := ts.UTC()
 			entry.LastSeenAt = &t
 		}
-		if manualStatus, ok := manualOverrides[member.UserID]; ok {
+		if manualStatus, ok := manualOverrides[userID]; ok {
 			entry.Status = manualStatus
 			entry.Source = model.SupportTeammateStatusSourceManual
 			entry.ManualStatus = &manualStatus
 		} else {
 			recentlyActive := entry.LastSeenAt != nil && now.Sub(*entry.LastSeenAt) <= supportTeammateAwayThreshold
-			if _, ok := onlineSet[member.UserID]; ok {
+			if _, ok := onlineSet[userID]; ok {
 				if recentlyActive {
 					entry.Status = model.SupportTeammateStatusOnline
 				} else {

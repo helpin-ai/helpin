@@ -35,6 +35,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			totp_secret_encrypted TEXT,
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
+			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -635,12 +636,17 @@ func newTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE git_repositories (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
-			git_integration_id TEXT NOT NULL,
-			repo_full_name TEXT NOT NULL,
-			repo_name TEXT NOT NULL,
-			repo_owner TEXT NOT NULL,
+			integration_id TEXT NOT NULL,
+			provider TEXT NOT NULL DEFAULT 'github',
+			external_id TEXT NOT NULL DEFAULT '',
+			full_name TEXT NOT NULL,
 			default_branch TEXT NOT NULL DEFAULT 'main',
-			is_active BOOLEAN NOT NULL DEFAULT 1,
+			permissions TEXT NOT NULL DEFAULT '{}',
+			private BOOLEAN NOT NULL DEFAULT 1,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			selected BOOLEAN NOT NULL DEFAULT 1,
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -675,6 +681,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			ai_resolution_type TEXT,
 			ai_turn_count INTEGER NOT NULL DEFAULT 0,
 			customer_requested_human_at DATETIME,
+			human_takeover BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -848,7 +855,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 			stripped_text TEXT,
 			html_body TEXT,
 			status TEXT NOT NULL DEFAULT 'sent',
+			delivered_at DATETIME,
 			opened_at DATETIME,
+			bounced_at DATETIME,
 			error_message TEXT,
 			created_at DATETIME
 		)`,
@@ -905,8 +914,38 @@ func newTestDB(t *testing.T) *gorm.DB {
 			avatar_url TEXT,
 			source TEXT,
 			custom_properties TEXT NOT NULL DEFAULT '{}',
+			email_status TEXT NOT NULL DEFAULT 'valid',
+			email_status_reason TEXT,
+			email_status_updated_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_companies (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			external_id TEXT,
+			name TEXT NOT NULL,
+			domain TEXT,
+			industry TEXT,
+			employee_count INTEGER,
+			annual_revenue REAL,
+			description TEXT,
+			logo_url TEXT,
+			owner_member_id TEXT,
+			custom_properties TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_associations (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			from_object_type TEXT NOT NULL,
+			from_object_id TEXT NOT NULL,
+			to_object_type TEXT NOT NULL,
+			to_object_id TEXT NOT NULL,
+			association_label TEXT,
+			created_at DATETIME
 		)`,
 	}
 

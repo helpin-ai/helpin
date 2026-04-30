@@ -22,7 +22,7 @@ cp server/.env.example server/.env
 Edit `server/.env` and set:
 ```env
 DATABASE_URL=postgres://helpin:helpin@localhost:5432/helpin?sslmode=disable
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://:helpin-redis-dev@localhost:6379/0
 NATS_URL=nats://localhost:4222
 ```
 
@@ -66,6 +66,9 @@ docker compose down -v
 
 # Restart a single service
 docker compose restart redis
+
+# Connect to Redis with the local default password
+REDISCLI_AUTH=helpin-redis-dev docker compose exec redis redis-cli ping
 ```
 
 ## Port Conflicts

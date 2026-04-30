@@ -97,7 +97,7 @@ import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { RecurringTemplateForm, type RecurringTemplateFormValue } from '@/components/pm/RecurringTemplateForm';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow } from '@/hooks/queries';
+import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { buildTaskCopyUrl, buildTaskPath } from '@/lib/pmTaskLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
@@ -108,6 +108,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-detail/taskOverlayDismiss';
+import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
@@ -215,8 +216,8 @@ function MetadataRow({
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground mt-0.5" />
-      <span className="text-xs text-muted-foreground mt-0.5">{label}</span>
-      <div className="min-w-0">{children}</div>
+      <span className="text-[12px] text-muted-foreground mt-0.5">{label}</span>
+      <div className="min-w-0 text-[12px]">{children}</div>
     </>
   );
 }
@@ -486,6 +487,8 @@ function TaskDetailPanelBody({
   const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
   const dragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
+  const { data: workspaceAccess } = useWorkspaceAccess(workspaceId);
+  const { canEdit } = usePermissions(workspaceAccess);
   const taskId = taskDetail.task.id;
 
   useEffect(() => {
@@ -1087,7 +1090,7 @@ function TaskDetailPanelBody({
             <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
               <Upload01Icon className="h-8 w-8 text-primary" />
               <p className="text-sm font-medium text-foreground">Drop files to attach</p>
-              <p className="text-xs text-muted-foreground">Max 10MB per file</p>
+              <p className="text-xs text-muted-foreground">Max 50MB per file</p>
             </div>
           </div>
         )}
@@ -1291,7 +1294,7 @@ function TaskDetailPanelBody({
           {/* External Links */}
           {showExternalLinks && (
             <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} taskId={taskDetail.task.id} />
+              <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
             </div>
           )}
 
@@ -1316,6 +1319,8 @@ function TaskDetailPanelBody({
                 taskId={taskDetail.task.id}
                 workspaceId={workspaceId}
                 latestRunAgentId={taskDetail.task.latest_run_agent_id}
+                delivery={delivery}
+                canEditDelivery={canEdit && fieldVis.delivery}
               />
             </>
           )}
@@ -1840,11 +1845,19 @@ export function TaskDetailPanel({
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {
+          if (isInsideAskAgentsDock(event.target)) {
+            event.preventDefault();
+            return;
+          }
           if (shouldSuppressTaskOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
             event.preventDefault();
           }
         }}
         onInteractOutside={(event) => {
+          if (isInsideAskAgentsDock(event.target)) {
+            event.preventDefault();
+            return;
+          }
           if (shouldSuppressTaskOverlayOutsideDismiss(openedAtRef.current, Date.now())) {
             event.preventDefault();
           }

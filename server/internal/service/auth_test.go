@@ -819,6 +819,39 @@ func TestRefreshToken(t *testing.T) {
 		}
 	})
 
+	t.Run("recomputes platform admin claim from database", func(t *testing.T) {
+		svc, userRepo := newAuthService(t)
+		ctx := context.Background()
+
+		signupResp, err := svc.Signup(ctx, model.SignupRequest{
+			Email:    "admin-refresh@example.com",
+			Password: "password123",
+			FullName: "Admin Refresh",
+		})
+		if err != nil {
+			t.Fatalf("signup failed: %v", err)
+		}
+		if _, err := userRepo.GrantPlatformAdminByEmails(ctx, []string{"ADMIN-REFRESH@example.com"}); err != nil {
+			t.Fatalf("grant platform admin: %v", err)
+		}
+
+		refreshResp, err := svc.RefreshToken(ctx, signupResp.RefreshToken)
+		if err != nil {
+			t.Fatalf("refresh failed: %v", err)
+		}
+
+		claims, err := svc.jwtManager.ValidateToken(refreshResp.AccessToken)
+		if err != nil {
+			t.Fatalf("validate access token: %v", err)
+		}
+		if !claims.IsPlatformAdmin {
+			t.Fatalf("expected refreshed access token to reflect DB platform admin status")
+		}
+		if !refreshResp.User.IsPlatformAdmin {
+			t.Fatalf("expected refreshed user profile to report platform admin")
+		}
+	})
+
 	t.Run("invalid token", func(t *testing.T) {
 		svc, _ := newAuthService(t)
 		ctx := context.Background()

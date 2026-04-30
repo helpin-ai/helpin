@@ -379,8 +379,8 @@ export function useMoveDocsDocument(wsId: string) {
 export function usePublishDocsDocument(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, slug }: { id: string; slug?: string }) =>
-      unwrap(await docsService.publishDocument(wsId, id, slug)),
+    mutationFn: async ({ id, slug, published_content }: { id: string; slug?: string; published_content?: unknown }) =>
+      unwrap(await docsService.publishDocument(wsId, id, { slug, published_content })),
     onSuccess: (updatedDoc, { id }) => {
       qc.setQueryData(queryKeys.docs.document(wsId, id), updatedDoc)
       qc.invalidateQueries({
@@ -421,6 +421,14 @@ export function useDocsContent(wsId: string, docId: string) {
   })
 }
 
+export function useDocsBlocks(wsId: string, docId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.blocks(wsId, docId),
+    queryFn: async () => unwrap(await docsService.listBlocks(wsId, docId)),
+    enabled: !!wsId && !!docId,
+  })
+}
+
 export function useSaveDocsContent(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -429,6 +437,7 @@ export function useSaveDocsContent(wsId: string) {
     onSuccess: (savedContent, { docId }) => {
       // Update content cache directly from the response — avoids an extra refetch
       qc.setQueryData(queryKeys.docs.content(wsId, docId), savedContent)
+      qc.invalidateQueries({ queryKey: queryKeys.docs.blocks(wsId, docId) })
       // Refetch the document to pick up the server-updated updated_at.
       // exact: true prevents cascading to content/versions/links queries.
       qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId), exact: true })
@@ -451,6 +460,7 @@ export function useSaveDocsMarkdown(wsId: string) {
       unwrap(await docsService.saveMarkdownContent(wsId, docId, markdown)),
     onSuccess: (savedContent, { docId }) => {
       qc.setQueryData(queryKeys.docs.content(wsId, docId), savedContent)
+      qc.invalidateQueries({ queryKey: queryKeys.docs.blocks(wsId, docId) })
       qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId), exact: true })
       qc.invalidateQueries({
         predicate: (query) => {
@@ -560,8 +570,8 @@ export function useDocsLinkedDocs(wsId: string, objectType: string, objectId: st
 export function usePublishDocsExternally(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ docId, slug }: { docId: string; slug?: string }) =>
-      unwrap(await docsService.publishExternally(wsId, docId, slug)),
+    mutationFn: async ({ docId, slug, published_content }: { docId: string; slug?: string; published_content?: unknown }) =>
+      unwrap(await docsService.publishExternally(wsId, docId, { slug, published_content })),
     onSuccess: (_, { docId }) => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
     },
@@ -771,8 +781,8 @@ export function useUpsertDocsHelpcenterArticleTranslation(wsId: string, docId: s
 export function usePublishDocsHelpcenterArticleTranslation(wsId: string, docId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ locale, slug }: { locale: string; slug?: string }) =>
-      unwrap(await docsService.publishArticleTranslation(wsId, docId, locale, slug)),
+    mutationFn: async ({ locale, slug, published_content }: { locale: string; slug?: string; published_content?: unknown }) =>
+      unwrap(await docsService.publishArticleTranslation(wsId, docId, { locale, slug, published_content })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
     },
@@ -855,6 +865,19 @@ export function useReorderDocsChildren(wsId: string) {
     onSuccess: (_, { spaceId }) => {
       invalidateDocsCollectionTree(qc, wsId, spaceId)
       qc.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
+    },
+  })
+}
+
+export function useMoveDocsItem(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (data: import('../../lib/docsTypes').MoveDocsItemRequest) =>
+      unwrap(await docsService.moveItem(wsId, data)),
+    onSuccess: () => {
+      // Invalidate all docs-related queries since a move can affect
+      // multiple buckets, collections, and tree structures.
+      qc.invalidateQueries({ queryKey: ['docs', wsId] })
     },
   })
 }

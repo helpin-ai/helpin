@@ -22,6 +22,11 @@ func NewPMExternalLinkService(repo *repository.PMExternalLinkRepository, wsPubli
 	return &PMExternalLinkService{repo: repo, wsPublisher: wsPublisher}
 }
 
+var allowedExternalLinkEntityTypes = map[string]bool{
+	"task": true,
+	"epic": true,
+}
+
 // List returns external links for a story.
 func (s *PMExternalLinkService) List(ctx context.Context, storyID string) ([]model.PMExternalLink, error) {
 	if storyID == "" {
@@ -46,7 +51,9 @@ func (s *PMExternalLinkService) Create(ctx context.Context, storyID string, req 
 	}
 
 	link := &model.PMExternalLink{
-		TaskID:      storyID,
+		TaskID:      &storyID,
+		EntityType:  "task",
+		EntityID:    storyID,
 		Title:       title,
 		URL:         rawURL,
 		CreatedByID: userID,
@@ -86,7 +93,7 @@ func (s *PMExternalLinkService) Update(ctx context.Context, id string, req model
 	if err := s.repo.Update(ctx, link); err != nil {
 		return nil, err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "external_link", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: link.TaskID})
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "external_link", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: link.EntityType, ParentID: link.EntityID})
 	return link, nil
 }
 
@@ -102,8 +109,59 @@ func (s *PMExternalLinkService) Delete(ctx context.Context, id string, workspace
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return err
 	}
-	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "external_link", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: "task", ParentID: link.TaskID})
+	s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "external_link", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: link.EntityType, ParentID: link.EntityID})
 	return nil
+}
+
+// ListByEntity returns external links for any supported entity type.
+func (s *PMExternalLinkService) ListByEntity(ctx context.Context, entityType, entityID string) ([]model.PMExternalLink, error) {
+	if !allowedExternalLinkEntityTypes[entityType] {
+		return nil, fmt.Errorf("unsupported entity type: %s", entityType)
+	}
+	if entityID == "" {
+		return nil, fmt.Errorf("entity_id is required")
+	}
+	return s.repo.ListByEntity(ctx, entityType, entityID)
+}
+
+// CreateForEntity creates an external link for any supported entity type.
+func (s *PMExternalLinkService) CreateForEntity(ctx context.Context, entityType, entityID string, req model.CreateExternalLinkRequest, userID, workspaceID string) (*model.PMExternalLink, error) {
+	if !allowedExternalLinkEntityTypes[entityType] {
+		return nil, fmt.Errorf("unsupported entity type: %s", entityType)
+	}
+	if entityID == "" {
+		return nil, fmt.Errorf("entity_id is required")
+	}
+	rawURL := strings.TrimSpace(req.URL)
+	if rawURL == "" {
+		return nil, fmt.Errorf("url is required")
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = deriveTitle(rawURL)
+	}
+
+	link := &model.PMExternalLink{
+		EntityType:  entityType,
+		EntityID:    entityID,
+		Title:       title,
+		URL:         rawURL,
+		CreatedByID: userID,
+	}
+	if entityType == "task" {
+		link.TaskID = &entityID
+	}
+
+	if err := s.repo.Create(ctx, link); err != nil {
+		return nil, err
+	}
+	s.wsPublisher.Publish(websocket.Event{
+		Action: "created", Entity: "external_link", EntityID: link.ID,
+		WorkspaceID: workspaceID, ActorID: userID,
+		ParentType: entityType, ParentID: entityID,
+	})
+	return link, nil
 }
 
 // deriveTitle extracts hostname from a URL for use as the title.

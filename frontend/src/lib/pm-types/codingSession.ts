@@ -2,6 +2,7 @@ import type { AgentInvocationMode, AgentRunPauseReason, AgentRunStatus, AgentRun
 
 export type CodingSessionInteractionKind =
   | 'request_user_input'
+  | 'approval_request'
   | 'command_execution_approval'
   | 'file_change_approval'
   | 'permissions_approval'
@@ -9,6 +10,46 @@ export type CodingSessionInteractionKind =
   | 'auth_required';
 
 export type CodingSessionInteractionStatus = 'pending' | 'resolved' | 'cancelled';
+
+export interface CodingSessionApprovalRequestPayload {
+  phase?: string;
+  preview_panel_key?: string;
+  title?: string;
+  summary?: string;
+}
+
+export interface CodingSessionApprovalResponsePayload {
+  [key: string]: unknown;
+  decision: 'approve' | 'request_changes';
+  message?: string;
+}
+
+export interface CodingSessionReviewFinding {
+  id: string;
+  title: string;
+  body: string;
+  priority?: string;
+  confidence?: string;
+  code_location?: string;
+}
+
+export interface CodingSessionReviewCheckpointRequestPayload {
+  phase?: string;
+  title?: string;
+  summary?: string;
+  findings?: CodingSessionReviewFinding[];
+  overall_correctness?: string;
+  overall_explanation?: string;
+  overall_confidence_score?: number;
+}
+
+export interface CodingSessionReviewCheckpointResponsePayload {
+  [key: string]: unknown;
+  decision: 'approve' | 'request_changes';
+  message?: string;
+  selection_mode?: 'all' | 'selected';
+  selected_finding_ids?: string[];
+}
 
 export interface CodingSessionInteraction {
   interaction_id: string;
@@ -82,6 +123,7 @@ export interface CodingSession {
   error_message?: string;
   title: string;
   summary?: string;
+  system_prompt?: string;
   capabilities: CodingSessionCapabilities;
   repo: CodingSessionRepoState;
   cached_input_tokens: number;
@@ -129,6 +171,10 @@ export interface CodingSessionTranscriptMessage {
   sequence_no: number;
   tool_calls?: CodingSessionLiveToolCall[];
   turn_segments?: CodingSessionLiveTurnSegment[];
+  // For review_checkpoint_resolution / approval_request_resolution messages,
+  // the workspace user who resolved the interaction (so the UI can render
+  // their avatar and name).
+  resolver_user_id?: string;
 }
 
 export interface CodingSessionLiveToolResult {
