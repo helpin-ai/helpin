@@ -1,29 +1,19 @@
 import { FileSearchIcon } from '@/lib/icons'
 import type { SupportCoverageGapListItem } from '@/lib/supportCoverageTypes'
-import { GAP_KIND_LABELS, GAP_KIND_COLORS, resolveGapKindDisplay } from '@/lib/supportCoverageTypes'
+import { GAP_KIND_COLORS, V1_GAP_TYPE_LABELS, resolveGapKindDisplay } from '@/lib/supportCoverageTypes'
 import { cn, timeAgo } from '@/lib/utils'
 import { GapImpactBadge } from './GapImpactBadge'
 
 const ROW_GRID_FULL =
-  'grid w-full grid-cols-[minmax(0,1fr)_100px_100px_90px_90px] items-center gap-4 px-4 py-3 text-left'
+  'grid w-full grid-cols-[minmax(0,1fr)_140px_100px_90px_90px] items-center gap-4 px-4 py-3 text-left'
 const ROW_GRID_COMPACT =
-  'grid w-full grid-cols-[minmax(0,1fr)_80px_90px] items-center gap-3 px-3 py-3 text-left'
+  'grid w-full grid-cols-[minmax(0,1fr)_120px_90px] items-center gap-3 px-3 py-3 text-left'
 
-function KindBadge({ gapKind }: { gapKind: string }) {
+function KindDot({ gapKind }: { gapKind: string }) {
   const kind = resolveGapKindDisplay(gapKind)
   const colors = GAP_KIND_COLORS[kind] ?? GAP_KIND_COLORS.content
-  const label = GAP_KIND_LABELS[gapKind] ?? gapKind
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium',
-        colors.bg,
-        colors.text,
-        colors.border
-      )}
-    >
-      {label}
-    </span>
+    <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', colors.bg, colors.border, 'border')} />
   )
 }
 
@@ -88,14 +78,16 @@ export function GapList({
                 )}
               </div>
 
-              {compact ? (
-                <div>
-                  <KindBadge gapKind={gap.gap_kind} />
-                </div>
+              {!compact ? (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <KindDot gapKind={gap.gap_kind} />
+                  {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
+                </span>
               ) : (
-                <div>
-                  <KindBadge gapKind={gap.gap_kind} />
-                </div>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <KindDot gapKind={gap.gap_kind} />
+                  <span className="truncate">{V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}</span>
+                </span>
               )}
 
               {!compact && (
