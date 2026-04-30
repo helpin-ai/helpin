@@ -4,7 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
 import {
-  SentIcon, AttachmentIcon, StickyNote01Icon, Comment01Icon, Cancel01Icon, Loading01Icon,
+  SentIcon, AttachmentIcon, Cancel01Icon, Loading01Icon,
   Mail01Icon, SparklesIcon, ArrowUp01Icon, ArrowUpDownIcon, ArrowReloadHorizontalIcon,
   TickDouble01Icon, SmileIcon, Briefcase01Icon,
   TextBoldIcon, TextItalicIcon, TextUnderlineIcon, TextStrikethroughIcon,
@@ -230,7 +230,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   // Toolbar visibility — show when the editor is focused, or while interacting
   // with the toolbar itself, or when the link modal is open.
-  const [editorFocused, setEditorFocused] = useState(false);
+  const [, setEditorFocused] = useState(false);
   const toolbarHasPointerRef = useRef(false);
   // toolbarHasPointerRef still used by the merged bottom bar to keep editor focus state
 
@@ -663,7 +663,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         isNote && 'bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
-      {emailFallbackHint && !isNote && (editorFocused || !editor?.isEmpty) && (
+      {emailFallbackHint && !isNote && editor && !editor.isEmpty && (
         <div className="flex items-start gap-2 border-b border-border/20 bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground rounded-t-xl">
           <Mail01Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
           <p>
@@ -707,26 +707,24 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           type="button"
           onClick={() => setReplyMode('reply')}
           className={cn(
-            'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            'rounded-full px-3 py-1 text-xs font-medium transition-colors',
             !isNote
-              ? 'bg-primary/10 text-primary'
+              ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/25 dark:text-blue-400'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted'
           )}
         >
-          <Comment01Icon className="h-3 w-3" />
           Reply
         </button>
         <button
           type="button"
           onClick={() => setReplyMode('note')}
           className={cn(
-            'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+            'rounded-full px-3 py-1 text-xs font-medium transition-colors',
             isNote
               ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted'
           )}
         >
-          <StickyNote01Icon className="h-3 w-3" />
           Note
         </button>
         <DropdownMenu>
