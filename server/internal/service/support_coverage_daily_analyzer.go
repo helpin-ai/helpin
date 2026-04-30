@@ -26,7 +26,7 @@ import (
 const (
 	coverageAnalysisMaxMessages             = 80
 	coverageAnalysisMaxMessageChars         = 2000
-	coverageAnalyzerVersion                 = "v1"
+	coverageAnalyzerVersion                 = "v2"
 	coverageAnalysisWorkflowID              = "coverage-daily-analysis"
 	coverageAnalysisCronSchedule            = "30 4 * * *"
 	coverageAnalysisOverlap                 = 2 * time.Hour
@@ -83,6 +83,10 @@ type CoverageKnowledgeCandidate struct {
 }
 
 type CoverageConversationAnalysisResult struct {
+	IsSupportQuery       bool   `json:"is_support_query"`
+	ConversationType     string `json:"conversation_type"`
+	ClassificationReason string `json:"classification_reason"`
+
 	HasGap             bool                     `json:"has_gap"`
 	GapKind            string                   `json:"gap_kind"`
 	GapCategory        string                   `json:"gap_category"`
@@ -313,6 +317,27 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 	if alreadyAnalyzed {
 		return false, nil
 	}
+
+	// Deterministic prefilter: skip obvious non-support conversations without LLM.
+	if localClass, skip := classifyCoverageConversationLocally(input); skip {
+		classPayload, _ := json.Marshal(localClass)
+		if err := s.analysisRepo.RecordConversationAnalysis(ctx, &model.SupportCoverageConversationAnalysis{
+			WorkspaceID:          workspaceID,
+			RunID:                runID,
+			ConversationID:       conversation.ID,
+			Status:               model.SupportCoverageConversationAnalysisStatusSkipped,
+			TranscriptHash:       input.TranscriptHash,
+			AnalyzerVersion:      coverageAnalyzerVersion,
+			IsSupportQuery:       false,
+			ConversationType:     localClass.ConversationType,
+			ClassificationReason: localClass.ClassificationReason,
+			RawOutput:            classPayload,
+		}); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
 	result, raw, err := s.AnalyzeConversation(ctx, input)
 	if err != nil {
 		analysisErr := err.Error()
@@ -332,17 +357,26 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		return false, nil
 	}
 
+	// Determine status: non-support conversations are "skipped", others "analyzed".
+	analysisStatus := model.SupportCoverageConversationAnalysisStatusAnalyzed
+	if !result.IsSupportQuery {
+		analysisStatus = model.SupportCoverageConversationAnalysisStatusSkipped
+	}
+
 	analysis := &model.SupportCoverageConversationAnalysis{
 		WorkspaceID:               workspaceID,
 		RunID:                     runID,
 		ConversationID:            conversation.ID,
-		Status:                    model.SupportCoverageConversationAnalysisStatusAnalyzed,
+		Status:                    analysisStatus,
 		HasGap:                    result.HasGap,
 		GapKind:                   result.GapKind,
 		GapCategory:               result.GapCategory,
 		PrimaryRecommendationType: primaryRecommendationType(result.RecommendedFixes),
 		TranscriptHash:            input.TranscriptHash,
 		AnalyzerVersion:           coverageAnalyzerVersion,
+		IsSupportQuery:            result.IsSupportQuery,
+		ConversationType:          result.ConversationType,
+		ClassificationReason:      result.ClassificationReason,
 		CustomerNeed:              result.CustomerNeed,
 		AIFailure:                 result.AIFailure,
 		HumanResolution:           result.HumanResolution,
@@ -520,6 +554,109 @@ func (s *SupportCoverageDailyAnalyzer) supportContentSourceIDs(ctx context.Conte
 		}
 	}
 	return ids, nil
+}
+
+// CoverageLocalClassification is the result of the deterministic prefilter.
+type CoverageLocalClassification struct {
+	ConversationType     string `json:"conversation_type"`
+	ClassificationReason string `json:"classification_reason"`
+}
+
+// classifyCoverageConversationLocally applies conservative deterministic rules
+// to skip obvious non-support conversations before the LLM call. The second
+// return value is true when the classification is high-confidence and the
+// conversation can be skipped without LLM analysis.
+func classifyCoverageConversationLocally(input CoverageConversationAnalysisInput) (CoverageLocalClassification, bool) {
+	// Rule 1: No customer messages at all — nothing to analyze.
+	hasCustomerMessage := false
+	for _, m := range input.Messages {
+		if m.SenderType == "customer" {
+			hasCustomerMessage = true
+			break
+		}
+	}
+	if !hasCustomerMessage {
+		return CoverageLocalClassification{
+			ConversationType:     "other",
+			ClassificationReason: "no customer messages in conversation",
+		}, true
+	}
+
+	// Gather subject (lowercased) and first customer message for pattern matching.
+	subjectLower := strings.ToLower(strings.TrimSpace(input.Subject))
+	var firstCustomerContent string
+	for _, m := range input.Messages {
+		if m.SenderType == "customer" {
+			firstCustomerContent = strings.ToLower(m.Content)
+			break
+		}
+	}
+
+	// Rule 2: Auto-reply / bounce patterns in subject.
+	autoReplyPrefixes := []string{
+		"out of office",
+		"automatic reply",
+		"auto-reply",
+		"auto reply",
+		"delivery status notification",
+		"undeliverable",
+		"mail delivery failed",
+		"returned mail",
+	}
+	for _, prefix := range autoReplyPrefixes {
+		if strings.HasPrefix(subjectLower, prefix) || strings.Contains(subjectLower, prefix) {
+			return CoverageLocalClassification{
+				ConversationType:     "auto_reply",
+				ClassificationReason: fmt.Sprintf("subject matches auto-reply pattern: %s", prefix),
+			}, true
+		}
+	}
+
+	// Rule 3: Newsletter / promotional patterns — only if no question mark in content.
+	hasQuestion := strings.Contains(firstCustomerContent, "?")
+	newsletterSignals := []string{
+		"view this email in your browser",
+		"manage your preferences",
+		"unsubscribe from this list",
+		"you are receiving this email because",
+	}
+	if !hasQuestion {
+		for _, signal := range newsletterSignals {
+			if strings.Contains(firstCustomerContent, signal) {
+				return CoverageLocalClassification{
+					ConversationType:     "newsletter",
+					ClassificationReason: fmt.Sprintf("content matches newsletter pattern: %s", signal),
+				}, true
+			}
+		}
+	}
+
+	// Rule 4: Cold outreach patterns — only if no question mark in content.
+	if !hasQuestion {
+		coldOutreachSignals := []string{
+			"book a call",
+			"book a demo",
+			"schedule a call",
+			"increase your leads",
+			"guest post",
+			"backlinks",
+			"seo services",
+			"partnership opportunity",
+			"link building",
+			"we help companies like yours",
+		}
+		for _, signal := range coldOutreachSignals {
+			if strings.Contains(firstCustomerContent, signal) || strings.Contains(subjectLower, signal) {
+				return CoverageLocalClassification{
+					ConversationType:     "cold_outreach",
+					ClassificationReason: fmt.Sprintf("content matches cold outreach pattern: %s", signal),
+				}, true
+			}
+		}
+	}
+
+	// No confident local classification — let the LLM decide.
+	return CoverageLocalClassification{}, false
 }
 
 func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, input CoverageConversationAnalysisInput) (*CoverageConversationAnalysisResult, json.RawMessage, error) {
@@ -922,10 +1059,50 @@ func firstNonEmptyCoverageString(values ...string) string {
 	return ""
 }
 
+// validConversationTypes is the set of recognized conversation_type values.
+var validConversationTypes = map[string]bool{
+	"support_query": true,
+	"newsletter":    true,
+	"cold_outreach": true,
+	"auto_reply":    true,
+	"transactional": true,
+	"spam":          true,
+	"internal":      true,
+	"other":         true,
+}
+
 func normalizeCoverageConversationAnalysisResult(result *CoverageConversationAnalysisResult) {
 	if result == nil {
 		return
 	}
+	// Normalize classification fields.
+	result.ConversationType = strings.TrimSpace(result.ConversationType)
+	result.ClassificationReason = strings.TrimSpace(result.ClassificationReason)
+	if result.ConversationType == "" {
+		result.ConversationType = "support_query"
+	}
+	if !validConversationTypes[result.ConversationType] {
+		result.ConversationType = "other"
+	}
+	// Derive IsSupportQuery from conversation_type to enforce consistency.
+	result.IsSupportQuery = result.ConversationType == "support_query"
+
+	// If not a support query, force zero-value gap fields.
+	if !result.IsSupportQuery {
+		result.HasGap = false
+		result.ShouldRunRetrieval = false
+		result.RecommendedFixes = nil
+		result.GapKind = ""
+		result.GapCategory = ""
+		result.CanonicalTitle = ""
+		result.CustomerNeed = ""
+		result.AIFailure = ""
+		result.HumanResolution = ""
+		result.SearchQuery = ""
+		result.Confidence = 0
+		return
+	}
+
 	result.GapKind = strings.TrimSpace(result.GapKind)
 	result.GapCategory = strings.TrimSpace(result.GapCategory)
 	result.CanonicalTitle = strings.TrimSpace(result.CanonicalTitle)
@@ -982,6 +1159,14 @@ func normalizeCoverageFixBundleDecision(decision *CoverageFixBundleDecision) {
 func coverageConversationAnalysisSystemPrompt() string {
 	return `You analyze support conversations to find durable AI coverage gaps. Return JSON only.
 
+First classify whether the conversation contains a genuine customer or prospect need. Set conversation_type=support_query for customer/prospect questions, support issues, account or billing requests, setup/troubleshooting requests, and product-evaluation questions such as pricing, migration, integration, security, or comparisons.
+
+Set is_support_query=false for newsletters, cold outreach, auto-replies, bounces, transactional notifications with no support request, spam/phishing, internal messages, and emails that are not from someone seeking help or product information. Explain the classification briefly in classification_reason.
+
+If is_support_query=false, set has_gap=false, should_run_retrieval=false, recommended_fixes=[], and leave gap details empty.
+
+If is_support_query=true, proceed with gap analysis:
+
 Decide from the full conversation outcome, not one message. Treat human replies as the best evidence of what was missing. Use live retrieval traces to diagnose what AI actually searched and saw during the conversation.
 
 Do not create a gap if the AI correctly resolved the issue. Set should_run_retrieval=true only when current docs, website, or customer-facing content search can materially improve the recommendation.
@@ -998,6 +1183,9 @@ func coverageConversationAnalysisJSONSchema() map[string]any {
 		"type":                 "object",
 		"additionalProperties": false,
 		"required": []string{
+			"is_support_query",
+			"conversation_type",
+			"classification_reason",
 			"has_gap",
 			"gap_kind",
 			"gap_category",
@@ -1012,7 +1200,10 @@ func coverageConversationAnalysisJSONSchema() map[string]any {
 			"confidence",
 		},
 		"properties": map[string]any{
-			"has_gap":              map[string]any{"type": "boolean"},
+			"is_support_query":      map[string]any{"type": "boolean"},
+			"conversation_type":     map[string]any{"type": "string", "enum": []string{"support_query", "newsletter", "cold_outreach", "auto_reply", "transactional", "spam", "internal", "other"}},
+			"classification_reason": map[string]any{"type": "string"},
+			"has_gap":               map[string]any{"type": "boolean"},
 			"gap_kind":             map[string]any{"type": "string", "enum": []string{"", "content", "data", "action", "policy"}},
 			"gap_category":         map[string]any{"type": "string", "enum": []string{"", model.SupportCoverageGapCategoryKnowledge, model.SupportCoverageGapCategoryStructure, model.SupportCoverageGapCategoryConflict, model.SupportCoverageGapCategoryContext, model.SupportCoverageGapCategoryAction, model.SupportCoverageGapCategoryWorkflow, model.SupportCoverageGapCategoryPolicy, model.SupportCoverageGapCategoryEvaluation, model.SupportCoverageGapCategoryUnknown}},
 			"canonical_title":      map[string]any{"type": "string"},
