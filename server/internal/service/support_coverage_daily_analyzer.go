@@ -1287,7 +1287,14 @@ Prefer knowledge/content gaps only when customer-facing knowledge could reasonab
 
 Recommend multiple fixes when one surface alone will not reduce repeated human intervention. Limit to 3 fixes. Mark exactly one fix as primary unless two fixes are equally necessary.
 
-Recommend website/content changes for prospect, sales, pricing, migration, integration, security, comparison, or pre-purchase questions. Recommend docs changes for setup, usage, troubleshooting, and post-signup workflows.`
+Recommend website/content changes for prospect, sales, pricing, migration, integration, security, comparison, or pre-purchase questions. Recommend docs changes for setup, usage, troubleshooting, and post-signup workflows.
+
+Be concise in all text fields. Each field should be one sentence, two at most:
+- customer_need: what the customer needed, not a retelling of the conversation.
+- ai_failure: specifically what the AI lacked or got wrong.
+- human_resolution: the concrete action the human took.
+- decision_reason: why this gap matters, not a summary of the above fields.
+- rationale, suggested_change, implementation_notes in recommended_fixes: one actionable sentence each. Do not repeat information across fields.`
 }
 
 func coverageConversationAnalysisJSONSchema() map[string]any {
@@ -1355,7 +1362,9 @@ func coverageFixBundleRefinementSystemPrompt() string {
 
 Use update_article only when a candidate help article is clearly about the same customer need but is missing, outdated, or unclear. Use update_website_page when a website/content page should answer a prospect, sales, pricing, integration, migration, security, comparison, or pre-purchase question. Use create_article or create_website_page when no candidate covers the same topic.
 
-Preserve data, action, policy, workflow, and agent-instruction recommendations from the first-pass analysis if they remain relevant. Mixed cases may produce multiple fixes, capped at 3. Mark exactly one primary fix unless two fixes are equally necessary. Keep decision_reason short enough for a UI card.`
+Preserve data, action, policy, workflow, and agent-instruction recommendations from the first-pass analysis if they remain relevant. Mixed cases may produce multiple fixes, capped at 3. Mark exactly one primary fix unless two fixes are equally necessary.
+
+Be concise: decision_reason should be one sentence for a UI card. Each fix field (rationale, suggested_change, implementation_notes) should be one actionable sentence. Do not repeat information across fields.`
 }
 
 func coverageFixBundleDecisionJSONSchema() map[string]any {
