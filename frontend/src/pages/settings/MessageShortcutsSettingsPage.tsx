@@ -88,6 +88,7 @@ function validateShortcut(shortCode: string) {
   if (!value) return 'Shortcut is required';
   if (!value.startsWith('!')) return 'Shortcut must start with !';
   if (/\s/.test(value)) return 'Shortcut cannot contain spaces';
+  if (value.length < 2) return 'Shortcut must have at least one character after !';
   return null;
 }
 
