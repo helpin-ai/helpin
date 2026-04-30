@@ -1,8 +1,0 @@
-./block-proximity-fusion.go
-./document-title.go
-./expand-title.go
-./heading-fusion.go
-./keep-largest-block.go
-./large-block-around-level.go
-./list-at-end.go
-./similar-sibling-content.go

@@ -1,5 +1,0 @@
-./capturing_handler.go
-./constants.go
-./grpc.go
-./handler.go
-./tags.go

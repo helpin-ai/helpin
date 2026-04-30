@@ -1,9 +1,0 @@
-./colly.go
-./context.go
-./htmlelement.go
-./http_backend.go
-./http_trace.go
-./request.go
-./response.go
-./unmarshal.go
-./xmlelement.go

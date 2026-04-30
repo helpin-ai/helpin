@@ -1,5 +1,0 @@
-./arch_amd64.go
-./assembler_amd64.go
-./backend.go
-./runtime.go
-./asm.s

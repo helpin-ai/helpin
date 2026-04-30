@@ -1,5 +1,0 @@
-./cache.go
-./lru.go
-./noop.go
-./redis.go
-./tiered.go

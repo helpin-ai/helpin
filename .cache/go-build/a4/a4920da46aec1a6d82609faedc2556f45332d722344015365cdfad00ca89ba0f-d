@@ -1,8 +1,0 @@
-./constant.go
-./linear-formula.go
-./monotonic-info.go
-./page-info.go
-./page-link-info.go
-./page-numbers-state.go
-./page-param-info.go
-./utils.go

@@ -1,6 +1,0 @@
-./config.go
-./hijri-parser.go
-./jalali-parser.go
-./parser.go
-./root.go
-./search.go

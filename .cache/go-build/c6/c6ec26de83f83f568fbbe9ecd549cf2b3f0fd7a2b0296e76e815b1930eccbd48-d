@@ -1,7 +1,0 @@
-./2022.go
-./detector.go
-./multi_byte.go
-./recognizer.go
-./single_byte.go
-./unicode.go
-./utf8.go
