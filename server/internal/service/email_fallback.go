@@ -253,7 +253,47 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 	if err := s.redis.RPush(ctx, s.msgListKey(conv.ID), msg.ID).Err(); err != nil {
 		return fmt.Errorf("append email fallback message id: %w", err)
 	}
+	if err := s.messageRepo.SetCancellableUntil(ctx, msg.ID, fireAt); err != nil {
+		s.logger.WarnContext(ctx, "set support message cancellable_until failed", "error", err, "message_id", msg.ID)
+	}
 	return nil
+}
+
+// CancelForMessage removes a single queued message from its conversation email
+// fallback batch. If an outbound email log already references this message, the
+// email has fired and the caller can only hide the in-app message.
+func (s *EmailFallbackService) CancelForMessage(ctx context.Context, workspaceID, conversationID, messageID string) (bool, error) {
+	if s == nil || s.redis == nil {
+		return false, nil
+	}
+	if s.emailLogRepo != nil {
+		logRow, err := s.emailLogRepo.GetByMessageID(ctx, workspaceID, messageID)
+		if err != nil {
+			return false, err
+		}
+		if logRow != nil && strings.TrimSpace(logRow.Direction) == "outbound" {
+			return true, nil
+		}
+	}
+
+	msgKey := s.msgListKey(conversationID)
+	if err := s.redis.LRem(ctx, msgKey, 0, messageID).Err(); err != nil {
+		return false, fmt.Errorf("remove queued email fallback message: %w", err)
+	}
+	remaining, err := s.redis.LLen(ctx, msgKey).Result()
+	if err != nil {
+		return false, fmt.Errorf("count queued email fallback messages: %w", err)
+	}
+	if remaining > 0 {
+		return false, nil
+	}
+	if err := s.redis.ZRem(ctx, emailFallbackOutboxKey, conversationID).Err(); err != nil {
+		return false, fmt.Errorf("remove email fallback outbox entry: %w", err)
+	}
+	if err := s.redis.Del(ctx, msgKey).Err(); err != nil {
+		return false, fmt.Errorf("delete email fallback message list: %w", err)
+	}
+	return false, nil
 }
 
 // ProcessInboundEmail converts a Postmark inbound webhook into a support message when valid.

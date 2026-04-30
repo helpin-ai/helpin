@@ -34,6 +34,7 @@ import type {
   SupportTriageRule,
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
+  SupportMessage,
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
@@ -355,6 +356,15 @@ export function useMessageEmailDetail(workspaceId: string, messageId: string | n
   });
 }
 
+export function useMessageInfo(workspaceId: string, conversationId: string, messageId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.messageInfo(workspaceId, conversationId, messageId ?? ''),
+    queryFn: async () => unwrap(await supportService.getConversationMessageInfo(workspaceId, conversationId, messageId!)),
+    enabled: enabled && !!workspaceId && !!conversationId && !!messageId,
+    staleTime: 60_000,
+  });
+}
+
 export function useVisitorContext(workspaceId: string, conversationId: string | null) {
   return useQuery<VisitorContextResponse>({
     queryKey: queryKeys.support.visitorContext(workspaceId, conversationId ?? ''),
@@ -379,6 +389,36 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
     },
     onError: (error: Error) => {
       toast.error('Failed to send message', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteSupportMessage(workspaceId: string, conversationId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ messageId, undo }: { messageId: string; undo?: boolean }) =>
+      supportService.deleteConversationMessage(workspaceId, conversationId!, messageId, !!undo).then(unwrap),
+    onMutate: async ({ messageId }) => {
+      if (!conversationId) return { previousMessages: undefined as SupportMessage[] | undefined };
+      const key = queryKeys.support.messages(workspaceId, conversationId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<SupportMessage[]>(key);
+      queryClient.setQueryData<SupportMessage[]>(key, (current) =>
+        current?.filter((message) => message.id !== messageId) ?? current,
+      );
+      return { previousMessages };
+    },
+    onError: (error: Error, _variables, context) => {
+      if (conversationId && context?.previousMessages) {
+        queryClient.setQueryData(queryKeys.support.messages(workspaceId, conversationId), context.previousMessages);
+      }
+      toast.error('Failed to remove message', { description: error.message });
+    },
+    onSettled: () => {
+      if (conversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) });
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
     },
   });
 }

@@ -16,6 +16,7 @@ import {
   useCreateTaskFromConversation,
   useMoveConversation,
   useDismissConversationTriage,
+  useDeleteSupportMessage,
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
@@ -48,6 +49,7 @@ interface MessageThreadProps {
 
 const INITIAL_THREAD_ITEM_COUNT = 60;
 const THREAD_HISTORY_HYDRATION_DELAY_MS = 120;
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
   const typingState = useSupportPresenceStore(
@@ -233,6 +235,7 @@ export function MessageThread({
   const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
+  const deleteMessage = useDeleteSupportMessage(workspaceId, conversationId);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { data: wsSettings } = useWorkspaceSettings(workspaceId);
   const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
@@ -390,6 +393,34 @@ export function MessageThread({
       wsSend('support:viewing:stop', { conversation_id: conversationId });
     };
   }, [conversationId, wsSend, wsConnected]);
+
+  useEffect(() => {
+    const handleKeyDown = async (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || event.shiftKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (!conversationId || deleteMessage.isPending) return;
+
+      const now = Date.now();
+      const latest = [...messages].reverse().find((message) => {
+        if (message.sender_type !== 'user' || message.sender_user_id !== currentUser?.id || message.is_internal) return false;
+        if (!message.cancellable_until) return false;
+        return Date.parse(message.cancellable_until) > now;
+      });
+      if (!latest) return;
+
+      event.preventDefault();
+      const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
+      if (result.markdown) {
+        window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
+          detail: { conversationId, markdown: result.markdown },
+        }));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [conversationId, currentUser?.id, deleteMessage, messages]);
 
   useEffect(() => {
     if (!conversationId) {

@@ -135,7 +135,7 @@ const ownedReplyClause = `
 	sender_type    = 'user'
 AND sender_user_id = ?
 AND message_type   = 'reply'
-AND is_internal    = 0`
+AND is_internal    = false`
 
 // GetMessageForActor returns the message if it exists, is not soft-deleted,
 // and was authored by the given user as an outbound reply (not internal,
@@ -589,11 +589,13 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 			SELECT CASE WHEN m.is_internal THEN 'Note: ' || %s ELSE %s END
 			FROM support_messages m
 			WHERE m.conversation_id = support_conversations.id
+			  AND m.deleted_at IS NULL
 			ORDER BY m.created_at DESC LIMIT 1
 		) AS last_message,
 		(SELECT COUNT(*)
 			FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
+			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
@@ -748,7 +750,7 @@ func (r *SupportConversationRepository) ListConversationIDsWithMentions(ctx cont
 	var ids []string
 	if err := r.db.WithContext(ctx).
 		Table("support_messages").
-		Where("workspace_id = ? AND is_internal = true AND metadata::jsonb @> ?::jsonb", workspaceID, string(filterJSON)).
+		Where("workspace_id = ? AND deleted_at IS NULL AND is_internal = true AND metadata::jsonb @> ?::jsonb", workspaceID, string(filterJSON)).
 		Distinct().
 		Pluck("conversation_id", &ids).Error; err != nil {
 		return nil, fmt.Errorf("list conversations with mentions: %w", err)
@@ -828,10 +830,11 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 	var conversations []model.SupportConversation
 	if err := r.db.WithContext(ctx).
 		Select(fmt.Sprintf(`support_conversations.*,
-		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message,
+		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.deleted_at IS NULL AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message,
 		(SELECT COUNT(*)
 			FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
+			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
@@ -855,6 +858,7 @@ func (r *SupportConversationRepository) MarkInternalRead(ctx context.Context, co
 		  AND EXISTS (
 			SELECT 1 FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
+			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
@@ -904,6 +908,7 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 		  AND EXISTS (
 			SELECT 1 FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
+			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
@@ -928,6 +933,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					SELECT COUNT(*)
 					FROM support_messages sm
 					WHERE sm.conversation_id = sc.id
+					  AND sm.deleted_at IS NULL
 					  AND sm.is_internal = false
 					  AND sm.sender_type = 'customer'
 					  AND sm.message_type = 'reply'
@@ -940,6 +946,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					SELECT COUNT(*)
 					FROM support_messages sm
 					WHERE sm.conversation_id = sc.id
+					  AND sm.deleted_at IS NULL
 					  AND sm.is_internal = false
 					  AND sm.sender_type = 'customer'
 					  AND sm.message_type = 'reply'
@@ -953,6 +960,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					SELECT COUNT(*)
 					FROM support_messages sm
 					WHERE sm.conversation_id = sc.id
+					  AND sm.deleted_at IS NULL
 					  AND sm.is_internal = false
 					  AND sm.sender_type = 'customer'
 					  AND sm.message_type = 'reply'
@@ -967,6 +975,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					SELECT COUNT(*)
 					FROM support_messages sm
 					WHERE sm.conversation_id = sc.id
+					  AND sm.deleted_at IS NULL
 					  AND sm.is_internal = false
 					  AND sm.sender_type = 'customer'
 					  AND sm.message_type = 'reply'

@@ -50,6 +50,7 @@ import { EmojiPicker } from './EmojiPicker';
 import { LinkInsertModal } from './LinkInsertModal';
 
 const OFFLINE_EMAIL_CONFIRM_STORAGE_PREFIX = 'support_offline_email_confirm';
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 interface ReplyComposerProps {
   workspaceId: string;
@@ -229,7 +230,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   // Toolbar visibility — show when the editor is focused, or while interacting
   // with the toolbar itself, or when the link modal is open.
-  const [, setEditorFocused] = useState(false);
+  const [editorFocused, setEditorFocused] = useState(false);
   const toolbarHasPointerRef = useRef(false);
   // toolbarHasPointerRef still used by the merged bottom bar to keep editor focus state
 
@@ -514,6 +515,21 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     };
   }, [conversationId, editor]);
 
+  useEffect(() => {
+    if (!editor) return;
+    const handleRestoreDraft = (event: Event) => {
+      const detail = (event as CustomEvent<{ conversationId?: string; markdown?: string }>).detail;
+      if (detail?.conversationId !== conversationId) return;
+      const markdown = detail.markdown ?? '';
+      setReplyMode('reply');
+      setDraft(conversationId, markdown);
+      editor.commands.setContent(markdown);
+      editor.commands.focus('end');
+    };
+    window.addEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
+    return () => window.removeEventListener(RESTORE_SUPPORT_DRAFT_EVENT, handleRestoreDraft);
+  }, [conversationId, editor, setDraft, setReplyMode]);
+
   // Force placeholder redecoration when mode changes
   useEffect(() => {
     if (editor && editor.isEmpty) {
@@ -647,7 +663,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         isNote && 'bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
-      {emailFallbackHint && !isNote && (
+      {emailFallbackHint && !isNote && (editorFocused || !editor?.isEmpty) && (
         <div className="flex items-start gap-2 border-b border-border/20 bg-muted/20 px-4 py-2.5 text-xs text-muted-foreground rounded-t-xl">
           <Mail01Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
           <p>

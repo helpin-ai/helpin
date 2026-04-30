@@ -46,6 +46,23 @@ func (r *SupportEmailLogRepository) GetByMessageID(ctx context.Context, workspac
 	if workspaceID == "" || messageID == "" {
 		return nil, nil
 	}
+	if r.db != nil && r.db.Dialector != nil && r.db.Dialector.Name() == "sqlite" {
+		var logs []model.SupportEmailLog
+		if err := r.db.WithContext(ctx).
+			Where("workspace_id = ?", workspaceID).
+			Order("created_at DESC").
+			Find(&logs).Error; err != nil {
+			return nil, fmt.Errorf("get support email log by message id: %w", err)
+		}
+		for i := range logs {
+			for _, id := range logs[i].MessageIDs {
+				if strings.TrimSpace(id) == messageID {
+					return &logs[i], nil
+				}
+			}
+		}
+		return nil, nil
+	}
 	var log model.SupportEmailLog
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ? AND ? = ANY(message_ids)", workspaceID, messageID).

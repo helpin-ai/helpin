@@ -305,6 +305,7 @@ export interface SupportMessage {
   via_channel?: 'email' | 'widget' | null;
   email_notified_at?: string;
   email_read_at?: string;
+  cancellable_until?: string;
   attachments?: SupportAttachmentPayload[];
   /** Sanitized HTML body — present only for inbound email messages (via_channel === 'email'). */
   html_body?: string;
@@ -316,6 +317,36 @@ export interface SupportMessage {
   email_delivery_error?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportMessageActionResponse {
+  id: string;
+  markdown?: string;
+  email_already_sent: boolean;
+}
+
+export interface SupportMessageInfo {
+  id: string;
+  sent_at: string;
+  sender: {
+    id?: string;
+    name: string;
+    type: string;
+    avatar_url?: string;
+  };
+  from: string;
+  origin: string;
+  type: string;
+  delivered?: {
+    channel: string;
+    delivered_at: string;
+  } | null;
+  not_delivered_reason?: string | null;
+  read: boolean;
+  read_at?: string | null;
+  edited: boolean;
+  translated: boolean;
+  automated: boolean;
 }
 
 export interface SupportMessageEmailDetail {

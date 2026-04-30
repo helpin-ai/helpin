@@ -1,18 +1,24 @@
-import { memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { TickDouble01Icon, CheckmarkCircle02Icon, ArrowDown01Icon, Download04Icon, LinkSquare01Icon, File01Icon, AttachmentIcon, RotateLeft01Icon, StickyNote01Icon, Cancel01Icon, CancelCircleIcon, Mail01Icon, AlertCircleIcon, BotIcon, UserIcon } from '@/lib/icons';
 import { EmailDetailModal } from './EmailDetailModal';
+import { MessageActionsMenu } from './MessageActionsMenu';
+import { MessageDeleteDialog } from './MessageDeleteDialog';
+import { MessageInfoDialog } from './MessageInfoDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
 import { timeAgo } from '@/lib/utils';
+import { toast } from 'sonner';
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
@@ -77,6 +83,13 @@ function previewHostLabel(preview: SupportLinkPreview): string {
   } catch {
     return preview.host.replace(/^www\./, '');
   }
+}
+
+function formatCountdown(ms: number): string {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview; isOutgoing: boolean }) {
@@ -225,6 +238,16 @@ export const MessageBubble = memo(function MessageBubble({
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [emailDetailOpen, setEmailDetailOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const deleteMutation = useDeleteSupportMessage(message.workspace_id, message.conversation_id);
+
+  useEffect(() => {
+    if (!message.cancellable_until) return;
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [message.cancellable_until]);
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
@@ -243,6 +266,49 @@ export const MessageBubble = memo(function MessageBubble({
       {sourceLabel && <div className="text-background/70">via {sourceLabel}</div>}
     </div>
   );
+
+  const cancellableUntilMs = message.cancellable_until ? Date.parse(message.cancellable_until) : 0;
+  const canMutateOwnReply = message.sender_type === 'user'
+    && message.sender_user_id === currentUser?.id
+    && message.message_type !== 'system'
+    && !message.is_internal;
+  const cancellableActive = canMutateOwnReply && Number.isFinite(cancellableUntilMs) && cancellableUntilMs > nowMs;
+  const hasCancellableFooter = canMutateOwnReply && !!message.cancellable_until;
+  const countdown = cancellableActive ? formatCountdown(cancellableUntilMs - nowMs) : '0:00';
+
+  const restoreComposerDraft = useCallback((markdown: string) => {
+    window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
+      detail: { conversationId: message.conversation_id, markdown },
+    }));
+  }, [message.conversation_id]);
+
+  const handleUndoOrEdit = useCallback(async () => {
+    const result = await deleteMutation.mutateAsync({ messageId: message.id, undo: true });
+    if (result.markdown) {
+      restoreComposerDraft(result.markdown);
+    }
+  }, [deleteMutation, message.id, restoreComposerDraft]);
+
+  const handleDelete = useCallback(async () => {
+    const result = await deleteMutation.mutateAsync({ messageId: message.id, undo: false });
+    setDeleteDialogOpen(false);
+    if (result.email_already_sent) {
+      toast.message('Message removed from chat', { description: 'The email may already have been delivered.' });
+    }
+  }, [deleteMutation, message.id]);
+
+  const handleCopy = useCallback(() => {
+    void navigator.clipboard?.writeText(displayContent);
+    toast.success('Message copied');
+  }, [displayContent]);
+
+  const handleQuoteReply = useCallback(() => {
+    const quoted = displayContent
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n');
+    restoreComposerDraft(`${quoted}\n\n`);
+  }, [displayContent, restoreComposerDraft]);
 
   const resolvedAvatarUrl = message.sender_avatar_url
     ?? fallbackAvatarUrl
@@ -456,8 +522,18 @@ export const MessageBubble = memo(function MessageBubble({
 
         <div
           data-slot="support-message-bubble"
-          className={bubbleWidthClass}
+          className={`${bubbleWidthClass} group/message relative`}
         >
+          <MessageActionsMenu
+            alignSide={isCustomer ? 'right' : 'left'}
+            canEdit={cancellableActive}
+            canDelete={canMutateOwnReply}
+            onEdit={handleUndoOrEdit}
+            onCopy={handleCopy}
+            onReply={handleQuoteReply}
+            onDelete={() => setDeleteDialogOpen(true)}
+            onInfo={() => setInfoOpen(true)}
+          />
           {showBubble && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -561,6 +637,19 @@ export const MessageBubble = memo(function MessageBubble({
           onOpenChange={setEmailDetailOpen}
         />
       )}
+      <MessageInfoDialog
+        workspaceId={message.workspace_id}
+        conversationId={message.conversation_id}
+        messageId={message.id}
+        open={infoOpen}
+        onOpenChange={setInfoOpen}
+      />
+      <MessageDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={handleDelete}
+        isPending={deleteMutation.isPending}
+      />
 
       {/* Lightbox modal — rendered in portal for full-screen overlay */}
       {lightboxSrc && createPortal(
@@ -585,7 +674,7 @@ export const MessageBubble = memo(function MessageBubble({
       )}
 
       {/* Status below the bubble row — outside the avatar alignment */}
-      {hasStatusBelow && (
+      {(hasStatusBelow || hasCancellableFooter) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
             <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
@@ -609,6 +698,28 @@ export const MessageBubble = memo(function MessageBubble({
                 {message.email_delivery_status === 'spam_complaint' ? 'Marked as spam' : 'Delivery failed'}
                 {message.email_delivery_error ? ` · ${message.email_delivery_error}` : ''}
               </span>
+            </div>
+          ) : hasCancellableFooter ? (
+            <div className={`flex items-center gap-1 text-[11px] text-muted-foreground ${isCustomer ? '' : 'justify-end'}`}>
+              <TickDouble01Icon className="h-3.5 w-3.5" />
+              {cancellableActive ? (
+                <>
+                  <span>Sent</span>
+                  <span>·</span>
+                  <button
+                    type="button"
+                    className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                    onClick={handleUndoOrEdit}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Undo
+                  </button>
+                  <span>·</span>
+                  <span>{countdown}</span>
+                </>
+              ) : (
+                <span>Delivered to email</span>
+              )}
             </div>
           ) : aiMeta ? (
             // AI message: combined footer — confidence + sources on the left, receipt on the right

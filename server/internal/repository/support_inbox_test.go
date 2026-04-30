@@ -50,6 +50,49 @@ func setupSupportMessageTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := setupSupportMessageTestDB(t)
+	if err := db.Exec(`CREATE TABLE support_conversations (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		mailbox_id TEXT,
+		display_id INTEGER NOT NULL DEFAULT 1,
+		subject TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'open',
+		flow_state TEXT,
+		priority TEXT NOT NULL DEFAULT 'medium',
+		channel TEXT NOT NULL DEFAULT 'widget',
+		customer_name TEXT,
+		customer_email TEXT,
+		customer_phone TEXT,
+		opened_by_user_id TEXT,
+		assigned_user_id TEXT,
+		assigned_agent_id TEXT,
+		linked_task_id TEXT,
+		source TEXT NOT NULL DEFAULT 'widget',
+		anonymous_id TEXT,
+		crm_contact_id TEXT,
+		resolved_at DATETIME,
+		closed_at DATETIME,
+		team_last_seen_at DATETIME,
+		contact_last_seen_at DATETIME,
+		email_unsubscribed BOOLEAN NOT NULL DEFAULT 0,
+		ai_state TEXT,
+		ai_resolved_at DATETIME,
+		ai_escalated_at DATETIME,
+		ai_resolution_type TEXT,
+		ai_turn_count INTEGER NOT NULL DEFAULT 0,
+		customer_requested_human_at DATETIME,
+		human_takeover BOOLEAN DEFAULT 0,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`).Error; err != nil {
+		t.Fatalf("create support_conversations: %v", err)
+	}
+	return db
+}
+
 // insertMessage is a small helper for the tests below — it inserts a row
 // directly via SQL so we can vary the columns the repo cares about
 // (sender_type, sender_user_id, message_type, is_internal) without
@@ -62,14 +105,53 @@ func insertMessage(t *testing.T, db *gorm.DB, m model.SupportMessage) {
 	if m.Metadata == "" {
 		m.Metadata = "{}"
 	}
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now().UTC()
+	}
+	var deletedAt any
+	if m.DeletedAt.Valid {
+		deletedAt = m.DeletedAt.Time
+	}
 	if err := db.Exec(`INSERT INTO support_messages
 		(id, workspace_id, conversation_id, sender_type, message_type, sender_user_id,
-		 content, is_internal, metadata, cancellable_until)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 content, is_internal, metadata, cancellable_until, deleted_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, m.WorkspaceID, m.ConversationID, m.SenderType, m.MessageType,
 		m.SenderUserID, m.Content, m.IsInternal, m.Metadata, m.CancellableUntil,
+		deletedAt, m.CreatedAt,
 	).Error; err != nil {
 		t.Fatalf("insert message %s: %v", m.ID, err)
+	}
+}
+
+func insertConversation(t *testing.T, db *gorm.DB, c model.SupportConversation) {
+	t.Helper()
+	if c.Status == "" {
+		c.Status = model.SupportConversationStatusOpen
+	}
+	if c.Priority == "" {
+		c.Priority = "medium"
+	}
+	if c.Channel == "" {
+		c.Channel = "widget"
+	}
+	if c.Source == "" {
+		c.Source = "widget"
+	}
+	if c.CreatedAt.IsZero() {
+		c.CreatedAt = time.Now().UTC()
+	}
+	if c.UpdatedAt.IsZero() {
+		c.UpdatedAt = c.CreatedAt
+	}
+	if err := db.Exec(`INSERT INTO support_conversations
+		(id, workspace_id, anonymous_id, display_id, subject, status, priority,
+		 channel, source, contact_last_seen_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.WorkspaceID, c.AnonymousID, c.DisplayID, c.Subject, c.Status,
+		c.Priority, c.Channel, c.Source, c.ContactLastSeenAt, c.CreatedAt, c.UpdatedAt,
+	).Error; err != nil {
+		t.Fatalf("insert conversation %s: %v", c.ID, err)
 	}
 }
 
@@ -225,4 +307,101 @@ func TestSupportMessageRepository_SetCancellableUntil(t *testing.T) {
 	if got == nil || !got.UTC().Equal(want) {
 		t.Fatalf("cancellable_until: got %v want %v", got, want)
 	}
+}
+
+func TestSupportConversationRepository_ListByAnonymousIDIgnoresSoftDeletedMessages(t *testing.T) {
+	db := setupSupportConversationMessageTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	ctx := context.Background()
+	base := time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)
+
+	insertConversation(t, db, model.SupportConversation{
+		ID:                "c1",
+		WorkspaceID:       "w",
+		AnonymousID:       strPtr("anon-1"),
+		DisplayID:         1,
+		Subject:           "conversation",
+		ContactLastSeenAt: supportMessageTimePtr(base),
+		CreatedAt:         base,
+		UpdatedAt:         base.Add(3 * time.Minute),
+	})
+	insertMessage(t, db, model.SupportMessage{
+		ID:             "visible",
+		WorkspaceID:    "w",
+		ConversationID: "c1",
+		SenderType:     "user",
+		SenderUserID:   strPtr("u1"),
+		Content:        "visible reply",
+		MessageType:    "reply",
+		CreatedAt:      base.Add(time.Minute),
+	})
+	insertMessage(t, db, model.SupportMessage{
+		ID:             "deleted",
+		WorkspaceID:    "w",
+		ConversationID: "c1",
+		SenderType:     "user",
+		SenderUserID:   strPtr("u1"),
+		Content:        "deleted reply",
+		MessageType:    "reply",
+		CreatedAt:      base.Add(2 * time.Minute),
+		DeletedAt:      gorm.DeletedAt{Time: base.Add(3 * time.Minute), Valid: true},
+	})
+
+	conversations, err := repo.ListByAnonymousID(ctx, "w", "anon-1")
+	if err != nil {
+		t.Fatalf("ListByAnonymousID: %v", err)
+	}
+	if len(conversations) != 1 {
+		t.Fatalf("conversations = %d, want 1", len(conversations))
+	}
+	if conversations[0].LastMessage == nil || *conversations[0].LastMessage != "visible reply" {
+		t.Fatalf("last_message = %v, want visible reply", conversations[0].LastMessage)
+	}
+	if conversations[0].UnreadCount != 1 {
+		t.Fatalf("unread_count = %d, want 1", conversations[0].UnreadCount)
+	}
+}
+
+func TestSupportConversationRepository_MarkContactReadIgnoresSoftDeletedMessages(t *testing.T) {
+	db := setupSupportConversationMessageTestDB(t)
+	repo := NewSupportConversationRepository(db)
+	ctx := context.Background()
+	base := time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)
+
+	insertConversation(t, db, model.SupportConversation{
+		ID:                "c1",
+		WorkspaceID:       "w",
+		AnonymousID:       strPtr("anon-1"),
+		DisplayID:         1,
+		Subject:           "conversation",
+		ContactLastSeenAt: supportMessageTimePtr(base),
+		CreatedAt:         base,
+		UpdatedAt:         base,
+	})
+	insertMessage(t, db, model.SupportMessage{
+		ID:             "deleted",
+		WorkspaceID:    "w",
+		ConversationID: "c1",
+		SenderType:     "user",
+		SenderUserID:   strPtr("u1"),
+		Content:        "deleted reply",
+		MessageType:    "reply",
+		CreatedAt:      base.Add(time.Minute),
+		DeletedAt:      gorm.DeletedAt{Time: base.Add(2 * time.Minute), Valid: true},
+	})
+
+	if err := repo.MarkContactRead(ctx, "c1"); err != nil {
+		t.Fatalf("MarkContactRead: %v", err)
+	}
+	var got time.Time
+	if err := db.Raw(`SELECT contact_last_seen_at FROM support_conversations WHERE id = ?`, "c1").Scan(&got).Error; err != nil {
+		t.Fatalf("read contact_last_seen_at: %v", err)
+	}
+	if !got.UTC().Equal(base) {
+		t.Fatalf("contact_last_seen_at changed to %v, want %v", got, base)
+	}
+}
+
+func supportMessageTimePtr(t time.Time) *time.Time {
+	return &t
 }

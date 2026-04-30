@@ -14,13 +14,14 @@ import (
 
 // SupportInboxHandler handles internal support HTTP endpoints.
 type SupportInboxHandler struct {
-	supportService *service.SupportInboxService
-	agentService   *service.AgentService
+	supportService        *service.SupportInboxService
+	agentService          *service.AgentService
+	messageActionsService *service.SupportMessageActionsService
 }
 
 // NewSupportInboxHandler creates a new SupportInboxHandler.
-func NewSupportInboxHandler(supportService *service.SupportInboxService, agentService *service.AgentService) *SupportInboxHandler {
-	return &SupportInboxHandler{supportService: supportService, agentService: agentService}
+func NewSupportInboxHandler(supportService *service.SupportInboxService, agentService *service.AgentService, messageActionsService *service.SupportMessageActionsService) *SupportInboxHandler {
+	return &SupportInboxHandler{supportService: supportService, agentService: agentService, messageActionsService: messageActionsService}
 }
 
 // ListConversations handles GET /api/support/tickets.
@@ -176,6 +177,58 @@ func (h *SupportInboxHandler) CreateConversationMessage(w http.ResponseWriter, r
 		return
 	}
 	writeJSON(w, http.StatusCreated, msg)
+}
+
+// DeleteMessage handles DELETE /api/support/inbox/conversations/{id}/messages/{msg_id}.
+func (h *SupportInboxHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	if h.messageActionsService == nil {
+		writeError(w, http.StatusInternalServerError, "message actions are not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	messageID := chi.URLParam(r, "msg_id")
+	actorID := middleware.GetUserID(r.Context())
+	undo := r.URL.Query().Get("undo") == "1" || strings.EqualFold(r.URL.Query().Get("undo"), "true")
+
+	result, err := h.messageActionsService.Delete(r.Context(), workspaceID, conversationID, actorID, messageID, undo)
+	if err != nil {
+		h.writeMessageActionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// GetMessageInfo handles GET /api/support/inbox/conversations/{id}/messages/{msg_id}.
+func (h *SupportInboxHandler) GetMessageInfo(w http.ResponseWriter, r *http.Request) {
+	if h.messageActionsService == nil {
+		writeError(w, http.StatusInternalServerError, "message actions are not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	messageID := chi.URLParam(r, "msg_id")
+	actorID := middleware.GetUserID(r.Context())
+
+	info, err := h.messageActionsService.Info(r.Context(), workspaceID, conversationID, actorID, messageID)
+	if err != nil {
+		h.writeMessageActionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (h *SupportInboxHandler) writeMessageActionError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrCancellableExpired):
+		writeError(w, http.StatusGone, err.Error())
+	case errors.Is(err, service.ErrSupportMessageActionForbidden):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrSupportMessageActionNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
 }
 
 // LinkConversationStory handles POST /api/support/tickets/{id}/link-task.
