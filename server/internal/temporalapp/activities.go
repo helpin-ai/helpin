@@ -83,6 +83,7 @@ type ReleaseFactsProvider interface {
 
 type CommandBarPlanAdvancer interface {
 	AdvanceCommandBarPlanAfterRun(ctx context.Context, completedRunID string) (*model.AgentRun, error)
+	StartReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error)
 }
 
 // AgentRunActivities contains the Temporal activities that execute an agent run.
@@ -351,6 +352,13 @@ func (a *AgentRunActivities) AdvanceCommandBarPlanActivity(ctx context.Context, 
 	}
 	_, err := a.commandBarAdvancer.AdvanceCommandBarPlanAfterRun(ctx, runID)
 	return err
+}
+
+func (a *AgentRunActivities) StartReadyCommandBarPlanStepsActivity(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error) {
+	if a == nil || a.commandBarAdvancer == nil {
+		return &CommandBarPlanProgress{Terminal: true, Status: "not_configured"}, nil
+	}
+	return a.commandBarAdvancer.StartReadyCommandBarPlanSteps(ctx, input)
 }
 
 // ExecuteRunActivity executes the agent loop on a shared runner workspace.

@@ -648,6 +648,7 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	}
 	w := tworker.New(client, taskQueue, options)
 	w.RegisterWorkflow(temporalapp.AgentRunWorkflow)
+	w.RegisterWorkflow(temporalapp.CommandBarPlanWorkflow)
 	w.RegisterActivityWithOptions(activities.PrepareRunActivity, activity.RegisterOptions{
 		Name: "AgentRunActivities.PrepareRunActivity",
 	})
@@ -659,6 +660,9 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	})
 	w.RegisterActivityWithOptions(activities.AdvanceCommandBarPlanActivity, activity.RegisterOptions{
 		Name: "AgentRunActivities.AdvanceCommandBarPlanActivity",
+	})
+	w.RegisterActivityWithOptions(activities.StartReadyCommandBarPlanStepsActivity, activity.RegisterOptions{
+		Name: "AgentRunActivities.StartReadyCommandBarPlanStepsActivity",
 	})
 
 	// Register email sync workflow and activities.

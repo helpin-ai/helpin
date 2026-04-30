@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -96,6 +97,12 @@ type Config struct {
 	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.5)
 	QueryExpansionModel    string
 	QueryExpansionProvider string
+
+	// Command bar intent routing LLM (optional — defaults to router default provider)
+	CommandRouterLLMProvider  string
+	CommandRouterLLMModel     string
+	CommandRouterLLMMaxTokens int
+	CommandRouterLLMTimeoutMS int
 
 	// MaxMind GeoIP configuration (optional — enables GeoIP enrichment for support/widget traffic)
 	MaxMindAccountID   string
@@ -236,6 +243,10 @@ func Load() (*Config, error) {
 		CRMLLMModel:                       os.Getenv("CRM_LLM_MODEL"),
 		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.5")),
 		QueryExpansionProvider:            strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
+		CommandRouterLLMProvider:          strings.TrimSpace(os.Getenv("COMMAND_ROUTER_LLM_PROVIDER")),
+		CommandRouterLLMModel:             strings.TrimSpace(os.Getenv("COMMAND_ROUTER_LLM_MODEL")),
+		CommandRouterLLMMaxTokens:         parsePositiveIntEnv(os.Getenv("COMMAND_ROUTER_LLM_MAX_TOKENS"), 900),
+		CommandRouterLLMTimeoutMS:         parsePositiveIntEnv(os.Getenv("COMMAND_ROUTER_LLM_TIMEOUT_MS"), 2500),
 		MaxMindAccountID:                  strings.TrimSpace(os.Getenv("MAXMIND_ACCOUNT_ID")),
 		MaxMindDBPath:                     strings.TrimSpace(os.Getenv("MAXMIND_DB_PATH")),
 		MaxMindDownloadURL:                strings.TrimSpace(os.Getenv("MAXMIND_DOWNLOAD_URL")),
@@ -253,6 +264,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func parsePositiveIntEnv(value string, fallback int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func parseCORSOrigins(value string) []string {

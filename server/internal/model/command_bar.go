@@ -12,6 +12,8 @@ const (
 	CommandBarPlanKindKnownAgent     = "known_agent"
 	CommandBarPlanKindOneShotCommand = "one_shot_command"
 	CommandBarPlanKindFanOut         = "fan_out"
+	CommandBarPlanKindTaskPipeline   = "task_pipeline_fan_out"
+	CommandBarPlanKindDAG            = "dag"
 
 	CommandBarPlanStatusRunning   = "running"
 	CommandBarPlanStatusCompleted = "completed"
@@ -33,13 +35,14 @@ type CommandBarParseRequest struct {
 }
 
 type CommandBarPlanStep struct {
-	AgentID      string                `json:"agent_id"`
-	AgentKey     string                `json:"agent_key,omitempty"`
-	AgentName    string                `json:"agent_name"`
-	PlanKind     string                `json:"plan_kind,omitempty"`
-	Target       CommandBarPageContext `json:"target"`
-	Instructions string                `json:"instructions"`
-	AllowedTools []string              `json:"allowed_tools,omitempty"`
+	AgentID              string                `json:"agent_id"`
+	AgentKey             string                `json:"agent_key,omitempty"`
+	AgentName            string                `json:"agent_name"`
+	PlanKind             string                `json:"plan_kind,omitempty"`
+	Target               CommandBarPageContext `json:"target"`
+	Instructions         string                `json:"instructions"`
+	AllowedTools         []string              `json:"allowed_tools,omitempty"`
+	DependsOnStepIndexes []int                 `json:"depends_on_step_indexes,omitempty"`
 }
 
 type CommandBarPlan struct {
@@ -173,6 +176,7 @@ type PromoteCommandBarRunResponse struct {
 type CommandBarAgent struct {
 	ID             string   `json:"id"`
 	Name           string   `json:"name"`
+	Description    string   `json:"description,omitempty"`
 	PresetKey      string   `json:"preset_key,omitempty"`
 	Role           string   `json:"role,omitempty"`
 	AllowedTargets []string `json:"allowed_targets"`

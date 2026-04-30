@@ -1,0 +1,277 @@
+import { useMemo } from 'react';
+import { format, formatDistanceToNow } from 'date-fns';
+import type { AgentRun } from '@/lib/pmTypes';
+import type { CommandBarRunPlan } from '@/stores/commandBarStore';
+import { Loading01Icon, RotateLeft01Icon } from '@/lib/icons';
+import { cn } from '@/lib/utils';
+import { StatusDot, type DotKind } from './StatusDot';
+import { PipelineRail } from './PipelineRail';
+import { FanOutRail } from './FanOutRail';
+import { TaskPipelineRail } from './TaskPipelineRail';
+import { DagRail } from './DagRail';
+import {
+  classifyPlan,
+  classifyRun,
+  listGroupKey,
+  LIST_GROUP_LABEL,
+  outputSummaryText,
+  planKindLabel,
+  planSummaryText,
+  planUpdatedAt,
+  runUpdatedAt,
+  targetLabel,
+  type ListGroupKey,
+} from './utils';
+
+type ListItem =
+  | { id: string; kind: 'plan'; plan: CommandBarRunPlan; ts: number }
+  | { id: string; kind: 'run'; run: AgentRun; ts: number };
+
+interface RunListViewProps {
+  plans: CommandBarRunPlan[];
+  standaloneRuns: AgentRun[];
+  runsById: Record<string, AgentRun>;
+  filter: string;
+  busyPlanId?: string | null;
+  busyRunId?: string | null;
+  onSelect: (item: ListItem) => void;
+  onRetryPlan: (plan: CommandBarRunPlan) => void;
+  onRetryRun: (run: AgentRun) => void;
+}
+
+export function RunListView({
+  plans,
+  standaloneRuns,
+  runsById,
+  filter,
+  busyPlanId,
+  busyRunId,
+  onSelect,
+  onRetryPlan,
+  onRetryRun,
+}: RunListViewProps) {
+  const items = useMemo<ListItem[]>(() => {
+    const planItems: ListItem[] = plans.map((plan) => ({
+      id: `plan-${plan.id}`,
+      kind: 'plan',
+      plan,
+      ts: planUpdatedAt(plan, runsById),
+    }));
+    const runItems: ListItem[] = standaloneRuns.map((run) => ({
+      id: `run-${run.id}`,
+      kind: 'run',
+      run,
+      ts: runUpdatedAt(run),
+    }));
+    return [...planItems, ...runItems].sort((a, b) => b.ts - a.ts);
+  }, [plans, standaloneRuns, runsById]);
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((it) => titleFor(it, runsById).toLowerCase().includes(q));
+  }, [items, filter, runsById]);
+
+  const grouped = useMemo(() => {
+    const now = new Date();
+    const buckets: Record<ListGroupKey, ListItem[]> = {
+      active: [],
+      today: [],
+      yesterday: [],
+      earlier_this_week: [],
+      older: [],
+    };
+    for (const it of filtered) {
+      const state = it.kind === 'plan' ? classifyPlan(it.plan, runsById) : classifyRun(it.run);
+      if (state === 'running') {
+        buckets.active.push(it);
+      } else {
+        const key = listGroupKey(now, new Date(it.ts));
+        buckets[key].push(it);
+      }
+    }
+    return buckets;
+  }, [filtered, runsById]);
+
+  const groups: ListGroupKey[] = ['active', 'today', 'yesterday', 'earlier_this_week', 'older'];
+
+  if (filtered.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-1 py-12 text-center">
+        <p className="text-sm font-medium text-foreground">
+          {filter.trim() ? 'No runs match' : 'No runs yet'}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {filter.trim() ? 'Press Enter to start a new run.' : 'Ask the dock to start one.'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-border/40">
+      {groups.map((g) => {
+        const rows = grouped[g];
+        if (rows.length === 0) return null;
+        return (
+          <div key={g} className="py-1">
+            <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
+              {LIST_GROUP_LABEL[g]}
+            </div>
+            {rows.map((it) => (
+              <ListRow
+                key={it.id}
+                item={it}
+                runsById={runsById}
+                busyPlanId={busyPlanId}
+                busyRunId={busyRunId}
+                onSelect={onSelect}
+                onRetryPlan={onRetryPlan}
+                onRetryRun={onRetryRun}
+              />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function titleFor(it: ListItem, runsById: Record<string, AgentRun>): string {
+  if (it.kind === 'plan') {
+    if (it.plan.prompt) return it.plan.prompt;
+    const firstId = it.plan.runIdsByStep[0];
+    const first = firstId ? runsById[firstId] : null;
+    return first ? targetLabel(first) : 'Command run';
+  }
+  return targetLabel(it.run);
+}
+
+function ListRow({
+  item,
+  runsById,
+  busyPlanId,
+  busyRunId,
+  onSelect,
+  onRetryPlan,
+  onRetryRun,
+}: {
+  item: ListItem;
+  runsById: Record<string, AgentRun>;
+  busyPlanId?: string | null;
+  busyRunId?: string | null;
+  onSelect: (item: ListItem) => void;
+  onRetryPlan: (plan: CommandBarRunPlan) => void;
+  onRetryRun: (run: AgentRun) => void;
+}) {
+  const state =
+    item.kind === 'plan' ? classifyPlan(item.plan, runsById) : classifyRun(item.run);
+  const dot: DotKind = state === 'running' ? 'active_step' : state;
+  const title = titleFor(item, runsById);
+  const ts = new Date(item.ts);
+
+  let label: string;
+  let subline: string;
+  let rail: React.ReactNode = null;
+  let busy = false;
+  let onRetry: (() => void) | null = null;
+  let errorMessage: string | null = null;
+
+  if (item.kind === 'plan') {
+    const { plan } = item;
+    label = planKindLabel(plan.planKind, plan.steps.length);
+    subline = planSummaryText(plan, runsById);
+    rail =
+      plan.planKind === 'task_pipeline_fan_out' ? (
+        <TaskPipelineRail plan={plan} runsById={runsById} maxRows={3} />
+      ) : plan.planKind === 'dag' ? (
+        <DagRail plan={plan} runsById={runsById} maxRows={4} />
+      ) : plan.planKind === 'fan_out' ? (
+        <FanOutRail plan={plan} runsById={runsById} max={6} />
+      ) : plan.steps.length > 1 ? (
+        <PipelineRail plan={plan} runsById={runsById} />
+      ) : null;
+    busy = busyPlanId === plan.id;
+    if (state === 'attention') {
+      onRetry = () => onRetryPlan(plan);
+      const failedRun = Object.values(plan.runIdsByStep)
+        .map((id) => runsById[id])
+        .find((r) => r && (r.status === 'failed' || r.status === 'cancelled'));
+      errorMessage = failedRun?.error_message ?? 'Failed';
+    }
+  } else {
+    const { run } = item;
+    label = 'Agent';
+    subline = outputSummaryText(run) || run.target_type.replaceAll('_', ' ');
+    busy = busyRunId === run.id;
+    if (state === 'attention') {
+      onRetry = () => onRetryRun(run);
+      errorMessage = run.error_message ?? 'Failed';
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        'group flex w-full items-start gap-2 px-3 py-2 transition',
+        'hover:bg-muted/40 cursor-pointer',
+      )}
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(item)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(item);
+        }
+      }}
+    >
+      <div className="mt-1.5">
+        <StatusDot state={dot} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="truncate text-sm font-medium text-foreground">{title}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {label} · {sinceOrTime(ts)}
+          </span>
+        </div>
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <span
+            className={cn(
+              'min-w-0 truncate text-[11px]',
+              state === 'attention' ? 'text-destructive' : 'text-muted-foreground',
+            )}
+          >
+            {state === 'attention' ? errorMessage : subline}
+          </span>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry?.();
+              }}
+              disabled={busy}
+              className="inline-flex shrink-0 items-center gap-1 rounded border border-border/70 bg-background/80 px-1.5 py-0.5 text-[11px] font-medium text-foreground transition hover:border-foreground/30 hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? (
+                <Loading01Icon className="h-3 w-3 animate-spin" />
+              ) : (
+                <RotateLeft01Icon className="h-3 w-3" />
+              )}
+              {busy ? 'Retrying…' : 'Retry'}
+            </button>
+          ) : null}
+        </div>
+        {rail}
+      </div>
+    </div>
+  );
+}
+
+function sinceOrTime(when: Date): string {
+  const diffHours = (Date.now() - when.getTime()) / 3_600_000;
+  if (diffHours < 24) return formatDistanceToNow(when, { addSuffix: true });
+  return format(when, 'HH:mm');
+}
