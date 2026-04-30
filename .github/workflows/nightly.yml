@@ -27,6 +27,8 @@ jobs:
   server-race:
     name: Server (-race)
     runs-on: arc-runners-helpin-ai
+    # -race adds ~3x runtime over plain go test; plan budget allows generous.
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine
@@ -56,6 +58,7 @@ jobs:
   playwright-support:
     name: Playwright (support, mocked)
     runs-on: arc-runners-helpin-ai
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -84,6 +87,7 @@ jobs:
   playwright-widget:
     name: Playwright (widget, mocked)
     runs-on: arc-runners-helpin-ai
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
