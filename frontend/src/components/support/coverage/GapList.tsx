@@ -13,7 +13,7 @@ function KindDot({ gapKind }: { gapKind: string }) {
   const kind = resolveGapKindDisplay(gapKind)
   const colors = GAP_KIND_COLORS[kind] ?? GAP_KIND_COLORS.content
   return (
-    <span className={cn('inline-block h-2 w-2 shrink-0 rounded-full', colors.bg, colors.border, 'border')} />
+    <span className={cn('inline-block h-2.5 w-2.5 shrink-0 rounded-full', colors.dot)} />
   )
 }
 

@@ -285,7 +285,7 @@ export function SupportCoveragePage() {
                 'All types'
               ) : (
                 <span className="flex items-center gap-1.5">
-                  <span className={`inline-block h-2 w-2 rounded-full border ${GAP_KIND_COLORS[kindFilter]?.bg} ${GAP_KIND_COLORS[kindFilter]?.border}`} />
+                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${GAP_KIND_COLORS[kindFilter]?.dot}`} />
                   {kindFilter.charAt(0).toUpperCase() + kindFilter.slice(1)} gaps
                 </span>
               )}
@@ -298,7 +298,7 @@ export function SupportCoveragePage() {
               return (
                 <SelectItem key={kind} value={kind}>
                   <span className="flex items-center gap-1.5">
-                    <span className={`inline-block h-2 w-2 rounded-full border ${colors.bg} ${colors.border}`} />
+                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${colors.dot}`} />
                     <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)} gaps</span>
                     <span className="text-muted-foreground">— {GAP_KIND_DESCRIPTIONS[kind]}</span>
                   </span>
