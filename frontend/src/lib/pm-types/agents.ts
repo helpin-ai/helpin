@@ -206,15 +206,16 @@ export interface CommandBarPlanStep {
   agent_id: string;
   agent_key?: string;
   agent_name: string;
-  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out' | 'task_pipeline_fan_out' | 'dag';
   target: CommandBarPageContext;
   instructions: string;
   allowed_tools?: string[];
+  depends_on_step_indexes?: number[];
 }
 
 export interface CommandBarPlan {
   id?: string;
-  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out' | 'task_pipeline_fan_out' | 'dag';
   steps: CommandBarPlanStep[];
   run_count: number;
   estimated_runs?: number;
@@ -266,7 +267,7 @@ export interface CommandBarDispatchResponse {
 export interface CommandBarPlanSummary {
   id: string;
   status: 'running' | 'completed' | 'failed' | 'cancelled';
-  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out';
+  plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out' | 'task_pipeline_fan_out' | 'dag';
   prompt: string;
   page_context: CommandBarPageContext;
   steps: CommandBarPlanStep[];

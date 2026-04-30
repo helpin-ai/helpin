@@ -13,6 +13,7 @@ export interface CommandBarRunPlan {
 
 export type RailMode = 'closed' | 'peek' | 'open';
 export type RailFilter = 'all' | 'running' | 'queued' | 'failed';
+export type DockViewMode = 'conversation' | 'list';
 
 const RAIL_MODE_KEY = 'helpin:cmdk-rail:mode';
 const RAIL_FILTER_KEY = 'helpin:cmdk-rail:filter';
@@ -64,6 +65,8 @@ interface CommandBarRunState {
   plansById: Record<string, CommandBarRunPlan>;
   railMode: RailMode;
   railFilter: RailFilter;
+  viewMode: DockViewMode;
+  listFilter: string;
   selectedRunId: string | null;
   /**
    * Set true when the user explicitly opens/closes the rail in this session.
@@ -78,6 +81,8 @@ interface CommandBarRunState {
   updatePlan: (plan: CommandBarPlanSummary, runs?: AgentRun[]) => void;
   setRailMode: (mode: RailMode) => void;
   setRailFilter: (filter: RailFilter) => void;
+  setViewMode: (mode: DockViewMode) => void;
+  setListFilter: (filter: string) => void;
   setSelectedRunId: (id: string | null) => void;
   clear: () => void;
 }
@@ -89,6 +94,8 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
   plansById: {},
   railMode: loadRailMode(),
   railFilter: loadRailFilter(),
+  viewMode: 'conversation',
+  listFilter: '',
   selectedRunId: null,
   userSetRailMode: false,
   addRuns: (runs) =>
@@ -99,7 +106,7 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
         runsById[run.id] = run;
         ids.add(run.id);
       }
-      return { runsById, runIds: Array.from(ids), railMode: state.railMode === 'closed' ? 'peek' : state.railMode };
+      return { runsById, runIds: Array.from(ids) };
     }),
   addPlan: (plan, runs = []) =>
     set((state) => {
@@ -116,7 +123,6 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
         runIds: Array.from(runIds),
         planIds: Array.from(planIds),
         plansById: { ...state.plansById, [plan.id]: plan },
-        railMode: state.railMode === 'closed' ? 'open' : state.railMode,
       };
     }),
   hydratePlans: (plans) =>
@@ -230,6 +236,8 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
     persistRailFilter(filter);
     set({ railFilter: filter });
   },
+  setViewMode: (mode) => set({ viewMode: mode }),
+  setListFilter: (filter) => set({ listFilter: filter }),
   setSelectedRunId: (id) => set({ selectedRunId: id }),
   clear: () => set({ runIds: [], runsById: {}, planIds: [], plansById: {}, selectedRunId: null }),
 }));
