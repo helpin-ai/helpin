@@ -145,7 +145,15 @@ func (s *SupportCoverageService) ProcessSupportEvent(ctx context.Context, event 
 			}
 			return nil // Evidence attached to existing gap, no new gap needed.
 		}
-		// No existing gap for this conversation — fall through to normal rule processing.
+		// No existing gap for this conversation — fall through to normal rule processing,
+		// unless the daily LLM analyzer is already active for this workspace.
+		analyzed, err := s.coverageRepo.HasCompletedAnalysisRun(ctx, event.WorkspaceID)
+		if err != nil {
+			s.logger.WarnContext(ctx, "check analysis run status", "error", err, "workspace_id", event.WorkspaceID)
+		}
+		if analyzed {
+			return nil
+		}
 	}
 
 	gap, err := s.clusterer.UpsertTopicGap(ctx, event)

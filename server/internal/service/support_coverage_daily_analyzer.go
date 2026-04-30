@@ -36,6 +36,7 @@ const (
 	coverageAnalysisBootstrapWindow         = 30 * 24 * time.Hour
 	coverageAnalysisWorkspaceLimit          = 1000
 	coverageAnalysisConversationConcurrency = 4
+	coverageKnowledgeMinRelevanceScore      = 0.1
 )
 
 type CoverageConversationMessage struct {
@@ -65,6 +66,7 @@ type CoverageConversationAnalysisInput struct {
 	SegmentStartAt        *time.Time                    `json:"segment_start_at,omitempty"`
 	SegmentEndAt          *time.Time                    `json:"segment_end_at,omitempty"`
 	SegmentResolved       bool                          `json:"segment_resolved"`
+	HasHumanReply         bool                          `json:"has_human_reply"`
 	Messages              []CoverageConversationMessage `json:"messages"`
 	RetrievalTraces       []CoverageRetrievalTraceInput `json:"retrieval_traces"`
 }
@@ -159,6 +161,7 @@ type CoverageFindingUpsertInput struct {
 	SegmentStartMessageID        string
 	SegmentEndMessageID          string
 	SegmentResolved              bool
+	HasHumanReply                bool
 }
 
 type SupportCoverageDailyAnalyzer struct {
@@ -387,6 +390,11 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		return false, nil
 	}
 
+	// Defense-in-depth: override speculative human_resolution when no human actually replied.
+	if !input.HasHumanReply && result.HumanResolution != "No human response observed" {
+		result.HumanResolution = "No human response observed"
+	}
+
 	// Determine status: non-support conversations are "skipped", others "analyzed".
 	analysisStatus := model.SupportCoverageConversationAnalysisStatusAnalyzed
 	if !result.IsSupportQuery {
@@ -458,6 +466,7 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		SegmentStartMessageID:        input.SegmentStartMessageID,
 		SegmentEndMessageID:          input.SegmentEndMessageID,
 		SegmentResolved:              input.SegmentResolved,
+		HasHumanReply:                input.HasHumanReply,
 	})
 	if err != nil {
 		return false, err
@@ -516,6 +525,14 @@ func BuildCoverageConversationAnalysisInputForSegment(conversation model.Support
 	}
 	filteredTraces := filterCoverageRetrievalTracesByMessageIDs(traces, analysisMessageIDs)
 
+	hasHumanReply := false
+	for _, message := range analysisMessages {
+		if message.SenderType == "user" {
+			hasHumanReply = true
+			break
+		}
+	}
+
 	flowState := ""
 	if conversation.FlowState != nil {
 		flowState = strings.TrimSpace(*conversation.FlowState)
@@ -539,6 +556,7 @@ func BuildCoverageConversationAnalysisInputForSegment(conversation model.Support
 		SegmentStartAt:        timePtrIfNonZero(segment.StartAt),
 		SegmentEndAt:          segment.EndAt,
 		SegmentResolved:       segment.Resolved,
+		HasHumanReply:         hasHumanReply,
 		Messages:              analysisMessages,
 		RetrievalTraces:       traceInputs,
 	}, nil
@@ -594,7 +612,19 @@ func (s *SupportCoverageDailyAnalyzer) matchCurrentKnowledgeForAnalysis(ctx cont
 	if len(spaceIDs) == 0 && len(contentSourceIDs) == 0 {
 		return nil, nil
 	}
-	return s.knowledgeMatcher.MatchKnowledge(ctx, workspaceID, spaceIDs, contentSourceIDs, query, 8)
+	candidates, err := s.knowledgeMatcher.MatchKnowledge(ctx, workspaceID, spaceIDs, contentSourceIDs, query, 8)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) > 0 && candidates[0].CombinedScore < coverageKnowledgeMinRelevanceScore {
+		slog.InfoContext(ctx, "skipping coverage knowledge refinement: best candidate below threshold",
+			"best_score", candidates[0].CombinedScore,
+			"threshold", coverageKnowledgeMinRelevanceScore,
+			"workspace_id", workspaceID,
+		)
+		return nil, nil
+	}
+	return candidates, nil
 }
 
 func (s *SupportCoverageDailyAnalyzer) externalDocsSpaceIDs(ctx context.Context, workspaceID string) ([]string, error) {
@@ -984,15 +1014,17 @@ func (s *SupportCoverageDailyAnalyzer) recommendationRowsForFinding(ctx context.
 			UpdatedAt:           now,
 		}
 		if isCoverageDocsFix(fix) {
-			suggestion, err := s.createDocsSuggestionForFix(ctx, input, gapID, fix, metadata, now)
-			if err != nil {
-				return nil, err
-			}
-			row.SuggestionID = &suggestion.ID
 			if strings.TrimSpace(fix.TargetID) != "" {
 				if err := s.coverageRepo.LinkGapArticle(ctx, gapID, strings.TrimSpace(fix.TargetID), input.WorkspaceID); err != nil {
 					return nil, fmt.Errorf("link recommendation article: %w", err)
 				}
+			}
+			if input.HasHumanReply {
+				suggestion, err := s.createDocsSuggestionForFix(ctx, input, gapID, fix, metadata, now)
+				if err != nil {
+					return nil, err
+				}
+				row.SuggestionID = &suggestion.ID
 			}
 		}
 		rows = append(rows, row)
@@ -1292,7 +1324,7 @@ Recommend website/content changes for prospect, sales, pricing, migration, integ
 Be concise in all text fields. Each field should be one sentence, two at most:
 - customer_need: what the customer needed, not a retelling of the conversation.
 - ai_failure: specifically what the AI lacked or got wrong.
-- human_resolution: the concrete action the human took.
+- human_resolution: the concrete action the human took. If no message from a human agent (sender_type=user) appears in the conversation, set human_resolution to "No human response observed" exactly. Do not speculate what a human agent would or should do.
 - decision_reason: why this gap matters, not a summary of the above fields.
 - rationale, suggested_change, implementation_notes in recommended_fixes: one actionable sentence each. Do not repeat information across fields.`
 }

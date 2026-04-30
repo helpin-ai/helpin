@@ -542,6 +542,7 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesGapEvidenceRecommendat
 		ConversationID: "conversation-1",
 		MessageID:      "message-1",
 		AnalysisID:     analysisID,
+		HasHumanReply:  true,
 		Result: CoverageConversationAnalysisResult{
 			HasGap:          true,
 			GapKind:         "content",
@@ -1196,5 +1197,40 @@ func TestCoverageConversationAnalysisInputFiltersRetrievalTracesToSentSegmentMes
 	}
 	if len(input.RetrievalTraces) != 1 || input.RetrievalTraces[0].MessageID != "new-ai" {
 		t.Fatalf("retrieval traces were not filtered to sent segment messages: %+v", input.RetrievalTraces)
+	}
+}
+
+func TestCoverageConversationAnalysisInputSetsHasHumanReplyTrue(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	conversation := model.SupportConversation{ID: "c-1", WorkspaceID: "ws-1"}
+	messages := []model.SupportMessage{
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "Help", CreatedAt: base},
+		{ID: "m-2", SenderType: "ai", MessageType: "reply", Content: "Let me check", CreatedAt: base.Add(time.Minute)},
+		{ID: "m-3", SenderType: "user", MessageType: "reply", Content: "Here is the fix", CreatedAt: base.Add(2 * time.Minute)},
+	}
+
+	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, nil)
+	if err != nil {
+		t.Fatalf("BuildCoverageConversationAnalysisInput: %v", err)
+	}
+	if !input.HasHumanReply {
+		t.Fatal("expected HasHumanReply=true when user messages exist")
+	}
+}
+
+func TestCoverageConversationAnalysisInputSetsHasHumanReplyFalseWhenNoUserMessages(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	conversation := model.SupportConversation{ID: "c-1", WorkspaceID: "ws-1"}
+	messages := []model.SupportMessage{
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "Help", CreatedAt: base},
+		{ID: "m-2", SenderType: "ai", MessageType: "reply", Content: "Try this", CreatedAt: base.Add(time.Minute)},
+	}
+
+	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, nil)
+	if err != nil {
+		t.Fatalf("BuildCoverageConversationAnalysisInput: %v", err)
+	}
+	if input.HasHumanReply {
+		t.Fatal("expected HasHumanReply=false when no user messages exist")
 	}
 }

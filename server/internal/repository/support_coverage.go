@@ -861,6 +861,21 @@ func (r *SupportCoverageRepository) GetSummary(ctx context.Context, workspaceID 
 	return summary, nil
 }
 
+// HasCompletedAnalysisRun returns true if the workspace has at least one
+// completed daily coverage analysis run, meaning the LLM analyzer is active
+// and v1 heuristic gap creation can be suppressed for human-resolution signals.
+func (r *SupportCoverageRepository) HasCompletedAnalysisRun(ctx context.Context, workspaceID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Table("support_coverage_analysis_runs").
+		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageAnalysisRunStatusCompleted).
+		Limit(1).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check completed analysis run: %w", err)
+	}
+	return count > 0, nil
+}
+
 // CreateSnapshot stores a pre-computed coverage snapshot.
 func (r *SupportCoverageRepository) CreateSnapshot(ctx context.Context, snapshot *model.SupportCoverageSnapshot) error {
 	if snapshot.Metrics == nil {
