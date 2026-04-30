@@ -56,3 +56,5 @@ packages/*/lib/
 *.log
 .gocache/
 .playwright-mcp/
+# Build cache
+.cache/

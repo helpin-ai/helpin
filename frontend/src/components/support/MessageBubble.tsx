@@ -58,7 +58,7 @@ const markdownComponents = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="[overflow-wrap:anywhere] break-words"
+      className="break-all [overflow-wrap:anywhere]"
     >
       {children}
     </a>
@@ -92,17 +92,16 @@ function formatCountdown(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview; isOutgoing: boolean }) {
+function LinkPreviewCard({ preview }: { preview: SupportLinkPreview }) {
+  // Both incoming (`bg-muted`) and outgoing (`bg-blue-50`) bubbles are light,
+  // so foreground/muted-foreground tokens read well on either. We dropped the
+  // separate isOutgoing styling that assumed a dark/saturated outgoing bubble.
   return (
     <a
       href={preview.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`block overflow-hidden rounded-xl border transition-colors hover:opacity-95 ${
-        isOutgoing
-          ? 'border-white/20 bg-white/10 text-white'
-          : 'border-border bg-background text-foreground'
-      }`}
+      className="block overflow-hidden rounded-xl border border-border bg-background text-foreground transition-colors hover:opacity-95"
     >
       {preview.image_url ? (
         <img
@@ -113,13 +112,13 @@ function LinkPreviewCard({ preview, isOutgoing }: { preview: SupportLinkPreview;
         />
       ) : null}
       <div className="space-y-1.5 p-3">
-        <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wide ${isOutgoing ? 'text-white/70' : 'text-muted-foreground'}`}>
+        <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
           <span className="truncate">{preview.site_name || previewHostLabel(preview)}</span>
           <LinkSquare01Icon className="h-3 w-3 shrink-0" />
         </div>
         <div className="text-sm font-semibold leading-snug">{preview.title}</div>
         {preview.description ? (
-          <p className={`text-xs leading-relaxed ${isOutgoing ? 'text-white/80' : 'text-muted-foreground'}`}>
+          <p className="text-xs leading-relaxed text-muted-foreground">
             {preview.description}
           </p>
         ) : null}
@@ -507,7 +506,7 @@ export const MessageBubble = memo(function MessageBubble({
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
       ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
-      : 'min-w-0 max-w-[85%]';
+      : 'min-w-0 max-w-[min(85%,42rem)]';
 
   return (
     <div className={`${isConsecutive ? 'mt-1' : 'mt-5'} ${!isConsecutive ? (isCustomer ? 'animate-in fade-in slide-in-from-left-2 duration-200' : 'animate-in fade-in slide-in-from-right-2 duration-200') : ''}`}>
@@ -576,9 +575,7 @@ export const MessageBubble = memo(function MessageBubble({
                           href={att.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition-colors hover:bg-muted/50 ${
-                            isCustomer ? 'border-border' : 'border-white/20 text-white hover:bg-white/10'
-                          }`}
+                          className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/50"
                         >
                           <AttachmentIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />
                           <span className="truncate font-medium">{att.file_name}</span>
@@ -594,7 +591,6 @@ export const MessageBubble = memo(function MessageBubble({
                         <LinkPreviewCard
                           key={`${message.id}:${preview.url}`}
                           preview={preview}
-                          isOutgoing={!isCustomer}
                         />
                       ))}
                     </div>
@@ -732,9 +728,16 @@ export const MessageBubble = memo(function MessageBubble({
               )}
             </div>
           ) : aiMeta ? (
-            // AI message: combined footer — confidence + sources on the left, receipt on the right
+            // AI message: combined footer — confidence + sources cluster + receipt.
+            // For agent messages the parent wrapper isn't bubble-width, so
+            // justify-between would scatter the chips across the whole row.
+            // Cluster everything to the right under the bubble instead.
             <>
-              <div className="flex items-center justify-between gap-2">
+              <div
+                className={`mt-1.5 flex items-center gap-2 ${
+                  isCustomer ? 'justify-between' : 'justify-end'
+                }`}
+              >
                 <div className="inline-flex items-center gap-1.5 text-[11px]">
                   <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-medium text-primary">
                     <CheckmarkCircle02Icon className="h-3 w-3" />

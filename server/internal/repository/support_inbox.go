@@ -1174,8 +1174,8 @@ func (r *SupportCannedResponseRepository) Search(ctx context.Context, workspaceI
 	var responses []model.SupportCannedResponse
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
-		Where("short_code LIKE ? OR title LIKE ? OR content LIKE ?", pattern, pattern, pattern).
-		Order("short_code ASC").
+		Where("short_code LIKE ? OR title LIKE ? OR content LIKE ? OR tag LIKE ?", pattern, pattern, pattern, pattern).
+		Order("tag ASC, short_code ASC").
 		Limit(10).
 		Find(&responses).Error; err != nil {
 		return nil, fmt.Errorf("search canned responses: %w", err)
@@ -1197,6 +1197,18 @@ func (r *SupportCannedResponseRepository) GetByID(ctx context.Context, workspace
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get canned response: %w", err)
+	}
+	return &response, nil
+}
+
+// GetByShortCode returns a canned response by workspace-scoped shortcut.
+func (r *SupportCannedResponseRepository) GetByShortCode(ctx context.Context, workspaceID, shortCode string) (*model.SupportCannedResponse, error) {
+	var response model.SupportCannedResponse
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND short_code = ?", workspaceID, shortCode).First(&response).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get canned response by short code: %w", err)
 	}
 	return &response, nil
 }

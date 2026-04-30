@@ -810,6 +810,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			short_code TEXT NOT NULL,
 			title TEXT NOT NULL,
 			content TEXT NOT NULL,
+			tag TEXT NOT NULL DEFAULT 'Others',
 			created_by_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME

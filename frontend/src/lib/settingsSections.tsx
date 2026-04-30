@@ -25,6 +25,7 @@ import {
   BubbleChatIcon,
   Route01Icon,
   Shield01Icon,
+  Copy01Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -61,6 +62,7 @@ const Autonomy = hi(SlidersHorizontalIcon);
 const ChatWidget = hi(BubbleChatIcon);
 const InboxesRouting = hi(Route01Icon);
 const Access = hi(Shield01Icon);
+const MessageShortcuts = hi(Copy01Icon);
 
 export type SettingsSection =
   | 'general'
@@ -82,7 +84,8 @@ export type SettingsSection =
   | 'crm-email'
   | 'crm-autonomy'
   | 'chat-general'
-  | 'inboxes-routing';
+  | 'inboxes-routing'
+  | 'message-shortcuts';
 
 export type SettingsRouteSection = SettingsSection | 'profile' | 'notifications' | 'account';
 
@@ -211,6 +214,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'Inboxes & Routing',
     description: 'Manage team inboxes, email forwarding, and AI conversation routing.',
     icon: InboxesRouting,
+    group: 'Support',
+  },
+  {
+    id: 'message-shortcuts',
+    label: 'Message Shortcuts',
+    description: 'Create and manage saved replies for quick insertion into conversations.',
+    icon: MessageShortcuts,
     group: 'Support',
   },
   {

@@ -34,6 +34,9 @@ import type {
   SupportTriageRule,
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
+  SupportCannedResponse,
+  CreateCannedResponseRequest,
+  UpdateCannedResponseRequest,
   SupportMessage,
 } from '@/lib/pmTypes';
 
@@ -208,6 +211,25 @@ export function useSupportTriageRules(workspaceId: string) {
   });
 }
 
+export function useCannedResponses(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.cannedResponses(workspaceId),
+    queryFn: async (): Promise<SupportCannedResponse[]> => unwrap(await supportService.listCannedResponses(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  });
+}
+
+export function useSearchCannedResponses(workspaceId: string, query: string, enabled = true) {
+  const trimmed = query.trim();
+  return useQuery({
+    queryKey: queryKeys.support.cannedResponseSearch(workspaceId, trimmed),
+    queryFn: async (): Promise<SupportCannedResponse[]> => unwrap(await supportService.searchCannedResponses(workspaceId, trimmed)),
+    enabled: !!workspaceId && enabled && trimmed.length > 0,
+    staleTime: 15_000,
+  });
+}
+
 export function useSupportTeammatePresence(workspaceId: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.teammatePresence(workspaceId),
@@ -285,6 +307,48 @@ export function useDeleteSupportTriageRule(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to delete routing rule', { description: error.message });
+    },
+  });
+}
+
+export function useCreateCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateCannedResponseRequest) =>
+      supportService.createCannedResponse(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.cannedResponses(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create shortcut', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ responseId, payload }: { responseId: string; payload: UpdateCannedResponseRequest }) =>
+      supportService.updateCannedResponse(workspaceId, responseId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.cannedResponses(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update shortcut', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (responseId: string) =>
+      supportService.deleteCannedResponse(workspaceId, responseId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.cannedResponses(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete shortcut', { description: error.message });
     },
   });
 }

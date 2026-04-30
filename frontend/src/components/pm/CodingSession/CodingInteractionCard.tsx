@@ -627,7 +627,7 @@ function InteractionShell({
       className={cn(
         'rounded-xl border bg-card',
         compact
-          ? 'border-amber-200/80 bg-[color:color-mix(in_oklch,var(--card)_82%,oklch(0.94_0.03_72)_18%)] p-3 dark:border-border dark:bg-card'
+          ? 'border-border border-l-2 border-l-amber-400/80 p-3 dark:border-l-amber-500/70'
           : 'border-border p-4',
       )}
     >

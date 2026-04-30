@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { AiMagicIcon, BotIcon, Loading01Icon } from '@/lib/icons';
+import { AiMagicIcon, BotIcon, Loading01Icon, PauseIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { usePageContext } from '@/components/command-bar/pageContext';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { agentService } from '@/lib/services/agentService';
 import { useCommandBarRunStore, type CommandBarRunPlan } from '@/stores/commandBarStore';
-import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
+import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import type {
@@ -68,6 +68,11 @@ export function AskAgentsDock() {
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
   const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  // When the dock first opens with pending approvals, auto-expand the first
+  // one so the user lands on something actionable. Pressing "New" resets this
+  // to false — pending work stays visible as collapsed one-liners above the
+  // input but doesn't dominate the freshly-cleared canvas.
+  const [autoExpandFirstPaused, setAutoExpandFirstPaused] = useState(true);
   const [promotionRun, setPromotionRun] = useState<{
     run: AgentRun;
     step: CommandBarPlanStep | null;
@@ -98,10 +103,19 @@ export function AskAgentsDock() {
     [planRunIds, runs],
   );
 
-  const activeCount = useMemo(
-    () => runs.filter((r) => ACTIVE_RUN_STATUSES.has(r.status)).length,
-    [runs],
-  );
+  // Split active runs into truly running (queued/running) vs awaiting human
+  // (paused = awaiting input/approval/auth). Paused runs are not "doing work" —
+  // surfacing them under the same spinner as a running agent misleads the user.
+  const { runningCount, awaitingCount } = useMemo(() => {
+    let running = 0;
+    let awaiting = 0;
+    for (const r of runs) {
+      if (!ACTIVE_RUN_STATUSES.has(r.status)) continue;
+      if (isPausedAgentRun(r)) awaiting += 1;
+      else running += 1;
+    }
+    return { runningCount: running, awaitingCount: awaiting };
+  }, [runs]);
 
   // Items visible in conversation = items submitted in *this* session
   // (kept after completion so the user can see the result) plus anything
@@ -158,6 +172,21 @@ export function AskAgentsDock() {
     }
     return items.sort((a, b) => a.ts - b.ts);
   }, [messages, plans, runsById, standaloneRuns, visiblePlanIds, visibleRunIds]);
+
+  // Every paused run (awaiting approval/input/auth) is collapsible — the
+  // header chevron toggles it. Only the first paused run starts expanded so
+  // the user lands on something actionable; subsequent ones start collapsed.
+  const { compactRunIds, firstPausedRunId } = useMemo(() => {
+    const compact = new Set<string>();
+    let first: string | null = null;
+    for (const item of timeline) {
+      if (item.kind !== 'run') continue;
+      if (!isPausedAgentRun(item.run)) continue;
+      compact.add(item.run.id);
+      if (!first) first = item.run.id;
+    }
+    return { compactRunIds: compact, firstPausedRunId: first };
+  }, [timeline]);
 
   // Persist collapsed.
   useEffect(() => {
@@ -649,6 +678,7 @@ export function AskAgentsDock() {
     setIntentResult(null);
     setValue('');
     setViewMode('conversation');
+    setAutoExpandFirstPaused(false);
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, [setViewMode]);
 
@@ -678,10 +708,22 @@ export function AskAgentsDock() {
         >
           <AiMagicIcon className="h-4 w-4" />
           Ask agents
-          {activeCount > 0 ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300">
+          {runningCount > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300"
+              title={`${runningCount} running`}
+            >
               <Loading01Icon className="h-3 w-3 animate-spin" />
-              {activeCount}
+              {runningCount}
+            </span>
+          ) : null}
+          {awaitingCount > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+              title={`${awaitingCount} waiting on you`}
+            >
+              <PauseIcon className="h-3 w-3" />
+              {awaitingCount}
             </span>
           ) : null}
           <kbd className="ml-1 rounded border bg-muted px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground">
@@ -707,7 +749,8 @@ export function AskAgentsDock() {
         <div className="border-b border-border/60">
           <DockHeader
             mode={viewMode}
-            activeCount={activeCount}
+            runningCount={runningCount}
+            awaitingCount={awaitingCount}
             onSwapMode={() => setViewMode(viewMode === 'list' ? 'conversation' : 'list')}
             onNew={onNew}
             onClose={() => setCollapsed(true)}
@@ -715,7 +758,14 @@ export function AskAgentsDock() {
         </div>
 
         {viewMode === 'list' ? (
-          <div ref={responseRef} className="max-h-[60vh] overflow-y-auto">
+          <div
+            // Keyed on viewMode so the cross-fade fires when the user toggles
+            // between the list and the conversation. Tailwind's animate-in
+            // utilities give us a quick, contained motion.
+            key="list-view"
+            ref={responseRef}
+            className="max-h-[60vh] overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-150 ease-out"
+          >
             <RunListView
               plans={plans}
               standaloneRuns={standaloneRuns}
@@ -729,7 +779,11 @@ export function AskAgentsDock() {
             />
           </div>
         ) : hasResponseArea ? (
-          <div ref={responseRef} className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-3.5 py-3">
+          <div
+            key="conversation-view"
+            ref={responseRef}
+            className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-3.5 py-3 animate-in fade-in slide-in-from-bottom-1 duration-150 ease-out"
+          >
             {timeline.map((item) => {
               if (item.kind === 'msg') {
                 return (
@@ -759,13 +813,26 @@ export function AskAgentsDock() {
                 );
               }
               const summary = outputSummaryText(item.run);
+              const isCompact = compactRunIds.has(item.run.id);
+              const shouldAutoOpen =
+                isCompact && item.run.id === firstPausedRunId && autoExpandFirstPaused;
+              // Bake the auto-open intent into the key so flipping
+              // `autoExpandFirstPaused` (via "New") remounts the card with
+              // the new defaultOpen — `useState(initialOpen)` only reads its
+              // seed once. The cost is one websocket reconnect on the first
+              // paused run, only on "New".
+              const key = isCompact
+                ? `${item.id}-${shouldAutoOpen ? 'auto-open' : 'auto-closed'}`
+                : item.id;
               return (
                 <ExecutionStrip
-                  key={item.id}
+                  key={key}
                   kind="run"
                   workspaceId={workspace.id}
                   run={item.run}
                   busy={busyRunId === item.run.id}
+                  compact={isCompact}
+                  defaultOpen={shouldAutoOpen}
                   onAction={(a) => handleStripAction(a, { kind: 'run', run: item.run })}
                   resultSlot={summary ? <InlineResultCard>{summary}</InlineResultCard> : null}
                 />
