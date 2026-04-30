@@ -750,30 +750,30 @@
   margin-right: -0.2rem;
 }
 .prose-chat[data-chat-tone="agent"] .chat-markdown-table-wrap {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(7, 13, 28, 0.16);
+  border-color: color-mix(in oklab, oklch(0.62 0.18 257) 22%, transparent);
+  background: color-mix(in oklab, oklch(0.62 0.18 257) 6%, transparent);
 }
 .prose-chat[data-chat-tone="agent"] blockquote {
-  border-left-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  border-left-color: color-mix(in oklab, oklch(0.62 0.18 257) 30%, transparent);
+  background: color-mix(in oklab, oklch(0.62 0.18 257) 6%, transparent);
+  color: color-mix(in oklab, var(--foreground) 82%, var(--muted-foreground));
   border-radius: 0.8rem;
   padding: 0.6rem 0.85rem;
   margin: 0.5em 0;
 }
 .prose-chat[data-chat-tone="agent"] hr {
-  border-top-color: rgba(255, 255, 255, 0.22);
+  border-top-color: color-mix(in oklab, oklch(0.62 0.18 257) 22%, transparent);
   opacity: 1;
 }
 .prose-chat[data-chat-tone="agent"] th,
 .prose-chat[data-chat-tone="agent"] td {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: color-mix(in oklab, oklch(0.62 0.18 257) 18%, transparent);
 }
 .prose-chat[data-chat-tone="agent"] th {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in oklab, oklch(0.62 0.18 257) 12%, transparent);
 }
 .prose-chat[data-chat-tone="agent"] tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in oklab, oklch(0.62 0.18 257) 6%, transparent);
 }
 .prose-chat[data-chat-tone="customer"] blockquote {
   border-left-color: rgba(15, 23, 42, 0.16);

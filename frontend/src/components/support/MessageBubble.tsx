@@ -448,8 +448,8 @@ export const MessageBubble = memo(function MessageBubble({
                 <div
                   className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere] ${
                     isCustomer
-                      ? `bg-muted text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
-                      : `bg-blue-600 text-white dark:bg-blue-500 ${isLastInGroup ? 'rounded-br-sm' : ''}`
+                      ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
+                      : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
                   } ${hasTableContent || hasEmailBody ? 'overflow-hidden' : ''}`}
                 >
                   {hasEmailBody ? (
