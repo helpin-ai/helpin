@@ -138,6 +138,7 @@ type TriggerExecutionListFilters struct {
 	BindingKind *string    `json:"binding_kind,omitempty"`
 	Status      *string    `json:"status,omitempty"`
 	ReferenceID *string    `json:"reference_id,omitempty"`
+	RunID       *string    `json:"run_id,omitempty"`
 	FiredAfter  *time.Time `json:"fired_after,omitempty"`
 	FiredBefore *time.Time `json:"fired_before,omitempty"`
 }
