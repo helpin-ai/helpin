@@ -9,11 +9,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+type scriptedCommandBarLLM struct {
+	response string
+	err      error
+	requests []llm.ChatRequest
+}
+
+func (s *scriptedCommandBarLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	s.requests = append(s.requests, req)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &llm.ChatResponse{Content: s.response}, nil
+}
 
 func TestParseExplicitNamedAgentsPreservesRequestOrder(t *testing.T) {
 	pageContext := model.CommandBarPageContext{
@@ -135,6 +150,278 @@ func TestParseIntentDeterministicallyPrefersKnownAgentBeforeOneShot(t *testing.T
 	}
 }
 
+func TestWorkspaceTaskQuestionPrefersOneShotCommandAgent(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
+	candidates := []model.CommandBarAgent{
+		{ID: "agent-task", Name: "Atlas", PresetKey: model.AgentPresetTaskPlanner, AllowedTargets: []string{"workspace"}},
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"workspace"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "get_task_context"},
+		},
+	}
+
+	resp := parsePreferredOneShotCommandIntent("how many tasks in engineering team needs attention?", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot command plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.AgentID != "agent-command" {
+		t.Fatalf("expected Command Agent, got %q", step.AgentID)
+	}
+	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected one-shot plan kind, got %q", step.PlanKind)
+	}
+	for _, required := range []string{"list_workspace_teams", "list_team_workflows_with_stages", "list_tasks"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+	if strings.Contains(strings.ToLower(strings.Join(step.AllowedTools, ",")), "create_task") {
+		t.Fatalf("did not expect create_task for read-only task question: %#v", step.AllowedTools)
+	}
+	if !strings.Contains(step.Instructions, "Do not create, update, or move tasks") {
+		t.Fatalf("expected read-only PM analysis guardrail, got %q", step.Instructions)
+	}
+}
+
+func TestEpicStoryRankingQuestionPrefersOneShotCommandAgent(t *testing.T) {
+	pageContext := model.CommandBarPageContext{
+		EntityType:   "epic",
+		EntityID:     "epic-1",
+		DisplayTitle: "Add new metrics - Prometheus",
+		RelatedIDs:   map[string][]string{"task_ids": {"task-1", "task-2"}},
+	}
+	candidates := []model.CommandBarAgent{
+		{ID: "agent-epic", Name: "Epic Planner", PresetKey: model.AgentPresetEpicPlanner, AllowedTargets: []string{"epic"}},
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"epic"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "get_task_context"},
+		},
+	}
+
+	resp := parsePreferredOneShotCommandIntent("which is the most important story in this epic?", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot command plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.AgentID != "agent-command" {
+		t.Fatalf("expected Command Agent, got %q", step.AgentID)
+	}
+	for _, required := range []string{"list_workspace_teams", "list_team_workflows_with_stages", "list_tasks"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+	if slices.Contains(step.AllowedTools, "create_task") {
+		t.Fatalf("did not expect mutation tool for ranking question, got %#v", step.AllowedTools)
+	}
+	if !strings.Contains(step.Instructions, "Do not create, update, or move tasks") {
+		t.Fatalf("expected read-only PM analysis guardrail, got %q", step.Instructions)
+	}
+}
+
+func TestParseIntentWithLLMRoutesOneShotAndNarrowsTools(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
+	candidates := []model.CommandBarAgent{
+		{ID: "agent-atlas", Name: "Atlas", Description: "Task planning agent", PresetKey: model.AgentPresetTaskPlanner, AllowedTargets: []string{"workspace"}},
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			Description:    "One-shot workspace operator",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"workspace"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task"},
+		},
+	}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"one_shot_command",
+		"agent_id":"agent-command",
+		"instructions":"Count engineering tasks that need attention.",
+		"one_shot_tools":["list_workspace_teams","list_tasks","create_task"],
+		"rationale":"This is an ad hoc data question, not planning.",
+		"confidence":0.91
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetLLMRouterConfig("openai", "gpt-5.5", 777, time.Second)
+
+	resp := service.parseIntentWithLLM(context.Background(), "how many tasks in engineering team needs attention?", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.AgentID != "agent-command" || step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected command one-shot step, got %#v", step)
+	}
+	if !slices.Contains(step.AllowedTools, "list_tasks") || !slices.Contains(step.AllowedTools, "list_workspace_teams") {
+		t.Fatalf("expected read tools, got %#v", step.AllowedTools)
+	}
+	if slices.Contains(step.AllowedTools, "create_task") {
+		t.Fatalf("did not expect mutation tool for read-only question, got %#v", step.AllowedTools)
+	}
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected one LLM request, got %d", len(fakeLLM.requests))
+	}
+	if got := fakeLLM.requests[0].Provider; got != "openai" {
+		t.Fatalf("expected provider openai, got %q", got)
+	}
+	if got := fakeLLM.requests[0].Model; got != "gpt-5.5" {
+		t.Fatalf("expected model gpt-5.5, got %q", got)
+	}
+	if got := fakeLLM.requests[0].MaxTokens; got != 777 {
+		t.Fatalf("expected max tokens 777, got %d", got)
+	}
+	if fakeLLM.requests[0].JSONSchema == nil {
+		t.Fatalf("expected command router JSON schema for schema-forced providers")
+	}
+}
+
+func TestParseIntentWithLLMRoutesMultiStepSavedAgents(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "task", EntityID: "task-1"}
+	candidates := []model.CommandBarAgent{
+		{ID: "agent-forge", Name: "Forge", PresetKey: model.AgentPresetCodeBuilder, AllowedTargets: []string{"task"}},
+		{ID: "agent-lens", Name: "Lens", PresetKey: model.AgentPresetReviewAgent, AllowedTargets: []string{"task"}},
+		{ID: "agent-command", Name: "Command Agent", PresetKey: model.AgentPresetCommandAgent, AllowedTargets: []string{"task"}, AllowedTools: []string{"get_task_context"}},
+	}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"multi_step",
+		"steps":[
+			{"agent_id":"agent-forge","instructions":"Implement the requested task."},
+			{"agent_id":"agent-lens","instructions":"Review Forge's result."}
+		],
+		"rationale":"The user asked for implementation followed by review.",
+		"confidence":0.93
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM)
+
+	resp := service.parseIntentWithLLM(context.Background(), "have Forge implement then Lens review", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 2 {
+		t.Fatalf("expected two-step saved-agent plan, got %#v", resp)
+	}
+	if resp.Plan.Steps[0].AgentID != "agent-forge" || resp.Plan.Steps[1].AgentID != "agent-lens" {
+		t.Fatalf("unexpected step order: %#v", resp.Plan.Steps)
+	}
+	if resp.Plan.PlanKind != model.CommandBarPlanKindKnownAgent {
+		t.Fatalf("expected known-agent plan kind, got %q", resp.Plan.PlanKind)
+	}
+}
+
+func TestParseIntentWithLLMRoutesDAG(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1", DisplayTitle: "Workspace"}
+	candidates := []model.CommandBarAgent{
+		{ID: "agent-atlas", Name: "Atlas", PresetKey: model.AgentPresetTaskPlanner, AllowedTargets: []string{"workspace"}},
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"workspace"},
+			AllowedTools:   []string{"list_tasks", "list_workspace_teams", "create_task"},
+		},
+	}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"dag",
+		"steps":[
+			{
+				"agent_id":"agent-command",
+				"target":{"entity_type":"workspace","entity_id":"workspace-1","display_title":"Workspace"},
+				"instructions":"Find engineering tasks needing attention and group by team.",
+				"allowed_tools":["list_tasks","list_workspace_teams"],
+				"depends_on_step_indexes":[]
+			},
+			{
+				"agent_id":"agent-atlas",
+				"target":{"entity_type":"workspace","entity_id":"workspace-1","display_title":"Workspace"},
+				"instructions":"Summarize the triage results and recommend next actions.",
+				"depends_on_step_indexes":[0]
+			}
+		],
+		"rationale":"The request needs discovery followed by synthesis.",
+		"confidence":0.88
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM)
+
+	resp := service.parseIntentWithLLM(context.Background(), "find engineering tasks needing attention, then summarize next actions", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 2 {
+		t.Fatalf("expected DAG plan, got %#v", resp)
+	}
+	if resp.Plan.PlanKind != model.CommandBarPlanKindDAG {
+		t.Fatalf("expected DAG plan kind, got %q", resp.Plan.PlanKind)
+	}
+	if resp.Plan.Steps[0].PlanKind != model.CommandBarPlanKindDAG || resp.Plan.Steps[1].PlanKind != model.CommandBarPlanKindDAG {
+		t.Fatalf("expected DAG step kinds, got %#v", resp.Plan.Steps)
+	}
+	if got := resp.Plan.Steps[1].DependsOnStepIndexes; len(got) != 1 || got[0] != 0 {
+		t.Fatalf("expected second step to depend on first, got %#v", got)
+	}
+	if slices.Contains(resp.Plan.Steps[0].AllowedTools, "create_task") {
+		t.Fatalf("did not expect mutation tool in read-only DAG step, got %#v", resp.Plan.Steps[0].AllowedTools)
+	}
+}
+
+func TestValidateCommandBarStepDependenciesRejectsCycle(t *testing.T) {
+	steps := []model.CommandBarPlanStep{
+		{PlanKind: model.CommandBarPlanKindDAG, DependsOnStepIndexes: []int{1}},
+		{PlanKind: model.CommandBarPlanKindDAG, DependsOnStepIndexes: []int{0}},
+	}
+	err := validateCommandBarStepDependencies(steps, maxCommandBarDAGInitialFanOut)
+	if err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("expected cycle validation error, got %v", err)
+	}
+}
+
+func TestValidateCommandBarStepDependenciesRejectsInitialFanOutCap(t *testing.T) {
+	steps := make([]model.CommandBarPlanStep, 0, maxCommandBarDAGInitialFanOut+1)
+	for i := 0; i < maxCommandBarDAGInitialFanOut+1; i++ {
+		steps = append(steps, model.CommandBarPlanStep{PlanKind: model.CommandBarPlanKindDAG})
+	}
+	err := validateCommandBarStepDependencies(steps, maxCommandBarDAGInitialFanOut)
+	if err == nil || !strings.Contains(err.Error(), "initially runnable") {
+		t.Fatalf("expected fan-out validation error, got %v", err)
+	}
+}
+
+func TestCommandBarSchedulerReadinessRequiresCompletedDependencies(t *testing.T) {
+	completedRunID := "run-completed"
+	runningRunID := "run-running"
+	runsByID := map[string]model.AgentRun{
+		completedRunID: {ID: completedRunID, Status: model.AgentRunStatusCompleted},
+		runningRunID:   {ID: runningRunID, Status: model.AgentRunStatusRunning},
+	}
+
+	parentRunID, ready := commandBarStepDependenciesSatisfied(
+		model.CommandBarPlanStep{DependsOnStepIndexes: []int{0}},
+		map[int]string{0: completedRunID},
+		runsByID,
+	)
+	if !ready || parentRunID == nil || *parentRunID != completedRunID {
+		t.Fatalf("expected completed dependency to make step ready, parent=%v ready=%v", parentRunID, ready)
+	}
+
+	if _, ready := commandBarStepDependenciesSatisfied(
+		model.CommandBarPlanStep{DependsOnStepIndexes: []int{1}},
+		map[int]string{1: runningRunID},
+		runsByID,
+	); ready {
+		t.Fatalf("expected running dependency to keep step blocked")
+	}
+
+	if _, ready := commandBarStepDependenciesSatisfied(
+		model.CommandBarPlanStep{DependsOnStepIndexes: []int{2}},
+		map[int]string{},
+		runsByID,
+	); ready {
+		t.Fatalf("expected missing dependency run to keep step blocked")
+	}
+}
+
 func TestParseOneShotCommandIntentRejectsUnsupportedMutation(t *testing.T) {
 	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
 	candidates := []model.CommandBarAgent{
@@ -149,6 +436,110 @@ func TestParseOneShotCommandIntentRejectsUnsupportedMutation(t *testing.T) {
 
 	if resp := parseOneShotCommandIntent("delete workspace", pageContext, candidates); resp != nil {
 		t.Fatalf("expected unsupported mutation to stay unmatched, got %#v", resp)
+	}
+}
+
+func TestParseSafeOneShotFallbackUsesReadOnlyTargetTools(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
+	candidates := []model.CommandBarAgent{
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"workspace"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task"},
+		},
+	}
+
+	resp := parseSafeOneShotCommandFallback("what should I look at first in this workspace?", pageContext, candidates)
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil {
+		t.Fatalf("expected safe one-shot fallback, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.PlanKind != model.CommandBarPlanKindOneShotCommand || step.AgentID != "agent-command" {
+		t.Fatalf("expected Command Agent one-shot step, got %#v", step)
+	}
+	for _, required := range []string{"list_workspace_teams", "list_team_workflows_with_stages", "list_tasks"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected fallback tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+	if slices.Contains(step.AllowedTools, "create_task") {
+		t.Fatalf("did not expect mutation tool in safe fallback: %#v", step.AllowedTools)
+	}
+	if !strings.Contains(step.Instructions, "Fallback routing") {
+		t.Fatalf("expected fallback routing instructions, got %q", step.Instructions)
+	}
+}
+
+func TestParseSafeOneShotFallbackRejectsUnsafePrompt(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
+	candidates := []model.CommandBarAgent{
+		{
+			ID:             "agent-command",
+			Name:           "Command Agent",
+			PresetKey:      model.AgentPresetCommandAgent,
+			AllowedTargets: []string{"workspace"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks"},
+		},
+	}
+
+	if resp := parseSafeOneShotCommandFallback("delete all tasks in this workspace", pageContext, candidates); resp != nil {
+		t.Fatalf("expected unsafe prompt to stay unmatched, got %#v", resp)
+	}
+}
+
+func TestParseIntentFallsBackToOneShotAfterLLMNoMatch(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+		allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, 1, 'Command Agent', ?, 'idle', 'native_sdk', ?, ?, ?, 'never', 1, 'interactive', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"22222222-2222-2222-2222-222222222222",
+		workspaceID,
+		model.AgentPresetCommandAgent,
+		[]byte(`["update_plan","request_user_input","list_workspace_teams","list_team_workflows_with_stages","list_tasks"]`),
+		[]byte(`[]`),
+		[]byte(`["workspace"]`),
+	).Error; err != nil {
+		t.Fatalf("seed command agent: %v", err)
+	}
+
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status": "no_matching_agent",
+		"route_kind": "no_matching_agent",
+		"agent_id": "",
+		"instructions": "",
+		"steps": [],
+		"one_shot_tools": [],
+		"rationale": "No saved agent matched.",
+		"reason": "No saved agent matched.",
+		"clarifying_question": "",
+		"confidence": 0.2
+	}`}
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo}, nil, nil, nil, fakeLLM)
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "what should I look at first in this workspace?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil {
+		t.Fatalf("expected one-shot fallback plan after llm no-match, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.AgentKey != model.AgentPresetCommandAgent || step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected Command Agent fallback, got %#v", step)
+	}
+	if !slices.Contains(step.AllowedTools, "list_tasks") {
+		t.Fatalf("expected read-only task context tools, got %#v", step.AllowedTools)
 	}
 }
 
@@ -253,6 +644,148 @@ func TestParseFanOutIntentBuildsConcreteTargetPlan(t *testing.T) {
 		if step.Target.EntityType != "task" {
 			t.Fatalf("expected task target, got %#v", step.Target)
 		}
+	}
+}
+
+func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
+	ctx := context.Background()
+	workspaceID := "ws-pipeline"
+	epicID := "epic-pipeline"
+	dbName := fmt.Sprintf("file:command_bar_pipeline_%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE pm_tasks (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			display_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			workflow_id TEXT NOT NULL,
+			workflow_state_id TEXT NOT NULL,
+			epic_id TEXT,
+			completed BOOLEAN NOT NULL DEFAULT 0,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_task_links (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			source_task_id TEXT NOT NULL,
+			target_task_id TEXT NOT NULL,
+			link_type TEXT NOT NULL,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create pipeline table: %v", err)
+		}
+	}
+
+	taskOne := model.PMTask{ID: "task-one", WorkspaceID: workspaceID, DisplayID: 1, Name: "Set up API", WorkflowID: "wf", WorkflowStateID: "state", EpicID: &epicID}
+	taskTwo := model.PMTask{ID: "task-two", WorkspaceID: workspaceID, DisplayID: 2, Name: "Build UI", WorkflowID: "wf", WorkflowStateID: "state", EpicID: &epicID}
+	taskThree := model.PMTask{ID: "task-three", WorkspaceID: workspaceID, DisplayID: 3, Name: "Wire integration", WorkflowID: "wf", WorkflowStateID: "state", EpicID: &epicID}
+	completedTask := model.PMTask{ID: "task-done", WorkspaceID: workspaceID, DisplayID: 4, Name: "Already done", WorkflowID: "wf", WorkflowStateID: "state", EpicID: &epicID, Completed: true}
+	for _, task := range []model.PMTask{taskOne, taskTwo, taskThree, completedTask} {
+		if err := db.Exec(`INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id,
+			epic_id, completed, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			task.ID, task.WorkspaceID, task.DisplayID, task.Name, task.WorkflowID, task.WorkflowStateID, task.EpicID, task.Completed,
+		).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+	if err := db.Exec(`INSERT INTO pm_task_links (
+		id, workspace_id, source_task_id, target_task_id, link_type, created_by, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"link-one-three", workspaceID, taskOne.ID, taskThree.ID, model.PMTaskLinkTypeBlocks, "user-1",
+	).Error; err != nil {
+		t.Fatalf("create task link: %v", err)
+	}
+
+	service := &CommandBarService{agentService: &AgentService{
+		taskRepo:     repository.NewPMTaskRepository(db),
+		taskLinkRepo: repository.NewPMTaskLinkRepository(db),
+	}}
+	agents := []model.Agent{
+		{ID: "agent-forge", Name: "Forge", PresetKey: model.AgentPresetCodeBuilder, AllowedTargets: json.RawMessage(`["task"]`)},
+		{ID: "agent-lens", Name: "Lens", PresetKey: model.AgentPresetReviewAgent, AllowedTargets: json.RawMessage(`["task"]`)},
+		{ID: "agent-atlas", Name: "Atlas", PresetKey: model.AgentPresetEpicPlanner, AllowedTargets: json.RawMessage(`["epic"]`)},
+	}
+	resp := service.parseEpicTaskPipelineIntent(ctx, workspaceID, "We need to complete all tasks in these epics. do the ones that block the others first. fan out for tasks that can be run in parallel. for every task run forge and then lens.", model.CommandBarPageContext{
+		EntityType:   "epic",
+		EntityID:     epicID,
+		DisplayTitle: "Pipeline epic",
+	}, agents)
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil {
+		t.Fatalf("expected pipeline plan, got %#v", resp)
+	}
+	if resp.Plan.PlanKind != model.CommandBarPlanKindTaskPipeline {
+		t.Fatalf("expected task pipeline plan kind, got %q", resp.Plan.PlanKind)
+	}
+	if resp.Plan.RunCount != 6 {
+		t.Fatalf("expected 6 runs for 3 active tasks, got %d", resp.Plan.RunCount)
+	}
+	steps := resp.Plan.Steps
+	for i := 0; i < len(steps); i += 2 {
+		if steps[i].AgentName != "Forge" || steps[i+1].AgentName != "Lens" {
+			t.Fatalf("expected Forge then Lens pair at steps %d/%d, got %s/%s", i, i+1, steps[i].AgentName, steps[i+1].AgentName)
+		}
+		if got := steps[i+1].DependsOnStepIndexes; len(got) != 1 || got[0] != i {
+			t.Fatalf("expected Lens step %d to depend on Forge step %d, got %#v", i+1, i, got)
+		}
+	}
+	if got := steps[4].DependsOnStepIndexes; !slices.Contains(got, 1) {
+		t.Fatalf("expected blocked task Forge step to depend on blocking task Lens step 1, got %#v", got)
+	}
+	if strings.Contains(strings.Join([]string{steps[0].Target.EntityID, steps[2].Target.EntityID, steps[4].Target.EntityID}, ","), completedTask.ID) {
+		t.Fatalf("completed task should not be scheduled")
+	}
+
+	dependencyPromptResp := service.parseEpicTaskPipelineIntent(ctx, workspaceID, "run these tasks in this epic in parallel if they dont have any dependencies otherwise DAG. some are blocked by the others", model.CommandBarPageContext{
+		EntityType:   "epic",
+		EntityID:     epicID,
+		DisplayTitle: "Pipeline epic",
+	}, agents)
+	if dependencyPromptResp == nil || dependencyPromptResp.Plan == nil {
+		t.Fatalf("expected dependency-aware prompt to create task pipeline plan, got %#v", dependencyPromptResp)
+	}
+	if dependencyPromptResp.Plan.PlanKind != model.CommandBarPlanKindTaskPipeline {
+		t.Fatalf("expected dependency-aware prompt to avoid flat fan-out, got %q", dependencyPromptResp.Plan.PlanKind)
+	}
+	if dependencyPromptResp.Plan.RunCount != 6 {
+		t.Fatalf("expected dependency-aware prompt to schedule 6 runs, got %d", dependencyPromptResp.Plan.RunCount)
+	}
+	if got := dependencyPromptResp.Plan.Steps[4].DependsOnStepIndexes; !slices.Contains(got, 1) {
+		t.Fatalf("expected dependency-aware prompt to preserve blocks edge, got %#v", got)
+	}
+	if !slices.ContainsFunc(dependencyPromptResp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {
+		return g.Type == "task_dependency_context"
+	}) {
+		t.Fatalf("expected task dependency context guardrail, got %#v", dependencyPromptResp.Plan.Guardrails)
+	}
+}
+
+func TestParseEpicTaskPipelineIntentMissingAgentsDoesNotFallThrough(t *testing.T) {
+	service := &CommandBarService{}
+	resp := service.parseEpicTaskPipelineIntent(context.Background(), "ws-1", "run these tasks in this epic in parallel if they dont have any dependencies otherwise DAG", model.CommandBarPageContext{
+		EntityType:   "epic",
+		EntityID:     "epic-1",
+		DisplayTitle: "Epic 1",
+		RelatedIDs:   map[string][]string{"task_ids": {"task-1", "task-2"}},
+	}, []model.Agent{
+		{ID: "agent-atlas", Name: "Atlas", PresetKey: model.AgentPresetEpicPlanner, AllowedTargets: json.RawMessage(`["epic"]`)},
+	})
+	if resp == nil || resp.Status != model.CommandBarParseStatusNoMatchingAgent {
+		t.Fatalf("expected no-match response for missing Forge/Lens, got %#v", resp)
+	}
+	if !strings.Contains(resp.Reason, "Forge") || !strings.Contains(resp.Reason, "Lens") {
+		t.Fatalf("expected missing agent reason, got %q", resp.Reason)
 	}
 }
 

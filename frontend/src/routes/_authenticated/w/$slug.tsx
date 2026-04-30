@@ -11,10 +11,8 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
 import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
-import { CommandBarRunRail } from '@/components/command-bar/CommandBarRunRail'
 import { PageContextProvider } from '@/components/command-bar/pageContext'
 import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
-import { RunsStatusPill } from '@/components/agents/RunsStatusPill'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -106,7 +104,6 @@ function WorkspaceLayout() {
                   <Outlet />
                   <RouteAwareAskAgentsDock />
                 </main>
-                <CommandBarRunRail />
               </div>
               <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
               <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
@@ -129,12 +126,7 @@ function RouteAwareHeader() {
 function RouteAwareAskAgentsDock() {
   const location = useLocation()
   if (location.pathname.includes('/support')) return null
-  return (
-    <>
-      <AskAgentsDock />
-      <RunsStatusPill />
-    </>
-  )
+  return <AskAgentsDock />
 }
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)

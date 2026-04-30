@@ -306,6 +306,7 @@ export const SUPPORT_SYSTEM_EVENT_TYPES = [
   'triage_routed',
   'triage_dismissed',
   'ai_escalated',
+  'customer_requested_human',
   'resolved',
   'reopened',
   'closed',

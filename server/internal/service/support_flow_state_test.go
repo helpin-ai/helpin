@@ -406,8 +406,26 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 	if err != nil {
 		t.Fatalf("ListByConversation: %v", err)
 	}
-	if len(messages) != 1 || messages[0].MessageType != "system" {
-		t.Fatalf("expected one system escalation message, got %+v", messages)
+	if len(messages) != 2 {
+		t.Fatalf("expected escalation reply + system event, got %+v", messages)
+	}
+	var reply, sysEvent *model.SupportMessage
+	for i := range messages {
+		if messages[i].MessageType == "reply" && !messages[i].IsInternal {
+			reply = &messages[i]
+		}
+		if messages[i].MessageType == "system" && messages[i].IsInternal {
+			sysEvent = &messages[i]
+		}
+	}
+	if reply == nil {
+		t.Fatalf("expected non-internal AI reply, got %+v", messages)
+	}
+	if sysEvent == nil {
+		t.Fatalf("expected internal system escalation event, got %+v", messages)
+	}
+	if sysEvent.SystemEventType == nil || *sysEvent.SystemEventType != model.SystemEventCustomerRequestedHuman {
+		t.Fatalf("system_event_type = %v, want %q", sysEvent.SystemEventType, model.SystemEventCustomerRequestedHuman)
 	}
 }
 

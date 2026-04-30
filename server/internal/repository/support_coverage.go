@@ -398,12 +398,17 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		}
 	}
 
-	var evidence []model.SupportGapEvidence
-	r.db.WithContext(ctx).
-		Where("gap_id = ?", gapID).
-		Order("created_at DESC").
+	var evidence []model.SupportGapEvidenceView
+	if err := r.db.WithContext(ctx).
+		Table("support_gap_evidence AS e").
+		Select("e.*, COALESCE(sm.sender_type, '') AS sender_role").
+		Joins("LEFT JOIN support_messages sm ON sm.id = e.message_id AND sm.workspace_id = e.workspace_id").
+		Where("e.gap_id = ?", gapID).
+		Order("e.created_at DESC").
 		Limit(50).
-		Find(&evidence)
+		Find(&evidence).Error; err != nil {
+		return nil, fmt.Errorf("list gap evidence: %w", err)
+	}
 
 	var analysisExplanation *model.SupportCoverageAnalysisExplanation
 	for _, ev := range evidence {

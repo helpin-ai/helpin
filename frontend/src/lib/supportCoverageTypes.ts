@@ -51,6 +51,7 @@ export interface SupportGapEvidence {
   document_id: string | null
   source_signal: string
   excerpt: string
+  sender_role: string
   created_at: string
 }
 

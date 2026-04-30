@@ -183,6 +183,127 @@ func (r *AgentRunRepository) ListByWorkspace(ctx context.Context, workspaceID st
 	return runs, total, nil
 }
 
+// ListWorkspaceRunsWithoutTriggerExecutions returns agent runs that do not
+// already have a durable trigger execution row. Automation activity uses these
+// as synthetic timeline items for command-bar and child-run launches.
+func (r *AgentRunRepository) ListWorkspaceRunsWithoutTriggerExecutions(ctx context.Context, workspaceID string, filters model.TriggerExecutionListFilters, limit int) ([]model.AgentRun, int64, error) {
+	if r == nil || r.db == nil {
+		return []model.AgentRun{}, 0, nil
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return []model.AgentRun{}, 0, nil
+	}
+	bindingKind := ""
+	if filters.BindingKind != nil {
+		bindingKind = strings.TrimSpace(*filters.BindingKind)
+		if bindingKind != "" && bindingKind != "agent_run" && bindingKind != model.AgentRunTriggerSourceCommandBar && bindingKind != model.AgentRunTriggerSourceManual {
+			return []model.AgentRun{}, 0, nil
+		}
+	}
+	bindingID := ""
+	if filters.BindingID != nil && strings.TrimSpace(*filters.BindingID) != "" {
+		bindingID = strings.TrimSpace(*filters.BindingID)
+		if bindingID != "agent_run.run" && bindingID != "agent_run.child_run" && bindingID != "command_bar.run" && manualRunTargetTypeForBindingID(bindingID) == "" {
+			return []model.AgentRun{}, 0, nil
+		}
+	}
+	triggerType := ""
+	if filters.TriggerType != nil && strings.TrimSpace(*filters.TriggerType) != "" {
+		triggerType = strings.TrimSpace(*filters.TriggerType)
+	}
+	if triggerType != "" && triggerType != model.AgentRunTriggerTypeCommandBar && triggerType != model.AgentRunTriggerTypeManual {
+		return []model.AgentRun{}, 0, nil
+	}
+	if filters.ReferenceID != nil && strings.TrimSpace(*filters.ReferenceID) != "" {
+		return []model.AgentRun{}, 0, nil
+	}
+
+	query := r.db.WithContext(ctx).
+		Model(&model.AgentRun{}).
+		Joins("LEFT JOIN agent_trigger_executions ON agent_trigger_executions.workspace_id = agent_runs.workspace_id AND agent_trigger_executions.run_id = agent_runs.id").
+		Where("agent_runs.workspace_id = ? AND agent_trigger_executions.id IS NULL", workspaceID)
+	if filters.AgentID != nil && strings.TrimSpace(*filters.AgentID) != "" {
+		query = query.Where("agent_runs.agent_id = ?", strings.TrimSpace(*filters.AgentID))
+	}
+	if filters.Status != nil && strings.TrimSpace(*filters.Status) != "" {
+		query = query.Where("agent_runs.status = ?", strings.TrimSpace(*filters.Status))
+	}
+	if bindingKind == model.AgentRunTriggerSourceCommandBar || bindingID == "command_bar.run" || triggerType == model.AgentRunTriggerTypeCommandBar {
+		query = query.Where(agentRunInputTriggerStringPredicate(r.db, "source"), model.AgentRunTriggerSourceCommandBar)
+	}
+	manualTargetType := manualRunTargetTypeForBindingID(bindingID)
+	if bindingKind == model.AgentRunTriggerSourceManual || triggerType == model.AgentRunTriggerTypeManual || manualTargetType != "" {
+		query = query.Where(agentRunInputManualTriggerPredicate(r.db), model.AgentRunTriggerSourceManual)
+	}
+	if manualTargetType != "" {
+		query = query.Where("agent_runs.target_type = ?", manualTargetType)
+	}
+	if bindingID == "agent_run.child_run" {
+		query = query.Where("agent_runs.parent_run_id IS NOT NULL AND agent_runs.parent_run_id <> ''")
+	}
+	if bindingID == "agent_run.run" {
+		query = query.Where("(agent_runs.parent_run_id IS NULL OR agent_runs.parent_run_id = '')")
+	}
+	if filters.RunID != nil && strings.TrimSpace(*filters.RunID) != "" {
+		query = query.Where("agent_runs.id = ?", strings.TrimSpace(*filters.RunID))
+	}
+	if filters.FiredAfter != nil {
+		query = query.Where("agent_runs.created_at >= ?", *filters.FiredAfter)
+	}
+	if filters.FiredBefore != nil {
+		query = query.Where("agent_runs.created_at <= ?", *filters.FiredBefore)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("count workspace agent runs without trigger executions: %w", err)
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	var runs []model.AgentRun
+	if err := query.Order("agent_runs.created_at DESC").Limit(limit).Find(&runs).Error; err != nil {
+		return nil, 0, fmt.Errorf("list workspace agent runs without trigger executions: %w", err)
+	}
+	return runs, total, nil
+}
+
+func agentRunInputTriggerStringPredicate(db *gorm.DB, field string) string {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		field = "source"
+	}
+	if db != nil && db.Dialector != nil && db.Dialector.Name() == "postgres" {
+		return fmt.Sprintf("agent_runs.input -> 'trigger' ->> '%s' = ?", field)
+	}
+	return fmt.Sprintf("json_extract(agent_runs.input, '$.trigger.%s') = ?", field)
+}
+
+func agentRunInputManualTriggerPredicate(db *gorm.DB) string {
+	if db != nil && db.Dialector != nil && db.Dialector.Name() == "postgres" {
+		return "COALESCE(agent_runs.input -> 'trigger' ->> 'source', '') IN (?, '')"
+	}
+	return "COALESCE(json_extract(agent_runs.input, '$.trigger.source'), '') IN (?, '')"
+}
+
+func manualRunTargetTypeForBindingID(bindingID string) string {
+	switch strings.TrimSpace(bindingID) {
+	case "manual.task_run":
+		return "task"
+	case "manual.epic_run":
+		return "epic"
+	case "manual.support_run":
+		return "support_conversation"
+	case "manual.repository_run":
+		return "repository"
+	case "manual.workspace_run":
+		return "workspace"
+	default:
+		return ""
+	}
+}
+
 // ListRecentForActor returns the most recent runs triggered by the given user
 // in the workspace. Used by the command runs rail to rehydrate standalone
 // runs (runs not tied to a command-bar plan) on mount.
@@ -531,6 +652,9 @@ func (r *AgentTriggerExecutionRepository) ListByWorkspace(
 	}
 	if filters.ReferenceID != nil && strings.TrimSpace(*filters.ReferenceID) != "" {
 		query = query.Where("reference_id = ?", strings.TrimSpace(*filters.ReferenceID))
+	}
+	if filters.RunID != nil && strings.TrimSpace(*filters.RunID) != "" {
+		query = query.Where("run_id = ?", strings.TrimSpace(*filters.RunID))
 	}
 	if filters.FiredAfter != nil {
 		query = query.Where("fired_at >= ?", *filters.FiredAfter)

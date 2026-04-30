@@ -1,216 +1,56 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import {
-  AiMagicIcon,
-  ArrowUp01Icon,
-  BookOpen01Icon,
-  BotIcon,
-  Briefcase01Icon,
-  Cancel01Icon,
-  File01Icon,
-  FolderKanbanIcon,
-  Loading01Icon,
-  RecordIcon,
-  Target01Icon,
-  UserIcon,
-} from '@/lib/icons';
+import { AiMagicIcon, BotIcon, Loading01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { usePageContext } from '@/components/command-bar/pageContext';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { commandBarService } from '@/lib/services/commandBarService';
-import { useCommandBarRunStore } from '@/stores/commandBarStore';
-import type { AgentRun, AgentRunStatus } from '@/lib/pm-types/agents';
+import { agentService } from '@/lib/services/agentService';
+import { useCommandBarRunStore, type CommandBarRunPlan } from '@/stores/commandBarStore';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
+import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
+import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import type {
-  CommandBarPageContext,
+  AgentRun,
+  CommandBarPlanStep,
   CommandBarParseResponse,
 } from '@/lib/pmTypes';
+import { DockHeader } from './dock/DockHeader';
+import { DockInput } from './dock/DockInput';
+import { ExecutionStrip, type StripAction } from './dock/ExecutionStrip';
+import { InlineResultCard } from './dock/InlineResultCard';
+import { RunListView } from './dock/RunListView';
+import { PlanPreview } from './dock/PlanPreview';
+import { outputSummaryText } from './dock/utils';
 
 const COLLAPSED_KEY = 'helpin:ask-agents-dock-collapsed';
 
-const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
-  task: 'Task',
-  epic: 'Epic',
-  document: 'Doc',
-  crm_contact: 'Contact',
-  crm_deal: 'Deal',
-  workspace: 'Workspace',
+type ThreadMessage = { kind: 'user'; id: string; text: string; ts: number };
+
+type AskAgentsEventDetail = {
+  query?: string;
+  mode?: 'compose' | 'runs';
+  runId?: string;
 };
-
-type ThreadStatus = 'running' | 'completed' | 'failed' | 'cancelled';
-
-type ThreadMessage =
-  | { kind: 'user'; id: string; text: string }
-  | {
-      kind: 'agent';
-      id: string;
-      planId?: string;
-      runIds: string[];
-      agentName: string;
-      description: string;
-    };
-
-function chipIcon(type: CommandBarPageContext['entity_type']) {
-  switch (type) {
-    case 'task':
-      return RecordIcon;
-    case 'epic':
-      return BookOpen01Icon;
-    case 'document':
-      return File01Icon;
-    case 'crm_contact':
-      return UserIcon;
-    case 'crm_deal':
-      return Briefcase01Icon;
-    default:
-      return FolderKanbanIcon;
-  }
-}
-
-/**
- * Extract a short, human-readable description of what a step will do.
- * One-shot brief instructions look like "One-shot execution brief\nGoal:\n{goal}\nPlan:\n...";
- * we surface the Goal section. For other shapes, fall back to the raw instructions.
- */
-function describeStep(instructions: string | undefined | null): string {
-  const text = (instructions ?? '').trim();
-  if (!text) return '';
-  if (!text.toLowerCase().includes('goal:')) return text;
-  const lines = text.split('\n');
-  const goalIdx = lines.findIndex((l) => l.trim().toLowerCase() === 'goal:');
-  if (goalIdx < 0) return text;
-  const out: string[] = [];
-  for (let i = goalIdx + 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const lower = line.toLowerCase();
-    if (
-      lower === 'plan:' ||
-      lower === 'constraints:' ||
-      lower.startsWith('target:') ||
-      lower.startsWith('user request:')
-    )
-      break;
-    out.push(line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, ''));
-  }
-  return out.join(' ').trim() || text;
-}
-
-function aggregateStatus(
-  runIds: string[],
-  runsById: Record<string, AgentRun>,
-): ThreadStatus {
-  if (runIds.length === 0) return 'completed';
-  const runs = runIds.map((id) => runsById[id]).filter(Boolean) as AgentRun[];
-  if (runs.length === 0) return 'running';
-  if (runs.some((r) => r.status === 'failed')) return 'failed';
-  if (runs.some((r) => r.status === 'cancelled')) return 'cancelled';
-  if (
-    runs.every(
-      (r) => r.status === ('completed' as AgentRunStatus),
-    )
-  )
-    return 'completed';
-  return 'running';
-}
-
-function ContextChip({ context }: { context: CommandBarPageContext }) {
-  const Icon = chipIcon(context.entity_type);
-  return (
-    <span
-      title={context.display_title || context.entity_id}
-      className="inline-flex max-w-[260px] items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[11px] text-foreground"
-    >
-      <Icon className="h-3 w-3 shrink-0" />
-      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {TYPE_LABEL[context.entity_type] ?? context.entity_type}
-      </span>
-      <span className="truncate font-medium">{context.display_title || context.entity_id}</span>
-    </span>
-  );
-}
-
-function ThreadAgentMessage({
-  message,
-  onView,
-}: {
-  message: Extract<ThreadMessage, { kind: 'agent' }>;
-  onView: () => void;
-}) {
-  const runsById = useCommandBarRunStore((s) => s.runsById);
-  const status = useMemo(
-    () => aggregateStatus(message.runIds, runsById),
-    [message.runIds, runsById],
-  );
-
-  const statusLabel =
-    status === 'running'
-      ? 'Running'
-      : status === 'completed'
-        ? 'Completed'
-        : status === 'failed'
-          ? 'Failed'
-          : 'Cancelled';
-
-  const statusClass =
-    status === 'running'
-      ? 'text-muted-foreground'
-      : status === 'completed'
-        ? 'text-emerald-600 dark:text-emerald-400'
-        : 'text-destructive';
-
-  return (
-    <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <BotIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate text-sm font-medium text-foreground">
-            {message.agentName}
-          </span>
-        </div>
-        <span className={cn('inline-flex items-center gap-1 text-[11px]', statusClass)}>
-          {status === 'running' ? (
-            <Loading01Icon className="h-3 w-3 animate-spin" />
-          ) : (
-            <span
-              aria-hidden
-              className={cn(
-                'h-1.5 w-1.5 rounded-full',
-                status === 'completed'
-                  ? 'bg-emerald-500'
-                  : 'bg-destructive',
-              )}
-            />
-          )}
-          {statusLabel}
-        </span>
-      </div>
-      {message.description ? (
-        <p className="mt-1 line-clamp-3 pl-[22px] text-xs leading-snug text-muted-foreground">
-          {message.description}
-        </p>
-      ) : null}
-      <div className="mt-1.5 flex justify-end pl-[22px]">
-        <button
-          type="button"
-          onClick={onView}
-          className="rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
-        >
-          View run →
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export function AskAgentsDock() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const pageContext = usePageContext();
+
   const addPlan = useCommandBarRunStore((s) => s.addPlan);
   const addRuns = useCommandBarRunStore((s) => s.addRuns);
-  const setRailMode = useCommandBarRunStore((s) => s.setRailMode);
-  const setRailFilter = useCommandBarRunStore((s) => s.setRailFilter);
-  const setSelectedRunId = useCommandBarRunStore((s) => s.setSelectedRunId);
+  const runIds = useCommandBarRunStore((s) => s.runIds);
+  const runsById = useCommandBarRunStore((s) => s.runsById);
+  const planIds = useCommandBarRunStore((s) => s.planIds);
+  const plansById = useCommandBarRunStore((s) => s.plansById);
+  const hydratePlans = useCommandBarRunStore((s) => s.hydratePlans);
+  const updateRun = useCommandBarRunStore((s) => s.updateRun);
+  const updatePlan = useCommandBarRunStore((s) => s.updatePlan);
+  const viewMode = useCommandBarRunStore((s) => s.viewMode);
+  const setViewMode = useCommandBarRunStore((s) => s.setViewMode);
+  const listFilter = useCommandBarRunStore((s) => s.listFilter);
+  const setListFilter = useCommandBarRunStore((s) => s.setListFilter);
 
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -223,54 +63,251 @@ export function AskAgentsDock() {
   const [dispatching, setDispatching] = useState(false);
   const [intentResult, setIntentResult] = useState<CommandBarParseResponse | null>(null);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [sessionPlanIds, setSessionPlanIds] = useState<Set<string>>(() => new Set());
+  const [sessionRunIds, setSessionRunIds] = useState<Set<string>>(() => new Set());
+  const [busyRunId, setBusyRunId] = useState<string | null>(null);
+  const [busyPlanId, setBusyPlanId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [promotionRun, setPromotionRun] = useState<{
+    run: AgentRun;
+    step: CommandBarPlanStep | null;
+    planPrompt?: string;
+  } | null>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const responseRef = useRef<HTMLDivElement | null>(null);
+  const planRefetchTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Auto-grow textarea (max 160px ≈ 8 lines)
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [value, collapsed]);
+  const runs = useMemo(
+    () => runIds.map((id) => runsById[id]).filter(Boolean),
+    [runIds, runsById],
+  );
+  const plans = useMemo(
+    () => planIds.map((id) => plansById[id]).filter(Boolean),
+    [planIds, plansById],
+  );
+  const planRunIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const plan of plans) {
+      for (const id of Object.values(plan.runIdsByStep)) ids.add(id);
+    }
+    return ids;
+  }, [plans]);
+  const standaloneRuns = useMemo(
+    () => runs.filter((run) => !planRunIds.has(run.id)),
+    [planRunIds, runs],
+  );
 
+  const activeCount = useMemo(
+    () => runs.filter((r) => ACTIVE_RUN_STATUSES.has(r.status)).length,
+    [runs],
+  );
+
+  // Items visible in conversation = items submitted in *this* session
+  // (kept after completion so the user can see the result) plus anything
+  // currently active (so refreshes show in-flight work). Completed items from
+  // prior sessions live in history (list mode), not conversation.
+  const visiblePlanIds = useMemo(() => {
+    const ids = new Set(sessionPlanIds);
+    for (const plan of plans) {
+      const hasActive = Object.values(plan.runIdsByStep)
+        .map((id) => runsById[id])
+        .some((r) => r && ACTIVE_RUN_STATUSES.has(r.status));
+      if (hasActive) ids.add(plan.id);
+    }
+    return ids;
+  }, [plans, runsById, sessionPlanIds]);
+
+  const visibleRunIds = useMemo(() => {
+    const ids = new Set(sessionRunIds);
+    for (const run of standaloneRuns) {
+      if (ACTIVE_RUN_STATUSES.has(run.status)) ids.add(run.id);
+    }
+    return ids;
+  }, [sessionRunIds, standaloneRuns]);
+
+  // Conversation timeline: only items started in THIS session, plus the user
+  // bubbles, ordered by timestamp. Hydrated history lives in list mode.
+  type TimelineItem =
+    | { kind: 'msg'; id: string; ts: number; msg: ThreadMessage }
+    | { kind: 'plan'; id: string; ts: number; plan: CommandBarRunPlan }
+    | { kind: 'run'; id: string; ts: number; run: AgentRun };
+
+  const timeline = useMemo<TimelineItem[]>(() => {
+    const items: TimelineItem[] = [];
+    for (const m of messages) items.push({ kind: 'msg', id: m.id, ts: m.ts, msg: m });
+    for (const plan of plans) {
+      if (!visiblePlanIds.has(plan.id)) continue;
+      const ts = Math.max(
+        ...Object.values(plan.runIdsByStep)
+          .map((id) => runsById[id])
+          .filter(Boolean)
+          .map((r) => Date.parse(r.created_at) || 0),
+        0,
+      );
+      items.push({ kind: 'plan', id: `plan-${plan.id}`, ts, plan });
+    }
+    for (const run of standaloneRuns) {
+      if (!visibleRunIds.has(run.id)) continue;
+      items.push({
+        kind: 'run',
+        id: `run-${run.id}`,
+        ts: Date.parse(run.created_at) || 0,
+        run,
+      });
+    }
+    return items.sort((a, b) => a.ts - b.ts);
+  }, [messages, plans, runsById, standaloneRuns, visiblePlanIds, visibleRunIds]);
+
+  // Persist collapsed.
   useEffect(() => {
     localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
   }, [collapsed]);
 
-  // Drop the current pending plan if the user keeps typing
+  // Drop the current pending plan if the user keeps typing.
   useEffect(() => {
     setIntentResult(null);
   }, [value]);
 
-  // Auto-scroll the response area to the bottom when new messages or a plan appears
+  // Auto-scroll on new content.
   useEffect(() => {
     const el = responseRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages.length, intentResult, parsing]);
+  }, [timeline.length, intentResult, parsing]);
 
-  // "/" focuses the dock when no other input is focused
+  // Initial hydration.
+  useEffect(() => {
+    if (!workspace?.id) return;
+    let cancelled = false;
+    void commandBarService.listPlans(workspace.id, 10).then((res) => {
+      if (cancelled || !res.data?.plans) return;
+      hydratePlans(res.data.plans);
+      // Any plan whose runs include an active one belongs in the conversation —
+      // the user expects to see in-flight work when they reopen the dock.
+      const activePlanIds = res.data.plans
+        .filter((p) =>
+          (p.runs ?? []).some((r) => ACTIVE_RUN_STATUSES.has(r.status)),
+        )
+        .map((p) => p.id);
+      if (activePlanIds.length) {
+        setSessionPlanIds((prev) => {
+          const next = new Set(prev);
+          for (const id of activePlanIds) next.add(id);
+          return next;
+        });
+      }
+    });
+    void agentService.listRecentRuns(workspace.id, 20).then((res) => {
+      if (cancelled || !res.data?.runs?.length) return;
+      addRuns(res.data.runs);
+      const activeRunIds = res.data.runs
+        .filter((r) => ACTIVE_RUN_STATUSES.has(r.status))
+        .map((r) => r.id);
+      if (activeRunIds.length) {
+        setSessionRunIds((prev) => {
+          const next = new Set(prev);
+          for (const id of activeRunIds) next.add(id);
+          return next;
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [addRuns, hydratePlans, workspace?.id]);
+
+  const findPlanIdForRun = useCallback(
+    (runId: string): string | null => {
+      for (const plan of plans) {
+        for (const id of Object.values(plan.runIdsByStep)) {
+          if (id === runId) return plan.id;
+        }
+      }
+      return null;
+    },
+    [plans],
+  );
+
+  const schedulePlanRefetch = useCallback(
+    (planId: string) => {
+      if (!workspace?.id) return;
+      const existing = planRefetchTimers.current.get(planId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        planRefetchTimers.current.delete(planId);
+        void commandBarService.getPlan(workspace.id, planId).then((res) => {
+          if (res.data?.plan) updatePlan(res.data.plan, res.data.plan.runs ?? []);
+        });
+      }, 600);
+      planRefetchTimers.current.set(planId, timer);
+    },
+    [updatePlan, workspace?.id],
+  );
+
+  useEffect(() => {
+    const timers = planRefetchTimers.current;
+    return () => {
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+    };
+  }, []);
+
+  const refreshRun = useCallback(
+    async (runId: string, allowUnknown = false) => {
+      if (!workspace?.id || (!allowUnknown && !runIds.includes(runId))) return;
+      const res = await agentService.getRun(workspace.id, runId);
+      if (!res.data) return;
+      updateRun(res.data);
+      const terminal =
+        res.data.status === 'completed' ||
+        res.data.status === 'failed' ||
+        res.data.status === 'cancelled';
+      if (terminal) {
+        const planId = findPlanIdForRun(res.data.id);
+        if (planId) schedulePlanRefetch(planId);
+      }
+    },
+    [findPlanIdForRun, runIds, schedulePlanRefetch, updateRun, workspace?.id],
+  );
+
+  // WebSocket-driven refresh.
+  useEffect(() => {
+    const createdHandler = (event: Event) => {
+      const detail = (event as CustomEvent<{ entity_id?: string }>).detail;
+      if (detail?.entity_id) void refreshRun(detail.entity_id, true);
+    };
+    const updatedHandler = (event: Event) => {
+      const detail = (event as CustomEvent<{ entity_id?: string }>).detail;
+      if (detail?.entity_id) void refreshRun(detail.entity_id);
+    };
+    window.addEventListener('agent_run-created', createdHandler);
+    window.addEventListener('agent_run-updated', updatedHandler);
+    return () => {
+      window.removeEventListener('agent_run-created', createdHandler);
+      window.removeEventListener('agent_run-updated', updatedHandler);
+    };
+  }, [refreshRun]);
+
+  // "/" focuses the dock when no other input is focused.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '/') return;
       const target = e.target as HTMLElement | null;
       if (!target) return;
       const tag = target.tagName?.toLowerCase();
-      const isEditable =
-        tag === 'input' || tag === 'textarea' || target.isContentEditable;
+      const isEditable = tag === 'input' || tag === 'textarea' || target.isContentEditable;
       if (isEditable) return;
       e.preventDefault();
       setCollapsed(false);
+      setViewMode('conversation');
       requestAnimationFrame(() => textareaRef.current?.focus());
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  }, [setViewMode]);
 
-  // Auto-collapse to pill when the dock has been idle for IDLE_COLLAPSE_MS.
-  // "Idle" = expanded, no draft text, no pending plan, not parsing/dispatching,
-  // and the textarea isn't focused. Any change to those resets the timer.
+  // Auto-collapse to pill when idle.
   useEffect(() => {
     if (collapsed) return;
     if (parsing || dispatching) return;
@@ -282,9 +319,7 @@ export function AskAgentsDock() {
     return () => clearTimeout(timer);
   }, [collapsed, parsing, dispatching, intentResult, value, isFocused]);
 
-  // Hide the dock while a centered modal dialog is open. Sheets (anything with
-  // data-side, like the task panel) do NOT trigger this — the dock stays visible
-  // over them. Tracks Radix's [role="dialog"][data-state="open"] tree.
+  // Hide while a centered modal dialog is open. Sheets pass through.
   useEffect(() => {
     const update = () => {
       const open = document.querySelectorAll(
@@ -292,8 +327,8 @@ export function AskAgentsDock() {
       );
       let blocking = false;
       open.forEach((el) => {
-        if (el.hasAttribute('data-side')) return; // sheets pass through
-        if (el.closest('[data-helpin-dock]')) return; // the dock itself
+        if (el.hasAttribute('data-side')) return;
+        if (el.closest('[data-helpin-dock]')) return;
         blocking = true;
       });
       setHiddenByModal(blocking);
@@ -309,28 +344,40 @@ export function AskAgentsDock() {
     return () => obs.disconnect();
   }, []);
 
-  // External callers can pre-fill the dock via window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail: { query } }))
+  // External callers: window.dispatchEvent(new CustomEvent('helpin:ask-agents', { detail }))
   useEffect(() => {
     const onAsk = (event: Event) => {
-      const detail = (event as CustomEvent<{ query?: string }>).detail;
+      const detail = (event as CustomEvent<AskAgentsEventDetail>).detail;
       const next = detail?.query?.trim() ?? '';
-      if (!next) return;
+      if (!next && !detail?.mode && !detail?.runId) return;
       setCollapsed(false);
-      setValue(next);
-      setIntentResult(null);
-      requestAnimationFrame(() => textareaRef.current?.focus());
+      if (detail?.mode === 'runs') {
+        setViewMode('list');
+      }
+      if (detail?.runId) {
+        // jump straight to that run's conversation context — switch to conversation mode
+        setViewMode('conversation');
+      }
+      if (next) {
+        setValue(next);
+        setIntentResult(null);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      }
     };
     window.addEventListener('helpin:ask-agents', onAsk);
     return () => window.removeEventListener('helpin:ask-agents', onAsk);
-  }, []);
+  }, [setViewMode]);
 
   const trimmed = value.trim();
-  const showChip = !!pageContext && pageContext.entity_type !== 'workspace';
 
   const submit = useCallback(
     async (override?: string) => {
       const text = (override ?? value).trim();
       if (!workspace?.id || !pageContext || !text) return;
+      // List-mode submit: if any rows match, treat as filter; otherwise dispatch a new run.
+      if (viewMode === 'list') {
+        setViewMode('conversation');
+      }
       setParsing(true);
       setIntentResult(null);
       try {
@@ -347,17 +394,16 @@ export function AskAgentsDock() {
         setParsing(false);
       }
     },
-    [pageContext, value, workspace?.id],
+    [pageContext, value, viewMode, setViewMode, workspace?.id],
   );
 
   const confirmPlan = useCallback(async () => {
-    if (
-      !workspace?.id ||
-      !pageContext ||
-      !intentResult ||
-      intentResult.status !== 'plan'
-    )
-      return;
+    if (!workspace?.id || !pageContext || !intentResult || intentResult.status !== 'plan') return;
+    const submittedAt = Date.now();
+    setMessages((prev) => [
+      ...prev,
+      { kind: 'user', id: `user-${submittedAt}`, text: trimmed, ts: submittedAt },
+    ]);
     setDispatching(true);
     try {
       const res = await commandBarService.dispatchPlan(workspace.id, {
@@ -375,9 +421,7 @@ export function AskAgentsDock() {
           {
             id: res.data.plan_id,
             steps,
-            runIdsByStep: Object.fromEntries(
-              res.data.runs.map((run, index) => [index, run.id]),
-            ),
+            runIdsByStep: Object.fromEntries(res.data.runs.map((run, index) => [index, run.id])),
             planKind: intentResult.plan.plan_kind,
             status: 'running',
             prompt: trimmed,
@@ -385,30 +429,19 @@ export function AskAgentsDock() {
           },
           res.data.runs,
         );
+        setSessionPlanIds((prev) => {
+          const next = new Set(prev);
+          next.add(res.data!.plan_id!);
+          return next;
+        });
       } else {
         addRuns(res.data.runs);
+        setSessionRunIds((prev) => {
+          const next = new Set(prev);
+          for (const r of res.data!.runs) next.add(r.id);
+          return next;
+        });
       }
-
-      const firstStep = steps[0];
-      const runIds = res.data.runs.map((r) => r.id);
-      const userMsg: ThreadMessage = {
-        kind: 'user',
-        id: `user-${Date.now()}`,
-        text: trimmed,
-      };
-      const agentMsg: ThreadMessage = {
-        kind: 'agent',
-        id: res.data.plan_id ?? `agent-${Date.now()}`,
-        planId: res.data.plan_id,
-        runIds,
-        agentName:
-          steps.length > 1
-            ? `${firstStep.agent_name} +${steps.length - 1}`
-            : firstStep.agent_name,
-        description: describeStep(firstStep.instructions),
-      };
-      setMessages((prev) => [...prev, userMsg, agentMsg]);
-
       setValue('');
       setIntentResult(null);
     } finally {
@@ -416,7 +449,7 @@ export function AskAgentsDock() {
     }
   }, [addPlan, addRuns, intentResult, pageContext, trimmed, workspace?.id]);
 
-  // ⌘↵ confirms a pending plan from anywhere in the dock
+  // ⌘↵ confirms a pending plan from anywhere in the dock.
   useEffect(() => {
     if (intentResult?.status !== 'plan') return;
     const handler = (e: KeyboardEvent) => {
@@ -429,47 +462,229 @@ export function AskAgentsDock() {
     return () => window.removeEventListener('keydown', handler);
   }, [intentResult, confirmPlan]);
 
+  const cancelPlan = useCallback(
+    async (planId: string) => {
+      if (!workspace?.id) return;
+      setBusyPlanId(planId);
+      try {
+        const res = await commandBarService.cancelPlan(workspace.id, planId);
+        if (res.error || !res.data) {
+          toast.error(res.error ?? 'Failed to cancel plan');
+          return;
+        }
+        updatePlan(res.data.plan, res.data.runs ?? []);
+        toast.success('Command plan cancelled');
+      } finally {
+        setBusyPlanId(null);
+      }
+    },
+    [updatePlan, workspace?.id],
+  );
+
+  const retryPlan = useCallback(
+    async (plan: CommandBarRunPlan) => {
+      if (!workspace?.id) return;
+      const failedIndex = plan.steps.findIndex((_, i) => {
+        const runId = plan.runIdsByStep[i];
+        const run = runId ? runsById[runId] : null;
+        return run && (run.status === 'failed' || run.status === 'cancelled');
+      });
+      const stepIndex = failedIndex >= 0 ? failedIndex : 0;
+      setBusyPlanId(plan.id);
+      try {
+        const res = await commandBarService.retryPlan(workspace.id, plan.id, stepIndex);
+        if (res.error || !res.data) {
+          toast.error(res.error ?? 'Failed to retry plan');
+          return;
+        }
+        const retryRuns = res.data.runs ?? (res.data.run ? [res.data.run] : []);
+        updatePlan(res.data.plan, retryRuns);
+      } finally {
+        setBusyPlanId(null);
+      }
+    },
+    [runsById, updatePlan, workspace?.id],
+  );
+
+  const retryRun = useCallback(
+    (run: AgentRun) => {
+      // Standalone runs are usually recoverable by re-issuing the original prompt.
+      const text = (run.input as { text?: string } | null)?.text;
+      if (text) {
+        setCollapsed(false);
+        setViewMode('conversation');
+        setValue(text);
+        void submit(text);
+      } else {
+        toast.error('Cannot retry: original prompt unavailable.');
+      }
+    },
+    [submit, setViewMode],
+  );
+
+  const runApprove = useCallback(
+    async (run: AgentRun) => {
+      if (!workspace?.id) return;
+      setBusyRunId(run.id);
+      try {
+        const res = await agentService.approveRun(workspace.id, run.id);
+        if (res.error || !res.data) {
+          toast.error(res.error ?? 'Failed to approve run');
+          return;
+        }
+        updateRun(res.data);
+      } finally {
+        setBusyRunId(null);
+      }
+    },
+    [updateRun, workspace?.id],
+  );
+
+  const runCancel = useCallback(
+    async (run: AgentRun) => {
+      if (!workspace?.id) return;
+      setBusyRunId(run.id);
+      try {
+        const res = await agentService.cancelRun(workspace.id, run.id);
+        if (res.error || !res.data) {
+          toast.error(res.error ?? 'Failed to cancel run');
+          return;
+        }
+        updateRun(res.data);
+      } finally {
+        setBusyRunId(null);
+      }
+    },
+    [updateRun, workspace?.id],
+  );
+
+  const findRunStep = useCallback(
+    (run: AgentRun): { step: CommandBarPlanStep | null; planPrompt?: string } => {
+      for (const plan of plans) {
+        for (const [indexStr, runId] of Object.entries(plan.runIdsByStep)) {
+          if (runId !== run.id) continue;
+          const step = plan.steps[Number(indexStr)] ?? null;
+          return { step, planPrompt: plan.prompt };
+        }
+      }
+      return { step: null };
+    },
+    [plans],
+  );
+
+  const openRunDrawer = useCallback((runId: string) => {
+    setSelectedRunId(runId);
+  }, []);
+
+  const handleStripAction = useCallback(
+    (
+      action: StripAction,
+      target: { kind: 'plan'; plan: CommandBarRunPlan } | { kind: 'run'; run: AgentRun },
+    ) => {
+      if (action === 'open') {
+        const runId = target.kind === 'plan'
+          ? Object.values(target.plan.runIdsByStep)[0]
+          : target.run.id;
+        if (runId) openRunDrawer(runId);
+        return;
+      }
+      if (action === 'rerun') {
+        if (target.kind === 'plan') {
+          if (target.plan.prompt) {
+            setValue(target.plan.prompt);
+            void submit(target.plan.prompt);
+          }
+        } else {
+          const display = target.run.approval_state === 'approved' ? null : target.run;
+          if (display) void runApprove(target.run);
+        }
+        return;
+      }
+      if (action === 'save_as_agent') {
+        if (target.kind === 'run') {
+          const { step, planPrompt } = findRunStep(target.run);
+          if (!step) {
+            toast.error('Cannot save: this run is missing its plan context.');
+            return;
+          }
+          setPromotionRun({ run: target.run, step, planPrompt });
+        } else {
+          // Plan: promote the first/only completed run.
+          const firstRunId = Object.values(target.plan.runIdsByStep)[0];
+          const run = firstRunId ? runsById[firstRunId] : null;
+          if (run) {
+            const { step, planPrompt } = findRunStep(run);
+            if (step) setPromotionRun({ run, step, planPrompt: planPrompt ?? target.plan.prompt });
+          }
+        }
+        return;
+      }
+      if (action === 'retry') {
+        if (target.kind === 'plan') void retryPlan(target.plan);
+        else retryRun(target.run);
+        return;
+      }
+      if (action === 'cancel') {
+        if (target.kind === 'plan') void cancelPlan(target.plan.id);
+        else void runCancel(target.run);
+      }
+    },
+    [
+      cancelPlan,
+      findRunStep,
+      openRunDrawer,
+      retryPlan,
+      retryRun,
+      runApprove,
+      runCancel,
+      runsById,
+      submit,
+    ],
+  );
+
+  const onNew = useCallback(() => {
+    setMessages([]);
+    setSessionPlanIds(new Set());
+    setSessionRunIds(new Set());
+    setIntentResult(null);
+    setValue('');
+    setViewMode('conversation');
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [setViewMode]);
+
+  const onListSelect = useCallback(
+    (item: { kind: 'plan'; plan: CommandBarRunPlan } | { kind: 'run'; run: AgentRun }) => {
+      const runId =
+        item.kind === 'plan' ? Object.values(item.plan.runIdsByStep)[0] : item.run.id;
+      if (runId) openRunDrawer(runId);
+    },
+    [openRunDrawer],
+  );
+
   if (!workspace) return null;
   if (hiddenByModal) return null;
-
-  const onTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void submit();
-    } else if (e.key === 'Escape') {
-      if (intentResult) {
-        setIntentResult(null);
-      } else {
-        e.currentTarget.blur();
-      }
-    }
-  };
 
   if (collapsed) {
     if (typeof document === 'undefined') return null;
     return createPortal(
       <div
         data-helpin-dock="true"
-        className="pointer-events-none fixed inset-x-0 bottom-3 z-[60] flex justify-center"
+        className="pointer-events-none fixed inset-x-0 bottom-8 z-[60] flex justify-center"
       >
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="pointer-events-auto group inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05),0_6px_20px_-8px_rgba(15,23,42,0.18)] backdrop-blur transition hover:border-primary/40 hover:bg-background hover:text-foreground hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_10px_28px_-10px_rgba(15,23,42,0.25)] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200"
+          className="pointer-events-auto group inline-flex items-center gap-2.5 rounded-full border border-border/70 bg-background/95 px-4 py-2.5 text-sm font-medium text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_24px_-8px_rgba(15,23,42,0.22)] backdrop-blur transition hover:border-foreground/30 hover:bg-background hover:text-foreground"
         >
-          <AiMagicIcon className="h-3.5 w-3.5" />
+          <AiMagicIcon className="h-4 w-4" />
           Ask agents
-          {messages.length > 0 ? (
-            <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-medium text-primary">
-              {messages.filter((m) => m.kind === 'agent').length}
+          {activeCount > 0 ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300">
+              <Loading01Icon className="h-3 w-3 animate-spin" />
+              {activeCount}
             </span>
           ) : null}
-          {showChip && messages.length === 0 ? (
-            <span className="max-w-[160px] truncate text-foreground">
-              · {pageContext!.display_title || pageContext!.entity_id}
-            </span>
-          ) : null}
-          <kbd className="ml-1 rounded border bg-muted px-1 py-0 text-[10px] font-mono text-muted-foreground">
+          <kbd className="ml-1 rounded border bg-muted px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground">
             /
           </kbd>
         </button>
@@ -480,285 +695,202 @@ export function AskAgentsDock() {
 
   const plan = intentResult?.status === 'plan' ? intentResult.plan : null;
   const noMatch = intentResult?.status === 'no_matching_agent' ? intentResult : null;
-  const sendDisabled = !trimmed || parsing || dispatching || !!plan;
-  const hasResponseArea = messages.length > 0 || !!plan || !!noMatch;
-
-  const openRail = (runId?: string) => {
-    setRailFilter('all');
-    setRailMode('open');
-    if (runId) setSelectedRunId(runId);
-  };
+  const hasResponseArea = timeline.length > 0 || !!plan || !!noMatch;
 
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div
       data-helpin-dock="true"
-      className="pointer-events-none fixed inset-x-0 bottom-3 z-[60] flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex justify-center px-4"
     >
       <div className="pointer-events-auto flex w-full max-w-2xl flex-col rounded-2xl border border-border/70 bg-background/95 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_8px_24px_-12px_rgba(15,23,42,0.18),0_24px_64px_-28px_rgba(15,23,42,0.28)] ring-1 ring-black/[0.02] backdrop-blur transition-shadow focus-within:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_12px_32px_-12px_rgba(15,23,42,0.22),0_32px_80px_-32px_rgba(15,23,42,0.34)] dark:ring-white/[0.04] animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-200 ease-out">
-        {hasResponseArea ? (
-          <div className="order-1 flex max-h-[60vh] flex-col">
-            {messages.length > 0 ? (
-              <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3.5 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                <span>Recent runs</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMessages([]);
-                    setIntentResult(null);
-                  }}
-                  className="rounded px-1.5 py-0.5 text-[11px] font-medium normal-case tracking-normal text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  New chat
-                </button>
-              </div>
+        <div className="border-b border-border/60">
+          <DockHeader
+            mode={viewMode}
+            activeCount={activeCount}
+            onSwapMode={() => setViewMode(viewMode === 'list' ? 'conversation' : 'list')}
+            onNew={onNew}
+            onClose={() => setCollapsed(true)}
+          />
+        </div>
+
+        {viewMode === 'list' ? (
+          <div ref={responseRef} className="max-h-[60vh] overflow-y-auto">
+            <RunListView
+              plans={plans}
+              standaloneRuns={standaloneRuns}
+              runsById={runsById}
+              filter={listFilter}
+              busyPlanId={busyPlanId}
+              busyRunId={busyRunId}
+              onSelect={onListSelect}
+              onRetryPlan={(p) => void retryPlan(p)}
+              onRetryRun={retryRun}
+            />
+          </div>
+        ) : hasResponseArea ? (
+          <div ref={responseRef} className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-3.5 py-3">
+            {timeline.map((item) => {
+              if (item.kind === 'msg') {
+                return (
+                  <div key={item.id} className="flex justify-end">
+                    <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary/10 px-3 py-1.5 text-sm text-foreground">
+                      {item.msg.text}
+                    </div>
+                  </div>
+                );
+              }
+              if (item.kind === 'plan') {
+                const onlyRunId = Object.values(item.plan.runIdsByStep)[0];
+                const onlyRun = onlyRunId ? runsById[onlyRunId] : null;
+                const summary =
+                  item.plan.steps.length === 1 && onlyRun ? outputSummaryText(onlyRun) : '';
+                return (
+                  <ExecutionStrip
+                    key={item.id}
+                    kind="plan"
+                    workspaceId={workspace.id}
+                    plan={item.plan}
+                    runsById={runsById}
+                    busyPlanId={busyPlanId}
+                    onAction={(a) => handleStripAction(a, { kind: 'plan', plan: item.plan })}
+                    resultSlot={summary ? <InlineResultCard>{summary}</InlineResultCard> : null}
+                  />
+                );
+              }
+              const summary = outputSummaryText(item.run);
+              return (
+                <ExecutionStrip
+                  key={item.id}
+                  kind="run"
+                  workspaceId={workspace.id}
+                  run={item.run}
+                  busy={busyRunId === item.run.id}
+                  onAction={(a) => handleStripAction(a, { kind: 'run', run: item.run })}
+                  resultSlot={summary ? <InlineResultCard>{summary}</InlineResultCard> : null}
+                />
+              );
+            })}
+
+            {plan ? (
+              <PlanPreview
+                plan={plan}
+                rationale={
+                  intentResult?.status === 'plan' ? intentResult.rationale ?? null : null
+                }
+                dispatching={dispatching}
+                onConfirm={() => void confirmPlan()}
+                onEdit={() => {
+                  setIntentResult(null);
+                  requestAnimationFrame(() => textareaRef.current?.focus());
+                }}
+                onDiscard={() => setIntentResult(null)}
+              />
             ) : null}
 
-            <div ref={responseRef} className="flex flex-col gap-3 overflow-y-auto px-3.5 pt-3 pb-3">
-              {messages.map((msg) =>
-                msg.kind === 'user' ? (
-                  <div key={msg.id} className="flex justify-end">
-                    <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary/10 px-3 py-1.5 text-sm text-foreground">
-                      {msg.text}
-                    </div>
-                  </div>
-                ) : (
-                  <ThreadAgentMessage
-                    key={msg.id}
-                    message={msg}
-                    onView={() => openRail(msg.runIds[0])}
-                  />
-                ),
-              )}
-
-              {plan ? (
-                <div>
-                  {plan.steps.length > 1 || plan.plan_kind === 'fan_out' ? (
-                    <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <span className="font-medium uppercase tracking-wider">
-                        {plan.plan_kind === 'fan_out' ? 'Fan-out' : 'Plan'}
-                      </span>
-                      <span className="opacity-60">·</span>
-                      <span>
-                        {plan.plan_kind === 'fan_out'
-                          ? `${plan.steps.length} targets`
-                          : `${plan.steps.length} steps`}
-                      </span>
-                    </div>
-                  ) : null}
-                  {intentResult?.status === 'plan' &&
-                  intentResult.rationale &&
-                  plan.plan_kind !== 'one_shot_command' ? (
-                    <p className="mb-2 line-clamp-3 text-xs text-muted-foreground">
-                      {intentResult.rationale}
-                    </p>
-                  ) : null}
-                  {plan.guardrails?.length ? (
-                    <div className="mb-2 space-y-1">
-                      {plan.guardrails.map((g, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-                        >
-                          <Target01Icon className="h-3 w-3" />
-                          <span>{g.message}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  {plan.steps.length === 1 ? (
-                    <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
-                      <div className="flex items-center gap-2">
-                        <BotIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {plan.steps[0].agent_name}
-                        </span>
-                      </div>
-                      {(() => {
-                        const desc = describeStep(plan.steps[0].instructions);
-                        return desc ? (
-                          <p className="mt-1 line-clamp-3 pl-[22px] text-xs leading-snug text-muted-foreground">
-                            {desc}
-                          </p>
-                        ) : null;
-                      })()}
-                    </div>
-                  ) : (
-                    <div className="relative space-y-1.5 pl-3">
-                      <div
-                        aria-hidden
-                        className="absolute left-[8px] top-3 bottom-3 w-px bg-border/70"
-                      />
-                      {plan.steps.map((step, index) => (
-                        <div key={`${step.agent_id}-${index}`} className="relative">
-                          <span
-                            aria-hidden
-                            className="absolute -left-3 top-2 grid h-4 w-4 place-items-center rounded-full bg-background ring-2 ring-border/70 text-[9px] font-semibold text-muted-foreground"
-                          >
-                            {index + 1}
-                          </span>
-                          <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
-                            <p className="text-sm font-medium leading-snug text-foreground line-clamp-2">
-                              {step.instructions}
-                            </p>
-                            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                              <BotIcon className="h-3 w-3" />
-                              <span className="truncate">{step.agent_name}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-2.5 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIntentResult(null)}
-                      disabled={dispatching}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void confirmPlan()}
-                      disabled={dispatching}
-                      className={cn(
-                        'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition',
-                        dispatching
-                          ? 'cursor-not-allowed bg-muted text-muted-foreground'
-                          : 'bg-foreground text-background hover:bg-foreground/90',
-                      )}
-                    >
-                      {dispatching ? (
-                        <Loading01Icon className="h-3 w-3 animate-spin" />
-                      ) : null}
-                      {dispatching
-                        ? 'Starting…'
-                        : `Confirm ${
-                            (plan.estimated_runs ?? plan.run_count) === 1
-                              ? '1 run'
-                              : `${plan.estimated_runs ?? plan.run_count} runs`
-                          }`}
-                      {!dispatching ? (
-                        <kbd className="ml-1 rounded border border-background/30 bg-background/15 px-1 py-0 text-[9px] font-mono">
-                          ⌘↵
-                        </kbd>
-                      ) : null}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {noMatch ? (
-                <div>
-                  <div className="flex items-start gap-2">
-                    <BotIcon className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
-                    <div className="min-w-0 text-sm">
-                      <p className="font-medium">No available agent can do that yet.</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{noMatch.reason}</p>
-                      {noMatch.suggestions?.length ? (
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {noMatch.suggestions.map((s) => (
-                            <button
-                              type="button"
-                              key={s}
-                              onClick={() => {
-                                setValue(s);
-                                void submit(s);
-                              }}
-                              className="rounded border border-border/70 bg-background/80 px-2 py-0.5 text-[11px] text-foreground transition hover:border-primary/40 hover:bg-primary/5"
-                            >
-                              {s}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="mt-2 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setIntentResult(null)}
-                      className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            {noMatch ? (
+              <NoMatchBlock
+                reason={noMatch.reason}
+                suggestions={noMatch.suggestions}
+                onPick={(s) => {
+                  setValue(s);
+                  void submit(s);
+                }}
+                onDismiss={() => setIntentResult(null)}
+              />
+            ) : null}
           </div>
         ) : null}
 
-        <div
-          className={cn(
-            'order-2 flex flex-col gap-2 px-3.5 pt-3 pb-2.5',
-            hasResponseArea && 'border-t border-border/60',
-          )}
-        >
-          <div className="flex items-start gap-2">
-            <textarea
-              ref={textareaRef}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={onTextareaKeyDown}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              placeholder={
-                messages.length > 0
-                  ? 'Ask another question...'
-                  : showChip
-                    ? 'Ask agents about this...'
-                    : 'Ask agents anything about your workspace...'
+        <div className={cn(hasResponseArea && viewMode === 'conversation' ? 'border-t border-border/60' : viewMode === 'list' ? 'border-t border-border/60' : null)}>
+          <DockInput
+            mode={viewMode}
+            value={viewMode === 'list' ? listFilter : value}
+            onChange={(v) => (viewMode === 'list' ? setListFilter(v) : setValue(v))}
+            onSubmit={() => {
+              if (viewMode === 'list') {
+                const text = listFilter.trim();
+                if (!text) return;
+                setListFilter('');
+                setValue(text);
+                void submit(text);
+              } else {
+                void submit();
               }
-              rows={1}
-              disabled={parsing || dispatching}
-              className="block w-full flex-1 resize-none bg-transparent text-sm leading-5 placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"
-            />
-            <button
-              type="button"
-              onClick={() => setCollapsed(true)}
-              title="Hide"
-              className="-mt-0.5 rounded-full p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-            >
-              <Cancel01Icon className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              {pageContext ? <ContextChip context={pageContext} /> : null}
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {parsing ? (
-                <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                  <Loading01Icon className="h-3 w-3 animate-spin" />
-                  Thinking…
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void submit()}
-                disabled={sendDisabled}
-                title="Ask agents"
-                className={cn(
-                  'inline-flex h-8 w-8 items-center justify-center rounded-full transition',
-                  sendDisabled
-                    ? 'cursor-not-allowed bg-muted text-muted-foreground'
-                    : 'bg-foreground text-background hover:bg-foreground/90',
-                )}
-              >
-                {parsing ? (
-                  <Loading01Icon className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowUp01Icon className="h-4 w-4" />
-                )}
-              </button>
-            </div>
-          </div>
+            }}
+            onFocusChange={setIsFocused}
+            pageContext={pageContext ?? null}
+            busy={parsing || dispatching}
+            textareaRef={textareaRef}
+          />
         </div>
       </div>
+      <PromotionDialog
+        open={!!promotionRun}
+        onOpenChange={(open) => {
+          if (!open) setPromotionRun(null);
+        }}
+        workspaceId={workspace.id}
+        run={promotionRun?.run ?? null}
+        step={promotionRun?.step ?? null}
+        planPrompt={promotionRun?.planPrompt}
+      />
+      <CodingSessionDrawer
+        sessionId={selectedRunId}
+        open={!!selectedRunId}
+        onOpenChange={(open) => {
+          if (!open) setSelectedRunId(null);
+        }}
+      />
     </div>,
     document.body,
+  );
+}
+
+
+function NoMatchBlock({
+  reason,
+  suggestions,
+  onPick,
+  onDismiss,
+}: {
+  reason: string;
+  suggestions?: string[];
+  onPick: (s: string) => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-start gap-2">
+        <BotIcon className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
+        <div className="min-w-0 text-sm">
+          <p className="font-medium">No available agent can do that yet.</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{reason}</p>
+          {suggestions?.length ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {suggestions.map((s) => (
+                <button
+                  type="button"
+                  key={s}
+                  onClick={() => onPick(s)}
+                  className="rounded border border-border/70 bg-background/80 px-2 py-0.5 text-[11px] text-foreground transition hover:border-foreground/30 hover:bg-muted/60"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
   );
 }

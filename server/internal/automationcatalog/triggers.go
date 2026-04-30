@@ -97,6 +97,8 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 		case "support.auto":
 			return "support.widget_message", "support_widget", true
 		}
+	case model.AgentRunTriggerSourceCommandBar:
+		return "command_bar.run", "command_bar", true
 	}
 
 	return "", "", false
