@@ -27,7 +27,7 @@ export function SupportCoveragePage() {
 
   const [summary, setSummary] = useState<SupportCoverageSummary | null>(null)
   const [gaps, setGaps] = useState<SupportCoverageGapListItem[]>([])
-  const [total, setTotal] = useState(0)
+  const [, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
