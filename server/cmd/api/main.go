@@ -212,6 +212,7 @@ func main() {
 			&model.SupportMailboxMembership{},
 			&model.SupportTriageRule{},
 			&model.SupportEmailRoute{},
+			&model.SupportEmailSenderDomain{},
 			&model.SupportMessage{},
 			&model.SupportEmailLog{},
 			&model.SupportEmailWebhookEvent{},
@@ -393,6 +394,7 @@ func main() {
 	// Initialize email clients (nil if not configured).
 	appEmailClient := email.NewClient(cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
 	replyEmailClient := email.NewClient(cfg.PostmarkReplyServerToken, cfg.PostmarkReplyFromEmail)
+	postmarkDomainClient := email.NewDomainClient(cfg.PostmarkAccountToken)
 	if appEmailClient != nil {
 		slog.Info("Postmark app email configured")
 	} else {
@@ -402,6 +404,11 @@ func main() {
 		slog.Info("Postmark support reply email configured")
 	} else {
 		slog.Info("Postmark support reply email not configured — support reply emails will be logged only")
+	}
+	if postmarkDomainClient != nil {
+		slog.Info("Postmark account domain API configured")
+	} else {
+		slog.Info("Postmark account domain API not configured — custom sender domain onboarding disabled")
 	}
 
 	// Initialize S3 storage client (nil if not configured).
@@ -555,6 +562,7 @@ func main() {
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
 	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
 	supportEmailRouteRepo := repository.NewSupportEmailRouteRepository(db)
+	supportEmailSenderDomainRepo := repository.NewSupportEmailSenderDomainRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
@@ -679,6 +687,8 @@ func main() {
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
 	supportInboxService.SetRouteDomain(cfg.SupportEmailRouteDomain)
 	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
+	supportInboxService.SetEmailSenderDomainRepository(supportEmailSenderDomainRepo)
+	supportInboxService.SetPostmarkDomainClient(postmarkDomainClient)
 	supportInboxService.SetEmailLogRepo(supportEmailLogRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetTaskService(pmTaskService)

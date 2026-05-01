@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -32,6 +33,7 @@ type SupportInboxService struct {
 	conversationRepo        *repository.SupportConversationRepository
 	mailboxRepo             *repository.SupportMailboxRepository
 	emailRouteRepo          *repository.SupportEmailRouteRepository
+	emailSenderDomainRepo   *repository.SupportEmailSenderDomainRepository
 	messageRepo             *repository.SupportMessageRepository
 	agentRepo               *repository.AgentRepository
 	assocRepo               *repository.CRMAssociationRepository
@@ -56,6 +58,7 @@ type SupportInboxService struct {
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 	emailLogRepo            *repository.SupportEmailLogRepository
+	postmarkDomainClient    *email.DomainClient
 	triageService           *SupportInboxTriageService
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
@@ -567,6 +570,24 @@ func (s *SupportInboxService) SetEmailRouteRepository(emailRouteRepo *repository
 		return nil
 	}
 	s.emailRouteRepo = emailRouteRepo
+	return s
+}
+
+// SetEmailSenderDomainRepository injects the custom support sender domain repository.
+func (s *SupportInboxService) SetEmailSenderDomainRepository(repo *repository.SupportEmailSenderDomainRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailSenderDomainRepo = repo
+	return s
+}
+
+// SetPostmarkDomainClient injects the Postmark Account API client for sender domains.
+func (s *SupportInboxService) SetPostmarkDomainClient(client *email.DomainClient) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.postmarkDomainClient = client
 	return s
 }
 

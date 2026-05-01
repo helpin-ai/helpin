@@ -156,6 +156,35 @@ export interface CreateSupportEmailRouteRequest {
   source_address?: string | null;
 }
 
+export interface SupportEmailSenderDomain {
+  id: string;
+  workspace_id: string;
+  domain: string;
+  from_local_part: string;
+  postmark_domain_id?: number | null;
+  return_path_domain: string;
+  return_path_domain_cname_value: string;
+  return_path_domain_verified: boolean;
+  dkim_host: string;
+  dkim_text_value: string;
+  dkim_pending_host: string;
+  dkim_pending_text_value: string;
+  dkim_verified: boolean;
+  dkim_update_status: string;
+  status: 'pending_dns' | 'verified' | string;
+  active: boolean;
+  last_checked_at?: string | null;
+  last_error?: string | null;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportEmailSenderDomainRequest {
+  domain: string;
+  from_local_part: string;
+}
+
 export interface CreateSupportMailboxRequest {
   name: string;
   handle: string;
