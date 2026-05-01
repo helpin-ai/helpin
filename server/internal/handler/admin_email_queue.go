@@ -34,8 +34,14 @@ func NewAdminEmailQueueHandler(
 	if config.SupportEmailRouteDomain == "" {
 		config.SupportEmailRouteDomain = "on.helpin.email"
 	}
-	config.ExpectedFallbackFromShape = "<mailbox-handle>@<workspace-slug>." + config.SupportEmailRouteDomain
+	config.VerifiedFallbackFromEmail = strings.TrimSpace(config.VerifiedFallbackFromEmail)
+	if config.VerifiedFallbackFromEmail == "" {
+		config.VerifiedFallbackFromEmail = strings.TrimSpace(config.ReplyFromEmail)
+	}
+	config.ExpectedBrandedFromShape = "<mailbox-handle>@<workspace-slug>." + config.SupportEmailRouteDomain
+	config.ExpectedFallbackFromShape = config.VerifiedFallbackFromEmail
 	config.ExpectedReplyToShape = "conv-{conversation_id}@" + config.SupportEmailReplyDomain
+	config.OutboundFromBehavior = "try branded workspace sender, retry with verified fallback sender on Postmark sender-signature rejection"
 
 	return &AdminEmailQueueHandler{
 		emailFallbackService: emailFallbackService,

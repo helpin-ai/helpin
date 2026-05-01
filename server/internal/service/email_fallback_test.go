@@ -519,6 +519,112 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackFromName = "Acme Support"
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666667"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Pricing question",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Alex Agent"),
+		Content:           "We can help with billing.",
+		MessageType:       "reply",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	var attempts []capturedPostmarkRequest
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+			var captured capturedPostmarkRequest
+			if err := json.Unmarshal(body, &captured); err != nil {
+				return nil, err
+			}
+			attempts = append(attempts, captured)
+			if len(attempts) == 1 {
+				return &http.Response{
+					StatusCode: http.StatusUnprocessableEntity,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"ErrorCode": 300,
+						"Message": "The 'From' address you supplied (inbox@acme.on.helpin.email) is not a Sender Signature on your account."
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-fallback-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
+		t.Fatalf("fire email: %v", err)
+	}
+
+	if len(attempts) != 2 {
+		t.Fatalf("expected branded sender attempt and verified fallback attempt, got %d", len(attempts))
+	}
+	if !strings.Contains(attempts[0].From, "Alex Agent - Acme Support <inbox@acme.on.helpin.email>") {
+		t.Fatalf("unexpected first from: %q", attempts[0].From)
+	}
+	if !strings.Contains(attempts[1].From, "Alex Agent - Acme Support <noreply@example.com>") {
+		t.Fatalf("unexpected fallback from: %q", attempts[1].From)
+	}
+	expectedReplyTo := "conv-" + conversationID + "@replies.helpin.ai"
+	if attempts[0].ReplyTo != expectedReplyTo || attempts[1].ReplyTo != expectedReplyTo {
+		t.Fatalf("reply-to changed across retry: first=%q second=%q", attempts[0].ReplyTo, attempts[1].ReplyTo)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected one outbound log, got %d", len(logs))
+	}
+	if logs[0].FromEmail != "noreply@example.com" {
+		t.Fatalf("expected fallback from in email log, got %q", logs[0].FromEmail)
+	}
+	if logs[0].PostmarkMessageID == nil || *logs[0].PostmarkMessageID != "pm-fallback-1" {
+		t.Fatalf("unexpected postmark message id: %#v", logs[0].PostmarkMessageID)
+	}
+}
+
 func TestEmailFallbackReconcileMissedOutboundReplySendsOnce(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()

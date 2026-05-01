@@ -1423,11 +1423,21 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && conv != nil {
 		conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 		conv.HumanTakeover = boolPtr(true)
-		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
+		updates := map[string]any{
 			"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
 			"opened_by_user_id": conv.OpenedByUserID,
 			"human_takeover":    true,
-		}); err != nil {
+		}
+		if conv.Status == model.SupportConversationStatusResolved {
+			conv.Status = model.SupportConversationStatusWaitingOnCustomer
+			conv.ResolvedAt = nil
+			conv.ClosedAt = nil
+			updates["status"] = model.SupportConversationStatusWaitingOnCustomer
+			updates["resolved_at"] = nil
+			updates["closed_at"] = nil
+			updates["updated_at"] = time.Now()
+		}
+		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, updates); err != nil {
 			slog.ErrorContext(ctx, "failed to update support conversation flow state after teammate reply", "error", err, "conversation_id", ticketID)
 		}
 

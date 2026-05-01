@@ -1116,17 +1116,18 @@ func main() {
 
 	// Initialize handlers.
 	emailDiagnosticsConfig := model.EmailDiagnosticsConfig{
-		AppEmailConfigured:      appEmailClient != nil,
-		ReplyEmailConfigured:    replyEmailClient != nil,
-		RouteEmailConfigured:    strings.TrimSpace(cfg.PostmarkRouteServerToken) != "",
-		RedisConfigured:         redisClient != nil,
-		FallbackPollerEnabled:   redisClient != nil && replyEmailClient != nil,
-		AppFromEmail:            cfg.PostmarkAppFromEmail,
-		ReplyFromEmail:          cfg.PostmarkReplyFromEmail,
-		SupportEmailReplyDomain: cfg.SupportEmailReplyDomain,
-		SupportEmailRouteDomain: cfg.SupportEmailRouteDomain,
-		ReplyInboundSecretSet:   strings.TrimSpace(cfg.PostmarkReplyInboundWebhookSecret) != "",
-		RouteInboundSecretSet:   strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
+		AppEmailConfigured:        appEmailClient != nil,
+		ReplyEmailConfigured:      replyEmailClient != nil,
+		RouteEmailConfigured:      strings.TrimSpace(cfg.PostmarkRouteServerToken) != "",
+		RedisConfigured:           redisClient != nil,
+		FallbackPollerEnabled:     redisClient != nil && replyEmailClient != nil,
+		AppFromEmail:              cfg.PostmarkAppFromEmail,
+		ReplyFromEmail:            cfg.PostmarkReplyFromEmail,
+		VerifiedFallbackFromEmail: cfg.PostmarkReplyFromEmail,
+		SupportEmailReplyDomain:   cfg.SupportEmailReplyDomain,
+		SupportEmailRouteDomain:   cfg.SupportEmailRouteDomain,
+		ReplyInboundSecretSet:     strings.TrimSpace(cfg.PostmarkReplyInboundWebhookSecret) != "",
+		RouteInboundSecretSet:     strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
 	}
 
 	handlers := router.Handlers{
