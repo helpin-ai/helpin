@@ -120,12 +120,15 @@ export interface EmailDiagnosticsConfig {
   fallback_poller_enabled: boolean
   app_from_email?: string
   reply_from_email?: string
+  verified_fallback_from_email?: string
   support_email_reply_domain: string
   support_email_route_domain: string
   reply_inbound_secret_set: boolean
   route_inbound_secret_set: boolean
   expected_fallback_from_shape: string
+  expected_branded_from_shape: string
   expected_reply_to_shape: string
+  outbound_from_behavior: string
 }
 
 export interface EmailLogCount {

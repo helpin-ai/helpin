@@ -1327,8 +1327,14 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		"reply_to", replyTo,
 		"message_count", len(pending),
 	)
-	postmarkMessageID, err := s.emailClient.SendEmailWithHeaders(
+	postmarkMessageID, sentFromAddress, err := s.sendFallbackEmailWithSenderFallback(
+		ctx,
+		conv.WorkspaceID,
+		conversationID,
 		from,
+		fromAddress,
+		agentName,
+		workspaceName,
 		strings.TrimSpace(*conv.CustomerEmail),
 		subject,
 		htmlBody,
@@ -1360,7 +1366,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		ConversationID:    conversationID,
 		Direction:         "outbound",
 		MessageIDs:        model.DocsStringArray(messageIDValues),
-		FromEmail:         fromAddress,
+		FromEmail:         sentFromAddress,
 		ToEmail:           strings.TrimSpace(*conv.CustomerEmail),
 		Subject:           subject,
 		RFCMessageID:      rfcMessageID,
@@ -2126,11 +2132,60 @@ func (s *EmailFallbackService) unsubscribeAddress(conversationID string) string 
 	return fmt.Sprintf("unsubscribe-%s@%s", conversationID, domain)
 }
 
-// resolveOutboundFromAddress returns the branded sender address for a
-// conversation's outbound email. It prefers the mailbox-aware route address
-// (<handle>@<slug>.<route_domain>) so replies land on the verified customer
-// domain, falling back to the legacy global Postmark sender when the slug or
-// route domain is unavailable.
+func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
+	ctx context.Context,
+	workspaceID string,
+	conversationID string,
+	from string,
+	fromAddress string,
+	agentName string,
+	workspaceName string,
+	to string,
+	subject string,
+	htmlBody string,
+	textBody string,
+	replyTo string,
+	headers []email.EmailHeader,
+) (string, string, error) {
+	postmarkMessageID, err := s.emailClient.SendEmailWithHeaders(from, to, subject, htmlBody, textBody, replyTo, headers)
+	if err == nil {
+		return postmarkMessageID, fromAddress, nil
+	}
+	if !email.IsSenderSignatureError(err) {
+		return "", fromAddress, err
+	}
+
+	fallbackFromAddress := strings.TrimSpace(s.emailClient.FromEmail())
+	if fallbackFromAddress == "" || strings.EqualFold(fallbackFromAddress, strings.TrimSpace(fromAddress)) {
+		return "", fromAddress, err
+	}
+	fallbackFrom := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, fallbackFromAddress)
+	s.logger.WarnContext(ctx, "email fallback branded sender rejected, retrying with verified sender",
+		"error", err,
+		"workspace_id", workspaceID,
+		"conversation_id", conversationID,
+		"branded_from_email", fromAddress,
+		"fallback_from_email", fallbackFromAddress,
+		"reply_to", replyTo,
+	)
+	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeaders(fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers)
+	if fallbackErr != nil {
+		return "", fallbackFromAddress, fmt.Errorf("retry with verified sender after branded sender rejection: %w", fallbackErr)
+	}
+	s.logger.InfoContext(ctx, "email fallback sent with verified sender fallback",
+		"workspace_id", workspaceID,
+		"conversation_id", conversationID,
+		"branded_from_email", fromAddress,
+		"fallback_from_email", fallbackFromAddress,
+		"reply_to", replyTo,
+	)
+	return postmarkMessageID, fallbackFromAddress, nil
+}
+
+// resolveOutboundFromAddress returns the preferred branded sender address for a
+// conversation's outbound email. Postmark may still reject this address until
+// the workspace/domain is verified for outbound sending; the send path retries
+// with the configured verified sender while keeping the conversation Reply-To.
 func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, conv *model.SupportConversation) string {
 	fallback := s.emailClient.FromEmail()
 	if s.supportInboxService == nil || conv == nil {

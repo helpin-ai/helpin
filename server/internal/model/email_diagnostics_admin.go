@@ -10,12 +10,15 @@ type EmailDiagnosticsConfig struct {
 	FallbackPollerEnabled     bool   `json:"fallback_poller_enabled"`
 	AppFromEmail              string `json:"app_from_email,omitempty"`
 	ReplyFromEmail            string `json:"reply_from_email,omitempty"`
+	VerifiedFallbackFromEmail string `json:"verified_fallback_from_email,omitempty"`
 	SupportEmailReplyDomain   string `json:"support_email_reply_domain"`
 	SupportEmailRouteDomain   string `json:"support_email_route_domain"`
 	ReplyInboundSecretSet     bool   `json:"reply_inbound_secret_set"`
 	RouteInboundSecretSet     bool   `json:"route_inbound_secret_set"`
 	ExpectedFallbackFromShape string `json:"expected_fallback_from_shape"`
+	ExpectedBrandedFromShape  string `json:"expected_branded_from_shape"`
 	ExpectedReplyToShape      string `json:"expected_reply_to_shape"`
+	OutboundFromBehavior      string `json:"outbound_from_behavior"`
 }
 
 // EmailLogCount is a grouped support email log count.
