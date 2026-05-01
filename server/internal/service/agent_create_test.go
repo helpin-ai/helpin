@@ -659,6 +659,7 @@ func TestUpdateAgent_AllowsSystemPresetVersionRuntimeFromSelectedVersion(t *test
 		VersionKey:            "code_builder_workspace_codex",
 		Label:                 "Workspace Codex",
 		RuntimeKind:           "codex",
+		Provider:              agentTestStringPtr(model.AgentModelProviderOpenAI),
 		SystemPrompt:          agentTestStringPtr("Use Codex for code builder runs."),
 		InstructionSkills:     mustJSONStringSlice(nil),
 		AllowedTools:          mustJSONStringSlice([]string{"read_file", "run_command"}),

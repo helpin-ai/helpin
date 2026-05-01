@@ -671,6 +671,15 @@ func (r *SupportConversationRepository) applyConversationSearch(query *gorm.DB, 
 	}
 	escaped := escapeLike(search)
 	pattern := "%" + escaped + "%"
+	if r.db.Dialector.Name() == "sqlite" {
+		lowerPattern := strings.ToLower(pattern)
+		return query.Where(`(
+			LOWER(support_conversations.subject) LIKE ? ESCAPE '\'
+			OR LOWER(COALESCE(support_conversations.customer_name, '')) LIKE ? ESCAPE '\'
+			OR LOWER(COALESCE(support_conversations.customer_email, '')) LIKE ? ESCAPE '\'
+			OR CAST(support_conversations.display_id AS TEXT) LIKE ? ESCAPE '\'
+		)`, lowerPattern, lowerPattern, lowerPattern, pattern)
+	}
 	return query.Where(`(
 		support_conversations.subject ILIKE ? ESCAPE '\'
 		OR COALESCE(support_conversations.customer_name, '') ILIKE ? ESCAPE '\'

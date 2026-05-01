@@ -111,6 +111,62 @@ export interface WebhookEventListResponse {
   total_pages: number
 }
 
+// Email diagnostics
+export interface EmailDiagnosticsConfig {
+  app_email_configured: boolean
+  reply_email_configured: boolean
+  route_email_configured: boolean
+  redis_configured: boolean
+  fallback_poller_enabled: boolean
+  app_from_email?: string
+  reply_from_email?: string
+  support_email_reply_domain: string
+  support_email_route_domain: string
+  reply_inbound_secret_set: boolean
+  route_inbound_secret_set: boolean
+  expected_fallback_from_shape: string
+  expected_reply_to_shape: string
+}
+
+export interface EmailLogCount {
+  direction: string
+  status: string
+  count: number
+}
+
+export interface SupportEmailLog {
+  id: string
+  workspace_id: string
+  conversation_id: string
+  email_route_id?: string
+  direction: string
+  message_ids?: string[]
+  from_email: string
+  to_email: string
+  recipient_address?: string
+  subject: string
+  rfc_message_id: string
+  in_reply_to?: string
+  references_header?: string
+  postmark_message_id?: string
+  stripped_text?: string
+  html_body?: string
+  status: string
+  delivered_at?: string
+  opened_at?: string
+  bounced_at?: string
+  error_message?: string
+  created_at: string
+}
+
+export interface EmailDiagnosticsResponse {
+  config: EmailDiagnosticsConfig
+  queue: EmailQueueResponse
+  recent_logs: SupportEmailLog[]
+  log_counts: EmailLogCount[]
+  recent_webhooks: WebhookEvent[]
+}
+
 // Email queue
 export interface EmailQueueMessage {
   id: string

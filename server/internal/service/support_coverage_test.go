@@ -68,6 +68,12 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			source_signal TEXT NOT NULL DEFAULT '', excerpt TEXT NOT NULL DEFAULT '',
 			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME
 		)`,
+		`CREATE TABLE support_messages (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT,
+			sender_type TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'reply',
+			content TEXT NOT NULL DEFAULT '', is_internal BOOLEAN NOT NULL DEFAULT 0,
+			deleted_at DATETIME, created_at DATETIME, updated_at DATETIME
+		)`,
 		`CREATE TABLE support_gap_suggestions (
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			suggestion_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
