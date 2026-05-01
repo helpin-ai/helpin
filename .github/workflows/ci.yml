@@ -20,9 +20,80 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: arc-runners-helpin-ai
+    outputs:
+      server: ${{ steps.filter.outputs.server }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      admin: ${{ steps.filter.outputs.admin }}
+      packages: ${{ steps.filter.outputs.packages }}
+      helpcenter: ${{ steps.filter.outputs.helpcenter }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed paths
+        id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "admin=true" >> "$GITHUB_OUTPUT"
+            echo "packages=true" >> "$GITHUB_OUTPUT"
+            echo "helpcenter=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ]; then
+            CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          else
+            CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          SERVER=false
+          FRONTEND=false
+          ADMIN=false
+          PACKAGES=false
+          HELPCENTER=false
+
+          if echo "$CHANGED" | grep -qE '^server/|^\.github/workflows/ci\.yml$'; then
+            SERVER=true
+          fi
+          if echo "$CHANGED" | grep -qE '^frontend/|^packages/(shared|widget-core)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
+            FRONTEND=true
+          fi
+          if echo "$CHANGED" | grep -qE '^apps/admin/|^frontend/src/index\.css$|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
+            ADMIN=true
+          fi
+          if echo "$CHANGED" | grep -qE '^packages/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
+            PACKAGES=true
+          fi
+          if echo "$CHANGED" | grep -qE '^help-center/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/ci\.yml$'; then
+            HELPCENTER=true
+          fi
+
+          echo "server=$SERVER" >> "$GITHUB_OUTPUT"
+          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
+          echo "admin=$ADMIN" >> "$GITHUB_OUTPUT"
+          echo "packages=$PACKAGES" >> "$GITHUB_OUTPUT"
+          echo "helpcenter=$HELPCENTER" >> "$GITHUB_OUTPUT"
+          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER"
+
   # ------------------------- Server -------------------------
   server:
     name: Server CI
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: arc-runners-helpin-ai
     # Plan budget: ≤ 6 min for vet+build. Generous timeout so transient
     # network blips don't fail the run for the wrong reason.
@@ -53,6 +124,8 @@ jobs:
 
   server-tests:
     name: Server Tests
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: arc-runners-helpin-ai
     timeout-minutes: 20
     # Informational until promoted per the plan's promotion criteria.
@@ -88,6 +161,8 @@ jobs:
   # ------------------------ Frontend ------------------------
   frontend:
     name: Frontend CI
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: arc-runners-helpin-ai
     # Plan budget: ≤ 4 min build. Tsc -b alone can stretch to 3-4m on
     # cold cache; allow headroom.
@@ -100,11 +175,13 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build all packages
-        run: pnpm build
+      - name: Build frontend
+        run: pnpm --dir frontend run build
 
   frontend-tests:
     name: Frontend Vitest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: arc-runners-helpin-ai
     timeout-minutes: 10
     steps:
@@ -123,6 +200,8 @@ jobs:
   # ------------------------ Packages ------------------------
   packages-tests:
     name: Package Vitest
+    needs: changes
+    if: needs.changes.outputs.packages == 'true'
     runs-on: arc-runners-helpin-ai
     # Plan budget: ≤ 3 min for all packages combined.
     timeout-minutes: 8
@@ -151,6 +230,8 @@ jobs:
   # ----------------------- Help Center ----------------------
   helpcenter:
     name: Help Center CI
+    needs: changes
+    if: needs.changes.outputs.helpcenter == 'true'
     runs-on: arc-runners-helpin-ai
     # Plan budget: ≤ 3 min build + test.
     timeout-minutes: 8
@@ -173,3 +254,21 @@ jobs:
       - name: Build
         working-directory: help-center
         run: pnpm run build
+
+  # -------------------------- Admin -------------------------
+  admin:
+    name: Admin CI
+    needs: changes
+    if: needs.changes.outputs.admin == 'true'
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build admin
+        run: pnpm --dir apps/admin run build
