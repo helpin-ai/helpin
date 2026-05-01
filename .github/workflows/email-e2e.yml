@@ -76,6 +76,7 @@ jobs:
     # Real email is slow because delivery polling waits on external providers.
     timeout-minutes: 30
     env:
+      CGO_ENABLED: '1'
       MAILSLURP_API_KEY: ${{ secrets.MAILSLURP_API_KEY }}
       POSTMARK_REPLY_SERVER_TOKEN: ${{ secrets.POSTMARK_REPLY_SERVER_TOKEN }}
       POSTMARK_REPLY_FROM_EMAIL: ${{ secrets.POSTMARK_REPLY_FROM_EMAIL }}
@@ -91,7 +92,7 @@ jobs:
       - name: Run MailSlurp scenarios
         working-directory: server
         run: |
-          if go test -tags=email_e2e -run='^TestMailSlurpScenario' ./... 2>&1; then
+          if go test -tags=email_e2e -run='^TestMailSlurpScenario' ./internal/service 2>&1; then
             echo "::notice::MailSlurp scenarios passed"
           else
             STATUS=$?
