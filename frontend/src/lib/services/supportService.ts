@@ -29,6 +29,8 @@ import type {
   SupportMailboxMember,
   SupportEmailRoute,
   CreateSupportEmailRouteRequest,
+  SupportEmailSenderDomain,
+  CreateSupportEmailSenderDomainRequest,
   SupportTriageRule,
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
@@ -92,6 +94,16 @@ export const supportService = {
     api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
   disableEmailRoute: (workspaceId: string, routeId: string) =>
     api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
+  listEmailSenderDomains: (workspaceId: string) =>
+    api.get<SupportEmailSenderDomain[]>(`/support/inbox/email-sender-domains${qs(workspaceId)}`),
+  createEmailSenderDomain: (workspaceId: string, payload: CreateSupportEmailSenderDomainRequest) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains${qs(workspaceId)}`, payload),
+  verifyEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains/${domainId}/verify${qs(workspaceId)}`, {}),
+  activateEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains/${domainId}/activate${qs(workspaceId)}`, {}),
+  deactivateEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post(`/support/inbox/email-sender-domains/${domainId}/deactivate${qs(workspaceId)}`, {}),
   listTriageRules: (workspaceId: string) =>
     api.get<SupportTriageRule[]>(`/support/inbox/triage-rules${qs(workspaceId)}`),
   createTriageRule: (workspaceId: string, payload: CreateSupportTriageRuleRequest) =>

@@ -148,6 +148,7 @@ export const queryKeys = {
     mailboxes: (wsId: string) => ['support', wsId, 'mailboxes'] as const,
     mailboxMembers: (wsId: string, mailboxId: string) => ['support', wsId, 'mailboxes', mailboxId, 'members'] as const,
     emailRoutes: (wsId: string) => ['support', wsId, 'email-routes'] as const,
+    emailSenderDomains: (wsId: string) => ['support', wsId, 'email-sender-domains'] as const,
     triageRules: (wsId: string) => ['support', wsId, 'triage-rules'] as const,
     cannedResponses: (wsId: string) => ['support', wsId, 'canned-responses'] as const,
     cannedResponseSearch: (wsId: string, query: string) => ['support', wsId, 'canned-responses', 'search', query] as const,

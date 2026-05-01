@@ -484,6 +484,37 @@ type CreateSupportEmailRouteRequest struct {
 
 type DisableSupportEmailRouteRequest struct{}
 
+type SupportEmailSenderDomain struct {
+	ID                         string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_support_email_sender_domain_workspace_domain"`
+	Domain                     string     `json:"domain" gorm:"not null;uniqueIndex:idx_support_email_sender_domain_workspace_domain"`
+	FromLocalPart              string     `json:"from_local_part" gorm:"not null;default:'support'"`
+	PostmarkDomainID           *int       `json:"postmark_domain_id,omitempty" gorm:"uniqueIndex"`
+	ReturnPathDomain           string     `json:"return_path_domain"`
+	ReturnPathDomainCNAMEValue string     `json:"return_path_domain_cname_value"`
+	ReturnPathDomainVerified   bool       `json:"return_path_domain_verified" gorm:"not null;default:false"`
+	DKIMHost                   string     `json:"dkim_host"`
+	DKIMTextValue              string     `json:"dkim_text_value"`
+	DKIMPendingHost            string     `json:"dkim_pending_host"`
+	DKIMPendingTextValue       string     `json:"dkim_pending_text_value"`
+	DKIMVerified               bool       `json:"dkim_verified" gorm:"not null;default:false"`
+	DKIMUpdateStatus           string     `json:"dkim_update_status"`
+	Status                     string     `json:"status" gorm:"not null;default:'pending_dns';index"`
+	Active                     bool       `json:"active" gorm:"not null;default:false;index"`
+	LastCheckedAt              *time.Time `json:"last_checked_at,omitempty"`
+	LastError                  *string    `json:"last_error,omitempty"`
+	CreatedByID                string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt                  time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                  time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (SupportEmailSenderDomain) TableName() string { return "support_email_sender_domains" }
+
+type CreateSupportEmailSenderDomainRequest struct {
+	Domain        string `json:"domain"`
+	FromLocalPart string `json:"from_local_part"`
+}
+
 type CreateSupportMailboxRequest struct {
 	Name               string   `json:"name"`
 	Handle             string   `json:"handle"`

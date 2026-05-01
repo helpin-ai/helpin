@@ -1,10 +1,11 @@
-import { TeamInboxesTab, SupportEmailForwardingTab, ConversationRoutingTab } from '@/components/settings';
+import { TeamInboxesTab, SupportEmailForwardingTab, SupportEmailCustomDomainsTab, ConversationRoutingTab } from '@/components/settings';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SettingsPageFrame } from './SettingsPageFrame';
 
 const TABS = [
   { value: 'inboxes', label: 'Team Inboxes' },
   { value: 'email', label: 'Email Forwarding' },
+  { value: 'custom-domains', label: 'Email Custom Domains' },
   { value: 'routing', label: 'Conversation Routing' },
 ] as const;
 
@@ -33,6 +34,9 @@ export function InboxesRoutingSettingsPage({
           </TabsContent>
           <TabsContent value="email" className="mt-4">
             <SupportEmailForwardingTab workspaceId={workspaceId} />
+          </TabsContent>
+          <TabsContent value="custom-domains" className="mt-4">
+            <SupportEmailCustomDomainsTab workspaceId={workspaceId} />
           </TabsContent>
           <TabsContent value="routing" className="mt-4">
             <ConversationRoutingTab workspaceId={workspaceId} />

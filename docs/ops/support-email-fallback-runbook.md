@@ -11,7 +11,9 @@ replies should thread back into the support conversation.
    queued in Redis with a short cancellation delay.
 3. The email fallback poller sends the message through Postmark.
 4. Outbound email uses:
-   - Preferred `From`: workspace mailbox sender, for example
+   - Preferred `From`: active verified workspace sender domain, for example
+     `support@example.com`
+   - Next `From`: workspace mailbox sender, for example
      `inbox@contentpen.on.helpin.email`
    - Fallback `From`: verified Postmark sender, for example
      `support@helpin.email`
@@ -33,15 +35,20 @@ Current production-safe behavior:
 3. The `Reply-To` remains conversation-specific, so inbound replies still route
    into the original conversation.
 
-This keeps emails moving while we build the longer-term branded sender flow.
+This keeps emails moving even when a workspace has not configured or verified a
+custom sender domain.
 
-Preferred future sender pattern:
+Managed sender-domain flow:
 
-- Verify `inbox.helpin.email` in Postmark.
-- Send workspace-branded emails as `<workspace-slug>@inbox.helpin.email`.
-- Keep `POSTMARK_REPLY_FROM_EMAIL` as a verified fallback such as
-  `support@helpin.email`.
-- Keep `Reply-To` as `conv-{conversation_id}@replies.helpin.email`.
+- `POSTMARK_ACCOUNT_TOKEN` must be configured so Helpin can create and verify
+  Postmark sender domains through the Account API.
+- Workspace admins add a sender domain from support email settings.
+- Helpin creates the Postmark domain and returns DKIM TXT plus Return-Path CNAME
+  records.
+- Admins add the DNS records, then click Verify DNS.
+- Activation is allowed only when both DKIM and Return-Path are verified.
+- `Reply-To` remains `conv-{conversation_id}@replies.helpin.email` so customer
+  replies continue threading to the conversation.
 
 Avoid using per-workspace subdomains like
 `inbox@contentpen.on.helpin.email` as the long-term outbound `From` unless each
@@ -112,6 +119,33 @@ Open the platform admin email diagnostics page and check:
 - Recent email logs show outbound `sent`/`delivered` rows.
 - Conversation lookup explains why a specific message was queued, sent, or
   blocked.
+
+## Custom Sender Domain Setup
+
+Required production secret:
+
+```text
+POSTMARK_ACCOUNT_TOKEN=<postmark-account-api-token>
+```
+
+Expected app behavior:
+
+1. Support settings creates rows in `support_email_sender_domains`.
+2. The row is initially `pending_dns`.
+3. Verify DNS refreshes DKIM and Return-Path status from Postmark.
+4. Activating a verified row makes it the workspace's outbound `From`.
+5. If custom sending fails with a Postmark sender-signature `422`, the existing
+   verified fallback sender retry still protects delivery.
+
+Useful SQL:
+
+```sql
+select workspace_id, domain, from_local_part, status, active,
+       dkim_verified, return_path_domain_verified, last_checked_at, last_error
+from support_email_sender_domains
+order by created_at desc
+limit 50;
+```
 
 ## Recover Missed Emails
 
@@ -203,10 +237,7 @@ limit 50;
 
 ## Longer-Term Product Work
 
-Build a managed sender-domain flow:
-
-1. Verify `inbox.helpin.email` in Postmark.
-2. Change preferred outbound sender to `<workspace-slug>@inbox.helpin.email`.
-3. Keep verified fallback sender.
-4. Later add customer-owned domain verification with DKIM/TXT/CNAME records,
-   Postmark account/domain API integration, and verification status in settings.
+- Add automatic scheduled re-verification for pending sender domains.
+- Add Postmark domain deletion/disable cleanup when a workspace removes a
+  sender domain.
+- Add richer admin diagnostics for custom sender-domain health.
