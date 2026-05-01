@@ -1,5 +1,5 @@
 -- Ensure offline support email fallback is enabled for every installation.
-UPDATE support_installations
+UPDATE support_widget_installations
 SET settings = jsonb_set(
     COALESCE(settings, '{}'::jsonb),
     '{email_fallback_enabled}',
