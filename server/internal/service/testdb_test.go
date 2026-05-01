@@ -113,6 +113,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			invited_by TEXT,
 			invited_at DATETIME,
 			accepted_at DATETIME,
+			support_default_team_id TEXT,
+			support_task_dialog_dismissed BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -138,6 +140,17 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME,
 			UNIQUE(team_id, workspace_member_id)
+		)`,
+		`CREATE TABLE workspace_module_grants (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			module TEXT NOT NULL,
+			subject_type TEXT NOT NULL,
+			subject_id TEXT NOT NULL,
+			access_level TEXT NOT NULL DEFAULT 'member',
+			created_by_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
 		)`,
 		`CREATE TABLE workspace_settings (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),

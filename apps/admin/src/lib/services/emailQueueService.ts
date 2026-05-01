@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
-import type { EmailQueueResponse } from '@/lib/pmTypes'
+import type { EmailDiagnosticsResponse, EmailQueueResponse } from '@/lib/pmTypes'
 
 export const emailQueueService = {
   list: () => api.get<EmailQueueResponse>('/admin/email-queue'),
+  diagnostics: () => api.get<EmailDiagnosticsResponse>('/admin/email-diagnostics'),
 }

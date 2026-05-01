@@ -17,7 +17,8 @@ name: Email E2E (MailSlurp)
 #
 # Required repo/org secrets (set these once before promoting):
 # - MAILSLURP_API_KEY        — MailSlurp account API key
-# - POSTMARK_STAGING_TOKEN   — Postmark staging server token
+# - POSTMARK_REPLY_SERVER_TOKEN — Postmark server token for support replies
+# - POSTMARK_REPLY_FROM_EMAIL — verified sender for support replies
 # - POSTMARK_INBOUND_DOMAIN  — domain whose MX points at staging API
 # - SUPPORT_REPLY_DOMAIN     — domain for Reply-To threading
 
@@ -50,9 +51,10 @@ jobs:
         shell: bash
         env:
           MAILSLURP_API_KEY: ${{ secrets.MAILSLURP_API_KEY }}
-          POSTMARK_STAGING_TOKEN: ${{ secrets.POSTMARK_STAGING_TOKEN }}
+          POSTMARK_REPLY_SERVER_TOKEN: ${{ secrets.POSTMARK_REPLY_SERVER_TOKEN }}
+          POSTMARK_REPLY_FROM_EMAIL: ${{ secrets.POSTMARK_REPLY_FROM_EMAIL }}
         run: |
-          if [ -n "$MAILSLURP_API_KEY" ] && [ -n "$POSTMARK_STAGING_TOKEN" ]; then
+          if [ -n "$MAILSLURP_API_KEY" ] && [ -n "$POSTMARK_REPLY_SERVER_TOKEN" ] && [ -n "$POSTMARK_REPLY_FROM_EMAIL" ]; then
             echo "have_secrets=true" >> "$GITHUB_OUTPUT"
             echo "::notice::email-e2e secrets present — running suite"
           else
@@ -60,24 +62,23 @@ jobs:
             echo "::notice::email-e2e secrets missing — skipping (this is expected until secrets are provisioned)"
           fi
 
-  # Scenario suite. Each scenario is a separate test target so failures
-  # report the specific behavior that broke (delivery vs threading vs bounce
-  # vs spam vs attachments vs HTML).
+  # Scenario suite. Scenario names use `TestMailSlurpScenario...` so failures
+  # report the specific behavior that broke.
   #
-  # Scenarios A-G map to docs/test-suite-ci-email-plan.md Phase 6.
-  # Test files will live under server/internal/test/email_e2e/ (not yet
-  # implemented — this job will be wired in a follow-up PR once secrets
-  # land and MailSlurp account is provisioned).
+  # Scenarios map to docs/test-suite-ci-email-plan.md Phase 6 as they land.
+  # Test files use the `email_e2e` build tag and are kept out of the
+  # default unit-test path because they send real provider email.
   scenarios:
     name: MailSlurp scenarios
     needs: preflight
     if: needs.preflight.outputs.have_secrets == 'true'
     runs-on: arc-runners-helpin-ai
-    # Real email is slow (delivery polling). 30 min covers all 7 scenarios.
+    # Real email is slow because delivery polling waits on external providers.
     timeout-minutes: 30
     env:
       MAILSLURP_API_KEY: ${{ secrets.MAILSLURP_API_KEY }}
-      POSTMARK_STAGING_TOKEN: ${{ secrets.POSTMARK_STAGING_TOKEN }}
+      POSTMARK_REPLY_SERVER_TOKEN: ${{ secrets.POSTMARK_REPLY_SERVER_TOKEN }}
+      POSTMARK_REPLY_FROM_EMAIL: ${{ secrets.POSTMARK_REPLY_FROM_EMAIL }}
       POSTMARK_INBOUND_DOMAIN: ${{ secrets.POSTMARK_INBOUND_DOMAIN }}
       SUPPORT_REPLY_DOMAIN: ${{ secrets.SUPPORT_REPLY_DOMAIN }}
     steps:
@@ -88,10 +89,6 @@ jobs:
         with:
           go-version: '1.24'
       - name: Run MailSlurp scenarios
-        # Test target tag is reserved; the actual test files land in a
-        # follow-up PR once MailSlurp + Postmark staging are provisioned.
-        # `|| true` keeps the job green until tests exist; once they do,
-        # remove the trailing `|| true` to make failures visible.
         working-directory: server
         run: |
           if go test -tags=email_e2e -run='^TestMailSlurpScenario' ./... 2>&1; then
@@ -103,4 +100,4 @@ jobs:
             # actual product breakage and should fail the job.
             echo "::warning::MailSlurp scenarios exited with status $STATUS"
             exit $STATUS
-          fi || true
+          fi
