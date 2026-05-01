@@ -167,6 +167,55 @@ export interface EmailDiagnosticsResponse {
   recent_webhooks: WebhookEvent[]
 }
 
+export interface EmailFallbackConversationSettingsSummary {
+  email_fallback_enabled: boolean
+  email_fallback_delay_secs: number
+  email_fallback_max_delivery_age_secs: number
+}
+
+export interface EmailFallbackConversationQueueSummary {
+  queued: boolean
+  fire_at?: string
+  message_ids?: string[]
+  redis_checked: boolean
+  redis_error?: string
+  delay_remaining_secs: number
+}
+
+export interface EmailFallbackMessageDiagnostics {
+  id: string
+  created_at: string
+  sender_type: string
+  message_type: string
+  is_internal: boolean
+  content_preview?: string
+  cancellable_until?: string
+  email_notified_at?: string
+  email_read_at?: string
+  email_log_id?: string
+  email_log_status?: string
+  postmark_message_id?: string
+  eligible: boolean
+  queued: boolean
+  due: boolean
+  reconcile_candidate: boolean
+  reasons: string[]
+}
+
+export interface EmailFallbackConversationDiagnosticsResponse {
+  conversation_id: string
+  workspace_id: string
+  subject: string
+  status: string
+  customer_email?: string
+  email_unsubscribed: boolean
+  contact_last_seen_at?: string
+  visitor_online: boolean
+  settings: EmailFallbackConversationSettingsSummary
+  queue: EmailFallbackConversationQueueSummary
+  messages: EmailFallbackMessageDiagnostics[]
+}
+
 // Email queue
 export interface EmailQueueMessage {
   id: string

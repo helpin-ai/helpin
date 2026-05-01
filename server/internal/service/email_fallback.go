@@ -809,6 +809,194 @@ func (s *EmailFallbackService) ReconcileMissedOutboundEmails(ctx context.Context
 	return sent, nil
 }
 
+// DiagnoseConversation explains the email fallback decision state for one
+// support conversation. It is read-only and intended for platform-admin
+// troubleshooting.
+func (s *EmailFallbackService) DiagnoseConversation(ctx context.Context, conversationID string) (*model.EmailFallbackConversationDiagnosticsResponse, error) {
+	if s == nil || s.convRepo == nil || s.messageRepo == nil {
+		return nil, nil
+	}
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return nil, fmt.Errorf("conversation_id is required")
+	}
+
+	conv, err := s.findConversationByID(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if conv == nil {
+		return nil, nil
+	}
+
+	settings, err := s.loadSettings(ctx, conv.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	delaySecs := normalizedEmailFallbackDelaySecs(settings.EmailFallbackDelaySecs)
+	maxAgeSecs := settings.EmailFallbackMaxDeliveryAgeSecs
+	if maxAgeSecs < 120 || maxAgeSecs > 1800 || maxAgeSecs < delaySecs {
+		maxAgeSecs = model.DefaultSupportInboxSettings().EmailFallbackMaxDeliveryAgeSecs
+	}
+
+	messages, err := s.messageRepo.ListByConversation(ctx, conv.WorkspaceID, conv.ID, true)
+	if err != nil {
+		return nil, err
+	}
+
+	queue := model.EmailFallbackConversationQueueSummary{
+		RedisChecked:       s.redis != nil,
+		DelayRemainingSecs: 0,
+	}
+	queuedMessageIDs := map[string]bool{}
+	if s.redis != nil {
+		if score, err := s.redis.ZScore(ctx, emailFallbackOutboxKey, conv.ID).Result(); err == nil {
+			queue.Queued = true
+			fireAt := time.Unix(int64(score), 0).UTC()
+			queue.FireAt = strPtr(fireAt.Format(time.RFC3339))
+			if remaining := int(fireAt.Sub(s.now()).Seconds()); remaining > 0 {
+				queue.DelayRemainingSecs = remaining
+			}
+		} else if err != nil && !errors.Is(err, redis.Nil) {
+			queue.RedisError = err.Error()
+		}
+		if ids, err := s.redis.LRange(ctx, s.msgListKey(conv.ID), 0, -1).Result(); err == nil {
+			queue.MessageIDs = uniqueEmailFallbackStrings(ids)
+			for _, id := range queue.MessageIDs {
+				queuedMessageIDs[id] = true
+			}
+		} else if err != nil && queue.RedisError == "" {
+			queue.RedisError = err.Error()
+		}
+	}
+
+	visitorOnline := false
+	if online, err := s.isVisitorOnline(ctx, conv.WorkspaceID, conv.AnonymousID); err == nil {
+		visitorOnline = online
+	}
+
+	now := s.now()
+	diagnostics := make([]model.EmailFallbackMessageDiagnostics, 0, len(messages))
+	for _, msg := range messages {
+		diag := model.EmailFallbackMessageDiagnostics{
+			ID:             msg.ID,
+			CreatedAt:      msg.CreatedAt.UTC().Format(time.RFC3339),
+			SenderType:     msg.SenderType,
+			MessageType:    msg.MessageType,
+			IsInternal:     msg.IsInternal,
+			ContentPreview: truncateEmailFallbackString(strings.TrimSpace(msg.Content), 120),
+			Queued:         queuedMessageIDs[msg.ID],
+			Reasons:        []string{},
+		}
+		if msg.CancellableUntil != nil {
+			diag.CancellableUntil = strPtr(msg.CancellableUntil.UTC().Format(time.RFC3339))
+		}
+		if msg.EmailNotifiedAt != nil {
+			diag.EmailNotifiedAt = strPtr(msg.EmailNotifiedAt.UTC().Format(time.RFC3339))
+		}
+		if msg.EmailReadAt != nil {
+			diag.EmailReadAt = strPtr(msg.EmailReadAt.UTC().Format(time.RFC3339))
+		}
+
+		if s.emailLogRepo != nil {
+			logRow, err := s.emailLogRepo.GetByMessageID(ctx, msg.WorkspaceID, msg.ID)
+			if err == nil && logRow != nil {
+				diag.EmailLogID = logRow.ID
+				diag.EmailLogStatus = logRow.Status
+				diag.PostmarkMessageID = derefString(logRow.PostmarkMessageID)
+			} else if err != nil {
+				diag.Reasons = append(diag.Reasons, "email log lookup failed: "+err.Error())
+			}
+		}
+
+		messageType := strings.TrimSpace(msg.MessageType)
+		if messageType == "" {
+			messageType = "reply"
+		}
+		fireAt := msg.CreatedAt.Add(time.Duration(delaySecs) * time.Second)
+		if msg.CancellableUntil != nil {
+			fireAt = *msg.CancellableUntil
+		}
+		diag.Due = !now.Before(fireAt)
+
+		if msg.EmailNotifiedAt != nil {
+			diag.Reasons = append(diag.Reasons, "already marked email_notified_at")
+		}
+		if diag.EmailLogID != "" {
+			diag.Reasons = append(diag.Reasons, "already has outbound email log")
+		}
+		if msg.IsInternal {
+			diag.Reasons = append(diag.Reasons, "internal note")
+		}
+		if messageType != "reply" {
+			diag.Reasons = append(diag.Reasons, "message_type is not reply")
+		}
+		if strings.TrimSpace(msg.SenderType) == "customer" {
+			diag.Reasons = append(diag.Reasons, "customer-authored message")
+		}
+		if conv.CustomerEmail == nil || strings.TrimSpace(*conv.CustomerEmail) == "" {
+			diag.Reasons = append(diag.Reasons, "conversation has no customer_email")
+		}
+		if isEmailFallbackTerminalStatus(conv.Status) {
+			diag.Reasons = append(diag.Reasons, "conversation status is terminal: "+conv.Status)
+		}
+		if conv.EmailUnsubscribed {
+			diag.Reasons = append(diag.Reasons, "conversation is unsubscribed")
+		}
+		if !settings.EmailFallbackEnabled {
+			diag.Reasons = append(diag.Reasons, "email fallback setting disabled")
+		}
+		if conv.ContactLastSeenAt != nil && !msg.CreatedAt.After(*conv.ContactLastSeenAt) {
+			diag.Reasons = append(diag.Reasons, "visitor already saw this message")
+		}
+		if now.Sub(msg.CreatedAt) > time.Duration(maxAgeSecs)*time.Second {
+			diag.Reasons = append(diag.Reasons, "message is older than fallback send window")
+		}
+		if visitorOnline {
+			diag.Reasons = append(diag.Reasons, "visitor currently online")
+		}
+		if !diag.Due {
+			diag.Reasons = append(diag.Reasons, "fallback delay has not elapsed")
+		}
+		if queue.RedisError != "" {
+			diag.Reasons = append(diag.Reasons, "redis queue check failed")
+		}
+
+		diag.Eligible = len(diag.Reasons) == 0 || (len(diag.Reasons) == 1 && diag.Queued)
+		diag.ReconcileCandidate = diag.Eligible && !diag.Queued && diag.EmailLogID == "" && msg.EmailNotifiedAt == nil
+		if diag.Queued {
+			diag.Reasons = append([]string{"currently queued in Redis"}, diag.Reasons...)
+		}
+		if len(diag.Reasons) == 0 {
+			diag.Reasons = append(diag.Reasons, "eligible to send")
+		}
+		diagnostics = append(diagnostics, diag)
+	}
+
+	var contactLastSeenAt *string
+	if conv.ContactLastSeenAt != nil {
+		contactLastSeenAt = strPtr(conv.ContactLastSeenAt.UTC().Format(time.RFC3339))
+	}
+
+	return &model.EmailFallbackConversationDiagnosticsResponse{
+		ConversationID:    conv.ID,
+		WorkspaceID:       conv.WorkspaceID,
+		Subject:           conv.Subject,
+		Status:            conv.Status,
+		CustomerEmail:     strings.TrimSpace(derefString(conv.CustomerEmail)),
+		EmailUnsubscribed: conv.EmailUnsubscribed,
+		ContactLastSeenAt: contactLastSeenAt,
+		VisitorOnline:     visitorOnline,
+		Settings: model.EmailFallbackConversationSettingsSummary{
+			EmailFallbackEnabled:            settings.EmailFallbackEnabled,
+			EmailFallbackDelaySecs:          delaySecs,
+			EmailFallbackMaxDeliveryAgeSecs: maxAgeSecs,
+		},
+		Queue:    queue,
+		Messages: diagnostics,
+	}, nil
+}
+
 func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID string, messageIDs []string) error {
 	return s.fireEmailWithCleanup(ctx, conversationID, messageIDs, true)
 }
