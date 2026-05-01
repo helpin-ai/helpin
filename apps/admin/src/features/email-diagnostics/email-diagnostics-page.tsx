@@ -1,8 +1,16 @@
-import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
+import { useState, type FormEvent } from 'react'
+import { AlertTriangle, CheckCircle2, Search, XCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { useEmailDiagnostics } from '@/hooks/queries/useEmailQueue'
-import type { EmailLogCount, SupportEmailLog, WebhookEvent } from '@/lib/pmTypes'
+import { Input } from '@/components/ui/input'
+import { useEmailConversationDiagnostics, useEmailDiagnostics } from '@/hooks/queries/useEmailQueue'
+import type {
+  EmailFallbackConversationDiagnosticsResponse,
+  EmailFallbackMessageDiagnostics,
+  EmailLogCount,
+  SupportEmailLog,
+  WebhookEvent,
+} from '@/lib/pmTypes'
 
 function formatTime(iso?: string) {
   if (!iso) return '—'
@@ -31,6 +39,14 @@ function StatusValue({ ok }: { ok: boolean }) {
 
 export function EmailDiagnosticsPage() {
   const { data, isLoading, refetch, isFetching } = useEmailDiagnostics()
+  const [conversationInput, setConversationInput] = useState('')
+  const [conversationId, setConversationId] = useState('')
+  const conversationDiagnostics = useEmailConversationDiagnostics(conversationId)
+
+  const handleConversationLookup = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setConversationId(conversationInput.trim())
+  }
 
   if (isLoading) {
     return (
@@ -80,6 +96,35 @@ export function EmailDiagnosticsPage() {
           <span>Offline fallback emails will not leave the queue until Redis and the reply Postmark client are both configured.</span>
         </div>
       )}
+
+      <section className="rounded-md border">
+        <div className="border-b px-3 py-2 text-sm font-medium">Conversation lookup</div>
+        <div className="space-y-4 px-3 py-3">
+          <form className="flex gap-2" onSubmit={handleConversationLookup}>
+            <Input
+              value={conversationInput}
+              onChange={(event) => setConversationInput(event.target.value)}
+              placeholder="Conversation ID"
+              className="font-mono text-xs"
+            />
+            <Button type="submit" size="sm" disabled={!conversationInput.trim() || conversationDiagnostics.isFetching}>
+              <Search className="h-4 w-4" />
+              Inspect
+            </Button>
+          </form>
+          {conversationId && conversationDiagnostics.isLoading && (
+            <div className="text-sm text-muted-foreground">Loading conversation diagnostics...</div>
+          )}
+          {conversationDiagnostics.isError && (
+            <div className="rounded-md border border-destructive/30 px-3 py-2 text-sm text-destructive">
+              Conversation diagnostics could not be loaded.
+            </div>
+          )}
+          {conversationDiagnostics.data && (
+            <ConversationDiagnostics diagnostics={conversationDiagnostics.data} />
+          )}
+        </div>
+      </section>
 
       <section className="rounded-md border">
         <div className="border-b px-3 py-2 text-sm font-medium">Configuration</div>
@@ -159,6 +204,118 @@ export function EmailDiagnosticsPage() {
         </div>
         <WebhookTable events={data.recent_webhooks} />
       </section>
+    </div>
+  )
+}
+
+function ConversationDiagnostics({ diagnostics }: { diagnostics: EmailFallbackConversationDiagnosticsResponse }) {
+  const queue = diagnostics.queue
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 text-sm md:grid-cols-3">
+        <div>
+          <div className="text-xs text-muted-foreground">Conversation</div>
+          <div className="mt-1 font-mono text-xs">{diagnostics.conversation_id}</div>
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground">Customer</div>
+          <div className="mt-1 font-mono text-xs">{diagnostics.customer_email || '—'}</div>
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground">State</div>
+          <div className="mt-1 flex flex-wrap gap-2">
+            <Badge variant="outline">{diagnostics.status}</Badge>
+            <Badge variant="outline">{diagnostics.visitor_online ? 'visitor online' : 'visitor offline'}</Badge>
+            {diagnostics.email_unsubscribed && <Badge variant="destructive">unsubscribed</Badge>}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-3 text-sm md:grid-cols-3">
+        <div>
+          <div className="text-xs text-muted-foreground">Queue</div>
+          <div className="mt-1">
+            {queue.queued ? `Queued for ${formatTime(queue.fire_at)}` : 'Not queued'}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground">Delay</div>
+          <div className="mt-1">{diagnostics.settings.email_fallback_delay_secs}s</div>
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground">Send window</div>
+          <div className="mt-1">{Math.round(diagnostics.settings.email_fallback_max_delivery_age_secs / 60)} minutes</div>
+        </div>
+      </div>
+
+      {queue.redis_error && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          Redis queue check failed: {queue.redis_error}
+        </div>
+      )}
+
+      <MessageDiagnosticsTable messages={diagnostics.messages} />
+    </div>
+  )
+}
+
+function MessageDiagnosticsTable({ messages }: { messages: EmailFallbackMessageDiagnostics[] }) {
+  if (messages.length === 0) {
+    return <div className="px-3 py-8 text-center text-sm text-muted-foreground">No messages found.</div>
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[980px] text-sm">
+        <thead>
+          <tr className="border-b bg-muted/40 text-left text-xs font-medium text-muted-foreground">
+            <th className="px-3 py-2">Created</th>
+            <th className="px-3 py-2">Sender</th>
+            <th className="px-3 py-2">Preview</th>
+            <th className="px-3 py-2">Email state</th>
+            <th className="px-3 py-2">Decision</th>
+            <th className="px-3 py-2">Reasons</th>
+          </tr>
+        </thead>
+        <tbody>
+          {messages.map((message) => (
+            <tr key={message.id} className="border-b align-top last:border-0">
+              <td className="px-3 py-2 text-xs text-muted-foreground">{formatTime(message.created_at)}</td>
+              <td className="px-3 py-2">
+                <div>{message.sender_type}</div>
+                <div className="text-xs text-muted-foreground">{message.message_type}</div>
+              </td>
+              <td className="max-w-xs px-3 py-2">{message.content_preview || '—'}</td>
+              <td className="px-3 py-2">
+                <div className="flex flex-wrap gap-1">
+                  {message.queued && <Badge variant="outline">queued</Badge>}
+                  {message.email_notified_at && <Badge variant="outline">sent</Badge>}
+                  {message.email_log_status && <Badge variant="outline">{message.email_log_status}</Badge>}
+                  {message.email_read_at && <Badge variant="outline">read</Badge>}
+                  {!message.queued && !message.email_notified_at && !message.email_log_status && <span className="text-muted-foreground">—</span>}
+                </div>
+              </td>
+              <td className="px-3 py-2">
+                <div className="flex flex-wrap gap-1">
+                  <Badge variant={message.eligible ? 'default' : 'outline'}>
+                    {message.eligible ? 'eligible' : 'blocked'}
+                  </Badge>
+                  {message.reconcile_candidate && <Badge variant="secondary">reconcile</Badge>}
+                  {!message.due && <Badge variant="outline">waiting</Badge>}
+                </div>
+              </td>
+              <td className="px-3 py-2">
+                <div className="space-y-1">
+                  {message.reasons.map((reason) => (
+                    <div key={reason} className="text-xs text-muted-foreground">{reason}</div>
+                  ))}
+                </div>
+                <div className="mt-1 font-mono text-[11px] text-muted-foreground">{message.id}</div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

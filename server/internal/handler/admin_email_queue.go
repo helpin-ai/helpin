@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -108,4 +110,23 @@ func (h *AdminEmailQueueHandler) Diagnostics(w http.ResponseWriter, r *http.Requ
 		LogCounts:      logCounts,
 		RecentWebhooks: recentWebhooks,
 	})
+}
+
+// ConversationDiagnostics handles GET /api/admin/email-diagnostics/conversations/{conversationID}.
+func (h *AdminEmailQueueHandler) ConversationDiagnostics(w http.ResponseWriter, r *http.Request) {
+	if h.emailFallbackService == nil {
+		writeError(w, http.StatusServiceUnavailable, "email fallback service unavailable")
+		return
+	}
+	conversationID := strings.TrimSpace(chi.URLParam(r, "conversationID"))
+	result, err := h.emailFallbackService.DiagnoseConversation(r.Context(), conversationID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "diagnose email fallback conversation")
+		return
+	}
+	if result == nil {
+		writeError(w, http.StatusNotFound, "conversation not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
