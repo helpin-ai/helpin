@@ -15,5 +15,6 @@ export const queryKeys = {
   },
   emailQueue: {
     list: () => ['email-queue'] as const,
+    diagnostics: () => ['email-diagnostics'] as const,
   },
 } as const

@@ -1244,6 +1244,7 @@ func TestCreateConversationMessage_PublicMentionsNotifyWorkspaceMembers(t *testi
 	seedWorkspace(t, db, workspaceID, "Support Mentions", "support-mentions", senderUserID)
 	seedWorkspaceMember(t, db, "wm-sender", workspaceID, senderUserID, "sender@example.com", "Sender User", model.RoleAdmin)
 	seedWorkspaceMember(t, db, "wm-mentioned", workspaceID, mentionedUserID, "mentioned@example.com", "Teammate Mentioned", model.RoleMember)
+	seedSupportModuleGrant(t, db, "grant-mentioned-support", workspaceID, model.ModuleGrantSubjectWorkspaceMember, "wm-mentioned")
 	for _, userID := range []string{senderUserID, mentionedUserID} {
 		mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

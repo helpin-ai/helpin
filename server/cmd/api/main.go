@@ -1115,6 +1115,20 @@ func main() {
 	widgetWsHandler := ws.NewWidgetHandler(wsHub, supportInboxService)
 
 	// Initialize handlers.
+	emailDiagnosticsConfig := model.EmailDiagnosticsConfig{
+		AppEmailConfigured:      appEmailClient != nil,
+		ReplyEmailConfigured:    replyEmailClient != nil,
+		RouteEmailConfigured:    strings.TrimSpace(cfg.PostmarkRouteServerToken) != "",
+		RedisConfigured:         redisClient != nil,
+		FallbackPollerEnabled:   redisClient != nil && replyEmailClient != nil,
+		AppFromEmail:            cfg.PostmarkAppFromEmail,
+		ReplyFromEmail:          cfg.PostmarkReplyFromEmail,
+		SupportEmailReplyDomain: cfg.SupportEmailReplyDomain,
+		SupportEmailRouteDomain: cfg.SupportEmailRouteDomain,
+		ReplyInboundSecretSet:   strings.TrimSpace(cfg.PostmarkReplyInboundWebhookSecret) != "",
+		RouteInboundSecretSet:   strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
+	}
+
 	handlers := router.Handlers{
 		Health:              handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth:                handler.NewAuthHandler(authService),
@@ -1151,7 +1165,7 @@ func main() {
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
-		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService),
+		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService, supportEmailLogRepo, supportEmailWebhookEventRepo, emailDiagnosticsConfig),
 		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),

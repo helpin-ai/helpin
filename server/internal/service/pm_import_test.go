@@ -1347,6 +1347,8 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			invited_by TEXT,
 			invited_at DATETIME,
 			accepted_at DATETIME,
+			support_default_team_id TEXT,
+			support_task_dialog_dismissed BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

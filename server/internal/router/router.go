@@ -349,6 +349,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/webhook-events", h.AdminWebhookEvent.List)
 			r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
 			r.Get("/email-queue", h.AdminEmailQueue.List)
+			r.Get("/email-diagnostics", h.AdminEmailQueue.Diagnostics)
 		})
 
 		// ---- Protected routes ----

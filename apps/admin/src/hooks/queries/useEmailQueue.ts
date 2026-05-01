@@ -10,3 +10,11 @@ export function useEmailQueue() {
     refetchInterval: 10_000,
   })
 }
+
+export function useEmailDiagnostics() {
+  return useQuery({
+    queryKey: queryKeys.emailQueue.diagnostics(),
+    queryFn: async () => unwrap(await emailQueueService.diagnostics()),
+    refetchInterval: 15_000,
+  })
+}
