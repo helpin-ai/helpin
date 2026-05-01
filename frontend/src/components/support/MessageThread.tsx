@@ -34,7 +34,6 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
-import { SharedAddShortcutDialog } from './AddShortcutDialog';
 import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
@@ -416,7 +415,7 @@ export function MessageThread({
       const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
       if (result.markdown) {
         window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-          detail: { conversationId, markdown: result.markdown },
+          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [] },
         }));
       }
     };
@@ -915,7 +914,6 @@ export function MessageThread({
         isPending={createTaskFromConversation.isPending}
         onConfirm={handleCreateTaskConfirm}
       />
-      <SharedAddShortcutDialog workspaceId={workspaceId} />
     </div>
   );
 }

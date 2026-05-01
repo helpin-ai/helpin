@@ -805,13 +805,12 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE support_canned_responses (
-			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-			workspace_id TEXT NOT NULL,
-			short_code TEXT NOT NULL,
-			title TEXT NOT NULL,
-			content TEXT NOT NULL,
-			tag TEXT NOT NULL DEFAULT 'Others',
-			created_by_id TEXT,
+				id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+				workspace_id TEXT NOT NULL,
+				short_code TEXT NOT NULL,
+				content TEXT NOT NULL,
+				tag TEXT NOT NULL DEFAULT 'General',
+				created_by_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

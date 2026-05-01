@@ -1158,7 +1158,7 @@ func (r *SupportCannedResponseRepository) List(ctx context.Context, workspaceID 
 	var responses []model.SupportCannedResponse
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
-		Order("title ASC").
+		Order("tag ASC, short_code ASC").
 		Find(&responses).Error; err != nil {
 		return nil, fmt.Errorf("list canned responses: %w", err)
 	}
@@ -1174,7 +1174,7 @@ func (r *SupportCannedResponseRepository) Search(ctx context.Context, workspaceI
 	var responses []model.SupportCannedResponse
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
-		Where("short_code LIKE ? OR title LIKE ? OR content LIKE ? OR tag LIKE ?", pattern, pattern, pattern, pattern).
+		Where("short_code LIKE ? OR content LIKE ? OR tag LIKE ?", pattern, pattern, pattern).
 		Order("tag ASC, short_code ASC").
 		Limit(10).
 		Find(&responses).Error; err != nil {

@@ -220,7 +220,6 @@ export interface SupportCannedResponse {
   id: string;
   workspace_id: string;
   short_code: string;
-  title: string;
   content: string;
   tag: string;
   created_by_id: string | null;
@@ -230,16 +229,16 @@ export interface SupportCannedResponse {
 
 export interface CreateCannedResponseRequest {
   short_code: string;
-  title: string;
   content: string;
   tag?: string;
+  title?: string;
 }
 
 export interface UpdateCannedResponseRequest {
   short_code: string;
-  title: string;
   content: string;
   tag?: string;
+  title?: string;
 }
 
 export interface UpdateSupportTriageRuleRequest {

@@ -7,7 +7,7 @@ import { EmailDetailModal } from './EmailDetailModal';
 import { MessageActionsContextMenu, MessageActionsMenu } from './MessageActionsMenu';
 import { MessageDeleteDialog } from './MessageDeleteDialog';
 import { MessageInfoDialog } from './MessageInfoDialog';
-import { useAddShortcutDialogStore } from './AddShortcutDialog';
+import { useShortcutComposerStore } from './shortcutDialogStore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
@@ -278,9 +278,9 @@ export const MessageBubble = memo(function MessageBubble({
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
-      detail: { conversationId: message.conversation_id, markdown },
+      detail: { conversationId: message.conversation_id, markdown, attachments: message.attachments ?? [] },
     }));
-  }, [message.conversation_id]);
+  }, [message.attachments, message.conversation_id]);
 
   const handleUndoOrEdit = useCallback(async () => {
     const result = await deleteMutation.mutateAsync({ messageId: message.id, undo: true });
@@ -303,10 +303,10 @@ export const MessageBubble = memo(function MessageBubble({
   }, [displayContent]);
 
   const canSaveAsShortcut = displayContent.trim().length > 0 && message.message_type !== 'system';
-  const openAddShortcutDialog = useAddShortcutDialogStore((s) => s.openDialog);
+  const openShortcutComposer = useShortcutComposerStore((s) => s.openCreate);
   const handleSaveAsShortcut = useCallback(
-    () => openAddShortcutDialog({ seedContent: displayContent }),
-    [openAddShortcutDialog, displayContent],
+    () => openShortcutComposer({ seedContent: displayContent }),
+    [openShortcutComposer, displayContent],
   );
 
   const handleQuoteReply = useCallback(() => {
