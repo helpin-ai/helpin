@@ -83,8 +83,10 @@ func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlB
 const (
 	emailFallbackOutboxKey     = "email_fallback_outbox"
 	emailFallbackLockKey       = "email_fallback_lock"
+	emailFallbackReconcileKey  = "email_fallback_reconcile_lock"
 	emailFallbackMsgsKeyPrefix = "email_fallback_msgs:"
 	emailFallbackOnlineRetry   = 30 * time.Second
+	emailFallbackReconcileTick = time.Minute
 )
 
 // EmailFallbackService manages delayed outbound email delivery and inbound replies.
@@ -192,16 +194,25 @@ func NewEmailFallbackService(
 
 // StartPoller runs the Redis outbox poller until ctx is cancelled.
 func (s *EmailFallbackService) StartPoller(ctx context.Context) {
-	if s == nil || s.redis == nil {
+	if s == nil {
+		return
+	}
+	if s.redis == nil {
+		s.logger.WarnContext(ctx, "email fallback poller not started — redis is not configured")
 		return
 	}
 
+	s.logger.InfoContext(ctx, "email fallback poller started",
+		"poll_interval", s.pollInterval.String(),
+		"pod_id", s.podID,
+	)
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			s.logger.InfoContext(ctx, "email fallback poller stopped", "error", ctx.Err())
 			return
 		case <-ticker.C:
 			leaseHeld, err := s.acquireOrRenewLease(ctx)
@@ -219,30 +230,128 @@ func (s *EmailFallbackService) StartPoller(ctx context.Context) {
 	}
 }
 
+// StartReconciler periodically repairs missed outbound email fallback sends.
+// It scans Postgres for recent unread outbound replies that were not marked as
+// emailed and sends each eligible message through the normal fallback path.
+func (s *EmailFallbackService) StartReconciler(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	if s.redis == nil || s.emailClient == nil {
+		s.logger.WarnContext(ctx, "email fallback reconciler not started — dependency not configured",
+			"redis_configured", s.redis != nil,
+			"postmark_reply_configured", s.emailClient != nil,
+		)
+		return
+	}
+
+	s.logger.InfoContext(ctx, "email fallback reconciler started",
+		"interval", emailFallbackReconcileTick.String(),
+		"pod_id", s.podID,
+	)
+	ticker := time.NewTicker(emailFallbackReconcileTick)
+	defer ticker.Stop()
+
+	run := func() {
+		leaseHeld, err := s.acquireOrRenewNamedLease(ctx, emailFallbackReconcileKey)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "email fallback reconcile lease failed", "error", err)
+			return
+		}
+		if !leaseHeld {
+			return
+		}
+		sent, err := s.ReconcileMissedOutboundEmails(ctx, 25)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "email fallback reconcile failed", "error", err)
+			return
+		}
+		if sent > 0 {
+			s.logger.InfoContext(ctx, "email fallback reconcile completed", "sent_count", sent)
+		}
+	}
+
+	run()
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.InfoContext(ctx, "email fallback reconciler stopped", "error", ctx.Err())
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
 // OnAgentReply enqueues an outbound email candidate when the feature is enabled.
 func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID string, msg *model.SupportMessage, conv *model.SupportConversation) error {
-	if s == nil || s.redis == nil || s.emailClient == nil || msg == nil || conv == nil {
+	if s == nil {
+		return nil
+	}
+	if msg == nil || conv == nil {
+		s.logger.WarnContext(ctx, "email fallback enqueue skipped — missing message or conversation",
+			"workspace_id", workspaceID,
+			"has_message", msg != nil,
+			"has_conversation", conv != nil,
+		)
+		return nil
+	}
+	if s.redis == nil || s.emailClient == nil {
+		s.logger.WarnContext(ctx, "email fallback enqueue skipped — dependency not configured",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+			"redis_configured", s.redis != nil,
+			"postmark_reply_configured", s.emailClient != nil,
+		)
 		return nil
 	}
 	if conv.CustomerEmail == nil || strings.TrimSpace(*conv.CustomerEmail) == "" {
+		s.logger.InfoContext(ctx, "email fallback enqueue skipped — conversation has no customer email",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
 		return nil
 	}
-	if isEmailFallbackTerminalStatus(conv.Status) || conv.EmailUnsubscribed {
+	if isEmailFallbackTerminalStatus(conv.Status) {
+		s.logger.InfoContext(ctx, "email fallback enqueue skipped — conversation is terminal",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+			"status", conv.Status,
+		)
+		return nil
+	}
+	if conv.EmailUnsubscribed {
+		s.logger.InfoContext(ctx, "email fallback enqueue skipped — conversation is unsubscribed",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
 		return nil
 	}
 
 	settings, err := s.loadSettings(ctx, workspaceID)
 	if err != nil {
+		s.logger.ErrorContext(ctx, "email fallback enqueue skipped — settings load failed",
+			"error", err,
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
 		return err
 	}
 	if !settings.EmailFallbackEnabled {
+		s.logger.InfoContext(ctx, "email fallback enqueue skipped — workspace setting disabled",
+			"workspace_id", workspaceID,
+			"conversation_id", conv.ID,
+			"message_id", msg.ID,
+		)
 		return nil
 	}
 
-	delaySecs := settings.EmailFallbackDelaySecs
-	if delaySecs < 30 || delaySecs > 600 {
-		delaySecs = 120
-	}
+	delaySecs := normalizedEmailFallbackDelaySecs(settings.EmailFallbackDelaySecs)
 	fireAt := s.now().Add(time.Duration(delaySecs) * time.Second)
 	if _, err := s.redis.ZAddArgs(ctx, emailFallbackOutboxKey, redis.ZAddArgs{
 		GT:      true,
@@ -592,9 +701,128 @@ func (s *EmailFallbackService) claimAndFire(ctx context.Context, conversationID 
 	return s.fireEmail(ctx, conversationID, uniqueEmailFallbackStrings(msgIDs))
 }
 
+// ReconcileMissedOutboundEmails sends recent unread outbound replies that were
+// not queued or marked as emailed. It intentionally skips conversations still
+// present in Redis outbox so the normal delayed queue remains the single owner
+// of active pending fallback sends.
+func (s *EmailFallbackService) ReconcileMissedOutboundEmails(ctx context.Context, limit int) (int, error) {
+	if s == nil || s.messageRepo == nil || s.emailLogRepo == nil || s.emailClient == nil {
+		return 0, nil
+	}
+	if limit < 1 || limit > 100 {
+		limit = 25
+	}
+
+	now := s.now()
+	candidates, err := s.messageRepo.ListEmailFallbackReconciliationCandidates(ctx, now.Add(-30*time.Second), limit)
+	if err != nil {
+		return 0, err
+	}
+	if len(candidates) == 0 {
+		return 0, nil
+	}
+
+	s.logger.InfoContext(ctx, "email fallback reconcile candidates found", "candidate_count", len(candidates))
+	sent := 0
+	for _, msg := range candidates {
+		if ctx.Err() != nil {
+			return sent, ctx.Err()
+		}
+
+		if s.redis != nil {
+			if _, err := s.redis.ZScore(ctx, emailFallbackOutboxKey, msg.ConversationID).Result(); err == nil {
+				s.logger.InfoContext(ctx, "email fallback reconcile skipped — conversation still has active redis outbox",
+					"workspace_id", msg.WorkspaceID,
+					"conversation_id", msg.ConversationID,
+					"message_id", msg.ID,
+				)
+				continue
+			} else if err != nil && !errors.Is(err, redis.Nil) {
+				s.logger.WarnContext(ctx, "email fallback reconcile redis outbox lookup failed",
+					"error", err,
+					"workspace_id", msg.WorkspaceID,
+					"conversation_id", msg.ConversationID,
+					"message_id", msg.ID,
+				)
+				continue
+			}
+		}
+
+		existingLog, err := s.emailLogRepo.GetByMessageID(ctx, msg.WorkspaceID, msg.ID)
+		if err != nil {
+			s.logger.WarnContext(ctx, "email fallback reconcile email log lookup failed",
+				"error", err,
+				"workspace_id", msg.WorkspaceID,
+				"conversation_id", msg.ConversationID,
+				"message_id", msg.ID,
+			)
+			continue
+		}
+		if existingLog != nil {
+			s.logger.InfoContext(ctx, "email fallback reconcile skipped — message already has email log",
+				"workspace_id", msg.WorkspaceID,
+				"conversation_id", msg.ConversationID,
+				"message_id", msg.ID,
+				"email_log_id", existingLog.ID,
+			)
+			continue
+		}
+
+		settings, err := s.loadSettings(ctx, msg.WorkspaceID)
+		if err != nil {
+			s.logger.WarnContext(ctx, "email fallback reconcile settings load failed",
+				"error", err,
+				"workspace_id", msg.WorkspaceID,
+				"conversation_id", msg.ConversationID,
+				"message_id", msg.ID,
+			)
+			continue
+		}
+		delaySecs := normalizedEmailFallbackDelaySecs(settings.EmailFallbackDelaySecs)
+		fireAt := msg.CreatedAt.Add(time.Duration(delaySecs) * time.Second)
+		if msg.CancellableUntil != nil {
+			fireAt = *msg.CancellableUntil
+		}
+		if now.Before(fireAt) {
+			continue
+		}
+
+		s.logger.InfoContext(ctx, "email fallback reconcile sending missed message",
+			"workspace_id", msg.WorkspaceID,
+			"conversation_id", msg.ConversationID,
+			"message_id", msg.ID,
+			"fire_at", fireAt,
+			"delay_secs", delaySecs,
+		)
+		if err := s.fireEmailWithoutRedisCleanup(ctx, msg.ConversationID, []string{msg.ID}); err != nil {
+			s.logger.ErrorContext(ctx, "email fallback reconcile send failed",
+				"error", err,
+				"workspace_id", msg.WorkspaceID,
+				"conversation_id", msg.ConversationID,
+				"message_id", msg.ID,
+			)
+			continue
+		}
+		sent++
+	}
+
+	return sent, nil
+}
+
 func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID string, messageIDs []string) error {
+	return s.fireEmailWithCleanup(ctx, conversationID, messageIDs, true)
+}
+
+func (s *EmailFallbackService) fireEmailWithoutRedisCleanup(ctx context.Context, conversationID string, messageIDs []string) error {
+	return s.fireEmailWithCleanup(ctx, conversationID, messageIDs, false)
+}
+
+func (s *EmailFallbackService) fireEmailWithCleanup(ctx context.Context, conversationID string, messageIDs []string, cleanupRedis bool) error {
 	if len(messageIDs) == 0 {
-		return s.cleanup(ctx, conversationID)
+		s.logger.InfoContext(ctx, "email fallback cleaned up — no queued message ids",
+			"conversation_id", conversationID,
+		)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 	}
 
 	messages, err := s.messageRepo.GetByIDs(ctx, messageIDs)
@@ -602,7 +830,11 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return err
 	}
 	if len(messages) == 0 {
-		return s.cleanup(ctx, conversationID)
+		s.logger.InfoContext(ctx, "email fallback cleaned up — queued messages no longer exist",
+			"conversation_id", conversationID,
+			"queued_message_count", len(messageIDs),
+		)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 	}
 
 	conv, err := s.findConversationByID(ctx, conversationID)
@@ -610,13 +842,36 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return err
 	}
 	if conv == nil {
-		return s.cleanup(ctx, conversationID)
+		s.logger.InfoContext(ctx, "email fallback cleaned up — conversation no longer exists",
+			"conversation_id", conversationID,
+			"queued_message_count", len(messageIDs),
+		)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 	}
-	if isEmailFallbackTerminalStatus(conv.Status) || conv.EmailUnsubscribed {
-		return s.cleanup(ctx, conversationID)
+	if isEmailFallbackTerminalStatus(conv.Status) {
+		s.logger.InfoContext(ctx, "email fallback cleaned up — conversation is terminal",
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"status", conv.Status,
+			"queued_message_count", len(messageIDs),
+		)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
+	}
+	if conv.EmailUnsubscribed {
+		s.logger.InfoContext(ctx, "email fallback cleaned up — conversation is unsubscribed",
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"queued_message_count", len(messageIDs),
+		)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 	}
 	if conv.CustomerEmail == nil || strings.TrimSpace(*conv.CustomerEmail) == "" {
-		return s.cleanup(ctx, conversationID)
+		s.logger.InfoContext(ctx, "email fallback cleaned up — conversation has no customer email",
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"queued_message_count", len(messageIDs),
+		)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 	}
 
 	settings, err := s.loadSettings(ctx, conv.WorkspaceID)
@@ -624,23 +879,40 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return err
 	}
 	if !settings.EmailFallbackEnabled {
-		return s.cleanup(ctx, conversationID)
+		s.logger.InfoContext(ctx, "email fallback cleaned up — workspace setting disabled",
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"queued_message_count", len(messageIDs),
+		)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 	}
 
 	if s.contactRepo != nil {
 		if contact, err := s.contactRepo.GetByEmail(ctx, conv.WorkspaceID, strings.TrimSpace(*conv.CustomerEmail)); err == nil && contact != nil && contact.EmailStatus == model.CRMContactEmailStatusInvalid {
 			s.logger.InfoContext(ctx, "email fallback skipped — recipient marked invalid",
+				"workspace_id", conv.WorkspaceID,
 				"conversation_id", conversationID,
-				"email", strings.TrimSpace(*conv.CustomerEmail),
 				"reason", derefString(contact.EmailStatusReason),
 			)
-			return s.cleanup(ctx, conversationID)
+			return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
+		} else if err != nil {
+			s.logger.WarnContext(ctx, "email fallback contact status lookup failed",
+				"error", err,
+				"workspace_id", conv.WorkspaceID,
+				"conversation_id", conversationID,
+			)
 		}
 	}
 
 	pending := unreadFallbackMessages(conv, messages)
 	if len(pending) == 0 {
-		return s.cleanup(ctx, conversationID)
+		s.logger.InfoContext(ctx, "email fallback cleaned up — no unread outbound replies remain",
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"queued_message_count", len(messageIDs),
+			"contact_last_seen_at", conv.ContactLastSeenAt,
+		)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 	}
 
 	maxAgeSecs := settings.EmailFallbackMaxDeliveryAgeSecs
@@ -653,7 +925,7 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 			"conversation_id", conversationID,
 			"max_delivery_age_secs", maxAgeSecs,
 		)
-		return s.cleanup(ctx, conversationID)
+		return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 	}
 	pending = freshPending
 
@@ -661,10 +933,15 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		s.logger.InfoContext(ctx, "email fallback postponed — visitor online",
 			"workspace_id", conv.WorkspaceID,
 			"conversation_id", conversationID,
-			"to_email", strings.TrimSpace(*conv.CustomerEmail),
 			"retry_secs", int(emailFallbackOnlineRetry.Seconds()),
 		)
 		return s.postpone(ctx, conversationID, emailFallbackOnlineRetry)
+	} else if err != nil {
+		s.logger.WarnContext(ctx, "email fallback visitor presence lookup failed",
+			"error", err,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+		)
 	}
 
 	workspace, err := s.workspaceRepo.GetByID(ctx, conv.WorkspaceID)
@@ -702,6 +979,13 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	chatLink, _ := s.buildChatLink(ctx, conv)
 	htmlBody, textBody := s.renderBodies(pending, agentName, workspaceName, chatLink, unsubscribeEmail)
 
+	s.logger.InfoContext(ctx, "email fallback sending via postmark",
+		"workspace_id", conv.WorkspaceID,
+		"conversation_id", conversationID,
+		"from_email", fromAddress,
+		"reply_to", replyTo,
+		"message_count", len(pending),
+	)
 	postmarkMessageID, err := s.emailClient.SendEmailWithHeaders(
 		from,
 		strings.TrimSpace(*conv.CustomerEmail),
@@ -752,6 +1036,13 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 		return s.messageRepo.WithTx(tx).UpdateEmailNotifiedAt(ctx, messageIDValues, notifiedAt)
 	})
 	if txErr != nil {
+		s.logger.ErrorContext(ctx, "email fallback sent but failed to persist email log",
+			"error", txErr,
+			"workspace_id", conv.WorkspaceID,
+			"conversation_id", conversationID,
+			"postmark_message_id", strings.TrimSpace(postmarkMessageID),
+			"message_count", len(messageIDValues),
+		)
 		return txErr
 	}
 
@@ -766,7 +1057,7 @@ func (s *EmailFallbackService) fireEmail(ctx context.Context, conversationID str
 	)
 	s.publishMessageUpdated(conv.WorkspaceID, conversationID, lastString(messageIDValues), "postmark:sent")
 
-	return s.cleanup(ctx, conversationID)
+	return s.cleanupIfRequested(ctx, conversationID, cleanupRedis)
 }
 
 func unreadFallbackMessages(conv *model.SupportConversation, messages []model.SupportMessage) []model.SupportMessage {
@@ -1160,18 +1451,22 @@ func (s *EmailFallbackService) loadSettings(ctx context.Context, workspaceID str
 }
 
 func (s *EmailFallbackService) acquireOrRenewLease(ctx context.Context) (bool, error) {
+	return s.acquireOrRenewNamedLease(ctx, emailFallbackLockKey)
+}
+
+func (s *EmailFallbackService) acquireOrRenewNamedLease(ctx context.Context, key string) (bool, error) {
 	if s.podID == "" {
 		s.podID = "email-fallback"
 	}
-	current, err := s.redis.Get(ctx, emailFallbackLockKey).Result()
+	current, err := s.redis.Get(ctx, key).Result()
 	if errors.Is(err, redis.Nil) {
-		return s.redis.SetNX(ctx, emailFallbackLockKey, s.podID, s.leaseTTL).Result()
+		return s.redis.SetNX(ctx, key, s.podID, s.leaseTTL).Result()
 	}
 	if err != nil {
 		return false, err
 	}
 	if current == s.podID {
-		if err := s.redis.Expire(ctx, emailFallbackLockKey, s.leaseTTL).Err(); err != nil {
+		if err := s.redis.Expire(ctx, key, s.leaseTTL).Err(); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -1320,6 +1615,13 @@ func (s *EmailFallbackService) cleanup(ctx context.Context, conversationID strin
 	return nil
 }
 
+func (s *EmailFallbackService) cleanupIfRequested(ctx context.Context, conversationID string, cleanupRedis bool) error {
+	if !cleanupRedis {
+		return nil
+	}
+	return s.cleanup(ctx, conversationID)
+}
+
 func (s *EmailFallbackService) postpone(ctx context.Context, conversationID string, delay time.Duration) error {
 	if s == nil || s.redis == nil {
 		return nil
@@ -1335,6 +1637,13 @@ func (s *EmailFallbackService) postpone(ctx context.Context, conversationID stri
 		return fmt.Errorf("postpone email fallback outbox: %w", err)
 	}
 	return nil
+}
+
+func normalizedEmailFallbackDelaySecs(delaySecs int) int {
+	if delaySecs < 30 || delaySecs > 600 {
+		return 120
+	}
+	return delaySecs
 }
 
 func (s *EmailFallbackService) msgListKey(conversationID string) string {

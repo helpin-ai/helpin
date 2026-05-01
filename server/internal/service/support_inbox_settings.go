@@ -32,6 +32,7 @@ func parseSettings(raw string) model.SupportInboxSettings {
 	if err := json.Unmarshal([]byte(raw), &defaults); err != nil {
 		return model.DefaultSupportInboxSettings()
 	}
+	defaults.EmailFallbackEnabled = true
 	return defaults
 }
 
@@ -151,9 +152,7 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 			current.SpecialNoticeText = &trimmed
 		}
 	}
-	if patch.EmailFallbackEnabled != nil {
-		current.EmailFallbackEnabled = *patch.EmailFallbackEnabled
-	}
+	current.EmailFallbackEnabled = true
 	if patch.EmailFallbackDelaySecs != nil {
 		current.EmailFallbackDelaySecs = *patch.EmailFallbackDelaySecs
 	}
