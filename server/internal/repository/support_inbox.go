@@ -92,8 +92,8 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 // that still need offline email fallback processing. The service layer performs
 // the final per-workspace delay, duplicate-log, and presence checks before
 // sending.
-func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx context.Context, before time.Time, limit int) ([]model.SupportMessage, error) {
-	if limit < 1 || limit > 100 {
+func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx context.Context, after, before time.Time, limit int) ([]model.SupportMessage, error) {
+	if limit < 1 || limit > 1000 {
 		limit = 25
 	}
 	var messages []model.SupportMessage
@@ -105,6 +105,7 @@ func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx
 		Where("COALESCE(NULLIF(support_messages.message_type, ''), 'reply') = ?", "reply").
 		Where("support_messages.sender_type <> ?", "customer").
 		Where("support_messages.created_at <= ?", before).
+		Where("support_messages.created_at >= ?", after).
 		Where("(support_messages.cancellable_until IS NULL OR support_messages.cancellable_until <= ?)", before).
 		Where("sc.customer_email IS NOT NULL AND TRIM(sc.customer_email) <> ''").
 		Where("sc.email_unsubscribed = ?", false).
