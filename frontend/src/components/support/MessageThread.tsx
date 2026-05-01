@@ -38,6 +38,7 @@ import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
+import { isNearThreadBottom, shouldAutoScrollThread } from './threadAutoScroll';
 
 interface MessageThreadProps {
   workspaceId: string;
@@ -226,6 +227,13 @@ export function MessageThread({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
+  const isNearBottomRef = useRef(true);
+  const pendingInitialScrollRef = useRef(false);
+  const threadScrollStateRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
+    conversationId: null,
+    messageCount: 0,
+    lastMessageId: null,
+  });
   const { data: conversation, isFetched: conversationFetched } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
@@ -442,14 +450,6 @@ export function MessageThread({
     };
   }, [conversationId]);
 
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const frame = window.requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ block: 'end' });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [messages]);
-
   const handleApproveRun = async (runId: string) => {
     await agentService.approveRun(workspaceId, runId, { send_message: true });
     if (!conversationId || !assignedAgentId) {
@@ -610,6 +610,83 @@ export function MessageThread({
     return visibleItems;
   }, [groupedMessages, historyHydrated]);
 
+  const lastMessageId = messages[messages.length - 1]?.id ?? null;
+
+  useEffect(() => {
+    if (!conversationId) {
+      pendingInitialScrollRef.current = false;
+      isNearBottomRef.current = true;
+      threadScrollStateRef.current = { conversationId: null, messageCount: 0, lastMessageId: null };
+      return;
+    }
+
+    if (messages.length === 0) {
+      pendingInitialScrollRef.current = false;
+      isNearBottomRef.current = true;
+      threadScrollStateRef.current = { conversationId, messageCount: 0, lastMessageId: null };
+      return;
+    }
+
+    const previous = threadScrollStateRef.current;
+    const conversationChanged = previous.conversationId !== conversationId;
+    const initialLoad = previous.conversationId === conversationId && previous.messageCount === 0;
+    const messageCountIncreased = previous.conversationId === conversationId && messages.length > previous.messageCount;
+
+    if (conversationChanged || initialLoad) {
+      pendingInitialScrollRef.current = true;
+      isNearBottomRef.current = true;
+    }
+
+    const shouldScroll = shouldAutoScrollThread({
+      conversationChanged,
+      initialLoad,
+      messageCountIncreased,
+      wasNearBottom: isNearBottomRef.current,
+      pendingInitialScroll: pendingInitialScrollRef.current,
+    });
+
+    threadScrollStateRef.current = { conversationId, messageCount: messages.length, lastMessageId };
+
+    if (!shouldScroll) return;
+
+    let cancelled = false;
+    const frames: number[] = [];
+    const timeouts: number[] = [];
+
+    const scrollToBottom = () => {
+      if (cancelled) return;
+
+      const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+        isNearBottomRef.current = true;
+        return;
+      }
+
+      messagesEndRef.current?.scrollIntoView({ block: 'end' });
+      isNearBottomRef.current = true;
+    };
+
+    const scheduleFrame = () => {
+      frames.push(window.requestAnimationFrame(scrollToBottom));
+    };
+
+    scheduleFrame();
+    timeouts.push(window.setTimeout(scheduleFrame, 0));
+    timeouts.push(window.setTimeout(scheduleFrame, 80));
+    timeouts.push(window.setTimeout(scheduleFrame, 180));
+
+    if (pendingInitialScrollRef.current && historyHydrated) {
+      pendingInitialScrollRef.current = false;
+    }
+
+    return () => {
+      cancelled = true;
+      frames.forEach((frame) => window.cancelAnimationFrame(frame));
+      timeouts.forEach((timeout) => window.clearTimeout(timeout));
+    };
+  }, [conversationId, historyHydrated, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
   useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
     if (!viewport) return;
@@ -632,10 +709,12 @@ export function MessageThread({
     };
 
     const onScroll = () => {
+      isNearBottomRef.current = isNearThreadBottom(viewport);
       if (frame) return;
       frame = window.requestAnimationFrame(updateActiveStickySeparator);
     };
 
+    isNearBottomRef.current = isNearThreadBottom(viewport);
     updateActiveStickySeparator();
     viewport.addEventListener('scroll', onScroll, { passive: true });
 
