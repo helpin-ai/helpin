@@ -519,6 +519,96 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackReconcileMissedOutboundReplySendsOnce(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666667"
+	anonymousID := "anon-reconcile"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Missed queue reply",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		ID:                "55555555-5555-5555-5555-555555555555",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Alex Agent"),
+		Content:           "This reply missed the redis queue.",
+		MessageType:       "reply",
+		CreatedAt:         fixedNow.Add(-3 * time.Minute),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	sendCount := 0
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-reconcile-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	sent, err := env.service.ReconcileMissedOutboundEmails(ctx, 10)
+	if err != nil {
+		t.Fatalf("reconcile missed outbound emails: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("expected one reconciled send, got %d", sent)
+	}
+	if sendCount != 1 {
+		t.Fatalf("expected one postmark send, got %d", sendCount)
+	}
+
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded.EmailNotifiedAt == nil {
+		t.Fatal("expected email_notified_at to be set")
+	}
+
+	sent, err = env.service.ReconcileMissedOutboundEmails(ctx, 10)
+	if err != nil {
+		t.Fatalf("second reconcile missed outbound emails: %v", err)
+	}
+	if sent != 0 {
+		t.Fatalf("expected second reconcile to send nothing, got %d", sent)
+	}
+	if sendCount != 1 {
+		t.Fatalf("expected no duplicate postmark send, got %d", sendCount)
+	}
+}
+
 func TestEmailFallbackFireEmailSendsOnlyUnreadEligibleMessages(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()

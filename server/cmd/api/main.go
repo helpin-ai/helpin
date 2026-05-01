@@ -1304,12 +1304,22 @@ func main() {
 		}
 	}()
 
-	// Start the email fallback poller only when both Redis and Postmark are available.
+	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && replyEmailClient != nil {
 		var emailFallbackCtx context.Context
 		emailFallbackCtx, emailFallbackCancel = context.WithCancel(context.Background())
+		slog.Info("email fallback workers starting",
+			"redis_configured", redisClient != nil,
+			"postmark_reply_configured", replyEmailClient != nil,
+		)
 		go emailFallbackService.StartPoller(emailFallbackCtx)
+		go emailFallbackService.StartReconciler(emailFallbackCtx)
+	} else {
+		slog.Warn("email fallback workers not started",
+			"redis_configured", redisClient != nil,
+			"postmark_reply_configured", replyEmailClient != nil,
+		)
 	}
 
 	// Start background ticker for archived notification cleanup (daily).
