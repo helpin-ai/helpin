@@ -609,6 +609,149 @@ func TestEmailFallbackReconcileMissedOutboundReplySendsOnce(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackReconcileSkipsStaleMissedOutboundReply(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666677"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Stale missed queue reply",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		ID:             "55555555-5555-5555-5555-555555555557",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "This reply is too old to reconcile.",
+		MessageType:    "reply",
+		CreatedAt:      fixedNow.Add(-20 * time.Minute),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	env.service.emailClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected postmark send for stale reconcile candidate")
+		return nil, nil
+	})})
+
+	sent, err := env.service.ReconcileMissedOutboundEmails(ctx, 10)
+	if err != nil {
+		t.Fatalf("reconcile missed outbound emails: %v", err)
+	}
+	if sent != 0 {
+		t.Fatalf("expected stale reconcile candidate to send nothing, got %d", sent)
+	}
+
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded.EmailNotifiedAt != nil {
+		t.Fatal("did not expect email_notified_at to be set")
+	}
+}
+
+func TestEmailFallbackBackfillSendsStaleMissedOutboundReplyInWindow(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666678"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Bug-window missed reply",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		ID:             "55555555-5555-5555-5555-555555555558",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "This stale reply should be recovered by explicit backfill.",
+		MessageType:    "reply",
+		CreatedAt:      fixedNow.Add(-20 * time.Minute),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	sendCount := 0
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-backfill-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	result, err := env.service.BackfillMissedOutboundEmails(ctx, EmailFallbackBackfillOptions{
+		From:   fixedNow.Add(-30 * time.Minute),
+		To:     fixedNow,
+		Limit:  10,
+		DryRun: false,
+	})
+	if err != nil {
+		t.Fatalf("backfill missed outbound emails: %v", err)
+	}
+	if result.SentMessages != 1 || result.SentConversations != 1 {
+		t.Fatalf("unexpected backfill result: %+v", result)
+	}
+	if sendCount != 1 {
+		t.Fatalf("expected one postmark send, got %d", sendCount)
+	}
+
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded.EmailNotifiedAt == nil {
+		t.Fatal("expected email_notified_at to be set")
+	}
+}
+
 func TestEmailFallbackFireEmailSendsOnlyUnreadEligibleMessages(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -828,7 +971,7 @@ func TestFreshEmailFallbackMessagesDropsOnlyStaleMessages(t *testing.T) {
 	}
 }
 
-func TestEmailFallbackFireEmailVisitorOnlineUnreadPostpones(t *testing.T) {
+func TestEmailFallbackFireEmailVisitorOnlineUnreadPostponesWithinGraceWindow(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
 	settings.EmailFallbackEnabled = true
@@ -861,7 +1004,7 @@ func TestEmailFallbackFireEmailVisitorOnlineUnreadPostpones(t *testing.T) {
 		SenderType:     "user",
 		Content:        "Unread while online",
 		MessageType:    "reply",
-		CreatedAt:      fixedNow.Add(-time.Minute),
+		CreatedAt:      fixedNow.Add(-120 * time.Second),
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
@@ -894,6 +1037,92 @@ func TestEmailFallbackFireEmailVisitorOnlineUnreadPostpones(t *testing.T) {
 		t.Fatalf("check msg list: %v", err)
 	} else if exists != 1 {
 		t.Fatalf("expected msg list to remain, exists=%d", exists)
+	}
+}
+
+func TestEmailFallbackFireEmailVisitorOnlineUnreadSendsAfterGraceWindow(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666672"
+	anonymousID := "anon-online-unread-after-grace"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Unread online after grace",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "Unread after online grace",
+		MessageType:    "reply",
+		CreatedAt:      fixedNow.Add(-151 * time.Second),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+	if err := env.redis.ZAdd(ctx, emailFallbackOutboxKey, redis.Z{Score: float64(fixedNow.Unix()), Member: conversationID}).Err(); err != nil {
+		t.Fatalf("seed outbox: %v", err)
+	}
+	if err := env.redis.RPush(ctx, env.service.msgListKey(conversationID), msg.ID).Err(); err != nil {
+		t.Fatalf("seed msg list: %v", err)
+	}
+	if err := env.service.hub.Presence.SetVisitorOnline(ctx, workspaceID, anonymousID, "conn-1"); err != nil {
+		t.Fatalf("set visitor online: %v", err)
+	}
+
+	sendCount := 0
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-online-after-grace",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
+		t.Fatalf("fire email: %v", err)
+	}
+	if sendCount != 1 {
+		t.Fatalf("expected postmark send after online grace, got %d", sendCount)
+	}
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded.EmailNotifiedAt == nil {
+		t.Fatal("expected email_notified_at to be set")
+	}
+	if exists, err := env.redis.Exists(ctx, emailFallbackOutboxKey, env.service.msgListKey(conversationID)).Result(); err != nil {
+		t.Fatalf("check redis cleanup: %v", err)
+	} else if exists != 0 {
+		t.Fatalf("expected redis cleanup, found %d keys", exists)
 	}
 }
 

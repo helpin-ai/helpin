@@ -939,7 +939,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		ReplyTimeCustomMinutes:          nil,
 		SpecialNoticeText:               nil,
 		EmailFallbackEnabled:            true,
-		EmailFallbackDelaySecs:          120,
+		EmailFallbackDelaySecs:          180,
 		EmailFallbackFromName:           "",
 		EmailFallbackMaxDeliveryAgeSecs: 600,
 		WidgetName:                      "",

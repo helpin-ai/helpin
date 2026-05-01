@@ -81,7 +81,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
   const [replyTimePreset, setReplyTimePreset] = useState<string>('few_minutes');
   const [replyTimeCustomMinutes, setReplyTimeCustomMinutes] = useState<number | null>(null);
   const [specialNoticeText, setSpecialNoticeText] = useState<string>('');
-  const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(120);
+  const [emailFallbackDelaySecs, setEmailFallbackDelaySecs] = useState(180);
   const [emailFallbackFromName, setEmailFallbackFromName] = useState('');
   const [emailFallbackMaxDeliveryAgeMins, setEmailFallbackMaxDeliveryAgeMins] = useState(10);
   const [csatEnabled, setCsatEnabled] = useState(false);
@@ -136,7 +136,7 @@ export function ChatGeneralTab({ workspaceId }: { workspaceId: string }) {
       setReplyTimePreset(s.reply_time_preset ?? 'few_minutes');
       setReplyTimeCustomMinutes(s.reply_time_custom_minutes ?? null);
       setSpecialNoticeText(s.special_notice_text ?? '');
-      setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 120);
+      setEmailFallbackDelaySecs(s.email_fallback_delay_secs ?? 180);
       setEmailFallbackFromName(s.email_fallback_from_name ?? '');
       setEmailFallbackMaxDeliveryAgeMins(Math.round((s.email_fallback_max_delivery_age_secs ?? 600) / 60));
       setCsatEnabled(s.csat_enabled);
@@ -1407,7 +1407,7 @@ function Dashboard() {
                         min={30}
                         max={600}
                         value={emailFallbackDelaySecs}
-                        onChange={(e) => setEmailFallbackDelaySecs(Number(e.target.value) || 120)}
+                        onChange={(e) => setEmailFallbackDelaySecs(Number(e.target.value) || 180)}
                       />
                       <p className="text-xs text-muted-foreground">Seconds after the latest team reply.</p>
                     </div>
