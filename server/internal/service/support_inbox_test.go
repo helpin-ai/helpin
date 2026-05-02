@@ -1244,6 +1244,7 @@ func TestCreateConversationMessage_PublicMentionsNotifyWorkspaceMembers(t *testi
 	seedWorkspace(t, db, workspaceID, "Support Mentions", "support-mentions", senderUserID)
 	seedWorkspaceMember(t, db, "wm-sender", workspaceID, senderUserID, "sender@example.com", "Sender User", model.RoleAdmin)
 	seedWorkspaceMember(t, db, "wm-mentioned", workspaceID, mentionedUserID, "mentioned@example.com", "Teammate Mentioned", model.RoleMember)
+	seedSupportModuleGrant(t, db, "grant-mentioned-support", workspaceID, model.ModuleGrantSubjectWorkspaceMember, "wm-mentioned")
 	for _, userID := range []string{senderUserID, mentionedUserID} {
 		mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -2406,7 +2407,6 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		response := &model.SupportCannedResponse{
 			WorkspaceID: workspaceID,
 			ShortCode:   "greeting",
-			Title:       "Greeting",
 			Content:     "Hello! How can we help you today?",
 			CreatedByID: "user-123",
 		}
@@ -2436,6 +2436,9 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		if fetched.ShortCode != "greeting" {
 			t.Errorf("expected short_code 'greeting', got %q", fetched.ShortCode)
 		}
+		if fetched.Tag != "General" {
+			t.Errorf("expected default category 'General', got %q", fetched.Tag)
+		}
 	})
 
 	t.Run("Search canned responses", func(t *testing.T) {
@@ -2444,19 +2447,17 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		// Create multiple responses
 		responses := []struct {
 			shortCode string
-			title     string
 			content   string
 		}{
-			{"greetshort", "Greetshort", "Hello there! How can we help?"},
-			{"thankshort", "Thankshort", "Thank you for reaching out!"},
-			{"closingshort", "Closingshort", "Is there anything else?"},
+			{"greetshort", "Hello there! How can we help?"},
+			{"thankshort", "Thank you for reaching out!"},
+			{"closingshort", "Is there anything else?"},
 		}
 
 		for _, r := range responses {
 			err := repo.Create(ctx, &model.SupportCannedResponse{
 				WorkspaceID: workspaceID,
 				ShortCode:   r.shortCode,
-				Title:       r.title,
 				Content:     r.content,
 			})
 			if err != nil {
@@ -2473,13 +2474,13 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 			t.Errorf("expected 1 result for 'greetshort', got %d", len(results))
 		}
 
-		// Search by title
-		results, err = repo.Search(ctx, workspaceID, "Thankshort")
+		// Search by another short_code
+		results, err = repo.Search(ctx, workspaceID, "thankshort")
 		if err != nil {
 			t.Fatalf("search: %v", err)
 		}
 		if len(results) != 1 {
-			t.Errorf("expected 1 result for 'Thankshort', got %d", len(results))
+			t.Errorf("expected 1 result for 'thankshort', got %d", len(results))
 		}
 
 		// Search by content
@@ -2492,13 +2493,34 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		}
 	})
 
+	t.Run("Search ignores deprecated title field", func(t *testing.T) {
+		ctx := context.Background()
+
+		err := repo.Create(ctx, &model.SupportCannedResponse{
+			WorkspaceID: workspaceID,
+			ShortCode:   "not-title-searchable",
+			Content:     "Body does not contain the deprecated search token",
+			Tag:         "Support",
+		})
+		if err != nil {
+			t.Fatalf("create title-only response: %v", err)
+		}
+
+		results, err := repo.Search(ctx, workspaceID, "UniqueDeprecatedTitleOnly")
+		if err != nil {
+			t.Fatalf("search title-only token: %v", err)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected title-only search to return 0 results, got %d", len(results))
+		}
+	})
+
 	t.Run("Update canned response", func(t *testing.T) {
 		ctx := context.Background()
 
 		response := &model.SupportCannedResponse{
 			WorkspaceID: workspaceID,
 			ShortCode:   "test",
-			Title:       "Test",
 			Content:     "Original content",
 		}
 		err := repo.Create(ctx, response)
@@ -2507,7 +2529,6 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		}
 
 		// Update
-		response.Title = "Updated Title"
 		response.Content = "Updated content"
 		err = repo.Update(ctx, response)
 		if err != nil {
@@ -2519,8 +2540,8 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get: %v", err)
 		}
-		if fetched.Title != "Updated Title" {
-			t.Errorf("expected title 'Updated Title', got %q", fetched.Title)
+		if fetched.Content != "Updated content" {
+			t.Errorf("expected content 'Updated content', got %q", fetched.Content)
 		}
 	})
 
@@ -2530,7 +2551,6 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		response := &model.SupportCannedResponse{
 			WorkspaceID: workspaceID,
 			ShortCode:   "delete-me",
-			Title:       "Delete Me",
 			Content:     "This will be deleted",
 		}
 		err := repo.Create(ctx, response)
@@ -2564,7 +2584,6 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		err := repo.Create(ctx, &model.SupportCannedResponse{
 			WorkspaceID: otherWS,
 			ShortCode:   "isolated",
-			Title:       "Isolated",
 			Content:     "Only in other workspace",
 		})
 		if err != nil {
@@ -2580,6 +2599,130 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 			t.Errorf("expected 0 results from cross-workspace search, got %d", len(results))
 		}
 	})
+}
+
+func TestSupportInboxServiceSeedWorkspaceDefaultsSeedsStarterShortcuts(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-support-shortcut-defaults"
+	ownerID := "user-shortcut-defaults"
+	seedWorkspace(t, db, workspaceID, "Shortcut Defaults", "shortcut-defaults", ownerID)
+
+	cannedRepo := repository.NewSupportCannedResponseRepository(db)
+	svc := NewSupportInboxService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewSupportInboxInstallationRepository(db),
+		nil,
+		cannedRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	if err := svc.SeedWorkspaceDefaults(ctx, workspaceID, ownerID); err != nil {
+		t.Fatalf("seed workspace defaults: %v", err)
+	}
+
+	responses, err := cannedRepo.List(ctx, workspaceID)
+	if err != nil {
+		t.Fatalf("list canned responses: %v", err)
+	}
+	if len(responses) != 12 {
+		t.Fatalf("expected 12 starter shortcuts, got %d", len(responses))
+	}
+
+	byCode := map[string]model.SupportCannedResponse{}
+	for _, response := range responses {
+		byCode[response.ShortCode] = response
+	}
+	if byCode["!hello"].Tag != "General" {
+		t.Fatalf("expected !hello in General, got %q", byCode["!hello"].Tag)
+	}
+	if !strings.Contains(byCode["!hello"].Content, `{{customer.first_name | fallback: "there"}}`) {
+		t.Fatalf("expected !hello to include customer first-name fallback, got %q", byCode["!hello"].Content)
+	}
+	if !strings.Contains(byCode["!hello"].Content, "\n\nThanks for reaching out.") {
+		t.Fatalf("expected !hello to separate greeting from message body, got %q", byCode["!hello"].Content)
+	}
+	if !strings.Contains(byCode["!followup"].Content, "\n\nJust checking in") {
+		t.Fatalf("expected !followup to separate greeting from message body, got %q", byCode["!followup"].Content)
+	}
+	if byCode["!demo"].Tag != "Sales" {
+		t.Fatalf("expected !demo in Sales, got %q", byCode["!demo"].Tag)
+	}
+
+	if err := svc.SeedWorkspaceDefaults(ctx, workspaceID, ownerID); err != nil {
+		t.Fatalf("seed workspace defaults again: %v", err)
+	}
+	responses, err = cannedRepo.List(ctx, workspaceID)
+	if err != nil {
+		t.Fatalf("list canned responses after second seed: %v", err)
+	}
+	if len(responses) != 12 {
+		t.Fatalf("expected second seed to avoid duplicates, got %d shortcuts", len(responses))
+	}
+}
+
+func TestSupportInboxServiceSeedWorkspaceDefaultsKeepsExistingShortcutSet(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-support-existing-shortcuts"
+	ownerID := "user-existing-shortcuts"
+	seedWorkspace(t, db, workspaceID, "Existing Shortcuts", "existing-shortcuts", ownerID)
+
+	cannedRepo := repository.NewSupportCannedResponseRepository(db)
+	if err := cannedRepo.Create(ctx, &model.SupportCannedResponse{
+		WorkspaceID: workspaceID,
+		ShortCode:   "!custom",
+		Content:     "Custom saved reply",
+		Tag:         "General",
+		CreatedByID: ownerID,
+	}); err != nil {
+		t.Fatalf("create custom shortcut: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewSupportInboxInstallationRepository(db),
+		nil,
+		cannedRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	if err := svc.SeedWorkspaceDefaults(ctx, workspaceID, ownerID); err != nil {
+		t.Fatalf("seed workspace defaults: %v", err)
+	}
+
+	responses, err := cannedRepo.List(ctx, workspaceID)
+	if err != nil {
+		t.Fatalf("list canned responses: %v", err)
+	}
+	if len(responses) != 1 {
+		t.Fatalf("expected existing shortcut set to remain unchanged, got %d shortcuts", len(responses))
+	}
+	if responses[0].ShortCode != "!custom" {
+		t.Fatalf("expected custom shortcut to remain, got %q", responses[0].ShortCode)
+	}
 }
 
 // ---------------------------------------------------------------------------

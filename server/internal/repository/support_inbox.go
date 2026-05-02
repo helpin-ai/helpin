@@ -88,6 +88,37 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 	return messages, nil
 }
 
+// ListEmailFallbackReconciliationCandidates returns recent outbound replies
+// that still need offline email fallback processing. The service layer performs
+// the final per-workspace delay, duplicate-log, and presence checks before
+// sending.
+func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx context.Context, after, before time.Time, limit int) ([]model.SupportMessage, error) {
+	if limit < 1 || limit > 1000 {
+		limit = 25
+	}
+	var messages []model.SupportMessage
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportMessage{}).
+		Joins("JOIN support_conversations sc ON sc.id = support_messages.conversation_id AND sc.workspace_id = support_messages.workspace_id").
+		Where("support_messages.email_notified_at IS NULL").
+		Where("support_messages.is_internal = ?", false).
+		Where("COALESCE(NULLIF(support_messages.message_type, ''), 'reply') = ?", "reply").
+		Where("support_messages.sender_type <> ?", "customer").
+		Where("support_messages.created_at <= ?", before).
+		Where("support_messages.created_at >= ?", after).
+		Where("(support_messages.cancellable_until IS NULL OR support_messages.cancellable_until <= ?)", before).
+		Where("sc.customer_email IS NOT NULL AND TRIM(sc.customer_email) <> ''").
+		Where("sc.email_unsubscribed = ?", false).
+		Where("LOWER(sc.status) NOT IN ?", []string{"closed", "resolved", "spam"}).
+		Where("(sc.contact_last_seen_at IS NULL OR support_messages.created_at > sc.contact_last_seen_at)").
+		Order("support_messages.created_at ASC").
+		Limit(limit).
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list email fallback reconciliation candidates: %w", err)
+	}
+	return messages, nil
+}
+
 // UpdateEmailNotifiedAt stamps email_notified_at for the provided message IDs.
 func (r *SupportMessageRepository) UpdateEmailNotifiedAt(ctx context.Context, ids []string, notifiedAt time.Time) error {
 	if len(ids) == 0 {
@@ -124,6 +155,60 @@ func (r *SupportMessageRepository) DB() *gorm.DB {
 // WithTx returns a new SupportMessageRepository using the given transaction.
 func (r *SupportMessageRepository) WithTx(tx *gorm.DB) *SupportMessageRepository {
 	return &SupportMessageRepository{db: tx}
+}
+
+// ownedReplyClause matches outbound, non-internal, non-system messages
+// authored by the given human user. It is the canonical eligibility
+// predicate for the message-actions feature: only the original author can
+// undo or remove their own reply, and only "real" replies (not csat
+// surveys, not system events, not internal notes) are mutable.
+const ownedReplyClause = `
+	sender_type    = 'user'
+AND sender_user_id = ?
+AND message_type   = 'reply'
+AND is_internal    = false`
+
+// GetMessageForActor returns the message if it exists, is not soft-deleted,
+// and was authored by the given user as an outbound reply (not internal,
+// not a system event). Returns (nil, nil) when there is no match.
+func (r *SupportMessageRepository) GetMessageForActor(ctx context.Context, id, userID string) (*model.SupportMessage, error) {
+	var msg model.SupportMessage
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND "+ownedReplyClause, id, userID).
+		First(&msg).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get message for actor: %w", err)
+	}
+	return &msg, nil
+}
+
+// SoftDeleteMessage marks a message deleted iff the actor authored it.
+// A no-op (no error) when nothing matches — the service layer is expected
+// to call GetMessageForActor first if it needs to distinguish "not yours"
+// from "already gone".
+func (r *SupportMessageRepository) SoftDeleteMessage(ctx context.Context, id, userID string) error {
+	res := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("id = ? AND "+ownedReplyClause, id, userID).
+		Update("deleted_at", time.Now())
+	if res.Error != nil {
+		return fmt.Errorf("soft delete message: %w", res.Error)
+	}
+	return nil
+}
+
+// SetCancellableUntil writes the email-fallback cancel-window expiry on a
+// message. Called by EmailFallbackService.OnAgentReply right after the
+// message is enqueued so the UI countdown matches the actual fire time.
+func (r *SupportMessageRepository) SetCancellableUntil(ctx context.Context, id string, t time.Time) error {
+	if err := r.db.WithContext(ctx).Model(&model.SupportMessage{}).
+		Where("id = ?", id).
+		Update("cancellable_until", t).Error; err != nil {
+		return fmt.Errorf("set cancellable_until: %w", err)
+	}
+	return nil
 }
 
 // SupportInboxInstallationRepository handles widget installations.
@@ -535,11 +620,13 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 			SELECT CASE WHEN m.is_internal THEN 'Note: ' || %s ELSE %s END
 			FROM support_messages m
 			WHERE m.conversation_id = support_conversations.id
+			  AND m.deleted_at IS NULL
 			ORDER BY m.created_at DESC LIMIT 1
 		) AS last_message,
 		(SELECT COUNT(*)
 			FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
+			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
@@ -615,6 +702,15 @@ func (r *SupportConversationRepository) applyConversationSearch(query *gorm.DB, 
 	}
 	escaped := escapeLike(search)
 	pattern := "%" + escaped + "%"
+	if r.db.Dialector.Name() == "sqlite" {
+		lowerPattern := strings.ToLower(pattern)
+		return query.Where(`(
+			LOWER(support_conversations.subject) LIKE ? ESCAPE '\'
+			OR LOWER(COALESCE(support_conversations.customer_name, '')) LIKE ? ESCAPE '\'
+			OR LOWER(COALESCE(support_conversations.customer_email, '')) LIKE ? ESCAPE '\'
+			OR CAST(support_conversations.display_id AS TEXT) LIKE ? ESCAPE '\'
+		)`, lowerPattern, lowerPattern, lowerPattern, pattern)
+	}
 	return query.Where(`(
 		support_conversations.subject ILIKE ? ESCAPE '\'
 		OR COALESCE(support_conversations.customer_name, '') ILIKE ? ESCAPE '\'
@@ -694,7 +790,7 @@ func (r *SupportConversationRepository) ListConversationIDsWithMentions(ctx cont
 	var ids []string
 	if err := r.db.WithContext(ctx).
 		Table("support_messages").
-		Where("workspace_id = ? AND is_internal = true AND metadata::jsonb @> ?::jsonb", workspaceID, string(filterJSON)).
+		Where("workspace_id = ? AND deleted_at IS NULL AND is_internal = true AND metadata::jsonb @> ?::jsonb", workspaceID, string(filterJSON)).
 		Distinct().
 		Pluck("conversation_id", &ids).Error; err != nil {
 		return nil, fmt.Errorf("list conversations with mentions: %w", err)
@@ -774,10 +870,11 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 	var conversations []model.SupportConversation
 	if err := r.db.WithContext(ctx).
 		Select(fmt.Sprintf(`support_conversations.*,
-		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message,
+		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.deleted_at IS NULL AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message,
 		(SELECT COUNT(*)
 			FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
+			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
@@ -801,6 +898,7 @@ func (r *SupportConversationRepository) MarkInternalRead(ctx context.Context, co
 		  AND EXISTS (
 			SELECT 1 FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
+			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
@@ -850,6 +948,7 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 		  AND EXISTS (
 			SELECT 1 FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
+			  AND sm.deleted_at IS NULL
 			  AND sm.is_internal = false
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
@@ -874,6 +973,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					SELECT COUNT(*)
 					FROM support_messages sm
 					WHERE sm.conversation_id = sc.id
+					  AND sm.deleted_at IS NULL
 					  AND sm.is_internal = false
 					  AND sm.sender_type = 'customer'
 					  AND sm.message_type = 'reply'
@@ -886,6 +986,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					SELECT COUNT(*)
 					FROM support_messages sm
 					WHERE sm.conversation_id = sc.id
+					  AND sm.deleted_at IS NULL
 					  AND sm.is_internal = false
 					  AND sm.sender_type = 'customer'
 					  AND sm.message_type = 'reply'
@@ -899,6 +1000,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					SELECT COUNT(*)
 					FROM support_messages sm
 					WHERE sm.conversation_id = sc.id
+					  AND sm.deleted_at IS NULL
 					  AND sm.is_internal = false
 					  AND sm.sender_type = 'customer'
 					  AND sm.message_type = 'reply'
@@ -913,6 +1015,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 					SELECT COUNT(*)
 					FROM support_messages sm
 					WHERE sm.conversation_id = sc.id
+					  AND sm.deleted_at IS NULL
 					  AND sm.is_internal = false
 					  AND sm.sender_type = 'customer'
 					  AND sm.message_type = 'reply'
@@ -1095,7 +1198,7 @@ func (r *SupportCannedResponseRepository) List(ctx context.Context, workspaceID 
 	var responses []model.SupportCannedResponse
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
-		Order("title ASC").
+		Order("tag ASC, short_code ASC").
 		Find(&responses).Error; err != nil {
 		return nil, fmt.Errorf("list canned responses: %w", err)
 	}
@@ -1111,8 +1214,8 @@ func (r *SupportCannedResponseRepository) Search(ctx context.Context, workspaceI
 	var responses []model.SupportCannedResponse
 	if err := r.db.WithContext(ctx).
 		Where("workspace_id = ?", workspaceID).
-		Where("short_code LIKE ? OR title LIKE ? OR content LIKE ?", pattern, pattern, pattern).
-		Order("short_code ASC").
+		Where("short_code LIKE ? OR content LIKE ? OR tag LIKE ?", pattern, pattern, pattern).
+		Order("tag ASC, short_code ASC").
 		Limit(10).
 		Find(&responses).Error; err != nil {
 		return nil, fmt.Errorf("search canned responses: %w", err)
@@ -1134,6 +1237,18 @@ func (r *SupportCannedResponseRepository) GetByID(ctx context.Context, workspace
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get canned response: %w", err)
+	}
+	return &response, nil
+}
+
+// GetByShortCode returns a canned response by workspace-scoped shortcut.
+func (r *SupportCannedResponseRepository) GetByShortCode(ctx context.Context, workspaceID, shortCode string) (*model.SupportCannedResponse, error) {
+	var response model.SupportCannedResponse
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND short_code = ?", workspaceID, shortCode).First(&response).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get canned response by short code: %w", err)
 	}
 	return &response, nil
 }

@@ -45,6 +45,13 @@ vi.mock('@/components/docs/DocsArrangeTree', () => ({
   DocsArrangeTree: () => <div>Arrange tree</div>,
 }))
 
+vi.mock('@/hooks/queries/useSettings', () => ({
+  useWorkspaceSettings: () => ({
+    data: undefined,
+    isLoading: false,
+  }),
+}))
+
 vi.mock('@/hooks/queries', () => ({
   useDocsSpaces: () => ({
     data: [
@@ -67,7 +74,7 @@ vi.mock('@/hooks/queries', () => ({
     ],
     isLoading: false,
   }),
-  useDocsCollections: () => ({
+  useAllDocsCollections: () => ({
     data: [
       {
         id: 'coll-1',
@@ -116,6 +123,9 @@ vi.mock('@/hooks/queries', () => ({
     ],
   }),
   useCreateDocsSpace: () => ({
+    mutateAsync: vi.fn(),
+  }),
+  useUpdateDocsDocument: () => ({
     mutateAsync: vi.fn(),
   }),
   useWorkspaceAccess: () => ({

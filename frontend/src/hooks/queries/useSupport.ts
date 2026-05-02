@@ -31,9 +31,18 @@ import type {
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
   CreateSupportEmailRouteRequest,
+  CreateSupportEmailSenderRequest,
+  SetSupportEmailSenderDefaultRequest,
+  SupportEmailSender,
+  CreateSupportEmailSenderDomainRequest,
+  SupportEmailSenderDomain,
   SupportTriageRule,
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
+  SupportCannedResponse,
+  CreateCannedResponseRequest,
+  UpdateCannedResponseRequest,
+  SupportMessage,
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
@@ -198,11 +207,48 @@ export function useSupportEmailRoutes(workspaceId: string) {
   });
 }
 
+export function useSupportEmailSenders(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.emailSenders(workspaceId),
+    queryFn: async (): Promise<SupportEmailSender[]> => unwrap(await supportService.listEmailSenders(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
+export function useSupportEmailSenderDomains(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.emailSenderDomains(workspaceId),
+    queryFn: async (): Promise<SupportEmailSenderDomain[]> => unwrap(await supportService.listEmailSenderDomains(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
 export function useSupportTriageRules(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.support.triageRules(workspaceId),
     queryFn: async (): Promise<SupportTriageRule[]> => unwrap(await supportService.listTriageRules(workspaceId)),
     enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
+export function useCannedResponses(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.cannedResponses(workspaceId),
+    queryFn: async (): Promise<SupportCannedResponse[]> => unwrap(await supportService.listCannedResponses(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  });
+}
+
+export function useSearchCannedResponses(workspaceId: string, query: string, enabled = true) {
+  const trimmed = query.trim();
+  return useQuery({
+    queryKey: queryKeys.support.cannedResponseSearch(workspaceId, trimmed),
+    queryFn: async (): Promise<SupportCannedResponse[]> => unwrap(await supportService.searchCannedResponses(workspaceId, trimmed)),
+    enabled: !!workspaceId && enabled && trimmed.length > 0,
     staleTime: 15_000,
   });
 }
@@ -246,6 +292,118 @@ export function useCreateSupportEmailRoute(workspaceId: string) {
   });
 }
 
+export function useCreateSupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportEmailSenderRequest) =>
+      supportService.createEmailSender(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to add sender address', { description: error.message });
+    },
+  });
+}
+
+export function useVerifySupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (senderId: string) =>
+      supportService.verifyEmailSender(workspaceId, senderId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to verify sender address', { description: error.message });
+    },
+  });
+}
+
+export function useSetDefaultSupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ senderId, payload }: { senderId: string; payload: SetSupportEmailSenderDefaultRequest }) =>
+      supportService.setDefaultEmailSender(workspaceId, senderId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update sender default', { description: error.message });
+    },
+  });
+}
+
+export function useDisableSupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (senderId: string) =>
+      supportService.disableEmailSender(workspaceId, senderId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to disable sender address', { description: error.message });
+    },
+  });
+}
+
+export function useCreateSupportEmailSenderDomain(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportEmailSenderDomainRequest) =>
+      supportService.createEmailSenderDomain(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenderDomains(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to add sender domain', { description: error.message });
+    },
+  });
+}
+
+export function useVerifySupportEmailSenderDomain(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (domainId: string) =>
+      supportService.verifyEmailSenderDomain(workspaceId, domainId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenderDomains(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to verify sender domain', { description: error.message });
+    },
+  });
+}
+
+export function useActivateSupportEmailSenderDomain(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (domainId: string) =>
+      supportService.activateEmailSenderDomain(workspaceId, domainId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenderDomains(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to activate sender domain', { description: error.message });
+    },
+  });
+}
+
+export function useDeactivateSupportEmailSenderDomain(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (domainId: string) =>
+      supportService.deactivateEmailSenderDomain(workspaceId, domainId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenderDomains(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to deactivate sender domain', { description: error.message });
+    },
+  });
+}
+
 export function useCreateSupportTriageRule(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -284,6 +442,48 @@ export function useDeleteSupportTriageRule(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to delete routing rule', { description: error.message });
+    },
+  });
+}
+
+export function useCreateCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateCannedResponseRequest) =>
+      supportService.createCannedResponse(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.cannedResponses(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create shortcut', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ responseId, payload }: { responseId: string; payload: UpdateCannedResponseRequest }) =>
+      supportService.updateCannedResponse(workspaceId, responseId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.cannedResponses(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update shortcut', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteCannedResponse(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (responseId: string) =>
+      supportService.deleteCannedResponse(workspaceId, responseId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.cannedResponses(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete shortcut', { description: error.message });
     },
   });
 }
@@ -355,6 +555,15 @@ export function useMessageEmailDetail(workspaceId: string, messageId: string | n
   });
 }
 
+export function useMessageInfo(workspaceId: string, conversationId: string, messageId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.messageInfo(workspaceId, conversationId, messageId ?? ''),
+    queryFn: async () => unwrap(await supportService.getConversationMessageInfo(workspaceId, conversationId, messageId!)),
+    enabled: enabled && !!workspaceId && !!conversationId && !!messageId,
+    staleTime: 60_000,
+  });
+}
+
 export function useVisitorContext(workspaceId: string, conversationId: string | null) {
   return useQuery<VisitorContextResponse>({
     queryKey: queryKeys.support.visitorContext(workspaceId, conversationId ?? ''),
@@ -379,6 +588,36 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
     },
     onError: (error: Error) => {
       toast.error('Failed to send message', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteSupportMessage(workspaceId: string, conversationId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ messageId, undo }: { messageId: string; undo?: boolean }) =>
+      supportService.deleteConversationMessage(workspaceId, conversationId!, messageId, !!undo).then(unwrap),
+    onMutate: async ({ messageId }) => {
+      if (!conversationId) return { previousMessages: undefined as SupportMessage[] | undefined };
+      const key = queryKeys.support.messages(workspaceId, conversationId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<SupportMessage[]>(key);
+      queryClient.setQueryData<SupportMessage[]>(key, (current) =>
+        current?.filter((message) => message.id !== messageId) ?? current,
+      );
+      return { previousMessages };
+    },
+    onError: (error: Error, _variables, context) => {
+      if (conversationId && context?.previousMessages) {
+        queryClient.setQueryData(queryKeys.support.messages(workspaceId, conversationId), context.previousMessages);
+      }
+      toast.error('Failed to remove message', { description: error.message });
+    },
+    onSettled: () => {
+      if (conversationId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) });
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
     },
   });
 }

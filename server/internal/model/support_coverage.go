@@ -258,13 +258,15 @@ func (SupportCoverageDigestDelivery) TableName() string {
 
 // SupportCoverageGapFilter controls gap list queries.
 type SupportCoverageGapFilter struct {
-	Status    string `json:"status"`
-	V1GapType string `json:"v1_gap_type"`
-	IssueKey  string `json:"issue_key"`
-	Search    string `json:"search"`
-	ShowRaw   bool   `json:"show_raw"`
-	Page      int    `json:"page"`
-	PerPage   int    `json:"per_page"`
+	Status      string `json:"status"`
+	GapKind     string `json:"gap_kind"`
+	GapCategory string `json:"gap_category"`
+	V1GapType   string `json:"v1_gap_type"`
+	IssueKey    string `json:"issue_key"`
+	Search      string `json:"search"`
+	ShowRaw     bool   `json:"show_raw"`
+	Page        int    `json:"page"`
+	PerPage     int    `json:"per_page"`
 }
 
 // SupportCoverageGapListItem is a row in the gap inbox table.
@@ -308,10 +310,11 @@ type SupportConversationCoverageState struct {
 
 // SupportCoverageSummary is returned by the summary endpoint.
 type SupportCoverageSummary struct {
-	NewGapsThisWeek    int `json:"new_gaps_this_week"`
-	TopRecurringGaps   int `json:"top_recurring_gaps"`
-	GapsFixedThisWeek  int `json:"gaps_fixed_this_week"`
-	TotalOpenGaps      int `json:"total_open_gaps"`
-	TotalEvidenceCount int `json:"total_evidence_count"`
-	HandoffsAfterFixes int `json:"handoffs_after_fixes"`
+	NewGapsThisWeek    int        `json:"new_gaps_this_week"`
+	TopRecurringGaps   int        `json:"top_recurring_gaps"`
+	GapsFixedThisWeek  int        `json:"gaps_fixed_this_week"`
+	TotalOpenGaps      int        `json:"total_open_gaps"`
+	TotalEvidenceCount int        `json:"total_evidence_count"`
+	HandoffsAfterFixes int        `json:"handoffs_after_fixes"`
+	LastAnalyzedAt     *time.Time `json:"last_analyzed_at,omitempty"`
 }

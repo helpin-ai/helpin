@@ -2,7 +2,22 @@ import type { AgentRun, CommandBarPlanStep } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/stores/commandBarStore';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from '@/components/pm/agentRunConstants';
 
-export type ActivityState = 'attention' | 'running' | 'queued' | 'completed';
+/**
+ * Activity state used to drive the status dot and color tokens.
+ * - running: actively executing
+ * - awaiting: paused waiting on a human (approval, input, sign-in)
+ * - attention: something broke (failed) — needs intervention
+ * - cancelled: user-initiated stop, terminal, no action needed
+ * - queued: waiting to start
+ * - completed: done
+ */
+export type ActivityState =
+  | 'attention'
+  | 'awaiting'
+  | 'cancelled'
+  | 'running'
+  | 'queued'
+  | 'completed';
 
 export type PlanKindLabel =
   | 'One-shot'
@@ -21,13 +36,20 @@ export function classifyRun(run: AgentRun): ActivityState {
     displayStatus === 'awaiting_input' ||
     displayStatus === 'awaiting_auth'
   )
-    return 'attention';
-  if (run.status === 'failed' || run.status === 'cancelled') return 'attention';
+    return 'awaiting';
+  if (run.status === 'failed') return 'attention';
+  if (run.status === 'cancelled') return 'cancelled';
   if (ACTIVE_RUN_STATUSES.has(run.status)) return 'running';
   if (run.status === 'completed') return 'completed';
   return 'queued';
 }
 
+/**
+ * Plan-level state priority: failed > awaiting > running > queued > completed
+ * > cancelled. We surface the most actionable signal so a plan with one failed
+ * step reads red even if another is awaiting; a plan that's mostly done with
+ * one approval still shows amber until the user resolves it.
+ */
 export function classifyPlan(
   plan: CommandBarRunPlan,
   runsById: Record<string, AgentRun>,
@@ -35,10 +57,12 @@ export function classifyPlan(
   const runs = Object.values(plan.runIdsByStep)
     .map((id) => runsById[id])
     .filter(Boolean);
-  if (plan.status === 'failed' || plan.status === 'cancelled') return 'attention';
+  if (plan.status === 'failed') return 'attention';
   if (runs.some((r) => classifyRun(r) === 'attention')) return 'attention';
-  if (plan.status === 'completed') return 'completed';
+  if (runs.some((r) => classifyRun(r) === 'awaiting')) return 'awaiting';
   if (runs.some((r) => ACTIVE_RUN_STATUSES.has(r.status))) return 'running';
+  if (plan.status === 'completed') return 'completed';
+  if (plan.status === 'cancelled') return 'cancelled';
   return 'queued';
 }
 
@@ -58,13 +82,19 @@ export function planUpdatedAt(
   return latest || Date.now();
 }
 
+/**
+ * Human-readable label for the entity an agent is operating on. Returns an
+ * empty string when only a UUID prefix is available — surfacing
+ * "support conversation 4477c244" to the user adds noise without context, so
+ * callers should hide the line in that case. The backend is responsible for
+ * populating `target_info.title` (or `task_key`) when a meaningful name
+ * exists for the target type.
+ */
 export function targetLabel(run: AgentRun): string {
   const t = run.target_info;
   if (t?.title) return t.title;
   if (t?.task_key) return t.task_key;
-  if (run.target_type)
-    return `${run.target_type.replaceAll('_', ' ')} ${run.target_id.slice(0, 8)}`;
-  return run.target_id.slice(0, 8);
+  return '';
 }
 
 export function planKindLabel(
@@ -96,7 +126,12 @@ export function stepDotState(
 
   if (run) {
     if (run.status === 'completed') return 'completed';
-    if (run.status === 'failed' || run.status === 'cancelled') return 'attention';
+    if (run.status === 'failed') return 'attention';
+    if (run.status === 'cancelled') return 'cancelled';
+    // Paused-for-human (approval/input/auth) gets the amber awaiting dot
+    // even mid-pipeline, so users can see which step is blocked on them.
+    const runState = classifyRun(run);
+    if (runState === 'awaiting') return 'awaiting';
     if (ACTIVE_RUN_STATUSES.has(run.status)) return isCurrent ? 'active_step' : 'running';
   }
 
@@ -177,6 +212,37 @@ export function outputSummaryText(run: AgentRun): string {
   return '';
 }
 
+/**
+ * Best-effort one-line description of what a run is about, for use in the
+ * Recent runs list. Tries (in order): the prompt the user gave, the result
+ * text, the target entity title, the task key. Returns empty if nothing
+ * useful exists — caller should render a fallback rather than a hash.
+ */
+export function runDisplayTitle(run: AgentRun): string {
+  const promptText = (run.input as { text?: string; prompt?: string } | null)?.text
+    ?? (run.input as { text?: string; prompt?: string } | null)?.prompt;
+  if (typeof promptText === 'string' && promptText.trim()) return promptText.trim();
+  const output = outputSummaryText(run);
+  if (output) return output;
+  if (run.target_info?.title) return run.target_info.title;
+  if (run.target_info?.task_key) return run.target_info.task_key;
+  return '';
+}
+
+/**
+ * Short context line under the run title — describes the *target* the run
+ * acts on. Surfaces task_key + title (e.g. "HLP-123 · Add login flow") when
+ * available, the title alone, or a humanized target_type as final fallback.
+ */
+export function runContextLine(run: AgentRun): string {
+  const t = run.target_info;
+  if (t?.task_key && t.title) return `${t.task_key} · ${t.title}`;
+  if (t?.task_key) return t.task_key;
+  if (t?.title) return t.title;
+  if (run.target_type) return run.target_type.replaceAll('_', ' ');
+  return '';
+}
+
 export function runStatusLabel(run: AgentRun): string {
   const display = getAgentRunDisplayStatus(run);
   if (display === 'awaiting_approval') return 'Awaiting approval';
@@ -206,7 +272,7 @@ export function planSummaryText(
     let tasksWaiting = 0;
     for (const g of groups) {
       const stepStates = g.stepIndexes.map((i) => stepDotState(plan, i, runsById));
-      if (stepStates.some((s) => s === 'attention')) tasksFailed++;
+      if (stepStates.some((s) => s === 'attention' || s === 'cancelled')) tasksFailed++;
       else if (stepStates.every((s) => s === 'completed')) tasksDone++;
       else if (stepStates.some((s) => s === 'running' || s === 'active_step'))
         tasksActive++;
@@ -227,11 +293,11 @@ export function planSummaryText(
     let failedCount = 0;
     for (let i = 0; i < plan.steps.length; i++) {
       const state = stepDotState(plan, i, runsById);
-      if (state === 'blocked') waiting++;
+      if (state === 'blocked' || state === 'awaiting') waiting++;
       else if (state === 'queued') queued++;
       else if (state === 'running' || state === 'active_step') running++;
       else if (state === 'completed') completed++;
-      else if (state === 'attention') failedCount++;
+      else if (state === 'attention' || state === 'cancelled') failedCount++;
     }
     const parts: string[] = [`${total} steps`];
     if (running) parts.push(`${running} running`);

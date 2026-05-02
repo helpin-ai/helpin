@@ -68,6 +68,12 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			source_signal TEXT NOT NULL DEFAULT '', excerpt TEXT NOT NULL DEFAULT '',
 			metadata TEXT NOT NULL DEFAULT '{}', created_at DATETIME
 		)`,
+		`CREATE TABLE support_messages (
+			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, conversation_id TEXT,
+			sender_type TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'reply',
+			content TEXT NOT NULL DEFAULT '', is_internal BOOLEAN NOT NULL DEFAULT 0,
+			deleted_at DATETIME, created_at DATETIME, updated_at DATETIME
+		)`,
 		`CREATE TABLE support_gap_suggestions (
 			id TEXT PRIMARY KEY, gap_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
 			suggestion_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft',
@@ -89,6 +95,24 @@ func setupCoverageTestEnv(t *testing.T) (*SupportEventService, *SupportCoverageS
 			id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, week_start DATETIME NOT NULL,
 			recipient_user_id TEXT NOT NULL, sent_at DATETIME NOT NULL, created_at DATETIME,
 			UNIQUE(workspace_id, week_start, recipient_user_id)
+		)`,
+		`CREATE TABLE support_coverage_analysis_runs (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			window_start DATETIME NOT NULL,
+			window_end DATETIME NOT NULL,
+			cursor_started_at DATETIME NOT NULL,
+			cursor_ended_at DATETIME NOT NULL,
+			analyzer_version TEXT NOT NULL DEFAULT 'v1',
+			status TEXT NOT NULL DEFAULT 'running',
+			conversation_cnt INTEGER NOT NULL DEFAULT 0,
+			gap_count INTEGER NOT NULL DEFAULT 0,
+			error_message TEXT,
+			metadata TEXT NOT NULL DEFAULT '{}',
+			started_at DATETIME NOT NULL,
+			completed_at DATETIME,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
 	}
 	for _, stmt := range tables {
@@ -634,6 +658,40 @@ func TestSupportCoverage_HumanReplyAfterAI_NoExistingGap_CreatesNew(t *testing.T
 	}
 	if gaps[0].V1GapType != model.SupportCoverageV1GapNeedsReview {
 		t.Errorf("expected needs_review, got %q", gaps[0].V1GapType)
+	}
+}
+
+func TestSupportCoverage_HumanReplyAfterAI_CompletedAnalysisRunSkipsNewV1Gap(t *testing.T) {
+	eventSvc, coverageSvc, db := setupCoverageTestEnv(t)
+	ctx := context.Background()
+	convID := "conv-analyzed-human-reply"
+	now := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	if err := db.Exec(`INSERT INTO support_coverage_analysis_runs (
+		id, workspace_id, window_start, window_end, cursor_started_at, cursor_ended_at,
+		analyzer_version, status, started_at, completed_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"run-completed", "ws-1", now.Add(-24*time.Hour), now, now.Add(-24*time.Hour), now,
+		"v3", model.SupportCoverageAnalysisRunStatusCompleted, now.Add(-time.Hour), now).Error; err != nil {
+		t.Fatalf("seed completed run: %v", err)
+	}
+
+	err := eventSvc.RecordEvent(ctx, SupportEventInput{
+		WorkspaceID:    "ws-1",
+		EventType:      model.SupportEventHumanReplyAfterAI,
+		ConversationID: &convID,
+		IssueSummary:   "Agent helped with billing question",
+		SourceSignal:   model.SupportCoverageSourceHumanReply,
+	})
+	if err != nil {
+		t.Fatalf("RecordEvent: %v", err)
+	}
+
+	_, total, err := coverageSvc.ListGaps(ctx, "ws-1", model.SupportCoverageGapFilter{ShowRaw: true})
+	if err != nil {
+		t.Fatalf("ListGaps: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("expected no v1 gap after completed analysis run, got %d", total)
 	}
 }
 

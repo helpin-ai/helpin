@@ -2,6 +2,7 @@ package crmemail
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -48,12 +49,15 @@ func (r *BackfillRunner) Run(ctx context.Context) error {
 			break
 		}
 
+		madeProgress := false
+		hadErrors := false
 		for _, message := range messages {
 			account, ok := accountCache[message.EmailAccountID]
 			if !ok {
 				account, err = r.emailRepo.GetAccountByID(ctx, message.EmailAccountID)
 				if err != nil {
 					slog.ErrorContext(ctx, "crm email backfill: load account", "error", err, "message_id", message.ID)
+					hadErrors = true
 					continue
 				}
 				if account == nil {
@@ -95,6 +99,7 @@ func (r *BackfillRunner) Run(ctx context.Context) error {
 			})
 			if err != nil {
 				slog.ErrorContext(ctx, "crm email backfill: resolve participants", "error", err, "message_id", message.ID)
+				hadErrors = true
 				continue
 			}
 
@@ -112,8 +117,18 @@ func (r *BackfillRunner) Run(ctx context.Context) error {
 
 			if err := r.emailRepo.ReplaceMessageContacts(ctx, message.ID, primaryContactID, associations); err != nil {
 				slog.ErrorContext(ctx, "crm email backfill: save associations", "error", err, "message_id", message.ID)
+				hadErrors = true
 				continue
 			}
+			if len(associations) > 0 || primaryContactID != nil {
+				madeProgress = true
+			}
+		}
+		if !madeProgress {
+			if hadErrors {
+				return fmt.Errorf("crm email association backfill made no progress after processing %d messages", len(messages))
+			}
+			break
 		}
 	}
 

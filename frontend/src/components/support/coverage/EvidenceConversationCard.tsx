@@ -4,7 +4,6 @@ import { ArrowUpRight01Icon } from '@/lib/icons'
 import type { SupportGapEvidence } from '@/lib/supportCoverageTypes'
 import { timeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import { evidenceTypeLabel as resolveEvidenceTypeLabel } from './coverageUi'
 import {
   conversationCardCountText,
   conversationCardHeaderLabel,
@@ -119,12 +118,8 @@ function MessageBubble({ evidence }: { evidence: SupportGapEvidence }) {
 function EventRow({ evidence }: { evidence: SupportGapEvidence }) {
   return (
     <div className="rounded-sm border border-border/40 bg-background/60 px-2 py-1 text-[11px] text-muted-foreground">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium">{resolveEvidenceTypeLabel(evidence.evidence_type)}</span>
-        <span>{timeAgo(evidence.created_at)}</span>
-      </div>
       {evidence.excerpt && (
-        <div className="prose-chat mt-1 text-xs leading-relaxed">
+        <div className="prose-chat text-xs leading-relaxed">
           <Markdown>{evidence.excerpt}</Markdown>
         </div>
       )}

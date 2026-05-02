@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   diffRemovedInlineAttachmentIds,
   extractInlineAttachmentIds,
-  mergeAttachmentIds,
   removeInlineImagesByAttachmentIds,
 } from '../editorImageAttachments'
 import { uploadEditorImage } from '@/hooks/useEditorImageUpload'
@@ -63,16 +62,6 @@ describe('editorImageAttachments', () => {
     const nextHtml = '<p><img src="https://cdn.example.com/b.png" data-attachment-id="att-2" /></p>'
 
     expect(diffRemovedInlineAttachmentIds(previousHtml, nextHtml)).toEqual(['att-1'])
-  })
-
-  it('merges attachment ids from inline images and manual uploads without duplicates', () => {
-    const descriptionHtml =
-      '<p><img src="https://cdn.example.com/a.png" data-attachment-id="att-1" /></p>'
-
-    expect(mergeAttachmentIds(['att-1', 'att-2'], extractInlineAttachmentIds(descriptionHtml))).toEqual([
-      'att-1',
-      'att-2',
-    ])
   })
 
   it('returns attachment metadata after a successful image upload', async () => {

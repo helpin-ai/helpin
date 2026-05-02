@@ -55,6 +55,18 @@ interface RunStripProps {
   busy?: boolean;
   onAction?: (action: StripAction) => void;
   resultSlot?: React.ReactNode;
+  /**
+   * When true, collapse the run to a one-line header — hiding the inline
+   * pending-interaction card, result slot, and action chips until the user
+   * expands it. Used to reduce noise when several paused runs queue up.
+   */
+  compact?: boolean;
+  /**
+   * Initial open state. When `compact` is true, the first paused run in the
+   * timeline starts expanded so the user lands on something actionable, while
+   * subsequent paused runs start collapsed.
+   */
+  defaultOpen?: boolean;
 }
 
 export type ExecutionStripProps = PlanStripProps | RunStripProps;
@@ -62,6 +74,25 @@ export type ExecutionStripProps = PlanStripProps | RunStripProps;
 function activityToDot(state: ActivityState, hasActive = false): DotKind {
   if (state === 'running' && hasActive) return 'active_step';
   return state;
+}
+
+/** Tailwind classes for the compact-mode right-side status pill, by state. */
+function pillClasses(state: ActivityState): string {
+  switch (state) {
+    case 'awaiting':
+      return 'bg-amber-500/10 text-amber-700 dark:text-amber-300';
+    case 'attention':
+      return 'bg-destructive/10 text-destructive dark:text-red-300';
+    case 'cancelled':
+      return 'bg-muted text-muted-foreground';
+    case 'completed':
+      return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    case 'running':
+      return 'bg-orange-500/10 text-orange-700 dark:text-orange-300';
+    case 'queued':
+    default:
+      return 'bg-muted text-muted-foreground';
+  }
 }
 
 /**
@@ -77,11 +108,13 @@ function liveStreamSummary(plan: RunPlanArtifact | null): string | null {
 }
 
 export function ExecutionStrip(props: ExecutionStripProps) {
-  const [open, setOpen] = useState(false);
+  const initialOpen = props.kind === 'run' ? props.defaultOpen ?? false : false;
+  const [open, setOpen] = useState(initialOpen);
 
   if (props.kind === 'plan') return <PlanStrip {...props} open={open} setOpen={setOpen} />;
   return <RunStrip {...props} open={open} setOpen={setOpen} />;
 }
+
 
 interface InternalProps {
   open: boolean;
@@ -234,7 +267,7 @@ function PlanStrip({
         </ChipRow>
       ) : null}
 
-      {onAction && state === 'attention' ? (
+      {onAction && (state === 'attention' || state === 'cancelled') ? (
         <ChipRow>
           <ActionChip
             icon={busy ? Loading01Icon : RotateLeft01Icon}
@@ -253,13 +286,22 @@ function PlanStrip({
   );
 }
 
-function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen }: RunStripProps & InternalProps) {
+function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen, compact }: RunStripProps & InternalProps) {
   const state = classifyRun(run);
   const dot: DotKind = activityToDot(state, state === 'running');
   const isActive = ACTIVE_RUN_STATUSES.has(run.status);
+  // Stream whenever the run is active. We keep the pending-interaction card
+  // mounted inside a grid-rows-animated wrapper, so it has to stay populated
+  // through the collapse transition instead of unmounting on close.
   const stream = useAgentRunStream(workspaceId, run.id, isActive);
   const liveSummary = liveStreamSummary(stream.currentPlan);
-  const baseSummary = outputSummaryText(run) || runStatusLabel(run);
+  const outputSummary = outputSummaryText(run);
+  // Prefer the pending interaction's title ("Approve pricing reply to
+  // customer") over the generic status label so the header line tells the
+  // user *what* needs review, not just that something does. Status is already
+  // conveyed by the dot + the right-side pill.
+  const interactionTitle = stream.pendingInteraction?.title?.trim() || null;
+  const baseSummary = outputSummary || interactionTitle || runStatusLabel(run);
   const summary = isActive && liveSummary ? liveSummary : baseSummary;
   const ts = runUpdatedAt(run);
   const duration = totalDurationMs(null, {}, run);
@@ -267,34 +309,15 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen 
   const display = getAgentRunDisplayStatus(run);
   const awaitingApproval = display === 'awaiting_approval';
   const canCancel = ACTIVE_RUN_STATUSES.has(run.status);
+  const expanded = !compact || open;
 
-  return (
+  const body = (
     <div className="space-y-2">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="group flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-muted/40"
-      >
-        <StatusDot state={dot} />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          Agent
-        </span>
-        <span className="text-muted-foreground/60">·</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {duration != null ? formatDuration(duration) : formatDistanceToNow(ts, { addSuffix: true })}
-        </span>
-        <ArrowDown01Icon
-          className={cn(
-            'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
-
       {open ? (
         <div className="space-y-2 pl-4 text-xs leading-snug">
-          <p className="text-[11px] text-muted-foreground">{targetLabel(run)}</p>
+          {targetLabel(run) ? (
+            <p className="text-[11px] text-muted-foreground">{targetLabel(run)}</p>
+          ) : null}
           {stream.currentPlan?.plan?.length ? (
             <div className="space-y-1">
               {stream.currentPlan.plan.map((step, i) => (
@@ -316,9 +339,9 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen 
                 <p className="pl-4 text-[11px] italic text-muted-foreground">{stream.currentPlan.note}</p>
               ) : null}
             </div>
-          ) : (
-            <p className="text-foreground/80">{baseSummary}</p>
-          )}
+          ) : outputSummary ? (
+            <p className="text-foreground/80">{outputSummary}</p>
+          ) : null}
           {run.error_message ? (
             <p className="rounded bg-destructive/10 px-2 py-1 text-destructive">{run.error_message}</p>
           ) : null}
@@ -336,7 +359,12 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen 
       {resultSlot}
 
       {onAction ? (
-        <ChipRow>
+        <ChipRow
+          // When the inline approval card already provides the primary action,
+          // demote Cancel/Open to a right-aligned meta row so the user's eye
+          // stays on the actual decision (Approve / Request changes).
+          align={stream.pendingInteraction ? 'end' : 'start'}
+        >
           {completed ? (
             <>
               <ActionChip icon={RotateLeft01Icon} label="Re-run" onClick={() => onAction('rerun')} />
@@ -347,7 +375,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen 
               />
             </>
           ) : null}
-          {state === 'attention' && !awaitingApproval ? (
+          {(state === 'attention' || state === 'cancelled') && !awaitingApproval ? (
             <ActionChip
               icon={busy ? Loading01Icon : RotateLeft01Icon}
               label={busy ? 'Retrying…' : 'Retry'}
@@ -355,7 +383,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen 
               disabled={busy}
             />
           ) : null}
-          {awaitingApproval ? (
+          {awaitingApproval && !stream.pendingInteraction ? (
             <ActionChip
               icon={busy ? Loading01Icon : ArrowUpRight01Icon}
               label={busy ? 'Approving…' : 'Approve'}
@@ -370,6 +398,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen 
               label="Cancel"
               onClick={() => onAction('cancel')}
               disabled={busy}
+              subtle
             />
           ) : null}
           <ActionChip icon={ArrowUpRight01Icon} label="Open" onClick={() => onAction('open')} />
@@ -377,10 +406,75 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen 
       ) : null}
     </div>
   );
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="group flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-muted/40"
+      >
+        <StatusDot state={dot} />
+        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          Agent
+        </span>
+        <span className="text-muted-foreground/60">·</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
+        {compact && !open ? (
+          <span
+            className={cn(
+              'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+              pillClasses(state),
+            )}
+          >
+            {runStatusLabel(run)}
+          </span>
+        ) : null}
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {duration != null ? formatDuration(duration) : formatDistanceToNow(ts, { addSuffix: true })}
+        </span>
+        <ArrowDown01Icon
+          className={cn(
+            'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+
+      {/* Grid-rows trick: animates intrinsic content height between 0fr and
+          1fr without measuring. Wrapper stays mounted through the transition
+          so the pending-interaction card animates instead of popping. For
+          non-compact runs the wrapper is always 1fr — no animation needed. */}
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows,margin-top,opacity] duration-200 ease-out',
+          expanded ? 'mt-2 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+        aria-hidden={!expanded}
+      >
+        <div className="overflow-hidden">{body}</div>
+      </div>
+    </div>
+  );
 }
 
-function ChipRow({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap items-center gap-1.5 pt-0.5">{children}</div>;
+function ChipRow({
+  children,
+  align = 'start',
+}: {
+  children: React.ReactNode;
+  align?: 'start' | 'end';
+}) {
+  return (
+    <div
+      className={cn(
+        'flex flex-wrap items-center gap-1.5 pt-0.5',
+        align === 'end' && 'justify-end',
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 function ActionChip({
@@ -389,12 +483,15 @@ function ActionChip({
   onClick,
   disabled,
   accent,
+  subtle,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
   disabled?: boolean;
   accent?: boolean;
+  /** Borderless, transparent variant for low-emphasis meta actions. */
+  subtle?: boolean;
 }) {
   return (
     <button
@@ -402,10 +499,12 @@ function ActionChip({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-medium transition',
+        'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition',
         accent
-          ? 'border-orange-500/40 bg-orange-500/10 text-orange-700 hover:bg-orange-500/15 dark:text-orange-300'
-          : 'border-border/70 bg-background/80 text-foreground hover:border-foreground/30 hover:bg-muted/60',
+          ? 'border border-orange-500/40 bg-orange-500/10 text-orange-700 hover:bg-orange-500/15 dark:text-orange-300'
+          : subtle
+            ? 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+            : 'border border-border/70 bg-background/80 text-foreground hover:border-foreground/30 hover:bg-muted/60',
         disabled && 'cursor-not-allowed opacity-60',
       )}
     >
