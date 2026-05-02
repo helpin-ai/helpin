@@ -584,6 +584,75 @@ func (h *SupportInboxHandler) DisableEmailRoute(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *SupportInboxHandler) ListEmailSenders(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senders, err := h.supportService.ListEmailSenders(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, senders)
+}
+
+func (h *SupportInboxHandler) CreateEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateSupportEmailSenderRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	sender, err := h.supportService.CreateEmailSender(r.Context(), workspaceID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, sender)
+}
+
+func (h *SupportInboxHandler) VerifyEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senderID := chi.URLParam(r, "senderId")
+
+	sender, err := h.supportService.VerifyEmailSender(r.Context(), workspaceID, senderID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sender)
+}
+
+func (h *SupportInboxHandler) SetDefaultEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senderID := chi.URLParam(r, "senderId")
+
+	var req model.SetSupportEmailSenderDefaultRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	sender, err := h.supportService.SetDefaultEmailSender(r.Context(), workspaceID, senderID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sender)
+}
+
+func (h *SupportInboxHandler) DisableEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senderID := chi.URLParam(r, "senderId")
+
+	if err := h.supportService.DisableEmailSender(r.Context(), workspaceID, senderID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *SupportInboxHandler) ListEmailSenderDomains(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	domains, err := h.supportService.ListEmailSenderDomains(r.Context(), workspaceID)

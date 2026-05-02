@@ -33,6 +33,7 @@ type SupportInboxService struct {
 	conversationRepo        *repository.SupportConversationRepository
 	mailboxRepo             *repository.SupportMailboxRepository
 	emailRouteRepo          *repository.SupportEmailRouteRepository
+	emailSenderRepo         *repository.SupportEmailSenderRepository
 	emailSenderDomainRepo   *repository.SupportEmailSenderDomainRepository
 	messageRepo             *repository.SupportMessageRepository
 	agentRepo               *repository.AgentRepository
@@ -579,6 +580,15 @@ func (s *SupportInboxService) SetEmailSenderDomainRepository(repo *repository.Su
 		return nil
 	}
 	s.emailSenderDomainRepo = repo
+	return s
+}
+
+// SetEmailSenderRepository injects the custom support sender-address repository.
+func (s *SupportInboxService) SetEmailSenderRepository(repo *repository.SupportEmailSenderRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailSenderRepo = repo
 	return s
 }
 

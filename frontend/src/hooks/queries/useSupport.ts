@@ -31,6 +31,9 @@ import type {
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
   CreateSupportEmailRouteRequest,
+  CreateSupportEmailSenderRequest,
+  SetSupportEmailSenderDefaultRequest,
+  SupportEmailSender,
   CreateSupportEmailSenderDomainRequest,
   SupportEmailSenderDomain,
   SupportTriageRule,
@@ -204,6 +207,15 @@ export function useSupportEmailRoutes(workspaceId: string) {
   });
 }
 
+export function useSupportEmailSenders(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.emailSenders(workspaceId),
+    queryFn: async (): Promise<SupportEmailSender[]> => unwrap(await supportService.listEmailSenders(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 15_000,
+  });
+}
+
 export function useSupportEmailSenderDomains(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.support.emailSenderDomains(workspaceId),
@@ -276,6 +288,62 @@ export function useCreateSupportEmailRoute(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to enable email forwarding', { description: error.message });
+    },
+  });
+}
+
+export function useCreateSupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportEmailSenderRequest) =>
+      supportService.createEmailSender(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to add sender address', { description: error.message });
+    },
+  });
+}
+
+export function useVerifySupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (senderId: string) =>
+      supportService.verifyEmailSender(workspaceId, senderId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to verify sender address', { description: error.message });
+    },
+  });
+}
+
+export function useSetDefaultSupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ senderId, payload }: { senderId: string; payload: SetSupportEmailSenderDefaultRequest }) =>
+      supportService.setDefaultEmailSender(workspaceId, senderId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update sender default', { description: error.message });
+    },
+  });
+}
+
+export function useDisableSupportEmailSender(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (senderId: string) =>
+      supportService.disableEmailSender(workspaceId, senderId).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.emailSenders(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to disable sender address', { description: error.message });
     },
   });
 }
