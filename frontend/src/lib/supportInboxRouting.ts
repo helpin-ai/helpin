@@ -1,4 +1,6 @@
 import type { NavFilter } from '@/stores/supportInboxStore';
+import { defaultStatesForNav, statesEqual } from '@/lib/supportInboxFilters';
+import type { ConversationListFilters } from '@/lib/supportInboxFilters';
 
 export type SupportInboxRouteSearch = {
   view?: string;
@@ -6,25 +8,35 @@ export type SupportInboxRouteSearch = {
   status?: string;
   q?: string;
   conversation?: string;
+  custom_view?: string;
+  assigned_to?: string;
+  ai?: string;
+  sort?: string;
+  states?: string;
 };
 
 const VIEW_BY_FILTER: Record<NavFilter, string> = {
-  all: 'all',
-  my_inbox: 'assigned',
-  unassigned: 'unassigned',
-  mentions: 'mentions',
+  inbox: 'inbox',
+  mine: 'mine',
+  waiting: 'waiting',
+  resolved: 'resolved',
+  spam: 'spam',
   ai_active: 'ai-handling',
   resolved_by_ai: 'ai-resolved',
 };
 
 const FILTER_BY_VIEW: Record<string, NavFilter> = {
-  all: 'all',
-  assigned: 'my_inbox',
-  mine: 'my_inbox',
-  my: 'my_inbox',
-  my_inbox: 'my_inbox',
-  unassigned: 'unassigned',
-  mentions: 'mentions',
+  all: 'inbox',
+  inbox: 'inbox',
+  assigned: 'mine',
+  mine: 'mine',
+  my: 'mine',
+  my_inbox: 'mine',
+  unassigned: 'inbox',
+  mentions: 'mine',
+  waiting: 'waiting',
+  resolved: 'resolved',
+  spam: 'spam',
   ai: 'ai_active',
   'ai-active': 'ai_active',
   'ai-handling': 'ai_active',
@@ -40,12 +52,17 @@ export function normalizeSupportInboxRouteSearch(search: Record<string, unknown>
     status: typeof search.status === 'string' ? search.status : undefined,
     q: typeof search.q === 'string' ? search.q : undefined,
     conversation: typeof search.conversation === 'string' ? search.conversation : undefined,
+    custom_view: typeof search.custom_view === 'string' ? search.custom_view : undefined,
+    assigned_to: typeof search.assigned_to === 'string' ? search.assigned_to : undefined,
+    ai: typeof search.ai === 'string' ? search.ai : undefined,
+    sort: typeof search.sort === 'string' ? search.sort : undefined,
+    states: typeof search.states === 'string' ? search.states : undefined,
   };
 }
 
 export function navFilterFromView(view?: string): NavFilter {
-  if (!view) return 'all';
-  return FILTER_BY_VIEW[view.toLowerCase()] ?? 'all';
+  if (!view) return 'inbox';
+  return FILTER_BY_VIEW[view.toLowerCase()] ?? 'inbox';
 }
 
 export function viewFromNavFilter(filter: NavFilter): string {
@@ -57,14 +74,18 @@ export function buildSupportInboxSearch({
   selectedMailboxId,
   statusFilter,
   searchQuery,
+  activeCustomViewId,
+  listFilters,
 }: {
   navFilter: NavFilter;
   selectedMailboxId: string;
   statusFilter: string;
   searchQuery: string;
+  activeCustomViewId?: string | null;
+  listFilters?: ConversationListFilters;
 }): SupportInboxRouteSearch {
   const search: SupportInboxRouteSearch = {};
-  if (navFilter !== 'all') {
+  if (navFilter !== 'inbox' || (selectedMailboxId && selectedMailboxId !== 'all')) {
     search.view = viewFromNavFilter(navFilter);
   }
   if (selectedMailboxId && selectedMailboxId !== 'all') {
@@ -75,6 +96,21 @@ export function buildSupportInboxSearch({
   }
   if (searchQuery.trim()) {
     search.q = searchQuery.trim();
+  }
+  if (activeCustomViewId) {
+    search.custom_view = activeCustomViewId;
+  }
+  if (listFilters?.assignment && listFilters.assignment !== 'default') {
+    search.assigned_to = listFilters.assignment;
+  }
+  if (listFilters?.ai && listFilters.ai !== 'default') {
+    search.ai = listFilters.ai;
+  }
+  if (listFilters?.sort && listFilters.sort !== 'newest') {
+    search.sort = listFilters.sort;
+  }
+  if (listFilters?.states && !statesEqual(listFilters.states, defaultStatesForNav(navFilter))) {
+    search.states = listFilters.states.join(',');
   }
   return search;
 }

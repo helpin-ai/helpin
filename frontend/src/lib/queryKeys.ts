@@ -144,6 +144,7 @@ export const queryKeys = {
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
     unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
     inboxScopes: (wsId: string) => ['support', wsId, 'inbox-scopes'] as const,
+    inboxViews: (wsId: string) => ['support', wsId, 'inbox-views'] as const,
     workspaceUnread: () => ['support', 'workspace-unread'] as const,
     mailboxes: (wsId: string) => ['support', wsId, 'mailboxes'] as const,
     mailboxMembers: (wsId: string, mailboxId: string) => ['support', wsId, 'mailboxes', mailboxId, 'members'] as const,

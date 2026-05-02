@@ -24,6 +24,18 @@ func NewSupportInboxHandler(supportService *service.SupportInboxService, agentSe
 	return &SupportInboxHandler{supportService: supportService, agentService: agentService, messageActionsService: messageActionsService}
 }
 
+func splitQueryCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
 // ListConversations handles GET /api/support/tickets.
 func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -34,21 +46,14 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 	userID := middleware.GetUserID(r.Context())
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
 
-	// Mentions filter: return conversations where the user was @mentioned.
-	if r.URL.Query().Get("filter") == "mentions" {
-		resp, err := h.supportService.ListConversationsWithMentions(r.Context(), workspaceID, userID, search)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, resp)
-		return
-	}
-
 	status := r.URL.Query().Get("status")
+	statuses := splitQueryCSV(r.URL.Query().Get("statuses"))
 	priority := r.URL.Query().Get("priority")
 	aiState := r.URL.Query().Get("ai_state")
 	flowState := r.URL.Query().Get("flow_state")
+	filter := strings.TrimSpace(r.URL.Query().Get("filter"))
+	assignedTo := strings.TrimSpace(r.URL.Query().Get("assigned_to"))
+	sortOrder := strings.TrimSpace(r.URL.Query().Get("sort"))
 	var mailboxID *string
 	if values, ok := r.URL.Query()["mailbox_id"]; ok {
 		mailboxParam := strings.TrimSpace(values[0])
@@ -61,7 +66,21 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 	}
 	pagination := queryPagination(r)
 
-	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), workspaceID, userID, status, priority, pagination, mailboxID, flowState, search, aiState)
+	resp, err := h.supportService.ListConversationsWithMeta(r.Context(), service.SupportConversationListParams{
+		WorkspaceID: workspaceID,
+		UserID:      userID,
+		Status:      status,
+		Statuses:    statuses,
+		Priority:    priority,
+		Pagination:  pagination,
+		MailboxID:   mailboxID,
+		FlowState:   flowState,
+		Search:      search,
+		Filter:      filter,
+		AssignedTo:  assignedTo,
+		Sort:        sortOrder,
+		AIState:     []string{aiState},
+	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

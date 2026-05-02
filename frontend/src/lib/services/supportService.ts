@@ -22,6 +22,9 @@ import type {
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportInboxScopeListResponse,
+  SupportInboxView,
+  CreateSupportInboxViewRequest,
+  UpdateSupportInboxViewRequest,
   SupportWorkspaceUnreadCount,
   SupportMailbox,
   CreateSupportMailboxRequest,
@@ -48,30 +51,44 @@ export const supportService = {
     workspaceId: string,
     filters?: {
       status?: string;
+      statuses?: string;
       priority?: string;
       filter?: string;
       mailbox_id?: string | null;
       ai_state?: string;
       flow_state?: string;
       search?: string;
+      assigned_to?: string;
+      sort?: string;
       page?: number;
       per_page?: number;
     },
   ) => {
     let path = `/support/inbox/conversations${qs(workspaceId)}`;
     if (filters?.status) path += `&status=${encodeURIComponent(filters.status)}`;
+    if (filters?.statuses) path += `&statuses=${encodeURIComponent(filters.statuses)}`;
     if (filters?.priority) path += `&priority=${encodeURIComponent(filters.priority)}`;
     if (filters?.filter) path += `&filter=${encodeURIComponent(filters.filter)}`;
     if (filters?.mailbox_id && filters.mailbox_id !== 'all') path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
     if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`;
     if (filters?.flow_state) path += `&flow_state=${encodeURIComponent(filters.flow_state)}`;
     if (filters?.search?.trim()) path += `&search=${encodeURIComponent(filters.search.trim())}`;
+    if (filters?.assigned_to) path += `&assigned_to=${encodeURIComponent(filters.assigned_to)}`;
+    if (filters?.sort) path += `&sort=${encodeURIComponent(filters.sort)}`;
     if (filters?.page) path += `&page=${encodeURIComponent(String(filters.page))}`;
     if (filters?.per_page) path += `&per_page=${encodeURIComponent(String(filters.per_page))}`;
     return api.get<ConversationListResponse>(path);
   },
   listInboxScopes: (workspaceId: string) =>
     api.get<SupportInboxScopeListResponse>(`/support/inbox/mailboxes/scopes${qs(workspaceId)}`),
+  listInboxViews: (workspaceId: string) =>
+    api.get<SupportInboxView[]>(`/support/inbox/views${qs(workspaceId)}`),
+  createInboxView: (workspaceId: string, payload: CreateSupportInboxViewRequest) =>
+    api.post<SupportInboxView>(`/support/inbox/views${qs(workspaceId)}`, payload),
+  updateInboxView: (workspaceId: string, viewId: string, payload: UpdateSupportInboxViewRequest) =>
+    api.put<SupportInboxView>(`/support/inbox/views/${viewId}${qs(workspaceId)}`, payload),
+  deleteInboxView: (workspaceId: string, viewId: string) =>
+    api.del(`/support/inbox/views/${viewId}${qs(workspaceId)}`),
   listWorkspaceUnread: () =>
     api.get<SupportWorkspaceUnreadCount[]>(`/support/workspace-unread`),
   listMailboxes: (workspaceId: string) =>

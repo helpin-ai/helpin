@@ -68,10 +68,13 @@ export interface SupportConversation {
 }
 
 export interface UnreadStats {
-  total: number;
-  my_inbox: number;
-  unassigned: number;
+  inbox: number;
+  mine: number;
+  waiting: number;
   ai_active: number;
+  total?: number;
+  my_inbox?: number;
+  unassigned?: number;
 }
 
 export interface SupportInboxScope {
@@ -84,6 +87,31 @@ export interface SupportInboxScope {
   unread_count: number;
   active: boolean;
   linked_team_id?: string | null;
+}
+
+export type SupportInboxViewFilters = Record<string, string>;
+
+export interface SupportInboxView {
+  id: string;
+  workspace_id: string;
+  name: string;
+  filters: SupportInboxViewFilters;
+  is_shared: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportInboxViewRequest {
+  name: string;
+  filters: SupportInboxViewFilters;
+  is_shared: boolean;
+}
+
+export interface UpdateSupportInboxViewRequest {
+  name?: string;
+  filters?: SupportInboxViewFilters;
+  is_shared?: boolean;
 }
 
 export interface SupportInboxScopeListResponse {

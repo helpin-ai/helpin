@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useParams } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { ConversationList } from './ConversationList';
@@ -12,6 +13,18 @@ import { ConversationDetailSidebar } from './ConversationDetailSidebar';
 import { CreateConversationDialog } from './CreateConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
+import { defaultStatesForNav, statesEqual, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+
+function parseRouteStates(value: string | undefined, navFilter: ReturnType<typeof navFilterFromView>): ConversationStateFilter[] {
+  if (!value) return defaultStatesForNav(navFilter);
+  const states = value.split(',').filter((state): state is ConversationStateFilter =>
+    state === 'open' ||
+    state === 'waiting_on_customer' ||
+    state === 'resolved' ||
+    state === 'spam'
+  );
+  return states.length > 0 ? states : defaultStatesForNav(navFilter);
+}
 
 export function SupportInboxLayout() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
@@ -22,14 +35,13 @@ export function SupportInboxLayout() {
     navFilter,
     statusFilter,
     searchQuery,
+    conversationListFilters,
+    activeCustomViewId,
     selectedMailboxId,
     selectedConversationId,
     activePanel,
     setActivePanel,
-    setNavFilter,
-    setSelectedMailboxId,
-    setStatusFilter,
-    setSearchQuery,
+    syncRouteState,
     selectConversation,
     createDialogOpen,
     setCreateDialogOpen,
@@ -38,6 +50,8 @@ export function SupportInboxLayout() {
     editMailboxId,
   } = useSupportInboxStore();
   const { data: mailboxes = [] } = useSupportMailboxes(workspaceId);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { isAdmin } = usePermissions(access);
   const editMailbox = editMailboxId ? mailboxes.find((m) => m.id === editMailboxId) ?? null : null;
   const [showInboxOnboarding, setShowInboxOnboarding] = useState(false);
   const navigate = useNavigate();
@@ -55,8 +69,10 @@ export function SupportInboxLayout() {
       selectedMailboxId,
       statusFilter,
       searchQuery,
+      activeCustomViewId,
+      listFilters: conversationListFilters,
     }),
-    [navFilter, searchQuery, selectedMailboxId, statusFilter],
+    [activeCustomViewId, conversationListFilters, navFilter, searchQuery, selectedMailboxId, statusFilter],
   );
 
   // Sync URL params → store on mount / URL change.
@@ -64,11 +80,24 @@ export function SupportInboxLayout() {
     const routeSearch = normalizeSupportInboxRouteSearch(location.search as Record<string, unknown>);
     const nextNavFilter = navFilterFromView(routeSearch.view);
     const nextMailboxId = routeSearch.inbox || 'all';
-    const defaultStatusFilter = nextNavFilter === 'my_inbox' || nextNavFilter === 'unassigned' || nextNavFilter === 'mentions'
-      ? 'open'
-      : 'all';
-    const nextStatusFilter = routeSearch.status || defaultStatusFilter;
+    let effectiveNavFilter = nextNavFilter;
+    if (!routeSearch.view) {
+      if (routeSearch.status === 'waiting_on_customer') effectiveNavFilter = 'waiting';
+      if (routeSearch.status === 'resolved') effectiveNavFilter = 'resolved';
+      if (routeSearch.status === 'spam') effectiveNavFilter = 'spam';
+    }
+    const nextStatusFilter = routeSearch.status || 'all';
     const nextSearchQuery = routeSearch.q || '';
+    const nextConversationListFilters = {
+      states: parseRouteStates(routeSearch.states, effectiveNavFilter),
+      assignment: routeSearch.assigned_to === 'me' || routeSearch.assigned_to === 'unassigned' || routeSearch.assigned_to === 'others'
+        ? routeSearch.assigned_to
+        : 'default',
+      ai: routeSearch.ai === 'ai_handling' || routeSearch.ai === 'needs_human' || routeSearch.ai === 'resolved_by_ai'
+        ? routeSearch.ai
+        : 'default',
+      sort: routeSearch.sort === 'oldest' ? 'oldest' : 'newest',
+    } as const;
 
     if (routeConversationId === 'inbox') {
       if (routeSearch.conversation) {
@@ -76,10 +105,12 @@ export function SupportInboxLayout() {
           to: '/w/$slug/support/$conversationId',
           params: { slug, conversationId: routeSearch.conversation },
           search: buildSupportInboxSearch({
-            navFilter: nextNavFilter,
+            navFilter: effectiveNavFilter,
             selectedMailboxId: nextMailboxId,
             statusFilter: nextStatusFilter,
             searchQuery: nextSearchQuery,
+            activeCustomViewId: routeSearch.custom_view,
+            listFilters: nextConversationListFilters,
           }),
           replace: true,
         });
@@ -88,10 +119,12 @@ export function SupportInboxLayout() {
           to: '/w/$slug/support',
           params: { slug },
           search: buildSupportInboxSearch({
-            navFilter: nextNavFilter,
+            navFilter: effectiveNavFilter,
             selectedMailboxId: nextMailboxId,
             statusFilter: nextStatusFilter,
             searchQuery: nextSearchQuery,
+            activeCustomViewId: routeSearch.custom_view,
+            listFilters: nextConversationListFilters,
           }),
           replace: true,
         });
@@ -100,17 +133,25 @@ export function SupportInboxLayout() {
     }
 
     const currentState = useSupportInboxStore.getState();
-    if (nextNavFilter !== currentState.navFilter) {
-      setNavFilter(nextNavFilter);
-    }
-    if (nextMailboxId !== useSupportInboxStore.getState().selectedMailboxId) {
-      setSelectedMailboxId(nextMailboxId);
-    }
-    if (nextStatusFilter !== useSupportInboxStore.getState().statusFilter) {
-      setStatusFilter(nextStatusFilter);
-    }
-    if (nextSearchQuery !== useSupportInboxStore.getState().searchQuery) {
-      setSearchQuery(nextSearchQuery);
+    if (
+      effectiveNavFilter !== currentState.navFilter ||
+      nextMailboxId !== currentState.selectedMailboxId ||
+      nextStatusFilter !== currentState.statusFilter ||
+      nextSearchQuery !== currentState.searchQuery ||
+      (routeSearch.custom_view ?? null) !== currentState.activeCustomViewId ||
+      !statesEqual(nextConversationListFilters.states, currentState.conversationListFilters.states) ||
+      nextConversationListFilters.assignment !== currentState.conversationListFilters.assignment ||
+      nextConversationListFilters.ai !== currentState.conversationListFilters.ai ||
+      nextConversationListFilters.sort !== currentState.conversationListFilters.sort
+    ) {
+      syncRouteState({
+        navFilter: effectiveNavFilter,
+        selectedMailboxId: nextMailboxId,
+        statusFilter: nextStatusFilter,
+        searchQuery: nextSearchQuery,
+        activeCustomViewId: routeSearch.custom_view,
+        conversationListFilters: nextConversationListFilters,
+      });
     }
 
     const nextConversationId = routeConversationId;
@@ -121,10 +162,7 @@ export function SupportInboxLayout() {
     location.search,
     navigate,
     selectConversation,
-    setNavFilter,
-    setSearchQuery,
-    setSelectedMailboxId,
-    setStatusFilter,
+    syncRouteState,
     slug,
     routeConversationId,
   ]);
@@ -193,6 +231,7 @@ export function SupportInboxLayout() {
             onOnboardingEmptyChange={setShowInboxOnboarding}
             onWidgetSettingsClick={handleWidgetSettingsClick}
             onCreateConversationClick={() => setCreateDialogOpen(true)}
+            canCreateSharedViews={isAdmin}
           />
         </div>
 

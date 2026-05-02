@@ -184,6 +184,7 @@ func main() {
 			&model.PMChecklistItem{},
 			&model.PMExternalLink{},
 			&model.PMView{},
+			&model.SupportInboxView{},
 			&model.PMAutomation{},
 			&model.AutomationRule{},
 			&model.WorkspaceInvitation{},
@@ -550,6 +551,7 @@ func main() {
 	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	supportConversationRepo := repository.NewSupportConversationRepository(db)
+	supportInboxViewRepo := repository.NewSupportInboxViewRepository(db)
 	supportConversationTriageRepo := repository.NewSupportConversationTriageRepository(db)
 	supportConversationTriageEventRepo := repository.NewSupportConversationTriageEventRepository(db)
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
@@ -653,6 +655,7 @@ func main() {
 	searchService := service.NewSearchService(searchRepo, workspaceRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
+	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, wsPublisher)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
 	emailFallbackService := service.NewEmailFallbackService(
@@ -1159,6 +1162,7 @@ func main() {
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
 		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
+		SupportInboxView:    handler.NewSupportInboxViewHandler(supportInboxViewService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
 		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),

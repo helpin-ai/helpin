@@ -30,6 +30,9 @@ import type {
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
+  SupportInboxView,
+  CreateSupportInboxViewRequest,
+  UpdateSupportInboxViewRequest,
   CreateSupportEmailRouteRequest,
   SupportTriageRule,
   CreateSupportTriageRuleRequest,
@@ -44,12 +47,15 @@ const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
 
 type SupportConversationFilters = {
   status?: string;
+  statuses?: string;
   priority?: string;
   filter?: string;
   mailbox_id?: string | null;
   ai_state?: string;
   flow_state?: string;
   search?: string;
+  assigned_to?: string;
+  sort?: string;
 };
 
 async function loadConversationListPage(
@@ -69,7 +75,17 @@ async function loadConversationListPage(
     page: filters?.page ?? 1,
     per_page: filters?.per_page ?? SUPPORT_CONVERSATIONS_PER_PAGE,
     total_pages: 1,
-    meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_active: 0 } },
+    meta: {
+      unread: {
+        inbox: 0,
+        mine: 0,
+        waiting: 0,
+        ai_active: 0,
+        total: 0,
+        my_inbox: 0,
+        unassigned: 0,
+      },
+    },
   } satisfies ConversationListResponse;
 }
 
@@ -158,6 +174,47 @@ export function useInboxScopes(workspaceId: string, enabled = true) {
     queryFn: async () => unwrap(await supportService.listInboxScopes(workspaceId)),
     enabled: !!workspaceId && enabled,
     staleTime: 15_000,
+  });
+}
+
+export function useSupportInboxViews(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.inboxViews(workspaceId),
+    queryFn: async (): Promise<SupportInboxView[]> => unwrap(await supportService.listInboxViews(workspaceId)),
+    enabled: !!workspaceId && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateSupportInboxView(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportInboxViewRequest) =>
+      supportService.createInboxView(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+    },
+  });
+}
+
+export function useUpdateSupportInboxView(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: UpdateSupportInboxViewRequest & { id: string }) =>
+      supportService.updateInboxView(workspaceId, id, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+    },
+  });
+}
+
+export function useDeleteSupportInboxView(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => supportService.deleteInboxView(workspaceId, id).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+    },
   });
 }
 

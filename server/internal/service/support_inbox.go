@@ -710,20 +710,51 @@ func (s *SupportInboxService) ListConversations(ctx context.Context, workspaceID
 	}
 	status = model.NormalizeSupportConversationStatus(status)
 	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
-	return s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, nil, "", search)
+	return s.conversationRepo.List(ctx, repository.ConversationRepositoryListParams{
+		ConversationListParams: repository.ConversationListParams{
+			WorkspaceID: workspaceID,
+			Status:      status,
+			Priority:    priority,
+			Pagination:  pagination,
+			Search:      search,
+		},
+		WorkspaceMemberID: workspaceMemberID,
+		Role:              role,
+	})
+}
+
+type SupportConversationListParams = repository.ConversationListParams
+
+func normalizeSupportConversationStatuses(statuses []string) []string {
+	normalized := make([]string, 0, len(statuses))
+	seen := make(map[string]bool, len(statuses))
+	for _, status := range statuses {
+		value := model.NormalizeSupportConversationStatus(status)
+		if value == "" || !model.IsValidSupportConversationStatus(value) || seen[value] {
+			continue
+		}
+		normalized = append(normalized, value)
+		seen[value] = true
+	}
+	return normalized
 }
 
 // ListConversationsWithMeta returns conversations plus aggregate unread stats.
-func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, workspaceID, userID, status, priority string, pagination model.PMPagination, mailboxID *string, flowState, search string, aiState ...string) (*model.ConversationListResponse, error) {
-	if workspaceID == "" {
+func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, params SupportConversationListParams) (*model.ConversationListResponse, error) {
+	if params.WorkspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")
 	}
-	status = model.NormalizeSupportConversationStatus(status)
-	if err := s.requireMailboxAccess(ctx, workspaceID, mailboxID); err != nil {
+	params.Status = model.NormalizeSupportConversationStatus(params.Status)
+	params.Statuses = normalizeSupportConversationStatuses(params.Statuses)
+	if err := s.requireMailboxAccess(ctx, params.WorkspaceID, params.MailboxID); err != nil {
 		return nil, err
 	}
-	workspaceMemberID, role := s.actorMailboxScope(ctx, workspaceID)
-	conversations, total, err := s.conversationRepo.List(ctx, workspaceID, status, priority, pagination, workspaceMemberID, role, mailboxID, flowState, search, aiState...)
+	workspaceMemberID, role := s.actorMailboxScope(ctx, params.WorkspaceID)
+	conversations, total, err := s.conversationRepo.List(ctx, repository.ConversationRepositoryListParams{
+		ConversationListParams: params,
+		WorkspaceMemberID:      workspaceMemberID,
+		Role:                   role,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -732,21 +763,21 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, wor
 	}
 	if s.triageService != nil {
 		if err := s.triageService.HydrateConversations(ctx, conversations); err != nil {
-			slog.ErrorContext(ctx, "hydrate support conversation triage list", "error", err, "workspace_id", workspaceID)
+			slog.ErrorContext(ctx, "hydrate support conversation triage list", "error", err, "workspace_id", params.WorkspaceID)
 		}
 	}
 
-	stats, err := s.conversationRepo.GetUnreadStats(ctx, workspaceID, userID, workspaceMemberID, role, mailboxID)
+	stats, err := s.conversationRepo.GetUnreadStats(ctx, params.WorkspaceID, params.UserID, workspaceMemberID, role, params.MailboxID)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to get unread stats", "error", err, "workspace_id", workspaceID)
+		slog.ErrorContext(ctx, "failed to get unread stats", "error", err, "workspace_id", params.WorkspaceID)
 		// Non-fatal: return conversations with zero stats
 	}
 
-	perPage := pagination.PerPage
+	perPage := params.Pagination.PerPage
 	if perPage <= 0 {
 		perPage = 50
 	}
-	page := pagination.Page
+	page := params.Pagination.Page
 	if page <= 0 {
 		page = 1
 	}

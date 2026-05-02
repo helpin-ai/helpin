@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon } from '@/lib/icons';
+import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -13,12 +13,14 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { supportAiItems, supportFilterItems } from './config';
+import type { SupportInboxView, UnreadStats } from '@/lib/pmTypes';
 
 type SupportNavFilter =
-  | 'my_inbox'
-  | 'unassigned'
-  | 'mentions'
-  | 'all'
+  | 'inbox'
+  | 'mine'
+  | 'waiting'
+  | 'resolved'
+  | 'spam'
   | 'ai_active'
   | 'resolved_by_ai';
 
@@ -33,19 +35,20 @@ type InboxScopes = {
 
 type SupportRailNavProps = {
   navFilter: SupportNavFilter;
-  unreadStats?: {
-    my_inbox?: number;
-    unassigned?: number;
-    total?: number;
-    ai_active?: number;
-  } | null;
+  unreadStats?: UnreadStats | null;
   inboxScopes?: InboxScopes | null;
   selectedMailboxId: string;
+  activeCustomViewId?: string | null;
+  currentUserId?: string;
+  customViews?: SupportInboxView[];
   canManageSettings: boolean;
   wsSlug: string;
   pathname: string;
   onNavFilterChange: (value: SupportNavFilter) => void;
   onMailboxSelect: (mailboxId: string) => void;
+  onCustomViewSelect: (view: SupportInboxView) => void;
+  onEditCustomView: (view: SupportInboxView) => void;
+  onDeleteCustomView: (view: SupportInboxView) => void;
   onCreateMailbox: () => void;
   onEditMailbox: (mailboxId: string) => void;
   onArchiveMailbox: (mailboxId: string) => void;
@@ -57,11 +60,17 @@ export function SupportRailNav({
   unreadStats,
   inboxScopes,
   selectedMailboxId,
+  activeCustomViewId,
+  currentUserId,
+  customViews = [],
   canManageSettings,
   wsSlug,
   pathname,
   onNavFilterChange,
   onMailboxSelect,
+  onCustomViewSelect,
+  onEditCustomView,
+  onDeleteCustomView,
   onCreateMailbox,
   onEditMailbox,
   onArchiveMailbox,
@@ -81,12 +90,12 @@ export function SupportRailNav({
         <SidebarMenu>
           {supportFilterItems.map((item) => {
             const badge =
-              item.key === 'my_inbox'
-                ? unreadStats?.my_inbox
-                : item.key === 'unassigned'
-                  ? unreadStats?.unassigned
-                  : item.key === 'all'
-                    ? unreadStats?.total
+              item.key === 'inbox'
+                ? unreadStats?.inbox
+                : item.key === 'mine'
+                  ? unreadStats?.mine
+                  : item.key === 'waiting'
+                    ? unreadStats?.waiting
                     : undefined;
 
             return (
@@ -109,6 +118,74 @@ export function SupportRailNav({
           })}
         </SidebarMenu>
       </SidebarGroup>
+
+      {customViews.length > 0 && (
+        <SidebarGroup className="p-0 pb-3">
+          <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+            Custom views
+          </SidebarGroupLabel>
+          <SidebarMenu>
+            {customViews.map((view) => {
+              const isActive = activeCustomViewId === view.id;
+              const isMenuOpen = openMenuId === view.id;
+              const canModifyView = view.created_by === currentUserId || (view.is_shared && canManageSettings);
+
+              return (
+                <SidebarMenuItem key={view.id} className="group/custom-view">
+                  <SidebarMenuButton
+                    isActive={isActive}
+                    className="h-8 rounded-md px-2 text-sm"
+                    onClick={() => onCustomViewSelect(view)}
+                  >
+                    <FileSearchIcon className="h-4 w-4" />
+                    <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                    <span className="ml-auto relative flex h-5 min-w-5 items-center justify-center">
+                      {view.is_shared && (
+                        <UserGroupIcon
+                          className={`h-3.5 w-3.5 text-muted-foreground transition-opacity ${
+                            canModifyView && !isMenuOpen ? 'group-hover/custom-view:opacity-0' : ''
+                          } ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`}
+                        />
+                      )}
+                      {canModifyView && (
+                        <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? view.id : null)}>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <span
+                              role="button"
+                              className={`absolute inset-0 inline-flex items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground ${
+                                isMenuOpen
+                                  ? 'opacity-100'
+                                  : view.is_shared
+                                    ? 'opacity-0 group-hover/custom-view:opacity-100'
+                                    : 'opacity-0 group-hover/custom-view:opacity-100'
+                              }`}
+                            >
+                              <MoreVerticalIcon className="h-3.5 w-3.5" />
+                            </span>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent side="right" align="start" className="w-36">
+                            <DropdownMenuItem onClick={() => onEditCustomView(view)}>
+                              <PencilEdit01Icon className="mr-2 h-3.5 w-3.5" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => onDeleteCustomView(view)}
+                            >
+                              <Delete01Icon className="mr-2 h-3.5 w-3.5" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
+          </SidebarMenu>
+        </SidebarGroup>
+      )}
 
       <SidebarGroup className="p-0 pb-3">
         <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">

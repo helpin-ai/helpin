@@ -80,6 +80,13 @@ const (
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
 )
 
+const (
+	SupportConversationListFilterInbox    = "inbox"
+	SupportConversationListFilterMine     = "mine"
+	SupportConversationListFilterMentions = "mentions"
+	SupportConversationListFilterResolved = "resolved"
+)
+
 func NormalizeSupportConversationStatus(status string) string {
 	switch strings.TrimSpace(strings.ToLower(status)) {
 	case "in_progress":
@@ -147,10 +154,13 @@ type UpdateSupportTeammatePresenceRequest struct {
 
 // UnreadStats holds aggregate unread conversation counts for sidebar badges.
 type UnreadStats struct {
+	Inbox      int `json:"inbox"`
+	Mine       int `json:"mine"`
+	Waiting    int `json:"waiting"`
+	AIActive   int `json:"ai_active"`
 	Total      int `json:"total"`
 	MyInbox    int `json:"my_inbox"`
 	Unassigned int `json:"unassigned"`
-	AIActive   int `json:"ai_active"`
 }
 
 type SupportInboxScope struct {

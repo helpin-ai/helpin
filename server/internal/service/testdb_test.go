@@ -663,6 +663,16 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_inbox_views (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			filters TEXT NOT NULL DEFAULT '{}',
+			is_shared BOOLEAN NOT NULL DEFAULT 0,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE support_conversations (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,

@@ -504,6 +504,24 @@ func conversationHumanQueueCondition(alias string) string {
 	)
 }
 
+func conversationHumanInboxCondition(alias string) string {
+	return fmt.Sprintf("(%s.status = '%s' AND (%s OR %s.ai_state = 'escalated' OR %s.customer_requested_human_at IS NOT NULL))",
+		alias,
+		model.SupportConversationStatusOpen,
+		conversationHumanQueueCondition(alias),
+		alias,
+		alias,
+	)
+}
+
+func conversationHumanResolvedCondition(alias string) string {
+	return fmt.Sprintf("(%s.status = '%s' AND NOT (%s))",
+		alias,
+		model.SupportConversationStatusResolved,
+		conversationResolvedByAICondition(alias),
+	)
+}
+
 func applyConversationFlowState(query *gorm.DB, alias, flowState string) *gorm.DB {
 	trimmed := strings.TrimSpace(flowState)
 	if trimmed == "" {
@@ -524,36 +542,154 @@ func applyConversationFlowState(query *gorm.DB, alias, flowState string) *gorm.D
 	}
 }
 
-// List returns conversations with optional filters and pagination.
-func (r *SupportConversationRepository) List(ctx context.Context, workspaceID string, status string, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, flowState, search string, aiState ...string) ([]model.SupportConversation, int64, error) {
-	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ?", workspaceID)
-	base = r.applyMailboxAccess(base, workspaceMemberID, role)
-	base = r.applyMailboxScope(base, mailboxID)
-	base = applyConversationFlowState(base, "support_conversations", flowState)
-	base = r.applyConversationSearch(base, strings.TrimSpace(search))
+// ConversationListParams contains user-facing list filters before mailbox access is resolved.
+type ConversationListParams struct {
+	WorkspaceID string
+	UserID      string
+	Status      string
+	Statuses    []string
+	Priority    string
+	Pagination  model.PMPagination
+	MailboxID   *string
+	FlowState   string
+	Search      string
+	Filter      string
+	AssignedTo  string
+	Sort        string
+	AIState     []string
+}
 
-	if status != "" {
-		base = base.Where("status = ?", status)
+// ConversationRepositoryListParams adds resolved actor access data for repository queries.
+type ConversationRepositoryListParams struct {
+	ConversationListParams
+	WorkspaceMemberID string
+	Role              string
+}
+
+func (r *SupportConversationRepository) mentionExistsCondition(alias string, userID string) (string, []any) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return "1 = 0", nil
 	}
-	if priority != "" {
-		base = base.Where("priority = ?", priority)
+	if r.db.Dialector.Name() == "sqlite" {
+		return fmt.Sprintf(`EXISTS (
+			SELECT 1
+			FROM support_messages sm_mention
+			WHERE sm_mention.conversation_id = %s.id
+			  AND sm_mention.workspace_id = %s.workspace_id
+			  AND sm_mention.deleted_at IS NULL
+			  AND sm_mention.metadata LIKE ?
+			  AND sm_mention.metadata LIKE ?
+		)`, alias, alias), []any{"%mentioned_user_ids%", "%" + userID + "%"}
 	}
-	// AI state filter: "any" = ai_state IS NOT NULL, specific value = exact match
-	if len(aiState) > 0 && aiState[0] != "" {
-		if aiState[0] == "any" {
-			base = base.Where("ai_state IS NOT NULL")
+	filterJSON, _ := json.Marshal(map[string][]string{"mentioned_user_ids": {userID}})
+	return fmt.Sprintf(`EXISTS (
+		SELECT 1
+		FROM support_messages sm_mention
+		WHERE sm_mention.conversation_id = %s.id
+		  AND sm_mention.workspace_id = %s.workspace_id
+		  AND sm_mention.deleted_at IS NULL
+		  AND sm_mention.metadata::jsonb @> ?::jsonb
+	)`, alias, alias), []any{string(filterJSON)}
+}
+
+func (r *SupportConversationRepository) applyMineFilter(query *gorm.DB, alias, userID string) *gorm.DB {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return query.Where("1 = 0")
+	}
+	mentionCondition, mentionArgs := r.mentionExistsCondition(alias, userID)
+	args := []any{
+		model.SupportConversationStatusWaitingOnCustomer,
+		userID,
+		userID,
+	}
+	args = append(args, mentionArgs...)
+	return query.Where(fmt.Sprintf(`(%s OR %s.status = ?) AND (
+		%s.assigned_user_id = ?
+		OR %s.opened_by_user_id = ?
+		OR %s
+	)`, conversationHumanInboxCondition(alias), alias, alias, alias, mentionCondition), args...)
+}
+
+func (r *SupportConversationRepository) applyConversationListFilter(query *gorm.DB, alias, filter, userID string) *gorm.DB {
+	switch strings.TrimSpace(strings.ToLower(filter)) {
+	case model.SupportConversationListFilterInbox:
+		return query.Where(conversationHumanInboxCondition(alias))
+	case model.SupportConversationListFilterMine, model.SupportConversationListFilterMentions:
+		return r.applyMineFilter(query, alias, userID)
+	case model.SupportConversationListFilterResolved:
+		return query.Where(conversationHumanResolvedCondition(alias))
+	default:
+		return query
+	}
+}
+
+func applyConversationAssignmentFilter(query *gorm.DB, alias, assignedTo, userID string) *gorm.DB {
+	switch strings.TrimSpace(strings.ToLower(assignedTo)) {
+	case "me":
+		userID = strings.TrimSpace(userID)
+		if userID == "" {
+			return query.Where("1 = 0")
+		}
+		return query.Where(fmt.Sprintf("%s.assigned_user_id = ?", alias), userID)
+	case "unassigned":
+		return query.Where(fmt.Sprintf("%s.assigned_user_id IS NULL AND %s.assigned_agent_id IS NULL", alias, alias))
+	case "others":
+		userID = strings.TrimSpace(userID)
+		if userID == "" {
+			return query.Where(fmt.Sprintf("%s.assigned_user_id IS NOT NULL", alias))
+		}
+		return query.Where(fmt.Sprintf("%s.assigned_user_id IS NOT NULL AND %s.assigned_user_id <> ?", alias, alias), userID)
+	default:
+		return query
+	}
+}
+
+func (r *SupportConversationRepository) applyConversationListParams(query *gorm.DB, alias string, params ConversationRepositoryListParams) *gorm.DB {
+	query = r.applyMailboxAccess(query, params.WorkspaceMemberID, params.Role)
+	query = r.applyMailboxScope(query, params.MailboxID)
+	query = applyConversationFlowState(query, alias, params.FlowState)
+	query = r.applyConversationSearch(query, strings.TrimSpace(params.Search))
+	query = r.applyConversationListFilter(query, alias, params.Filter, params.UserID)
+	query = applyConversationAssignmentFilter(query, alias, params.AssignedTo, params.UserID)
+	if len(params.Statuses) > 0 {
+		query = query.Where(fmt.Sprintf("%s.status IN ?", alias), params.Statuses)
+	} else if params.Status != "" {
+		query = query.Where(fmt.Sprintf("%s.status = ?", alias), params.Status)
+	}
+	if params.Priority != "" {
+		query = query.Where(fmt.Sprintf("%s.priority = ?", alias), params.Priority)
+	}
+	if len(params.AIState) > 0 && params.AIState[0] != "" {
+		if params.AIState[0] == "any" {
+			query = query.Where(fmt.Sprintf("%s.ai_state IS NOT NULL", alias))
 		} else {
-			base = base.Where("ai_state = ?", aiState[0])
+			query = query.Where(fmt.Sprintf("%s.ai_state = ?", alias), params.AIState[0])
 		}
 	}
+	return query
+}
+
+func conversationListOrder(sortOrder string) string {
+	if strings.EqualFold(strings.TrimSpace(sortOrder), "oldest") {
+		return "support_conversations.updated_at ASC"
+	}
+	return "support_conversations.updated_at DESC"
+}
+
+// List returns conversations with optional filters and pagination.
+func (r *SupportConversationRepository) List(ctx context.Context, params ConversationRepositoryListParams) ([]model.SupportConversation, int64, error) {
+	base := r.db.WithContext(ctx).Model(&model.SupportConversation{}).Where("support_conversations.workspace_id = ?", params.WorkspaceID)
+	base = r.applyConversationListParams(base, "support_conversations", params)
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count conversations: %w", err)
 	}
 
-	page := pagination.Page
-	perPage := pagination.PerPage
+	page := params.Pagination.Page
+	perPage := params.Pagination.PerPage
 	if page <= 0 {
 		page = 1
 	}
@@ -563,24 +699,8 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 	offset := (page - 1) * perPage
 
 	// Fresh query for fetch — Count() taints the SELECT clause
-	fetch := r.db.WithContext(ctx).Table("support_conversations").Where("support_conversations.workspace_id = ?", workspaceID)
-	fetch = r.applyMailboxAccess(fetch, workspaceMemberID, role)
-	fetch = r.applyMailboxScope(fetch, mailboxID)
-	fetch = applyConversationFlowState(fetch, "support_conversations", flowState)
-	fetch = r.applyConversationSearch(fetch, strings.TrimSpace(search))
-	if status != "" {
-		fetch = fetch.Where("support_conversations.status = ?", status)
-	}
-	if priority != "" {
-		fetch = fetch.Where("support_conversations.priority = ?", priority)
-	}
-	if len(aiState) > 0 && aiState[0] != "" {
-		if aiState[0] == "any" {
-			fetch = fetch.Where("support_conversations.ai_state IS NOT NULL")
-		} else {
-			fetch = fetch.Where("support_conversations.ai_state = ?", aiState[0])
-		}
-	}
+	fetch := r.db.WithContext(ctx).Table("support_conversations").Where("support_conversations.workspace_id = ?", params.WorkspaceID)
+	fetch = r.applyConversationListParams(fetch, "support_conversations", params)
 
 	var conversations []model.SupportConversation
 	if err := fetch.
@@ -612,7 +732,7 @@ func (r *SupportConversationRepository) List(ctx context.Context, workspaceID st
 			r.latestSessionCountryExpr("country_code", "support_conversations"),
 			r.latestSessionCountryExpr("country_name", "support_conversations"),
 		)).
-		Order("support_conversations.updated_at DESC").Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
+		Order(conversationListOrder(params.Sort)).Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
 	return conversations, total, nil
@@ -933,71 +1053,67 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 // GetUnreadStats returns aggregate unread conversation counts for an accessible inbox scope.
 func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, workspaceID, userID, workspaceMemberID, role string, mailboxID *string) (model.UnreadStats, error) {
 	var stats model.UnreadStats
-	humanQueueCondition := conversationHumanQueueCondition("sc")
+	humanInboxCondition := conversationHumanInboxCondition("sc")
 	aiActiveCondition := conversationAIActiveCondition("sc")
-	baseQuery := `
+	mentionCondition, mentionArgs := r.mentionExistsCondition("sc", userID)
+	mineCondition := `(` + conversationHumanInboxCondition("sc") + ` OR sc.status = 'waiting_on_customer') AND (
+		sc.assigned_user_id = ?
+		OR sc.opened_by_user_id = ?
+		OR ` + mentionCondition + `
+	)`
+	unreadCondition := fmt.Sprintf(`(
+		SELECT COUNT(*)
+		FROM support_messages sm
+		WHERE sm.conversation_id = sc.id
+		  AND sm.deleted_at IS NULL
+		  AND sm.is_internal = false
+		  AND sm.sender_type = 'customer'
+		  AND sm.message_type = 'reply'
+		  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+	) > 0`, r.epochExpr())
+	baseQuery := fmt.Sprintf(`
 		SELECT
 			COUNT(*) FILTER (
-				WHERE (
-					SELECT COUNT(*)
-					FROM support_messages sm
-					WHERE sm.conversation_id = sc.id
-					  AND sm.deleted_at IS NULL
-					  AND sm.is_internal = false
-					  AND sm.sender_type = 'customer'
-					  AND sm.message_type = 'reply'
-					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-				) > 0
-				  AND ` + humanQueueCondition + `
+				WHERE %s
+				  AND %s
+			) AS inbox,
+			COUNT(*) FILTER (
+				WHERE %s
+				  AND %s
+			) AS mine,
+			COUNT(*) FILTER (
+				WHERE %s
+				  AND sc.status = 'waiting_on_customer'
+			) AS waiting,
+			COUNT(*) FILTER (
+				WHERE %s
+				  AND %s
+			) AS ai_active,
+			COUNT(*) FILTER (
+				WHERE %s
+				  AND %s
 			) AS total,
 			COUNT(*) FILTER (
-				WHERE (
-					SELECT COUNT(*)
-					FROM support_messages sm
-					WHERE sm.conversation_id = sc.id
-					  AND sm.deleted_at IS NULL
-					  AND sm.is_internal = false
-					  AND sm.sender_type = 'customer'
-					  AND sm.message_type = 'reply'
-					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-				) > 0
-				  AND ` + humanQueueCondition + `
-				  AND sc.assigned_user_id = ?
+				WHERE %s
+				  AND %s
 			) AS my_inbox,
 			COUNT(*) FILTER (
-				WHERE (
-					SELECT COUNT(*)
-					FROM support_messages sm
-					WHERE sm.conversation_id = sc.id
-					  AND sm.deleted_at IS NULL
-					  AND sm.is_internal = false
-					  AND sm.sender_type = 'customer'
-					  AND sm.message_type = 'reply'
-					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-				) > 0
-				  AND ` + humanQueueCondition + `
+				WHERE %s
+				  AND %s
 				  AND sc.assigned_agent_id IS NULL
 				  AND sc.assigned_user_id IS NULL
-			) AS unassigned,
-			COUNT(*) FILTER (
-				WHERE (
-					SELECT COUNT(*)
-					FROM support_messages sm
-					WHERE sm.conversation_id = sc.id
-					  AND sm.deleted_at IS NULL
-					  AND sm.is_internal = false
-					  AND sm.sender_type = 'customer'
-					  AND sm.message_type = 'reply'
-					  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
-				) > 0
-				  AND ` + aiActiveCondition + `
-			) AS ai_active
+			) AS unassigned
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ?
 		  AND sc.status NOT IN ('resolved', 'spam')
-	`
+	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition)
 
-	args := []any{userID, workspaceID}
+	args := []any{}
+	args = append(args, userID, userID)
+	args = append(args, mentionArgs...)
+	args = append(args, userID, userID)
+	args = append(args, mentionArgs...)
+	args = append(args, workspaceID)
 	if mailboxID != nil {
 		if *mailboxID == "" {
 			baseQuery += " AND sc.mailbox_id IS NULL"
@@ -1019,7 +1135,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		args = append(args, workspaceMemberID, workspaceMemberID)
 	}
 
-	err := r.db.WithContext(ctx).Raw(fmt.Sprintf(baseQuery, r.epochExpr(), r.epochExpr(), r.epochExpr(), r.epochExpr()), args...).Scan(&stats).Error
+	err := r.db.WithContext(ctx).Raw(baseQuery, args...).Scan(&stats).Error
 	if err != nil {
 		return stats, fmt.Errorf("get unread stats: %w", err)
 	}

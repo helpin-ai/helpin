@@ -1,7 +1,8 @@
-import { useMemo, useCallback, useState, memo, useEffect, type UIEvent } from 'react';
+import { useMemo, useCallback, useState, memo, useEffect, type ReactNode, type UIEvent } from 'react';
 import {
-  ArrowDown01Icon,
   Cancel01Icon,
+  CheckmarkCircle02Icon,
+  FilterHorizontalIcon,
   Message01Icon,
   PlusSignIcon,
   Search01Icon,
@@ -9,20 +10,30 @@ import {
 } from '@/lib/icons';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-} from '@/components/ui/dropdown-menu';
-import { useInfiniteConversations, useInboxScopes, useMarkConversationRead } from '@/hooks/queries/useSupport';
-import { useSupportInboxStore } from '@/stores/supportInboxStore';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
+import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useMarkConversationRead } from '@/hooks/queries/useSupport';
+import { useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
 import { EmptyState } from './EmptyState';
-import { filterSupportConversations } from '@/lib/supportInboxFilters';
-import { supportStatusOptions } from '@/components/layout/sidebar/config';
+import {
+  buildConversationListRequestFilters,
+  buildSupportInboxViewFilters,
+  defaultStatesForNav,
+  filterSupportConversations,
+  hasConversationListChanges,
+  statesEqual,
+  type ConversationAIFilter,
+  type ConversationAssignmentFilter,
+  type ConversationListFilters,
+  type ConversationSortOrder,
+  type ConversationStateFilter,
+} from '@/lib/supportInboxFilters';
 import type { SupportInboxScope } from '@/lib/pmTypes';
+import { cn } from '@/lib/utils';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -47,20 +58,25 @@ function emptyCopyForNavFilter(navFilter: string, searchQuery: string): { title:
     };
   }
   switch (navFilter) {
-    case 'my_inbox':
+    case 'mine':
       return {
-        title: 'Nothing assigned to you',
-        subtitle: 'Assigned conversations will appear here.',
+        title: 'Nothing for you',
+        subtitle: 'Assigned conversations and mentions will appear here.',
       };
-    case 'unassigned':
+    case 'waiting':
       return {
-        title: 'No unassigned conversations',
-        subtitle: 'New conversations without an owner will appear here.',
+        title: 'No waiting conversations',
+        subtitle: 'Conversations waiting on a customer will appear here.',
       };
-    case 'mentions':
+    case 'resolved':
       return {
-        title: 'No mentions',
-        subtitle: 'Teammate mentions will appear here.',
+        title: 'No resolved conversations',
+        subtitle: 'Resolved conversations will appear here.',
+      };
+    case 'spam':
+      return {
+        title: 'No spam',
+        subtitle: 'Spam conversations will appear here.',
       };
     case 'ai_active':
       return {
@@ -72,13 +88,78 @@ function emptyCopyForNavFilter(navFilter: string, searchQuery: string): { title:
         title: 'No AI resolutions yet',
         subtitle: 'Resolved AI conversations will appear here.',
       };
-    case 'all':
+    case 'inbox':
     default:
       return {
-        title: 'Inbox is empty',
-        subtitle: 'New support conversations will appear here.',
+        title: 'Inbox is clear',
+        subtitle: 'New conversations needing a teammate will appear here.',
       };
   }
+}
+
+function titleForView(navFilter: NavFilter): string {
+  switch (navFilter) {
+    case 'inbox':
+      return 'Inbox';
+    case 'mine':
+      return 'Mine';
+    case 'waiting':
+      return 'Waiting';
+    case 'resolved':
+      return 'Resolved';
+    case 'spam':
+      return 'Spam';
+    case 'ai_active':
+      return 'AI Handling';
+    case 'resolved_by_ai':
+      return 'AI Resolved';
+  }
+}
+
+function filterCount(filters: ConversationListFilters, selectedMailboxId: string, navFilter: NavFilter, searchQuery: string): number {
+  let count = 0;
+  if (selectedMailboxId !== 'all') count += 1;
+  if (searchQuery.trim()) count += 1;
+  if (!statesEqual(filters.states, defaultStatesForNav(navFilter))) count += 1;
+  if (filters.assignment !== 'default') count += 1;
+  if (filters.ai !== 'default') count += 1;
+  if (filters.sort !== 'newest') count += 1;
+  return count;
+}
+
+function FilterPill({
+  children,
+  selected,
+  onClick,
+}: {
+  children: ReactNode;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors',
+        selected
+          ? 'border-primary/20 bg-primary/10 text-primary'
+          : 'border-border bg-background text-foreground hover:bg-muted'
+      )}
+      onClick={onClick}
+    >
+      {selected && <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
+      {children}
+    </button>
+  );
+}
+
+function FilterSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] font-semibold uppercase tracking-normal text-muted-foreground">{title}</div>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
+  );
 }
 
 interface ConversationListProps {
@@ -87,6 +168,7 @@ interface ConversationListProps {
   onOnboardingEmptyChange?: (isEmpty: boolean) => void;
   onWidgetSettingsClick?: () => void;
   onCreateConversationClick?: () => void;
+  canCreateSharedViews?: boolean;
 }
 
 export function ConversationList({
@@ -95,18 +177,25 @@ export function ConversationList({
   onOnboardingEmptyChange,
   onWidgetSettingsClick,
   onCreateConversationClick,
+  canCreateSharedViews = false,
 }: ConversationListProps) {
-  const statusFilter = useSupportInboxStore((s) => s.statusFilter);
-  const setStatusFilter = useSupportInboxStore((s) => s.setStatusFilter);
   const searchQuery = useSupportInboxStore((s) => s.searchQuery);
   const setSearchQuery = useSupportInboxStore((s) => s.setSearchQuery);
   const navFilter = useSupportInboxStore((s) => s.navFilter);
   const selectedMailboxId = useSupportInboxStore((s) => s.selectedMailboxId);
+  const setMailboxFilter = useSupportInboxStore((s) => s.setMailboxFilter);
+  const conversationListFilters = useSupportInboxStore((s) => s.conversationListFilters);
+  const setConversationListFilter = useSupportInboxStore((s) => s.setConversationListFilter);
+  const resetConversationListFilters = useSupportInboxStore((s) => s.resetConversationListFilters);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState('');
+  const [saveViewShared, setSaveViewShared] = useState(false);
   const wsSend = useSupportPresenceStore((s) => s.wsSend);
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   const markConversationRead = useMarkConversationRead(workspaceId);
+  const createInboxView = useCreateSupportInboxView(workspaceId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
 
   const handleSelect = useCallback((id: string, unreadCount?: number) => {
@@ -118,18 +207,12 @@ export function ConversationList({
     }
   }, [markConversationRead, selectConversation]);
 
-  const filters = useMemo(() => {
-    const f: Record<string, string> = {};
-    if (selectedMailboxId !== 'all') {
-      f.mailbox_id = selectedMailboxId;
-    }
-    if (statusFilter !== 'all') f.status = statusFilter;
-    if (navFilter === 'mentions') f.filter = 'mentions';
-    if (navFilter === 'ai_active') f.flow_state = 'ai_handling';
-    if (navFilter === 'resolved_by_ai') f.flow_state = 'resolved_by_ai';
-    if (searchQuery.trim()) f.search = searchQuery.trim();
-    return Object.keys(f).length > 0 ? f : undefined;
-  }, [statusFilter, navFilter, searchQuery, selectedMailboxId]);
+  const filters = useMemo(() => buildConversationListRequestFilters({
+    navFilter,
+    selectedMailboxId,
+    searchQuery,
+    listFilters: conversationListFilters,
+  }), [conversationListFilters, navFilter, searchQuery, selectedMailboxId]);
   const {
     data: response,
     isLoading,
@@ -144,23 +227,40 @@ export function ConversationList({
   );
 
   const filteredConversations = useMemo(() => {
+    const hasExplicitStateFilters = !statesEqual(conversationListFilters.states, defaultStatesForNav(navFilter));
     return filterSupportConversations(conversations, {
       navFilter,
       mailboxScope: selectedMailboxId,
-      statusFilter,
       userId,
-      searchQuery: navFilter === 'mentions' ? searchQuery : '',
+      searchQuery: '',
+      sortOrder: conversationListFilters.sort,
+      skipViewFilter: hasExplicitStateFilters,
     });
-  }, [conversations, navFilter, selectedMailboxId, statusFilter, userId, searchQuery]);
+  }, [conversationListFilters.sort, conversationListFilters.states, conversations, navFilter, selectedMailboxId, userId]);
   const mailboxMoveOptions = useMemo(
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]
   );
+  const selectedMailboxName = useMemo(() => {
+    if (selectedMailboxId === 'all') return null;
+    if (selectedMailboxId === inboxScopes?.shared_inbox?.id || selectedMailboxId === 'shared') {
+      return inboxScopes?.shared_inbox?.name ?? 'Shared Inbox';
+    }
+    return inboxScopes?.mailboxes?.find((mailbox) => mailbox.id === selectedMailboxId)?.name ?? null;
+  }, [inboxScopes, selectedMailboxId]);
+  const viewTitle = titleForView(navFilter);
+  const listTitle = selectedMailboxName ? `${selectedMailboxName} / ${viewTitle}` : viewTitle;
+  const activeFilterCount = filterCount(conversationListFilters, selectedMailboxId, navFilter, searchQuery);
+  const canSaveCurrentView = hasConversationListChanges({
+    navFilter,
+    selectedMailboxId,
+    searchQuery,
+    listFilters: conversationListFilters,
+  });
   const shouldShowEmptyState = !isLoading && filteredConversations.length === 0 && !error && !hasNextPage;
   const shouldShowOnboardingEmptyState =
     shouldShowEmptyState &&
-    navFilter === 'all' &&
-    statusFilter === 'all' &&
+    navFilter === 'inbox' &&
     selectedMailboxId === 'all' &&
     !searchQuery.trim();
 
@@ -185,6 +285,45 @@ export function ConversationList({
       fetchNextPage();
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  const toggleStateFilter = useCallback((state: ConversationStateFilter) => {
+    const currentStates = conversationListFilters.states;
+    const nextStates = currentStates.includes(state)
+      ? currentStates.filter((value) => value !== state)
+      : [...currentStates, state];
+    if (nextStates.length === 0) return;
+    setConversationListFilter('states', nextStates);
+  }, [conversationListFilters.states, setConversationListFilter]);
+
+  const handleSaveView = useCallback(() => {
+    const name = saveViewName.trim();
+    if (!name) return;
+    createInboxView.mutate({
+      name,
+      is_shared: canCreateSharedViews && saveViewShared,
+      filters: buildSupportInboxViewFilters({
+        navFilter,
+        selectedMailboxId,
+        searchQuery,
+        listFilters: conversationListFilters,
+      }),
+    }, {
+      onSuccess: () => {
+        setSaveViewOpen(false);
+        setSaveViewName('');
+        setSaveViewShared(false);
+      },
+    });
+  }, [
+    canCreateSharedViews,
+    conversationListFilters,
+    createInboxView,
+    navFilter,
+    saveViewName,
+    saveViewShared,
+    searchQuery,
+    selectedMailboxId,
+  ]);
 
   return (
     <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
@@ -220,41 +359,131 @@ export function ConversationList({
           </div>
         ) : (
           <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <div className="min-w-0 flex-1 px-1.5 text-sm font-medium">
+              <div className="truncate">{listTitle}</div>
+            </div>
+            <Popover>
+              <PopoverTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-7 max-w-[208px] gap-1.5 px-2 text-xs font-medium"
+                  size="icon"
+                  className={cn('relative h-7 w-7 shrink-0', activeFilterCount > 0 && 'text-primary')}
+                  aria-label="Conversation filters"
                 >
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    {(() => {
-                      const active = supportStatusOptions.find((o) => o.value === statusFilter);
-                      const Icon = active?.icon;
-                      return Icon ? <Icon className={`h-3.5 w-3.5 shrink-0 ${active.color}`} /> : null;
-                    })()}
-                    <span className="truncate">
-                      {supportStatusOptions.find((o) => o.value === statusFilter)?.label ?? 'All statuses'}
-                    </span>
-                  </span>
-                  <ArrowDown01Icon className="h-3 w-3 shrink-0 opacity-50" />
+                  <FilterHorizontalIcon className="h-3.5 w-3.5" />
+                  {activeFilterCount > 0 && (
+                    <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-primary" />
+                  )}
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                {supportStatusOptions.map((option) => (
-                  <DropdownMenuCheckboxItem
-                    key={option.value}
-                    checked={statusFilter === option.value}
-                    onCheckedChange={() => setStatusFilter(option.value)}
-                    className="gap-2 whitespace-nowrap"
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-[292px] p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold">View & filters</div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => {
+                      resetConversationListFilters();
+                      setMailboxFilter('all');
+                      setSearchQuery('');
+                    }}
                   >
-                    <option.icon className={`h-3.5 w-3.5 ${option.color}`} />
-                    {option.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="flex-1" />
+                    Reset
+                  </Button>
+                </div>
+                <div className="space-y-4">
+                  <FilterSection title="State">
+                    {[
+                      ['Open', 'open'],
+                      ['Waiting', 'waiting_on_customer'],
+                      ['Resolved', 'resolved'],
+                      ['Spam', 'spam'],
+                    ].map(([label, value]) => (
+                      <FilterPill
+                        key={value}
+                        selected={conversationListFilters.states.includes(value as ConversationStateFilter)}
+                        onClick={() => toggleStateFilter(value as ConversationStateFilter)}
+                      >
+                        {label}
+                      </FilterPill>
+                    ))}
+                  </FilterSection>
+                  <FilterSection title="Assigned to">
+                    {[
+                      ['Any', 'default'],
+                      ['Me', 'me'],
+                      ['Unassigned', 'unassigned'],
+                      ['Others', 'others'],
+                    ].map(([label, value]) => (
+                      <FilterPill
+                        key={value}
+                        selected={conversationListFilters.assignment === value}
+                        onClick={() => setConversationListFilter('assignment', value as ConversationAssignmentFilter)}
+                      >
+                        {label}
+                      </FilterPill>
+                    ))}
+                  </FilterSection>
+                  <FilterSection title="AI">
+                    {[
+                      ['Any', 'default'],
+                      ['AI handling', 'ai_handling'],
+                      ['Needs human', 'needs_human'],
+                      ['AI resolved', 'resolved_by_ai'],
+                    ].map(([label, value]) => (
+                      <FilterPill
+                        key={value}
+                        selected={conversationListFilters.ai === value}
+                        onClick={() => setConversationListFilter('ai', value as ConversationAIFilter)}
+                      >
+                        {label}
+                      </FilterPill>
+                    ))}
+                  </FilterSection>
+                  <FilterSection title="Team inbox">
+                    <FilterPill selected={selectedMailboxId === 'all'} onClick={() => setMailboxFilter('all')}>
+                      All
+                    </FilterPill>
+                    {mailboxMoveOptions.map((mailbox) => (
+                      <FilterPill
+                        key={mailbox.id}
+                        selected={selectedMailboxId === mailbox.id || (mailbox.id === 'shared' && selectedMailboxId === 'shared')}
+                        onClick={() => setMailboxFilter(mailbox.id)}
+                      >
+                        {mailbox.name}
+                      </FilterPill>
+                    ))}
+                  </FilterSection>
+                  <FilterSection title="Sort">
+                    {[
+                      ['Newest', 'newest'],
+                      ['Oldest', 'oldest'],
+                    ].map(([label, value]) => (
+                      <FilterPill
+                        key={value}
+                        selected={conversationListFilters.sort === value}
+                        onClick={() => setConversationListFilter('sort', value as ConversationSortOrder)}
+                      >
+                        {label}
+                      </FilterPill>
+                    ))}
+                  </FilterSection>
+                  {canSaveCurrentView && (
+                    <div className="border-t pt-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-center"
+                        onClick={() => setSaveViewOpen(true)}
+                      >
+                        Save as view
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button
               variant="ghost"
               size="icon"
@@ -266,6 +495,50 @@ export function ConversationList({
           </>
         )}
       </div>
+      <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Save view</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="support-view-name">Name</Label>
+              <Input
+                id="support-view-name"
+                autoFocus
+                value={saveViewName}
+                onChange={(event) => setSaveViewName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handleSaveView();
+                  }
+                }}
+              />
+            </div>
+            {canCreateSharedViews && (
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <Label htmlFor="support-view-shared" className="text-sm font-medium">
+                  Shared with workspace
+                </Label>
+                <Switch
+                  id="support-view-shared"
+                  checked={saveViewShared}
+                  onCheckedChange={setSaveViewShared}
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveViewOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveView} disabled={!saveViewName.trim() || createInboxView.isPending}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Conversation list */}
       <div

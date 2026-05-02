@@ -9,11 +9,13 @@ import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
 const mockUseInfiniteConversations = vi.fn()
 const mockUseMarkConversationRead = vi.fn()
 const mockUseInboxScopes = vi.fn()
+const mockUseCreateSupportInboxView = vi.fn()
 
 vi.mock('@/hooks/queries/useSupport', () => ({
   useInfiniteConversations: (...args: unknown[]) => mockUseInfiniteConversations(...args),
   useMarkConversationRead: (...args: unknown[]) => mockUseMarkConversationRead(...args),
   useInboxScopes: (...args: unknown[]) => mockUseInboxScopes(...args),
+  useCreateSupportInboxView: (...args: unknown[]) => mockUseCreateSupportInboxView(...args),
 }))
 
 vi.mock('../ConversationRow', () => ({
@@ -31,8 +33,14 @@ describe('ConversationList presence resync', () => {
       statusFilter: 'all',
       searchQuery: '',
       selectedConversationId: null,
-      navFilter: 'all',
+      navFilter: 'inbox',
       selectedMailboxId: 'all',
+      conversationListFilters: {
+        states: ['open'],
+        assignment: 'default',
+        ai: 'default',
+        sort: 'newest',
+      },
     })
     useSupportPresenceStore.setState({
       typingIndicators: {},
@@ -47,8 +55,8 @@ describe('ConversationList presence resync', () => {
         pages: [
           {
             data: [
-              { id: 'conv-1', updated_at: '2026-03-27T20:00:00Z' },
-              { id: 'conv-2', updated_at: '2026-03-27T20:01:00Z' },
+              { id: 'conv-1', status: 'open', updated_at: '2026-03-27T20:00:00Z' },
+              { id: 'conv-2', status: 'open', updated_at: '2026-03-27T20:01:00Z' },
             ],
           },
         ],
@@ -61,6 +69,10 @@ describe('ConversationList presence resync', () => {
     })
     mockUseMarkConversationRead.mockReturnValue({
       mutate: vi.fn(),
+    })
+    mockUseCreateSupportInboxView.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
     })
     mockUseInboxScopes.mockReturnValue({
       data: {
@@ -100,7 +112,7 @@ describe('ConversationList presence resync', () => {
         pages: [
           {
             data: [
-              { id: 'conv-1', updated_at: '2026-03-27T20:00:00Z' },
+              { id: 'conv-1', status: 'open', updated_at: '2026-03-27T20:00:00Z' },
             ],
           },
         ],
@@ -130,6 +142,155 @@ describe('ConversationList presence resync', () => {
     })
 
     expect(fetchNextPage).toHaveBeenCalledTimes(1)
+
+    act(() => root.unmount())
+  })
+
+  it('uses backend view filters for ownership-based sidebar views', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'mine',
+      selectedMailboxId: 'mailbox-billing',
+      conversationListFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: 'default',
+        ai: 'default',
+        sort: 'newest',
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(mockUseInfiniteConversations).toHaveBeenCalledWith('ws-1', {
+      filter: 'mine',
+      mailbox_id: 'mailbox-billing',
+    })
+
+    act(() => root.unmount())
+  })
+
+  it('uses status directly for simple lifecycle sidebar views', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'waiting',
+      conversationListFilters: {
+        states: ['waiting_on_customer'],
+        assignment: 'default',
+        ai: 'default',
+        sort: 'newest',
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(mockUseInfiniteConversations).toHaveBeenCalledWith('ws-1', {
+      status: 'waiting_on_customer',
+    })
+
+    act(() => root.unmount())
+  })
+
+  it('saves the current filters as a support view', () => {
+    const mutate = vi.fn((_payload, options?: { onSuccess?: () => void }) => options?.onSuccess?.())
+    mockUseCreateSupportInboxView.mockReturnValue({
+      mutate,
+      isPending: false,
+    })
+    useSupportInboxStore.setState({
+      navFilter: 'waiting',
+      selectedMailboxId: 'mailbox-billing',
+      searchQuery: 'refund',
+      conversationListFilters: {
+        states: ['waiting_on_customer'],
+        assignment: 'unassigned',
+        ai: 'needs_human',
+        sort: 'oldest',
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" canCreateSharedViews />)
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    act(() => {
+      filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const saveAsViewButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Save as view') as HTMLButtonElement
+    act(() => {
+      saveAsViewButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const nameInput = document.body.querySelector('#support-view-name') as HTMLInputElement
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(nameInput, 'Billing followups')
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const sharedSwitch = document.body.querySelector('#support-view-shared') as HTMLButtonElement
+    act(() => {
+      sharedSwitch.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const saveButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Save') as HTMLButtonElement
+    act(() => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(mutate).toHaveBeenCalledWith({
+      name: 'Billing followups',
+      is_shared: true,
+      filters: {
+        nav_filter: 'waiting',
+        states: 'waiting_on_customer',
+        mailbox_id: 'mailbox-billing',
+        search: 'refund',
+        assignment: 'unassigned',
+        ai: 'needs_human',
+        sort: 'oldest',
+      },
+    }, expect.any(Object))
+
+    act(() => root.unmount())
+  })
+
+  it('only offers save as view after the current filters differ from the sidebar default', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    act(() => {
+      filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent === 'Save as view')).toBe(false)
+
+    const waitingButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Waiting') as HTMLButtonElement
+    act(() => {
+      waitingButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent === 'Save as view')).toBe(true)
 
     act(() => root.unmount())
   })

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -483,6 +483,21 @@ function ShortcutFormPanel({
     setCategoryOpen(false);
   };
 
+  const focusMessageField = () => {
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const moveFromCategoryToMessage = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Tab' || event.shiftKey) return;
+    event.preventDefault();
+    if (normalizedCategorySearch) {
+      selectCategory(exactCategoryMatch ?? filteredCategories[0] ?? normalizedCategorySearch);
+    } else {
+      setCategoryOpen(false);
+    }
+    focusMessageField();
+  };
+
   const insertAtSelection = (value: string) => {
     const textarea = textareaRef.current;
     if (!textarea) {
@@ -580,6 +595,7 @@ function ShortcutFormPanel({
               <PopoverTrigger asChild>
                 <button
                   type="button"
+                  onKeyDown={moveFromCategoryToMessage}
                   className="flex h-8 w-full items-center justify-between rounded-md border border-transparent bg-input/50 px-3 text-left text-sm outline-none transition-colors hover:bg-input focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
                 >
                   <span className="truncate">{selectedCategory}</span>
@@ -593,6 +609,10 @@ function ShortcutFormPanel({
                     onValueChange={setCategorySearch}
                     placeholder="Choose or type a category"
                     onKeyDown={(event) => {
+                      if (event.key === 'Tab' && !event.shiftKey) {
+                        moveFromCategoryToMessage(event);
+                        return;
+                      }
                       if (event.key !== 'Enter' || !normalizedCategorySearch) return;
                       event.preventDefault();
                       selectCategory(exactCategoryMatch ?? filteredCategories[0] ?? normalizedCategorySearch);
