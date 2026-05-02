@@ -18,3 +18,4 @@ export { RedirectsTab } from './RedirectsTab';
 export { TeamInboxesTab } from './TeamInboxesTab';
 export { SupportEmailForwardingTab } from './SupportEmailForwardingTab';
 export { SupportEmailCustomDomainsTab } from './SupportEmailCustomDomainsTab';
+export { SupportEmailSendersTab } from './SupportEmailSendersTab';

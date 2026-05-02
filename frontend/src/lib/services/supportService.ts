@@ -29,6 +29,9 @@ import type {
   SupportMailboxMember,
   SupportEmailRoute,
   CreateSupportEmailRouteRequest,
+  SupportEmailSender,
+  CreateSupportEmailSenderRequest,
+  SetSupportEmailSenderDefaultRequest,
   SupportEmailSenderDomain,
   CreateSupportEmailSenderDomainRequest,
   SupportTriageRule,
@@ -94,6 +97,16 @@ export const supportService = {
     api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
   disableEmailRoute: (workspaceId: string, routeId: string) =>
     api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
+  listEmailSenders: (workspaceId: string) =>
+    api.get<SupportEmailSender[]>(`/support/inbox/email-senders${qs(workspaceId)}`),
+  createEmailSender: (workspaceId: string, payload: CreateSupportEmailSenderRequest) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders${qs(workspaceId)}`, payload),
+  verifyEmailSender: (workspaceId: string, senderId: string) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders/${senderId}/verify-dns${qs(workspaceId)}`, {}),
+  setDefaultEmailSender: (workspaceId: string, senderId: string, payload: SetSupportEmailSenderDefaultRequest) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders/${senderId}/set-default${qs(workspaceId)}`, payload),
+  disableEmailSender: (workspaceId: string, senderId: string) =>
+    api.post(`/support/inbox/email-senders/${senderId}/disable${qs(workspaceId)}`, {}),
   listEmailSenderDomains: (workspaceId: string) =>
     api.get<SupportEmailSenderDomain[]>(`/support/inbox/email-sender-domains${qs(workspaceId)}`),
   createEmailSenderDomain: (workspaceId: string, payload: CreateSupportEmailSenderDomainRequest) =>

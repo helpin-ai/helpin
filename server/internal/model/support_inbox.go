@@ -515,6 +515,57 @@ type CreateSupportEmailSenderDomainRequest struct {
 	FromLocalPart string `json:"from_local_part"`
 }
 
+type SupportEmailSender struct {
+	ID                         string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_support_email_sender_workspace_email"`
+	MailboxID                  *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
+	Email                      string     `json:"email" gorm:"not null;uniqueIndex:idx_support_email_sender_workspace_email"`
+	LocalPart                  string     `json:"local_part" gorm:"not null"`
+	Domain                     string     `json:"domain" gorm:"not null;index"`
+	DisplayName                string     `json:"display_name"`
+	PostmarkDomainID           *int       `json:"postmark_domain_id,omitempty" gorm:"index"`
+	ReturnPathDomain           string     `json:"return_path_domain"`
+	ReturnPathDomainCNAMEValue string     `json:"return_path_domain_cname_value"`
+	ReturnPathDomainVerified   bool       `json:"return_path_domain_verified" gorm:"not null;default:false"`
+	DKIMHost                   string     `json:"dkim_host"`
+	DKIMTextValue              string     `json:"dkim_text_value"`
+	DKIMPendingHost            string     `json:"dkim_pending_host"`
+	DKIMPendingTextValue       string     `json:"dkim_pending_text_value"`
+	DKIMVerified               bool       `json:"dkim_verified" gorm:"not null;default:false"`
+	DKIMUpdateStatus           string     `json:"dkim_update_status"`
+	DMARCHost                  string     `json:"dmarc_host"`
+	DMARCPolicy                string     `json:"dmarc_policy"`
+	DMARCRecordPresent         bool       `json:"dmarc_record_present" gorm:"not null;default:false"`
+	DMARCLastCheckedAt         *time.Time `json:"dmarc_last_checked_at,omitempty"`
+	DomainStatus               string     `json:"domain_status" gorm:"not null;default:'pending_dns';index"`
+	ForwardingStatus           string     `json:"forwarding_status" gorm:"not null;default:'not_started';index"`
+	VerificationStatus         string     `json:"verification_status" gorm:"not null;default:'pending_dns';index"`
+	DefaultScope               string     `json:"default_scope" gorm:"not null;default:'none';index"`
+	Active                     bool       `json:"active" gorm:"not null;default:false;index"`
+	LastCheckedAt              *time.Time `json:"last_checked_at,omitempty"`
+	LastError                  *string    `json:"last_error,omitempty"`
+	CreatedByID                string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt                  time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                  time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	MailboxName   *string `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle *string `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon   *string `json:"mailbox_icon,omitempty" gorm:"->"`
+}
+
+func (SupportEmailSender) TableName() string { return "support_email_senders" }
+
+type CreateSupportEmailSenderRequest struct {
+	Email       string  `json:"email"`
+	DisplayName string  `json:"display_name"`
+	MailboxID   *string `json:"mailbox_id"`
+}
+
+type SetSupportEmailSenderDefaultRequest struct {
+	DefaultScope string  `json:"default_scope"`
+	MailboxID    *string `json:"mailbox_id"`
+}
+
 type CreateSupportMailboxRequest struct {
 	Name               string   `json:"name"`
 	Handle             string   `json:"handle"`

@@ -156,6 +156,54 @@ export interface CreateSupportEmailRouteRequest {
   source_address?: string | null;
 }
 
+export interface SupportEmailSender {
+  id: string;
+  workspace_id: string;
+  mailbox_id?: string | null;
+  email: string;
+  local_part: string;
+  domain: string;
+  display_name: string;
+  postmark_domain_id?: number | null;
+  return_path_domain: string;
+  return_path_domain_cname_value: string;
+  return_path_domain_verified: boolean;
+  dkim_host: string;
+  dkim_text_value: string;
+  dkim_pending_host: string;
+  dkim_pending_text_value: string;
+  dkim_verified: boolean;
+  dkim_update_status: string;
+  dmarc_host: string;
+  dmarc_policy: string;
+  dmarc_record_present: boolean;
+  dmarc_last_checked_at?: string | null;
+  domain_status: 'pending_dns' | 'verified' | string;
+  forwarding_status: 'not_started' | 'pending' | 'verified' | string;
+  verification_status: 'pending_dns' | 'verified' | string;
+  default_scope: 'none' | 'workspace' | 'mailbox' | string;
+  active: boolean;
+  last_checked_at?: string | null;
+  last_error?: string | null;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+  mailbox_name?: string | null;
+  mailbox_handle?: string | null;
+  mailbox_icon?: string | null;
+}
+
+export interface CreateSupportEmailSenderRequest {
+  email: string;
+  display_name?: string;
+  mailbox_id?: string | null;
+}
+
+export interface SetSupportEmailSenderDefaultRequest {
+  default_scope: 'none' | 'workspace' | 'mailbox';
+  mailbox_id?: string | null;
+}
+
 export interface SupportEmailSenderDomain {
   id: string;
   workspace_id: string;

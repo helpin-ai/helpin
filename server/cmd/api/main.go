@@ -212,6 +212,7 @@ func main() {
 			&model.SupportMailboxMembership{},
 			&model.SupportTriageRule{},
 			&model.SupportEmailRoute{},
+			&model.SupportEmailSender{},
 			&model.SupportEmailSenderDomain{},
 			&model.SupportMessage{},
 			&model.SupportEmailLog{},
@@ -562,6 +563,7 @@ func main() {
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
 	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
 	supportEmailRouteRepo := repository.NewSupportEmailRouteRepository(db)
+	supportEmailSenderRepo := repository.NewSupportEmailSenderRepository(db)
 	supportEmailSenderDomainRepo := repository.NewSupportEmailSenderDomainRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
@@ -687,6 +689,7 @@ func main() {
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
 	supportInboxService.SetRouteDomain(cfg.SupportEmailRouteDomain)
 	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
+	supportInboxService.SetEmailSenderRepository(supportEmailSenderRepo)
 	supportInboxService.SetEmailSenderDomainRepository(supportEmailSenderDomainRepo)
 	supportInboxService.SetPostmarkDomainClient(postmarkDomainClient)
 	supportInboxService.SetEmailLogRepo(supportEmailLogRepo)

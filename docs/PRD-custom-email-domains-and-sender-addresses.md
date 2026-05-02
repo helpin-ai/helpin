@@ -1,5 +1,8 @@
 # PRD: Custom Email Domains and Sender Addresses
 
+> Superseded for implementation by [PRD-custom-support-sender-addresses-mvp.md](./PRD-custom-support-sender-addresses-mvp.md).
+> This file is retained as the broader parity reference. Use the MVP PRD for engineering scope.
+
 ## Summary
 
 Helpin should support branded support email sending at Intercom-level parity, with a path toward Crisp-style full custom reply domains.
