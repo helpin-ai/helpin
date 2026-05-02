@@ -1630,6 +1630,73 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailRouteMarksHighSpamScoreAsSpam(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a1111111-1111-1111-1111-111111111112",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-spam123",
+		InboundAddress: "spam@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "promo@example.com", Name: "Promo"},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Special offer",
+		MessageID:         "pm-route-spam-1",
+		StrippedTextReply: "Buy now",
+		Headers: []model.PostmarkHeader{
+			{Name: "X-Spam-Status", Value: "No"},
+			{Name: "X-Spam-Score", Value: "5.3"},
+			{Name: "X-Spam-Tests", Value: "HTML_MESSAGE,LOTS_OF_MONEY"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-spam-1"}`); err != nil {
+		t.Fatalf("process routed inbound email: %v", err)
+	}
+
+	resp, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, model.SupportConversationStatusSpam, "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list spam conversations: %v", err)
+	}
+	if total != 1 || len(resp) != 1 {
+		t.Fatalf("expected 1 spam conversation, got total=%d len=%d", total, len(resp))
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, resp[0].ID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %#v", messages)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal([]byte(messages[0].Metadata), &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata["postmark_spam_status"] != "No" {
+		t.Fatalf("expected postmark_spam_status metadata, got %#v", metadata)
+	}
+	if metadata["postmark_spam_tests"] != "HTML_MESSAGE,LOTS_OF_MONEY" {
+		t.Fatalf("expected postmark_spam_tests metadata, got %#v", metadata)
+	}
+	if score, ok := metadata["postmark_spam_score"].(float64); !ok || score != 5.3 {
+		t.Fatalf("expected postmark_spam_score=5.3, got %#v", metadata["postmark_spam_score"])
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -1691,6 +1758,8 @@ func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 		Headers: []model.PostmarkHeader{
 			{Name: "Message-ID", Value: "<customer-reply-2@example.com>"},
 			{Name: "In-Reply-To", Value: "<helpin-thread-123@replies.helpin.ai>"},
+			{Name: "X-Spam-Status", Value: "Yes"},
+			{Name: "X-Spam-Score", Value: "9.1"},
 		},
 	}
 
@@ -1712,6 +1781,16 @@ func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 	}
 	if total != 1 || len(resp) != 1 || resp[0].ID != conversationID {
 		t.Fatalf("expected reply to stay on original conversation, got %#v total=%d", resp, total)
+	}
+	if resp[0].Status != model.SupportConversationStatusOpen {
+		t.Fatalf("expected high-score reply not to mark existing conversation spam, got %q", resp[0].Status)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal([]byte(messages[0].Metadata), &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata["postmark_spam_status"] != "Yes" {
+		t.Fatalf("expected postmark spam metadata on reply, got %#v", metadata)
 	}
 }
 
