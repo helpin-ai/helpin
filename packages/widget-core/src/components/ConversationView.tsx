@@ -83,6 +83,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const availability = config.availability;
   const aiFirst = Boolean(config.features?.aiFirst);
   const hasTeamReply = messages.some((message) => message.role !== 'customer');
+  const hasAssistantReply = messages.some((message) => message.role === 'ai' || message.role === 'agent');
   const hasHumanReply = messages.some((message) => message.role === 'agent');
   const hasCustomerMessage = messages.some((message) => message.role === 'customer');
   const escalationMessageCopy = (config.features?.escalationMessage || 'Let me connect you with a team member who can help further.').trim();
@@ -119,7 +120,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const showTalkToHumanButton = Boolean(
     config.features?.showTalkToHuman &&
       onEscalateToHuman &&
-      messages.length > 0 &&
+      hasAssistantReply &&
       !hasHumanHandoffAlready &&
       !showHumanHandoffState &&
       !isAIThinking &&
