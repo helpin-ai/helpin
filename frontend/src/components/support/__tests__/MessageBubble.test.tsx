@@ -197,6 +197,92 @@ describe('MessageBubble', () => {
     read.cleanup()
   })
 
+  it('renders internal note image and file attachments with image preview', () => {
+    const message: SupportMessage = {
+      id: 'msg-note-attachments-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'viewer-1',
+      sender_display_name: 'Viewer',
+      content: '',
+      message_type: 'note',
+      is_internal: true,
+      via_channel: 'widget',
+      attachments: [
+        {
+          id: 'att-image-1',
+          file_key: 'support/att-image-1',
+          file_name: 'screenshot.png',
+          file_type: 'image/png',
+          file_size: 2048,
+          url: 'https://cdn.example.com/screenshot.png',
+        },
+        {
+          id: 'att-file-1',
+          file_key: 'support/att-file-1',
+          file_name: 'diagnostics.pdf',
+          file_type: 'application/pdf',
+          file_size: 4096,
+          url: 'https://cdn.example.com/diagnostics.pdf',
+        },
+      ],
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const { container, cleanup } = renderBubble(message)
+
+    const noteCard = container.querySelector('.border-r-amber-400')
+    expect(noteCard).toBeTruthy()
+
+    const fileLink = container.querySelector('a[href="https://cdn.example.com/diagnostics.pdf"]')
+    expect(fileLink?.textContent).toContain('diagnostics.pdf')
+    expect(fileLink?.className).toContain('border-amber-200')
+
+    const image = container.querySelector('img[alt="screenshot.png"]') as HTMLImageElement | null
+    expect(image).toBeTruthy()
+    expect(image?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
+    expect(image?.className).toContain('max-h-60')
+
+    act(() => {
+      image?.closest('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const preview = document.body.querySelector('img[alt="Preview"]') as HTMLImageElement | null
+    expect(preview).toBeTruthy()
+    expect(preview?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
+
+    cleanup()
+  })
+
+  it('constrains markdown images in internal notes', () => {
+    const message: SupportMessage = {
+      id: 'msg-note-markdown-image-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'viewer-1',
+      sender_display_name: 'Viewer',
+      content: 'Here is the screenshot:\n\n![Inline screenshot](https://cdn.example.com/inline.png)',
+      message_type: 'note',
+      is_internal: true,
+      via_channel: 'widget',
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const { container, cleanup } = renderBubble(message)
+
+    const image = container.querySelector('img[alt="Inline screenshot"]') as HTMLImageElement | null
+    expect(image).toBeTruthy()
+    expect(image?.getAttribute('loading')).toBe('lazy')
+    expect(image?.className).toContain('max-h-60')
+    expect(image?.className).toContain('max-w-full')
+
+    cleanup()
+  })
+
   it('renders outbound fallback email failure states ahead of read receipts', () => {
     const message: SupportMessage = {
       id: 'msg-email-status-3',
