@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/helpin-ai/helpin/server/internal/authorization"
+	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -32,6 +33,8 @@ type SupportInboxService struct {
 	conversationRepo        *repository.SupportConversationRepository
 	mailboxRepo             *repository.SupportMailboxRepository
 	emailRouteRepo          *repository.SupportEmailRouteRepository
+	emailSenderRepo         *repository.SupportEmailSenderRepository
+	emailSenderDomainRepo   *repository.SupportEmailSenderDomainRepository
 	messageRepo             *repository.SupportMessageRepository
 	agentRepo               *repository.AgentRepository
 	assocRepo               *repository.CRMAssociationRepository
@@ -56,6 +59,7 @@ type SupportInboxService struct {
 	presence                websocket.PresenceProvider
 	statusOverrideRepo      *repository.SupportTeammateStatusOverrideRepository
 	emailLogRepo            *repository.SupportEmailLogRepository
+	postmarkDomainClient    *email.DomainClient
 	triageService           *SupportInboxTriageService
 	taskService             *PMTaskService
 	geoIPResolver           geoip.Resolver
@@ -567,6 +571,33 @@ func (s *SupportInboxService) SetEmailRouteRepository(emailRouteRepo *repository
 		return nil
 	}
 	s.emailRouteRepo = emailRouteRepo
+	return s
+}
+
+// SetEmailSenderDomainRepository injects the custom support sender domain repository.
+func (s *SupportInboxService) SetEmailSenderDomainRepository(repo *repository.SupportEmailSenderDomainRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailSenderDomainRepo = repo
+	return s
+}
+
+// SetEmailSenderRepository injects the custom support sender-address repository.
+func (s *SupportInboxService) SetEmailSenderRepository(repo *repository.SupportEmailSenderRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.emailSenderRepo = repo
+	return s
+}
+
+// SetPostmarkDomainClient injects the Postmark Account API client for sender domains.
+func (s *SupportInboxService) SetPostmarkDomainClient(client *email.DomainClient) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.postmarkDomainClient = client
 	return s
 }
 
@@ -1423,11 +1454,21 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 	if !msg.IsInternal && msg.MessageType == "reply" && msg.SenderType != "customer" && conv != nil {
 		conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
 		conv.HumanTakeover = boolPtr(true)
-		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, map[string]any{
+		updates := map[string]any{
 			"flow_state":        model.SupportConversationFlowStateAssignedToHuman,
 			"opened_by_user_id": conv.OpenedByUserID,
 			"human_takeover":    true,
-		}); err != nil {
+		}
+		if conv.Status == model.SupportConversationStatusResolved {
+			conv.Status = model.SupportConversationStatusWaitingOnCustomer
+			conv.ResolvedAt = nil
+			conv.ClosedAt = nil
+			updates["status"] = model.SupportConversationStatusWaitingOnCustomer
+			updates["resolved_at"] = nil
+			updates["closed_at"] = nil
+			updates["updated_at"] = time.Now()
+		}
+		if err := s.conversationRepo.UpdateFields(ctx, workspaceID, ticketID, updates); err != nil {
 			slog.ErrorContext(ctx, "failed to update support conversation flow state after teammate reply", "error", err, "conversation_id", ticketID)
 		}
 

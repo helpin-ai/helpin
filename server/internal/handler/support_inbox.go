@@ -14,13 +14,14 @@ import (
 
 // SupportInboxHandler handles internal support HTTP endpoints.
 type SupportInboxHandler struct {
-	supportService *service.SupportInboxService
-	agentService   *service.AgentService
+	supportService        *service.SupportInboxService
+	agentService          *service.AgentService
+	messageActionsService *service.SupportMessageActionsService
 }
 
 // NewSupportInboxHandler creates a new SupportInboxHandler.
-func NewSupportInboxHandler(supportService *service.SupportInboxService, agentService *service.AgentService) *SupportInboxHandler {
-	return &SupportInboxHandler{supportService: supportService, agentService: agentService}
+func NewSupportInboxHandler(supportService *service.SupportInboxService, agentService *service.AgentService, messageActionsService *service.SupportMessageActionsService) *SupportInboxHandler {
+	return &SupportInboxHandler{supportService: supportService, agentService: agentService, messageActionsService: messageActionsService}
 }
 
 // ListConversations handles GET /api/support/tickets.
@@ -176,6 +177,58 @@ func (h *SupportInboxHandler) CreateConversationMessage(w http.ResponseWriter, r
 		return
 	}
 	writeJSON(w, http.StatusCreated, msg)
+}
+
+// DeleteMessage handles DELETE /api/support/inbox/conversations/{id}/messages/{msg_id}.
+func (h *SupportInboxHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
+	if h.messageActionsService == nil {
+		writeError(w, http.StatusInternalServerError, "message actions are not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	messageID := chi.URLParam(r, "msg_id")
+	actorID := middleware.GetUserID(r.Context())
+	undo := r.URL.Query().Get("undo") == "1" || strings.EqualFold(r.URL.Query().Get("undo"), "true")
+
+	result, err := h.messageActionsService.Delete(r.Context(), workspaceID, conversationID, actorID, messageID, undo)
+	if err != nil {
+		h.writeMessageActionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// GetMessageInfo handles GET /api/support/inbox/conversations/{id}/messages/{msg_id}.
+func (h *SupportInboxHandler) GetMessageInfo(w http.ResponseWriter, r *http.Request) {
+	if h.messageActionsService == nil {
+		writeError(w, http.StatusInternalServerError, "message actions are not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	conversationID := chi.URLParam(r, "id")
+	messageID := chi.URLParam(r, "msg_id")
+	actorID := middleware.GetUserID(r.Context())
+
+	info, err := h.messageActionsService.Info(r.Context(), workspaceID, conversationID, actorID, messageID)
+	if err != nil {
+		h.writeMessageActionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (h *SupportInboxHandler) writeMessageActionError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrCancellableExpired):
+		writeError(w, http.StatusGone, err.Error())
+	case errors.Is(err, service.ErrSupportMessageActionForbidden):
+		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrSupportMessageActionNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, err.Error())
+	}
 }
 
 // LinkConversationStory handles POST /api/support/tickets/{id}/link-task.
@@ -531,6 +584,138 @@ func (h *SupportInboxHandler) DisableEmailRoute(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *SupportInboxHandler) ListEmailSenders(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senders, err := h.supportService.ListEmailSenders(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, senders)
+}
+
+func (h *SupportInboxHandler) CreateEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateSupportEmailSenderRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	sender, err := h.supportService.CreateEmailSender(r.Context(), workspaceID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, sender)
+}
+
+func (h *SupportInboxHandler) VerifyEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senderID := chi.URLParam(r, "senderId")
+
+	sender, err := h.supportService.VerifyEmailSender(r.Context(), workspaceID, senderID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sender)
+}
+
+func (h *SupportInboxHandler) SetDefaultEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senderID := chi.URLParam(r, "senderId")
+
+	var req model.SetSupportEmailSenderDefaultRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	sender, err := h.supportService.SetDefaultEmailSender(r.Context(), workspaceID, senderID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sender)
+}
+
+func (h *SupportInboxHandler) DisableEmailSender(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	senderID := chi.URLParam(r, "senderId")
+
+	if err := h.supportService.DisableEmailSender(r.Context(), workspaceID, senderID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *SupportInboxHandler) ListEmailSenderDomains(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	domains, err := h.supportService.ListEmailSenderDomains(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, domains)
+}
+
+func (h *SupportInboxHandler) CreateEmailSenderDomain(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateSupportEmailSenderDomainRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	domain, err := h.supportService.CreateEmailSenderDomain(r.Context(), workspaceID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, domain)
+}
+
+func (h *SupportInboxHandler) VerifyEmailSenderDomain(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	domainID := chi.URLParam(r, "domainId")
+
+	domain, err := h.supportService.VerifyEmailSenderDomain(r.Context(), workspaceID, domainID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, domain)
+}
+
+func (h *SupportInboxHandler) ActivateEmailSenderDomain(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	domainID := chi.URLParam(r, "domainId")
+
+	domain, err := h.supportService.ActivateEmailSenderDomain(r.Context(), workspaceID, domainID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, domain)
+}
+
+func (h *SupportInboxHandler) DeactivateEmailSenderDomain(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	domainID := chi.URLParam(r, "domainId")
+
+	if err := h.supportService.DeactivateEmailSenderDomain(r.Context(), workspaceID, domainID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *SupportInboxHandler) ListTriageRules(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	rules, err := h.supportService.ListTriageRules(r.Context(), workspaceID)
@@ -757,6 +942,10 @@ func (h *SupportInboxHandler) CreateCannedResponse(w http.ResponseWriter, r *htt
 
 	response, err := h.supportService.CreateCannedResponse(r.Context(), workspaceID, req, actorID)
 	if err != nil {
+		if errors.Is(err, service.ErrCannedResponseDuplicate) {
+			writeError(w, http.StatusConflict, "shortcut already exists")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -780,6 +969,10 @@ func (h *SupportInboxHandler) UpdateCannedResponse(w http.ResponseWriter, r *htt
 
 	response, err := h.supportService.UpdateCannedResponse(r.Context(), workspaceID, id, req)
 	if err != nil {
+		if errors.Is(err, service.ErrCannedResponseDuplicate) {
+			writeError(w, http.StatusConflict, "shortcut already exists")
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

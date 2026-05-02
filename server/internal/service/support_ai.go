@@ -1090,6 +1090,7 @@ func (s *SupportAIService) escalateToHuman(ctx context.Context, workspaceID, con
 		"assigned_agent_id": nil,
 		"mailbox_id":        handoffMailboxID,
 		"flow_state":        flowState,
+		"human_takeover":    true,
 	}
 	if selection != nil {
 		fields["assigned_user_id"] = selection.UserID

@@ -12,10 +12,13 @@ interface StatusDotProps {
 /**
  * Single source of truth for the dock's status dot semantics.
  * - completed: filled green
- * - running: hollow ember ring
- * - active_step: hollow ember ring + halo (for the currently-executing pipeline step)
- * - attention: filled red ring (failed / awaiting input / cancelled)
- * - queued: muted dot
+ * - running: hollow ember ring (actively executing)
+ * - active_step: hollow ember ring + halo (the currently-executing pipeline step)
+ * - awaiting: filled amber dot (paused waiting on a human — approval/input/auth)
+ * - attention: filled red dot (failed — something broke)
+ * - cancelled: hollow muted dot (user-initiated stop, terminal)
+ * - blocked: dashed muted ring (a pipeline step waiting on a dep)
+ * - queued: filled muted dot (waiting to start)
  */
 export function StatusDot({ state, size = 'sm', className }: StatusDotProps) {
   const dim = size === 'md' ? 'h-2.5 w-2.5' : 'h-2 w-2';
@@ -52,12 +55,34 @@ export function StatusDot({ state, size = 'sm', className }: StatusDotProps) {
           <span className="relative inline-block h-full w-full rounded-full border-[1.5px] border-orange-500" />
         </span>
       );
+    case 'awaiting':
+      return (
+        <span
+          aria-hidden
+          className={cn(
+            'inline-block shrink-0 rounded-full bg-amber-500 dark:bg-amber-400',
+            dim,
+            className,
+          )}
+        />
+      );
     case 'attention':
       return (
         <span
           aria-hidden
           className={cn(
             'inline-block shrink-0 rounded-full border-[1.5px] border-destructive bg-destructive/80',
+            dim,
+            className,
+          )}
+        />
+      );
+    case 'cancelled':
+      return (
+        <span
+          aria-hidden
+          className={cn(
+            'inline-block shrink-0 rounded-full border border-muted-foreground/40 bg-transparent',
             dim,
             className,
           )}

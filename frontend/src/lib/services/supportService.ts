@@ -29,11 +29,21 @@ import type {
   SupportMailboxMember,
   SupportEmailRoute,
   CreateSupportEmailRouteRequest,
+  SupportEmailSender,
+  CreateSupportEmailSenderRequest,
+  SetSupportEmailSenderDefaultRequest,
+  SupportEmailSenderDomain,
+  CreateSupportEmailSenderDomainRequest,
   SupportTriageRule,
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
   SupportConversationTriage,
+  SupportMessageActionResponse,
   SupportMessageEmailDetail,
+  SupportCannedResponse,
+  CreateCannedResponseRequest,
+  UpdateCannedResponseRequest,
+  SupportMessageInfo,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -87,6 +97,26 @@ export const supportService = {
     api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
   disableEmailRoute: (workspaceId: string, routeId: string) =>
     api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
+  listEmailSenders: (workspaceId: string) =>
+    api.get<SupportEmailSender[]>(`/support/inbox/email-senders${qs(workspaceId)}`),
+  createEmailSender: (workspaceId: string, payload: CreateSupportEmailSenderRequest) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders${qs(workspaceId)}`, payload),
+  verifyEmailSender: (workspaceId: string, senderId: string) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders/${senderId}/verify-dns${qs(workspaceId)}`, {}),
+  setDefaultEmailSender: (workspaceId: string, senderId: string, payload: SetSupportEmailSenderDefaultRequest) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders/${senderId}/set-default${qs(workspaceId)}`, payload),
+  disableEmailSender: (workspaceId: string, senderId: string) =>
+    api.post(`/support/inbox/email-senders/${senderId}/disable${qs(workspaceId)}`, {}),
+  listEmailSenderDomains: (workspaceId: string) =>
+    api.get<SupportEmailSenderDomain[]>(`/support/inbox/email-sender-domains${qs(workspaceId)}`),
+  createEmailSenderDomain: (workspaceId: string, payload: CreateSupportEmailSenderDomainRequest) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains${qs(workspaceId)}`, payload),
+  verifyEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains/${domainId}/verify${qs(workspaceId)}`, {}),
+  activateEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains/${domainId}/activate${qs(workspaceId)}`, {}),
+  deactivateEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post(`/support/inbox/email-sender-domains/${domainId}/deactivate${qs(workspaceId)}`, {}),
   listTriageRules: (workspaceId: string) =>
     api.get<SupportTriageRule[]>(`/support/inbox/triage-rules${qs(workspaceId)}`),
   createTriageRule: (workspaceId: string, payload: CreateSupportTriageRuleRequest) =>
@@ -95,6 +125,16 @@ export const supportService = {
     api.put<SupportTriageRule>(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`, payload),
   deleteTriageRule: (workspaceId: string, ruleId: string) =>
     api.del(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`),
+  listCannedResponses: (workspaceId: string) =>
+    api.get<SupportCannedResponse[]>(`/support/inbox/canned-responses${qs(workspaceId)}`),
+  searchCannedResponses: (workspaceId: string, query: string) =>
+    api.get<SupportCannedResponse[]>(`/support/inbox/canned-responses/search${qs(workspaceId)}&q=${encodeURIComponent(query)}`),
+  createCannedResponse: (workspaceId: string, payload: CreateCannedResponseRequest) =>
+    api.post<SupportCannedResponse>(`/support/inbox/canned-responses${qs(workspaceId)}`, payload),
+  updateCannedResponse: (workspaceId: string, responseId: string, payload: UpdateCannedResponseRequest) =>
+    api.put<SupportCannedResponse>(`/support/inbox/canned-responses/${responseId}${qs(workspaceId)}`, payload),
+  deleteCannedResponse: (workspaceId: string, responseId: string) =>
+    api.del(`/support/inbox/canned-responses/${responseId}${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
   listConversationAssignees: (workspaceId: string, conversationId: string) =>
@@ -105,6 +145,13 @@ export const supportService = {
     api.get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
+  deleteConversationMessage: (workspaceId: string, conversationId: string, messageId: string, undo = false) => {
+    let path = `/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`;
+    if (undo) path += '&undo=1';
+    return api.del<SupportMessageActionResponse>(path);
+  },
+  getConversationMessageInfo: (workspaceId: string, conversationId: string, messageId: string) =>
+    api.get<SupportMessageInfo>(`/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`),
   rewriteConversationDraft: (workspaceId: string, conversationId: string, payload: SupportAIRewriteDraftRequest) =>
     api.post<SupportAIRewriteDraftResponse>(`/support/inbox/conversations/${conversationId}/rewrite-draft${qs(workspaceId)}`, payload),
   updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>

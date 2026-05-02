@@ -1,13 +1,21 @@
 import { FileSearchIcon } from '@/lib/icons'
 import type { SupportCoverageGapListItem } from '@/lib/supportCoverageTypes'
-import { V1_GAP_TYPE_LABELS } from '@/lib/supportCoverageTypes'
+import { GAP_KIND_COLORS, V1_GAP_TYPE_LABELS, resolveGapKindDisplay } from '@/lib/supportCoverageTypes'
 import { cn, timeAgo } from '@/lib/utils'
 import { GapImpactBadge } from './GapImpactBadge'
 
 const ROW_GRID_FULL =
-  'grid w-full grid-cols-[minmax(0,1fr)_140px_110px_120px_90px] items-center gap-4 px-4 py-3 text-left'
+  'grid w-full grid-cols-[minmax(0,1fr)_140px_100px_90px_90px] items-center gap-4 px-4 py-3 text-left'
 const ROW_GRID_COMPACT =
   'grid w-full grid-cols-[minmax(0,1fr)_120px_90px] items-center gap-3 px-3 py-3 text-left'
+
+function KindDot({ gapKind }: { gapKind: string }) {
+  const kind = resolveGapKindDisplay(gapKind)
+  const colors = GAP_KIND_COLORS[kind] ?? GAP_KIND_COLORS.content
+  return (
+    <span className={cn('inline-block h-2.5 w-2.5 shrink-0 rounded-full', colors.dot)} />
+  )
+}
 
 export function GapList({
   gaps,
@@ -43,8 +51,8 @@ export function GapList({
         >
           <span>Gap</span>
           <span>Type</span>
-          <span>Evidence</span>
           <span>Impact</span>
+          <span>Evidence</span>
           <span>Last seen</span>
         </div>
       )}
@@ -70,10 +78,22 @@ export function GapList({
                 )}
               </div>
 
-              {!compact && (
-                <span className="truncate text-xs font-medium text-muted-foreground">
+              {!compact ? (
+                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <KindDot gapKind={gap.gap_kind} />
                   {V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}
                 </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <KindDot gapKind={gap.gap_kind} />
+                  <span className="truncate">{V1_GAP_TYPE_LABELS[gap.v1_gap_type] ?? gap.v1_gap_type}</span>
+                </span>
+              )}
+
+              {!compact && (
+                <div className="flex justify-start">
+                  <GapImpactBadge tier={gap.impact_tier} />
+                </div>
               )}
 
               {!compact && (
@@ -81,10 +101,6 @@ export function GapList({
                   {gap.evidence_30d} in 30d
                 </span>
               )}
-
-              <div className="flex justify-start">
-                <GapImpactBadge tier={gap.impact_tier} />
-              </div>
 
               <span className="truncate text-xs text-muted-foreground">
                 {timeAgo(gap.last_seen_at)}

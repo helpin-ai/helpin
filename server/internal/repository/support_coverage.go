@@ -261,7 +261,7 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 			COALESCE(t.canonical_title, t.title, '') AS canonical_title,
 			(SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
 			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
-			(SELECT COUNT(*) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
+			(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
@@ -271,6 +271,16 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 
 	if filter.Status != "" {
 		q = q.Where("g.status = ?", filter.Status)
+	}
+	if filter.GapKind != "" {
+		if filter.GapKind == "action" {
+			q = q.Where("g.gap_kind IN (?)", []string{"action", "policy"})
+		} else {
+			q = q.Where("g.gap_kind = ?", filter.GapKind)
+		}
+	}
+	if filter.GapCategory != "" {
+		q = q.Where("g.gap_category = ?", filter.GapCategory)
 	}
 	if filter.V1GapType != "" {
 		q = q.Where("g.v1_gap_type = ?", filter.V1GapType)
@@ -291,6 +301,16 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	}
 	if filter.Status != "" {
 		countQ = countQ.Where("status = ?", filter.Status)
+	}
+	if filter.GapKind != "" {
+		if filter.GapKind == "action" {
+			countQ = countQ.Where("gap_kind IN (?)", []string{"action", "policy"})
+		} else {
+			countQ = countQ.Where("gap_kind = ?", filter.GapKind)
+		}
+	}
+	if filter.GapCategory != "" {
+		countQ = countQ.Where("gap_category = ?", filter.GapCategory)
 	}
 	if filter.V1GapType != "" {
 		countQ = countQ.Where("v1_gap_type = ?", filter.V1GapType)
@@ -850,7 +870,30 @@ func (r *SupportCoverageRepository) GetSummary(ctx context.Context, workspaceID 
 		Count(&totalEvidence)
 	summary.TotalEvidenceCount = int(totalEvidence)
 
+	var lastRun model.SupportCoverageAnalysisRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageAnalysisRunStatusCompleted).
+		Order("completed_at DESC").
+		First(&lastRun).Error; err == nil && lastRun.CompletedAt != nil {
+		summary.LastAnalyzedAt = lastRun.CompletedAt
+	}
+
 	return summary, nil
+}
+
+// HasCompletedAnalysisRun returns true if the workspace has at least one
+// completed daily coverage analysis run, meaning the LLM analyzer is active
+// and v1 heuristic gap creation can be suppressed for human-resolution signals.
+func (r *SupportCoverageRepository) HasCompletedAnalysisRun(ctx context.Context, workspaceID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Table("support_coverage_analysis_runs").
+		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageAnalysisRunStatusCompleted).
+		Limit(1).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check completed analysis run: %w", err)
+	}
+	return count > 0, nil
 }
 
 // CreateSnapshot stores a pre-computed coverage snapshot.

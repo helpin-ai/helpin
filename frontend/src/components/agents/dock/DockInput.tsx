@@ -86,12 +86,18 @@ export function DockInput({
       ? 'Search runs or ask something new…'
       : 'Ask, or type / to run an agent or pipeline';
 
-  const showChip = !!pageContext;
+  // Hide the workspace-level chip — it just restates the current workspace
+  // (already visible in the sidebar) and provides no scoping signal. Keep it
+  // for entity-scoped contexts (task / epic / doc / contact / deal) where the
+  // chip tells the user "your input runs against this thing."
+  const showChip = !!pageContext && pageContext.entity_type !== 'workspace';
   const sendDisabled = !value.trim() || busy || disabled;
+
+  const showContextRow = mode === 'conversation' && (showChip || !!onAddContext);
 
   return (
     <div className="flex flex-col gap-2 px-3.5 pb-2.5 pt-2">
-      {mode === 'conversation' ? (
+      {showContextRow ? (
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
             {showChip ? <ContextChip context={pageContext!} /> : null}

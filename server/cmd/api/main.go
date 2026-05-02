@@ -212,6 +212,8 @@ func main() {
 			&model.SupportMailboxMembership{},
 			&model.SupportTriageRule{},
 			&model.SupportEmailRoute{},
+			&model.SupportEmailSender{},
+			&model.SupportEmailSenderDomain{},
 			&model.SupportMessage{},
 			&model.SupportEmailLog{},
 			&model.SupportEmailWebhookEvent{},
@@ -393,6 +395,7 @@ func main() {
 	// Initialize email clients (nil if not configured).
 	appEmailClient := email.NewClient(cfg.PostmarkAppServerToken, cfg.PostmarkAppFromEmail)
 	replyEmailClient := email.NewClient(cfg.PostmarkReplyServerToken, cfg.PostmarkReplyFromEmail)
+	postmarkDomainClient := email.NewDomainClient(cfg.PostmarkAccountToken)
 	if appEmailClient != nil {
 		slog.Info("Postmark app email configured")
 	} else {
@@ -402,6 +405,11 @@ func main() {
 		slog.Info("Postmark support reply email configured")
 	} else {
 		slog.Info("Postmark support reply email not configured — support reply emails will be logged only")
+	}
+	if postmarkDomainClient != nil {
+		slog.Info("Postmark account domain API configured")
+	} else {
+		slog.Info("Postmark account domain API not configured — custom sender domain onboarding disabled")
 	}
 
 	// Initialize S3 storage client (nil if not configured).
@@ -555,6 +563,8 @@ func main() {
 	supportMailboxRepo := repository.NewSupportMailboxRepository(db)
 	supportTriageRuleRepo := repository.NewSupportTriageRuleRepository(db)
 	supportEmailRouteRepo := repository.NewSupportEmailRouteRepository(db)
+	supportEmailSenderRepo := repository.NewSupportEmailSenderRepository(db)
+	supportEmailSenderDomainRepo := repository.NewSupportEmailSenderDomainRepository(db)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	supportEmailLogRepo := repository.NewSupportEmailLogRepository(db)
 	supportEmailWebhookEventRepo := repository.NewSupportEmailWebhookEventRepository(db)
@@ -672,12 +682,16 @@ func main() {
 		podID,
 	)
 	emailFallbackService.SetCRMContactRepository(crmContactRepo)
+	supportMessageActionsService := service.NewSupportMessageActionsService(supportMessageRepo, emailFallbackService, supportEmailLogRepo, wsPublisher)
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
 	supportInboxService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)
 	supportInboxService.SetRouteDomain(cfg.SupportEmailRouteDomain)
 	supportInboxService.SetEmailRouteRepository(supportEmailRouteRepo)
+	supportInboxService.SetEmailSenderRepository(supportEmailSenderRepo)
+	supportInboxService.SetEmailSenderDomainRepository(supportEmailSenderDomainRepo)
+	supportInboxService.SetPostmarkDomainClient(postmarkDomainClient)
 	supportInboxService.SetEmailLogRepo(supportEmailLogRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetTaskService(pmTaskService)
@@ -1114,6 +1128,21 @@ func main() {
 	widgetWsHandler := ws.NewWidgetHandler(wsHub, supportInboxService)
 
 	// Initialize handlers.
+	emailDiagnosticsConfig := model.EmailDiagnosticsConfig{
+		AppEmailConfigured:        appEmailClient != nil,
+		ReplyEmailConfigured:      replyEmailClient != nil,
+		RouteEmailConfigured:      strings.TrimSpace(cfg.PostmarkRouteServerToken) != "",
+		RedisConfigured:           redisClient != nil,
+		FallbackPollerEnabled:     redisClient != nil && replyEmailClient != nil,
+		AppFromEmail:              cfg.PostmarkAppFromEmail,
+		ReplyFromEmail:            cfg.PostmarkReplyFromEmail,
+		VerifiedFallbackFromEmail: cfg.PostmarkReplyFromEmail,
+		SupportEmailReplyDomain:   cfg.SupportEmailReplyDomain,
+		SupportEmailRouteDomain:   cfg.SupportEmailRouteDomain,
+		ReplyInboundSecretSet:     strings.TrimSpace(cfg.PostmarkReplyInboundWebhookSecret) != "",
+		RouteInboundSecretSet:     strings.TrimSpace(cfg.PostmarkRouteInboundWebhookSecret) != "",
+	}
+
 	handlers := router.Handlers{
 		Health:              handler.NewHealthHandler(s3Client, geoIPResolver),
 		Auth:                handler.NewAuthHandler(authService),
@@ -1143,14 +1172,14 @@ func main() {
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
 		PMRecurringTemplate: handler.NewPMRecurringTemplateHandler(pmRecurringTemplateService),
 		Agent:               handler.NewAgentHandler(agentService),
-		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService),
+		SupportInbox:        handler.NewSupportInboxHandler(supportInboxService, agentService, supportMessageActionsService),
 		SupportInboxWidget:  handler.NewSupportInboxWidgetHandler(supportInboxService),
 		SupportAI:           handler.NewSupportAIHandler(supportAIService, supportInboxService, agentKnowledgeSourceService, supportContentSourceService, agentContentSourceService),
 		SupportAttachment:   handler.NewSupportAttachmentHandler(supportAttachmentService, supportInboxService),
 		PostmarkInbound:     handler.NewPostmarkInboundHandler(emailFallbackService, cfg.PostmarkReplyInboundWebhookSecret, cfg.PostmarkRouteInboundWebhookSecret),
 		EmailImageProxy:     handler.NewEmailImageProxyHandler(),
 		AdminWebhookEvent:   handler.NewAdminWebhookEventHandler(supportEmailWebhookEventRepo),
-		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService),
+		AdminEmailQueue:     handler.NewAdminEmailQueueHandler(emailFallbackService, supportEmailLogRepo, supportEmailWebhookEventRepo, emailDiagnosticsConfig),
 		Git:                 handler.NewGitHandler(gitService, gitWebhookEventRepo),
 		Notification:        handler.NewNotificationHandler(notificationService, followerService),
 		UserNotifSettings:   handler.NewUserNotificationSettingsHandler(userNotifSettingsService),
@@ -1289,12 +1318,22 @@ func main() {
 		}
 	}()
 
-	// Start the email fallback poller only when both Redis and Postmark are available.
+	// Start email fallback workers only when both Redis and Postmark are available.
 	var emailFallbackCancel context.CancelFunc
 	if redisClient != nil && replyEmailClient != nil {
 		var emailFallbackCtx context.Context
 		emailFallbackCtx, emailFallbackCancel = context.WithCancel(context.Background())
+		slog.Info("email fallback workers starting",
+			"redis_configured", redisClient != nil,
+			"postmark_reply_configured", replyEmailClient != nil,
+		)
 		go emailFallbackService.StartPoller(emailFallbackCtx)
+		go emailFallbackService.StartReconciler(emailFallbackCtx)
+	} else {
+		slog.Warn("email fallback workers not started",
+			"redis_configured", redisClient != nil,
+			"postmark_reply_configured", replyEmailClient != nil,
+		)
 	}
 
 	// Start background ticker for archived notification cleanup (daily).

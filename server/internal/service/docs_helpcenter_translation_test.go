@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -33,11 +34,16 @@ func (f *scriptedDocsTranslationLLM) ChatCompletion(_ context.Context, req llm.C
 func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dbName := fmt.Sprintf("file:docs-helpcenter-service-i18n-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	dbName := fmt.Sprintf("file:docs-helpcenter-service-i18n-%s?mode=memory&cache=shared&_busy_timeout=5000", uuid.NewString())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
 	stmts := []string{
 		`CREATE TABLE docs_spaces (
