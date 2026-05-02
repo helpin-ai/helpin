@@ -103,7 +103,7 @@ export function SupportEmailSendersTab({ workspaceId }: { workspaceId: string })
 
         {!isLoading && senders.length === 0 && (
           <div className="rounded-lg border border-dashed py-5 text-center text-sm text-muted-foreground">
-            Add a sender address to get DKIM TXT and Return-Path CNAME records.
+            Add a sender address to get DNS records and a forwarding verification address.
           </div>
         )}
 
@@ -161,7 +161,8 @@ function SenderRow({
   const dkimHost = sender.dkim_pending_host || sender.dkim_host;
   const dkimValue = sender.dkim_pending_text_value || sender.dkim_text_value;
   const lastChecked = sender.last_checked_at ? new Date(sender.last_checked_at).toLocaleString() : null;
-  const canUseForMailbox = Boolean(sender.mailbox_id);
+  const forwardingVerified = sender.forwarding_status === 'verified';
+  const canUseForMailbox = Boolean(sender.mailbox_id) && forwardingVerified;
 
   return (
     <div className="rounded-lg border p-3">
@@ -172,15 +173,18 @@ function SenderRow({
             {sender.default_scope === 'workspace' && sender.active && <StatusBadge tone="success">Workspace default</StatusBadge>}
             {sender.default_scope === 'mailbox' && sender.active && <StatusBadge tone="success">Inbox default</StatusBadge>}
             {verified ? <StatusBadge tone="success">DNS verified</StatusBadge> : <StatusBadge tone="warning">DNS pending</StatusBadge>}
+            {forwardingVerified ? <StatusBadge tone="success">Forwarding verified</StatusBadge> : <StatusBadge tone="warning">Forwarding pending</StatusBadge>}
           </div>
           <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span>DKIM: {sender.dkim_verified ? 'verified' : 'pending'}</span>
             <span>Return-Path: {sender.return_path_domain_verified ? 'verified' : 'pending'}</span>
+            <span>Forwarding: {forwardingVerified ? 'verified' : 'pending'}</span>
             {sender.dmarc_policy && <span>DMARC: {sender.dmarc_policy}</span>}
             {sender.mailbox_name && <span>Inbox: {sender.mailbox_name}</span>}
             {lastChecked && <span>Checked: {lastChecked}</span>}
           </div>
           {sender.last_error && <p className="mt-2 text-xs text-destructive">{sender.last_error}</p>}
+          {sender.forwarding_last_error && <p className="mt-2 text-xs text-destructive">{sender.forwarding_last_error}</p>}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={onVerify} disabled={busy}>Verify DNS</Button>
@@ -193,7 +197,26 @@ function SenderRow({
       <div className="mt-3 divide-y rounded-md border bg-muted/20">
         <DNSRecordRow type="TXT" host={dkimHost} value={dkimValue} onCopy={onCopy} />
         <DNSRecordRow type="CNAME" host={sender.return_path_domain} value={sender.return_path_domain_cname_value} onCopy={onCopy} />
+        <ForwardingRecordRow sender={sender} onCopy={onCopy} />
       </div>
+    </div>
+  );
+}
+
+function ForwardingRecordRow({
+  sender,
+  onCopy,
+}: {
+  sender: SupportEmailSender;
+  onCopy: (value: string, label?: string) => void | Promise<void>;
+}) {
+  const value = sender.forwarding_address || 'Waiting for Helpin';
+  return (
+    <div className="grid gap-2 p-2 text-xs md:grid-cols-[70px_1fr_1fr_auto] md:items-center">
+      <Badge variant="secondary" className="w-fit rounded-md">Forward</Badge>
+      <code className="min-w-0 truncate rounded bg-background px-2 py-1">{sender.email}</code>
+      <code className="min-w-0 truncate rounded bg-background px-2 py-1">{value}</code>
+      <CopyButton label="forwarding address" value={sender.forwarding_address} onCopy={onCopy} />
     </div>
   );
 }

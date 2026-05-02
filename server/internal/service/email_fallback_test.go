@@ -43,6 +43,7 @@ type emailFallbackTestEnv struct {
 	redisServer  *miniredis.Miniredis
 	service      *EmailFallbackService
 	routeRepo    *repository.SupportEmailRouteRepository
+	senderRepo   *repository.SupportEmailSenderRepository
 	messageRepo  *repository.SupportMessageRepository
 	convRepo     *repository.SupportConversationRepository
 	emailLogRepo *repository.SupportEmailLogRepository
@@ -80,6 +81,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 	messageRepo := repository.NewSupportMessageRepository(db)
 	convRepo := repository.NewSupportConversationRepository(db)
 	routeRepo := repository.NewSupportEmailRouteRepository(db)
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
 	emailLogRepo := repository.NewSupportEmailLogRepository(db)
 	webhookRepo := repository.NewSupportEmailWebhookEventRepository(db)
 	installRepo := repository.NewSupportInboxInstallationRepository(db)
@@ -119,6 +121,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 	)
 	supportInboxService := NewSupportInboxService(convRepo, repository.NewSupportMailboxRepository(db), messageRepo, nil, nil, installRepo, sessionRepo, nil, nil, nil, repository.NewCRMContactRepository(db), nil, nil, nil, nil)
 	supportInboxService.SetEmailRouteRepository(routeRepo)
+	supportInboxService.SetEmailSenderRepository(senderRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetRouteDomain("on.helpin.email")
 	service.SetSupportInboxService(supportInboxService)
@@ -128,6 +131,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 		redisServer:  redisServer,
 		service:      service,
 		routeRepo:    routeRepo,
+		senderRepo:   senderRepo,
 		messageRepo:  messageRepo,
 		convRepo:     convRepo,
 		emailLogRepo: emailLogRepo,
@@ -2052,6 +2056,134 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	}
 	if logs[0].RFCMessageID != "<customer-thread-1@example.com>" {
 		t.Fatalf("unexpected rfc message id: %q", logs[0].RFCMessageID)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailVerifiesSenderForwarding(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", "22222222-2222-2222-2222-222222222222")
+	sender.ForwardingVerificationToken = "abc123"
+	sender.ForwardingAddress = "verify-abc123@on.helpin.email"
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := env.senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MailboxHash:       "verify-abc123",
+		OriginalRecipient: sender.ForwardingAddress,
+		To:                sender.Email,
+		FromFull:          model.PostmarkAddress{Email: "customer@example.com", Name: "Taylor"},
+		Subject:           "Forwarding test",
+		MessageID:         "pm-sender-verify-1",
+		StrippedTextReply: "Testing forwarding",
+		Headers: []model.PostmarkHeader{
+			{Name: "To", Value: sender.Email},
+		},
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-sender-verify-1"}`); err != nil {
+		t.Fatalf("process sender verification email: %v", err)
+	}
+
+	updated, err := env.senderRepo.GetByID(ctx, workspaceID, sender.ID)
+	if err != nil {
+		t.Fatalf("reload sender: %v", err)
+	}
+	if updated == nil || updated.ForwardingStatus != supportEmailSenderForwardingVerified || updated.ForwardingVerifiedAt == nil {
+		t.Fatalf("expected sender forwarding verified, got %#v", updated)
+	}
+
+	_, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", "")
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("verification email should not create conversation, got total=%d", total)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailVerifiesSenderForwardingFromRecipientAddress(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", "22222222-2222-2222-2222-222222222222")
+	sender.ForwardingVerificationToken = "abc123"
+	sender.ForwardingAddress = "verify-abc123@on.helpin.email"
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := env.senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		OriginalRecipient: "Forward Verify <" + sender.ForwardingAddress + ">",
+		ToFull: []model.PostmarkAddress{
+			{Email: sender.Email, Name: "Support"},
+		},
+		FromFull:  model.PostmarkAddress{Email: "customer@example.com", Name: "Taylor"},
+		Subject:   "Forwarding test",
+		MessageID: "pm-sender-verify-from-recipient-1",
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-sender-verify-from-recipient-1"}`); err != nil {
+		t.Fatalf("process sender verification email: %v", err)
+	}
+
+	updated, err := env.senderRepo.GetByID(ctx, workspaceID, sender.ID)
+	if err != nil {
+		t.Fatalf("reload sender: %v", err)
+	}
+	if updated == nil || updated.ForwardingStatus != supportEmailSenderForwardingVerified || updated.ForwardingVerifiedAt == nil {
+		t.Fatalf("expected sender forwarding verified from recipient address, got %#v", updated)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailMarksSenderForwardingFailedWithoutSenderEvidence(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", "22222222-2222-2222-2222-222222222222")
+	sender.ForwardingVerificationToken = "abc123"
+	sender.ForwardingAddress = "verify-abc123@on.helpin.email"
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := env.senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		OriginalRecipient: sender.ForwardingAddress,
+		To:                "not-support@example.com",
+		FromFull:          model.PostmarkAddress{Email: "customer@example.com", Name: "Taylor"},
+		Subject:           "Forwarding test",
+		MessageID:         "pm-sender-verify-failed-1",
+		Headers: []model.PostmarkHeader{
+			{Name: "X-Forwarded-To", Value: "not-support@example.com"},
+		},
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-sender-verify-failed-1"}`); err != nil {
+		t.Fatalf("process sender verification email: %v", err)
+	}
+
+	updated, err := env.senderRepo.GetByID(ctx, workspaceID, sender.ID)
+	if err != nil {
+		t.Fatalf("reload sender: %v", err)
+	}
+	if updated == nil || updated.ForwardingStatus != supportEmailSenderForwardingFailed || updated.ForwardingLastError == nil {
+		t.Fatalf("expected sender forwarding failed, got %#v", updated)
+	}
+
+	_, total, err := env.convRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", "")
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("failed verification email should not create conversation, got total=%d", total)
 	}
 }
 

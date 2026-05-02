@@ -322,27 +322,280 @@ func TestNormalizeSupportSenderEmail(t *testing.T) {
 	}
 }
 
+func TestSupportInboxServiceCompleteEmailSenderForwardingVerification(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	routeRepo := repository.NewSupportEmailRouteRepository(db)
+	svc := NewSupportInboxService(nil, repository.NewSupportMailboxRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderRepository(senderRepo).
+		SetEmailRouteRepository(routeRepo).
+		SetRouteDomain("on.helpin.email")
+
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", actorID)
+	sender.ForwardingVerificationToken = "abc123"
+	sender.ForwardingAddress = "verify-abc123@on.helpin.email"
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+	route := &model.SupportEmailRoute{
+		ID:             "33333333-3333-3333-3333-333333333333",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-shared123",
+		InboundAddress: "inbox@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    actorID,
+	}
+	if err := routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MessageID:         "pm-verify-1",
+		OriginalRecipient: sender.ForwardingAddress,
+		To:                "Helpin Support <" + sender.Email + ">",
+		FromFull:          model.PostmarkAddress{Email: "customer@example.com"},
+		Headers: []model.PostmarkHeader{
+			{Name: "To", Value: sender.Email},
+		},
+	}
+	updated, verified, err := svc.CompleteEmailSenderForwardingVerification(ctx, "verify-abc123", payload)
+	if err != nil {
+		t.Fatalf("complete forwarding verification: %v", err)
+	}
+	if !verified {
+		t.Fatal("expected forwarding verification to succeed")
+	}
+	if updated == nil || updated.ForwardingStatus != supportEmailSenderForwardingVerified || updated.ForwardingVerifiedAt == nil {
+		t.Fatalf("unexpected updated sender: %#v", updated)
+	}
+	if updated.ForwardingLastError != nil {
+		t.Fatalf("expected forwarding error to be cleared, got %q", *updated.ForwardingLastError)
+	}
+	if updated.EmailRouteID == nil || *updated.EmailRouteID != route.ID {
+		t.Fatalf("expected active route to be attached, got %#v", updated.EmailRouteID)
+	}
+}
+
+func TestSupportInboxServiceCompleteEmailSenderForwardingVerificationRejectsWrongAddress(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	svc := NewSupportInboxService(nil, repository.NewSupportMailboxRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderRepository(senderRepo).
+		SetRouteDomain("on.helpin.email")
+
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", actorID)
+	sender.ForwardingVerificationToken = "abc123"
+	sender.ForwardingAddress = "verify-abc123@on.helpin.email"
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MessageID:         "pm-verify-wrong",
+		OriginalRecipient: sender.ForwardingAddress,
+		To:                "not-support@example.com",
+		Headers: []model.PostmarkHeader{
+			{Name: "X-Forwarded-To", Value: "not-support@example.com"},
+		},
+	}
+	updated, verified, err := svc.CompleteEmailSenderForwardingVerification(ctx, "abc123", payload)
+	if err != nil {
+		t.Fatalf("complete forwarding verification: %v", err)
+	}
+	if verified {
+		t.Fatal("expected forwarding verification to fail for wrong sender address")
+	}
+	if updated == nil || updated.ForwardingStatus != supportEmailSenderForwardingFailed {
+		t.Fatalf("expected failed sender state, got %#v", updated)
+	}
+	if updated.ForwardingVerifiedAt != nil {
+		t.Fatalf("expected forwarding_verified_at to remain nil, got %v", updated.ForwardingVerifiedAt)
+	}
+	if updated.ForwardingLastCheckedAt == nil {
+		t.Fatal("expected forwarding_last_checked_at to be set")
+	}
+	if updated.ForwardingLastError == nil || !strings.Contains(*updated.ForwardingLastError, "did not reference sender address") {
+		t.Fatalf("expected useful forwarding error, got %#v", updated.ForwardingLastError)
+	}
+}
+
+func TestSupportInboxServiceCompleteEmailSenderForwardingVerificationIgnoresMissingToken(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	svc := NewSupportInboxService(nil, repository.NewSupportMailboxRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderRepository(senderRepo).
+		SetRouteDomain("on.helpin.email")
+
+	for _, token := range []string{"", "verify-", "verify-missing"} {
+		sender, verified, err := svc.CompleteEmailSenderForwardingVerification(ctx, token, model.PostmarkInboundPayload{To: "support@example.com"})
+		if err != nil {
+			t.Fatalf("complete forwarding verification for token %q: %v", token, err)
+		}
+		if sender != nil || verified {
+			t.Fatalf("expected no-op for token %q, got sender=%#v verified=%v", token, sender, verified)
+		}
+	}
+}
+
+func TestSupportInboxServiceListEmailSendersBackfillsForwardingVerification(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	svc := NewSupportInboxService(nil, repository.NewSupportMailboxRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderRepository(senderRepo).
+		SetRouteDomain("on.helpin.email")
+
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", actorID)
+	sender.ForwardingVerificationToken = ""
+	sender.ForwardingAddress = ""
+	sender.ForwardingStatus = supportEmailSenderForwardingNotStarted
+	if err := senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	senders, err := svc.ListEmailSenders(ctx, workspaceID)
+	if err != nil {
+		t.Fatalf("list senders: %v", err)
+	}
+	if len(senders) != 1 {
+		t.Fatalf("expected 1 sender, got %d", len(senders))
+	}
+	if senders[0].ForwardingVerificationToken == "" || senders[0].ForwardingAddress == "" {
+		t.Fatalf("expected forwarding verification fields to be backfilled, got %#v", senders[0])
+	}
+	if senders[0].ForwardingStatus != supportEmailSenderForwardingPending {
+		t.Fatalf("expected forwarding status pending, got %q", senders[0].ForwardingStatus)
+	}
+
+	reloaded, err := senderRepo.GetByID(ctx, workspaceID, sender.ID)
+	if err != nil {
+		t.Fatalf("reload sender: %v", err)
+	}
+	if reloaded == nil || reloaded.ForwardingVerificationToken != senders[0].ForwardingVerificationToken || reloaded.ForwardingAddress != senders[0].ForwardingAddress {
+		t.Fatalf("expected backfill to persist, got %#v", reloaded)
+	}
+}
+
+func TestSupportInboxServiceSetDefaultEmailSenderRequiresForwardingForMailboxOnly(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	actorID := "22222222-2222-2222-2222-222222222222"
+	seedUser(t, db, actorID, "owner@example.com", "Owner", "hashed")
+	seedWorkspace(t, db, workspaceID, "Acme", "acme", actorID)
+
+	mailboxRepo := repository.NewSupportMailboxRepository(db)
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
+	svc := NewSupportInboxService(nil, mailboxRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).
+		SetEmailSenderRepository(senderRepo).
+		SetRouteDomain("on.helpin.email")
+
+	mailbox := &model.SupportMailbox{
+		WorkspaceID:    workspaceID,
+		Name:           "Billing",
+		Handle:         "billing",
+		Icon:           "credit-card",
+		TriageEligible: true,
+		VisibilityMode: "members_only",
+		AssignmentMode: "manual",
+		Active:         true,
+		CreatedByID:    actorID,
+	}
+	if err := mailboxRepo.Create(ctx, mailbox); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+
+	sender := verifiedSender(workspaceID, &mailbox.ID, "billing@example.com", "none", actorID)
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	if _, err := svc.SetDefaultEmailSender(ctx, workspaceID, sender.ID, model.SetSupportEmailSenderDefaultRequest{DefaultScope: supportEmailSenderDefaultScopeWorkspace}); err != nil {
+		t.Fatalf("workspace default should not require forwarding verification: %v", err)
+	}
+	if _, err := svc.SetDefaultEmailSender(ctx, workspaceID, sender.ID, model.SetSupportEmailSenderDefaultRequest{DefaultScope: supportEmailSenderDefaultScopeMailbox, MailboxID: &mailbox.ID}); err == nil || !strings.Contains(err.Error(), "forwarding must be verified") {
+		t.Fatalf("expected mailbox default to require forwarding verification, got %v", err)
+	}
+
+	sender.ForwardingStatus = supportEmailSenderForwardingVerified
+	if err := senderRepo.Update(ctx, sender); err != nil {
+		t.Fatalf("mark sender forwarding verified: %v", err)
+	}
+	if _, err := svc.SetDefaultEmailSender(ctx, workspaceID, sender.ID, model.SetSupportEmailSenderDefaultRequest{DefaultScope: supportEmailSenderDefaultScopeMailbox, MailboxID: &mailbox.ID}); err != nil {
+		t.Fatalf("mailbox default should pass after forwarding verification: %v", err)
+	}
+}
+
+func TestInboundPayloadMentionsAddressMatchesExactEmailTokens(t *testing.T) {
+	payload := model.PostmarkInboundPayload{
+		To:      "Helpin Support <support@example.com>",
+		Subject: "Forward support@example.com",
+		Headers: []model.PostmarkHeader{
+			{Name: "X-Forwarded-To", Value: "Billing <billing@example.com>, support@example.com"},
+		},
+	}
+	if !inboundPayloadMentionsAddress(payload, "support@example.com") {
+		t.Fatal("expected exact sender address to match")
+	}
+
+	payload.To = "not-support@example.com"
+	payload.Subject = "Forwarding not-support@example.com"
+	payload.Headers = []model.PostmarkHeader{{Name: "X-Forwarded-To", Value: "not-support@example.com"}}
+	if inboundPayloadMentionsAddress(payload, "support@example.com") {
+		t.Fatal("expected substring-only sender address to be rejected")
+	}
+}
+
 func verifiedSender(workspaceID string, mailboxID *string, emailAddress, defaultScope, actorID string) *model.SupportEmailSender {
 	localPart, domain, _ := strings.Cut(emailAddress, "@")
 	return &model.SupportEmailSender{
-		ID:                         strings.NewReplacer("@", "-", ".", "-").Replace(emailAddress),
-		WorkspaceID:                workspaceID,
-		MailboxID:                  mailboxID,
-		Email:                      emailAddress,
-		LocalPart:                  localPart,
-		Domain:                     domain,
-		DisplayName:                "Support",
-		ReturnPathDomain:           "pm-bounces." + domain,
-		ReturnPathDomainCNAMEValue: "pm.mtasv.net",
-		ReturnPathDomainVerified:   true,
-		DKIMHost:                   "pm._domainkey." + domain,
-		DKIMTextValue:              "k=rsa; p=test",
-		DKIMVerified:               true,
-		DomainStatus:               supportEmailSenderStatusVerified,
-		ForwardingStatus:           supportEmailSenderForwardingNotStarted,
-		VerificationStatus:         supportEmailSenderStatusVerified,
-		DefaultScope:               defaultScope,
-		Active:                     defaultScope != "none",
-		CreatedByID:                actorID,
+		ID:                          strings.NewReplacer("@", "-", ".", "-").Replace(emailAddress),
+		WorkspaceID:                 workspaceID,
+		MailboxID:                   mailboxID,
+		Email:                       emailAddress,
+		LocalPart:                   localPart,
+		Domain:                      domain,
+		DisplayName:                 "Support",
+		ReturnPathDomain:            "pm-bounces." + domain,
+		ReturnPathDomainCNAMEValue:  "pm.mtasv.net",
+		ReturnPathDomainVerified:    true,
+		DKIMHost:                    "pm._domainkey." + domain,
+		DKIMTextValue:               "k=rsa; p=test",
+		DKIMVerified:                true,
+		DomainStatus:                supportEmailSenderStatusVerified,
+		ForwardingStatus:            supportEmailSenderForwardingNotStarted,
+		ForwardingVerificationToken: "verifytoken-" + strings.NewReplacer("@", "-", ".", "-").Replace(emailAddress),
+		ForwardingAddress:           "verify-verifytoken-" + strings.NewReplacer("@", "-", ".", "-").Replace(emailAddress) + "@on.helpin.email",
+		VerificationStatus:          supportEmailSenderStatusVerified,
+		DefaultScope:                defaultScope,
+		Active:                      defaultScope != "none",
+		CreatedByID:                 actorID,
 	}
 }

@@ -17,13 +17,25 @@ const (
 	supportEmailSenderDefaultScopeWorkspace = "workspace"
 	supportEmailSenderDefaultScopeMailbox   = "mailbox"
 	supportEmailSenderForwardingNotStarted  = "not_started"
+	supportEmailSenderForwardingPending     = "pending"
+	supportEmailSenderForwardingVerified    = "verified"
+	supportEmailSenderForwardingFailed      = "failed"
 )
 
 func (s *SupportInboxService) ListEmailSenders(ctx context.Context, workspaceID string) ([]model.SupportEmailSender, error) {
 	if s.emailSenderRepo == nil {
 		return nil, fmt.Errorf("support email sender repository is unavailable")
 	}
-	return s.emailSenderRepo.ListByWorkspace(ctx, workspaceID)
+	senders, err := s.emailSenderRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range senders {
+		if err := s.ensureEmailSenderForwardingVerification(ctx, &senders[i]); err != nil {
+			return nil, err
+		}
+	}
+	return senders, nil
 }
 
 func (s *SupportInboxService) CreateEmailSender(ctx context.Context, workspaceID string, req model.CreateSupportEmailSenderRequest, actorID string) (*model.SupportEmailSender, error) {
@@ -58,6 +70,10 @@ func (s *SupportInboxService) CreateEmailSender(ctx context.Context, workspaceID
 	if err != nil {
 		return nil, err
 	}
+	forwardingToken, forwardingAddress, err := s.generateEmailSenderForwardingVerification(ctx)
+	if err != nil {
+		return nil, err
+	}
 	sender := supportEmailSenderFromPostmark(postmarkDomain)
 	sender.WorkspaceID = workspaceID
 	sender.MailboxID = mailboxID
@@ -65,7 +81,9 @@ func (s *SupportInboxService) CreateEmailSender(ctx context.Context, workspaceID
 	sender.LocalPart = localPart
 	sender.Domain = domainName
 	sender.DisplayName = strings.TrimSpace(req.DisplayName)
-	sender.ForwardingStatus = supportEmailSenderForwardingNotStarted
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	sender.ForwardingVerificationToken = forwardingToken
+	sender.ForwardingAddress = forwardingAddress
 	sender.DefaultScope = supportEmailSenderDefaultScopeNone
 	sender.Active = false
 	sender.CreatedByID = actorID
@@ -80,6 +98,49 @@ func (s *SupportInboxService) CreateEmailSender(ctx context.Context, workspaceID
 		return nil, err
 	}
 	return sender, nil
+}
+
+func (s *SupportInboxService) CompleteEmailSenderForwardingVerification(ctx context.Context, token string, payload model.PostmarkInboundPayload) (*model.SupportEmailSender, bool, error) {
+	if s == nil || s.emailSenderRepo == nil {
+		return nil, false, nil
+	}
+	token = strings.TrimSpace(token)
+	token = strings.TrimPrefix(token, "verify-")
+	if token == "" {
+		return nil, false, nil
+	}
+	sender, err := s.emailSenderRepo.GetByForwardingVerificationToken(ctx, token)
+	if err != nil {
+		return nil, false, err
+	}
+	if sender == nil {
+		return nil, false, nil
+	}
+
+	now := time.Now().UTC()
+	sender.ForwardingLastCheckedAt = &now
+	if !inboundPayloadMentionsAddress(payload, sender.Email) {
+		msg := "verification email did not reference sender address"
+		sender.ForwardingStatus = supportEmailSenderForwardingFailed
+		sender.ForwardingLastError = &msg
+		if updateErr := s.emailSenderRepo.Update(ctx, sender); updateErr != nil {
+			return nil, false, updateErr
+		}
+		return sender, false, nil
+	}
+
+	sender.ForwardingStatus = supportEmailSenderForwardingVerified
+	sender.ForwardingVerifiedAt = &now
+	sender.ForwardingLastError = nil
+	if sender.EmailRouteID == nil && s.emailRouteRepo != nil {
+		if route, err := s.emailRouteRepo.GetActiveByMailbox(ctx, sender.WorkspaceID, sender.MailboxID); err == nil && route != nil {
+			sender.EmailRouteID = &route.ID
+		}
+	}
+	if err := s.emailSenderRepo.Update(ctx, sender); err != nil {
+		return nil, false, err
+	}
+	return sender, true, nil
 }
 
 func (s *SupportInboxService) VerifyEmailSender(ctx context.Context, workspaceID, senderID string) (*model.SupportEmailSender, error) {
@@ -98,6 +159,9 @@ func (s *SupportInboxService) VerifyEmailSender(ctx context.Context, workspaceID
 	}
 	if sender.PostmarkDomainID == nil || *sender.PostmarkDomainID == 0 {
 		return nil, fmt.Errorf("email sender is missing postmark domain id")
+	}
+	if err := s.ensureEmailSenderForwardingVerification(ctx, sender); err != nil {
+		return nil, err
 	}
 
 	lastErr := ""
@@ -150,9 +214,15 @@ func (s *SupportInboxService) SetDefaultEmailSender(ctx context.Context, workspa
 	if scope != supportEmailSenderDefaultScopeNone && (!sender.DKIMVerified || !sender.ReturnPathDomainVerified) {
 		return nil, fmt.Errorf("email sender must have verified DKIM and Return-Path records before it can be used")
 	}
+	if err := s.ensureEmailSenderForwardingVerification(ctx, sender); err != nil {
+		return nil, err
+	}
 
 	mailboxID := req.MailboxID
 	if scope == supportEmailSenderDefaultScopeMailbox {
+		if sender.ForwardingStatus != supportEmailSenderForwardingVerified {
+			return nil, fmt.Errorf("email sender forwarding must be verified before it can be used as an inbox default")
+		}
 		if mailboxID == nil || strings.TrimSpace(*mailboxID) == "" {
 			mailboxID = sender.MailboxID
 		}
@@ -212,6 +282,53 @@ func (s *SupportInboxService) postmarkDomainForSender(ctx context.Context, works
 		return nil, fmt.Errorf("create postmark sender domain: %w", err)
 	}
 	return postmarkDomain, nil
+}
+
+func (s *SupportInboxService) generateEmailSenderForwardingVerification(ctx context.Context) (string, string, error) {
+	if s == nil {
+		return "", "", fmt.Errorf("support inbox service is unavailable")
+	}
+	for attempt := 0; attempt < 8; attempt++ {
+		token, err := generateSecureToken(10)
+		if err != nil {
+			return "", "", fmt.Errorf("generate forwarding verification token: %w", err)
+		}
+		if s.emailSenderRepo != nil {
+			existing, err := s.emailSenderRepo.GetByForwardingVerificationToken(ctx, token)
+			if err != nil {
+				return "", "", err
+			}
+			if existing != nil {
+				continue
+			}
+		}
+		return token, "verify-" + token + "@" + s.inboundEmailDomain(), nil
+	}
+	return "", "", fmt.Errorf("failed to allocate forwarding verification address")
+}
+
+func (s *SupportInboxService) ensureEmailSenderForwardingVerification(ctx context.Context, sender *model.SupportEmailSender) error {
+	if sender == nil {
+		return nil
+	}
+	if strings.TrimSpace(sender.ForwardingVerificationToken) != "" && strings.TrimSpace(sender.ForwardingAddress) != "" {
+		return nil
+	}
+	token, address, err := s.generateEmailSenderForwardingVerification(ctx)
+	if err != nil {
+		return err
+	}
+	sender.ForwardingVerificationToken = token
+	sender.ForwardingAddress = address
+	if strings.TrimSpace(sender.ForwardingStatus) == "" || sender.ForwardingStatus == supportEmailSenderForwardingNotStarted {
+		sender.ForwardingStatus = supportEmailSenderForwardingPending
+	}
+	if s.emailSenderRepo != nil && strings.TrimSpace(sender.ID) != "" {
+		if err := s.emailSenderRepo.Update(ctx, sender); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func supportEmailSenderFromPostmark(postmarkDomain *email.PostmarkDomain) *model.SupportEmailSender {
@@ -330,6 +447,77 @@ func normalizeSupportEmailSenderDefaultScope(value string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported sender default scope")
 	}
+}
+
+func inboundPayloadMentionsAddress(payload model.PostmarkInboundPayload, address string) bool {
+	address = strings.ToLower(strings.TrimSpace(address))
+	if address == "" {
+		return false
+	}
+	candidates := []string{
+		payload.From,
+		payload.FromFull.Email,
+		payload.To,
+		payload.OriginalRecipient,
+		payload.Subject,
+	}
+	for _, addr := range payload.ToFull {
+		candidates = append(candidates, addr.Email)
+	}
+	for _, header := range payload.Headers {
+		name := strings.ToLower(strings.TrimSpace(header.Name))
+		switch name {
+		case "to", "delivered-to", "x-original-to", "x-forwarded-to", "x-envelope-to", "original-recipient", "resent-to", "forwarded-to":
+			candidates = append(candidates, header.Value)
+		}
+	}
+	for _, candidate := range candidates {
+		if emailTextMentionsAddress(candidate, address) {
+			return true
+		}
+	}
+	return false
+}
+
+func emailTextMentionsAddress(value, address string) bool {
+	value = strings.TrimSpace(value)
+	address = strings.ToLower(strings.TrimSpace(address))
+	if value == "" || address == "" {
+		return false
+	}
+	if parsed, err := mail.ParseAddressList(value); err == nil {
+		for _, addr := range parsed {
+			if strings.EqualFold(strings.TrimSpace(addr.Address), address) {
+				return true
+			}
+		}
+	}
+	lower := strings.ToLower(value)
+	start := 0
+	for {
+		idx := strings.Index(lower[start:], address)
+		if idx < 0 {
+			return false
+		}
+		idx += start
+		beforeOK := idx == 0 || !isEmailAddressRune(rune(lower[idx-1]))
+		after := idx + len(address)
+		afterOK := after >= len(lower) || !isEmailAddressRune(rune(lower[after]))
+		if beforeOK && afterOK {
+			return true
+		}
+		start = idx + len(address)
+	}
+}
+
+func isEmailAddressRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') ||
+		(r >= '0' && r <= '9') ||
+		r == '.' ||
+		r == '_' ||
+		r == '%' ||
+		r == '+' ||
+		r == '-'
 }
 
 func refreshSupportEmailSenderDMARC(ctx context.Context, sender *model.SupportEmailSender) {

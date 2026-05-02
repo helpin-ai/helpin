@@ -180,6 +180,11 @@ export interface SupportEmailSender {
   dmarc_last_checked_at?: string | null;
   domain_status: 'pending_dns' | 'verified' | string;
   forwarding_status: 'not_started' | 'pending' | 'verified' | string;
+  forwarding_address: string;
+  forwarding_verified_at?: string | null;
+  forwarding_last_checked_at?: string | null;
+  forwarding_last_error?: string | null;
+  email_route_id?: string | null;
   verification_status: 'pending_dns' | 'verified' | string;
   default_scope: 'none' | 'workspace' | 'mailbox' | string;
   active: boolean;

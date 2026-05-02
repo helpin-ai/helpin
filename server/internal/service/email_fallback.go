@@ -486,6 +486,9 @@ func (s *EmailFallbackService) ProcessInboundEmail(ctx context.Context, payload 
 	if strings.HasPrefix(mailboxHash, "route-") {
 		return s.processInboundRouteEmail(ctx, mailboxHash, payload, rawPayload)
 	}
+	if strings.HasPrefix(mailboxHash, "verify-") {
+		return s.processInboundSenderForwardingVerification(ctx, mailboxHash, payload)
+	}
 
 	if mailboxHash == "" {
 		if route, err := s.findInboundRouteByRecipient(ctx, inboundRecipientAddress(payload)); err != nil {
@@ -2257,6 +2260,39 @@ func (s *EmailFallbackService) processInboundRouteEmail(ctx context.Context, mai
 	return s.processInboundRoute(ctx, route, payload, rawPayload)
 }
 
+func (s *EmailFallbackService) processInboundSenderForwardingVerification(ctx context.Context, mailboxHash string, payload model.PostmarkInboundPayload) error {
+	if s == nil || s.supportInboxService == nil {
+		return nil
+	}
+	sender, verified, err := s.supportInboxService.CompleteEmailSenderForwardingVerification(ctx, mailboxHash, payload)
+	if err != nil {
+		return err
+	}
+	if sender == nil {
+		s.logger.InfoContext(ctx, "postmark inbound sender forwarding verification not found",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"mailbox_hash", mailboxHash,
+		)
+		return nil
+	}
+	if verified {
+		s.logger.InfoContext(ctx, "postmark inbound sender forwarding verified",
+			"message_id", strings.TrimSpace(payload.MessageID),
+			"workspace_id", sender.WorkspaceID,
+			"sender_id", sender.ID,
+			"sender_email", sender.Email,
+		)
+		return nil
+	}
+	s.logger.InfoContext(ctx, "postmark inbound sender forwarding verification did not match sender address",
+		"message_id", strings.TrimSpace(payload.MessageID),
+		"workspace_id", sender.WorkspaceID,
+		"sender_id", sender.ID,
+		"sender_email", sender.Email,
+	)
+	return nil
+}
+
 func (s *EmailFallbackService) processInboundRoute(ctx context.Context, route *model.SupportEmailRoute, payload model.PostmarkInboundPayload, rawPayload string) error {
 	if route == nil {
 		return nil
@@ -2518,7 +2554,7 @@ func mailboxHashFromRecipient(value string) string {
 		return ""
 	}
 	local := strings.TrimSpace(value[:at])
-	if strings.HasPrefix(local, "conv-") || strings.HasPrefix(local, "unsubscribe-") || strings.HasPrefix(local, "route-") {
+	if strings.HasPrefix(local, "conv-") || strings.HasPrefix(local, "unsubscribe-") || strings.HasPrefix(local, "route-") || strings.HasPrefix(local, "verify-") {
 		return local
 	}
 	return ""
