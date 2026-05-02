@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Dialog as DialogPrimitive } from 'radix-ui';
+import { Cancel01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import { ArrowExpandIcon, File01Icon, SparklesIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import type { CodingSessionInteraction } from '@/lib/pmTypes';
@@ -140,22 +143,41 @@ function PreviewExpandDialog({
   title: string;
   children: React.ReactNode;
 }) {
+  // Rendered with explicit z-indexes above the parent CodingSessionDrawer's
+  // Sheet (z-70). The shadcn DialogContent wraps content in a z-50 div that
+  // creates a stacking context, which would trap any inner override below the
+  // Sheet — so we use Radix primitives directly here.
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="z-[140] gap-0 overflow-hidden border-border/70 bg-background p-0 shadow-2xl sm:max-w-5xl">
-        <DialogHeader className="border-b border-border/70 px-6 py-4">
-          <DialogTitle className="pr-10 text-lg font-semibold leading-tight text-foreground">
-            {title}
-          </DialogTitle>
-          <DialogDescription className="sr-only">Preview content</DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[78vh] overflow-auto">
-          <div className="px-6 py-6 sm:px-10 sm:py-8">
-            {children}
-          </div>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay
+          className="fixed inset-0 z-[140] bg-black/40 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0"
+        />
+        <div className="pointer-events-none fixed inset-0 z-[150] grid place-items-center overflow-y-auto p-4">
+          <DialogPrimitive.Content
+            className="pointer-events-auto relative z-[150] grid w-full max-w-[calc(100%-2rem)] gap-0 overflow-hidden rounded-xl border border-border/70 bg-background p-0 text-sm text-popover-foreground shadow-2xl outline-none sm:max-w-5xl data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+          >
+            <DialogHeader className="border-b border-border/70 px-6 py-4">
+              <DialogTitle className="pr-10 text-lg font-semibold leading-tight text-foreground">
+                {title}
+              </DialogTitle>
+              <DialogDescription className="sr-only">Preview content</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[78vh] overflow-auto">
+              <div className="px-6 py-6 sm:px-10 sm:py-8">
+                {children}
+              </div>
+            </div>
+            <DialogPrimitive.Close asChild>
+              <Button variant="ghost" className="absolute top-4 right-4 bg-secondary" size="icon-sm">
+                <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+                <span className="sr-only">Close</span>
+              </Button>
+            </DialogPrimitive.Close>
+          </DialogPrimitive.Content>
         </div>
-      </DialogContent>
-    </Dialog>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 
