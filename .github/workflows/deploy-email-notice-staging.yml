@@ -1,0 +1,54 @@
+# Deploy Email Notice Page (Staging) to Cloudflare Pages
+# Cloudflare Pages project:
+#   - helpin-email-notice-stage (staging): helpin-email-notice-stage.pages.dev (no custom domain)
+# Required GitHub secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+name: Deploy Email Notice to Cloudflare Pages (Staging)
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "apps/email-notice/**"
+      - ".github/workflows/deploy-email-notice-staging.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: email-notice-deploy-staging-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging (helpin-email-notice-stage.pages.dev)
+    runs-on: arc-runners-helpin-ai
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Ensure Cloudflare Pages project exists
+        run: npx wrangler@3.114.1 pages project create helpin-email-notice-stage --production-branch=develop 2>/dev/null || true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '3.114.1'
+          command: pages deploy apps/email-notice/public --project-name=helpin-email-notice-stage --branch=develop
