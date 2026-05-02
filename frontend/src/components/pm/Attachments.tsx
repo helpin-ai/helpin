@@ -106,7 +106,15 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
     setAttachments(data ?? []);
   }, [workspaceId, entityType, entityId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    let cancelled = false;
+    void pmAttachmentService.list(workspaceId, entityType, entityId).then(({ data }) => {
+      if (!cancelled) setAttachments(data ?? []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, entityType, entityId]);
 
   // Re-fetch when another client changes attachments
   useEffect(() => {
@@ -115,7 +123,11 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       if (d?.parent_id === entityId && d?.entity === 'attachment') reload();
     };
     window.addEventListener('task-child-updated', handler);
-    return () => window.removeEventListener('task-child-updated', handler);
+    window.addEventListener('epic-child-updated', handler);
+    return () => {
+      window.removeEventListener('task-child-updated', handler);
+      window.removeEventListener('epic-child-updated', handler);
+    };
   }, [entityId, reload]);
 
   const handleUpload = useCallback(
