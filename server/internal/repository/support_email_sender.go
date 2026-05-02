@@ -84,6 +84,23 @@ func (r *SupportEmailSenderRepository) GetByDomain(ctx context.Context, workspac
 	return &sender, nil
 }
 
+func (r *SupportEmailSenderRepository) GetByForwardingVerificationToken(ctx context.Context, token string) (*model.SupportEmailSender, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, nil
+	}
+	var sender model.SupportEmailSender
+	if err := r.baseQuery(ctx).
+		Where("ses.forwarding_verification_token = ?", token).
+		First(&sender).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get support email sender by forwarding token: %w", err)
+	}
+	return &sender, nil
+}
+
 func (r *SupportEmailSenderRepository) GetWorkspaceDefaultVerified(ctx context.Context, workspaceID string) (*model.SupportEmailSender, error) {
 	var sender model.SupportEmailSender
 	if err := r.baseQuery(ctx).
