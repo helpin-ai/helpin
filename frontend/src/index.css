@@ -689,6 +689,12 @@
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.prose-chat img {
+  max-height: 15rem;
+  max-width: 100%;
+  border-radius: 0.5rem;
+  object-fit: cover;
+}
 .prose-chat h1,
 .prose-chat h2,
 .prose-chat h3,
