@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import type {
-  ConversationAIFilter,
   ConversationAssignmentFilter,
   ConversationListFilters,
   ConversationSortOrder,
   ConversationStateFilter,
 } from '@/lib/supportInboxFilters';
 import { defaultConversationListFiltersForNav } from '@/lib/supportInboxFilters';
+import type { SupportSystemTag } from '@/lib/pmTypes';
 
 export type NavFilter = 'inbox' | 'mine' | 'waiting' | 'resolved' | 'spam' | 'ai_active' | 'resolved_by_ai';
 export type ReplyMode = 'reply' | 'note';
@@ -106,16 +106,35 @@ function parseNavFilter(value: unknown): NavFilter {
     : 'inbox';
 }
 
-function parseAssignmentFilter(value: unknown): ConversationAssignmentFilter {
-  return value === 'me' || value === 'unassigned' || value === 'others' ? value : 'default';
-}
-
-function parseAIFilter(value: unknown): ConversationAIFilter {
-  return value === 'ai_handling' || value === 'needs_human' || value === 'resolved_by_ai' ? value : 'default';
+function parseAssignmentFilters(value: unknown): ConversationAssignmentFilter[] {
+  return parseStringList(value).filter((entry): entry is ConversationAssignmentFilter =>
+    entry === 'me' ||
+    entry === 'unassigned' ||
+    entry === 'others'
+  );
 }
 
 function parseSortOrder(value: unknown): ConversationSortOrder {
   return value === 'oldest' ? 'oldest' : 'newest';
+}
+
+function parseStringList(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function parseSystemTags(value: unknown, legacyAI?: unknown): SupportSystemTag[] {
+  const tags = parseStringList(value).filter((tag): tag is SupportSystemTag =>
+    tag === 'ai_handoff' ||
+    tag === 'ai_resolved'
+  );
+  if (legacyAI === 'needs_human' && !tags.includes('ai_handoff')) {
+    tags.push('ai_handoff');
+  }
+  if (legacyAI === 'resolved_by_ai' && !tags.includes('ai_resolved')) {
+    tags.push('ai_resolved');
+  }
+  return tags;
 }
 
 function parseStates(value: unknown, navFilter: NavFilter): ConversationStateFilter[] {
@@ -172,6 +191,7 @@ interface SupportInboxState {
   setStatusFilter: (status: string) => void;
   setSearchQuery: (query: string) => void;
   setConversationListFilter: <K extends keyof ConversationListFilters>(key: K, value: ConversationListFilters[K]) => void;
+  setConversationMailboxFilters: (mailboxIds: string[]) => void;
   resetConversationListFilters: () => void;
   applyCustomView: (view: { id: string; filters: Record<string, string> }) => void;
   selectConversation: (id: string | null) => void;
@@ -291,6 +311,16 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         },
         selectedConversationId: null,
       })),
+    setConversationMailboxFilters: (mailboxIds) =>
+      set((state) => ({
+        activeCustomViewId: null,
+        selectedMailboxId: 'all',
+        conversationListFilters: {
+          ...state.conversationListFilters,
+          mailboxIds,
+        },
+        selectedConversationId: null,
+      })),
     resetConversationListFilters: () =>
       set({
         activeCustomViewId: null,
@@ -308,8 +338,10 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         searchQuery: filters.search || '',
         conversationListFilters: {
           states: parseStates(filters.states, navFilter),
-          assignment: parseAssignmentFilter(filters.assignment),
-          ai: parseAIFilter(filters.ai),
+          assignment: parseAssignmentFilters(filters.assignment),
+          mailboxIds: parseStringList(filters.mailbox_ids),
+          tagIds: parseStringList(filters.tag_ids),
+          systemTags: parseSystemTags(filters.system_tags, filters.ai),
           sort: parseSortOrder(filters.sort),
         },
         selectedConversationId: null,

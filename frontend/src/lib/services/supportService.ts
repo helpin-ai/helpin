@@ -42,6 +42,7 @@ import type {
   CreateCannedResponseRequest,
   UpdateCannedResponseRequest,
   SupportMessageInfo,
+  SupportTag,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -55,11 +56,14 @@ export const supportService = {
       priority?: string;
       filter?: string;
       mailbox_id?: string | null;
+      mailbox_ids?: string;
       ai_state?: string;
       flow_state?: string;
       search?: string;
       assigned_to?: string;
       sort?: string;
+      tag_ids?: string;
+      system_tags?: string;
       page?: number;
       per_page?: number;
     },
@@ -70,11 +74,14 @@ export const supportService = {
     if (filters?.priority) path += `&priority=${encodeURIComponent(filters.priority)}`;
     if (filters?.filter) path += `&filter=${encodeURIComponent(filters.filter)}`;
     if (filters?.mailbox_id && filters.mailbox_id !== 'all') path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
+    if (filters?.mailbox_ids) path += `&mailbox_ids=${encodeURIComponent(filters.mailbox_ids)}`;
     if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`;
     if (filters?.flow_state) path += `&flow_state=${encodeURIComponent(filters.flow_state)}`;
     if (filters?.search?.trim()) path += `&search=${encodeURIComponent(filters.search.trim())}`;
     if (filters?.assigned_to) path += `&assigned_to=${encodeURIComponent(filters.assigned_to)}`;
     if (filters?.sort) path += `&sort=${encodeURIComponent(filters.sort)}`;
+    if (filters?.tag_ids) path += `&tag_ids=${encodeURIComponent(filters.tag_ids)}`;
+    if (filters?.system_tags) path += `&system_tags=${encodeURIComponent(filters.system_tags)}`;
     if (filters?.page) path += `&page=${encodeURIComponent(String(filters.page))}`;
     if (filters?.per_page) path += `&per_page=${encodeURIComponent(String(filters.per_page))}`;
     return api.get<ConversationListResponse>(path);
@@ -127,6 +134,18 @@ export const supportService = {
     api.put<SupportCannedResponse>(`/support/inbox/canned-responses/${responseId}${qs(workspaceId)}`, payload),
   deleteCannedResponse: (workspaceId: string, responseId: string) =>
     api.del(`/support/inbox/canned-responses/${responseId}${qs(workspaceId)}`),
+  listTags: (workspaceId: string) =>
+    api.get<SupportTag[]>(`/support/inbox/tags${qs(workspaceId)}`),
+  createTag: (workspaceId: string, payload: { name: string; color?: string }) =>
+    api.post<SupportTag>(`/support/inbox/tags${qs(workspaceId)}`, payload),
+  updateTag: (workspaceId: string, tagId: string, payload: { name?: string; color?: string }) =>
+    api.put<SupportTag>(`/support/inbox/tags/${tagId}${qs(workspaceId)}`, payload),
+  deleteTag: (workspaceId: string, tagId: string) =>
+    api.del(`/support/inbox/tags/${tagId}${qs(workspaceId)}`),
+  addConversationTag: (workspaceId: string, conversationId: string, tagId: string) =>
+    api.post<{ message: string }>(`/support/inbox/conversations/${conversationId}/tags/${tagId}${qs(workspaceId)}`, {}),
+  removeConversationTag: (workspaceId: string, conversationId: string, tagId: string) =>
+    api.del<{ message: string }>(`/support/inbox/conversations/${conversationId}/tags/${tagId}${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
   listConversationAssignees: (workspaceId: string, conversationId: string) =>

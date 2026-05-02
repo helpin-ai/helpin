@@ -106,7 +106,9 @@ func TestSupportConversationRepositoryListViews(t *testing.T) {
 		"human-open",
 		"ai-escalated",
 		"requested-human",
+		"waiting",
 		"assigned-mine",
+		"opened-mine",
 		"mentioned-mine",
 	})
 	assertContainsExactly(t, listIDs(model.SupportConversationListFilterMine), []string{
@@ -120,6 +122,7 @@ func TestSupportConversationRepositoryListViews(t *testing.T) {
 		"mentioned-mine",
 	})
 	assertContainsExactly(t, listIDs(model.SupportConversationListFilterResolved), []string{
+		"ai-resolved",
 		"human-resolved",
 		"resolved-mine",
 	})
@@ -189,6 +192,7 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 	assertContainsExactly(t, listIDs("me", ""), []string{"assigned-me"})
 	assertContainsExactly(t, listIDs("unassigned", ""), []string{"unassigned"})
 	assertContainsExactly(t, listIDs("others", ""), []string{"assigned-other"})
+	assertContainsExactly(t, listIDs("me,unassigned", ""), []string{"assigned-me", "unassigned"})
 
 	if got, want := listIDs("", "oldest"), []string{"assigned-me", "assigned-other", "unassigned", "agent-owned"}; len(got) != len(want) {
 		t.Fatalf("got ids %v, want %v", got, want)
@@ -249,6 +253,65 @@ func TestSupportConversationRepositoryListStatusFilters(t *testing.T) {
 		ids = append(ids, conversation.ID)
 	}
 	assertContainsExactly(t, ids, []string{"open", "waiting"})
+}
+
+func TestSupportConversationRepositoryListMailboxIDsFilter(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-support-mailbox-filters"
+	userID := "user-support-mailbox-filters"
+	seedWorkspace(t, db, workspaceID, "Support Mailbox Filters", "support-mailbox-filters", userID)
+	repo := repository.NewSupportConversationRepository(db)
+
+	for _, mailbox := range []model.SupportMailbox{
+		{ID: "mailbox-billing-filter", WorkspaceID: workspaceID, Name: "Billing", Handle: "billing", Icon: "inbox", Active: true, CreatedByID: userID},
+		{ID: "mailbox-sales-filter", WorkspaceID: workspaceID, Name: "Sales", Handle: "sales", Icon: "inbox", Active: true, CreatedByID: userID},
+	} {
+		if err := db.Create(&mailbox).Error; err != nil {
+			t.Fatalf("create mailbox %s: %v", mailbox.ID, err)
+		}
+	}
+
+	for _, item := range []struct {
+		id        string
+		mailboxID *string
+	}{
+		{id: "shared", mailboxID: nil},
+		{id: "billing", mailboxID: stringPtr("mailbox-billing-filter")},
+		{id: "sales", mailboxID: stringPtr("mailbox-sales-filter")},
+	} {
+		conversation := &model.SupportConversation{
+			ID:          item.id,
+			WorkspaceID: workspaceID,
+			Subject:     item.id,
+			Status:      model.SupportConversationStatusOpen,
+			Priority:    "medium",
+			Channel:     "widget",
+			Source:      "widget",
+			MailboxID:   item.mailboxID,
+		}
+		if err := repo.Create(ctx, conversation); err != nil {
+			t.Fatalf("create %s: %v", item.id, err)
+		}
+	}
+
+	conversations, _, err := repo.List(ctx, repository.ConversationRepositoryListParams{
+		ConversationListParams: repository.ConversationListParams{
+			WorkspaceID: workspaceID,
+			UserID:      userID,
+			MailboxIDs:  []string{"mailbox-billing-filter", "mailbox-sales-filter"},
+			Pagination:  model.PMPagination{Page: 1, PerPage: 50},
+		},
+		Role: model.RoleOwner,
+	})
+	if err != nil {
+		t.Fatalf("list mailbox ids: %v", err)
+	}
+	ids := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		ids = append(ids, conversation.ID)
+	}
+	assertContainsExactly(t, ids, []string{"billing", "sales"})
 }
 
 func assertContainsExactly(t *testing.T, got []string, want []string) {

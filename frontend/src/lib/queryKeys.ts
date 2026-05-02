@@ -152,6 +152,7 @@ export const queryKeys = {
     triageRules: (wsId: string) => ['support', wsId, 'triage-rules'] as const,
     cannedResponses: (wsId: string) => ['support', wsId, 'canned-responses'] as const,
     cannedResponseSearch: (wsId: string, query: string) => ['support', wsId, 'canned-responses', 'search', query] as const,
+    tags: (wsId: string) => ['support', wsId, 'tags'] as const,
     teammatePresence: (wsId: string) => ['support', wsId, 'teammates', 'presence'] as const,
     visitorContext: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   },

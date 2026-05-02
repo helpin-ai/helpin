@@ -1,29 +1,31 @@
-import type { SupportConversation } from './pmTypes';
+import type { SupportConversation, SupportSystemTag } from './pmTypes';
 import type { NavFilter } from '@/stores/supportInboxStore';
 import {
   isAIActiveConversation,
   isHumanInboxConversation,
-  isHumanResolvedConversation,
   isMineActionableConversation,
   isResolvedByAIConversation,
 } from '@/components/support/helpers';
 
-export type ConversationAssignmentFilter = 'default' | 'me' | 'unassigned' | 'others';
-export type ConversationAIFilter = 'default' | 'ai_handling' | 'needs_human' | 'resolved_by_ai';
+export type ConversationAssignmentFilter = 'me' | 'unassigned' | 'others';
 export type ConversationSortOrder = 'newest' | 'oldest';
 export type ConversationStateFilter = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
 
 export interface ConversationListFilters {
   states: ConversationStateFilter[];
-  assignment: ConversationAssignmentFilter;
-  ai: ConversationAIFilter;
+  assignment: ConversationAssignmentFilter[];
+  mailboxIds: string[];
+  tagIds: string[];
+  systemTags: SupportSystemTag[];
   sort: ConversationSortOrder;
 }
 
 export const DEFAULT_CONVERSATION_LIST_FILTERS: ConversationListFilters = {
   states: ['open'],
-  assignment: 'default',
-  ai: 'default',
+  assignment: [],
+  mailboxIds: [],
+  tagIds: [],
+  systemTags: [],
   sort: 'newest',
 };
 
@@ -31,15 +33,20 @@ export type ConversationListRequestFilters = {
   status?: string;
   filter?: string;
   mailbox_id?: string;
+  mailbox_ids?: string;
   flow_state?: string;
   search?: string;
   assigned_to?: string;
   sort?: string;
   statuses?: string;
+  tag_ids?: string;
+  system_tags?: string;
 };
 
 export function defaultStatesForNav(navFilter: NavFilter): ConversationStateFilter[] {
   switch (navFilter) {
+    case 'inbox':
+      return ['open', 'waiting_on_customer'];
     case 'mine':
       return ['open', 'waiting_on_customer'];
     case 'waiting':
@@ -49,7 +56,6 @@ export function defaultStatesForNav(navFilter: NavFilter): ConversationStateFilt
       return ['resolved'];
     case 'spam':
       return ['spam'];
-    case 'inbox':
     case 'ai_active':
     default:
       return ['open'];
@@ -59,8 +65,10 @@ export function defaultStatesForNav(navFilter: NavFilter): ConversationStateFilt
 export function defaultConversationListFiltersForNav(navFilter: NavFilter): ConversationListFilters {
   return {
     states: defaultStatesForNav(navFilter),
-    assignment: 'default',
-    ai: 'default',
+    assignment: [],
+    mailboxIds: [],
+    tagIds: [],
+    systemTags: [],
     sort: 'newest',
   };
 }
@@ -70,6 +78,26 @@ export function statesEqual(a: ConversationStateFilter[], b: ConversationStateFi
   return a.every((value, index) => value === b[index]);
 }
 
+export function stringArraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+function normalizeAssignmentFilters(value: unknown): ConversationAssignmentFilter[] {
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  const normalized: ConversationAssignmentFilter[] = [];
+  for (const item of raw) {
+    const trimmed = String(item).trim();
+    if (
+      (trimmed === 'me' || trimmed === 'unassigned' || trimmed === 'others') &&
+      !normalized.includes(trimmed)
+    ) {
+      normalized.push(trimmed);
+    }
+  }
+  return normalized;
+}
+
 export function normalizeConversationListFilters(
   filters: Partial<ConversationListFilters> | undefined,
   navFilter: NavFilter,
@@ -77,8 +105,10 @@ export function normalizeConversationListFilters(
   const defaults = defaultConversationListFiltersForNav(navFilter);
   return {
     states: filters?.states && filters.states.length > 0 ? filters.states : defaults.states,
-    assignment: filters?.assignment ?? defaults.assignment,
-    ai: filters?.ai ?? defaults.ai,
+    assignment: normalizeAssignmentFilters(filters?.assignment),
+    mailboxIds: filters?.mailboxIds ?? defaults.mailboxIds,
+    tagIds: filters?.tagIds ?? defaults.tagIds,
+    systemTags: filters?.systemTags ?? defaults.systemTags,
     sort: filters?.sort ?? defaults.sort,
   };
 }
@@ -99,8 +129,10 @@ export function hasConversationListChanges({
     selectedMailboxId !== 'all' ||
     searchQuery.trim().length > 0 ||
     !statesEqual(normalized.states, defaultStatesForNav(navFilter)) ||
-    normalized.assignment !== 'default' ||
-    normalized.ai !== 'default' ||
+    normalized.assignment.length > 0 ||
+    normalized.mailboxIds.length > 0 ||
+    normalized.tagIds.length > 0 ||
+    normalized.systemTags.length > 0 ||
     normalized.sort !== 'newest'
   );
 }
@@ -123,8 +155,10 @@ export function buildSupportInboxViewFilters({
   filters.states = normalizedFilters.states.join(',');
   if (selectedMailboxId !== 'all') filters.mailbox_id = selectedMailboxId;
   if (searchQuery.trim()) filters.search = searchQuery.trim();
-  if (normalizedFilters.assignment !== 'default') filters.assignment = normalizedFilters.assignment;
-  if (normalizedFilters.ai !== 'default') filters.ai = normalizedFilters.ai;
+  if (normalizedFilters.assignment.length > 0) filters.assignment = normalizedFilters.assignment.join(',');
+  if (normalizedFilters.mailboxIds.length > 0) filters.mailbox_ids = normalizedFilters.mailboxIds.join(',');
+  if (normalizedFilters.tagIds.length > 0) filters.tag_ids = normalizedFilters.tagIds.join(',');
+  if (normalizedFilters.systemTags.length > 0) filters.system_tags = normalizedFilters.systemTags.join(',');
   if (normalizedFilters.sort !== 'newest') filters.sort = normalizedFilters.sort;
   return filters;
 }
@@ -142,27 +176,20 @@ export function buildConversationListRequestFilters({
 }): ConversationListRequestFilters | undefined {
   const f: ConversationListRequestFilters = {};
   const normalizedFilters = normalizeConversationListFilters(listFilters, navFilter);
-  const hasExplicitAI = normalizedFilters.ai !== 'default';
   const selectedStates = normalizedFilters.states;
   const hasExplicitStates = !statesEqual(selectedStates, defaultStatesForNav(navFilter));
 
-  if (selectedMailboxId !== 'all') {
+  if (normalizedFilters.mailboxIds.includes('all')) {
+    // Explicit global override, mainly for Inbox where the default is Main inbox.
+  } else if (normalizedFilters.mailboxIds.length > 0) {
+    f.mailbox_ids = normalizedFilters.mailboxIds.join(',');
+  } else if (selectedMailboxId !== 'all') {
     f.mailbox_id = selectedMailboxId;
+  } else if (navFilter === 'inbox') {
+    f.mailbox_id = 'shared';
   }
 
-  if (hasExplicitAI) {
-    switch (normalizedFilters.ai) {
-      case 'ai_handling':
-        f.flow_state = 'ai_handling';
-        break;
-      case 'needs_human':
-        f.flow_state = 'waiting_for_human';
-        break;
-      case 'resolved_by_ai':
-        f.flow_state = 'resolved_by_ai';
-        break;
-    }
-  } else if (!hasExplicitStates) {
+  if (!hasExplicitStates) {
     switch (navFilter) {
       case 'inbox':
         f.filter = 'inbox';
@@ -202,7 +229,9 @@ export function buildConversationListRequestFilters({
 
   if (searchQuery.trim()) f.search = searchQuery.trim();
   if (hasExplicitStates) f.statuses = selectedStates.join(',');
-  if (normalizedFilters.assignment !== 'default') f.assigned_to = normalizedFilters.assignment;
+  if (normalizedFilters.assignment.length > 0) f.assigned_to = normalizedFilters.assignment.join(',');
+  if (normalizedFilters.tagIds.length > 0) f.tag_ids = normalizedFilters.tagIds.join(',');
+  if (normalizedFilters.systemTags.length > 0) f.system_tags = normalizedFilters.systemTags.join(',');
   if (normalizedFilters.sort !== 'newest') f.sort = normalizedFilters.sort;
   return Object.keys(f).length > 0 ? f : undefined;
 }
@@ -217,11 +246,18 @@ function matchesMailboxScope(conversation: SupportConversation, mailboxScope: st
   return conversation.mailbox_id === mailboxScope;
 }
 
+function matchesMailboxScopes(conversation: SupportConversation, mailboxScopes: string[]): boolean {
+  if (mailboxScopes.length === 0) return true;
+  if (mailboxScopes.includes('all')) return true;
+  return mailboxScopes.some((scope) => matchesMailboxScope(conversation, scope));
+}
+
 export function filterSupportConversations(
   conversations: SupportConversation[],
   options: {
     navFilter: NavFilter;
     mailboxScope: string;
+    mailboxScopes?: string[];
     statusFilter?: string;
     userId?: string;
     searchQuery: string;
@@ -229,8 +265,10 @@ export function filterSupportConversations(
     skipViewFilter?: boolean;
   }
 ): SupportConversation[] {
-  const { navFilter, mailboxScope, statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false } = options;
-  let result = conversations.filter((conversation) => matchesMailboxScope(conversation, mailboxScope));
+  const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false } = options;
+  let result = conversations.filter((conversation) =>
+    mailboxScopes.length > 0 ? matchesMailboxScopes(conversation, mailboxScopes) : matchesMailboxScope(conversation, mailboxScope)
+  );
 
   if (statusFilter !== 'all') {
     result = result.filter((conversation) => conversation.status === statusFilter);
@@ -244,7 +282,7 @@ export function filterSupportConversations(
     } else if (navFilter === 'waiting') {
       result = result.filter((conversation) => conversation.status === 'waiting_on_customer');
     } else if (navFilter === 'resolved') {
-      result = result.filter(isHumanResolvedConversation);
+      result = result.filter((conversation) => conversation.status === 'resolved');
     } else if (navFilter === 'spam') {
       result = result.filter((conversation) => conversation.status === 'spam');
     } else if (navFilter === 'ai_active') {

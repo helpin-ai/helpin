@@ -29,6 +29,7 @@ type InboxScopes = {
     id: string;
     name: string;
     icon?: string | null;
+    total_count?: number;
     unread_count: number;
   }>;
 };
@@ -36,6 +37,7 @@ type InboxScopes = {
 type SupportRailNavProps = {
   navFilter: SupportNavFilter;
   unreadStats?: UnreadStats | null;
+  globalUnreadStats?: UnreadStats | null;
   inboxScopes?: InboxScopes | null;
   selectedMailboxId: string;
   activeCustomViewId?: string | null;
@@ -58,6 +60,7 @@ type SupportRailNavProps = {
 export function SupportRailNav({
   navFilter,
   unreadStats,
+  globalUnreadStats,
   inboxScopes,
   selectedMailboxId,
   activeCustomViewId,
@@ -78,10 +81,40 @@ export function SupportRailNav({
 }: SupportRailNavProps) {
   const isOnCoverage = pathname.startsWith(`/w/${wsSlug}/support/coverage`);
   const mailboxes = inboxScopes?.mailboxes ?? [];
+  const aiStats = selectedMailboxId === 'all' ? (globalUnreadStats ?? unreadStats) : globalUnreadStats;
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const handleSettingsNavigate = (section: string) => {
     onNavigate(`/w/${wsSlug}/settings/${section}`);
+  };
+
+  const renderUnreadDot = (unread?: number | null) => {
+    const unreadValue = unread ?? 0;
+    if (unreadValue <= 0) return null;
+
+    return (
+      <span
+        data-slot="support-unread-dot"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+        title={`${unreadValue > 99 ? '99+' : unreadValue} unread`}
+      />
+    );
+  };
+
+  const renderCounts = (total?: number | null, className = '', alignRight = true) => {
+    const totalValue = total ?? 0;
+    if (totalValue <= 0) return null;
+
+    return (
+      <span className={`${alignRight ? 'ml-auto' : ''} flex shrink-0 items-center ${className}`}>
+        <span
+          data-slot="support-total-count"
+          className="min-w-[1ch] text-right text-xs font-medium tabular-nums text-muted-foreground"
+        >
+          {totalValue > 99 ? '99+' : totalValue}
+        </span>
+      </span>
+    );
   };
 
   return (
@@ -89,7 +122,7 @@ export function SupportRailNav({
       <SidebarGroup className="p-0 pb-3">
         <SidebarMenu>
           {supportFilterItems.map((item) => {
-            const badge =
+            const unread =
               item.key === 'inbox'
                 ? unreadStats?.inbox
                 : item.key === 'mine'
@@ -97,21 +130,28 @@ export function SupportRailNav({
                   : item.key === 'waiting'
                     ? unreadStats?.waiting
                     : undefined;
+            const total =
+              item.key === 'inbox'
+                ? unreadStats?.inbox_total
+                : item.key === 'mine'
+                  ? unreadStats?.mine_total
+                  : item.key === 'waiting'
+                    ? unreadStats?.waiting_total
+                    : undefined;
 
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={navFilter === item.key}
+                  isActive={!activeCustomViewId && navFilter === item.key && (item.key !== 'inbox' || selectedMailboxId === 'all')}
                   className="h-8 rounded-md px-2 text-sm"
                   onClick={() => onNavFilterChange(item.key)}
                 >
                   <item.icon />
-                  <span className="flex-1">{item.label}</span>
-                  {badge != null && badge > 0 && (
-                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                      {badge > 99 ? '99+' : badge}
-                    </span>
-                  )}
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="truncate">{item.label}</span>
+                    {renderUnreadDot(unread)}
+                  </span>
+                  {renderCounts(total)}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             );
@@ -193,25 +233,28 @@ export function SupportRailNav({
         </SidebarGroupLabel>
         <SidebarMenu>
           {supportAiItems.map((item) => {
-            const badge =
+            const unread =
               item.key === 'ai_active'
-                ? unreadStats?.ai_active
+                ? aiStats?.ai_active
+                : undefined;
+            const total =
+              item.key === 'ai_active'
+                ? aiStats?.ai_active_total
                 : undefined;
 
             return (
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
-                  isActive={navFilter === item.key}
+                  isActive={!activeCustomViewId && navFilter === item.key}
                   className="h-8 rounded-md px-2 text-sm"
                   onClick={() => onNavFilterChange(item.key)}
                 >
                   <item.icon />
-                  <span className="flex-1">{item.label}</span>
-                  {badge != null && badge > 0 && (
-                    <span className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
-                      {badge > 99 ? '99+' : badge}
-                    </span>
-                  )}
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="truncate">{item.label}</span>
+                    {renderUnreadDot(unread)}
+                  </span>
+                  {renderCounts(total)}
                 </SidebarMenuButton>
               </SidebarMenuItem>
             );
@@ -260,7 +303,7 @@ export function SupportRailNav({
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
             const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
-            const isActiveMailbox = selectedMailboxId === mailbox.id;
+            const isActiveMailbox = !activeCustomViewId && selectedMailboxId === mailbox.id;
             const isMenuOpen = openMenuId === mailbox.id;
 
             return (
@@ -271,16 +314,15 @@ export function SupportRailNav({
                   onClick={() => onMailboxSelect(mailbox.id)}
                 >
                   <MailboxIcon className="h-4 w-4" />
-                  <span className="flex-1 truncate">{mailbox.name}</span>
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <span className="truncate">{mailbox.name}</span>
+                    {renderUnreadDot(mailbox.unread_count)}
+                  </span>
                   <span className="ml-auto relative flex h-5 min-w-5 items-center justify-center">
-                    {mailbox.unread_count > 0 && (
-                      <span
-                        className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white transition-opacity ${
-                          canManageSettings && !isMenuOpen ? 'group-hover/mailbox:opacity-0' : ''
-                        } ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`}
-                      >
-                        {mailbox.unread_count > 99 ? '99+' : mailbox.unread_count}
-                      </span>
+                    {renderCounts(
+                      mailbox.total_count,
+                      `transition-opacity ${canManageSettings && !isMenuOpen ? 'group-hover/mailbox:opacity-0' : ''} ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`,
+                      false,
                     )}
                     {canManageSettings && (
                       <DropdownMenu onOpenChange={(open) => setOpenMenuId(open ? mailbox.id : null)}>

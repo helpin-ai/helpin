@@ -13,7 +13,8 @@ import { ConversationDetailSidebar } from './ConversationDetailSidebar';
 import { CreateConversationDialog } from './CreateConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
-import { defaultStatesForNav, statesEqual, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+import { defaultStatesForNav, statesEqual, stringArraysEqual, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+import type { SupportSystemTag } from '@/lib/pmTypes';
 
 function parseRouteStates(value: string | undefined, navFilter: ReturnType<typeof navFilterFromView>): ConversationStateFilter[] {
   if (!value) return defaultStatesForNav(navFilter);
@@ -24,6 +25,25 @@ function parseRouteStates(value: string | undefined, navFilter: ReturnType<typeo
     state === 'spam'
   );
   return states.length > 0 ? states : defaultStatesForNav(navFilter);
+}
+
+function parseRouteStringList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function parseRouteSystemTags(value: string | undefined, legacyAI: string | undefined): SupportSystemTag[] {
+  const tags = parseRouteStringList(value).filter((tag): tag is SupportSystemTag =>
+    tag === 'ai_handoff' ||
+    tag === 'ai_resolved'
+  );
+  if (legacyAI === 'needs_human' && !tags.includes('ai_handoff')) {
+    tags.push('ai_handoff');
+  }
+  if (legacyAI === 'resolved_by_ai' && !tags.includes('ai_resolved')) {
+    tags.push('ai_resolved');
+  }
+  return tags;
 }
 
 export function SupportInboxLayout() {
@@ -88,16 +108,16 @@ export function SupportInboxLayout() {
     }
     const nextStatusFilter = routeSearch.status || 'all';
     const nextSearchQuery = routeSearch.q || '';
-    const nextConversationListFilters = {
+    const nextConversationListFilters: ConversationListFilters = {
       states: parseRouteStates(routeSearch.states, effectiveNavFilter),
-      assignment: routeSearch.assigned_to === 'me' || routeSearch.assigned_to === 'unassigned' || routeSearch.assigned_to === 'others'
-        ? routeSearch.assigned_to
-        : 'default',
-      ai: routeSearch.ai === 'ai_handling' || routeSearch.ai === 'needs_human' || routeSearch.ai === 'resolved_by_ai'
-        ? routeSearch.ai
-        : 'default',
+      assignment: parseRouteStringList(routeSearch.assigned_to).filter((entry): entry is ConversationAssignmentFilter =>
+        entry === 'me' || entry === 'unassigned' || entry === 'others'
+      ),
+      mailboxIds: parseRouteStringList(routeSearch.mailbox_ids),
+      tagIds: parseRouteStringList(routeSearch.tag_ids),
+      systemTags: parseRouteSystemTags(routeSearch.system_tags, routeSearch.ai),
       sort: routeSearch.sort === 'oldest' ? 'oldest' : 'newest',
-    } as const;
+    };
 
     if (routeConversationId === 'inbox') {
       if (routeSearch.conversation) {
@@ -140,8 +160,10 @@ export function SupportInboxLayout() {
       nextSearchQuery !== currentState.searchQuery ||
       (routeSearch.custom_view ?? null) !== currentState.activeCustomViewId ||
       !statesEqual(nextConversationListFilters.states, currentState.conversationListFilters.states) ||
-      nextConversationListFilters.assignment !== currentState.conversationListFilters.assignment ||
-      nextConversationListFilters.ai !== currentState.conversationListFilters.ai ||
+      !stringArraysEqual(nextConversationListFilters.assignment, currentState.conversationListFilters.assignment) ||
+      !stringArraysEqual(nextConversationListFilters.mailboxIds, currentState.conversationListFilters.mailboxIds) ||
+      !stringArraysEqual(nextConversationListFilters.tagIds, currentState.conversationListFilters.tagIds) ||
+      !stringArraysEqual(nextConversationListFilters.systemTags, currentState.conversationListFilters.systemTags) ||
       nextConversationListFilters.sort !== currentState.conversationListFilters.sort
     ) {
       syncRouteState({

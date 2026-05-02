@@ -147,7 +147,7 @@ export function isHumanQueueConversation(conversation: Pick<SupportConversation,
 export function isHumanInboxConversation(
   conversation: Pick<SupportConversation, 'status' | 'flow_state' | 'ai_state' | 'human_takeover' | 'customer_requested_human_at'>,
 ): boolean {
-  return conversation.status === 'open' && (
+  return (conversation.status === 'open' || conversation.status === 'waiting_on_customer') && (
     isHumanQueueConversation(conversation) ||
     conversation.ai_state === 'escalated' ||
     Boolean(conversation.customer_requested_human_at)

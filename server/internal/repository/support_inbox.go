@@ -497,6 +497,38 @@ func conversationResolvedByAICondition(alias string) string {
 	)
 }
 
+func conversationAIHandoffCondition(alias string) string {
+	return fmt.Sprintf(`(
+		COALESCE(%s.ai_state, '') = 'escalated'
+		OR %s.ai_escalated_at IS NOT NULL
+		OR (%s.customer_requested_human_at IS NOT NULL AND (%s.ai_state IS NOT NULL OR COALESCE(%s.ai_turn_count, 0) > 0))
+		OR (
+			COALESCE(%s.flow_state, '') IN ('%s', '%s', '%s')
+			AND (%s.ai_state IS NOT NULL OR COALESCE(%s.ai_turn_count, 0) > 0)
+		)
+	)`,
+		alias,
+		alias,
+		alias, alias, alias,
+		alias,
+		model.SupportConversationFlowStateWaitingForHuman,
+		model.SupportConversationFlowStateQueuedForHuman,
+		model.SupportConversationFlowStateAfterHoursQueue,
+		alias, alias,
+	)
+}
+
+func compactStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
 func conversationHumanQueueCondition(alias string) string {
 	return fmt.Sprintf("NOT (%s) AND NOT (%s)",
 		conversationAIActiveCondition(alias),
@@ -505,9 +537,10 @@ func conversationHumanQueueCondition(alias string) string {
 }
 
 func conversationHumanInboxCondition(alias string) string {
-	return fmt.Sprintf("(%s.status = '%s' AND (%s OR %s.ai_state = 'escalated' OR %s.customer_requested_human_at IS NOT NULL))",
+	return fmt.Sprintf("(%s.status IN ('%s', '%s') AND (%s OR %s.ai_state = 'escalated' OR %s.customer_requested_human_at IS NOT NULL))",
 		alias,
 		model.SupportConversationStatusOpen,
+		model.SupportConversationStatusWaitingOnCustomer,
 		conversationHumanQueueCondition(alias),
 		alias,
 		alias,
@@ -551,12 +584,15 @@ type ConversationListParams struct {
 	Priority    string
 	Pagination  model.PMPagination
 	MailboxID   *string
+	MailboxIDs  []string
 	FlowState   string
 	Search      string
 	Filter      string
 	AssignedTo  string
 	Sort        string
 	AIState     []string
+	TagIDs      []string
+	SystemTags  []string
 }
 
 // ConversationRepositoryListParams adds resolved actor access data for repository queries.
@@ -619,28 +655,118 @@ func (r *SupportConversationRepository) applyConversationListFilter(query *gorm.
 	case model.SupportConversationListFilterMine, model.SupportConversationListFilterMentions:
 		return r.applyMineFilter(query, alias, userID)
 	case model.SupportConversationListFilterResolved:
-		return query.Where(conversationHumanResolvedCondition(alias))
+		return query.Where(fmt.Sprintf("%s.status = ?", alias), model.SupportConversationStatusResolved)
 	default:
 		return query
 	}
 }
 
+func applyConversationTagFilters(query *gorm.DB, alias string, tagIDs, systemTags []string) *gorm.DB {
+	tagIDs = compactStrings(tagIDs)
+	systemTags = compactStrings(systemTags)
+	if len(tagIDs) == 0 && len(systemTags) == 0 {
+		return query
+	}
+	conditions := make([]string, 0, 2+len(systemTags))
+	args := make([]any, 0, len(tagIDs))
+	if len(tagIDs) > 0 {
+		conditions = append(conditions, fmt.Sprintf(`EXISTS (
+			SELECT 1
+			FROM support_conversation_tags sct
+			WHERE sct.conversation_id = %s.id
+			  AND sct.tag_id IN ?
+		)`, alias))
+		args = append(args, tagIDs)
+	}
+	for _, tag := range systemTags {
+		switch tag {
+		case model.SupportSystemTagAIHandoff:
+			conditions = append(conditions, conversationAIHandoffCondition(alias))
+		case model.SupportSystemTagAIResolved:
+			conditions = append(conditions, conversationResolvedByAICondition(alias))
+		}
+	}
+	if len(conditions) == 0 {
+		return query
+	}
+	return query.Where("("+strings.Join(conditions, " OR ")+")", args...)
+}
+
 func applyConversationAssignmentFilter(query *gorm.DB, alias, assignedTo, userID string) *gorm.DB {
-	switch strings.TrimSpace(strings.ToLower(assignedTo)) {
-	case "me":
-		userID = strings.TrimSpace(userID)
-		if userID == "" {
-			return query.Where("1 = 0")
+	filters := compactStrings(strings.Split(assignedTo, ","))
+	if len(filters) == 0 {
+		return query
+	}
+	conditions := make([]string, 0, len(filters))
+	args := make([]any, 0, len(filters))
+	seen := make(map[string]bool, len(filters))
+	for _, filter := range filters {
+		switch strings.TrimSpace(strings.ToLower(filter)) {
+		case "me":
+			if seen["me"] {
+				continue
+			}
+			seen["me"] = true
+			userID = strings.TrimSpace(userID)
+			if userID == "" {
+				conditions = append(conditions, "1 = 0")
+				continue
+			}
+			conditions = append(conditions, fmt.Sprintf("%s.assigned_user_id = ?", alias))
+			args = append(args, userID)
+		case "unassigned":
+			if seen["unassigned"] {
+				continue
+			}
+			seen["unassigned"] = true
+			conditions = append(conditions, fmt.Sprintf("%s.assigned_user_id IS NULL AND %s.assigned_agent_id IS NULL", alias, alias))
+		case "others":
+			if seen["others"] {
+				continue
+			}
+			seen["others"] = true
+			userID = strings.TrimSpace(userID)
+			if userID == "" {
+				conditions = append(conditions, fmt.Sprintf("%s.assigned_user_id IS NOT NULL", alias))
+				continue
+			}
+			conditions = append(conditions, fmt.Sprintf("%s.assigned_user_id IS NOT NULL AND %s.assigned_user_id <> ?", alias, alias))
+			args = append(args, userID)
 		}
-		return query.Where(fmt.Sprintf("%s.assigned_user_id = ?", alias), userID)
-	case "unassigned":
-		return query.Where(fmt.Sprintf("%s.assigned_user_id IS NULL AND %s.assigned_agent_id IS NULL", alias, alias))
-	case "others":
-		userID = strings.TrimSpace(userID)
-		if userID == "" {
-			return query.Where(fmt.Sprintf("%s.assigned_user_id IS NOT NULL", alias))
+	}
+	if len(conditions) == 0 {
+		return query
+	}
+	return query.Where("("+strings.Join(conditions, " OR ")+")", args...)
+}
+
+func (r *SupportConversationRepository) applyMailboxScopes(query *gorm.DB, alias string, mailboxID *string, mailboxIDs []string) *gorm.DB {
+	mailboxIDs = compactStrings(mailboxIDs)
+	if len(mailboxIDs) == 0 {
+		return r.applyMailboxScope(query, mailboxID)
+	}
+	ids := make([]string, 0, len(mailboxIDs))
+	includeShared := false
+	seen := make(map[string]bool, len(mailboxIDs))
+	for _, mailboxID := range mailboxIDs {
+		trimmed := strings.TrimSpace(mailboxID)
+		if trimmed == "" || trimmed == "shared" {
+			includeShared = true
+			continue
 		}
-		return query.Where(fmt.Sprintf("%s.assigned_user_id IS NOT NULL AND %s.assigned_user_id <> ?", alias, alias), userID)
+		if seen[trimmed] {
+			continue
+		}
+		seen[trimmed] = true
+		ids = append(ids, trimmed)
+	}
+	switch {
+	case includeShared && len(ids) > 0:
+		return query.Where(fmt.Sprintf("(%s.mailbox_id IS NULL OR %s.mailbox_id IN ?)", alias, alias), ids)
+	case includeShared:
+		return query.Where(fmt.Sprintf("%s.mailbox_id IS NULL", alias))
+	case len(ids) > 0:
+		return query.Where(fmt.Sprintf("%s.mailbox_id IN ?", alias), ids)
 	default:
 		return query
 	}
@@ -648,11 +774,12 @@ func applyConversationAssignmentFilter(query *gorm.DB, alias, assignedTo, userID
 
 func (r *SupportConversationRepository) applyConversationListParams(query *gorm.DB, alias string, params ConversationRepositoryListParams) *gorm.DB {
 	query = r.applyMailboxAccess(query, params.WorkspaceMemberID, params.Role)
-	query = r.applyMailboxScope(query, params.MailboxID)
+	query = r.applyMailboxScopes(query, alias, params.MailboxID, params.MailboxIDs)
 	query = applyConversationFlowState(query, alias, params.FlowState)
 	query = r.applyConversationSearch(query, strings.TrimSpace(params.Search))
 	query = r.applyConversationListFilter(query, alias, params.Filter, params.UserID)
 	query = applyConversationAssignmentFilter(query, alias, params.AssignedTo, params.UserID)
+	query = applyConversationTagFilters(query, alias, params.TagIDs, params.SystemTags)
 	if len(params.Statuses) > 0 {
 		query = query.Where(fmt.Sprintf("%s.status IN ?", alias), params.Statuses)
 	} else if params.Status != "" {
@@ -1102,13 +1229,27 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 				  AND %s
 				  AND sc.assigned_agent_id IS NULL
 				  AND sc.assigned_user_id IS NULL
-			) AS unassigned
+			) AS unassigned,
+			COUNT(*) FILTER (
+				WHERE %s
+			) AS inbox_total,
+			COUNT(*) FILTER (
+				WHERE %s
+			) AS mine_total,
+			COUNT(*) FILTER (
+				WHERE sc.status = 'waiting_on_customer'
+			) AS waiting_total,
+			COUNT(*) FILTER (
+				WHERE %s
+			) AS ai_active_total
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ?
 		  AND sc.status NOT IN ('resolved', 'spam')
-	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition)
+	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition)
 
 	args := []any{}
+	args = append(args, userID, userID)
+	args = append(args, mentionArgs...)
 	args = append(args, userID, userID)
 	args = append(args, mentionArgs...)
 	args = append(args, userID, userID)

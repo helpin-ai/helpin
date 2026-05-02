@@ -24,8 +24,10 @@ function resetStore() {
     searchQuery: '',
     conversationListFilters: {
       states: ['open'],
-      assignment: 'default',
-      ai: 'default',
+      assignment: [],
+      mailboxIds: [],
+      tagIds: [],
+      systemTags: [],
       sort: 'newest',
     },
     activeCustomViewId: null,
@@ -132,8 +134,10 @@ describe('supportInboxStore', () => {
     useSupportInboxStore.setState({
       conversationListFilters: {
         states: ['open'],
-        assignment: 'unassigned',
-        ai: 'ai_handling',
+        assignment: ['unassigned'],
+        mailboxIds: [],
+        tagIds: ['tag-billing'],
+        systemTags: ['ai_handoff'],
         sort: 'oldest',
       },
     });
@@ -142,8 +146,10 @@ describe('supportInboxStore', () => {
 
     expect(useSupportInboxStore.getState().conversationListFilters).toEqual({
       states: ['resolved'],
-      assignment: 'default',
-      ai: 'default',
+      assignment: [],
+      mailboxIds: [],
+      tagIds: [],
+      systemTags: [],
       sort: 'newest',
     });
   });
@@ -156,7 +162,8 @@ describe('supportInboxStore', () => {
         states: 'open,waiting_on_customer',
         mailbox_id: 'mailbox-billing',
         assignment: 'unassigned',
-        ai: 'needs_human',
+        tag_ids: 'tag-billing,tag-vip',
+        system_tags: 'ai_handoff',
         sort: 'oldest',
         search: 'refund',
       },
@@ -168,8 +175,10 @@ describe('supportInboxStore', () => {
     expect(useSupportInboxStore.getState().searchQuery).toBe('refund');
     expect(useSupportInboxStore.getState().conversationListFilters).toEqual({
       states: ['open', 'waiting_on_customer'],
-      assignment: 'unassigned',
-      ai: 'needs_human',
+      assignment: ['unassigned'],
+      mailboxIds: [],
+      tagIds: ['tag-billing', 'tag-vip'],
+      systemTags: ['ai_handoff'],
       sort: 'oldest',
     });
   });
@@ -177,7 +186,7 @@ describe('supportInboxStore', () => {
   it('clears the active custom view when filters are manually changed', () => {
     useSupportInboxStore.setState({ activeCustomViewId: 'view-1' });
 
-    useSupportInboxStore.getState().setConversationListFilter('assignment', 'me');
+    useSupportInboxStore.getState().setConversationListFilter('assignment', ['me']);
 
     expect(useSupportInboxStore.getState().activeCustomViewId).toBeNull();
   });

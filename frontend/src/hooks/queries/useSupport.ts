@@ -41,6 +41,7 @@ import type {
   CreateCannedResponseRequest,
   UpdateCannedResponseRequest,
   SupportMessage,
+  SupportTag,
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
@@ -56,6 +57,8 @@ type SupportConversationFilters = {
   search?: string;
   assigned_to?: string;
   sort?: string;
+  tag_ids?: string;
+  system_tags?: string;
 };
 
 async function loadConversationListPage(
@@ -277,6 +280,15 @@ export function useCannedResponses(workspaceId: string) {
   });
 }
 
+export function useSupportTags(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.tags(workspaceId),
+    queryFn: async (): Promise<SupportTag[]> => unwrap(await supportService.listTags(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  });
+}
+
 export function useSearchCannedResponses(workspaceId: string, query: string, enabled = true) {
   const trimmed = query.trim();
   return useQuery({
@@ -406,6 +418,49 @@ export function useDeleteCannedResponse(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to delete shortcut', { description: error.message });
+    },
+  });
+}
+
+export function useCreateSupportTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; color?: string }) =>
+      supportService.createTag(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create tag', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateSupportTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tagId, payload }: { tagId: string; payload: { name?: string; color?: string } }) =>
+      supportService.updateTag(workspaceId, tagId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update tag', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteSupportTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tagId: string) => supportService.deleteTag(workspaceId, tagId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete tag', { description: error.message });
     },
   });
 }
@@ -788,6 +843,36 @@ export function useUpdateConversationSubject(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update subject', { description: error.message });
+    },
+  });
+}
+
+export function useAddConversationTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, tagId }: { conversationId: string; tagId: string }) =>
+      supportService.addConversationTag(workspaceId, conversationId, tagId).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to add tag', { description: error.message });
+    },
+  });
+}
+
+export function useRemoveConversationTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, tagId }: { conversationId: string; tagId: string }) =>
+      supportService.removeConversationTag(workspaceId, conversationId, tagId).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to remove tag', { description: error.message });
     },
   });
 }

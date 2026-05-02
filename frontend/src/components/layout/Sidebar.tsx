@@ -74,6 +74,8 @@ export function Sidebar() {
   const { data: customViews = [] } = useSupportInboxViews(workspaceId ?? '', hasSupportModule);
   const unreadMailboxScope = selectedMailboxId === 'all' ? undefined : selectedMailboxId;
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '', unreadMailboxScope, hasSupportModule);
+  const { data: workspaceUnreadStats } = useUnreadStats(workspaceId ?? '', undefined, hasSupportModule && !!unreadMailboxScope);
+  const globalUnreadStats = unreadMailboxScope ? workspaceUnreadStats : unreadStats;
   const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
   const updateSupportInboxView = useUpdateSupportInboxView(workspaceId ?? '');
   const deleteSupportInboxView = useDeleteSupportInboxView(workspaceId ?? '');
@@ -362,6 +364,7 @@ export function Sidebar() {
               <SupportRailNav
                 navFilter={navFilter}
                 unreadStats={unreadStats}
+                globalUnreadStats={globalUnreadStats}
                 inboxScopes={inboxScopes}
                 selectedMailboxId={selectedMailboxId}
                 activeCustomViewId={activeCustomViewId}

@@ -10,12 +10,14 @@ const mockUseInfiniteConversations = vi.fn()
 const mockUseMarkConversationRead = vi.fn()
 const mockUseInboxScopes = vi.fn()
 const mockUseCreateSupportInboxView = vi.fn()
+const mockUseSupportTags = vi.fn()
 
 vi.mock('@/hooks/queries/useSupport', () => ({
   useInfiniteConversations: (...args: unknown[]) => mockUseInfiniteConversations(...args),
   useMarkConversationRead: (...args: unknown[]) => mockUseMarkConversationRead(...args),
   useInboxScopes: (...args: unknown[]) => mockUseInboxScopes(...args),
   useCreateSupportInboxView: (...args: unknown[]) => mockUseCreateSupportInboxView(...args),
+  useSupportTags: (...args: unknown[]) => mockUseSupportTags(...args),
 }))
 
 vi.mock('../ConversationRow', () => ({
@@ -36,9 +38,11 @@ describe('ConversationList presence resync', () => {
       navFilter: 'inbox',
       selectedMailboxId: 'all',
       conversationListFilters: {
-        states: ['open'],
-        assignment: 'default',
-        ai: 'default',
+        states: ['open', 'waiting_on_customer'],
+        assignment: [],
+        mailboxIds: [],
+        tagIds: [],
+        systemTags: [],
         sort: 'newest',
       },
     })
@@ -79,6 +83,9 @@ describe('ConversationList presence resync', () => {
         shared_inbox: { id: 'shared', name: 'Shared Inbox' },
         mailboxes: [],
       },
+    })
+    mockUseSupportTags.mockReturnValue({
+      data: [],
     })
   })
 
@@ -152,8 +159,10 @@ describe('ConversationList presence resync', () => {
       selectedMailboxId: 'mailbox-billing',
       conversationListFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: 'default',
-        ai: 'default',
+        assignment: [],
+        mailboxIds: [],
+        tagIds: [],
+        systemTags: [],
         sort: 'newest',
       },
     })
@@ -179,8 +188,10 @@ describe('ConversationList presence resync', () => {
       navFilter: 'waiting',
       conversationListFilters: {
         states: ['waiting_on_customer'],
-        assignment: 'default',
-        ai: 'default',
+        assignment: [],
+        mailboxIds: [],
+        tagIds: [],
+        systemTags: [],
         sort: 'newest',
       },
     })
@@ -212,8 +223,10 @@ describe('ConversationList presence resync', () => {
       searchQuery: 'refund',
       conversationListFilters: {
         states: ['waiting_on_customer'],
-        assignment: 'unassigned',
-        ai: 'needs_human',
+        assignment: ['unassigned'],
+        mailboxIds: [],
+        tagIds: ['tag-billing'],
+        systemTags: ['ai_handoff'],
         sort: 'oldest',
       },
     })
@@ -261,7 +274,8 @@ describe('ConversationList presence resync', () => {
         mailbox_id: 'mailbox-billing',
         search: 'refund',
         assignment: 'unassigned',
-        ai: 'needs_human',
+        tag_ids: 'tag-billing',
+        system_tags: 'ai_handoff',
         sort: 'oldest',
       },
     }, expect.any(Object))
@@ -291,6 +305,142 @@ describe('ConversationList presence resync', () => {
     })
 
     expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent === 'Save as view')).toBe(true)
+
+    act(() => root.unmount())
+  })
+
+  it('keeps custom tags behind a searchable picker in the filter popover', () => {
+    mockUseSupportTags.mockReturnValue({
+      data: Array.from({ length: 16 }, (_, index) => ({
+        id: `tag-${index + 1}`,
+        name: `Tag ${index + 1}`,
+        color: '#2563eb',
+      })),
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    act(() => {
+      filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent === 'Tag 16')).toBe(false)
+    expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent === 'Add')).toBe(true)
+
+    act(() => root.unmount())
+  })
+
+  it('lets selected tag filters be removed from their pill', () => {
+    mockUseSupportTags.mockReturnValue({
+      data: [
+        {
+          id: 'tag-billing',
+          name: 'Billing',
+          color: '#2563eb',
+        },
+      ],
+    })
+    useSupportInboxStore.setState({
+      conversationListFilters: {
+        states: ['open'],
+        assignment: [],
+        mailboxIds: [],
+        tagIds: ['tag-billing'],
+        systemTags: [],
+        sort: 'newest',
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    act(() => {
+      filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const removeButton = document.body.querySelector('[aria-label="Remove Billing"]') as HTMLButtonElement
+    expect(removeButton).not.toBeNull()
+    expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent === 'Add')).toBe(true)
+
+    act(() => {
+      removeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(useSupportInboxStore.getState().conversationListFilters.tagIds).toEqual([])
+
+    act(() => root.unmount())
+  })
+
+  it('lets Main inbox replace All in the team inbox filter', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'waiting',
+      conversationListFilters: {
+        states: ['waiting_on_customer'],
+        assignment: [],
+        mailboxIds: [],
+        tagIds: [],
+        systemTags: [],
+        sort: 'newest',
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    act(() => {
+      filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const mainInboxButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Main inbox') as HTMLButtonElement
+    act(() => {
+      mainInboxButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(useSupportInboxStore.getState().conversationListFilters.mailboxIds).toEqual(['shared'])
+    expect(useSupportInboxStore.getState().selectedMailboxId).toBe('all')
+
+    act(() => root.unmount())
+  })
+
+  it('lets Inbox override Main inbox to All inboxes', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    act(() => {
+      filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const allButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'All') as HTMLButtonElement
+    act(() => {
+      allButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(useSupportInboxStore.getState().conversationListFilters.mailboxIds).toEqual(['all'])
 
     act(() => root.unmount())
   })

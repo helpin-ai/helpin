@@ -505,6 +505,11 @@ func TestSupportConversationRepository(t *testing.T) {
 		now := time.Now()
 		customerMessageAt := now.Add(-time.Minute)
 
+		baseStats, err := repo.GetUnreadStats(ctx, workspaceID, "user-123", "", model.RoleOwner, nil)
+		if err != nil {
+			t.Fatalf("get baseline unread stats: %v", err)
+		}
+
 		humanConv := &model.SupportConversation{
 			WorkspaceID:     workspaceID,
 			Subject:         "Human owned conversation",
@@ -608,26 +613,38 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("get unread stats: %v", err)
 		}
 
-		if stats.Inbox != 2 {
-			t.Fatalf("expected inbox unread count 2, got %d", stats.Inbox)
+		if got := stats.Inbox - baseStats.Inbox; got != 2 {
+			t.Fatalf("expected inbox unread count delta 2, got %d", got)
 		}
-		if stats.Mine != 1 {
-			t.Fatalf("expected mine unread count 1, got %d", stats.Mine)
+		if got := stats.Mine - baseStats.Mine; got != 1 {
+			t.Fatalf("expected mine unread count delta 1, got %d", got)
 		}
-		if stats.Waiting != 1 {
-			t.Fatalf("expected waiting unread count 1, got %d", stats.Waiting)
+		if got := stats.Waiting - baseStats.Waiting; got != 1 {
+			t.Fatalf("expected waiting unread count delta 1, got %d", got)
 		}
-		if stats.Total != 2 {
-			t.Fatalf("expected total unread human inbox count 2, got %d", stats.Total)
+		if got := stats.Total - baseStats.Total; got != 2 {
+			t.Fatalf("expected total unread human inbox count delta 2, got %d", got)
 		}
-		if stats.MyInbox != 1 {
-			t.Fatalf("expected my inbox count 1, got %d", stats.MyInbox)
+		if got := stats.MyInbox - baseStats.MyInbox; got != 1 {
+			t.Fatalf("expected my inbox count delta 1, got %d", got)
 		}
-		if stats.Unassigned != 1 {
-			t.Fatalf("expected unassigned count 1, got %d", stats.Unassigned)
+		if got := stats.Unassigned - baseStats.Unassigned; got != 1 {
+			t.Fatalf("expected unassigned count delta 1, got %d", got)
 		}
-		if stats.AIActive != 1 {
-			t.Fatalf("expected AI active unread count 1, got %d", stats.AIActive)
+		if got := stats.AIActive - baseStats.AIActive; got != 1 {
+			t.Fatalf("expected AI active unread count delta 1, got %d", got)
+		}
+		if got := stats.InboxTotal - baseStats.InboxTotal; got != 2 {
+			t.Fatalf("expected inbox workload count delta 2, got %d", got)
+		}
+		if got := stats.MineTotal - baseStats.MineTotal; got != 1 {
+			t.Fatalf("expected mine workload count delta 1, got %d", got)
+		}
+		if got := stats.WaitingTotal - baseStats.WaitingTotal; got != 1 {
+			t.Fatalf("expected waiting workload count delta 1, got %d", got)
+		}
+		if got := stats.AIActiveTotal - baseStats.AIActiveTotal; got != 1 {
+			t.Fatalf("expected AI active workload count delta 1, got %d", got)
 		}
 	})
 

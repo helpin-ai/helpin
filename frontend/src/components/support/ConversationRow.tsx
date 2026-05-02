@@ -12,6 +12,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { timeAgo, getInitial, getAvatarColor } from './helpers';
 import { ConversationActionsMenu, type ConversationActionMoveOption } from './ConversationActionsMenu';
+import { SUPPORT_SYSTEM_TAGS, SupportTagBadge } from './SupportTagPicker';
 
 const EMPTY_ARRAY: string[] = [];
 
@@ -234,6 +235,20 @@ export const ConversationRow = memo(function ConversationRow({
     () => moveOptions.filter((option) => option.id !== (conversation.mailbox_id ?? 'shared')),
     [conversation.mailbox_id, moveOptions]
   );
+  const rowTags = [
+    ...(conversation.system_tags ?? []).map((tag) => ({
+      id: tag,
+      name: SUPPORT_SYSTEM_TAGS[tag].name,
+      color: SUPPORT_SYSTEM_TAGS[tag].color,
+    })),
+    ...(conversation.tags ?? []).map((tag) => ({
+      id: tag.id,
+      name: tag.name,
+      color: tag.color,
+    })),
+  ];
+  const visibleTags = rowTags.slice(0, 2);
+  const hiddenTagCount = Math.max(rowTags.length - visibleTags.length, 0);
 
   const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
@@ -430,6 +445,16 @@ export const ConversationRow = memo(function ConversationRow({
               ) : null}
             </div>
           </div>
+          {visibleTags.length > 0 && (
+            <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden">
+              {visibleTags.map((tag) => (
+                <SupportTagBadge key={tag.id} name={tag.name} color={tag.color} className="h-4 px-1.5 text-[10px]" />
+              ))}
+              {hiddenTagCount > 0 && (
+                <span className="text-[10px] text-muted-foreground">+{hiddenTagCount}</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,7 +1,6 @@
 import { useMemo, useCallback, useState, memo, useEffect, type ReactNode, type UIEvent } from 'react';
 import {
   Cancel01Icon,
-  CheckmarkCircle02Icon,
   FilterHorizontalIcon,
   Message01Icon,
   PlusSignIcon,
@@ -14,7 +13,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
-import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useMarkConversationRead } from '@/hooks/queries/useSupport';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useMarkConversationRead, useSupportTags } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
@@ -26,14 +26,14 @@ import {
   filterSupportConversations,
   hasConversationListChanges,
   statesEqual,
-  type ConversationAIFilter,
   type ConversationAssignmentFilter,
   type ConversationListFilters,
   type ConversationSortOrder,
   type ConversationStateFilter,
 } from '@/lib/supportInboxFilters';
-import type { SupportInboxScope } from '@/lib/pmTypes';
+import type { SupportInboxScope, SupportSystemTag, SupportTag } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
+import { SUPPORT_SYSTEM_TAGS, SupportTagBadge } from './SupportTagPicker';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -121,8 +121,10 @@ function filterCount(filters: ConversationListFilters, selectedMailboxId: string
   if (selectedMailboxId !== 'all') count += 1;
   if (searchQuery.trim()) count += 1;
   if (!statesEqual(filters.states, defaultStatesForNav(navFilter))) count += 1;
-  if (filters.assignment !== 'default') count += 1;
-  if (filters.ai !== 'default') count += 1;
+  if (filters.assignment.length > 0) count += 1;
+  if (filters.mailboxIds.length > 0) count += 1;
+  if (filters.tagIds.length > 0) count += 1;
+  if (filters.systemTags.length > 0) count += 1;
   if (filters.sort !== 'newest') count += 1;
   return count;
 }
@@ -142,12 +144,11 @@ function FilterPill({
       className={cn(
         'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors',
         selected
-          ? 'border-primary/20 bg-primary/10 text-primary'
+          ? 'border-border bg-primary/10 text-primary'
           : 'border-border bg-background text-foreground hover:bg-muted'
       )}
       onClick={onClick}
     >
-      {selected && <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
       {children}
     </button>
   );
@@ -159,6 +160,103 @@ function FilterSection({ title, children }: { title: string; children: ReactNode
       <div className="text-[11px] font-semibold uppercase tracking-normal text-muted-foreground">{title}</div>
       <div className="flex flex-wrap gap-2">{children}</div>
     </div>
+  );
+}
+
+function TagFilterSelector({
+  tags,
+  selectedTagIds,
+  selectedSystemTags,
+  onToggleTag,
+  onToggleSystemTag,
+}: {
+  tags: SupportTag[];
+  selectedTagIds: string[];
+  selectedSystemTags: SupportSystemTag[];
+  onToggleTag: (tagId: string) => void;
+  onToggleSystemTag: (tag: SupportSystemTag) => void;
+}) {
+  const selectedTags = tags.filter((tag) => selectedTagIds.includes(tag.id));
+
+  return (
+    <>
+      {selectedSystemTags.map((tag) => (
+        <SupportTagBadge
+          key={tag}
+          name={SUPPORT_SYSTEM_TAGS[tag].name}
+          color={SUPPORT_SYSTEM_TAGS[tag].color}
+          onRemove={() => onToggleSystemTag(tag)}
+        />
+      ))}
+      {selectedTags.map((tag) => (
+        <SupportTagBadge
+          key={tag.id}
+          name={tag.name}
+          color={tag.color}
+          onRemove={() => onToggleTag(tag.id)}
+        />
+      ))}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-5 gap-1 rounded-sm border-[0.5px] px-1.5 text-[11px] font-medium leading-none"
+          >
+            <PlusSignIcon className="h-3 w-3" />
+            Add
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 p-0">
+          <Command shouldFilter>
+            <CommandInput placeholder="Search tags..." className="h-8 text-xs" />
+            <CommandList className="max-h-56">
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                No tags found
+              </CommandEmpty>
+              <CommandGroup heading="System">
+                {([
+                  ['AI handoff', 'ai_handoff'],
+                  ['AI resolved', 'ai_resolved'],
+                ] as Array<[string, SupportSystemTag]>).map(([label, value]) => (
+                  <CommandItem
+                    key={value}
+                    value={label}
+                    data-checked={selectedSystemTags.includes(value)}
+                    onSelect={() => onToggleSystemTag(value)}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: SUPPORT_SYSTEM_TAGS[value].color }}
+                    />
+                    <span className="truncate">{label}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              {tags.length > 0 && (
+                <CommandGroup heading="Tags">
+                  {tags.map((tag) => (
+                    <CommandItem
+                      key={tag.id}
+                      value={tag.name}
+                      data-checked={selectedTagIds.includes(tag.id)}
+                      onSelect={() => onToggleTag(tag.id)}
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: tag.color || 'var(--muted-foreground)' }}
+                      />
+                      <span className="truncate">{tag.name}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
 
@@ -186,6 +284,7 @@ export function ConversationList({
   const setMailboxFilter = useSupportInboxStore((s) => s.setMailboxFilter);
   const conversationListFilters = useSupportInboxStore((s) => s.conversationListFilters);
   const setConversationListFilter = useSupportInboxStore((s) => s.setConversationListFilter);
+  const setConversationMailboxFilters = useSupportInboxStore((s) => s.setConversationMailboxFilters);
   const resetConversationListFilters = useSupportInboxStore((s) => s.resetConversationListFilters);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
   const [searchExpanded, setSearchExpanded] = useState(false);
@@ -197,6 +296,7 @@ export function ConversationList({
   const markConversationRead = useMarkConversationRead(workspaceId);
   const createInboxView = useCreateSupportInboxView(workspaceId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
+  const { data: supportTags = [] } = useSupportTags(workspaceId);
 
   const handleSelect = useCallback((id: string, unreadCount?: number) => {
     selectConversation(id);
@@ -230,17 +330,19 @@ export function ConversationList({
     const hasExplicitStateFilters = !statesEqual(conversationListFilters.states, defaultStatesForNav(navFilter));
     return filterSupportConversations(conversations, {
       navFilter,
-      mailboxScope: selectedMailboxId,
+      mailboxScope: selectedMailboxId === 'all' && conversationListFilters.mailboxIds.length === 0 && navFilter === 'inbox' ? 'shared' : selectedMailboxId,
+      mailboxScopes: conversationListFilters.mailboxIds,
       userId,
       searchQuery: '',
       sortOrder: conversationListFilters.sort,
       skipViewFilter: hasExplicitStateFilters,
     });
-  }, [conversationListFilters.sort, conversationListFilters.states, conversations, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.mailboxIds, conversationListFilters.sort, conversationListFilters.states, conversations, navFilter, selectedMailboxId, userId]);
   const mailboxMoveOptions = useMemo(
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]
   );
+  const teamInboxFilterOptions = inboxScopes?.mailboxes ?? [];
   const selectedMailboxName = useMemo(() => {
     if (selectedMailboxId === 'all') return null;
     if (selectedMailboxId === inboxScopes?.shared_inbox?.id || selectedMailboxId === 'shared') {
@@ -294,6 +396,54 @@ export function ConversationList({
     if (nextStates.length === 0) return;
     setConversationListFilter('states', nextStates);
   }, [conversationListFilters.states, setConversationListFilter]);
+
+  const toggleAssignmentFilter = useCallback((assignment: ConversationAssignmentFilter) => {
+    const currentAssignments = conversationListFilters.assignment;
+    const nextAssignments = currentAssignments.includes(assignment)
+      ? currentAssignments.filter((value) => value !== assignment)
+      : [...currentAssignments, assignment];
+    setConversationListFilter('assignment', nextAssignments);
+  }, [conversationListFilters.assignment, setConversationListFilter]);
+
+  const toggleMailboxFilter = useCallback((mailboxId: string) => {
+    if (mailboxId === 'all') {
+      setConversationMailboxFilters(navFilter === 'inbox' ? ['all'] : []);
+      return;
+    }
+    const currentMailboxIds = conversationListFilters.mailboxIds.length > 0
+      ? conversationListFilters.mailboxIds
+      : selectedMailboxId !== 'all'
+        ? [selectedMailboxId]
+        : navFilter === 'inbox'
+          ? ['shared']
+          : [];
+    if (currentMailboxIds.length === 0) {
+      setConversationMailboxFilters([mailboxId]);
+      return;
+    }
+    const scopedMailboxIds = currentMailboxIds.filter((value) => value !== 'all');
+    const nextMailboxIds = scopedMailboxIds.includes(mailboxId)
+      ? scopedMailboxIds.filter((value) => value !== mailboxId)
+      : [...scopedMailboxIds, mailboxId];
+    if (nextMailboxIds.length === 0) return;
+    setConversationMailboxFilters(nextMailboxIds);
+  }, [conversationListFilters.mailboxIds, navFilter, selectedMailboxId, setConversationMailboxFilters]);
+
+  const toggleTagFilter = useCallback((tagId: string) => {
+    const currentTags = conversationListFilters.tagIds;
+    const nextTags = currentTags.includes(tagId)
+      ? currentTags.filter((value) => value !== tagId)
+      : [...currentTags, tagId];
+    setConversationListFilter('tagIds', nextTags);
+  }, [conversationListFilters.tagIds, setConversationListFilter]);
+
+  const toggleSystemTagFilter = useCallback((tag: SupportSystemTag) => {
+    const currentTags = conversationListFilters.systemTags;
+    const nextTags = currentTags.includes(tag)
+      ? currentTags.filter((value) => value !== tag)
+      : [...currentTags, tag];
+    setConversationListFilter('systemTags', nextTags);
+  }, [conversationListFilters.systemTags, setConversationListFilter]);
 
   const handleSaveView = useCallback(() => {
     const name = saveViewName.trim();
@@ -376,7 +526,7 @@ export function ConversationList({
                   )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="end" className="w-[292px] p-3">
+              <PopoverContent side="right" align="start" sideOffset={8} className="w-[380px] p-3">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold">View & filters</div>
                   <Button
@@ -411,45 +561,57 @@ export function ConversationList({
                   </FilterSection>
                   <FilterSection title="Assigned to">
                     {[
-                      ['Any', 'default'],
                       ['Me', 'me'],
                       ['Unassigned', 'unassigned'],
                       ['Others', 'others'],
                     ].map(([label, value]) => (
                       <FilterPill
                         key={value}
-                        selected={conversationListFilters.assignment === value}
-                        onClick={() => setConversationListFilter('assignment', value as ConversationAssignmentFilter)}
+                        selected={conversationListFilters.assignment.includes(value as ConversationAssignmentFilter)}
+                        onClick={() => toggleAssignmentFilter(value as ConversationAssignmentFilter)}
                       >
                         {label}
                       </FilterPill>
                     ))}
                   </FilterSection>
-                  <FilterSection title="AI">
-                    {[
-                      ['Any', 'default'],
-                      ['AI handling', 'ai_handling'],
-                      ['Needs human', 'needs_human'],
-                      ['AI resolved', 'resolved_by_ai'],
-                    ].map(([label, value]) => (
-                      <FilterPill
-                        key={value}
-                        selected={conversationListFilters.ai === value}
-                        onClick={() => setConversationListFilter('ai', value as ConversationAIFilter)}
-                      >
-                        {label}
-                      </FilterPill>
-                    ))}
+                  <FilterSection title="Tags">
+                    <TagFilterSelector
+                      tags={supportTags}
+                      selectedTagIds={conversationListFilters.tagIds}
+                      selectedSystemTags={conversationListFilters.systemTags}
+                      onToggleTag={toggleTagFilter}
+                      onToggleSystemTag={toggleSystemTagFilter}
+                    />
                   </FilterSection>
                   <FilterSection title="Team inbox">
-                    <FilterPill selected={selectedMailboxId === 'all'} onClick={() => setMailboxFilter('all')}>
+                    <FilterPill
+                      selected={
+                        conversationListFilters.mailboxIds.includes('all') ||
+                        (selectedMailboxId === 'all' && conversationListFilters.mailboxIds.length === 0 && navFilter !== 'inbox')
+                      }
+                      onClick={() => toggleMailboxFilter('all')}
+                    >
                       All
                     </FilterPill>
-                    {mailboxMoveOptions.map((mailbox) => (
+                    <FilterPill
+                      selected={
+                        conversationListFilters.mailboxIds.length > 0
+                          ? conversationListFilters.mailboxIds.includes('shared')
+                          : selectedMailboxId === 'all' && navFilter === 'inbox'
+                      }
+                      onClick={() => toggleMailboxFilter('shared')}
+                    >
+                      Main inbox
+                    </FilterPill>
+                    {teamInboxFilterOptions.map((mailbox) => (
                       <FilterPill
                         key={mailbox.id}
-                        selected={selectedMailboxId === mailbox.id || (mailbox.id === 'shared' && selectedMailboxId === 'shared')}
-                        onClick={() => setMailboxFilter(mailbox.id)}
+                        selected={
+                          conversationListFilters.mailboxIds.length > 0
+                            ? conversationListFilters.mailboxIds.includes(mailbox.id)
+                            : selectedMailboxId === mailbox.id
+                        }
+                        onClick={() => toggleMailboxFilter(mailbox.id)}
                       >
                         {mailbox.name}
                       </FilterPill>

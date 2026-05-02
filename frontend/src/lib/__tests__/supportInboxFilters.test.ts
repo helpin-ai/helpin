@@ -37,7 +37,7 @@ describe('filterSupportConversations', () => {
       searchQuery: '',
     });
 
-    expect(result.map((conversation) => conversation.id)).toEqual(['human', 'ai-escalated']);
+    expect(result.map((conversation) => conversation.id)).toEqual(['human', 'ai-escalated', 'waiting']);
   });
 
   it('keeps Mine actionable and excludes normal AI-owned work', () => {
@@ -80,7 +80,7 @@ describe('filterSupportConversations', () => {
       mailboxScope: 'all',
       userId: 'user-1',
       searchQuery: '',
-    }).map((conversation) => conversation.id)).toEqual(['resolved']);
+    }).map((conversation) => conversation.id)).toEqual(['resolved', 'ai-resolved']);
 
     expect(filterSupportConversations(conversations, {
       navFilter: 'spam',
@@ -137,7 +137,7 @@ describe('buildConversationListRequestFilters', () => {
       selectedMailboxId: 'all',
       searchQuery: '',
       listFilters: defaultConversationListFiltersForNav('inbox'),
-    })).toEqual({ filter: 'inbox' });
+    })).toEqual({ filter: 'inbox', mailbox_id: 'shared' });
   });
 
   it('adds assignment and sort refinements without changing the sidebar view', () => {
@@ -145,7 +145,7 @@ describe('buildConversationListRequestFilters', () => {
       navFilter: 'inbox',
       selectedMailboxId: 'mailbox-billing',
       searchQuery: 'refund',
-      listFilters: { ...defaultConversationListFiltersForNav('inbox'), assignment: 'unassigned', sort: 'oldest' },
+      listFilters: { ...defaultConversationListFiltersForNav('inbox'), assignment: ['unassigned'], sort: 'oldest' },
     })).toEqual({
       filter: 'inbox',
       mailbox_id: 'mailbox-billing',
@@ -155,13 +155,39 @@ describe('buildConversationListRequestFilters', () => {
     });
   });
 
-  it('lets explicit AI filters replace conflicting sidebar constraints', () => {
+  it('sends multi-select assignment and team inbox filters as CSV lists', () => {
     expect(buildConversationListRequestFilters({
-      navFilter: 'resolved',
+      navFilter: 'inbox',
       selectedMailboxId: 'all',
       searchQuery: '',
-      listFilters: { ...defaultConversationListFiltersForNav('resolved'), ai: 'ai_handling' },
-    })).toEqual({ flow_state: 'ai_handling' });
+      listFilters: {
+        ...defaultConversationListFiltersForNav('inbox'),
+        assignment: ['me', 'unassigned'],
+        mailboxIds: ['mailbox-billing', 'mailbox-sales'],
+      },
+    })).toEqual({
+      filter: 'inbox',
+      assigned_to: 'me,unassigned',
+      mailbox_ids: 'mailbox-billing,mailbox-sales',
+    });
+  });
+
+  it('adds user and system tag filters without changing the sidebar view', () => {
+    expect(buildConversationListRequestFilters({
+      navFilter: 'inbox',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: {
+        ...defaultConversationListFiltersForNav('inbox'),
+        tagIds: ['tag-billing', 'tag-vip'],
+        systemTags: ['ai_handoff'],
+      },
+    })).toEqual({
+      filter: 'inbox',
+      mailbox_id: 'shared',
+      tag_ids: 'tag-billing,tag-vip',
+      system_tags: 'ai_handoff',
+    });
   });
 
   it('uses explicit multi-state filters when the visible state selection changes', () => {
@@ -169,18 +195,44 @@ describe('buildConversationListRequestFilters', () => {
       navFilter: 'inbox',
       selectedMailboxId: 'all',
       searchQuery: '',
-      listFilters: { ...defaultConversationListFiltersForNav('inbox'), states: ['open', 'waiting_on_customer'] },
+      listFilters: { ...defaultConversationListFiltersForNav('inbox'), states: ['open'] },
     })).toEqual({
-      statuses: 'open,waiting_on_customer',
+      mailbox_id: 'shared',
+      statuses: 'open',
     });
   });
 
-  it('shows Mine as Open plus Waiting without changing the backend mine filter', () => {
+  it('shows Mine globally as Open plus Waiting without changing the backend mine filter', () => {
     expect(buildConversationListRequestFilters({
       navFilter: 'mine',
       selectedMailboxId: 'all',
       searchQuery: '',
       listFilters: defaultConversationListFiltersForNav('mine'),
     })).toEqual({ filter: 'mine' });
+  });
+
+  it('shows non-inbox sidebar state views across all inboxes by default', () => {
+    expect(buildConversationListRequestFilters({
+      navFilter: 'waiting',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: defaultConversationListFiltersForNav('waiting'),
+    })).toEqual({ status: 'waiting_on_customer' });
+
+    expect(buildConversationListRequestFilters({
+      navFilter: 'ai_active',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: defaultConversationListFiltersForNav('ai_active'),
+    })).toEqual({ flow_state: 'ai_handling' });
+  });
+
+  it('allows Inbox to be explicitly expanded to all inboxes', () => {
+    expect(buildConversationListRequestFilters({
+      navFilter: 'inbox',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: { ...defaultConversationListFiltersForNav('inbox'), mailboxIds: ['all'] },
+    })).toEqual({ filter: 'inbox' });
   });
 });

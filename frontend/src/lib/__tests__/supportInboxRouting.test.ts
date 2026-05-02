@@ -58,8 +58,10 @@ describe('supportInboxRouting', () => {
       searchQuery: '',
       listFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: 'default',
-        ai: 'default',
+        assignment: [],
+        mailboxIds: [],
+        tagIds: [],
+        systemTags: [],
         sort: 'newest',
       },
     })).toEqual({ view: 'mine' });
@@ -71,10 +73,32 @@ describe('supportInboxRouting', () => {
       searchQuery: '',
       listFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: 'default',
-        ai: 'default',
+        assignment: [],
+        mailboxIds: [],
+        tagIds: [],
+        systemTags: [],
         sort: 'newest',
       },
-    })).toEqual({ states: 'open,waiting_on_customer' });
+    })).toEqual({});
+  });
+
+  it('stores tag filters in the URL', () => {
+    expect(buildSupportInboxSearch({
+      navFilter: 'inbox',
+      selectedMailboxId: 'all',
+      statusFilter: 'all',
+      searchQuery: '',
+      listFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: [],
+        mailboxIds: [],
+        tagIds: ['tag-billing'],
+        systemTags: ['ai_handoff'],
+        sort: 'newest',
+      },
+    })).toEqual({
+      tag_ids: 'tag-billing',
+      system_tags: 'ai_handoff',
+    });
   });
 });

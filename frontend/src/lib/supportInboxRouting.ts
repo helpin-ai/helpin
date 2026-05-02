@@ -13,6 +13,9 @@ export type SupportInboxRouteSearch = {
   ai?: string;
   sort?: string;
   states?: string;
+  mailbox_ids?: string;
+  tag_ids?: string;
+  system_tags?: string;
 };
 
 const VIEW_BY_FILTER: Record<NavFilter, string> = {
@@ -57,6 +60,9 @@ export function normalizeSupportInboxRouteSearch(search: Record<string, unknown>
     ai: typeof search.ai === 'string' ? search.ai : undefined,
     sort: typeof search.sort === 'string' ? search.sort : undefined,
     states: typeof search.states === 'string' ? search.states : undefined,
+    mailbox_ids: typeof search.mailbox_ids === 'string' ? search.mailbox_ids : undefined,
+    tag_ids: typeof search.tag_ids === 'string' ? search.tag_ids : undefined,
+    system_tags: typeof search.system_tags === 'string' ? search.system_tags : undefined,
   };
 }
 
@@ -100,17 +106,23 @@ export function buildSupportInboxSearch({
   if (activeCustomViewId) {
     search.custom_view = activeCustomViewId;
   }
-  if (listFilters?.assignment && listFilters.assignment !== 'default') {
-    search.assigned_to = listFilters.assignment;
-  }
-  if (listFilters?.ai && listFilters.ai !== 'default') {
-    search.ai = listFilters.ai;
+  if (listFilters?.assignment && listFilters.assignment.length > 0) {
+    search.assigned_to = listFilters.assignment.join(',');
   }
   if (listFilters?.sort && listFilters.sort !== 'newest') {
     search.sort = listFilters.sort;
   }
   if (listFilters?.states && !statesEqual(listFilters.states, defaultStatesForNav(navFilter))) {
     search.states = listFilters.states.join(',');
+  }
+  if (listFilters?.mailboxIds && listFilters.mailboxIds.length > 0) {
+    search.mailbox_ids = listFilters.mailboxIds.join(',');
+  }
+  if (listFilters?.tagIds && listFilters.tagIds.length > 0) {
+    search.tag_ids = listFilters.tagIds.join(',');
+  }
+  if (listFilters?.systemTags && listFilters.systemTags.length > 0) {
+    search.system_tags = listFilters.systemTags.join(',');
   }
   return search;
 }

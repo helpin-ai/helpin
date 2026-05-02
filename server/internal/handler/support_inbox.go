@@ -54,6 +54,9 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 	filter := strings.TrimSpace(r.URL.Query().Get("filter"))
 	assignedTo := strings.TrimSpace(r.URL.Query().Get("assigned_to"))
 	sortOrder := strings.TrimSpace(r.URL.Query().Get("sort"))
+	tagIDs := splitQueryCSV(r.URL.Query().Get("tag_ids"))
+	systemTags := splitQueryCSV(r.URL.Query().Get("system_tags"))
+	mailboxIDs := splitQueryCSV(r.URL.Query().Get("mailbox_ids"))
 	var mailboxID *string
 	if values, ok := r.URL.Query()["mailbox_id"]; ok {
 		mailboxParam := strings.TrimSpace(values[0])
@@ -74,12 +77,15 @@ func (h *SupportInboxHandler) ListConversations(w http.ResponseWriter, r *http.R
 		Priority:    priority,
 		Pagination:  pagination,
 		MailboxID:   mailboxID,
+		MailboxIDs:  mailboxIDs,
 		FlowState:   flowState,
 		Search:      search,
 		Filter:      filter,
 		AssignedTo:  assignedTo,
 		Sort:        sortOrder,
 		AIState:     []string{aiState},
+		TagIDs:      tagIDs,
+		SystemTags:  systemTags,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

@@ -33,6 +33,7 @@ type SupportInboxService struct {
 	mailboxRepo             *repository.SupportMailboxRepository
 	emailRouteRepo          *repository.SupportEmailRouteRepository
 	messageRepo             *repository.SupportMessageRepository
+	tagRepo                 *repository.SupportTagRepository
 	agentRepo               *repository.AgentRepository
 	assocRepo               *repository.CRMAssociationRepository
 	installationRepo        *repository.SupportInboxInstallationRepository
@@ -129,6 +130,14 @@ func (s *SupportInboxService) SetRouteDomain(domain string) *SupportInboxService
 		return nil
 	}
 	s.routeDomain = strings.TrimSpace(domain)
+	return s
+}
+
+func (s *SupportInboxService) SetSupportTagRepo(repo *repository.SupportTagRepository) *SupportInboxService {
+	if s == nil {
+		return nil
+	}
+	s.tagRepo = repo
 	return s
 }
 
@@ -749,6 +758,15 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, par
 	if err := s.requireMailboxAccess(ctx, params.WorkspaceID, params.MailboxID); err != nil {
 		return nil, err
 	}
+	for _, mailboxID := range params.MailboxIDs {
+		trimmed := strings.TrimSpace(mailboxID)
+		if trimmed == "" || trimmed == "shared" {
+			continue
+		}
+		if err := s.requireMailboxAccess(ctx, params.WorkspaceID, &trimmed); err != nil {
+			return nil, err
+		}
+	}
 	workspaceMemberID, role := s.actorMailboxScope(ctx, params.WorkspaceID)
 	conversations, total, err := s.conversationRepo.List(ctx, repository.ConversationRepositoryListParams{
 		ConversationListParams: params,
@@ -766,6 +784,7 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, par
 			slog.ErrorContext(ctx, "hydrate support conversation triage list", "error", err, "workspace_id", params.WorkspaceID)
 		}
 	}
+	s.hydrateConversationTags(ctx, params.WorkspaceID, conversations)
 
 	stats, err := s.conversationRepo.GetUnreadStats(ctx, params.WorkspaceID, params.UserID, workspaceMemberID, role, params.MailboxID)
 	if err != nil {
@@ -796,6 +815,73 @@ func (s *SupportInboxService) ListConversationsWithMeta(ctx context.Context, par
 			Unread: stats,
 		},
 	}, nil
+}
+
+func (s *SupportInboxService) hydrateConversationTags(ctx context.Context, workspaceID string, conversations []model.SupportConversation) {
+	if len(conversations) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(conversations))
+	for i := range conversations {
+		conversations[i].SystemTags = supportConversationSystemTags(conversations[i])
+		ids = append(ids, conversations[i].ID)
+	}
+	if s.tagRepo == nil {
+		return
+	}
+	tagsByConversation, err := s.tagRepo.ListByConversationIDs(ctx, workspaceID, ids)
+	if err != nil {
+		slog.ErrorContext(ctx, "hydrate support conversation tags", "error", err, "workspace_id", workspaceID)
+		return
+	}
+	for i := range conversations {
+		conversations[i].Tags = tagsByConversation[conversations[i].ID]
+	}
+}
+
+func supportConversationSystemTags(conversation model.SupportConversation) []string {
+	tags := make([]string, 0, 2)
+	if supportConversationHasAIHandoff(conversation) {
+		tags = append(tags, model.SupportSystemTagAIHandoff)
+	}
+	if conversationResolvedByAI(conversation) {
+		tags = append(tags, model.SupportSystemTagAIResolved)
+	}
+	return tags
+}
+
+func supportConversationHasAIHandoff(conversation model.SupportConversation) bool {
+	aiInvolved := conversation.AIState != nil || conversation.AITurnCount > 0
+	if conversation.AIState != nil && *conversation.AIState == "escalated" {
+		return true
+	}
+	if conversation.AIEscalatedAt != nil {
+		return true
+	}
+	if conversation.CustomerRequestedHumanAt != nil && aiInvolved {
+		return true
+	}
+	if conversation.FlowState == nil || !aiInvolved {
+		return false
+	}
+	switch *conversation.FlowState {
+	case model.SupportConversationFlowStateWaitingForHuman,
+		model.SupportConversationFlowStateQueuedForHuman,
+		model.SupportConversationFlowStateAfterHoursQueue:
+		return true
+	default:
+		return false
+	}
+}
+
+func conversationResolvedByAI(conversation model.SupportConversation) bool {
+	if conversation.HumanTakeover != nil && *conversation.HumanTakeover {
+		return false
+	}
+	if conversation.FlowState != nil && *conversation.FlowState == model.SupportConversationFlowStateResolvedByAI {
+		return true
+	}
+	return conversation.FlowState == nil && conversation.AIState != nil && *conversation.AIState == "resolved"
 }
 
 // GetUnreadStats returns aggregate unread conversation counts for sidebar badges.
@@ -998,6 +1084,10 @@ func (s *SupportInboxService) GetConversation(ctx context.Context, workspaceID, 
 			slog.ErrorContext(ctx, "hydrate support conversation triage", "error", err, "workspace_id", workspaceID, "conversation_id", id)
 		}
 	}
+	hydrated := []model.SupportConversation{*ticket}
+	s.hydrateConversationTags(ctx, workspaceID, hydrated)
+	ticket.Tags = hydrated[0].Tags
+	ticket.SystemTags = hydrated[0].SystemTags
 	return ticket, nil
 }
 
