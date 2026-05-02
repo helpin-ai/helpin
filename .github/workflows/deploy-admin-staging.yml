@@ -15,6 +15,11 @@ on:
       - "pnpm-workspace.yaml"
       - ".github/workflows/deploy-admin-staging.yml"
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Run regardless of changed paths"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
