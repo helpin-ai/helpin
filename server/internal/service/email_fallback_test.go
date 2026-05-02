@@ -1933,6 +1933,72 @@ func TestEmailFallbackProcessInboundEmailReopensResolvedConversation(t *testing.
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailReopensWaitingConversation(t *testing.T) {
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+	ctx := context.Background()
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	assignedUserID := "22222222-2222-2222-2222-222222222222"
+	customerEmail := "customer@example.com"
+	customerName := "Customer"
+	flowState := model.SupportConversationFlowStateWaitingForHuman
+	conversationID := "55555555-5555-5555-5555-555555555555"
+	conversation := &model.SupportConversation{
+		ID:             conversationID,
+		WorkspaceID:    workspaceID,
+		Subject:        "Plan question",
+		Status:         model.SupportConversationStatusWaitingOnCustomer,
+		FlowState:      &flowState,
+		AssignedUserID: &assignedUserID,
+		CustomerEmail:  &customerEmail,
+		CustomerName:   &customerName,
+		Source:         "email",
+	}
+	if err := env.convRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create waiting conversation: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MessageID:         "pm-waiting-reopen-1",
+		MessageStream:     "inbound",
+		OriginalRecipient: "conv-" + conversationID + "@replies.helpin.ai",
+		To:                "conv-" + conversationID + "@replies.helpin.ai",
+		From:              customerEmail,
+		FromFull:          model.PostmarkAddress{Name: customerName, Email: customerEmail},
+		Subject:           "Re: Plan question",
+		StrippedTextReply: "Here is the info you asked for.",
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-waiting-reopen-1"}`); err != nil {
+		t.Fatalf("process inbound email: %v", err)
+	}
+
+	updated, err := env.convRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("load updated conversation: %v", err)
+	}
+	if updated.Status != model.SupportConversationStatusOpen {
+		t.Fatalf("status = %q, want open", updated.Status)
+	}
+	if updated.ClosedAt != nil {
+		t.Fatalf("closed_at = %v, want nil", updated.ClosedAt)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAssignedToHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAssignedToHuman)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, true)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	for _, msg := range messages {
+		if msg.MessageType == "system" && msg.SystemEventType != nil && *msg.SystemEventType == string(model.SystemEventReopened) {
+			t.Fatal("waiting customer reply should not add a reopened system event")
+		}
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailIgnoresSpamConversation(t *testing.T) {
 	settings := model.DefaultSupportInboxSettings()
 	env := setupEmailFallbackInboundTestEnv(t, settings)

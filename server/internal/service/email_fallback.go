@@ -504,7 +504,9 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		ViaChannel:        &viaEmail,
 	}
 
-	wasResolved := model.NormalizeSupportConversationStatus(conv.Status) == model.SupportConversationStatusResolved
+	normalizedStatus := model.NormalizeSupportConversationStatus(conv.Status)
+	wasResolved := normalizedStatus == model.SupportConversationStatusResolved
+	shouldReopen := wasResolved || normalizedStatus == model.SupportConversationStatusWaitingOnCustomer
 
 	var createdMsg *model.SupportMessage
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -544,7 +546,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			return err
 		}
 
-		if wasResolved {
+		if shouldReopen {
 			reopenFlowState := supportEmailReopenFlowState(conv)
 			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
 				"status":      model.SupportConversationStatusOpen,
@@ -560,8 +562,10 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			conv.FlowState = &flowState
 			conv.ResolvedAt = nil
 			conv.ClosedAt = nil
-			if err := createEmailReopenedSystemMessage(ctx, msgRepoTx, conv); err != nil {
-				return err
+			if wasResolved {
+				if err := createEmailReopenedSystemMessage(ctx, msgRepoTx, conv); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -590,7 +594,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		_ = s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, s.now())
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, "email:"+createdMsg.ID))
-	if wasResolved {
+	if shouldReopen {
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
 			Entity:      "support_conversation",
@@ -1974,8 +1978,8 @@ func isEmailFallbackInboundTerminalStatus(status string) bool {
 	}
 }
 
-// supportEmailReopenFlowState computes the flow state a resolved conversation
-// should transition to when reopened by an inbound customer email reply.
+// supportEmailReopenFlowState computes the flow state a conversation should
+// transition to when an inbound customer email reply makes it actionable again.
 func supportEmailReopenFlowState(conv *model.SupportConversation) string {
 	if conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
 		return model.SupportConversationFlowStateAssignedToHuman
