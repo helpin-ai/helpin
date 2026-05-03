@@ -32,7 +32,7 @@ func validateNodeSchema(node *tiptap.Node, path NodePath) error {
 				return fmt.Errorf("invalid list child %s at %s", child.Type, path.String())
 			}
 		}
-	case "listItem", "taskItem", "callout":
+	case "listItem", "taskItem", "callout", "aiSection":
 		if len(node.Content) == 0 {
 			return fmt.Errorf("%s has no content at %s", node.Type, path.String())
 		}
@@ -79,6 +79,20 @@ func validateNodeSchema(node *tiptap.Node, path NodePath) error {
 		if strAttr(node.Attrs, "embedUrl") == "" {
 			return fmt.Errorf("video embed url is required at %s", path.String())
 		}
+	case "entityEmbed":
+		entityType := strAttr(node.Attrs, "entityType")
+		switch entityType {
+		case "task", "story", "epic", "support_conversation", "deal", "contact", "company":
+		default:
+			return fmt.Errorf("invalid entity embed type at %s", path.String())
+		}
+		if strAttr(node.Attrs, "entityId") == "" {
+			return fmt.Errorf("entity embed id is required at %s", path.String())
+		}
+	case "citationBlock":
+		if err := validateCitationBlock(node, path); err != nil {
+			return err
+		}
 	case "horizontalRule", "hardBreak":
 		if len(node.Content) > 0 {
 			return fmt.Errorf("%s should not have children at %s", node.Type, path.String())
@@ -90,6 +104,33 @@ func validateNodeSchema(node *tiptap.Node, path NodePath) error {
 	for i := range node.Content {
 		if err := validateNodeSchema(&node.Content[i], path.Child(i)); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateCitationBlock(node *tiptap.Node, path NodePath) error {
+	raw, ok := node.Attrs["sources"]
+	if !ok || raw == nil {
+		return nil
+	}
+	sources, ok := raw.([]any)
+	if !ok {
+		return fmt.Errorf("citation sources must be an array at %s", path.String())
+	}
+	for i, item := range sources {
+		source, ok := item.(map[string]any)
+		if !ok {
+			return fmt.Errorf("citation source %d must be an object at %s", i, path.String())
+		}
+		sourceType := strAttr(source, "sourceType")
+		switch sourceType {
+		case "docs_chunk", "support_conversation":
+		default:
+			return fmt.Errorf("invalid citation source type at %s", path.String())
+		}
+		if strAttr(source, "sourceId") == "" {
+			return fmt.Errorf("citation source id is required at %s", path.String())
 		}
 	}
 	return nil

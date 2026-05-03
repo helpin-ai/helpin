@@ -13,7 +13,7 @@ func TestListWidgetTeammates_ShowsSupportAccessibleMembersIncludingOffline(t *te
 	db := newTestDB(t)
 	ctx := context.Background()
 
-	mustExec(t, db, `CREATE TABLE workspace_module_grants (
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS workspace_module_grants (
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
 		module TEXT NOT NULL,

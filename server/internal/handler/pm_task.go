@@ -197,6 +197,7 @@ func (h *PMTaskHandler) ListBoardMemberColumn(w http.ResponseWriter, r *http.Req
 }
 
 func boardFilters(r *http.Request) model.PMTaskFilters {
+	archived, _ := queryBoolPtr(r, "archived")
 	return model.PMTaskFilters{
 		TeamID:                queryStringPtr(r, "team_id"),
 		Priority:              queryStringPtr(r, "priority"),
@@ -220,6 +221,7 @@ func boardFilters(r *http.Request) model.PMTaskFilters {
 		Blocked:               queryStringPtr(r, "blocked"),
 		Blocking:              queryStringPtr(r, "blocking"),
 		UpdatedAfter:          queryStringPtr(r, "updated_after"),
+		Archived:              archived,
 	}
 }
 

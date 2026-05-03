@@ -57,4 +57,7 @@ export const supportCoverageService = {
 
   submitDocsIssueFeedback: (wsId: string, conversationId: string, docsIssue: boolean) =>
     api.post(`/support/coverage/conversations/${conversationId}/docs-issue${qs(wsId)}`, { docs_issue: docsIssue }),
+
+  triggerReanalysis: (wsId: string) =>
+    api.post<{ status: string }>(`/support/coverage/reanalyze${qs(wsId)}`, {}),
 }

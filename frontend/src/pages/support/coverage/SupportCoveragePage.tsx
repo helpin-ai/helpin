@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
 import { useDocsCollections, useDocsSpaces } from '@/hooks/queries/useDocs'
@@ -11,7 +14,8 @@ import type {
   SupportCoverageGapListItem,
   SupportCoverageSummary,
 } from '@/lib/supportCoverageTypes'
-import { GAP_STATUS_LABELS } from '@/lib/supportCoverageTypes'
+import { GAP_STATUS_LABELS, GAP_KIND_DESCRIPTIONS, GAP_KIND_COLORS } from '@/lib/supportCoverageTypes'
+import { timeAgo } from '@/lib/utils'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 const STATUS_FILTERS = ['open', 'done', 'rejected'] as const
@@ -23,11 +27,12 @@ export function SupportCoveragePage() {
 
   const [summary, setSummary] = useState<SupportCoverageSummary | null>(null)
   const [gaps, setGaps] = useState<SupportCoverageGapListItem[]>([])
-  const [total, setTotal] = useState(0)
+  const [, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selectedGap, setSelectedGap] = useState<SupportCoverageGapDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>('open')
+  const [kindFilter, setKindFilter] = useState('all')
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [targetSpaceId, setTargetSpaceId] = useState('')
@@ -40,6 +45,50 @@ export function SupportCoveragePage() {
   const { data: access } = useWorkspaceAccess(wsId)
   const { has } = usePermissions(access)
   const canGenerate = has('support.edit') && has('docs.edit')
+  const canReanalyze = has('settings.manage')
+  const [reanalyzing, setReanalyzing] = useState(false)
+  const reanalyzeBaselineRef = useRef<string | null>(null)
+
+  const handleReanalyze = useCallback(async () => {
+    if (!wsId || reanalyzing) return
+    setReanalyzing(true)
+    reanalyzeBaselineRef.current = summary?.last_analyzed_at ?? null
+    try {
+      const { error } = await supportCoverageService.triggerReanalysis(wsId)
+      if (error) {
+        toast.error(error === 'reanalysis already in progress' ? 'Reanalysis is already running' : 'Failed to start reanalysis')
+        setReanalyzing(false)
+        reanalyzeBaselineRef.current = null
+      } else {
+        toast.success('Reanalysis started — the page will refresh automatically when complete.')
+      }
+    } catch {
+      toast.error('Failed to start reanalysis')
+      setReanalyzing(false)
+      reanalyzeBaselineRef.current = null
+    }
+  }, [wsId, reanalyzing, summary?.last_analyzed_at])
+
+  // Poll summary while reanalyzing to detect completion.
+  useEffect(() => {
+    if (!reanalyzing || !wsId) return
+    const interval = setInterval(async () => {
+      const { data } = await supportCoverageService.getSummary(wsId)
+      if (data?.last_analyzed_at && data.last_analyzed_at !== reanalyzeBaselineRef.current) {
+        setReanalyzing(false)
+        reanalyzeBaselineRef.current = null
+        setSummary(data)
+        // Refresh gap list with new data.
+        const gapsRes = await supportCoverageService.listGaps(wsId, { status: statusFilter })
+        if (gapsRes.data) {
+          setGaps(gapsRes.data.items || [])
+          setTotal(gapsRes.data.total || 0)
+        }
+        toast.success('Reanalysis complete.')
+      }
+    }, 30_000)
+    return () => clearInterval(interval)
+  }, [reanalyzing, wsId, statusFilter])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
 
   useEffect(() => {
@@ -51,7 +100,7 @@ export function SupportCoveragePage() {
       setSelectedGap(null)
       const [summaryRes, gapsRes] = await Promise.all([
         supportCoverageService.getSummary(wsId),
-        supportCoverageService.listGaps(wsId, { status: statusFilter }),
+        supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter !== 'all' && { gap_kind: kindFilter }) }),
       ])
       if (cancelled) return
       if (summaryRes.data) setSummary(summaryRes.data)
@@ -66,7 +115,7 @@ export function SupportCoveragePage() {
     return () => {
       cancelled = true
     }
-  }, [wsId, statusFilter])
+  }, [wsId, statusFilter, kindFilter])
 
   const refreshGap = async (gapId: string) => {
     const { data } = await supportCoverageService.getGap(wsId, gapId)
@@ -74,7 +123,7 @@ export function SupportCoveragePage() {
   }
 
   const refreshList = async () => {
-    const { data } = await supportCoverageService.listGaps(wsId, { status: statusFilter })
+    const { data } = await supportCoverageService.listGaps(wsId, { status: statusFilter, ...(kindFilter !== 'all' && { gap_kind: kindFilter }) })
     if (data) {
       setGaps(data.items || [])
       setTotal(data.total || 0)
@@ -165,11 +214,30 @@ export function SupportCoveragePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <header>
-        <h2 className="text-xl font-semibold">Coverage Gaps</h2>
-        <p className="text-sm text-muted-foreground">
-          Where AI could not resolve a customer issue, and what docs work closes the gap.
-        </p>
+      <header className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Coverage Gaps</h2>
+          <p className="text-sm text-muted-foreground">
+            Issues AI couldn't fully resolve — with recommended fixes to close each gap.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          {canReanalyze && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={reanalyzing}
+              onClick={handleReanalyze}
+            >
+              {reanalyzing ? 'Reanalyzing…' : 'Reanalyze'}
+            </Button>
+          )}
+          {summary?.last_analyzed_at && (
+            <span className="text-[11px] text-muted-foreground/60">
+              Last analyzed {timeAgo(summary.last_analyzed_at)}
+            </span>
+          )}
+        </div>
       </header>
 
       {summary && (
@@ -210,27 +278,35 @@ export function SupportCoveragePage() {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className="rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
-          >
-            Content gaps
-          </button>
-          {['Data gaps', 'Action gaps'].map((label) => (
-            <button
-              key={label}
-              type="button"
-              disabled
-              className="cursor-not-allowed rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground/45"
-            >
-              {label} <span className="text-muted-foreground/35">(soon)</span>
-            </button>
-          ))}
-        </div>
-        <span className="text-xs text-muted-foreground">
-          {total} gap{total !== 1 ? 's' : ''}
-        </span>
+        <Select value={kindFilter} onValueChange={setKindFilter}>
+          <SelectTrigger className="h-8 w-[150px] text-xs">
+            <SelectValue>
+              {kindFilter === 'all' ? (
+                'All types'
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <span className={`inline-block h-2.5 w-2.5 rounded-full ${GAP_KIND_COLORS[kindFilter]?.dot}`} />
+                  {kindFilter.charAt(0).toUpperCase() + kindFilter.slice(1)} gaps
+                </span>
+              )}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            {(['content', 'data', 'action'] as const).map((kind) => {
+              const colors = GAP_KIND_COLORS[kind]
+              return (
+                <SelectItem key={kind} value={kind}>
+                  <span className="flex items-center gap-1.5">
+                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${colors.dot}`} />
+                    <span className="font-medium">{kind.charAt(0).toUpperCase() + kind.slice(1)} gaps</span>
+                    <span className="text-muted-foreground">— {GAP_KIND_DESCRIPTIONS[kind]}</span>
+                  </span>
+                </SelectItem>
+              )
+            })}
+          </SelectContent>
+        </Select>
         <div className="ml-auto flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
           {STATUS_FILTERS.map((status) => (
             <button

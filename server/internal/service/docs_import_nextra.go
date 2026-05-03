@@ -565,7 +565,7 @@ func (s *DocsImportService) executeNextraImportPlan(ctx context.Context, jobID, 
 				s.logger.Error("nextra import: internal publish failed",
 					"job_id", jobID, "title", ca.title, "error", err)
 				summary.ArticlesDrafted++
-			} else if err := s.helpcenterSvc.PublishExternally(ctx, ca.docID, ca.slug); err != nil {
+			} else if err := s.helpcenterSvc.PublishExternally(ctx, ca.docID, ca.slug, nil); err != nil {
 				s.logger.Error("nextra import: external publish failed",
 					"job_id", jobID, "title", ca.title, "error", err)
 				summary.ArticlesDrafted++

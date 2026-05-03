@@ -16,8 +16,12 @@ import {
   useCreateTaskFromConversation,
   useMoveConversation,
   useDismissConversationTriage,
+  useDeleteSupportMessage,
 } from '@/hooks/queries/useSupport';
+import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
+import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
+import { CreateTaskDialog } from './CreateTaskDialog';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
@@ -34,6 +38,7 @@ import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
+import { isNearThreadBottom, shouldAutoScrollThread } from './threadAutoScroll';
 
 interface MessageThreadProps {
   workspaceId: string;
@@ -45,6 +50,7 @@ interface MessageThreadProps {
 
 const INITIAL_THREAD_ITEM_COUNT = 60;
 const THREAD_HISTORY_HYDRATION_DELAY_MS = 120;
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
   const typingState = useSupportPresenceStore(
@@ -162,15 +168,17 @@ function DaySeparator({
   separatorRef?: (node: HTMLDivElement | null) => void;
 }) {
   return (
-    <div ref={separatorRef} className="sticky top-0 z-[1] flex items-center justify-center py-3">
+    <div ref={separatorRef} className="sticky top-0 z-[1] my-5 flex items-center gap-3">
+      <div className="h-px flex-1 bg-border/60" aria-hidden />
       <span
-        className={`relative rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+        className={`shrink-0 rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
           isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
         }`}
         style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
       >
         {label}
       </span>
+      <div className="h-px flex-1 bg-border/60" aria-hidden />
     </div>
   );
 }
@@ -219,6 +227,13 @@ export function MessageThread({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
+  const isNearBottomRef = useRef(true);
+  const pendingInitialScrollRef = useRef(false);
+  const threadScrollStateRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
+    conversationId: null,
+    messageCount: 0,
+    lastMessageId: null,
+  });
   const { data: conversation, isFetched: conversationFetched } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
@@ -230,9 +245,14 @@ export function MessageThread({
   const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
+  const deleteMessage = useDeleteSupportMessage(workspaceId, conversationId);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { data: wsSettings } = useWorkspaceSettings(workspaceId);
+  const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
   const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
 
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const [composerReady, setComposerReady] = useState(false);
@@ -385,6 +405,34 @@ export function MessageThread({
   }, [conversationId, wsSend, wsConnected]);
 
   useEffect(() => {
+    const handleKeyDown = async (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || event.shiftKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (!conversationId || deleteMessage.isPending) return;
+
+      const now = Date.now();
+      const latest = [...messages].reverse().find((message) => {
+        if (message.sender_type !== 'user' || message.sender_user_id !== currentUser?.id || message.is_internal) return false;
+        if (!message.cancellable_until) return false;
+        return Date.parse(message.cancellable_until) > now;
+      });
+      if (!latest) return;
+
+      event.preventDefault();
+      const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
+      if (result.markdown) {
+        window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
+          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [] },
+        }));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [conversationId, currentUser?.id, deleteMessage, messages]);
+
+  useEffect(() => {
     if (!conversationId) {
       setComposerReady(false);
       return;
@@ -401,14 +449,6 @@ export function MessageThread({
       if (timeout) window.clearTimeout(timeout);
     };
   }, [conversationId]);
-
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const frame = window.requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ block: 'end' });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [messages]);
 
   const handleApproveRun = async (runId: string) => {
     await agentService.approveRun(workspaceId, runId, { send_message: true });
@@ -428,7 +468,41 @@ export function MessageThread({
 
   const handleCreateTask = async () => {
     if (!conversationId || !workspaceSlug) return;
-    const created = await createTaskFromConversation.mutateAsync(conversationId);
+
+    const dismissed = access?.membership?.support_task_dialog_dismissed;
+    const savedTeamId = access?.membership?.support_default_team_id;
+
+    if (!dismissed) {
+      setShowCreateTaskDialog(true);
+      return;
+    }
+
+    const created = await createTaskFromConversation.mutateAsync({
+      conversationId,
+      teamId: savedTeamId,
+    });
+    toast.success(`Created ${created.task_key ?? 'task'}`, {
+      description: created.summary || created.task_name,
+    });
+    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
+  };
+
+  const handleCreateTaskConfirm = async (teamId: string, dismissDialog: boolean) => {
+    if (!conversationId || !workspaceSlug) return;
+
+    // Create task first — only persist preferences after success
+    const created = await createTaskFromConversation.mutateAsync({
+      conversationId,
+      teamId,
+    });
+
+    // Task succeeded — now save team preference and dismissal
+    await updatePreferences.mutateAsync({
+      support_default_team_id: teamId,
+      support_task_dialog_dismissed: dismissDialog,
+    });
+
+    setShowCreateTaskDialog(false);
     toast.success(`Created ${created.task_key ?? 'task'}`, {
       description: created.summary || created.task_name,
     });
@@ -448,14 +522,16 @@ export function MessageThread({
   }, [messages]);
 
   // Derive delivered/read status from conversation's contact_last_seen_at cursor
-  const receiptStatus = useMemo<'delivered' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
+  const receiptStatus = useMemo<'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
     if (!receiptMessageId || !conversation) return null;
     const msg = messages.find((m) => m.id === receiptMessageId);
     if (!msg) return null;
     if (msg.email_read_at) return 'read_email';
+    if (msg.email_delivery_status === 'opened') return 'read_email';
+    if (msg.email_delivery_status === 'delivered') return 'delivered_email';
     const seen = conversation.contact_last_seen_at;
     if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
-    if (msg.email_notified_at) return 'delivered_email';
+    if (msg.email_notified_at) return 'sent_email';
     if (conversation.source === 'widget') return 'delivered';
     return null;
   }, [receiptMessageId, conversation, messages]);
@@ -536,6 +612,83 @@ export function MessageThread({
     return visibleItems;
   }, [groupedMessages, historyHydrated]);
 
+  const lastMessageId = messages[messages.length - 1]?.id ?? null;
+
+  useEffect(() => {
+    if (!conversationId) {
+      pendingInitialScrollRef.current = false;
+      isNearBottomRef.current = true;
+      threadScrollStateRef.current = { conversationId: null, messageCount: 0, lastMessageId: null };
+      return;
+    }
+
+    if (messages.length === 0) {
+      pendingInitialScrollRef.current = false;
+      isNearBottomRef.current = true;
+      threadScrollStateRef.current = { conversationId, messageCount: 0, lastMessageId: null };
+      return;
+    }
+
+    const previous = threadScrollStateRef.current;
+    const conversationChanged = previous.conversationId !== conversationId;
+    const initialLoad = previous.conversationId === conversationId && previous.messageCount === 0;
+    const messageCountIncreased = previous.conversationId === conversationId && messages.length > previous.messageCount;
+
+    if (conversationChanged || initialLoad) {
+      pendingInitialScrollRef.current = true;
+      isNearBottomRef.current = true;
+    }
+
+    const shouldScroll = shouldAutoScrollThread({
+      conversationChanged,
+      initialLoad,
+      messageCountIncreased,
+      wasNearBottom: isNearBottomRef.current,
+      pendingInitialScroll: pendingInitialScrollRef.current,
+    });
+
+    threadScrollStateRef.current = { conversationId, messageCount: messages.length, lastMessageId };
+
+    if (!shouldScroll) return;
+
+    let cancelled = false;
+    const frames: number[] = [];
+    const timeouts: number[] = [];
+
+    const scrollToBottom = () => {
+      if (cancelled) return;
+
+      const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+        isNearBottomRef.current = true;
+        return;
+      }
+
+      messagesEndRef.current?.scrollIntoView({ block: 'end' });
+      isNearBottomRef.current = true;
+    };
+
+    const scheduleFrame = () => {
+      frames.push(window.requestAnimationFrame(scrollToBottom));
+    };
+
+    scheduleFrame();
+    timeouts.push(window.setTimeout(scheduleFrame, 0));
+    timeouts.push(window.setTimeout(scheduleFrame, 80));
+    timeouts.push(window.setTimeout(scheduleFrame, 180));
+
+    if (pendingInitialScrollRef.current && historyHydrated) {
+      pendingInitialScrollRef.current = false;
+    }
+
+    return () => {
+      cancelled = true;
+      frames.forEach((frame) => window.cancelAnimationFrame(frame));
+      timeouts.forEach((timeout) => window.clearTimeout(timeout));
+    };
+  }, [conversationId, historyHydrated, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
   useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
     if (!viewport) return;
@@ -558,10 +711,12 @@ export function MessageThread({
     };
 
     const onScroll = () => {
+      isNearBottomRef.current = isNearThreadBottom(viewport);
       if (frame) return;
       frame = window.requestAnimationFrame(updateActiveStickySeparator);
     };
 
+    isNearBottomRef.current = isNearThreadBottom(viewport);
     updateActiveStickySeparator();
     viewport.addEventListener('scroll', onScroll, { passive: true });
 
@@ -763,7 +918,7 @@ export function MessageThread({
 
       {/* Messages area with light background (Crisp-style) */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 bg-muted/20">
-        <div className="px-4 pb-4 pt-2">
+        <div className="px-4 pb-10 pt-2">
           {isLoading && <MessageSkeleton />}
           {!isLoading && messages.length === 0 && (
             <EmptyState
@@ -817,6 +972,9 @@ export function MessageThread({
         </div>
       </ScrollArea>
 
+      {/* Soft gradient fade between thread and composer */}
+      <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />
+
       {/* Reply composer — show during loading (cache may still populate) and
           after a successful load. Only hide when the fetch settled AND the
           conversation didn't load (stale/deleted id) to avoid offering a
@@ -828,6 +986,15 @@ export function MessageThread({
           emailFallbackHint={emailFallbackHint}
         />
       )}
+
+      <CreateTaskDialog
+        open={showCreateTaskDialog}
+        onOpenChange={setShowCreateTaskDialog}
+        teams={wsSettings?.teams ?? []}
+        defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
+        isPending={createTaskFromConversation.isPending}
+        onConfirm={handleCreateTaskConfirm}
+      />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
 } from '@tanstack/react-router'
 import { AppLayout } from '@/components/app-layout'
 import { ChatPlaygroundPage } from '@/features/chat-playground/chat-playground-page'
+import { EmailDiagnosticsPage } from '@/features/email-diagnostics/email-diagnostics-page'
 import { WebhookEventsPage } from '@/features/webhook-events/webhook-events-page'
 import { EmailQueuePage } from '@/features/email-queue/email-queue-page'
 import { Button } from '@/components/ui/button'
@@ -92,11 +93,22 @@ const emailQueueRoute = createRoute({
   component: EmailQueuePage,
 })
 
+const emailDiagnosticsRoute = createRoute({
+  getParentRoute: () => authenticatedLayout,
+  path: '/email-diagnostics',
+  component: EmailDiagnosticsPage,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   forbiddenRoute,
-  authenticatedLayout.addChildren([chatPlaygroundRoute, webhookEventsRoute, emailQueueRoute]),
+  authenticatedLayout.addChildren([
+    chatPlaygroundRoute,
+    webhookEventsRoute,
+    emailQueueRoute,
+    emailDiagnosticsRoute,
+  ]),
 ])
 
 export const router = createRouter({

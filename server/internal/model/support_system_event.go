@@ -42,8 +42,16 @@ const (
 	// suggestion.
 	SystemEventTriageDismissed SupportSystemEventType = "triage_dismissed"
 
-	// SystemEventAIEscalated — AI handed off to a human teammate.
+	// SystemEventAIEscalated — AI decided to escalate to a human teammate
+	// (low confidence, stuck, action unavailable, etc.). Internal-only;
+	// the customer-facing escalation reply is sent as a separate public
+	// AI reply.
 	SystemEventAIEscalated SupportSystemEventType = "ai_escalated"
+
+	// SystemEventCustomerRequestedHuman — customer explicitly asked to
+	// talk to a human (e.g. "I want to talk to a person"). Internal-only
+	// counterpart to SystemEventAIEscalated.
+	SystemEventCustomerRequestedHuman SupportSystemEventType = "customer_requested_human"
 
 	// SystemEventResolved — conversation marked resolved.
 	SystemEventResolved SupportSystemEventType = "resolved"
@@ -58,18 +66,19 @@ const (
 // allSupportSystemEventTypes is the authoritative set of valid event types.
 // Kept private so callers go through IsValidSupportSystemEventType.
 var allSupportSystemEventTypes = map[SupportSystemEventType]struct{}{
-	SystemEventTeammateJoined:  {},
-	SystemEventAssigned:        {},
-	SystemEventUnassigned:      {},
-	SystemEventTook:            {},
-	SystemEventAgentAssigned:   {},
-	SystemEventMailboxMoved:    {},
-	SystemEventTriageRouted:    {},
-	SystemEventTriageDismissed: {},
-	SystemEventAIEscalated:     {},
-	SystemEventResolved:        {},
-	SystemEventReopened:        {},
-	SystemEventClosed:          {},
+	SystemEventTeammateJoined:         {},
+	SystemEventAssigned:               {},
+	SystemEventUnassigned:             {},
+	SystemEventTook:                   {},
+	SystemEventAgentAssigned:          {},
+	SystemEventMailboxMoved:           {},
+	SystemEventTriageRouted:           {},
+	SystemEventTriageDismissed:        {},
+	SystemEventAIEscalated:            {},
+	SystemEventCustomerRequestedHuman: {},
+	SystemEventResolved:               {},
+	SystemEventReopened:               {},
+	SystemEventClosed:                 {},
 }
 
 // IsValidSupportSystemEventType reports whether s is a recognized event type.

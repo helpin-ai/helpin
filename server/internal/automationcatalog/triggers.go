@@ -84,6 +84,8 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 			return "manual.repository_run", "manual", true
 		case "workspace":
 			return "manual.workspace_run", "manual", true
+		case "doc", "document":
+			return "manual.doc_run", "manual", true
 		}
 	case model.AgentRunTriggerSourceAutomationRule:
 		if triggerType == model.TriggerCron {
@@ -97,6 +99,8 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 		case "support.auto":
 			return "support.widget_message", "support_widget", true
 		}
+	case model.AgentRunTriggerSourceCommandBar:
+		return "command_bar.run", "command_bar", true
 	}
 
 	return "", "", false
@@ -253,6 +257,17 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			supportsAgentRun: true,
 		},
 		{
+			catalogID:        "manual.doc_run",
+			bindingKind:      "manual",
+			category:         "manual",
+			triggerType:      model.AgentRunTriggerTypeManual,
+			title:            "Manual Doc Run",
+			description:      "A human starts an agent directly against a document.",
+			sourceSurface:    "Docs document actions",
+			configSurface:    agentsPath,
+			supportsAgentRun: true,
+		},
+		{
 			catalogID:        "task.state_entered",
 			bindingKind:      "automation_rule",
 			category:         "automation_rule",
@@ -290,6 +305,63 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 				Template:            strPtr(model.TriggerAgentRunApproved),
 				TemplateTitle:       strPtr("Agent Run Approved template"),
 				TemplateDescription: strPtr("Choose a workflow state and follow-up action in Flows to create an agent_run.approved automation for the selected state."),
+			},
+		},
+		{
+			catalogID:        "doc.published",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerDocPublished,
+			title:            "Doc Published",
+			description:      "Fires when a document is published internally.",
+			sourceSurface:    "Docs publish actions",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerDocPublished),
+				ShowTriggerTitle: strPtr("Doc Published"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerDocPublished),
+			},
+		},
+		{
+			catalogID:        "ai_section.regenerated",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerAISectionRegenerated,
+			title:            "AI Section Regenerated",
+			description:      "Fires when an agent-owned document section is regenerated.",
+			sourceSurface:    "Docs AI section actions",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerAISectionRegenerated),
+				ShowTriggerTitle: strPtr("AI Section Regenerated"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerAISectionRegenerated),
+			},
+		},
+		{
+			catalogID:        "ai_section.approved",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerAISectionApproved,
+			title:            "AI Section Approved",
+			description:      "Fires when an agent-owned document section is approved.",
+			sourceSurface:    "Docs AI section approval actions",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerAISectionApproved),
+				ShowTriggerTitle: strPtr("AI Section Approved"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerAISectionApproved),
 			},
 		},
 		{

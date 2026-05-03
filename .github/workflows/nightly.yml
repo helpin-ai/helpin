@@ -1,0 +1,109 @@
+name: Nightly
+
+# Slow / flaky / browser suites that don't fit the PR runtime budget.
+# See `docs/test-suite-ci-email-plan.md` "Layer 3: Nightly Integration".
+#
+# Runs:
+# - On a daily schedule (02:30 UTC ≈ 19:30 PT, off-peak for self-hosted runners).
+# - On manual workflow_dispatch when an engineer wants to validate ahead of merge.
+#
+# Failures here do NOT block PRs; they feed the promote-to-required signal.
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # `go test -race` against full backend with Postgres service. Race builds
+  # are slow and noisy (~3x test runtime) — fine for nightly, never on PR.
+  server-race:
+    name: Server (-race)
+    runs-on: arc-runners-helpin-ai
+    # -race adds ~3x runtime over plain go test; plan budget allows generous.
+    timeout-minutes: 45
+    # Postgres service intentionally omitted — the in-cluster k8s API
+    # currently can't spin up service sidecar pods on our ARC runners.
+    # Existing test suite uses in-memory SQLite. Postgres-backed nightly
+    # tests will land once the runner story is sorted.
+    env:
+      CGO_ENABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Verify gcc available
+        run: |
+          if ! command -v gcc >/dev/null 2>&1; then
+            (command -v sudo >/dev/null 2>&1 && sudo apt-get update && sudo apt-get install -y gcc) \
+              || (apt-get update && apt-get install -y gcc) || true
+          fi
+      - name: Test with race detector
+        working-directory: server
+        run: go test -race ./...
+
+  # Mocked support inbox Playwright suite. Deterministic — no external services.
+  playwright-support:
+    name: Playwright (support, mocked)
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build widget-core (frontend imports compiled output)
+        run: pnpm --filter @helpin-ai/widget-core build
+      - name: Install Chromium
+        run: pnpm --dir frontend exec playwright install --with-deps chromium
+      - name: Run support Playwright suite
+        run: pnpm --dir frontend run test:e2e:support
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-support-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+
+  # Mocked SDK widget Playwright suite.
+  playwright-widget:
+    name: Playwright (widget, mocked)
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build sdk-js
+        run: pnpm --filter helpin-sdk build
+      - name: Install Chromium
+        run: pnpm --dir packages/sdk-js exec playwright install --with-deps chromium
+      - name: Run widget Playwright suite
+        run: pnpm --dir packages/sdk-js run test:e2e:widget
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-widget-report
+          path: |
+            packages/sdk-js/playwright-report
+            packages/sdk-js/test-results
+          retention-days: 7

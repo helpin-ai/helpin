@@ -64,6 +64,7 @@ import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 
@@ -91,8 +92,8 @@ function MetadataRow({
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-xs text-muted-foreground self-center">{label}</span>
-      <div className="min-w-0 self-center">{children}</div>
+      <span className="text-[12px] text-muted-foreground self-center">{label}</span>
+      <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
 }
@@ -211,6 +212,16 @@ export function EpicDetailPage() {
     () => filterMentionTeams(teams, form?.team_id ? [form.team_id] : []),
     [teams, form?.team_id],
   );
+  const commandBarContext = useMemo(() => {
+    if (!epic) return null;
+    return {
+      entity_type: 'epic' as const,
+      entity_id: epic.epic.id,
+      display_title: epic.epic.name,
+      related_ids: { task_ids: tasks.map((task) => task.id), story_ids: tasks.map((task) => task.id) },
+    };
+  }, [epic, tasks]);
+  useRegisterPageContext(commandBarContext, 10);
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
@@ -683,7 +694,7 @@ export function EpicDetailPage() {
           </div>
         )}
         {/* ── Left column ────────────────────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-6">
+        <div className="min-h-0 overflow-y-auto px-8 pb-24 pt-6">
           {/* Title */}
           <input
             type="text"
@@ -864,7 +875,7 @@ export function EpicDetailPage() {
 
           {/* AI Planning */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Planning</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Agents</h3>
             <div className="mt-3">
               {workspaceId ? (
                 <EpicPlannerPanel

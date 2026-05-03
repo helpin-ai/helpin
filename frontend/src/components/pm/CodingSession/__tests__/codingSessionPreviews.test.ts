@@ -82,8 +82,8 @@ describe('collectCodingSessionPreviews', () => {
 
     const previews = collectCodingSessionPreviews([], liveSegments);
 
-    expect(previews.get('story_plan_doc')).toMatchObject({
-      panelKey: 'story_plan_doc',
+    expect(previews.get('task_plan_doc')).toMatchObject({
+      panelKey: 'task_plan_doc',
       title: 'Task Planning Document',
       format: 'markdown',
       content: '# Flow\n\nUpdated live draft',

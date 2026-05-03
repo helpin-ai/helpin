@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -33,11 +34,16 @@ func (f *scriptedDocsTranslationLLM) ChatCompletion(_ context.Context, req llm.C
 func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dbName := fmt.Sprintf("file:docs-helpcenter-service-i18n-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	dbName := fmt.Sprintf("file:docs-helpcenter-service-i18n-%s?mode=memory&cache=shared&_busy_timeout=5000", uuid.NewString())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
 	stmts := []string{
 		`CREATE TABLE docs_spaces (
@@ -883,7 +889,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil); err == nil {
+		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil); err == nil {
 			t.Fatal("expected publish without parents to fail")
 		}
 
@@ -902,7 +908,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil); err == nil {
+		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil); err == nil {
 			t.Fatal("expected publish without collection translation to fail")
 		}
 
@@ -922,7 +928,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil)
+		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil)
 		if err != nil {
 			t.Fatalf("PublishArticleTranslation with parents: %v", err)
 		}
@@ -1058,7 +1064,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil)
+		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil)
 		if err != nil {
 			t.Fatalf("PublishArticleTranslation first publish slug: %v", err)
 		}

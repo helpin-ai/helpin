@@ -120,6 +120,89 @@ func TestCreateConversationMessageHumanReplySetsAssignedToHumanFlowState(t *test
 	}
 }
 
+func TestCreateConversationMessageHumanReplyReopensResolvedConversationForCustomerEmail(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-flow-human-resolved-reply"
+	userID := "user-flow-human-resolved-reply"
+	seedUser(t, db, userID, "agent-resolved-reply@example.com", "Agent Resolved Reply", "hash")
+	seedWorkspace(t, db, workspaceID, "Flow Human Resolved Reply WS", "flow-human-resolved-reply-ws", userID)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	userRepo := repository.NewUserRepository(db)
+
+	resolvedAt := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	conv := &model.SupportConversation{
+		WorkspaceID:       workspaceID,
+		Subject:           "Resolved conversation with new team reply",
+		Status:            model.SupportConversationStatusResolved,
+		FlowState:         strPtr(model.SupportConversationFlowStateResolvedByHuman),
+		OpenedByUserID:    &userID,
+		HumanTakeover:     boolPtr(true),
+		ResolvedAt:        &resolvedAt,
+		ClosedAt:          &resolvedAt,
+		CustomerEmail:     strPtr("customer@example.com"),
+		ContactLastSeenAt: nil,
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		userRepo,
+		nil,
+		nil,
+		nil,
+	)
+
+	displayName := "Agent Resolved Reply"
+	if _, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "Following up over email.", MessageType: "reply"},
+		"user",
+		&userID,
+		nil,
+		&displayName,
+	); err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Status != model.SupportConversationStatusWaitingOnCustomer {
+		t.Fatalf("status = %q, want %q", updated.Status, model.SupportConversationStatusWaitingOnCustomer)
+	}
+	if updated.ResolvedAt != nil {
+		t.Fatalf("resolved_at = %#v, want nil", updated.ResolvedAt)
+	}
+	if updated.ClosedAt != nil {
+		t.Fatalf("closed_at = %#v, want nil", updated.ClosedAt)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAssignedToHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAssignedToHuman)
+	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
+}
+
 func TestCreateConversationMessageCustomerReplyPreservesHumanTakeoverFlowState(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -398,6 +481,9 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 	if updated.AIState == nil || *updated.AIState != "escalated" {
 		t.Fatalf("ai_state = %#v, want escalated", updated.AIState)
 	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
 	if updated.CustomerRequestedHumanAt == nil {
 		t.Fatal("expected customer_requested_human_at to be set")
 	}
@@ -406,8 +492,26 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 	if err != nil {
 		t.Fatalf("ListByConversation: %v", err)
 	}
-	if len(messages) != 1 || messages[0].MessageType != "system" {
-		t.Fatalf("expected one system escalation message, got %+v", messages)
+	if len(messages) != 2 {
+		t.Fatalf("expected escalation reply + system event, got %+v", messages)
+	}
+	var reply, sysEvent *model.SupportMessage
+	for i := range messages {
+		if messages[i].MessageType == "reply" && !messages[i].IsInternal {
+			reply = &messages[i]
+		}
+		if messages[i].MessageType == "system" && messages[i].IsInternal {
+			sysEvent = &messages[i]
+		}
+	}
+	if reply == nil {
+		t.Fatalf("expected non-internal AI reply, got %+v", messages)
+	}
+	if sysEvent == nil {
+		t.Fatalf("expected internal system escalation event, got %+v", messages)
+	}
+	if sysEvent.SystemEventType == nil || *sysEvent.SystemEventType != model.SystemEventCustomerRequestedHuman {
+		t.Fatalf("system_event_type = %v, want %q", sysEvent.SystemEventType, model.SystemEventCustomerRequestedHuman)
 	}
 }
 

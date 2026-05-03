@@ -334,6 +334,7 @@ Raw configuration:
 				"get_task_context",
 				"find_tasks_for_git_changes",
 				"read_document",
+				"get_document_blocks",
 				"search_documents",
 				"list_collections",
 				"create_document",

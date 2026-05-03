@@ -10,3 +10,21 @@ export function useEmailQueue() {
     refetchInterval: 10_000,
   })
 }
+
+export function useEmailDiagnostics() {
+  return useQuery({
+    queryKey: queryKeys.emailQueue.diagnostics(),
+    queryFn: async () => unwrap(await emailQueueService.diagnostics()),
+    refetchInterval: 15_000,
+  })
+}
+
+export function useEmailConversationDiagnostics(conversationId: string) {
+  const trimmed = conversationId.trim()
+  return useQuery({
+    queryKey: queryKeys.emailQueue.conversationDiagnostics(trimmed),
+    queryFn: async () => unwrap(await emailQueueService.conversationDiagnostics(trimmed)),
+    enabled: trimmed.length > 0,
+    refetchInterval: trimmed ? 15_000 : false,
+  })
+}

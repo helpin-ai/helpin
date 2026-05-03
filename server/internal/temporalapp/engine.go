@@ -91,6 +91,31 @@ func (e *RunEngine) StartRun(ctx context.Context, run *model.AgentRun) (string, 
 	return we.GetID(), we.GetRunID(), nil
 }
 
+// StartCommandBarPlan starts the parent workflow for a command-bar plan.
+func (e *RunEngine) StartCommandBarPlan(ctx context.Context, input CommandBarPlanWorkflowInput) (string, string, error) {
+	if e == nil || e.client == nil {
+		return "", "", fmt.Errorf("temporal run engine is not configured")
+	}
+	workflowID := WorkflowIDForCommandBarPlan(input.PlanID)
+	options := tclient.StartWorkflowOptions{
+		ID:        workflowID,
+		TaskQueue: QueueAutomation,
+	}
+	we, err := e.client.ExecuteWorkflow(ctx, options, CommandBarPlanWorkflow, input)
+	if err != nil {
+		return "", "", fmt.Errorf("start command bar plan workflow: %w", err)
+	}
+	return we.GetID(), we.GetRunID(), nil
+}
+
+// SignalCommandBarPlanRunCompleted notifies the parent command-bar workflow that a child run reached a terminal state.
+func (e *RunEngine) SignalCommandBarPlanRunCompleted(ctx context.Context, planID, runID string) error {
+	if e == nil || e.client == nil || strings.TrimSpace(planID) == "" {
+		return nil
+	}
+	return e.client.SignalWorkflow(ctx, WorkflowIDForCommandBarPlan(planID), "", WorkflowSignalCommandBarRun, CommandBarRunCompletedSignal{RunID: runID})
+}
+
 // CancelRun cancels an in-flight workflow.
 func (e *RunEngine) CancelRun(ctx context.Context, workflowID, workflowRunID string) error {
 	if e == nil || e.client == nil || workflowID == "" {
@@ -325,6 +350,11 @@ func (e *RunEngine) QueueContentSourceReindex(ctx context.Context, workspaceID, 
 // WorkflowIDForRun returns the temporal workflow ID for a run.
 func WorkflowIDForRun(runID string) string {
 	return "agent-run-" + runID
+}
+
+// WorkflowIDForCommandBarPlan returns the temporal workflow ID for a command-bar parent plan.
+func WorkflowIDForCommandBarPlan(planID string) string {
+	return "command-bar-plan-" + strings.TrimSpace(planID)
 }
 
 func deref(value *string, fallback string) string {

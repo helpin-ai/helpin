@@ -19,14 +19,16 @@ describe('MentionSuggestionsList', () => {
           items={[
             {
               id: 'user-1',
-              name: 'Alice Smith',
+              label: 'Alice Smith',
+              secondaryText: 'alice@example.com',
               handle: 'alice.smith',
               type: 'member',
               avatarUrl: 'https://example.com/alice.png',
             },
             {
               id: 'team-1',
-              name: 'Engineering',
+              label: 'Engineering',
+              secondaryText: '@engineering',
               handle: 'engineering',
               type: 'team',
             },
@@ -37,18 +39,15 @@ describe('MentionSuggestionsList', () => {
       )
     })
 
-    const memberRow = container.querySelector('[data-mention-suggestion-type="member"]') as HTMLElement | null
-    const teamRow = container.querySelector('[data-mention-suggestion-type="team"]') as HTMLElement | null
+    const rows = Array.from(container.querySelectorAll('[role="option"]')) as HTMLElement[]
+    expect(rows).toHaveLength(2)
 
-    expect(memberRow).toBeTruthy()
-    expect(teamRow).toBeTruthy()
+    const [memberRow, teamRow] = rows
 
-    expect(memberRow?.textContent).toContain('Alice Smith')
-    expect(memberRow?.textContent).toContain('@alice.smith')
-    expect(memberRow?.querySelector('[data-mention-member-avatar]')).toBeTruthy()
+    expect(memberRow.textContent).toContain('Alice Smith')
+    expect(memberRow.textContent).toContain('@alice.smith')
 
-    expect(teamRow?.textContent).toContain('Engineering')
-    expect(teamRow?.textContent).toContain('@engineering')
-    expect(teamRow?.querySelector('[data-mention-team-badge]')?.textContent).toBe('E')
+    expect(teamRow.textContent).toContain('Engineering')
+    expect(teamRow.textContent).toContain('@engineering')
   })
 })

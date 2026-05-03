@@ -8,7 +8,6 @@ import {
   Loading01Icon,
   ArrowUp02Icon,
   TerminalIcon,
-  UserIcon,
   CancelCircleIcon,
   LockKeyIcon,
   RadioIcon,
@@ -32,6 +31,7 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { useWorkspaceMembers } from '@/hooks/queries';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
 import { AgentRunArtifactView } from '@/components/pm/AgentRunArtifactView';
@@ -267,11 +267,40 @@ export function CodingTranscriptPane({
   }, [streamingSignature, items.length, scrollToTail]);
 
   const triggeredBy = session?.triggered_by_user ?? null;
+  const { data: workspaceMembers } = useWorkspaceMembers(session?.workspace_id ?? '');
+
+  const memberActorByUserId = useMemo(() => {
+    const map = new Map<string, CodingSessionActor>();
+    for (const member of workspaceMembers ?? []) {
+      if (!member.user_id) continue;
+      map.set(member.user_id, {
+        id: member.user_id,
+        email: member.email,
+        full_name: member.full_name,
+        avatar_url: member.avatar_url,
+      });
+    }
+    return map;
+  }, [workspaceMembers]);
+
+  const actorForMessage = useCallback(
+    (message: CodingSessionTranscriptMessage): CodingSessionActor | null => {
+      const isResolution =
+        message.message_type === 'review_checkpoint_resolution' ||
+        message.message_type === 'approval_request_resolution';
+      if (isResolution && message.resolver_user_id) {
+        const resolver = memberActorByUserId.get(message.resolver_user_id);
+        if (resolver) return resolver;
+      }
+      return triggeredBy;
+    },
+    [memberActorByUserId, triggeredBy],
+  );
 
   const renderItem = useCallback((item: VirtualItem) => {
     switch (item.kind) {
       case 'transcript':
-        return <TranscriptEntry message={item.message} actor={triggeredBy} />;
+        return <TranscriptEntry message={item.message} actor={actorForMessage(item.message)} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
       case 'review-artifact':
@@ -326,7 +355,7 @@ export function CodingTranscriptPane({
           </div>
         );
     }
-  }, [liveAssistantMessage, triggeredBy]);
+  }, [liveAssistantMessage, actorForMessage]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
@@ -742,7 +771,7 @@ function TranscriptEntry({
   }
 
   if (message.message_type === 'review_checkpoint_resolution' || message.message_type === 'approval_request_resolution') {
-    return <ReviewDecisionTranscriptCard content={message.content} timestamp={message.timestamp} />;
+    return <ReviewDecisionTranscriptCard content={message.content} timestamp={message.timestamp} actor={actor ?? null} />;
   }
 
   const actorLabel = actor?.full_name || actor?.email || 'User';
@@ -752,18 +781,12 @@ function TranscriptEntry({
       <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(message.timestamp)}</span>
         <span className="font-medium">{actorLabel}</span>
-        {actor ? (
-          <UserAvatar
-            name={actorLabel}
-            avatarUrl={actor.avatar_url}
-            className="h-6 w-6"
-            fallbackClassName="text-[10px]"
-          />
-        ) : (
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
-            <UserIcon className="h-3 w-3" />
-          </span>
-        )}
+        <UserAvatar
+          name={actorLabel}
+          avatarUrl={actor?.avatar_url}
+          className="h-6 w-6"
+          fallbackClassName="text-[10px]"
+        />
       </div>
 
       {message.content.trim() ? (
@@ -807,20 +830,26 @@ function PromptTranscriptCard({
 function ReviewDecisionTranscriptCard({
   content,
   timestamp,
+  actor,
 }: {
   content: string;
   timestamp: string;
+  actor: CodingSessionActor | null;
 }) {
+  const reviewerName = actor?.full_name || actor?.email || 'Reviewer';
   return (
     <div className="ml-auto w-full max-w-[90%]">
       <div className="mb-2 flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(timestamp)}</span>
-        <span className="font-medium">Review decision</span>
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
-          <UserIcon className="h-3 w-3" />
-        </span>
+        <span className="font-medium">{reviewerName} reviewed</span>
+        <UserAvatar
+          name={reviewerName}
+          avatarUrl={actor?.avatar_url}
+          className="h-6 w-6"
+          fallbackClassName="text-[10px]"
+        />
       </div>
-      <div className="rounded-2xl rounded-br-sm bg-blue-600 px-3.5 py-2.5 text-sm leading-relaxed text-white shadow-sm dark:bg-blue-500">
+      <div className="rounded-2xl rounded-br-sm bg-blue-50 px-3.5 py-2.5 text-sm leading-relaxed text-foreground/85 shadow-sm dark:bg-blue-950/40 dark:text-foreground">
         <MarkdownContent content={content} className="text-inherit" />
       </div>
     </div>
@@ -843,13 +872,13 @@ function CollapsibleMarkdown({ content, streaming = false }: { content: string; 
   const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
 
   if (!isLong) {
-    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" streaming={streaming} />;
+    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />;
   }
 
   return (
     <div>
       <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
-        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" streaming={streaming} />
+        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />
         {!expanded && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
         )}
@@ -924,8 +953,8 @@ function AssistantMessageBubble({
     <div className={cn(
       'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
       isAssistant
-        ? 'rounded-bl-sm border border-border/60 bg-background text-foreground'
-        : 'rounded-br-sm bg-blue-600 text-white dark:bg-blue-500',
+        ? 'rounded-bl-sm border border-border/60 bg-background text-foreground/85 dark:text-foreground'
+        : 'rounded-br-sm bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground',
       placeholder && 'border-dashed text-muted-foreground',
     )}>
       {placeholder ? (
@@ -937,7 +966,7 @@ function AssistantMessageBubble({
             {!expanded && (
               <div className={cn(
                 'pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t to-transparent',
-                isAssistant ? 'from-background' : 'from-blue-600 dark:from-blue-500',
+                isAssistant ? 'from-background' : 'from-blue-50 dark:from-blue-950/40',
               )} />
             )}
           </div>

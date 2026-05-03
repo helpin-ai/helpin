@@ -40,8 +40,11 @@ type Handlers struct {
 	PMTaskTemplate      *handler.PMTaskTemplateHandler
 	PMRecurringTemplate *handler.PMRecurringTemplateHandler
 	Search              *handler.SearchHandler
+	CommandBar          *handler.CommandBarHandler
 	Agent               *handler.AgentHandler
 	SupportInbox        *handler.SupportInboxHandler
+	SupportInboxView    *handler.SupportInboxViewHandler
+	SupportTag          *handler.SupportTagHandler
 	SupportInboxWidget  *handler.SupportInboxWidgetHandler
 	Git                 *handler.GitHandler
 	Docs                *handler.DocsHandler
@@ -103,6 +106,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 	// Permission middleware helpers for readability.
 	requirePerm := func(perm authorization.Permission) func(http.Handler) http.Handler {
 		return authorization.RequirePermission(authz, perm)
+	}
+	requireCommandBarRead := func() func(http.Handler) http.Handler {
+		return authorization.RequireAnyPermission(authz, authorization.PermPMRead, authorization.PermDocsRead, authorization.PermCRMRead)
+	}
+	requireCommandBarEdit := func() func(http.Handler) http.Handler {
+		return authorization.RequireAnyPermission(authz, authorization.PermPMEdit, authorization.PermDocsEdit, authorization.PermCRMEdit)
 	}
 	requireModule := func(module model.ModuleID) func(http.Handler) http.Handler {
 		return authorization.RequireModuleAccess(authz, module)
@@ -342,6 +351,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/webhook-events", h.AdminWebhookEvent.List)
 			r.Get("/webhook-events/{id}", h.AdminWebhookEvent.GetByID)
 			r.Get("/email-queue", h.AdminEmailQueue.List)
+			r.Get("/email-diagnostics", h.AdminEmailQueue.Diagnostics)
+			r.Get("/email-diagnostics/conversations/{conversationID}", h.AdminEmailQueue.ConversationDiagnostics)
 		})
 
 		// ---- Protected routes ----
@@ -396,6 +407,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Get("/my-role", h.Workspace.GetMyRole)
 				r.Get("/my-membership", h.Workspace.GetMyMembership)
 				r.Get("/me", h.Workspace.GetMe)
+				r.Patch("/me/support-task-preferences", h.Workspace.UpdateSupportTaskPreferences)
 				r.Get("/members", h.Workspace.ListMembers)
 				r.Get("/members/presence", h.Workspace.ListMemberPresence)
 				r.Get("/assignable-members", h.Workspace.ListAssignableMembers)
@@ -472,6 +484,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/automation", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
+				r.Use(requireModule(model.ModuleAutomation))
 
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/overview", h.Automation.GetOverview)
 				r.Route("/flows", func(r chi.Router) {
@@ -573,6 +586,23 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSearchRead)).Get("/", h.Search.Search)
 			})
 
+			r.Route("/command-bar", func(r chi.Router) {
+				r.Use(middleware.RequireWorkspaceID)
+				r.Use(wsAccess)
+				r.With(requireCommandBarRead()).Post("/intents/parse", h.CommandBar.ParseIntent)
+				r.With(requireCommandBarRead()).Get("/plans", h.CommandBar.ListPlans)
+				r.With(requireCommandBarRead()).Get("/plans/{planID}", h.CommandBar.GetPlan)
+				r.With(requireCommandBarRead()).Get("/agents/{agentID}/tools", h.CommandBar.ListAgentToolCatalog)
+				r.With(requireCommandBarEdit()).Post("/plans/dispatch", h.CommandBar.DispatchPlan)
+				r.With(requireCommandBarEdit()).Post("/plans/{planID}/cancel", h.CommandBar.CancelPlan)
+				r.With(requireCommandBarEdit()).Post("/plans/{planID}/retry", h.CommandBar.RetryPlan)
+				r.With(requireCommandBarRead()).Post("/plans/dismiss", h.CommandBar.DismissPlans)
+				r.With(requireCommandBarRead()).Post("/plans/{planID}/dismiss", h.CommandBar.DismissPlan)
+				r.With(requirePerm(authorization.PermSettingsManage)).Post("/runs/{runID}/promote-agent", h.CommandBar.PromoteRunToAgent)
+				r.With(requirePerm(authorization.PermSettingsManage)).Get("/unmet-intents", h.CommandBar.ListUnmetIntents)
+				r.With(requirePerm(authorization.PermSettingsManage)).Post("/unmet-intents/{intentID}/review", h.CommandBar.ReviewUnmetIntent)
+			})
+
 			// Support module
 			r.Route("/support", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
@@ -595,6 +625,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// New /inbox/conversations routes
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/unread-stats", h.SupportInbox.GetUnreadStats)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/views", h.SupportInboxView.List)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/views", h.SupportInboxView.Create)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/views/{viewId}", h.SupportInboxView.Update)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/views/{viewId}", h.SupportInboxView.Delete)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/tags", h.SupportTag.List)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/tags", h.SupportTag.Create)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/tags/{tagId}", h.SupportTag.Update)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/tags/{tagId}", h.SupportTag.Delete)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/mailboxes/scopes", h.SupportInbox.ListInboxScopes)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/mailboxes", h.SupportInbox.ListMailboxes)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/mailboxes", h.SupportInbox.CreateMailbox)
@@ -605,6 +643,16 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-routes", h.SupportInbox.ListEmailRoutes)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes", h.SupportInbox.CreateEmailRoute)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-routes/{routeId}/disable", h.SupportInbox.DisableEmailRoute)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-senders", h.SupportInbox.ListEmailSenders)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders", h.SupportInbox.CreateEmailSender)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/verify-dns", h.SupportInbox.VerifyEmailSender)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/set-default", h.SupportInbox.SetDefaultEmailSender)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-senders/{senderId}/disable", h.SupportInbox.DisableEmailSender)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/email-sender-domains", h.SupportInbox.ListEmailSenderDomains)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-sender-domains", h.SupportInbox.CreateEmailSenderDomain)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-sender-domains/{domainId}/verify", h.SupportInbox.VerifyEmailSenderDomain)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-sender-domains/{domainId}/activate", h.SupportInbox.ActivateEmailSenderDomain)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/email-sender-domains/{domainId}/deactivate", h.SupportInbox.DeactivateEmailSenderDomain)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Get("/inbox/triage-rules", h.SupportInbox.ListTriageRules)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/triage-rules", h.SupportInbox.CreateTriageRule)
 				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/triage-rules/{ruleId}", h.SupportInbox.UpdateTriageRule)
@@ -623,6 +671,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermSupportRead)).Get("/email/image-proxy", h.EmailImageProxy.Proxy)
 				}
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/messages", h.SupportInbox.CreateConversationMessage)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/conversations/{id}/messages/{msg_id}", h.SupportInbox.DeleteMessage)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/messages/{msg_id}", h.SupportInbox.GetMessageInfo)
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/rewrite-draft", h.SupportAI.RewriteSupportDraft)
 				}
@@ -633,6 +683,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/conversations/{id}/crm-contact", h.SupportInbox.UpdateConversationCRMContact)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/run-agent", h.SupportInbox.RunAgent)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/move", h.SupportInbox.MoveConversation)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/tags/{tagId}", h.SupportTag.AddConversationTag)
+				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/conversations/{id}/tags/{tagId}", h.SupportTag.RemoveConversationTag)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/triage/dismiss", h.SupportInbox.DismissConversationTriage)
 				r.With(requirePerm(authorization.PermSupportRead)).Post("/inbox/conversations/{id}/read", h.SupportInbox.MarkConversationRead)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/unread", h.SupportInbox.MarkConversationUnread)
@@ -648,9 +700,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// Canned responses
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses", h.SupportInbox.ListCannedResponses)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/canned-responses/search", h.SupportInbox.SearchCannedResponses)
-				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/canned-responses", h.SupportInbox.CreateCannedResponse)
-				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/canned-responses/{id}", h.SupportInbox.UpdateCannedResponse)
-				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/canned-responses/{id}", h.SupportInbox.DeleteCannedResponse)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Post("/inbox/canned-responses", h.SupportInbox.CreateCannedResponse)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Put("/inbox/canned-responses/{id}", h.SupportInbox.UpdateCannedResponse)
+				r.With(requirePerm(authorization.PermSupportAdmin)).Delete("/inbox/canned-responses/{id}", h.SupportInbox.DeleteCannedResponse)
 
 				// Typing indicators — Deprecated: use WebSocket support:typing:start/stop instead. Kept as HTTP fallback.
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/{id}/typing", h.SupportInbox.TypingIndicator)
@@ -683,6 +735,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/suggestions/{suggestionId}/discard", h.SupportCoverage.DiscardSuggestion)
 						r.With(requirePerm(authorization.PermSupportRead)).Get("/conversations/{conversationId}/state", h.SupportCoverage.GetConversationState)
 						r.With(requirePerm(authorization.PermSupportEdit)).Post("/conversations/{conversationId}/docs-issue", h.SupportCoverage.SubmitDocsIssueFeedback)
+						r.With(requirePerm(authorization.PermSettingsManage)).Post("/reanalyze", h.SupportCoverage.TriggerReanalysis)
 					})
 				}
 			})
@@ -798,6 +851,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/comments", h.PMComment.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/comments/{id}", h.PMComment.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/comments/{id}", h.PMComment.Delete)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/comments/{id}/resolve", h.PMComment.Resolve)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/comments/{id}/reopen", h.PMComment.Reopen)
 				r.With(requirePerm(authorization.PermPMRead)).Post("/comments/{id}/reactions", h.PMComment.ToggleReaction)
 
 				// Attachments — pm.edit
@@ -892,6 +947,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs", h.Agent.StartTargetRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/workspace", h.Agent.ListWorkspaceRuns)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/recent", h.Agent.ListRecentRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs", h.Agent.ListTargetRuns)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
@@ -905,6 +961,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/approve", h.Agent.ApproveRun)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/request-changes", h.Agent.RequestRunChanges)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/handoff", h.Agent.HandoffRun)
+				// Run-scoped streaming endpoints. Same handlers serve the coding-session
+				// drawer and the Ask-agents dock — sessionID/runID are interchangeable.
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/snapshot", h.Agent.GetCodingSession)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/events", h.Agent.ListCodingSessionEvents)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/interactions/{interactionId}/resolve", h.Agent.ResolveCodingSessionInteraction)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}", h.Agent.GetCodingSession)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}/events", h.Agent.ListCodingSessionEvents)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}/repo", h.Agent.GetCodingSessionRepo)
@@ -1000,6 +1061,25 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/content", h.Docs.GetContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content", h.Docs.SaveContent)
 				r.With(requirePerm(authorization.PermDocsEdit)).Put("/documents/{docId}/content/markdown", h.Docs.SaveMarkdownContent)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/blocks", h.Docs.ListBlocks)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks", h.Docs.CreateBlock)
+				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/documents/{docId}/blocks/{blockId}", h.Docs.PatchBlock)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/reorder", h.Docs.ReorderBlocks)
+				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/documents/{docId}/blocks/{blockId}", h.Docs.DeleteBlock)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/blocks/{blockId}/ai-section/candidate", h.Docs.GetAISectionCandidate)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/regenerate", h.Docs.RegenerateAISection)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/approve", h.Docs.ApproveAISection)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/reject", h.Docs.RejectAISection)
+
+				// Comments — docs.read / docs.edit
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/comments", h.Docs.ListComments)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/comments", h.Docs.CreateComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/comments/{id}", h.Docs.UpdateComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/comments/{id}", h.Docs.DeleteComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/comments/{id}/resolve", h.Docs.ResolveComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/comments/{id}/reopen", h.Docs.ReopenComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/comments/{id}/reactions", h.Docs.ToggleCommentReaction)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/references", h.Docs.ListReferences)
 
 				// Preview token — docs.read
 				r.With(requirePerm(authorization.PermDocsRead)).Post("/documents/{docId}/preview-token", h.Docs.GeneratePreviewToken)
@@ -1029,6 +1109,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Search
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/search", h.Docs.Search)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/embeds/resolve", h.Docs.ResolveEmbed)
+				r.With(requirePerm(authorization.PermDocsRead)).Post("/entity-refs/resolve", h.Docs.ResolveEntityRefs)
 
 				// Help Center Config — docs.admin
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/config", h.Docs.GetHelpcenterConfig)

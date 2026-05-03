@@ -466,6 +466,10 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
     );
   if (!content) return null;
 
+  const responsePayload = asRecord(payload.response_payload);
+  const resolverUserId =
+    asString(payload.resolved_by) ?? asString(responsePayload?.resolved_by);
+
   return {
     event_id: event.id,
     message_id: asString(payload.interaction_id) ?? event.id,
@@ -474,6 +478,7 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
     message_type: interactionKind === 'approval_request' ? 'approval_request_resolution' : 'review_checkpoint_resolution',
     timestamp: event.timestamp,
     sequence_no: event.sequence_no,
+    resolver_user_id: resolverUserId,
   };
 }
 
