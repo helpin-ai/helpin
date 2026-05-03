@@ -817,7 +817,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   // Toolbar visibility — show when the editor is focused, or while interacting
   // with the toolbar itself, or when the link modal is open.
-  const [, setEditorFocused] = useState(false);
+  const [editorFocused, setEditorFocused] = useState(false);
   const toolbarHasPointerRef = useRef(false);
   // toolbarHasPointerRef still used by the merged bottom bar to keep editor focus state
 
@@ -1542,7 +1542,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   return (
     <div
       className={cn(
-        'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card shadow-lg transition-all',
+        'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card shadow-lg transition-[border-color,box-shadow,background-color]',
+        editorFocused && (
+          isNote
+            ? 'border-amber-400 ring-2 ring-amber-400/25 shadow-amber-500/10 dark:border-amber-500 dark:ring-amber-500/25'
+            : 'border-blue-500 ring-2 ring-blue-500/25 shadow-blue-500/10 dark:border-blue-400 dark:ring-blue-400/25'
+        ),
         isNote && 'bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
