@@ -285,7 +285,7 @@ func TestAuthzService_AccessibleModules_DefaultsForMember(t *testing.T) {
 
 func TestAuthzService_AccessibleModules_IncludesManagedGrants(t *testing.T) {
 	moduleRepo := newMockModuleRepo()
-	moduleRepo.setAccessibleModules("ws-1", "wm-1", model.ModuleSupport, model.ModuleCRM)
+	moduleRepo.setAccessibleModules("ws-1", "wm-1", model.ModuleSupport, model.ModuleCRM, model.ModuleAutomation)
 	svc := &AuthzService{rbac: NewRBACEngine(), moduleRepo: moduleRepo}
 	actor := &Actor{WorkspaceID: "ws-1", WorkspaceMemberID: "wm-1", Role: model.RoleMember}
 
@@ -293,7 +293,7 @@ func TestAuthzService_AccessibleModules_IncludesManagedGrants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AccessibleModules() error = %v", err)
 	}
-	want := []model.ModuleID{model.ModulePM, model.ModuleDocs, model.ModuleCRM, model.ModuleSupport}
+	want := []model.ModuleID{model.ModulePM, model.ModuleDocs, model.ModuleCRM, model.ModuleSupport, model.ModuleAutomation}
 	if len(modules) != len(want) {
 		t.Fatalf("expected %d modules, got %d", len(want), len(modules))
 	}
@@ -312,7 +312,7 @@ func TestAuthzService_AccessibleModules_AdminBypass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AccessibleModules() error = %v", err)
 	}
-	want := []model.ModuleID{model.ModulePM, model.ModuleDocs, model.ModuleCRM, model.ModuleSupport}
+	want := []model.ModuleID{model.ModulePM, model.ModuleDocs, model.ModuleCRM, model.ModuleSupport, model.ModuleAutomation}
 	if len(modules) != len(want) {
 		t.Fatalf("expected %d modules, got %d", len(want), len(modules))
 	}

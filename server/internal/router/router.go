@@ -484,6 +484,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/automation", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
+				r.Use(requireModule(model.ModuleAutomation))
 
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/overview", h.Automation.GetOverview)
 				r.Route("/flows", func(r chi.Router) {

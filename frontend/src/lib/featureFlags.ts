@@ -16,12 +16,6 @@ const GATED_MODULES: Record<string, string[]> = {
     'amad@usermaven.com',
     'waqar.azeem1986@gmail.com',
   ],
-  automation: [
-    'waqar@contentstudio.io',
-    'azhar@contentstudio.io',
-    'amad@usermaven.com',
-    'waqar.azeem1986@gmail.com',
-  ],
 };
 
 export function isModuleEnabled(moduleId: string, userEmail?: string): boolean {

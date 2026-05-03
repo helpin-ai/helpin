@@ -112,6 +112,37 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
+  it('auto-selects the first visible conversation when none is selected', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-2')
+    expect(useSupportInboxStore.getState().activePanel).toBe('thread')
+
+    act(() => root.unmount())
+  })
+
+  it('keeps an existing selected conversation instead of replacing it with the first row', () => {
+    useSupportInboxStore.setState({ selectedConversationId: 'conv-2', activePanel: 'thread' })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-2')
+
+    act(() => root.unmount())
+  })
+
   it('fetches the next page when the list is scrolled near the bottom', () => {
     const fetchNextPage = vi.fn()
     mockUseInfiniteConversations.mockReturnValue({
