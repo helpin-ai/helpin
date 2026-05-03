@@ -30,6 +30,9 @@ import type {
   SupportAIRewriteDraftRequest,
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
+  SupportInboxView,
+  CreateSupportInboxViewRequest,
+  UpdateSupportInboxViewRequest,
   CreateSupportEmailRouteRequest,
   CreateSupportEmailSenderRequest,
   SetSupportEmailSenderDefaultRequest,
@@ -43,18 +46,25 @@ import type {
   CreateCannedResponseRequest,
   UpdateCannedResponseRequest,
   SupportMessage,
+  SupportTag,
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
 
 type SupportConversationFilters = {
   status?: string;
+  statuses?: string;
   priority?: string;
   filter?: string;
   mailbox_id?: string | null;
   ai_state?: string;
+  ai?: string;
   flow_state?: string;
   search?: string;
+  assigned_to?: string;
+  sort?: string;
+  tag_ids?: string;
+  system_tags?: string;
 };
 
 async function loadConversationListPage(
@@ -74,7 +84,17 @@ async function loadConversationListPage(
     page: filters?.page ?? 1,
     per_page: filters?.per_page ?? SUPPORT_CONVERSATIONS_PER_PAGE,
     total_pages: 1,
-    meta: { unread: { total: 0, my_inbox: 0, unassigned: 0, ai_active: 0 } },
+    meta: {
+      unread: {
+        inbox: 0,
+        mine: 0,
+        waiting: 0,
+        ai_active: 0,
+        total: 0,
+        my_inbox: 0,
+        unassigned: 0,
+      },
+    },
   } satisfies ConversationListResponse;
 }
 
@@ -166,6 +186,47 @@ export function useInboxScopes(workspaceId: string, enabled = true) {
   });
 }
 
+export function useSupportInboxViews(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.inboxViews(workspaceId),
+    queryFn: async (): Promise<SupportInboxView[]> => unwrap(await supportService.listInboxViews(workspaceId)),
+    enabled: !!workspaceId && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateSupportInboxView(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateSupportInboxViewRequest) =>
+      supportService.createInboxView(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+    },
+  });
+}
+
+export function useUpdateSupportInboxView(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: UpdateSupportInboxViewRequest & { id: string }) =>
+      supportService.updateInboxView(workspaceId, id, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+    },
+  });
+}
+
+export function useDeleteSupportInboxView(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => supportService.deleteInboxView(workspaceId, id).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+    },
+  });
+}
+
 export function useSupportUnreadByWorkspace(enabled = true) {
   return useQuery({
     queryKey: queryKeys.support.workspaceUnread(),
@@ -238,6 +299,15 @@ export function useCannedResponses(workspaceId: string) {
   return useQuery({
     queryKey: queryKeys.support.cannedResponses(workspaceId),
     queryFn: async (): Promise<SupportCannedResponse[]> => unwrap(await supportService.listCannedResponses(workspaceId)),
+    enabled: !!workspaceId,
+    staleTime: 30_000,
+  });
+}
+
+export function useSupportTags(workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.support.tags(workspaceId),
+    queryFn: async (): Promise<SupportTag[]> => unwrap(await supportService.listTags(workspaceId)),
     enabled: !!workspaceId,
     staleTime: 30_000,
   });
@@ -484,6 +554,49 @@ export function useDeleteCannedResponse(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to delete shortcut', { description: error.message });
+    },
+  });
+}
+
+export function useCreateSupportTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { name: string; color?: string }) =>
+      supportService.createTag(workspaceId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create tag', { description: error.message });
+    },
+  });
+}
+
+export function useUpdateSupportTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tagId, payload }: { tagId: string; payload: { name?: string; color?: string } }) =>
+      supportService.updateTag(workspaceId, tagId, payload).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update tag', { description: error.message });
+    },
+  });
+}
+
+export function useDeleteSupportTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (tagId: string) => supportService.deleteTag(workspaceId, tagId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete tag', { description: error.message });
     },
   });
 }
@@ -866,6 +979,36 @@ export function useUpdateConversationSubject(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to update subject', { description: error.message });
+    },
+  });
+}
+
+export function useAddConversationTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, tagId }: { conversationId: string; tagId: string }) =>
+      supportService.addConversationTag(workspaceId, conversationId, tagId).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to add tag', { description: error.message });
+    },
+  });
+}
+
+export function useRemoveConversationTag(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversationId, tagId }: { conversationId: string; tagId: string }) =>
+      supportService.removeConversationTag(workspaceId, conversationId, tagId).then(unwrap),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to remove tag', { description: error.message });
     },
   });
 }

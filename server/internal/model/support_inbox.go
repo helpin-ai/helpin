@@ -61,6 +61,8 @@ type SupportConversation struct {
 	MailboxHandle       *string                    `json:"mailbox_handle,omitempty" gorm:"->"`
 	MailboxIcon         *string                    `json:"mailbox_icon,omitempty" gorm:"->"`
 	Triage              *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
+	Tags                []SupportTag               `json:"tags,omitempty" gorm:"-"`
+	SystemTags          []string                   `json:"system_tags,omitempty" gorm:"-"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
@@ -78,6 +80,13 @@ const (
 	SupportConversationFlowStateAssignedToHuman = "assigned_to_human"
 	SupportConversationFlowStateResolvedByAI    = "resolved_by_ai"
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
+)
+
+const (
+	SupportConversationListFilterInbox    = "inbox"
+	SupportConversationListFilterMine     = "mine"
+	SupportConversationListFilterMentions = "mentions"
+	SupportConversationListFilterResolved = "resolved"
 )
 
 func NormalizeSupportConversationStatus(status string) string {
@@ -147,10 +156,17 @@ type UpdateSupportTeammatePresenceRequest struct {
 
 // UnreadStats holds aggregate unread conversation counts for sidebar badges.
 type UnreadStats struct {
-	Total      int `json:"total"`
-	MyInbox    int `json:"my_inbox"`
-	Unassigned int `json:"unassigned"`
-	AIActive   int `json:"ai_active"`
+	Inbox         int `json:"inbox"`
+	Mine          int `json:"mine"`
+	Waiting       int `json:"waiting"`
+	AIActive      int `json:"ai_active"`
+	Total         int `json:"total"`
+	MyInbox       int `json:"my_inbox"`
+	Unassigned    int `json:"unassigned"`
+	InboxTotal    int `json:"inbox_total"`
+	MineTotal     int `json:"mine_total"`
+	WaitingTotal  int `json:"waiting_total"`
+	AIActiveTotal int `json:"ai_active_total"`
 }
 
 type SupportInboxScope struct {
@@ -160,6 +176,7 @@ type SupportInboxScope struct {
 	Icon         string  `json:"icon"`
 	IsShared     bool    `json:"is_shared"`
 	IsDefault    bool    `json:"is_default"`
+	TotalCount   int     `json:"total_count"`
 	UnreadCount  int     `json:"unread_count"`
 	Active       bool    `json:"active"`
 	LinkedTeamID *string `json:"linked_team_id,omitempty"`

@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Support Inbox Mockup</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --panel-2: #f9fafb;
+      --line: #e2e5ea;
+      --line-soft: #edf0f3;
+      --text: #1b1f27;
+      --muted: #667085;
+      --faint: #98a2b3;
+      --accent: #2563eb;
+      --accent-soft: #e9f0ff;
+      --green: #16a34a;
+      --amber: #d97706;
+      --red: #dc2626;
+      --violet: #7c3aed;
+      --shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      letter-spacing: 0;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 56px 232px 390px minmax(460px, 1fr);
+      height: 100vh;
+      min-height: 720px;
+      padding: 18px;
+      gap: 0;
+    }
+
+    .rail {
+      background: #111827;
+      border-radius: 8px 0 0 8px;
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .rail-dot, .rail-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      color: #d1d5db;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .rail-dot { background: #f8fafc; color: #111827; }
+    .rail-icon.active { background: #2563eb; color: white; }
+    .rail-spacer { flex: 1; }
+
+    .sidebar {
+      background: #f7f8fa;
+      border-right: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      padding: 14px 12px;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 34px;
+      padding: 0 4px 10px;
+      border-bottom: 1px solid var(--line-soft);
+      margin-bottom: 10px;
+    }
+
+    .brand-mark {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: var(--accent);
+    }
+
+    .brand-row span {
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .section-label {
+      margin: 14px 8px 6px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--faint);
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      height: 34px;
+      padding: 0 8px;
+      border-radius: 7px;
+      color: #384152;
+      font-size: 13px;
+      font-weight: 520;
+    }
+
+    .nav-item.active {
+      background: var(--accent-soft);
+      color: #1d4ed8;
+    }
+
+    .nav-icon {
+      width: 17px;
+      height: 17px;
+      border-radius: 5px;
+      border: 1px solid currentColor;
+      opacity: .85;
+    }
+
+    .nav-count {
+      margin-left: auto;
+      min-width: 21px;
+      height: 19px;
+      padding: 0 6px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: #e5e7eb;
+      color: #475467;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .nav-item.active .nav-count {
+      background: #2563eb;
+      color: white;
+    }
+
+    .subtle-nav {
+      display: flex;
+      align-items: center;
+      height: 29px;
+      padding: 0 8px 0 34px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .team-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 30px;
+      padding: 0 8px;
+      border-radius: 7px;
+      color: #475467;
+      font-size: 12.5px;
+    }
+
+    .team-swatch {
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      background: #94a3b8;
+    }
+
+    .list {
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .list-head {
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .title-row h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+
+    .queue-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .search {
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      color: var(--faint);
+      font-size: 13px;
+      margin-bottom: 10px;
+      background: var(--panel-2);
+    }
+
+    .chips {
+      display: flex;
+      gap: 6px;
+      overflow: hidden;
+    }
+
+    .chip {
+      height: 27px;
+      padding: 0 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: white;
+      color: #475467;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 560;
+      white-space: nowrap;
+    }
+
+    .chip.active {
+      background: #111827;
+      color: white;
+      border-color: #111827;
+    }
+
+    .conversation {
+      min-height: 84px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      display: grid;
+      grid-template-columns: 38px 1fr;
+      gap: 10px;
+      position: relative;
+    }
+
+    .conversation.selected {
+      background: #f8fbff;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: #e0ecff;
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .conv-top {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .name {
+      font-size: 13px;
+      font-weight: 690;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time {
+      margin-left: auto;
+      color: var(--faint);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .subject {
+      margin-top: 4px;
+      color: #344054;
+      font-size: 12.5px;
+      line-height: 1.35;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badges {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 8px;
+      min-width: 0;
+    }
+
+    .badge {
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      font-size: 10.5px;
+      font-weight: 650;
+      white-space: nowrap;
+      background: #eef2f7;
+      color: #475467;
+    }
+
+    .badge.blue { background: #e8f0ff; color: #1d4ed8; }
+    .badge.amber { background: #fff4df; color: #b45309; }
+    .badge.green { background: #eaf7ee; color: #15803d; }
+    .badge.violet { background: #f1e9ff; color: #6d28d9; }
+
+    .thread {
+      min-width: 0;
+      background: #fbfcfd;
+      border-radius: 0 8px 8px 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      box-shadow: var(--shadow);
+    }
+
+    .thread-head {
+      min-height: 62px;
+      padding: 12px 18px;
+      background: white;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .thread-head h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .thread-sub {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .head-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
+
+    .button {
+      height: 30px;
+      padding: 0 11px;
+      border-radius: 7px;
+      border: 1px solid var(--line);
+      background: white;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 650;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: white;
+    }
+
+    .messages {
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .ai-strip {
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #1e40af;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .msg-row {
+      max-width: 72%;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .msg-row.right { align-self: flex-end; align-items: flex-end; }
+    .msg-label {
+      color: var(--faint);
+      font-size: 11px;
+    }
+
+    .bubble {
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.45;
+      background: white;
+      border: 1px solid var(--line-soft);
+    }
+
+    .right .bubble {
+      background: #1f2937;
+      color: white;
+      border-color: #1f2937;
+    }
+
+    .composer {
+      border-top: 1px solid var(--line);
+      background: white;
+      padding: 12px 14px;
+    }
+
+    .composer-box {
+      min-height: 76px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--faint);
+      font-size: 13px;
+      background: #fbfcfd;
+    }
+
+    @media (max-width: 1050px) {
+      .shell { grid-template-columns: 52px 210px 340px minmax(360px, 1fr); padding: 10px; }
+      .thread-head { padding: 10px 14px; }
+      .messages { padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail">
+      <div class="rail-dot">H</div>
+      <div class="rail-icon">P</div>
+      <div class="rail-icon active">S</div>
+      <div class="rail-icon">D</div>
+      <div class="rail-spacer"></div>
+      <div class="rail-icon">?</div>
+    </aside>
+
+    <aside class="sidebar">
+      <div class="brand-row">
+        <div class="brand-mark"></div>
+        <span>Support</span>
+      </div>
+
+      <div class="section-label">Queue</div>
+      <div class="nav-item active">
+        <span class="nav-icon"></span>
+        <span>Active</span>
+        <span class="nav-count">18</span>
+      </div>
+      <div class="subtle-nav">Needs human 6</div>
+      <div class="subtle-nav">AI handling 12</div>
+
+      <div class="nav-item">
+        <span class="nav-icon"></span>
+        <span>Waiting</span>
+        <span class="nav-count">9</span>
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon"></span>
+        <span>Resolved</span>
+        <span class="nav-count">42</span>
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon"></span>
+        <span>Spam</span>
+        <span class="nav-count">3</span>
+      </div>
+
+      <div class="section-label">Ownership</div>
+      <div class="nav-item">
+        <span class="nav-icon"></span>
+        <span>Assigned to me</span>
+        <span class="nav-count">4</span>
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon"></span>
+        <span>Unassigned</span>
+        <span class="nav-count">6</span>
+      </div>
+      <div class="nav-item">
+        <span class="nav-icon"></span>
+        <span>Mentions</span>
+        <span class="nav-count">2</span>
+      </div>
+
+      <div class="section-label">Team inboxes</div>
+      <div class="team-row"><span class="team-swatch" style="background:#2563eb"></span>Support <span class="nav-count">7</span></div>
+      <div class="team-row"><span class="team-swatch" style="background:#7c3aed"></span>Billing <span class="nav-count">3</span></div>
+      <div class="team-row"><span class="team-swatch" style="background:#16a34a"></span>Sales <span class="nav-count">2</span></div>
+    </aside>
+
+    <main class="list">
+      <div class="list-head">
+        <div class="title-row">
+          <h1>Active conversations</h1>
+          <span class="queue-meta">18 total</span>
+        </div>
+        <div class="search">Search customer, subject, message...</div>
+        <div class="chips">
+          <span class="chip active">Needs action 6</span>
+          <span class="chip">AI working 12</span>
+          <span class="chip">Mine 4</span>
+          <span class="chip">Unassigned 6</span>
+        </div>
+      </div>
+
+      <section class="conversation selected">
+        <div class="avatar">AS</div>
+        <div>
+          <div class="conv-top">
+            <span class="name">Ava Stone</span>
+            <span class="time">2m</span>
+          </div>
+          <div class="subject">Customer asked for a human after the AI answer</div>
+          <div class="badges">
+            <span class="badge amber">Needs human</span>
+            <span class="badge">Unassigned</span>
+            <span class="badge violet">Billing</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="conversation">
+        <div class="avatar">MK</div>
+        <div>
+          <div class="conv-top">
+            <span class="name">Mika Khan</span>
+            <span class="time">5m</span>
+          </div>
+          <div class="subject">Refund status for invoice #4812</div>
+          <div class="badges">
+            <span class="badge amber">SLA risk</span>
+            <span class="badge blue">Assigned to you</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="conversation">
+        <div class="avatar">CL</div>
+        <div>
+          <div class="conv-top">
+            <span class="name">Chris Lee</span>
+            <span class="time">9m</span>
+          </div>
+          <div class="subject">AI is collecting troubleshooting details</div>
+          <div class="badges">
+            <span class="badge blue">AI working</span>
+            <span class="badge">Support</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="conversation">
+        <div class="avatar">NT</div>
+        <div>
+          <div class="conv-top">
+            <span class="name">Nora Taylor</span>
+            <span class="time">14m</span>
+          </div>
+          <div class="subject">Demo request from enterprise prospect</div>
+          <div class="badges">
+            <span class="badge green">AI qualified</span>
+            <span class="badge">Sales</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <section class="thread">
+      <div class="thread-head">
+        <div>
+          <h2>#284 - Customer asked for human review</h2>
+          <div class="thread-sub">Ava Stone · ava@example.com · Billing inbox</div>
+        </div>
+        <div class="head-actions">
+          <button class="button">Assign</button>
+          <button class="button">Wait</button>
+          <button class="button primary">Resolve</button>
+        </div>
+      </div>
+
+      <div class="messages">
+        <div class="ai-strip">
+          <span>AI summary</span>
+          <span>Customer wants refund timing. AI found invoice #4812 but cannot confirm payout date.</span>
+        </div>
+        <div class="msg-row">
+          <span class="msg-label">Ava Stone</span>
+          <div class="bubble">Can someone confirm when the refund will hit my card? The bot only showed that it was approved.</div>
+        </div>
+        <div class="msg-row right">
+          <span class="msg-label">Helpin AI</span>
+          <div class="bubble">The refund is approved. A teammate can confirm the expected bank processing window.</div>
+        </div>
+        <div class="msg-row">
+          <span class="msg-label">Ava Stone</span>
+          <div class="bubble">Please connect me with someone.</div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-box">Reply... type ! for saved replies</div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/mail"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +79,58 @@ func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlB
 		return stripped, htmlBody
 	}
 	return strings.TrimSpace(payload.TextBody), htmlBody
+}
+
+const postmarkInboundAutoSpamScoreThreshold = 5.0
+
+type postmarkInboundSpamSignals struct {
+	score  *float64
+	status string
+	tests  string
+}
+
+func postmarkInboundSpamSignalsFromHeaders(headers []model.PostmarkHeader) postmarkInboundSpamSignals {
+	signals := postmarkInboundSpamSignals{
+		status: strings.TrimSpace(inboundHeaderValue(headers, "X-Spam-Status")),
+		tests:  strings.TrimSpace(inboundHeaderValue(headers, "X-Spam-Tests")),
+	}
+	if scoreValue := strings.TrimSpace(inboundHeaderValue(headers, "X-Spam-Score")); scoreValue != "" {
+		fields := strings.Fields(scoreValue)
+		if len(fields) > 0 {
+			if score, err := strconv.ParseFloat(fields[0], 64); err == nil {
+				signals.score = &score
+			}
+		}
+	}
+	return signals
+}
+
+func (signals postmarkInboundSpamSignals) shouldAutoSpamNewConversation() bool {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(signals.status)), "yes") {
+		return true
+	}
+	return signals.score != nil && *signals.score >= postmarkInboundAutoSpamScoreThreshold
+}
+
+func (signals postmarkInboundSpamSignals) messageMetadata() string {
+	metadata := map[string]any{}
+	if signals.score != nil {
+		metadata["postmark_spam_score"] = *signals.score
+	}
+	if signals.status != "" {
+		metadata["postmark_spam_status"] = signals.status
+	}
+	if signals.tests != "" {
+		metadata["postmark_spam_tests"] = signals.tests
+	}
+	if len(metadata) == 0 {
+		return "{}"
+	}
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 const (
@@ -568,6 +621,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		senderName = "Customer"
 	}
 	viaEmail := "email"
+	spamSignals := postmarkInboundSpamSignalsFromHeaders(payload.Headers)
 	msg := &model.SupportMessage{
 		WorkspaceID:       conv.WorkspaceID,
 		ConversationID:    conv.ID,
@@ -576,10 +630,13 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		Content:           content,
 		IsInternal:        false,
 		MessageType:       "reply",
+		Metadata:          spamSignals.messageMetadata(),
 		ViaChannel:        &viaEmail,
 	}
 
-	wasResolved := model.NormalizeSupportConversationStatus(conv.Status) == model.SupportConversationStatusResolved
+	normalizedStatus := model.NormalizeSupportConversationStatus(conv.Status)
+	wasResolved := normalizedStatus == model.SupportConversationStatusResolved
+	shouldReopen := wasResolved || normalizedStatus == model.SupportConversationStatusWaitingOnCustomer
 
 	var createdMsg *model.SupportMessage
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -619,7 +676,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			return err
 		}
 
-		if wasResolved {
+		if shouldReopen {
 			reopenFlowState := supportEmailReopenFlowState(conv)
 			if err := convRepoTx.UpdateFields(ctx, conv.WorkspaceID, conv.ID, map[string]any{
 				"status":      model.SupportConversationStatusOpen,
@@ -635,8 +692,10 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			conv.FlowState = &flowState
 			conv.ResolvedAt = nil
 			conv.ClosedAt = nil
-			if err := createEmailReopenedSystemMessage(ctx, msgRepoTx, conv); err != nil {
-				return err
+			if wasResolved {
+				if err := createEmailReopenedSystemMessage(ctx, msgRepoTx, conv); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -665,7 +724,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		_ = s.supportInboxService.emailRouteRepo.TouchInbound(ctx, route.ID, s.now())
 	}
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(conv.WorkspaceID, createdMsg, "email:"+createdMsg.ID))
-	if wasResolved {
+	if shouldReopen {
 		s.wsPublisher.Publish(websocket.Event{
 			Action:      "updated",
 			Entity:      "support_conversation",
@@ -2364,12 +2423,20 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	customerEmail := fromEmail
 	viaEmail := "email"
 	now := s.now()
+	spamSignals := postmarkInboundSpamSignalsFromHeaders(payload.Headers)
+	status := model.SupportConversationStatusOpen
+	var closedAt *time.Time
+	if spamSignals.shouldAutoSpamNewConversation() {
+		status = model.SupportConversationStatusSpam
+		closedAt = &now
+	}
 
 	conversation := &model.SupportConversation{
 		WorkspaceID:   route.WorkspaceID,
 		MailboxID:     route.MailboxID,
 		Subject:       subject,
-		Status:        "open",
+		Status:        status,
+		ClosedAt:      closedAt,
 		FlowState:     strPtr(model.SupportConversationFlowStateWaitingForHuman),
 		Priority:      "medium",
 		Channel:       "email",
@@ -2378,7 +2445,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		Source:        "email",
 	}
 
-	if conversation.MailboxID == nil && s.supportInboxService != nil {
+	if conversation.Status != model.SupportConversationStatusSpam && conversation.MailboxID == nil && s.supportInboxService != nil {
 		if mailboxID, _, mailboxErr := s.supportInboxService.maybeApplyMailboxRoutingForChannel(ctx, route.WorkspaceID, nil, true, "email"); mailboxErr == nil {
 			conversation.MailboxID = mailboxID
 		}
@@ -2388,7 +2455,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		mailbox *model.SupportMailbox
 		err     error
 	)
-	if route.MailboxID != nil && strings.TrimSpace(*route.MailboxID) != "" && s.supportInboxService.mailboxRepo != nil {
+	if conversation.Status != model.SupportConversationStatusSpam && route.MailboxID != nil && strings.TrimSpace(*route.MailboxID) != "" && s.supportInboxService.mailboxRepo != nil {
 		mailbox, err = s.supportInboxService.mailboxRepo.GetByID(ctx, route.WorkspaceID, strings.TrimSpace(*route.MailboxID))
 		if err != nil {
 			return err
@@ -2410,6 +2477,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		Content:           content,
 		IsInternal:        false,
 		MessageType:       "reply",
+		Metadata:          spamSignals.messageMetadata(),
 		ViaChannel:        &viaEmail,
 	}
 
@@ -2689,8 +2757,8 @@ func isEmailFallbackInboundTerminalStatus(status string) bool {
 	}
 }
 
-// supportEmailReopenFlowState computes the flow state a resolved conversation
-// should transition to when reopened by an inbound customer email reply.
+// supportEmailReopenFlowState computes the flow state a conversation should
+// transition to when an inbound customer email reply makes it actionable again.
 func supportEmailReopenFlowState(conv *model.SupportConversation) string {
 	if conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
 		return model.SupportConversationFlowStateAssignedToHuman
