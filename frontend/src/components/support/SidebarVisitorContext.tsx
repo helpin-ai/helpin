@@ -39,7 +39,7 @@ function InfoRow({
 }) {
   if (!value) return null;
   return (
-    <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+    <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
       <span className="text-muted-foreground flex items-center gap-1.5">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
@@ -158,7 +158,7 @@ function MainInfoRow({
   href?: string;
 }) {
   return (
-    <div className="flex items-center gap-2.5 text-xs">
+    <div className="flex items-center gap-2.5 text-[12px]">
       <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
         {icon}
       </span>
@@ -217,7 +217,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
               <MainInfoRow icon={<Clock01Icon className="h-3.5 w-3.5" />} value={localTime} />
             )}
             {Flag && location?.country_name && (
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex items-center gap-2 text-[12px]">
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                   <span className="flex h-[11px] w-4 items-center justify-center overflow-hidden rounded-[2px] border border-border/60">
                     <Flag className="h-full w-full object-cover" />
@@ -247,19 +247,19 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
       {hasDevice && (
         <CollapsibleSection title="Visitor device" icon={ComputerIcon} count={0} defaultOpen>
           <div className="space-y-2">
-            <div className="flex items-center gap-2.5 text-xs">
+            <div className="flex items-center gap-2.5 text-[12px]">
               <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
                 <BrowserIcon browser={device.browser} />
               </span>
               <span className="text-foreground/90">{device.browser}{device.browser_version ? ` ${device.browser_version}` : ''}</span>
             </div>
-            <div className="flex items-center gap-2.5 text-xs">
+            <div className="flex items-center gap-2.5 text-[12px]">
               <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
                 <OSIcon os={device.os} />
               </span>
               <span className="text-foreground/90">{device.os}{device.os_version ? ` ${device.os_version}` : ''}</span>
             </div>
-            <div className="flex items-center gap-2.5 text-xs">
+            <div className="flex items-center gap-2.5 text-[12px]">
               <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground/70">
                 <DeviceIcon type={device.device_type} />
               </span>
@@ -277,7 +277,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
               <InfoRow label="Job title" value={contact.job_title} />
             )}
             {contact.lifecycle_stage && (
-              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
                 <span className="text-muted-foreground">Lifecycle</span>
                 <span>
                   <Badge variant="secondary" className={`h-4 rounded-full px-1.5 text-[10px] font-medium ${LIFECYCLE_COLORS[contact.lifecycle_stage] ?? LIFECYCLE_COLORS.other}`}>
@@ -287,7 +287,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
               </div>
             )}
             {contact.source && (
-              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+              <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
                 <span className="text-muted-foreground">Source</span>
                 <span className="flex items-center gap-1.5 truncate capitalize font-medium text-foreground/90">
                   {(() => {
@@ -319,7 +319,7 @@ export function SidebarVisitorContext({ workspaceId, conversationId }: SidebarVi
                 key={conv.id}
                 to="/w/$slug/support/$conversationId"
                 params={{ slug: workspace?.slug ?? '', conversationId: conv.id }}
-                className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs hover:bg-accent transition-colors"
+                className="flex items-center gap-2 rounded-md border px-2 py-1.5 text-[12px] hover:bg-accent transition-colors"
               >
                 <span className="text-muted-foreground shrink-0">#{conv.display_id}</span>
                 <span className="truncate flex-1 font-medium">{conv.subject}</span>

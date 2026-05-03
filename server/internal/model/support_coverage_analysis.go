@@ -74,6 +74,9 @@ type SupportCoverageConversationAnalysis struct {
 	HumanResolution           string          `json:"human_resolution" gorm:"type:text;not null;default:''"`
 	DecisionReason            string          `json:"decision_reason" gorm:"type:text;not null;default:''"`
 	Confidence                float64         `json:"confidence" gorm:"not null;default:0"`
+	IsSupportQuery            bool            `json:"is_support_query" gorm:"not null;default:true"`
+	ConversationType          string          `json:"conversation_type" gorm:"not null;default:'support_query'"`
+	ClassificationReason      string          `json:"classification_reason" gorm:"type:text;not null;default:''"`
 	ErrorMessage              *string         `json:"error_message"`
 	RawOutput                 json.RawMessage `json:"raw_output" gorm:"type:jsonb;not null;default:'{}'"`
 	CreatedAt                 time.Time       `json:"created_at" gorm:"autoCreateTime"`

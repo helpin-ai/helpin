@@ -28,7 +28,7 @@ spec:
       #         mountPath: /data/tls
       containers:
         - name: main
-          image: ghcr.io/helpin-ai/helpin/events-pipeline:stage-latest
+          image: ghcr.io/helpin-ai/helpin/events-pipeline:ep-stage-v0.1.10-rc.1
           command: ["./target/release/consumer"]
           envFrom:
             - secretRef:

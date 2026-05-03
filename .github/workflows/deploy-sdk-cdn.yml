@@ -14,6 +14,11 @@ on:
       - "packages/widget-core/**"
       - "packages/shared/**"
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Run regardless of changed paths"
+        type: boolean
+        default: true
 
 permissions:
   contents: read

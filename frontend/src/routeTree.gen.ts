@@ -56,6 +56,7 @@ import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
 import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes/_authenticated/w/$slug/settings/crm-email'
 import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './routes/_authenticated/w/$slug/settings/crm-autonomy'
+import { Route as AuthenticatedWSlugSettingsCommandIntentsRouteImport } from './routes/_authenticated/w/$slug/settings/command-intents'
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
 import { Route as AuthenticatedWSlugSettingsAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/automations'
 import { Route as AuthenticatedWSlugSettingsAiAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-automations'
@@ -365,6 +366,12 @@ const AuthenticatedWSlugSettingsCrmAutonomyRoute =
   AuthenticatedWSlugSettingsCrmAutonomyRouteImport.update({
     id: '/settings/crm-autonomy',
     path: '/settings/crm-autonomy',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsCommandIntentsRoute =
+  AuthenticatedWSlugSettingsCommandIntentsRouteImport.update({
+    id: '/settings/command-intents',
+    path: '/settings/command-intents',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsChatGeneralRoute =
@@ -687,6 +694,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
+  '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
@@ -775,6 +783,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
+  '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
@@ -870,6 +879,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/_authenticated/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
+  '/_authenticated/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/_authenticated/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/_authenticated/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
@@ -965,6 +975,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/chat-general'
+    | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-pipelines'
@@ -1053,6 +1064,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/chat-general'
+    | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-pipelines'
@@ -1147,6 +1159,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/ai-automations'
     | '/_authenticated/w/$slug/settings/automations'
     | '/_authenticated/w/$slug/settings/chat-general'
+    | '/_authenticated/w/$slug/settings/command-intents'
     | '/_authenticated/w/$slug/settings/crm-autonomy'
     | '/_authenticated/w/$slug/settings/crm-email'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
@@ -1533,6 +1546,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/crm-autonomy'
       fullPath: '/w/$slug/settings/crm-autonomy'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/command-intents': {
+      id: '/_authenticated/w/$slug/settings/command-intents'
+      path: '/settings/command-intents'
+      fullPath: '/w/$slug/settings/command-intents'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsCommandIntentsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/chat-general': {
@@ -1994,6 +2014,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsAiAutomationsRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   AuthenticatedWSlugSettingsAutomationsRoute: typeof AuthenticatedWSlugSettingsAutomationsRoute
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
+  AuthenticatedWSlugSettingsCommandIntentsRoute: typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   AuthenticatedWSlugSettingsCrmAutonomyRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   AuthenticatedWSlugSettingsCrmEmailRoute: typeof AuthenticatedWSlugSettingsCrmEmailRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
@@ -2056,6 +2077,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsAutomationsRoute,
   AuthenticatedWSlugSettingsChatGeneralRoute:
     AuthenticatedWSlugSettingsChatGeneralRoute,
+  AuthenticatedWSlugSettingsCommandIntentsRoute:
+    AuthenticatedWSlugSettingsCommandIntentsRoute,
   AuthenticatedWSlugSettingsCrmAutonomyRoute:
     AuthenticatedWSlugSettingsCrmAutonomyRoute,
   AuthenticatedWSlugSettingsCrmEmailRoute:

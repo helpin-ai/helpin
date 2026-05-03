@@ -7,7 +7,12 @@ import { Separator } from '@/components/ui/separator';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ICON_MAP } from '@/components/ui/icon-picker';
-import { useCreateSupportEmailRoute, useDisableSupportEmailRoute, useSupportEmailRoutes, useSupportMailboxes } from '@/hooks/queries/useSupport';
+import {
+  useCreateSupportEmailRoute,
+  useDisableSupportEmailRoute,
+  useSupportEmailRoutes,
+  useSupportMailboxes,
+} from '@/hooks/queries/useSupport';
 import type { SupportEmailRoute, SupportMailbox } from '@/lib/pmTypes';
 
 export function SupportEmailForwardingTab({ workspaceId }: { workspaceId: string }) {

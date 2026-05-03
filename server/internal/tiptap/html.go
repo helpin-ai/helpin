@@ -99,14 +99,46 @@ func renderNode(b *strings.Builder, n *Node) {
 
 	case "taskItem":
 		checked := boolAttr(n.Attrs, "checked")
+		assignee := strAttr(n.Attrs, "assigneeName")
+		dueDate := strAttr(n.Attrs, "dueDate")
+		pmTaskID := strAttr(n.Attrs, "pmTaskId")
+		taskKey := strAttr(n.Attrs, "taskKey")
+		b.WriteString(`<li class="task-item"`)
 		if checked {
-			b.WriteString(`<li class="task-item" data-checked="true">`)
+			b.WriteString(` data-checked="true"`)
+		}
+		if assignee != "" {
+			b.WriteString(` data-assignee-name="`)
+			b.WriteString(html.EscapeString(assignee))
+			b.WriteString(`"`)
+		}
+		if dueDate != "" {
+			b.WriteString(` data-due-date="`)
+			b.WriteString(html.EscapeString(dueDate))
+			b.WriteString(`"`)
+		}
+		if pmTaskID != "" {
+			b.WriteString(` data-pm-task-id="`)
+			b.WriteString(html.EscapeString(pmTaskID))
+			b.WriteString(`"`)
+		}
+		if taskKey != "" {
+			b.WriteString(` data-task-key="`)
+			b.WriteString(html.EscapeString(taskKey))
+			b.WriteString(`"`)
+		}
+		b.WriteString(`>`)
+		if checked {
 			b.WriteString(`<input type="checkbox" checked disabled> `)
 		} else {
-			b.WriteString(`<li class="task-item">`)
 			b.WriteString(`<input type="checkbox" disabled> `)
 		}
 		renderChildren(b, n)
+		if assignee != "" || dueDate != "" || taskKey != "" {
+			b.WriteString(`<span class="task-item-meta">`)
+			b.WriteString(html.EscapeString(strings.TrimSpace(assignee + " " + dueDate + " " + taskKey)))
+			b.WriteString(`</span>`)
+		}
 		b.WriteString("</li>\n")
 
 	case "codeBlock":
@@ -125,18 +157,89 @@ func renderNode(b *strings.Builder, n *Node) {
 		b.WriteString("</blockquote>\n")
 
 	case "callout":
-		variant := strAttr(n.Attrs, "variant")
-		if variant == "" {
-			variant = "grey"
-		}
-		switch variant {
-		case "blue", "green", "grey", "red", "yellow":
-		default:
-			variant = "grey"
-		}
+		variant := normalizeCalloutVariant(strAttr(n.Attrs, "variant"))
 		fmt.Fprintf(b, "<aside class=\"docs-callout docs-callout--%s\" data-callout-variant=\"%s\">\n", variant, variant)
 		renderChildren(b, n)
 		b.WriteString("</aside>\n")
+
+	case "toggleSection":
+		title := strAttr(n.Attrs, "title")
+		if title == "" {
+			title = "Details"
+		}
+		b.WriteString(`<details class="docs-toggle-section" data-toggle-section`)
+		if boolAttr(n.Attrs, "open") {
+			b.WriteString(` open`)
+		}
+		b.WriteString(` data-toggle-title="`)
+		b.WriteString(html.EscapeString(title))
+		b.WriteString(`">`)
+		b.WriteString(`<summary>`)
+		b.WriteString(html.EscapeString(title))
+		b.WriteString(`</summary>`)
+		b.WriteString("\n")
+		renderChildren(b, n)
+		b.WriteString("</details>\n")
+
+	case "aiSection":
+		renderChildren(b, n)
+
+	case "citationBlock":
+		renderCitationBlock(b, n)
+
+	case "entityEmbed":
+		entityType := strAttr(n.Attrs, "entityType")
+		entityID := strAttr(n.Attrs, "entityId")
+		switch entityType {
+		case "task", "story", "epic", "support_conversation", "deal", "contact", "company", "reference":
+		default:
+			entityType = "task"
+		}
+		title := strAttr(n.Attrs, "title")
+		if title == "" {
+			title = "Linked entity"
+		}
+		displayID := strAttr(n.Attrs, "displayId")
+		status := strAttr(n.Attrs, "status")
+		b.WriteString("<div class=\"docs-entity-embed\" data-entity-embed data-entity-type=\"")
+		b.WriteString(html.EscapeString(entityType))
+		b.WriteString("\" data-entity-id=\"")
+		b.WriteString(html.EscapeString(entityID))
+		b.WriteString("\" data-entity-title=\"")
+		b.WriteString(html.EscapeString(title))
+		if displayID != "" {
+			b.WriteString("\" data-entity-display-id=\"")
+			b.WriteString(html.EscapeString(displayID))
+		}
+		if status != "" {
+			b.WriteString("\" data-entity-status=\"")
+			b.WriteString(html.EscapeString(status))
+		}
+		b.WriteString("\">")
+		b.WriteString(html.EscapeString(title))
+		b.WriteString("</div>\n")
+
+	case "savedViewEmbed":
+		module := strAttr(n.Attrs, "module")
+		if module == "" {
+			module = "pm"
+		}
+		viewID := strAttr(n.Attrs, "viewId")
+		viewName := strAttr(n.Attrs, "viewName")
+		if viewName == "" {
+			viewName = "Saved view"
+		}
+		b.WriteString("<section class=\"docs-saved-view-embed\" data-saved-view-embed data-saved-view-module=\"")
+		b.WriteString(html.EscapeString(module))
+		if viewID != "" {
+			b.WriteString("\" data-saved-view-id=\"")
+			b.WriteString(html.EscapeString(viewID))
+		}
+		b.WriteString("\" data-saved-view-name=\"")
+		b.WriteString(html.EscapeString(viewName))
+		b.WriteString("\">")
+		b.WriteString(html.EscapeString(viewName))
+		b.WriteString("</section>\n")
 
 	case "videoEmbed":
 		embedUrl := strAttr(n.Attrs, "embedUrl")
@@ -150,7 +253,7 @@ func renderNode(b *strings.Builder, n *Node) {
 				b.WriteString("\">\n")
 				b.WriteString("<iframe src=\"")
 				b.WriteString(html.EscapeString(embedUrl))
-				b.WriteString("\" frameborder=\"0\" allowfullscreen sandbox=\"allow-scripts allow-same-origin allow-popups allow-presentation\" referrerpolicy=\"no-referrer\" loading=\"lazy\"></iframe>\n")
+				b.WriteString("\" frameborder=\"0\" allowfullscreen sandbox=\"allow-scripts allow-same-origin allow-popups allow-presentation\" referrerpolicy=\"strict-origin-when-cross-origin\" loading=\"lazy\"></iframe>\n")
 				b.WriteString("</div>\n")
 			}
 		}
@@ -166,6 +269,20 @@ func renderNode(b *strings.Builder, n *Node) {
 			}
 		}
 
+	case "excalidraw":
+		title := strAttr(n.Attrs, "title")
+		if title == "" {
+			title = "Excalidraw drawing"
+		}
+		b.WriteString("<figure class=\"docs-excalidraw-block\" data-excalidraw>\n")
+		b.WriteString("<div class=\"docs-excalidraw-placeholder\">")
+		b.WriteString(html.EscapeString(title))
+		b.WriteString("</div>\n")
+		b.WriteString("<figcaption>")
+		b.WriteString(html.EscapeString(title))
+		b.WriteString("</figcaption>\n")
+		b.WriteString("</figure>\n")
+
 	case "horizontalRule":
 		b.WriteString("<hr>\n")
 
@@ -175,6 +292,7 @@ func renderNode(b *strings.Builder, n *Node) {
 	case "image", "resizableImage":
 		alignment := strAttr(n.Attrs, "alignment")
 		linkUrl := strAttr(n.Attrs, "linkUrl")
+		caption := strAttr(n.Attrs, "caption")
 		linkNewTab := true
 		if v, ok := n.Attrs["linkNewTab"]; ok {
 			if bv, ok := v.(bool); ok {
@@ -182,6 +300,9 @@ func renderNode(b *strings.Builder, n *Node) {
 			}
 		}
 
+		if caption != "" {
+			b.WriteString("<figure class=\"docs-image-figure\">\n")
+		}
 		if alignment != "" && alignment != "center" {
 			var alignStyle string
 			switch alignment {
@@ -210,7 +331,81 @@ func renderNode(b *strings.Builder, n *Node) {
 		if linkUrl != "" {
 			b.WriteString("</a>")
 		}
+		if caption != "" {
+			b.WriteString("\n<figcaption>")
+			b.WriteString(html.EscapeString(caption))
+			b.WriteString("</figcaption>")
+		}
 		b.WriteString("\n</div>\n")
+		if caption != "" {
+			b.WriteString("</figure>\n")
+		}
+
+	case "fileAttachment":
+		fileName := strAttr(n.Attrs, "fileName")
+		if fileName == "" {
+			fileName = "Attachment"
+		}
+		url := strAttr(n.Attrs, "url")
+		contentType := strAttr(n.Attrs, "contentType")
+		b.WriteString(`<div class="docs-file-attachment" data-file-attachment`)
+		if contentType != "" {
+			b.WriteString(` data-content-type="`)
+			b.WriteString(html.EscapeString(contentType))
+			b.WriteString(`"`)
+		}
+		b.WriteString(`>`)
+		if url != "" {
+			b.WriteString(`<a href="`)
+			b.WriteString(html.EscapeString(url))
+			b.WriteString(`" target="_blank" rel="noopener noreferrer">`)
+			b.WriteString(html.EscapeString(fileName))
+			b.WriteString(`</a>`)
+		} else {
+			b.WriteString(html.EscapeString(fileName))
+		}
+		b.WriteString("</div>\n")
+
+	case "tableOfContents":
+		b.WriteString(`<nav data-docs-toc>Table of contents</nav>`)
+		b.WriteString("\n")
+
+	case "richEmbed":
+		url := strAttr(n.Attrs, "url")
+		title := strAttr(n.Attrs, "title")
+		if title == "" {
+			title = url
+		}
+		provider := strAttr(n.Attrs, "provider")
+		description := strAttr(n.Attrs, "description")
+		imageURL := strAttr(n.Attrs, "image_url")
+		b.WriteString(`<a class="docs-rich-embed" data-rich-embed href="`)
+		b.WriteString(html.EscapeString(url))
+		b.WriteString(`" data-embed-url="`)
+		b.WriteString(html.EscapeString(url))
+		if provider != "" {
+			b.WriteString(`" data-embed-provider="`)
+			b.WriteString(html.EscapeString(provider))
+		}
+		if title != "" {
+			b.WriteString(`" data-embed-title="`)
+			b.WriteString(html.EscapeString(title))
+		}
+		if description != "" {
+			b.WriteString(`" data-embed-description="`)
+			b.WriteString(html.EscapeString(description))
+		}
+		if imageURL != "" {
+			b.WriteString(`" data-embed-image-url="`)
+			b.WriteString(html.EscapeString(imageURL))
+		}
+		b.WriteString(`" target="_blank" rel="noopener noreferrer">`)
+		if provider != "" {
+			b.WriteString(html.EscapeString(provider))
+			b.WriteString(": ")
+		}
+		b.WriteString(html.EscapeString(title))
+		b.WriteString("</a>\n")
 
 	case "table":
 		b.WriteString("<table>\n")
@@ -328,17 +523,11 @@ func renderImage(b *strings.Builder, n *Node) {
 	if src == "" {
 		return
 	}
+	darkSrc := strAttr(n.Attrs, "darkSrc")
 	alt := strAttr(n.Attrs, "alt")
 	width := strAttr(n.Attrs, "width")
 	height := strAttr(n.Attrs, "height")
 
-	b.WriteString(`<img src="`)
-	b.WriteString(html.EscapeString(src))
-	b.WriteString(`" alt="`)
-	b.WriteString(html.EscapeString(alt))
-	b.WriteByte('"')
-
-	// Build inline style for dimensions.
 	var style []string
 	if width != "" && width != "auto" {
 		style = append(style, "width:"+html.EscapeString(width))
@@ -346,10 +535,112 @@ func renderImage(b *strings.Builder, n *Node) {
 	if height != "" && height != "auto" {
 		style = append(style, "height:"+html.EscapeString(height))
 	}
+
+	if darkSrc != "" {
+		b.WriteString(`<span class="docs-theme-image-set">`)
+		renderImageTag(b, src, alt, style, "docs-theme-image docs-theme-image-light")
+		renderImageTag(b, darkSrc, alt, style, "docs-theme-image docs-theme-image-dark")
+		b.WriteString(`</span>`)
+		return
+	}
+
+	renderImageTag(b, src, alt, style, "")
+}
+
+func renderImageTag(b *strings.Builder, src string, alt string, style []string, className string) {
+	b.WriteString(`<img`)
+	if className != "" {
+		b.WriteString(` class="`)
+		b.WriteString(html.EscapeString(className))
+		b.WriteByte('"')
+	}
+	b.WriteString(` src="`)
+	b.WriteString(html.EscapeString(src))
+	b.WriteString(`" alt="`)
+	b.WriteString(html.EscapeString(alt))
+	b.WriteByte('"')
 	if len(style) > 0 {
 		fmt.Fprintf(b, ` style="%s"`, strings.Join(style, ";"))
 	}
 	b.WriteString(" loading=\"lazy\">")
+}
+
+func renderCitationBlock(b *strings.Builder, n *Node) {
+	title := strAttr(n.Attrs, "title")
+	if title == "" {
+		title = "Sources"
+	}
+	sources := sourceListAttr(n.Attrs, "sources")
+
+	b.WriteString("<section class=\"docs-citation-block\" data-citation-block data-citation-title=\"")
+	b.WriteString(html.EscapeString(title))
+	b.WriteString("\">\n")
+	b.WriteString("<h3>")
+	b.WriteString(html.EscapeString(title))
+	b.WriteString("</h3>\n")
+	if len(sources) == 0 {
+		b.WriteString("<p>No sources attached</p>\n")
+		b.WriteString("</section>\n")
+		return
+	}
+
+	b.WriteString("<ol>\n")
+	for _, source := range sources {
+		sourceType := citationSourceType(strMapAttr(source, "sourceType"))
+		sourceID := strMapAttr(source, "sourceId")
+		access := strMapAttr(source, "access")
+		if access == "" {
+			access = "unknown"
+		}
+		redacted := access == "redacted"
+		title := strMapAttr(source, "title")
+		if title == "" {
+			title = citationSourceLabel(sourceType)
+		}
+		if redacted {
+			title = "Restricted source"
+		}
+
+		b.WriteString("<li data-source-type=\"")
+		b.WriteString(html.EscapeString(sourceType))
+		b.WriteString("\" data-source-id=\"")
+		b.WriteString(html.EscapeString(sourceID))
+		b.WriteString("\" data-source-access=\"")
+		b.WriteString(html.EscapeString(access))
+		b.WriteString("\">")
+
+		url := strMapAttr(source, "url")
+		if url != "" && !redacted {
+			b.WriteString("<a href=\"")
+			b.WriteString(html.EscapeString(url))
+			b.WriteString("\" target=\"_blank\" rel=\"noopener noreferrer\">")
+			b.WriteString(html.EscapeString(title))
+			b.WriteString("</a>")
+		} else {
+			b.WriteString("<span>")
+			b.WriteString(html.EscapeString(title))
+			b.WriteString("</span>")
+		}
+		b.WriteString(" <small>")
+		b.WriteString(html.EscapeString(citationSourceLabel(sourceType)))
+		if confidence, ok := numericMapAttr(source, "confidence"); ok && !redacted {
+			if confidence <= 1 {
+				confidence *= 100
+			}
+			fmt.Fprintf(b, " %.0f%%", confidence)
+		}
+		b.WriteString("</small>")
+
+		if redacted {
+			b.WriteString("<p>Hidden because this viewer cannot access the underlying source.</p>")
+		} else if excerpt := strMapAttr(source, "excerpt"); excerpt != "" {
+			b.WriteString("<p>")
+			b.WriteString(html.EscapeString(excerpt))
+			b.WriteString("</p>")
+		}
+		b.WriteString("</li>\n")
+	}
+	b.WriteString("</ol>\n</section>\n")
 }
 
 // allowedVideoHosts maps hostnames to required path prefixes for video embeds.
@@ -444,6 +735,25 @@ func strAttr(attrs map[string]any, key string) string {
 	return s
 }
 
+func normalizeCalloutVariant(value string) string {
+	switch value {
+	case "blue", "info":
+		return "info"
+	case "yellow", "warning":
+		return "warning"
+	case "green", "tip":
+		return "tip"
+	case "red", "danger":
+		return "danger"
+	case "success":
+		return "success"
+	case "grey":
+		return "info"
+	default:
+		return "info"
+	}
+}
+
 func boolAttr(attrs map[string]any, key string) bool {
 	if attrs == nil {
 		return false
@@ -457,4 +767,82 @@ func boolAttr(attrs map[string]any, key string) bool {
 		return false
 	}
 	return b
+}
+
+func sourceListAttr(attrs map[string]any, key string) []map[string]any {
+	if attrs == nil {
+		return nil
+	}
+	raw, ok := attrs[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func strMapAttr(attrs map[string]any, key string) string {
+	if attrs == nil {
+		return ""
+	}
+	v, ok := attrs[key]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
+func numericMapAttr(attrs map[string]any, key string) (float64, bool) {
+	if attrs == nil {
+		return 0, false
+	}
+	v, ok := attrs[key]
+	if !ok || v == nil {
+		return 0, false
+	}
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	default:
+		return 0, false
+	}
+}
+
+func citationSourceType(value string) string {
+	switch value {
+	case "docs_chunk", "support_conversation":
+		return value
+	default:
+		return "docs_chunk"
+	}
+}
+
+func citationSourceLabel(sourceType string) string {
+	switch sourceType {
+	case "support_conversation":
+		return "Support conversation"
+	case "docs_chunk":
+		return "Docs chunk"
+	default:
+		return "Source"
+	}
 }

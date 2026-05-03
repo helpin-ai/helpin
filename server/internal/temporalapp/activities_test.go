@@ -3279,6 +3279,8 @@ func TestCheckoutRunRefChecksOutRemoteWorkingBranchWithSlashName(t *testing.T) {
 
 	workDir := filepath.Join(t.TempDir(), "work")
 	runGitCommand(t, "", "clone", remoteDir, workDir)
+	runGitCommand(t, workDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, workDir, "config", "user.name", "Test User")
 
 	activities := &AgentRunActivities{}
 	state := &resolvedRunState{
@@ -3336,6 +3338,8 @@ func TestSyncBaseIntoWorkingBranchMergesBaseChangesForCodex(t *testing.T) {
 
 	workDir := filepath.Join(t.TempDir(), "work")
 	runGitCommand(t, "", "clone", remoteDir, workDir)
+	runGitCommand(t, workDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, workDir, "config", "user.name", "Test User")
 
 	activities := &AgentRunActivities{}
 	state := &resolvedRunState{
@@ -3400,6 +3404,8 @@ func TestSyncBaseIntoWorkingBranchLeavesConflictForCodexToResolve(t *testing.T) 
 
 	workDir := filepath.Join(t.TempDir(), "work")
 	runGitCommand(t, "", "clone", remoteDir, workDir)
+	runGitCommand(t, workDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, workDir, "config", "user.name", "Test User")
 
 	activities := &AgentRunActivities{}
 	state := &resolvedRunState{
@@ -3480,6 +3486,8 @@ func TestSyncBaseIntoWorkingBranchDeepensShallowCloneBeforeDeclaringUnrelatedHis
 
 	workDir := filepath.Join(t.TempDir(), "work")
 	runGitCommand(t, "", "clone", "--depth", "1", "--branch", "main", "file://"+remoteDir, workDir)
+	runGitCommand(t, workDir, "config", "user.email", "test@example.com")
+	runGitCommand(t, workDir, "config", "user.name", "Test User")
 
 	activities := &AgentRunActivities{}
 	state := &resolvedRunState{
@@ -4134,7 +4142,8 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE pm_workflow_states (
 			id TEXT PRIMARY KEY,
-			state_type TEXT NOT NULL
+			state_type TEXT NOT NULL,
+			position INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
@@ -4248,6 +4257,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			document_id TEXT NOT NULL,
+			block_id TEXT,
 			linked_object_type TEXT NOT NULL,
 			linked_object_id TEXT NOT NULL,
 			link_context TEXT NOT NULL,
@@ -5653,7 +5663,7 @@ func TestEnsureRunConversationCreatesFallbackPromptWhenNoTargetContext(t *testin
 	if len(history) != 1 {
 		t.Fatalf("expected fallback prompt history entry, got %#v", history)
 	}
-	if history[0].Role != "user" || history[0].Content != defaultInitialRunUserPrompt {
+	if history[0].Role != "user" || !strings.HasPrefix(history[0].Content, "Context:\nCurrent system date is: ") {
 		t.Fatalf("unexpected fallback execution history %#v", history[0])
 	}
 
@@ -5661,7 +5671,7 @@ func TestEnsureRunConversationCreatesFallbackPromptWhenNoTargetContext(t *testin
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
 	}
-	if len(messages) != 1 || messages[0].MessageType != "prompt" || messages[0].Content != defaultInitialRunUserPrompt {
+	if len(messages) != 1 || messages[0].MessageType != "prompt" || messages[0].Content != history[0].Content {
 		t.Fatalf("expected persisted non-empty fallback prompt, got %#v", messages)
 	}
 }
@@ -6855,7 +6865,8 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 		)`,
 		`CREATE TABLE pm_workflow_states (
 			id TEXT PRIMARY KEY,
-			state_type TEXT NOT NULL
+			state_type TEXT NOT NULL,
+			position INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,
@@ -6969,6 +6980,7 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			document_id TEXT NOT NULL,
+			block_id TEXT,
 			linked_object_type TEXT NOT NULL,
 			linked_object_id TEXT NOT NULL,
 			link_context TEXT NOT NULL,
@@ -10748,7 +10760,8 @@ func TestResolvePlanningRunInputClearsDeletedEpicSpecReferences(t *testing.T) {
 		)`,
 		`CREATE TABLE pm_workflow_states (
 			id TEXT PRIMARY KEY,
-			state_type TEXT NOT NULL
+			state_type TEXT NOT NULL,
+			position INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE pm_tasks (
 			id TEXT PRIMARY KEY,

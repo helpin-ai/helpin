@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { Editor } from '@tiptap/core';
+import { Fragment } from '@tiptap/pm/model';
 import {
   ArrowLeft02Icon,
   ArrowRight02Icon,
@@ -12,6 +13,7 @@ import {
   MoreHorizontalIcon,
   MoreVerticalIcon,
   EraserIcon,
+  ArrowUpDownIcon,
 } from '@/lib/icons';
 
 interface TableControlsProps {
@@ -418,6 +420,54 @@ export function TableControls({ editor }: TableControlsProps) {
     editor.view.dispatch(tr);
   }, [editor, getTableInfo]);
 
+  const sortRowsByColumn = useCallback((direction: 'asc' | 'desc') => {
+    const info = getTableInfo();
+    if (!info || !hover) return;
+    const { pos: tablePos, node: tableNode } = info;
+    const rows = Array.from({ length: tableNode.childCount }, (_, index) => tableNode.child(index));
+    const hasHeader = rows[0]?.child(0)?.type.name === 'tableHeader';
+    const head = hasHeader ? rows.slice(0, 1) : [];
+    const body = hasHeader ? rows.slice(1) : rows;
+    const sorted = [...body].sort((a, b) => {
+      const av = hover.colIndex < a.childCount ? a.child(hover.colIndex).textContent.trim().toLowerCase() : '';
+      const bv = hover.colIndex < b.childCount ? b.child(hover.colIndex).textContent.trim().toLowerCase() : '';
+      return direction === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+    const nextTable = tableNode.type.create(tableNode.attrs, [...head, ...sorted], tableNode.marks);
+    editor.view.dispatch(editor.state.tr.replaceWith(tablePos, tablePos + tableNode.nodeSize, nextTable));
+  }, [editor, hover, getTableInfo]);
+
+  const moveRow = useCallback((direction: 'up' | 'down') => {
+    const info = getTableInfo();
+    if (!info || !hover) return;
+    const { pos: tablePos, node: tableNode } = info;
+    const targetIndex = direction === 'up' ? hover.rowIndex - 1 : hover.rowIndex + 1;
+    if (targetIndex < 0 || targetIndex >= tableNode.childCount) return;
+    const rows = Array.from({ length: tableNode.childCount }, (_, index) => tableNode.child(index));
+    [rows[hover.rowIndex], rows[targetIndex]] = [rows[targetIndex], rows[hover.rowIndex]];
+    const nextTable = tableNode.type.create(tableNode.attrs, Fragment.fromArray(rows), tableNode.marks);
+    editor.view.dispatch(editor.state.tr.replaceWith(tablePos, tablePos + tableNode.nodeSize, nextTable));
+  }, [editor, hover, getTableInfo]);
+
+  const moveColumn = useCallback((direction: 'left' | 'right') => {
+    const info = getTableInfo();
+    if (!info || !hover) return;
+    const { pos: tablePos, node: tableNode } = info;
+    const firstRow = tableNode.child(0);
+    const targetIndex = direction === 'left' ? hover.colIndex - 1 : hover.colIndex + 1;
+    if (targetIndex < 0 || targetIndex >= firstRow.childCount) return;
+    const rows = Array.from({ length: tableNode.childCount }, (_, rowIndex) => {
+      const row = tableNode.child(rowIndex);
+      const cells = Array.from({ length: row.childCount }, (_, cellIndex) => row.child(cellIndex));
+      if (hover.colIndex < cells.length && targetIndex < cells.length) {
+        [cells[hover.colIndex], cells[targetIndex]] = [cells[targetIndex], cells[hover.colIndex]];
+      }
+      return row.type.create(row.attrs, Fragment.fromArray(cells), row.marks);
+    });
+    const nextTable = tableNode.type.create(tableNode.attrs, Fragment.fromArray(rows), tableNode.marks);
+    editor.view.dispatch(editor.state.tr.replaceWith(tablePos, tablePos + tableNode.nodeSize, nextTable));
+  }, [editor, hover, getTableInfo]);
+
   const openColumnMenu = useCallback(() => {
     if (!hover) return;
     focusCellAt(hover.tableEl, 0, hover.colIndex);
@@ -596,7 +646,14 @@ export function TableControls({ editor }: TableControlsProps) {
             <>
               <MenuItem icon={ArrowLeft02Icon} label="Add column left" onClick={() => runAndClose(() => editor.chain().focus().addColumnBefore().run())} />
               <MenuItem icon={ArrowRight02Icon} label="Add column right" onClick={() => runAndClose(() => editor.chain().focus().addColumnAfter().run())} />
+              <MenuItem icon={ArrowLeft02Icon} label="Move left" onClick={() => runAndClose(() => moveColumn('left'))} />
+              <MenuItem icon={ArrowRight02Icon} label="Move right" onClick={() => runAndClose(() => moveColumn('right'))} />
+              <MenuItem icon={ArrowUpDownIcon} label="Sort ascending" onClick={() => runAndClose(() => sortRowsByColumn('asc'))} />
+              <MenuItem icon={ArrowUpDownIcon} label="Sort descending" onClick={() => runAndClose(() => sortRowsByColumn('desc'))} />
               <MenuItem icon={Copy01Icon} label="Duplicate" onClick={() => runAndClose(() => duplicateColumn())} />
+              <div className="my-1 h-px bg-border" />
+              <MenuItem icon={MoreHorizontalIcon} label="Merge cells" onClick={() => runAndClose(() => editor.chain().focus().mergeCells().run())} />
+              <MenuItem icon={MoreHorizontalIcon} label="Split cell" onClick={() => runAndClose(() => editor.chain().focus().splitCell().run())} />
               <div className="my-1 h-px bg-border" />
               <MenuItem icon={EraserIcon} label="Clear content" onClick={() => runAndClose(() => clearColumnContent())} />
               <MenuItem icon={Delete01Icon} label="Delete" destructive onClick={() => runAndClose(() => editor.chain().focus().deleteColumn().run())} />
@@ -615,6 +672,8 @@ export function TableControls({ editor }: TableControlsProps) {
               <div className="my-1 h-px bg-border" />
               <MenuItem icon={ArrowUp02Icon} label="Add row above" onClick={() => runAndClose(() => editor.chain().focus().addRowBefore().run())} />
               <MenuItem icon={ArrowDown02Icon} label="Add row below" onClick={() => runAndClose(() => editor.chain().focus().addRowAfter().run())} />
+              <MenuItem icon={ArrowUp02Icon} label="Move up" onClick={() => runAndClose(() => moveRow('up'))} />
+              <MenuItem icon={ArrowDown02Icon} label="Move down" onClick={() => runAndClose(() => moveRow('down'))} />
               <MenuItem icon={Copy01Icon} label="Duplicate" onClick={() => runAndClose(() => duplicateRow())} />
               <div className="my-1 h-px bg-border" />
               <MenuItem icon={EraserIcon} label="Clear content" onClick={() => runAndClose(() => clearRowContent())} />

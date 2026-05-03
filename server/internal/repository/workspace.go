@@ -224,6 +224,19 @@ func (r *WorkspaceRepository) GetTeamByID(ctx context.Context, workspaceID, team
 	return team, nil
 }
 
+// ListTeams returns all teams in a workspace.
+func (r *WorkspaceRepository) ListTeams(ctx context.Context, workspaceID string) ([]model.WorkspaceTeam, error) {
+	var teams []model.WorkspaceTeam
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("name").
+		Find(&teams).Error
+	if err != nil {
+		return nil, fmt.Errorf("list workspace teams: %w", err)
+	}
+	return teams, nil
+}
+
 // Update modifies workspace fields.
 func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
@@ -352,6 +365,7 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM agent_handoffs WHERE workspace_id = ?",
 
 			// Support module
+			"DELETE FROM support_inbox_views WHERE workspace_id = ?",
 			"DELETE FROM support_conversations WHERE workspace_id = ?",
 			"DELETE FROM support_widget_sessions WHERE workspace_id = ?",
 			"DELETE FROM support_widget_installations WHERE workspace_id = ?",
@@ -623,6 +637,21 @@ func (r *WorkspaceRepository) UpdateMemberRole(ctx context.Context, workspaceID,
 		return fmt.Errorf("member not found")
 	}
 	return nil
+}
+
+// UpdateSupportTaskPreferences updates the support task creation preferences for a workspace member.
+func (r *WorkspaceRepository) UpdateSupportTaskPreferences(ctx context.Context, memberID string, teamID *string, dialogDismissed *bool) error {
+	updates := map[string]interface{}{}
+	if teamID != nil {
+		updates["support_default_team_id"] = teamID
+	}
+	if dialogDismissed != nil {
+		updates["support_task_dialog_dismissed"] = *dialogDismissed
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&model.WorkspaceMember{}).Where("id = ?", memberID).Updates(updates).Error
 }
 
 // RemoveMember revokes an active workspace member and clears membership-specific state.

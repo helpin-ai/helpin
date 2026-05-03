@@ -585,6 +585,99 @@ describe('WidgetManager', () => {
       expect(postSendOptions.messages).toHaveLength(1);
       expect(postSendOptions.messages[0].content).toBe('Fresh question');
     });
+
+    it('shows AI thinking immediately after sending an AI-first widget message', () => {
+      const sent: string[] = [];
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: { aiEnabled: true, aiFirst: true },
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).wsConnection = {
+        readyState: WebSocket.OPEN,
+        send: (payload: string) => sent.push(payload),
+        close: vi.fn(),
+        onclose: null,
+      };
+
+      (widget as any).render();
+      const mockMount = mountWidget as ReturnType<typeof vi.fn>;
+      const latestOptions = mockMount.mock.calls.at(-1)?.[1];
+
+      latestOptions.onSendMessage('Need help');
+
+      const postSendOptions = mockMount.mock.calls.at(-1)?.[1];
+      expect(postSendOptions.messages.at(-1)?.content).toBe('Need help');
+      expect(postSendOptions.isAIThinking).toBe(true);
+      expect(sent.map((frame) => JSON.parse(frame))).toContainEqual({
+        type: 'message:send',
+        data: { content: 'Need help' },
+      });
+    });
+
+    it('clears optimistic AI thinking when a non-customer reply arrives', () => {
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: { aiEnabled: true, aiFirst: true },
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).isAIThinking = true;
+
+      (widget as any).handleWSMessage({
+        type: 'message:received',
+        data: {
+          id: 'msg-ai',
+          conversation_id: 'conv-1',
+          sender_type: 'ai',
+          message_type: 'reply',
+          content: 'Here is what I found.',
+          created_at: new Date().toISOString(),
+        },
+      });
+
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(latestOptions?.isAIThinking).toBe(false);
+      expect(latestOptions?.messages.at(-1)?.content).toBe('Here is what I found.');
+    });
+
+    it('does not show optimistic AI thinking after a conversation is escalated to a human', () => {
+      const sent: string[] = [];
+      (widget as any).widgetConfig = {
+        workspaceId: 'ws_test',
+        branding: { primaryColor: '#6366f1' },
+        features: { aiEnabled: true, aiFirst: true },
+      };
+      (widget as any).mountContainer = document.createElement('div');
+      (widget as any).activeConversationId = 'conv-1';
+      (widget as any).conversations = [{
+        id: 'conv-1',
+        subject: 'Support',
+        status: 'open',
+        aiState: 'escalated',
+        flowState: 'waiting_for_human',
+      }];
+      (widget as any).wsConnection = {
+        readyState: WebSocket.OPEN,
+        send: (payload: string) => sent.push(payload),
+        close: vi.fn(),
+        onclose: null,
+      };
+
+      (widget as any).render();
+      const latestOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+
+      latestOptions.onSendMessage('Are you there?');
+
+      const postSendOptions = (mountWidget as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+      expect(postSendOptions.isAIThinking).toBe(false);
+      expect(sent.map((frame) => JSON.parse(frame))).toContainEqual({
+        type: 'message:send',
+        data: { content: 'Are you there?' },
+      });
+    });
   });
 
   describe('typing fallback', () => {

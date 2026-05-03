@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -23,6 +24,11 @@ func NewDocsLinkRepository(db *gorm.DB) *DocsLinkRepository {
 // Create inserts a new link.
 func (r *DocsLinkRepository) Create(ctx context.Context, link *model.DocsLink) (*model.DocsLink, error) {
 	if err := r.db.WithContext(ctx).Create(link).Error; err != nil {
+		if link.BlockID == nil && strings.Contains(err.Error(), "block_id") {
+			if retryErr := r.db.WithContext(ctx).Omit("block_id").Create(link).Error; retryErr == nil {
+				return link, nil
+			}
+		}
 		return nil, fmt.Errorf("create docs link: %w", err)
 	}
 	return link, nil

@@ -3,17 +3,21 @@ import type { Editor } from '@tiptap/core';
 import { ArrowLeft02Icon } from '@/lib/icons';
 import { slashMenuPluginKey, type SlashMenuState } from './SlashMenuExtension';
 import { slashCommands, type SlashCommand } from './slash-commands';
+import type { DocsEntityEmbedType } from './EntityEmbedExtension';
 
 interface SlashMenuProps {
   editor: Editor;
   onImageInsert?: () => void;
   onVideoInsert?: () => void;
   onEmojiInsert?: () => void;
+  onEntityInsert?: (entityType?: DocsEntityEmbedType) => void;
+  onFileInsert?: () => void;
+  onEmbedInsert?: () => void;
 }
 
 const CLOSED: SlashMenuState = { open: false, from: 0, query: '', selectedIndex: 0, commandCount: 0 };
 
-export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert }: SlashMenuProps) {
+export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert, onEntityInsert, onFileInsert, onEmbedInsert }: SlashMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<SlashMenuState>({ ...CLOSED });
   const [submenu, setSubmenu] = useState<SlashCommand[] | null>(null);
@@ -111,12 +115,20 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert 
         editor.chain().focus().deleteRange({ from: deleteFrom, to: deleteTo }).run();
       }
 
-      if (cmd.title === 'Emoji' && onEmojiInsert) {
+      if (cmd.entityType && onEntityInsert) {
+        onEntityInsert(cmd.entityType);
+      } else if (cmd.title === 'Emoji' && onEmojiInsert) {
         onEmojiInsert();
       } else if (cmd.title === 'Video' && onVideoInsert) {
         onVideoInsert();
       } else if (cmd.title === 'Image' && onImageInsert) {
         onImageInsert();
+      } else if (cmd.title === 'Entity' && onEntityInsert) {
+        onEntityInsert();
+      } else if (cmd.title === 'File' && onFileInsert) {
+        onFileInsert();
+      } else if (cmd.title === 'Embed' && onEmbedInsert) {
+        onEmbedInsert();
       } else {
         cmd.action(editor);
       }
@@ -127,7 +139,7 @@ export function SlashMenu({ editor, onImageInsert, onVideoInsert, onEmojiInsert 
       setSubmenuTitle('');
       setSubmenuIndex(0);
     },
-    [editor, onImageInsert],
+    [editor, onEmbedInsert, onEmojiInsert, onEntityInsert, onFileInsert, onImageInsert, onVideoInsert],
   );
 
   const goBack = useCallback(() => {

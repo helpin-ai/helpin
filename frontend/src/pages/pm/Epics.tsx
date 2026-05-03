@@ -1,16 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createColumnHelper,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
   type ColumnDef,
   type ColumnSizingState,
+  type OnChangeFn,
+  type Row,
   type SortingState,
   type VisibilityState,
 } from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
 import {
   Tick01Icon,
+  ArrowDown02Icon,
   Calendar03Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
@@ -19,6 +26,8 @@ import {
   Search01Icon,
   Target01Icon,
   ChartIncreaseIcon,
+  ArrowUp02Icon,
+  ArrowUpDownIcon,
   UserIcon,
   UserAdd01Icon,
   Cancel01Icon,
@@ -28,7 +37,6 @@ import {
 } from '@/lib/icons';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { PMDataTable } from '@/components/pm/PMDataTable';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
 import { LabelPicker } from '@/components/pm/LabelPicker';
@@ -50,7 +58,19 @@ import type { EpicWithStats, EpicHealth, EpicWorkflowState, Label, Objective, St
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
-import { TABLE_GROUP_ROW } from '@/lib/tableStyles';
+import {
+  GROUP_ROW_HEIGHT,
+  ROW_HEIGHT,
+  TABLE_CELL,
+  TABLE_CONTAINER,
+  TABLE_GROUP_ROW,
+  TABLE_HEADER,
+  TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SORTABLE,
+  TABLE_RESIZE_HANDLE,
+  TABLE_ROW,
+  dynamicCellStyle,
+} from '@/lib/tableStyles';
 
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   no_health: { label: 'No health', color: 'text-muted-foreground' },
@@ -82,7 +102,6 @@ const DEFAULT_VISIBLE = [
   'tasks',
   'points',
   'owner',
-  'objective',
   'target_date',
 ];
 
@@ -228,6 +247,82 @@ function sortEntries(entries: EpicWithStats[], epicStates: EpicWorkflowState[]) 
   });
 }
 
+function epicCompletionPct(entry: EpicWithStats) {
+  const totalTasks = epicTaskCount(entry);
+  if (totalTasks === 0) return 0;
+  return Math.round((epicDoneTaskCount(entry) / totalTasks) * 100);
+}
+
+function getEpicSortValue(
+  entry: EpicWithStats,
+  columnId: string,
+  epicStates: EpicWorkflowState[],
+  ownerNameMap: Map<string, string>,
+  teamMap: Map<string, string>,
+) {
+  switch (columnId) {
+    case 'name':
+      return entry.epic.name;
+    case 'state': {
+      const state = epicStates.find((candidate) => candidate.id === entry.epic.epic_state_id);
+      return state?.position ?? Number.MAX_SAFE_INTEGER;
+    }
+    case 'health':
+      return ALL_HEALTH_OPTIONS.indexOf(entry.epic.health);
+    case 'progress':
+      return epicCompletionPct(entry);
+    case 'tasks':
+      return epicTaskCount(entry);
+    case 'points':
+      return entry.stats.total_points;
+    case 'owner':
+      return entry.epic.owner_member_id ? ownerNameMap.get(entry.epic.owner_member_id) ?? '' : '';
+    case 'objective':
+      return (entry.objectives ?? []).map((objective) => objective.name).join(', ');
+    case 'target_date':
+      return entry.epic.deadline ?? '';
+    case 'team':
+      return entry.epic.team_id ? teamMap.get(entry.epic.team_id) ?? '' : '';
+    case 'start_date':
+      return entry.epic.planned_start_date ?? '';
+    case 'labels':
+      return (entry.labels ?? []).map((label) => label.name).join(', ');
+    case 'created':
+      return entry.epic.created_at;
+    case 'updated':
+      return entry.epic.updated_at;
+    default:
+      return '';
+  }
+}
+
+function compareEpicSortValues(a: string | number, b: string | number) {
+  if (typeof a === 'number' && typeof b === 'number') {
+    return a - b;
+  }
+  return String(a).localeCompare(String(b), undefined, { sensitivity: 'base', numeric: true });
+}
+
+function sortEntriesForTable(
+  entries: EpicWithStats[],
+  sorting: SortingState,
+  epicStates: EpicWorkflowState[],
+  ownerNameMap: Map<string, string>,
+  teamMap: Map<string, string>,
+) {
+  if (sorting.length === 0) return sortEntries(entries, epicStates);
+
+  return [...entries].sort((a, b) => {
+    for (const sort of sorting) {
+      const aValue = getEpicSortValue(a, sort.id, epicStates, ownerNameMap, teamMap);
+      const bValue = getEpicSortValue(b, sort.id, epicStates, ownerNameMap, teamMap);
+      const result = compareEpicSortValues(aValue, bValue);
+      if (result !== 0) return sort.desc ? -result : result;
+    }
+    return a.epic.name.localeCompare(b.epic.name);
+  });
+}
+
 function getDateGroupLabel(value: string | undefined) {
   if (!value) return 'No date';
   return format(parseISO(value), 'MMM d, yyyy');
@@ -241,6 +336,7 @@ function buildEpicGroups(
   ownerNameMap: Map<string, string>,
   teamMap: Map<string, string>,
   objectiveNameMap: Map<string, string>,
+  preserveEntryOrder = false,
 ): EpicGroup[] {
   if (groupBy === 'none') {
     return [{ key: 'all', label: 'All epics', entries }];
@@ -296,7 +392,7 @@ function buildEpicGroups(
 
   const groups = Array.from(grouped.values()).map((group) => ({
     ...group,
-    entries: sortEntries(group.entries, epicStates),
+    entries: preserveEntryOrder ? group.entries : sortEntries(group.entries, epicStates),
   }));
 
   return groups.sort((a, b) => {
@@ -474,9 +570,45 @@ function EpicFilterTrigger({
   );
 }
 
-function EpicGroupSection({
-  group,
-  index,
+interface EpicVirtualGroupItem {
+  type: 'group';
+  key: string;
+  label: string;
+  entryCount: number;
+  totalTasks: number;
+  totalPoints: number;
+  completedPoints: number;
+  collapsed: boolean;
+}
+
+interface EpicVirtualRowItem {
+  type: 'row';
+  key: string;
+  row: Row<EpicWithStats>;
+}
+
+type EpicVirtualItem = EpicVirtualGroupItem | EpicVirtualRowItem;
+
+interface EpicVirtualTableProps {
+  data: EpicWithStats[];
+  groups: EpicGroup[];
+  groupBy: EpicGroupBy;
+  collapsedGroupKeys: Set<string>;
+  columns: ColumnDef<EpicWithStats, any>[];
+  columnVisibility: VisibilityState;
+  onRowClick: (entry: EpicWithStats) => void;
+  sorting: SortingState;
+  onSortingChange: OnChangeFn<SortingState>;
+  columnSizing: ColumnSizingState;
+  onColumnSizingChange: OnChangeFn<ColumnSizingState>;
+  onToggleGroup: (key: string) => void;
+}
+
+function EpicVirtualTable({
+  data,
+  groups,
+  groupBy,
+  collapsedGroupKeys,
   columns,
   columnVisibility,
   onRowClick,
@@ -484,63 +616,238 @@ function EpicGroupSection({
   onSortingChange,
   columnSizing,
   onColumnSizingChange,
-  collapsed,
-  onToggle,
-}: {
-  group: EpicGroup;
-  index: number;
-  columns: ColumnDef<EpicWithStats, any>[];
-  columnVisibility: VisibilityState;
-  onRowClick: (entry: EpicWithStats) => void;
-  sorting: SortingState;
-  onSortingChange: (updater: SortingState | ((old: SortingState) => SortingState)) => void;
-  columnSizing: ColumnSizingState;
-  onColumnSizingChange: (updater: ColumnSizingState | ((old: ColumnSizingState) => ColumnSizingState)) => void;
-  collapsed: boolean;
-  onToggle: () => void;
-}) {
-  const totalTasks = group.entries.reduce((sum, entry) => sum + epicTaskCount(entry), 0);
-  const totalPoints = group.entries.reduce((sum, entry) => sum + entry.stats.total_points, 0);
-  const completedPoints = group.entries.reduce((sum, entry) => sum + entry.stats.done_points, 0);
+  onToggleGroup,
+}: EpicVirtualTableProps) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
+  const table = useReactTable({
+    data,
+    columns,
+    state: {
+      columnVisibility,
+      sorting,
+      columnSizing,
+    },
+    onSortingChange,
+    onColumnSizingChange,
+    enableColumnResizing: true,
+    columnResizeMode: 'onEnd',
+    manualSorting: true,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
+  const rowByEpicId = useMemo(() => {
+    const map = new Map<string, Row<EpicWithStats>>();
+    for (const row of table.getRowModel().rows) {
+      map.set(row.original.epic.id, row);
+    }
+    return map;
+  }, [table, data, columnVisibility, columnSizingVersion]);
+
+  const items = useMemo<EpicVirtualItem[]>(() => {
+    if (groupBy === 'none') {
+      return data.flatMap((entry) => {
+        const row = rowByEpicId.get(entry.epic.id);
+        return row ? [{ type: 'row' as const, key: entry.epic.id, row }] : [];
+      });
+    }
+
+    const nextItems: EpicVirtualItem[] = [];
+    for (const group of groups) {
+      const collapsed = collapsedGroupKeys.has(group.key);
+      nextItems.push({
+        type: 'group',
+        key: group.key,
+        label: group.label,
+        entryCount: group.entries.length,
+        totalTasks: group.entries.reduce((sum, entry) => sum + epicTaskCount(entry), 0),
+        totalPoints: group.entries.reduce((sum, entry) => sum + entry.stats.total_points, 0),
+        completedPoints: group.entries.reduce((sum, entry) => sum + entry.stats.done_points, 0),
+        collapsed,
+      });
+
+      if (!collapsed) {
+        for (const entry of group.entries) {
+          const row = rowByEpicId.get(entry.epic.id);
+          if (row) nextItems.push({ type: 'row', key: entry.epic.id, row });
+        }
+      }
+    }
+    return nextItems;
+  }, [collapsedGroupKeys, data, groupBy, groups, rowByEpicId]);
+
+  const estimateSize = useCallback(
+    (index: number) => (items[index]?.type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT),
+    [items],
+  );
+
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize,
+    overscan: groupBy === 'none' ? 8 : 5,
+  });
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border/60">
-      <button
-        type="button"
-        className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
-        onClick={onToggle}
+    <div className="min-h-0 flex-1 rounded-lg border border-border">
+      <div
+        ref={parentRef}
+        className={TABLE_CONTAINER}
+        style={{ maxHeight: 'calc(100vh - 220px)' }}
       >
-        {collapsed ? (
-          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        ) : (
-          <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        )}
-        <span className="min-w-0 truncate font-medium">{group.label}</span>
-        <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
-          <span>{group.entries.length} {group.entries.length === 1 ? 'epic' : 'epics'}</span>
-          <span>{totalTasks} tasks</span>
-          <span>{completedPoints}/{totalPoints} points</span>
-        </span>
-      </button>
-      {!collapsed ? (
-        <PMDataTable
-          data={group.entries}
-          columns={columns}
-          columnVisibility={columnVisibility}
-          onRowClick={onRowClick}
-          sorting={sorting}
-          onSortingChange={onSortingChange}
-          columnSizing={columnSizing}
-          onColumnSizingChange={onColumnSizingChange}
-          hideHeader={index > 0}
-          containerClassName="overflow-x-auto"
-          bodyClassName="overflow-visible"
-          bodyStyle={{}}
-        />
-      ) : null}
-    </section>
+        <div className="min-w-fit">
+          <div className={TABLE_HEADER}>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <div key={headerGroup.id} className="flex items-center">
+                {headerGroup.headers.map((header) => {
+                  const defSize = header.column.columnDef.size ?? 150;
+                  const runtimeSize = header.getSize();
+                  const isResized = !!columnSizing[header.column.id];
+                  const canSort = header.column.getCanSort();
+                  const sorted = header.column.getIsSorted();
+                  return (
+                    <div
+                      key={header.id}
+                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''}`}
+                      style={dynamicCellStyle(defSize, runtimeSize, isResized, 200)}
+                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                    >
+                      <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(header.column.columnDef.header, header.getContext())}
+                        {canSort ? (
+                          <span className="ml-auto shrink-0">
+                            {sorted === 'asc' ? (
+                              <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            ) : sorted === 'desc' ? (
+                              <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                            ) : (
+                              <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                            )}
+                          </span>
+                        ) : null}
+                      </div>
+                      {header.column.getCanResize() ? (
+                        <div
+                          onMouseDown={header.getResizeHandler()}
+                          onTouchStart={header.getResizeHandler()}
+                          onClick={(event) => event.stopPropagation()}
+                          className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const item = items[virtualRow.index];
+              if (!item) return null;
+              return (
+                <div
+                  key={`${item.type}-${item.key}`}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {item.type === 'group' ? (
+                    <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
+                  ) : (
+                    <MemoEpicDataRow
+                      row={item.row}
+                      onRowClick={onRowClick}
+                      columnSizingVersion={columnSizingVersion}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
+
+interface EpicGroupRowProps {
+  item: EpicVirtualGroupItem;
+  onToggle: (key: string) => void;
+}
+
+const MemoEpicGroupRow = memo(function EpicGroupRow({ item, onToggle }: EpicGroupRowProps) {
+  return (
+    <button
+      type="button"
+      className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
+      onClick={() => onToggle(item.key)}
+    >
+      {item.collapsed ? (
+        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+      ) : (
+        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+      )}
+      <span className="min-w-0 truncate font-medium">{item.label}</span>
+      <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
+        <span>{item.entryCount} {item.entryCount === 1 ? 'epic' : 'epics'}</span>
+        <span>{item.totalTasks} tasks</span>
+        <span>{item.completedPoints}/{item.totalPoints} points</span>
+      </span>
+    </button>
+  );
+});
+
+interface EpicDataRowProps {
+  row: Row<EpicWithStats>;
+  onRowClick: (entry: EpicWithStats) => void;
+  columnSizingVersion: string;
+}
+
+function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps) {
+  return (
+    prev.row.id === next.row.id &&
+    prev.row.original === next.row.original &&
+    prev.columnSizingVersion === next.columnSizingVersion &&
+    prev.onRowClick === next.onRowClick
+  );
+}
+
+const MemoEpicDataRow = memo(function EpicDataRow({
+  row,
+  onRowClick,
+  columnSizingVersion,
+}: EpicDataRowProps) {
+  void columnSizingVersion;
+  return (
+    <div
+      className={`${TABLE_ROW} cursor-pointer`}
+      onClick={() => onRowClick(row.original)}
+    >
+      {row.getVisibleCells().map((cell) => {
+        const defSize = cell.column.columnDef.size ?? 150;
+        const runtimeSize = cell.column.getSize();
+        const isResized = runtimeSize !== defSize;
+        return (
+          <div
+            key={cell.id}
+            className={`${TABLE_CELL} overflow-hidden`}
+            style={dynamicCellStyle(defSize, runtimeSize, isResized, 200)}
+          >
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </div>
+        );
+      })}
+    </div>
+  );
+}, areEpicDataRowPropsEqual);
 
 function InlineEpicStateCell({
   entry,
@@ -870,20 +1177,35 @@ function InlineEpicLabelsCell({
   onLabelsChange: (labels: Label[]) => void;
   onUpdate: (epicId: string, patch: UpdateEpicRequest) => Promise<void>;
 }) {
-  const selectedLabelIds = (entry.labels ?? []).map((label) => label.id);
+  const labels = entry.labels ?? [];
+  const selectedLabelIds = labels.map((label) => label.id);
 
   return (
-    <div onClick={(event) => event.stopPropagation()}>
-      <LabelPicker
-        workspaceId={workspaceId}
-        teamId={entry.epic.team_id || undefined}
-        labels={allLabels}
-        selectedLabelIds={selectedLabelIds}
-        onLabelsChange={onLabelsChange}
-        onChange={async (labelIds) => {
-          await onUpdate(entry.epic.id, { label_ids: labelIds });
-        }}
-      />
+    <div onClick={(event) => event.stopPropagation()} className="group/lbl flex min-w-0 items-center gap-1">
+      {labels.length > 0 ? (
+        <div className="flex min-w-0 items-center gap-1.5" title={labels.map((l) => l.name).join(', ')}>
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: labels[0].color ? (labels[0].color.startsWith('#') ? labels[0].color : `#${labels[0].color}`) : 'var(--muted-foreground)' }}
+          />
+          <span className="truncate text-xs text-muted-foreground">
+            {labels[0].name}{labels.length > 1 ? ` +${labels.length - 1} more` : ''}
+          </span>
+        </div>
+      ) : null}
+      <div className={labels.length > 0 ? 'opacity-0 group-hover/lbl:opacity-100 transition-opacity shrink-0' : 'shrink-0'}>
+        <LabelPicker
+          workspaceId={workspaceId}
+          teamId={entry.epic.team_id || undefined}
+          labels={allLabels}
+          selectedLabelIds={selectedLabelIds}
+          onLabelsChange={onLabelsChange}
+          onChange={async (labelIds) => {
+            await onUpdate(entry.epic.id, { label_ids: labelIds });
+          }}
+          triggerOnly
+        />
+      </div>
     </div>
   );
 }
@@ -899,15 +1221,24 @@ function InlineEpicObjectivesCell({
   selectedObjectives: ObjectivePickerSelection[];
   onChange: (epicId: string, objectiveIds: string[]) => Promise<void>;
 }) {
+  const objectives = entry.objectives ?? [];
   return (
-    <div onClick={(event) => event.stopPropagation()}>
-      <ObjectivePicker
-        objectives={allObjectives}
-        selectedObjectiveIds={(entry.objectives ?? []).map((objective) => objective.id)}
-        selectedObjectives={selectedObjectives}
-        onChange={(objectiveIds) => onChange(entry.epic.id, objectiveIds)}
-        addLabel="Add objective"
-      />
+    <div onClick={(event) => event.stopPropagation()} className="group/obj flex min-w-0 items-center gap-1">
+      {objectives.length > 0 ? (
+        <span className="truncate text-xs text-muted-foreground" title={objectives.map((o) => o.name).join(', ')}>
+          {objectives[0].name}{objectives.length > 1 ? ` +${objectives.length - 1} more` : ''}
+        </span>
+      ) : null}
+      <div className={objectives.length > 0 ? 'opacity-0 group-hover/obj:opacity-100 transition-opacity shrink-0' : 'shrink-0'}>
+        <ObjectivePicker
+          objectives={allObjectives}
+          selectedObjectiveIds={objectives.map((objective) => objective.id)}
+          selectedObjectives={selectedObjectives}
+          onChange={(objectiveIds) => onChange(entry.epic.id, objectiveIds)}
+          addLabel={objectives.length === 0 ? 'Add objective' : 'Edit'}
+          triggerOnly
+        />
+      </div>
     </div>
   );
 }
@@ -935,6 +1266,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const [tableSorting, setTableSorting] = useState<SortingState>([]);
   const [tableColumnSizing, setTableColumnSizing] = useState<ColumnSizingState>({});
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(new Set());
+  const deferredSearch = useDeferredValue(search);
 
   const workspaceId = workspace?.id;
   const slug = workspace?.slug;
@@ -982,11 +1314,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     }
     return map;
   }, [epicStates]);
-  const completionPct = (entry: EpicWithStats) => {
-    const totalTasks = epicTaskCount(entry);
-    if (totalTasks === 0) return 0;
-    return Math.round((epicDoneTaskCount(entry) / totalTasks) * 100);
-  };
 
   const filterDefinitions = useMemo<EpicFilterDefinition[]>(() => [
     {
@@ -1175,14 +1502,14 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           )
         ),
       }),
-      columnHelper.accessor((row) => completionPct(row), {
+      columnHelper.accessor((row) => epicCompletionPct(row), {
         id: 'progress',
         header: 'Progress',
         size: 90,
         cell: (info) => (
           <div className="flex items-center gap-1.5 text-xs">
             <Sun01Icon className="h-3.5 w-3.5 text-amber-500" />
-            <span>{completionPct(info.row.original)}%</span>
+            <span>{epicCompletionPct(info.row.original)}%</span>
           </div>
         ),
       }),
@@ -1252,8 +1579,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             );
           }
           return objectives.length > 0 ? (
-            <span className="truncate text-xs text-muted-foreground block max-w-[150px]">
-              {objectives.map((o) => o.name).join(', ')}
+            <span className="truncate text-xs text-muted-foreground block" title={objectives.map((o) => o.name).join(', ')}>
+              {objectives[0].name}{objectives.length > 1 ? ` +${objectives.length - 1} more` : ''}
             </span>
           ) : (
             <MinusSignIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1347,17 +1674,22 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               onUpdate={updateEpicField}
             />
           ) : (
-            <div className="flex flex-wrap gap-1">
-              {(info.row.original.labels ?? []).length > 0 ? (
-                info.row.original.labels.map((l) => (
-                  <span key={l.id} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
-                    {l.name}
+            (() => {
+              const lbls = info.row.original.labels ?? [];
+              return lbls.length > 0 ? (
+                <div className="flex min-w-0 items-center gap-1.5" title={lbls.map((l) => l.name).join(', ')}>
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: lbls[0].color ? (lbls[0].color.startsWith('#') ? lbls[0].color : `#${lbls[0].color}`) : 'var(--muted-foreground)' }}
+                  />
+                  <span className="truncate text-xs text-muted-foreground">
+                    {lbls[0].name}{lbls.length > 1 ? ` +${lbls.length - 1} more` : ''}
                   </span>
-                ))
+                </div>
               ) : (
                 <MinusSignIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-            </div>
+              );
+            })()
           )
         ),
       }),
@@ -1388,7 +1720,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       assignableMembers,
       canEdit,
       columnHelper,
-      completionPct,
       epicStateMap,
       epicStates,
       findTeamName,
@@ -1465,10 +1796,10 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     return () => window.removeEventListener('epic-created', handler);
   }, [loadData]);
 
-  const openEpic = (entry: EpicWithStats) => {
+  const openEpic = useCallback((entry: EpicWithStats) => {
     if (!slug) return;
     navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: entry.epic.id } });
-  };
+  }, [navigate, slug]);
 
   const handleAddFilter = useCallback((key: EpicFilterKey) => {
     const definition = filterDefinitions.find((item) => item.key === key);
@@ -1511,21 +1842,30 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   }, []);
 
   const filteredEpics = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = deferredSearch.trim().toLowerCase();
     return epics.filter((entry) => {
       if (q && !entry.epic.name.toLowerCase().includes(q)) return false;
       return epicMatchesFilters(entry, filters);
     });
-  }, [epics, filters, search]);
+  }, [deferredSearch, epics, filters]);
 
   const sortedEpics = useMemo(
-    () => sortEntries(filteredEpics, epicStates),
-    [epicStates, filteredEpics],
+    () => sortEntriesForTable(filteredEpics, tableSorting, epicStates, ownerNameMap, teamMap),
+    [epicStates, filteredEpics, ownerNameMap, tableSorting, teamMap],
   );
 
   const groupedEpics = useMemo(
-    () => buildEpicGroups(sortedEpics, groupBy, filters, epicStates, ownerNameMap, teamMap, objectiveNameMap),
-    [epicStates, filters, groupBy, objectiveNameMap, ownerNameMap, sortedEpics, teamMap],
+    () => buildEpicGroups(
+      sortedEpics,
+      groupBy,
+      filters,
+      epicStates,
+      ownerNameMap,
+      teamMap,
+      objectiveNameMap,
+      tableSorting.length > 0,
+    ),
+    [epicStates, filters, groupBy, objectiveNameMap, ownerNameMap, sortedEpics, tableSorting.length, teamMap],
   );
   const areAllGroupsCollapsed = groupedEpics.length > 0 && groupedEpics.every((group) => collapsedGroupKeys.has(group.key));
 
@@ -1701,39 +2041,20 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           <p className="mt-1 text-sm text-muted-foreground">Adjust the active filters or clear them to see more epics.</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {groupBy === 'none' ? (
-            <div className="min-h-0 flex-1 rounded-lg border border-border">
-              <PMDataTable
-                data={sortedEpics}
-                columns={columns}
-                columnVisibility={columnVisibility}
-                onRowClick={(entry) => openEpic(entry)}
-                sorting={tableSorting}
-                onSortingChange={setTableSorting}
-                columnSizing={tableColumnSizing}
-                onColumnSizingChange={setTableColumnSizing}
-              />
-            </div>
-          ) : (
-            groupedEpics.map((group, index) => (
-              <EpicGroupSection
-                key={group.key}
-                group={group}
-                index={index}
-                columns={columns}
-                columnVisibility={columnVisibility}
-                onRowClick={openEpic}
-                sorting={tableSorting}
-                onSortingChange={setTableSorting}
-                columnSizing={tableColumnSizing}
-                onColumnSizingChange={setTableColumnSizing}
-                collapsed={collapsedGroupKeys.has(group.key)}
-                onToggle={() => handleToggleGroup(group.key)}
-              />
-            ))
-          )}
-        </div>
+        <EpicVirtualTable
+          data={sortedEpics}
+          groups={groupedEpics}
+          groupBy={groupBy}
+          collapsedGroupKeys={collapsedGroupKeys}
+          columns={columns}
+          columnVisibility={columnVisibility}
+          onRowClick={openEpic}
+          sorting={tableSorting}
+          onSortingChange={setTableSorting}
+          columnSizing={tableColumnSizing}
+          onColumnSizingChange={setTableColumnSizing}
+          onToggleGroup={handleToggleGroup}
+        />
       )}
     </div>
   );

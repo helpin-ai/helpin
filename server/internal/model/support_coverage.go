@@ -177,6 +177,17 @@ type SupportGapEvidence struct {
 
 func (SupportGapEvidence) TableName() string { return "support_gap_evidence" }
 
+// SupportGapEvidenceView is a read-only projection of SupportGapEvidence
+// joined with the originating support_messages.sender_type. Used for the
+// gap detail response so the UI can render messages with role-aware layout
+// (customer vs agent/ai/user). Excluded from AutoMigrate by virtue of
+// having no TableName() — only scanned via explicit .Table()/.Select() in
+// repository queries.
+type SupportGapEvidenceView struct {
+	SupportGapEvidence
+	SenderRole string `json:"sender_role" gorm:"column:sender_role"`
+}
+
 // SupportGapSuggestion is a proposed fix linked to a gap.
 type SupportGapSuggestion struct {
 	ID                 string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -247,13 +258,15 @@ func (SupportCoverageDigestDelivery) TableName() string {
 
 // SupportCoverageGapFilter controls gap list queries.
 type SupportCoverageGapFilter struct {
-	Status    string `json:"status"`
-	V1GapType string `json:"v1_gap_type"`
-	IssueKey  string `json:"issue_key"`
-	Search    string `json:"search"`
-	ShowRaw   bool   `json:"show_raw"`
-	Page      int    `json:"page"`
-	PerPage   int    `json:"per_page"`
+	Status      string `json:"status"`
+	GapKind     string `json:"gap_kind"`
+	GapCategory string `json:"gap_category"`
+	V1GapType   string `json:"v1_gap_type"`
+	IssueKey    string `json:"issue_key"`
+	Search      string `json:"search"`
+	ShowRaw     bool   `json:"show_raw"`
+	Page        int    `json:"page"`
+	PerPage     int    `json:"per_page"`
 }
 
 // SupportCoverageGapListItem is a row in the gap inbox table.
@@ -275,7 +288,7 @@ type SupportCoverageGapDetail struct {
 	StatusChangedByName string                              `json:"status_changed_by_name"`
 	AnalysisExplanation *SupportCoverageAnalysisExplanation `json:"analysis_explanation,omitempty"`
 	Recommendations     []SupportCoverageRecommendation     `json:"recommendations"`
-	Evidence            []SupportGapEvidence                `json:"evidence"`
+	Evidence            []SupportGapEvidenceView            `json:"evidence"`
 	Suggestions         []SupportGapSuggestion              `json:"suggestions"`
 	RelatedArticles     []SupportCoverageGapArticle         `json:"related_articles"`
 }
@@ -297,10 +310,11 @@ type SupportConversationCoverageState struct {
 
 // SupportCoverageSummary is returned by the summary endpoint.
 type SupportCoverageSummary struct {
-	NewGapsThisWeek    int `json:"new_gaps_this_week"`
-	TopRecurringGaps   int `json:"top_recurring_gaps"`
-	GapsFixedThisWeek  int `json:"gaps_fixed_this_week"`
-	TotalOpenGaps      int `json:"total_open_gaps"`
-	TotalEvidenceCount int `json:"total_evidence_count"`
-	HandoffsAfterFixes int `json:"handoffs_after_fixes"`
+	NewGapsThisWeek    int        `json:"new_gaps_this_week"`
+	TopRecurringGaps   int        `json:"top_recurring_gaps"`
+	GapsFixedThisWeek  int        `json:"gaps_fixed_this_week"`
+	TotalOpenGaps      int        `json:"total_open_gaps"`
+	TotalEvidenceCount int        `json:"total_evidence_count"`
+	HandoffsAfterFixes int        `json:"handoffs_after_fixes"`
+	LastAnalyzedAt     *time.Time `json:"last_analyzed_at,omitempty"`
 }

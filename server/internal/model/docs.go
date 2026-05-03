@@ -60,6 +60,9 @@ const (
 	LinkedObjectObjective           = "objective"
 	LinkedObjectSprint              = "sprint"
 	LinkedObjectSupportConversation = "support_conversation"
+	LinkedObjectDeal                = "deal"
+	LinkedObjectContact             = "contact"
+	LinkedObjectCompany             = "company"
 )
 
 // ─── Helper types ───────────────────────────────────────────────────────────
@@ -239,6 +242,85 @@ type DocsContent struct {
 
 func (DocsContent) TableName() string { return "docs_contents" }
 
+// DocsBlock stores one addressable top-level document block. The full
+// document JSON remains materialized in docs_contents during the compatibility
+// rollout; this table is the stable row model used by agents and future
+// block-level editing APIs.
+type DocsBlock struct {
+	ID           string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID  string          `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_block_ws_doc_sort,priority:1"`
+	DocumentID   string          `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_block_ws_doc_sort,priority:2;index:idx_docs_block_doc_deleted,priority:1"`
+	ParentID     *string         `json:"parent_id" gorm:"type:uuid;index"`
+	Type         string          `json:"type" gorm:"not null;index:idx_docs_block_type"`
+	Content      json.RawMessage `json:"content" gorm:"type:jsonb;not null"`
+	ContentText  string          `json:"content_text" gorm:"type:text"`
+	SortKey      string          `json:"sort_key" gorm:"not null;index:idx_docs_block_ws_doc_sort,priority:3"`
+	Revision     int             `json:"revision" gorm:"not null;default:1"`
+	AuthoredBy   *string         `json:"authored_by" gorm:"type:uuid"`
+	LastEditedBy *string         `json:"last_edited_by" gorm:"type:uuid"`
+	CreatedAt    time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt    time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	DeletedAt    *time.Time      `json:"deleted_at" gorm:"index:idx_docs_block_doc_deleted,priority:2"`
+
+	AgentReadable *DocsBlockAgentProjection `json:"agent_readable,omitempty" gorm:"-"`
+}
+
+func (DocsBlock) TableName() string { return "docs_blocks" }
+
+type DocsBlockAgentProjection struct {
+	Kind       string                 `json:"kind"`
+	BlockID    string                 `json:"block_id"`
+	Text       string                 `json:"text,omitempty"`
+	Attrs      map[string]interface{} `json:"attrs,omitempty"`
+	EntityRefs []DocsBlockAgentRef    `json:"entity_refs,omitempty"`
+	Citations  []DocsBlockAgentRef    `json:"citations,omitempty"`
+	Actions    []DocsBlockAgentAction `json:"actions,omitempty"`
+}
+
+type DocsBlockAgentRef struct {
+	Type     string `json:"type"`
+	ID       string `json:"id"`
+	Title    string `json:"title,omitempty"`
+	Access   string `json:"access,omitempty"`
+	Redacted bool   `json:"redacted,omitempty"`
+}
+
+type DocsBlockAgentAction struct {
+	Type  string `json:"type"`
+	Label string `json:"label"`
+}
+
+const (
+	DocsAISectionCandidateStatusReady    = "ready"
+	DocsAISectionCandidateStatusApproved = "approved"
+	DocsAISectionCandidateStatusRejected = "rejected"
+	DocsAISectionCandidateStatusFailed   = "failed"
+)
+
+// DocsAISectionCandidate stores a proposed replacement for one AI-section
+// block. The approved document aggregate is not changed until approval.
+type DocsAISectionCandidate struct {
+	ID               string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID      string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DocumentID       string          `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_ai_candidate_doc_block_status,priority:1"`
+	BlockID          string          `json:"block_id" gorm:"type:uuid;not null;index:idx_docs_ai_candidate_doc_block_status,priority:2"`
+	AgentRunID       *string         `json:"agent_run_id,omitempty" gorm:"type:uuid;index"`
+	Status           string          `json:"status" gorm:"not null;default:'ready';index:idx_docs_ai_candidate_doc_block_status,priority:3"`
+	CurrentContent   json.RawMessage `json:"current_content" gorm:"type:jsonb;not null"`
+	CandidateContent json.RawMessage `json:"candidate_content" gorm:"type:jsonb;not null"`
+	CandidateText    string          `json:"candidate_text" gorm:"type:text"`
+	SourceRefs       JSONB           `json:"source_refs" gorm:"type:jsonb;default:'[]'"`
+	Prompt           *string         `json:"prompt,omitempty" gorm:"type:text"`
+	PromptHash       *string         `json:"prompt_hash,omitempty" gorm:"index"`
+	Model            *string         `json:"model,omitempty"`
+	CreatedBy        string          `json:"created_by" gorm:"type:uuid;not null"`
+	ApprovedBy       *string         `json:"approved_by,omitempty" gorm:"type:uuid"`
+	CreatedAt        time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt        time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (DocsAISectionCandidate) TableName() string { return "docs_ai_section_candidates" }
+
 // DocsVersion stores saved snapshots.
 type DocsVersion struct {
 	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -259,6 +341,7 @@ type DocsLink struct {
 	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;not null;index:idx_docs_link_ws_obj,priority:1"`
 	DocumentID       string    `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_link_doc_type,priority:1"`
+	BlockID          *string   `json:"block_id,omitempty" gorm:"type:uuid;index"`
 	LinkedObjectType string    `json:"linked_object_type" gorm:"not null;index:idx_docs_link_doc_type,priority:2;index:idx_docs_link_obj,priority:1;index:idx_docs_link_ws_obj,priority:2"`
 	LinkedObjectID   string    `json:"linked_object_id" gorm:"type:uuid;not null;index:idx_docs_link_obj,priority:2;index:idx_docs_link_ws_obj,priority:3"`
 	LinkContext      string    `json:"link_context" gorm:"not null;default:'attached'"`
@@ -272,6 +355,53 @@ type DocsLink struct {
 }
 
 func (DocsLink) TableName() string { return "docs_links" }
+
+type DocsReferenceItem struct {
+	ID           string    `json:"id"`
+	Kind         string    `json:"kind"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description,omitempty"`
+	DocumentID   string    `json:"document_id,omitempty"`
+	BlockID      string    `json:"block_id,omitempty"`
+	EntityType   string    `json:"entity_type,omitempty"`
+	EntityID     string    `json:"entity_id,omitempty"`
+	ReferenceID  string    `json:"reference_id,omitempty"`
+	ReferenceURL string    `json:"reference_url,omitempty"`
+	Status       string    `json:"status,omitempty"`
+	Access       string    `json:"access,omitempty"`
+	CreatedAt    time.Time `json:"created_at,omitempty"`
+}
+
+type DocsReferencesResponse struct {
+	Items []DocsReferenceItem `json:"items"`
+}
+
+type ResolveDocsEntityRefsRequest struct {
+	Refs []DocsEntityRefRequest `json:"refs"`
+}
+
+type DocsEntityRefRequest struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   string      `json:"entity_id"`
+	Label      string      `json:"label,omitempty"`
+	DisplayID  interface{} `json:"display_id,omitempty"`
+}
+
+type DocsResolvedEntityRef struct {
+	EntityType string      `json:"entity_type"`
+	EntityID   string      `json:"entity_id"`
+	Status     string      `json:"status"`
+	Access     string      `json:"access"`
+	Title      string      `json:"title"`
+	DisplayID  interface{} `json:"display_id,omitempty"`
+	Meta       string      `json:"meta,omitempty"`
+	StateLabel string      `json:"state_label,omitempty"`
+	Href       string      `json:"href,omitempty"`
+}
+
+type ResolveDocsEntityRefsResponse struct {
+	Refs []DocsResolvedEntityRef `json:"refs"`
+}
 
 // HelpcenterHeaderLink is a single header navigation link.
 type HelpcenterHeaderLink struct {
@@ -608,6 +738,36 @@ type SaveDocsContentRequest struct {
 	Content json.RawMessage `json:"content"`
 }
 
+// DocsBlockPatchRequest updates one addressable document block. Revision is
+// required for optimistic concurrency.
+type DocsBlockPatchRequest struct {
+	Revision int             `json:"revision"`
+	Content  json.RawMessage `json:"content"`
+}
+
+// CreateDocsBlockRequest inserts a new top-level block. AfterBlockID is
+// optional; omitted appends the block to the end.
+type CreateDocsBlockRequest struct {
+	AfterBlockID *string         `json:"after_block_id"`
+	Content      json.RawMessage `json:"content"`
+}
+
+// ReorderDocsBlocksRequest replaces the top-level block order.
+type ReorderDocsBlocksRequest struct {
+	BlockIDs []string `json:"block_ids"`
+}
+
+type RegenerateAISectionRequest struct {
+	AgentID      string  `json:"agent_id"`
+	Instructions *string `json:"instructions,omitempty"`
+}
+
+type AISectionCandidateResponse struct {
+	Candidate *DocsAISectionCandidate `json:"candidate"`
+	AgentRun  *AgentRun               `json:"agent_run,omitempty"`
+	Content   *DocsContent            `json:"content,omitempty"`
+}
+
 // SaveDocsMarkdownRequest is the payload for saving document content from Markdown.
 // The backend wraps the markdown in a JSON envelope so the frontend can auto-convert.
 type SaveDocsMarkdownRequest struct {
@@ -634,9 +794,10 @@ type UpdateDocsVersionRequest struct {
 
 // CreateDocsLinkRequest is the payload for creating a document link.
 type CreateDocsLinkRequest struct {
-	LinkedObjectType string `json:"linked_object_type"`
-	LinkedObjectID   string `json:"linked_object_id"`
-	LinkContext      string `json:"link_context"`
+	LinkedObjectType string  `json:"linked_object_type"`
+	LinkedObjectID   string  `json:"linked_object_id"`
+	LinkContext      string  `json:"link_context"`
+	BlockID          *string `json:"block_id,omitempty"`
 }
 
 // UpdateDocsHelpcenterConfigRequest is the payload for updating help center config.

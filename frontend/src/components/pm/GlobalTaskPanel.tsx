@@ -21,6 +21,7 @@ import { parseTaskKey } from '@/lib/taskKeyUtils';
 import type { TaskDetail, TaskRecurringSummary } from '@/lib/pmTypes';
 import { useTaskPanelStore } from '@/stores/taskPanelStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 
 interface GlobalTaskPanelProps {
   workspaceId: string;
@@ -42,6 +43,17 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     () => getTaskOverlayPresentationState(activeTaskId, loadedTask),
     [activeTaskId, loadedTask],
   );
+  const commandBarContext = useMemo(() => {
+    const detail = presentation.taskDetail;
+    if (!presentation.open || !detail) return null;
+    return {
+      entity_type: 'task' as const,
+      entity_id: detail.task.id,
+      display_title: detail.task.name,
+      related_ids: detail.task.epic_id ? { epicIds: [detail.task.epic_id] } : undefined,
+    };
+  }, [presentation.open, presentation.taskDetail]);
+  useRegisterPageContext(commandBarContext, 30);
 
   // Use refs for close handler to avoid re-triggering task load effect
   const locationRef = useRef(overlayLocation);

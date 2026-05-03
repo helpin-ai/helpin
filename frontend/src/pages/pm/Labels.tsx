@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
 import { Loading01Icon, MoreHorizontalIcon, PencilEdit01Icon, PlusSignIcon, Search01Icon, Tag01Icon, Delete01Icon } from '@/lib/icons';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
@@ -144,6 +144,7 @@ export function LabelsPage() {
 
   // Filter state
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [onlyArchived, setOnlyArchived] = useState(false);
   const [scopeFilter, setScopeFilter] = useState<string>('__all__');
 
@@ -183,13 +184,13 @@ export function LabelsPage() {
   const filteredLabels = useMemo(() => {
     let result = labels;
 
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
+    if (deferredSearch.trim()) {
+      const q = deferredSearch.trim().toLowerCase();
       result = result.filter((entry) => entry.label.name.toLowerCase().includes(q));
     }
 
     return result;
-  }, [labels, search, onlyArchived]);
+  }, [deferredSearch, labels]);
 
   // Create / edit handlers
   const handleCreate = () => {

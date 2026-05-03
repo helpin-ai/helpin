@@ -83,6 +83,8 @@ interface LabelPickerProps {
   /** Called when the labels list changes (e.g. a new label was created inline). */
   onLabelsChange?: (labels: Label[]) => void;
   className?: string;
+  /** Show only the trigger button, no badges — used for compact inline table cells */
+  triggerOnly?: boolean;
 }
 
 export function LabelPicker({
@@ -93,6 +95,7 @@ export function LabelPicker({
   labels,
   onLabelsChange,
   className,
+  triggerOnly = false,
 }: LabelPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -144,7 +147,7 @@ export function LabelPicker({
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
-      {selectedLabels.map((label) => (
+      {!triggerOnly && selectedLabels.map((label) => (
         <LabelBadge key={label.id} label={label} onRemove={() => removeLabel(label.id)} />
       ))}
 

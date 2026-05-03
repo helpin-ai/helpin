@@ -480,8 +480,12 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           s.clearOneAgentTyping(event.parent_id, event.actor_id)
         }
 
-        // Play notification sound for messages from others
-        if (event.actor_id !== selfIdRef.current) {
+        // Play notification sound for hydrated messages from others.
+        // Internal/data-less message events (e.g. internal system events
+        // accompanying an escalation) are refetch signals only — backend
+        // strips event.data for IsInternal rows, so skipping when data is
+        // absent prevents double pings on a single conversational event.
+        if (event.data && event.actor_id !== selfIdRef.current) {
           playNotificationSound()
         }
 

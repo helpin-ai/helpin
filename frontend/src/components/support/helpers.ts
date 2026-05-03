@@ -144,6 +144,38 @@ export function isHumanQueueConversation(conversation: Pick<SupportConversation,
   return !isAIActiveConversation(conversation) && !isResolvedByAIConversation(conversation);
 }
 
+export function isHumanInboxConversation(
+  conversation: Pick<SupportConversation, 'status' | 'flow_state' | 'ai_state' | 'human_takeover' | 'customer_requested_human_at'>,
+): boolean {
+  return (conversation.status === 'open' || conversation.status === 'waiting_on_customer') && (
+    isHumanQueueConversation(conversation) ||
+    conversation.ai_state === 'escalated' ||
+    Boolean(conversation.customer_requested_human_at)
+  );
+}
+
+export function isHumanResolvedConversation(
+  conversation: Pick<SupportConversation, 'status' | 'flow_state' | 'ai_state' | 'human_takeover'>,
+): boolean {
+  return conversation.status === 'resolved' && !isResolvedByAIConversation(conversation);
+}
+
+export function isUserOwnedConversation(
+  conversation: Pick<SupportConversation, 'assigned_user_id' | 'opened_by_user_id'>,
+  userId?: string,
+): boolean {
+  if (!userId) return false;
+  return conversation.assigned_user_id === userId || conversation.opened_by_user_id === userId;
+}
+
+export function isMineActionableConversation(
+  conversation: Pick<SupportConversation, 'status' | 'flow_state' | 'ai_state' | 'human_takeover' | 'customer_requested_human_at' | 'assigned_user_id' | 'opened_by_user_id'>,
+  userId?: string,
+): boolean {
+  if (!isUserOwnedConversation(conversation, userId)) return false;
+  return isHumanInboxConversation(conversation) || conversation.status === 'waiting_on_customer';
+}
+
 export function getConversationStateBadges(
   conversation: Pick<SupportConversation, 'flow_state' | 'ai_state' | 'customer_requested_human_at' | 'human_takeover'>,
 ): ConversationStateBadge[] {

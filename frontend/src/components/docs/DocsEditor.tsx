@@ -14,6 +14,7 @@ import {
   Menu01Icon,
   Loading01Icon,
   Cancel01Icon,
+  Message01Icon,
 } from '@/lib/icons'
 import {
   CheckListIcon as ListOrderedIcon,
@@ -34,21 +35,47 @@ import { Table } from '@tiptap/extension-table'
 import { TableRow } from '@tiptap/extension-table-row'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { TableCell } from '@tiptap/extension-table-cell'
+import { TaskList } from '@tiptap/extension-task-list'
 import { ResizableImageExtension } from '@/components/ui/resizable-image-extension'
 import { SlashMenuExtension, slashMenuPluginKey } from './SlashMenuExtension'
+import { BlockIdExtension } from './BlockIdExtension'
 import { SlashMenu } from './SlashMenu'
 import { CalloutExtension } from './CalloutExtension'
 import { VideoEmbedExtension } from './VideoEmbedExtension'
 import { HtmlBlockExtension } from './HtmlBlockExtension'
+import { ExcalidrawExtension } from './ExcalidrawExtension'
 import { CodeBlockExtension } from './CodeBlockExtension'
+import { AISectionExtension } from './AISectionExtension'
+import { CitationBlockExtension } from './CitationBlockExtension'
+import { EntityEmbedExtension, type DocsEntityEmbedType, type EntityEmbedAttrs } from './EntityEmbedExtension'
+import { EntityMentionExtension } from './EntityMentionExtension'
+import { SavedViewEmbedExtension } from './SavedViewEmbedExtension'
+import { CommentAnchorExtension, type DocsCommentDecorationAnchor } from './CommentAnchorExtension'
+import { DocsTaskItemExtension } from './DocsTaskItemExtension'
+import { TaskItemMetadataToolbar } from './TaskItemMetadataToolbar'
+import { ToggleSectionExtension } from './ToggleSectionExtension'
+import { FileAttachmentExtension } from './FileAttachmentExtension'
+import { TableOfContentsExtension } from './TableOfContentsExtension'
+import { RichEmbedExtension } from './RichEmbedExtension'
 import { SearchReplaceExtension } from './SearchReplaceExtension'
 import { SearchReplaceBar } from './SearchReplaceBar'
 import { EmojiPickerPopover } from './EmojiPickerPopover'
 import { InsertVideoDialog } from './InsertVideoDialog'
+import { InsertEmbedDialog } from './InsertEmbedDialog'
+import { EntityEmbedDialog } from './EntityEmbedDialog'
 import { TableControls } from './TableControls'
 import { BlockGapInserter } from './BlockGapInserter'
-import { uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
+import { uploadEditorFile, uploadEditorImage, type EditorUploadConfig } from '@/hooks/useEditorImageUpload'
 import { docsService } from '@/lib/services/docsService'
+import { MentionHighlight } from '@/components/pm/mention-highlight'
+import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList'
+import { getMentionSuggestions, type MentionableAgent, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions'
+import {
+  entityMentionHref,
+  parseEntityMentionQuery,
+  searchDocsEntityItems,
+  type DocsEntitySearchItem,
+} from './entitySearch'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import {
   DropdownMenu,
@@ -68,6 +95,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { SlugDisplay } from './SlugDisplay'
 import { toast } from 'sonner'
+import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
 
 // ── Toolbar button ──────────────────────────────────────────────────────────
 
@@ -168,10 +196,115 @@ function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedA
 
 // ── Floating toolbar ────────────────────────────────────────────────────────
 
-function FloatingToolbar({ editor }: {
+export interface DocsCommentAnchor {
+  block_id?: string
+  range?: Record<string, unknown>
+  anchor_text?: string
+}
+
+export interface DocsCommentAnchorDecoration extends DocsCommentAnchor {
+  id: string
+}
+
+function getSelectionCommentAnchor(editor: NonNullable<ReturnType<typeof useEditor>>): DocsCommentAnchor | null {
+  const { from, to } = editor.state.selection
+  const text = editor.state.doc.textBetween(from, to, ' ', ' ').trim()
+  let blockId: string | undefined
+  const $from = editor.state.doc.resolve(from)
+  for (let depth = $from.depth; depth >= 0; depth -= 1) {
+    const node = $from.node(depth)
+    const candidate = typeof node.attrs?.blockId === 'string' ? node.attrs.blockId.trim() : ''
+    if (candidate) {
+      blockId = candidate
+      break
+    }
+  }
+  if (!blockId && !text) {
+    return null
+  }
+  return {
+    block_id: blockId,
+    range: { from, to },
+    anchor_text: text.slice(0, 240),
+  }
+}
+
+function parseDelimitedPaste(text: string): JSONContent | null {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  if (!normalized || !normalized.includes('\n')) return null
+  const delimiter = normalized.includes('\t') ? '\t' : normalized.includes(',') ? ',' : null
+  if (!delimiter) return null
+
+  const rows = delimiter === '\t'
+    ? normalized.split('\n').map((line) => line.split('\t'))
+    : parseCSVRows(normalized)
+  const cleaned = rows
+    .map((row) => row.map((cell) => cell.trim()))
+    .filter((row) => row.some(Boolean))
+  if (cleaned.length < 2) return null
+  const width = Math.max(...cleaned.map((row) => row.length))
+  if (width < 2) return null
+  const denseRows = cleaned.filter((row) => row.length > 1)
+  if (denseRows.length < 2) return null
+
+  return {
+    type: 'table',
+    content: cleaned.map((row, rowIndex) => ({
+      type: 'tableRow',
+      content: Array.from({ length: width }, (_, index) => ({
+        type: rowIndex === 0 ? 'tableHeader' : 'tableCell',
+        content: [{
+          type: 'paragraph',
+          content: row[index] ? [{ type: 'text', text: row[index] }] : [],
+        }],
+      })),
+    })),
+  }
+}
+
+function parseCSVRows(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i]
+    const next = text[i + 1]
+    if (char === '"' && quoted && next === '"') {
+      cell += '"'
+      i += 1
+      continue
+    }
+    if (char === '"') {
+      quoted = !quoted
+      continue
+    }
+    if (char === ',' && !quoted) {
+      row.push(cell)
+      cell = ''
+      continue
+    }
+    if (char === '\n' && !quoted) {
+      row.push(cell)
+      rows.push(row)
+      row = []
+      cell = ''
+      continue
+    }
+    cell += char
+  }
+
+  row.push(cell)
+  rows.push(row)
+  return rows
+}
+
+function FloatingToolbar({ editor, onCreateCommentAnchor }: {
   editor: ReturnType<typeof useEditor>
   uploadConfig?: EditorUploadConfig
   onInsertImage: () => void
+  onCreateCommentAnchor?: (anchor: DocsCommentAnchor) => void
 }) {
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
@@ -400,6 +533,15 @@ function FloatingToolbar({ editor }: {
     linkOnlyRef.current = false
   }
 
+  const createComment = () => {
+    const anchor = editor ? getSelectionCommentAnchor(editor) : null
+    if (!anchor) return
+    onCreateCommentAnchor?.(anchor)
+    setShowFormatMenu(false)
+    setShowLinkPopover(false)
+    lastPosRef.current = null
+  }
+
   return (
     <div
       ref={toolbarRef}
@@ -447,6 +589,11 @@ function FloatingToolbar({ editor }: {
         <ToolbarButton title="Link" onClick={openLinkPopover} active={editor.isActive('link') || showLinkPopover}>
           <Link01Icon className="h-4 w-4" />
         </ToolbarButton>
+        {onCreateCommentAnchor && (
+          <ToolbarButton title="Comment" onClick={createComment}>
+            <Message01Icon className="h-4 w-4" />
+          </ToolbarButton>
+        )}
 
         <div className="mx-0.5 h-4 w-px bg-border" />
 
@@ -649,6 +796,15 @@ interface DocsEditorProps {
   topBanner?: React.ReactNode
   generatingOverlay?: string | null
   onEditingPresenceChange?: (presence: DocsEditingPresenceSignal | null) => void
+  onCreateCommentAnchor?: (anchor: DocsCommentAnchor) => void
+  commentAnchors?: DocsCommentAnchorDecoration[]
+  onOpenComment?: (commentId: string) => void
+  members?: AssignableMember[]
+  teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[]
+  agents?: MentionableAgent[]
+  workspaceId?: string
+  workspaceSlug?: string
+  documentId?: string
 }
 
 export function DocsEditor({
@@ -665,6 +821,15 @@ export function DocsEditor({
   onSlugChange,
   slugHelperText,
   onEditingPresenceChange,
+  onCreateCommentAnchor,
+  commentAnchors = [],
+  onOpenComment,
+  members = [],
+  teams = [],
+  agents = [],
+  workspaceId,
+  workspaceSlug,
+  documentId,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -681,6 +846,25 @@ export function DocsEditor({
   const editorReadyRef = useRef(false)
   const pendingPresenceClearRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const lastEditingPresenceRef = useRef<string | null>(null)
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null)
+  const onOpenCommentRef = useRef(onOpenComment)
+  onOpenCommentRef.current = onOpenComment
+  const [mentionState, setMentionState] = useState<{
+    from: number
+    to: number
+    items: MentionSuggestionItem[]
+    selectedIndex: number
+  } | null>(null)
+  const mentionStateRef = useRef(mentionState)
+  mentionStateRef.current = mentionState
+  const mentionSearchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const mentionSearchSeqRef = useRef(0)
+  const membersRef = useRef(members)
+  membersRef.current = members
+  const teamsRef = useRef(teams)
+  teamsRef.current = teams
+  const agentsRef = useRef(agents)
+  agentsRef.current = agents
 
   // Markdown feature state
   const [sourceView, setSourceView] = useState(false)
@@ -689,6 +873,11 @@ export function DocsEditor({
   const [importText, setImportText] = useState('')
   const [videoDialogOpen, setVideoDialogOpen] = useState(false)
   const videoInsertPosRef = useRef<number>(0)
+  const [embedDialogOpen, setEmbedDialogOpen] = useState(false)
+  const embedInsertPosRef = useRef<number>(0)
+  const [entityDialogOpen, setEntityDialogOpen] = useState(false)
+  const [entityDialogType, setEntityDialogType] = useState<DocsEntityEmbedType | undefined>(undefined)
+  const entityInsertPosRef = useRef<number>(0)
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const emojiInsertPosRef = useRef<number>(0)
   const [showSearch, setShowSearch] = useState(false)
@@ -743,6 +932,7 @@ export function DocsEditor({
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     if (savedFadeTimerRef.current) clearTimeout(savedFadeTimerRef.current)
     if (importedImagePersistTimerRef.current) clearTimeout(importedImagePersistTimerRef.current)
+    if (mentionSearchTimerRef.current) clearTimeout(mentionSearchTimerRef.current)
     if (pendingPresenceClearRef.current) clearTimeout(pendingPresenceClearRef.current)
   }, [])
 
@@ -801,7 +991,138 @@ export function DocsEditor({
 
   const uploadConfigRef = useRef(uploadConfig)
   uploadConfigRef.current = uploadConfig
-  const editorRef = useRef<ReturnType<typeof useEditor>>(null)
+
+  const insertMention = useCallback((item: MentionSuggestionItem) => {
+    const current = mentionStateRef.current
+    const editorInstance = editorRef.current
+    if (!current || !editorInstance) return
+
+    if (item.type === 'entity' && item.entityType && item.entityId) {
+      editorInstance
+        .chain()
+        .focus()
+        .insertContentAt({ from: current.from, to: current.to }, [
+          {
+            type: 'entityMention',
+            attrs: {
+              entityType: item.entityType,
+              entityId: item.entityId,
+              label: item.label,
+              displayId: item.displayId,
+              href: item.href,
+            },
+          },
+          { type: 'text', text: ' ' },
+        ])
+        .run()
+    } else {
+      editorInstance
+        .chain()
+        .focus()
+        .insertContentAt({ from: current.from, to: current.to }, `@${item.handle} `)
+        .run()
+    }
+    setMentionState(null)
+  }, [])
+
+  const entityItemsToMentionSuggestions = useCallback((items: DocsEntitySearchItem[]): MentionSuggestionItem[] => {
+    return items.slice(0, 12).map((item) => ({
+      id: item.entityId,
+      type: 'entity' as const,
+      handle: String(item.displayId || item.title).toLowerCase(),
+      label: item.displayId ? `${item.displayId} ${item.title}` : item.title,
+      secondaryText: item.meta,
+      entityType: item.entityType,
+      entityId: item.entityId,
+      displayId: item.displayId,
+      href: item.href || entityMentionHref(workspaceSlug, item),
+    }))
+  }, [workspaceSlug])
+
+  const updateMentionSuggestions = useCallback((editorInstance: NonNullable<typeof editorRef.current>) => {
+    if (readOnly || sourceView) {
+      setMentionState(null)
+      return
+    }
+
+    const slashState = slashMenuPluginKey.getState(editorInstance.state) as { open?: boolean } | undefined
+    if (slashState?.open) {
+      setMentionState(null)
+      return
+    }
+
+    const { selection } = editorInstance.state
+    if (!selection.empty || !selection.$from.parent.isTextblock) {
+      setMentionState(null)
+      return
+    }
+
+    const textBefore = selection.$from.parent.textBetween(
+      0,
+      selection.$from.parentOffset,
+      undefined,
+      '\ufffc',
+    )
+    const match = textBefore.match(/(?:^|\s)@([^@\n]*)$/i)
+    if (!match) {
+      setMentionState(null)
+      return
+    }
+
+    const rawQuery = match[1]
+    const parsed = parseEntityMentionQuery(rawQuery)
+    const localItems = parsed.typed
+      ? []
+      : getMentionSuggestions(parsed.query, membersRef.current, teamsRef.current, 6, agentsRef.current)
+    const from = selection.from - (rawQuery.length + 1)
+    const to = selection.from
+    const entityQuery = parsed.query.trim()
+    const shouldSearchEntities = Boolean(
+      workspaceId &&
+      (parsed.typed ? entityQuery.length >= 1 : entityQuery.length >= 2 && !rawQuery.includes(' ')),
+    )
+
+    if (mentionSearchTimerRef.current) {
+      clearTimeout(mentionSearchTimerRef.current)
+      mentionSearchTimerRef.current = undefined
+    }
+    mentionSearchSeqRef.current += 1
+    const searchSeq = mentionSearchSeqRef.current
+
+    if (localItems.length > 0) {
+      setMentionState({ from, to, items: localItems, selectedIndex: 0 })
+    } else {
+      setMentionState(null)
+    }
+
+    if (!shouldSearchEntities || !workspaceId) return
+
+    mentionSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const result = await searchDocsEntityItems({
+          workspaceId,
+          workspaceSlug,
+          query: entityQuery,
+          fixedEntityType: parsed.entityType,
+          includeDocuments: true,
+          broadLimit: 3,
+          fixedLimit: 8,
+        })
+        if (mentionSearchSeqRef.current !== searchSeq) return
+        const entityItems = entityItemsToMentionSuggestions(result.items)
+        const nextItems = [...localItems, ...entityItems].slice(0, parsed.typed ? 12 : 14)
+        if (nextItems.length === 0) {
+          setMentionState(null)
+          return
+        }
+        setMentionState({ from, to, items: nextItems, selectedIndex: 0 })
+      } catch {
+        if (mentionSearchSeqRef.current === searchSeq && localItems.length === 0) {
+          setMentionState(null)
+        }
+      }
+    }, 180)
+  }, [entityItemsToMentionSuggestions, readOnly, sourceView, workspaceId, workspaceSlug])
 
   const handleImageUpload = useCallback(
     async (file: File, editorInstance: ReturnType<typeof useEditor>) => {
@@ -980,6 +1301,15 @@ export function DocsEditor({
     await doSave(editorInstance.getJSON())
   }, [doSave, persistImportedImages, readOnly, sourceMarkdown, sourceView])
 
+  const saveImmediately = useCallback(async (json: JSONContent) => {
+    if (readOnly) return
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = undefined
+    }
+    await doSave(json)
+  }, [doSave, readOnly])
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -1010,13 +1340,32 @@ export function DocsEditor({
       TableRow,
       TableHeader,
       TableCell,
+      TaskList,
+      DocsTaskItemExtension,
+      BlockIdExtension,
       SlashMenuExtension,
       CalloutExtension,
       VideoEmbedExtension,
       HtmlBlockExtension,
+      ExcalidrawExtension.configure({
+        onImmediateSave: saveImmediately,
+      }),
+      AISectionExtension.configure({ workspaceId, documentId }),
+      CitationBlockExtension.configure({ workspaceSlug }),
+      EntityEmbedExtension.configure({ workspaceId, workspaceSlug }),
+      EntityMentionExtension.configure({ workspaceId, workspaceSlug }),
+      SavedViewEmbedExtension.configure({ workspaceId, workspaceSlug }),
+      CommentAnchorExtension.configure({
+        onOpenComment: (commentId) => onOpenCommentRef.current?.(commentId),
+      }),
+      ToggleSectionExtension,
+      FileAttachmentExtension,
+      TableOfContentsExtension,
+      RichEmbedExtension,
       UnderlineExtension,
       Subscript,
       Superscript,
+      MentionHighlight,
       SearchReplaceExtension,
     ],
     content: initialContent ?? { type: 'doc', content: [{ type: 'paragraph' }] },
@@ -1042,6 +1391,16 @@ export function DocsEditor({
         if (html.includes('<img') && editorRef.current) {
           queuePersistImportedImages(editorRef.current)
         }
+        const plainText = event.clipboardData?.getData('text/plain') ?? ''
+        if (!html && plainText && editorRef.current) {
+          const pastedTable = parseDelimitedPaste(plainText)
+          if (pastedTable) {
+            event.preventDefault()
+            editorRef.current.chain().focus().insertContent(pastedTable).run()
+            scheduleSave(editorRef.current.getJSON())
+            return true
+          }
+        }
         return false
       },
       handleDrop(_view, event) {
@@ -1060,6 +1419,42 @@ export function DocsEditor({
         }
         return false
       },
+      handleKeyDown(_view, event) {
+        const current = mentionStateRef.current
+        if (!current) return false
+
+        if (event.key === 'ArrowDown') {
+          event.preventDefault()
+          setMentionState({
+            ...current,
+            selectedIndex: (current.selectedIndex + 1) % current.items.length,
+          })
+          return true
+        }
+
+        if (event.key === 'ArrowUp') {
+          event.preventDefault()
+          setMentionState({
+            ...current,
+            selectedIndex: (current.selectedIndex - 1 + current.items.length) % current.items.length,
+          })
+          return true
+        }
+
+        if (event.key === 'Enter' || event.key === 'Tab') {
+          event.preventDefault()
+          insertMention(current.items[current.selectedIndex])
+          return true
+        }
+
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setMentionState(null)
+          return true
+        }
+
+        return false
+      },
     },
     onUpdate: ({ editor: e }) => {
       // Skip saves during initial mount — TipTap fires onUpdate when normalizing content
@@ -1074,10 +1469,12 @@ export function DocsEditor({
       if (!readOnly) {
         scheduleSave(e.getJSON())
         emitBodyEditingPresence(e)
+        updateMentionSuggestions(e)
       }
     },
     onBlur: () => {
       scheduleClearEditingPresence()
+      setMentionState(null)
     },
     onCreate: () => {
       // Mark editor ready after initialization is complete
@@ -1087,6 +1484,20 @@ export function DocsEditor({
   })
 
   editorRef.current = editor
+
+  useEffect(() => {
+    if (!editor) return
+    if (typeof editor.commands.setCommentAnchors !== 'function') return
+    const anchors: DocsCommentDecorationAnchor[] = commentAnchors
+      .filter((anchor) => anchor.id)
+      .map((anchor) => ({
+        id: anchor.id,
+        block_id: anchor.block_id,
+        range: anchor.range,
+        anchor_text: anchor.anchor_text,
+      }))
+    editor.commands.setCommentAnchors(anchors as DocsCommentDecorationAnchor[])
+  }, [commentAnchors, editor])
 
   // Sync editable state when readOnly prop changes (e.g. after unlock)
   useEffect(() => {
@@ -1136,6 +1547,30 @@ export function DocsEditor({
     }
     input.click()
   }, [editor, handleImageUpload])
+
+  const insertFile = useCallback(() => {
+    if (!editor || !uploadConfigRef.current) return
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file || !uploadConfigRef.current) return
+      try {
+        const upload = await uploadEditorFile(file, uploadConfigRef.current)
+        editor.chain().focus().setFileAttachment({
+          fileName: file.name,
+          fileSize: file.size,
+          contentType: file.type || 'application/octet-stream',
+          url: upload.publicUrl,
+          attachmentId: upload.attachmentId,
+        }).run()
+        scheduleSave(editor.getJSON())
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to upload file')
+      }
+    }
+    input.click()
+  }, [editor, scheduleSave])
 
   // ── Markdown actions ───────────────────────────────────────────────────────
 
@@ -1325,6 +1760,7 @@ img { max-width: 100%; }
           editor={editor}
           uploadConfig={uploadConfig}
           onInsertImage={insertImage}
+          onCreateCommentAnchor={onCreateCommentAnchor}
         />
       )}
 
@@ -1401,7 +1837,7 @@ img { max-width: 100%; }
             />
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-4xl">
             {showSearch && editor && (
               <SearchReplaceBar
                 editor={editor}
@@ -1449,6 +1885,16 @@ img { max-width: 100%; }
               </div>
             )}
             <EditorContent editor={editor} />
+            {!readOnly && mentionState && (
+              <div className="mx-6 mt-2 w-full max-w-sm rounded-lg border border-border/70 bg-popover p-1.5 text-popover-foreground shadow-lg">
+                <MentionSuggestionsList
+                  items={mentionState.items}
+                  selectedIndex={mentionState.selectedIndex}
+                  onSelect={insertMention}
+                  compact
+                />
+              </div>
+            )}
             {editor && (
               <>
                 <SlashMenu
@@ -1473,10 +1919,20 @@ img { max-width: 100%; }
                     videoInsertPosRef.current = editor.state.selection.from;
                     setVideoDialogOpen(true);
                   }}
+                  onEmbedInsert={() => {
+                    embedInsertPosRef.current = editor.state.selection.from;
+                    setEmbedDialogOpen(true);
+                  }}
                   onEmojiInsert={() => {
                     emojiInsertPosRef.current = editor.state.selection.from;
                     setEmojiPickerOpen(true);
                   }}
+                  onEntityInsert={(entityType) => {
+                    entityInsertPosRef.current = editor.state.selection.from;
+                    setEntityDialogType(entityType);
+                    setEntityDialogOpen(true);
+                  }}
+                  onFileInsert={insertFile}
                 />
                 <EmojiPickerPopover
                   editor={editor}
@@ -1485,6 +1941,7 @@ img { max-width: 100%; }
                   insertPos={emojiInsertPosRef.current}
                 />
                 <TableControls editor={editor} />
+                <TaskItemMetadataToolbar editor={editor} />
                 <BlockGapInserter editor={editor} />
               </>
             )}
@@ -1505,6 +1962,40 @@ img { max-width: 100%; }
               .setVideoEmbed({ provider: info.provider, sourceUrl: info.sourceUrl, embedUrl: info.embedUrl })
               .run();
             scheduleSave(editor.getJSON());
+          }}
+        />
+      )}
+      {editor && (
+        <InsertEmbedDialog
+          open={embedDialogOpen}
+          onOpenChange={setEmbedDialogOpen}
+          workspaceId={workspaceId}
+          onInsert={(embed) => {
+            editor.chain()
+              .focus()
+              .setTextSelection(embedInsertPosRef.current)
+              .setRichEmbed(embed)
+              .run()
+            scheduleSave(editor.getJSON())
+          }}
+        />
+      )}
+      {editor && workspaceId && (
+        <EntityEmbedDialog
+          open={entityDialogOpen}
+          workspaceId={workspaceId}
+          fixedEntityType={entityDialogType}
+          onOpenChange={(open) => {
+            setEntityDialogOpen(open)
+            if (!open) setEntityDialogType(undefined)
+          }}
+          onSelect={(attrs: EntityEmbedAttrs) => {
+            editor.chain()
+              .focus()
+              .setTextSelection(entityInsertPosRef.current)
+              .setEntityEmbed(attrs)
+              .run()
+            scheduleSave(editor.getJSON())
           }}
         />
       )}

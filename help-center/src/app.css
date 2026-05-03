@@ -376,6 +376,23 @@
   vertical-align: middle;
 }
 
+.hc-prose .docs-theme-image-set {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.hc-prose .docs-theme-image-dark {
+  display: none;
+}
+
+.dark .hc-prose .docs-theme-image-light {
+  display: none;
+}
+
+.dark .hc-prose .docs-theme-image-dark {
+  display: inline-block;
+}
+
 .hc-prose .docs-image-block[style*="left"] img {
   margin-left: 0;
   margin-right: auto;

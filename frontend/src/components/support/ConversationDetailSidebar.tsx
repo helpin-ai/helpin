@@ -1,7 +1,7 @@
 import { memo, type JSX, type SVGProps } from 'react';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { Link } from '@tanstack/react-router';
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Mail01Icon, Message01Icon, UserIcon } from '@/lib/icons';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowRight01Icon, Mail01Icon, Message01Icon, Tag01Icon, UserIcon } from '@/lib/icons';
 import { EmptyState } from './EmptyState';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -11,6 +11,7 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { findAssignableMember, formatAssignableMemberName } from '@/lib/assignableMembers';
 import { SidebarAssociations } from './SidebarAssociations';
 import { SidebarVisitorContext } from './SidebarVisitorContext';
+import { SupportTagPicker } from './SupportTagPicker';
 import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
@@ -137,11 +138,11 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
 
           {/* ── Conversation Info ────────────────────────── */}
           <div className="border-b border-border/50 px-4 py-3 space-y-1.5">
-            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
               <span className="text-muted-foreground">Created</span>
               <span className="font-medium text-foreground/90">{formatTimestamp(conversation.created_at)}</span>
             </div>
-            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-xs">
+            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
               <span className="text-muted-foreground">Updated</span>
               <span className="font-medium text-foreground/90">{formatTimestamp(conversation.updated_at)}</span>
             </div>
@@ -192,6 +193,14 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
                 No eligible teammates can be assigned to this conversation yet.
               </p>
             ) : null}
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Tags" icon={Tag01Icon} count={conversation.tags?.length ?? 0} defaultOpen>
+            <SupportTagPicker
+              workspaceId={workspaceId}
+              conversationId={conversation.id}
+              selectedTags={conversation.tags ?? []}
+            />
           </CollapsibleSection>
 
           {/* ── Visitor Intelligence ─────────────────────── */}

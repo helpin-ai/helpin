@@ -131,8 +131,47 @@ func (s *SupportInboxService) BuildOutboundFromAddress(ctx context.Context, work
 	if s == nil {
 		return "", fmt.Errorf("support inbox service is unavailable")
 	}
+	if address, ok := s.defaultEmailSenderAddress(ctx, workspaceID, mailboxID); ok {
+		return address, nil
+	}
+	if address, ok := s.activeCustomSenderAddress(ctx, workspaceID); ok {
+		return address, nil
+	}
 	mailbox := s.loadMailboxFromConversation(ctx, workspaceID, mailboxID)
 	return s.buildSupportEmailRouteAddress(ctx, workspaceID, mailbox)
+}
+
+func (s *SupportInboxService) defaultEmailSenderAddress(ctx context.Context, workspaceID string, mailboxID *string) (string, bool) {
+	if s == nil || s.emailSenderRepo == nil {
+		return "", false
+	}
+	if sender, err := s.emailSenderRepo.GetMailboxDefaultVerified(ctx, workspaceID, mailboxID); err == nil && sender != nil {
+		if address := strings.TrimSpace(sender.Email); address != "" {
+			return address, true
+		}
+	}
+	if sender, err := s.emailSenderRepo.GetWorkspaceDefaultVerified(ctx, workspaceID); err == nil && sender != nil {
+		if address := strings.TrimSpace(sender.Email); address != "" {
+			return address, true
+		}
+	}
+	return "", false
+}
+
+func (s *SupportInboxService) activeCustomSenderAddress(ctx context.Context, workspaceID string) (string, bool) {
+	if s == nil || s.emailSenderDomainRepo == nil {
+		return "", false
+	}
+	senderDomain, err := s.emailSenderDomainRepo.GetActiveVerifiedByWorkspace(ctx, workspaceID)
+	if err != nil || senderDomain == nil {
+		return "", false
+	}
+	localPart := strings.TrimSpace(senderDomain.FromLocalPart)
+	domain := strings.TrimSpace(senderDomain.Domain)
+	if localPart == "" || domain == "" {
+		return "", false
+	}
+	return fmt.Sprintf("%s@%s", localPart, domain), true
 }
 
 func (s *SupportInboxService) buildSupportEmailRouteAddress(ctx context.Context, workspaceID string, mailbox *model.SupportMailbox) (string, error) {

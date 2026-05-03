@@ -38,8 +38,10 @@ type WorkspaceMember struct {
 	Status      string     `json:"status" gorm:"not null;default:'active';index"`
 	InvitedBy   *string    `json:"invited_by,omitempty" gorm:"type:uuid"`
 	InvitedAt   *time.Time `json:"invited_at,omitempty"`
-	AcceptedAt  *time.Time `json:"accepted_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	AcceptedAt                 *time.Time `json:"accepted_at,omitempty"`
+	SupportDefaultTeamID       *string    `json:"support_default_team_id,omitempty" gorm:"type:uuid"`
+	SupportTaskDialogDismissed bool       `json:"support_task_dialog_dismissed" gorm:"default:false"`
+	CreatedAt                  time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
@@ -129,4 +131,10 @@ func (WorkspaceKeyHistory) TableName() string { return "workspace_key_history" }
 // UpdateWorkspaceMemberRequest is the payload for PUT /api/workspaces/{id}/members/{memberId}.
 type UpdateWorkspaceMemberRequest struct {
 	Role string `json:"role"`
+}
+
+// UpdateSupportTaskPreferencesRequest is the payload for updating support task creation preferences.
+type UpdateSupportTaskPreferencesRequest struct {
+	SupportDefaultTeamID       *string `json:"support_default_team_id"`
+	SupportTaskDialogDismissed *bool   `json:"support_task_dialog_dismissed"`
 }

@@ -3,6 +3,7 @@ package email
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -50,6 +51,37 @@ type postmarkResponse struct {
 	MessageID   string `json:"MessageID"`
 	SubmittedAt string `json:"SubmittedAt"`
 	To          string `json:"To"`
+}
+
+// PostmarkAPIError preserves Postmark response details for callers that need
+// to make retry decisions based on provider-side validation failures.
+type PostmarkAPIError struct {
+	StatusCode int
+	ErrorCode  int
+	Message    string
+}
+
+func (e *PostmarkAPIError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if e.Message != "" {
+		return fmt.Sprintf("postmark API returned status %d: %s", e.StatusCode, e.Message)
+	}
+	return fmt.Sprintf("postmark API returned status %d", e.StatusCode)
+}
+
+// IsSenderSignatureError reports whether Postmark rejected the From address
+// because the sender address/domain is not verified for outbound sending.
+func IsSenderSignatureError(err error) bool {
+	var apiErr *PostmarkAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	msg := strings.ToLower(apiErr.Message)
+	return apiErr.StatusCode == http.StatusUnprocessableEntity &&
+		strings.Contains(msg, "from") &&
+		strings.Contains(msg, "sender signature")
 }
 
 // SendEmail sends an email via the Postmark API.
@@ -127,10 +159,11 @@ func (c *Client) send(payload postmarkRequest) (string, error) {
 	}
 
 	if resp.StatusCode >= 400 {
-		if decoded.Message != "" {
-			return "", fmt.Errorf("postmark API returned status %d: %s", resp.StatusCode, decoded.Message)
+		return "", &PostmarkAPIError{
+			StatusCode: resp.StatusCode,
+			ErrorCode:  decoded.ErrorCode,
+			Message:    decoded.Message,
 		}
-		return "", fmt.Errorf("postmark API returned status %d", resp.StatusCode)
 	}
 
 	return decoded.MessageID, nil

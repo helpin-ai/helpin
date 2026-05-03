@@ -473,6 +473,20 @@ func (s *WorkspaceService) UpdateMember(ctx context.Context, workspaceID, actorI
 	return s.workspaceRepo.UpdateMemberRole(ctx, workspaceID, memberID, req.Role)
 }
 
+// UpdateSupportTaskPreferences updates support task preferences for the calling member.
+func (s *WorkspaceService) UpdateSupportTaskPreferences(ctx context.Context, workspaceID, memberID string, req model.UpdateSupportTaskPreferencesRequest) error {
+	if req.SupportDefaultTeamID != nil && *req.SupportDefaultTeamID != "" {
+		team, err := s.workspaceRepo.GetTeamByID(ctx, workspaceID, *req.SupportDefaultTeamID)
+		if err != nil {
+			return fmt.Errorf("validate team: %w", err)
+		}
+		if team == nil {
+			return fmt.Errorf("team not found in this workspace")
+		}
+	}
+	return s.workspaceRepo.UpdateSupportTaskPreferences(ctx, memberID, req.SupportDefaultTeamID, req.SupportTaskDialogDismissed)
+}
+
 // RemoveMember revokes a workspace member with owner/admin safeguards.
 func (s *WorkspaceService) RemoveMember(ctx context.Context, workspaceID, actorID, memberID string) error {
 	if actorID == "" {

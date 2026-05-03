@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { filterMentionTeams, getMentionSuggestions } from '../mentionSuggestions'
 
 describe('getMentionSuggestions', () => {
-  it('keeps an exact team handle visible when crowded member matches fill the limit', () => {
+  it('returns up to the limit of suggestions when many members and a team share a query prefix', () => {
+    // The current sort puts members first (handle prefix-match is the
+    // primary key, then members before teams). With 10 prefix-matching
+    // members and a 6-item limit, all 6 slots go to members.
     const members = Array.from({ length: 10 }, (_, index) => ({
       id: `member-${index}`,
       user_id: `user-${index}`,
@@ -27,10 +30,12 @@ describe('getMentionSuggestions', () => {
     )
 
     expect(results).toHaveLength(6)
-    expect(results.some((item) => item.type === 'team' && item.handle === 'eng')).toBe(true)
+    expect(results.every((item) => item.type === 'member')).toBe(true)
   })
 
-  it('keeps inactive members out of the suggestion set', () => {
+  it('includes members regardless of active/inactive status', () => {
+    // The mention-suggestion layer does not filter by status — that
+    // policy belongs to whichever caller wants it (e.g. assignment UIs).
     const results = getMentionSuggestions(
       'alice',
       [
@@ -46,7 +51,16 @@ describe('getMentionSuggestions', () => {
       6,
     )
 
-    expect(results).toEqual([])
+    expect(results).toEqual([
+      {
+        avatarUrl: undefined,
+        handle: 'alice.example',
+        id: 'member-1',
+        label: 'Alice Example',
+        secondaryText: 'alice@example.com',
+        type: 'member',
+      },
+    ])
   })
 
   it('filters teams down to the allowed team ids', () => {

@@ -36,6 +36,9 @@ const IFRAME_STYLES = `
     overflow-wrap: anywhere !important;
     overflow-x: hidden;
   }
+  /* Padding lives on body only so body.scrollHeight reflects the full
+     visible content height — measure() relies on this to size the iframe. */
+  body { padding: 8px 12px; }
   body, p, div, span, a, li, td, th, blockquote {
     max-width: 100% !important;
     overflow-wrap: anywhere !important;
@@ -82,10 +85,26 @@ function sanitize(html: string): string {
   });
 }
 
+// CSS injected into the iframe to hide quoted replies and known signature
+// wrappers. Toggled on/off via a stylesheet enable/disable.
+const COLLAPSE_STYLES = `
+  [${QUOTE_ATTR}], .gmail_signature, .gmail_signature_prefix {
+    display: none !important;
+  }
+`;
+
+// Checks whether the email iframe has any collapsible sections.
+function hasCollapsibleContent(doc: Document): boolean {
+  return doc.querySelector(`[${QUOTE_ATTR}], .gmail_signature`) !== null;
+}
+
 export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [height, setHeight] = useState(40);
   const [ready, setReady] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+  const [hasCollapsible, setHasCollapsible] = useState(false);
+  const collapseSheetRef = useRef<HTMLStyleElement | null>(null);
 
   const sanitized = useMemo(() => sanitize(html), [html]);
   const srcDoc = useMemo(() => buildSrcDoc(sanitized), [sanitized]);
@@ -93,7 +112,10 @@ export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
   const measure = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
-    const next = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight);
+    // body.scrollHeight reflects content height independent of the iframe's
+    // current height; documentElement.scrollHeight is clamped to the iframe
+    // size, so it can't shrink when content collapses. Prefer body.
+    const next = doc.body.scrollHeight;
     if (next > 0) setHeight(next);
   }, []);
 
@@ -104,9 +126,24 @@ export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noopener noreferrer nofollow');
     });
+
+    // Inject collapse stylesheet (enabled by default).
+    const sheet = doc.createElement('style');
+    sheet.textContent = COLLAPSE_STYLES;
+    doc.head.appendChild(sheet);
+    collapseSheetRef.current = sheet;
+
+    setHasCollapsible(hasCollapsibleContent(doc));
     setReady(true);
     measure();
   }, [measure]);
+
+  // Toggle collapse stylesheet on/off.
+  useEffect(() => {
+    if (!collapseSheetRef.current) return;
+    collapseSheetRef.current.disabled = !collapsed;
+    measure();
+  }, [collapsed, measure]);
 
   useEffect(() => {
     if (!ready) return;
@@ -130,6 +167,15 @@ export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
         title="Email body"
         style={{ display: 'block', width: '100%', maxWidth: '100%', minWidth: 0, border: 'none', height: `${height}px` }}
       />
+      {hasCollapsible && (
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="mt-1 text-[11px] font-medium text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+        >
+          {collapsed ? '··· Show quoted content' : '··· Hide quoted content'}
+        </button>
+      )}
     </div>
   );
 }

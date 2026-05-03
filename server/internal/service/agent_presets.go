@@ -28,6 +28,7 @@ func builtInPresetKeys() []string {
 		model.AgentPresetSupportAgent,
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
+		model.AgentPresetCommandAgent,
 	}
 }
 
@@ -68,6 +69,8 @@ func normalizePresetKey(key string) string {
 		return model.AgentPresetCodeBuilder
 	case "reviewer", model.AgentPresetReviewAgent:
 		return model.AgentPresetReviewAgent
+	case "command", "command_agent", "one_shot", "one_shot_agent", "one_shot_command", "one_shot_command_agent", "research", "doc_researcher", "general_researcher", model.AgentPresetResearcher:
+		return model.AgentPresetCommandAgent
 	default:
 		return strings.TrimSpace(key)
 	}
@@ -98,6 +101,8 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 		return "code_builder_local_commit_delivery"
 	case model.AgentPresetReviewAgent:
 		return "review_agent_interactive_loop"
+	case model.AgentPresetCommandAgent:
+		return "researcher_default"
 	default:
 		return ""
 	}
@@ -148,7 +153,9 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 	definition.Scope = "workspace"
 	definition.WorkspaceID = &version.WorkspaceID
 	definition.SourceVersionKey = version.SourceVersionKey
-	definition.Provider = trimPtr(version.Provider)
+	if version.Provider != nil {
+		definition.Provider = trimPtr(version.Provider)
+	}
 	if version.Model != nil {
 		modelValue := strings.TrimSpace(*version.Model)
 		definition.Model = &modelValue
@@ -280,6 +287,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	supportPrompt := defaultSystemPromptForPreset(model.AgentPresetSupportAgent)
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
+	commandAgentPrompt := "You are Command Agent, a one-shot workspace operator for confirmed command-bar runs. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
 	epicPlannerTools := filterPresetTools(productPlannerProfile.AllowedTools,
 		worker.ToolUpdatePlan,
 		worker.ToolPublishPRDDraft,
@@ -350,9 +358,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "search_documents"},
+			AllowedTools:          []string{"list_deals", "update_deal_stage", "add_deal_note", "list_contacts", "list_buyer_signals", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents"},
 			AllowedCommands:       []string{},
-			AllowedTargetTypes:    []string{"crm_deal", "support_conversation", "document", "workspace"},
+			AllowedTargetTypes:    []string{"crm_deal", "crm_contact", "support_conversation", "document", "workspace"},
 			ApprovalMode:          "never",
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
@@ -423,6 +431,26 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime("codex"),
 			SystemPrompt:          reviewPrompt,
+		},
+		{
+			Key:                   model.AgentPresetCommandAgent,
+			FamilyKey:             model.AgentPresetCommandAgent,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
+			Label:                 "Command Agent",
+			Description:           "One-shot workspace operator for command-bar intents that do not fit narrower saved agents.",
+			DefaultRole:           "Command Agent",
+			RuntimeKind:           productPlannerProfile.RuntimeKind,
+			DefaultTriggerMode:    "manual",
+			AllowedTriggerModes:   []string{"manual"},
+			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"},
+			AllowedCommands:       []string{},
+			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "crm_deal", "crm_contact"},
+			ApprovalMode:          "never",
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
+			SystemPrompt:          &commandAgentPrompt,
 		},
 	}
 

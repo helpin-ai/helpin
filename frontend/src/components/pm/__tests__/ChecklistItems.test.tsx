@@ -39,17 +39,27 @@ describe('buildChecklistMentionOptions', () => {
 
     expect(results).toEqual([
       {
-        id: 'team-1',
-        name: 'Engineering',
-        handle: 'engineering',
-        type: 'team',
+        avatarUrl: undefined,
+        handle: 'alice.smith',
+        id: 'user-1',
+        label: 'Alice Smith',
+        secondaryText: 'alice@example.com',
+        type: 'member',
       },
       {
-        id: 'user-1',
-        name: 'Alice Smith',
-        handle: 'alice.smith',
-        type: 'member',
         avatarUrl: undefined,
+        handle: 'bob.jones',
+        id: 'user-2',
+        label: 'Bob Jones',
+        secondaryText: 'bob@example.com',
+        type: 'member',
+      },
+      {
+        handle: 'engineering',
+        id: 'team-1',
+        label: 'Engineering',
+        secondaryText: '@engineering',
+        type: 'team',
       },
     ])
   })
@@ -77,17 +87,19 @@ describe('buildChecklistMentionOptions', () => {
 
     expect(results).toEqual([
       {
-        id: 'team-1',
-        name: 'Engineering',
         handle: 'engineering',
+        id: 'team-1',
+        label: 'Engineering',
+        secondaryText: '@engineering',
         type: 'team',
       },
       {
-        id: 'member-1',
-        name: 'Jamie',
-        handle: 'jamie',
-        type: 'member',
         avatarUrl: undefined,
+        handle: 'jamie',
+        id: 'member-1',
+        label: 'Jamie',
+        secondaryText: 'engineer@example.com',
+        type: 'member',
       },
     ])
   })

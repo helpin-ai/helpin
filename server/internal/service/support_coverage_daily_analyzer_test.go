@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -171,7 +172,7 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 	}{
 		{
 			name:           "knowledge gap",
-			response:       `{"has_gap":true,"gap_kind":"content","gap_category":"knowledge","canonical_title":"Refund policy gap","customer_need":"Customer needed refund exception terms","ai_failure":"AI found generic refund docs only","human_resolution":"Agent explained an exception","decision_reason":"Human answer shows docs are incomplete","search_query":"refund exception policy","should_run_retrieval":true,"recommended_fixes":[{"type":"update_article","target_type":"docs","target_id":"doc-1","target_title":"Refunds","priority":"primary","rationale":"Existing docs are close","suggested_change":"Add exception criteria","implementation_notes":"Mention Stripe refund path"}],"confidence":0.86}`,
+			response:       `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asking about refund","has_gap":true,"gap_kind":"content","gap_category":"knowledge","canonical_title":"Refund policy gap","customer_need":"Customer needed refund exception terms","ai_failure":"AI found generic refund docs only","human_resolution":"Agent explained an exception","decision_reason":"Human answer shows docs are incomplete","search_query":"refund exception policy","should_run_retrieval":true,"recommended_fixes":[{"type":"update_article","target_type":"docs","target_id":"doc-1","target_title":"Refunds","priority":"primary","rationale":"Existing docs are close","suggested_change":"Add exception criteria","implementation_notes":"Mention Stripe refund path"}],"confidence":0.86}`,
 			wantHasGap:     true,
 			wantKind:       "content",
 			wantCategory:   model.SupportCoverageGapCategoryKnowledge,
@@ -179,7 +180,7 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 		},
 		{
 			name:           "data gap",
-			response:       `{"has_gap":true,"gap_kind":"data","gap_category":"context","canonical_title":"Subscription status unavailable","customer_need":"Customer asked why renewal failed","ai_failure":"AI lacked subscription status","human_resolution":"Agent checked billing data","decision_reason":"Resolution depended on account data","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"add_data","target_type":"data_source","priority":"primary","rationale":"AI needs subscription status","suggested_change":"Expose subscription status to inbox AI","implementation_notes":"Connect billing source"}],"confidence":0.8}`,
+			response:       `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asking about renewal","has_gap":true,"gap_kind":"data","gap_category":"context","canonical_title":"Subscription status unavailable","customer_need":"Customer asked why renewal failed","ai_failure":"AI lacked subscription status","human_resolution":"Agent checked billing data","decision_reason":"Resolution depended on account data","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"add_data","target_type":"data_source","priority":"primary","rationale":"AI needs subscription status","suggested_change":"Expose subscription status to inbox AI","implementation_notes":"Connect billing source"}],"confidence":0.8}`,
 			wantHasGap:     true,
 			wantKind:       "data",
 			wantCategory:   model.SupportCoverageGapCategoryContext,
@@ -187,7 +188,7 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 		},
 		{
 			name:           "action gap",
-			response:       `{"has_gap":true,"gap_kind":"action","gap_category":"action","canonical_title":"Cancel subscription action missing","customer_need":"Customer wanted cancellation","ai_failure":"AI could explain only","human_resolution":"Agent cancelled subscription","decision_reason":"Resolution required an operation","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"add_action","target_type":"tool_action","priority":"primary","rationale":"AI needs a cancellation action","suggested_change":"Add guarded cancel action","implementation_notes":"Require confirmation"}],"confidence":0.81}`,
+			response:       `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer requesting cancellation","has_gap":true,"gap_kind":"action","gap_category":"action","canonical_title":"Cancel subscription action missing","customer_need":"Customer wanted cancellation","ai_failure":"AI could explain only","human_resolution":"Agent cancelled subscription","decision_reason":"Resolution required an operation","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"add_action","target_type":"tool_action","priority":"primary","rationale":"AI needs a cancellation action","suggested_change":"Add guarded cancel action","implementation_notes":"Require confirmation"}],"confidence":0.81}`,
 			wantHasGap:     true,
 			wantKind:       "action",
 			wantCategory:   model.SupportCoverageGapCategoryAction,
@@ -195,7 +196,7 @@ func TestSupportCoverageDailyAnalyzer_AnalyzeConversationParsesGapTypes(t *testi
 		},
 		{
 			name:       "no gap",
-			response:   `{"has_gap":false,"gap_kind":"","gap_category":"","canonical_title":"","customer_need":"Customer asked setup question","ai_failure":"","human_resolution":"","decision_reason":"AI correctly resolved the issue","search_query":"","should_run_retrieval":false,"recommended_fixes":[],"confidence":0.91}`,
+			response:   `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asking setup question","has_gap":false,"gap_kind":"","gap_category":"","canonical_title":"","customer_need":"Customer asked setup question","ai_failure":"","human_resolution":"","decision_reason":"AI correctly resolved the issue","search_query":"","should_run_retrieval":false,"recommended_fixes":[],"confidence":0.91}`,
 			wantHasGap: false,
 		},
 	}
@@ -478,6 +479,9 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			human_resolution TEXT NOT NULL DEFAULT '',
 			decision_reason TEXT NOT NULL DEFAULT '',
 			confidence REAL NOT NULL DEFAULT 0,
+			is_support_query BOOLEAN NOT NULL DEFAULT 1,
+			conversation_type TEXT NOT NULL DEFAULT 'support_query',
+			classification_reason TEXT NOT NULL DEFAULT '',
 			error_message TEXT,
 			raw_output TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -503,6 +507,33 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE support_ai_retrieval_traces (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			conversation_id TEXT NOT NULL,
+			message_id TEXT NOT NULL,
+			search_queries TEXT NOT NULL DEFAULT '[]',
+			results TEXT NOT NULL DEFAULT '[]',
+			cited_source_ids TEXT NOT NULL DEFAULT '[]',
+			ai_confidence REAL NOT NULL DEFAULT 0,
+			can_answer TEXT,
+			can_resolve TEXT,
+			failure_mode TEXT NOT NULL DEFAULT '',
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE support_messages (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			conversation_id TEXT NOT NULL,
+			sender_type TEXT NOT NULL,
+			message_type TEXT NOT NULL DEFAULT 'reply',
+			content TEXT NOT NULL DEFAULT '',
+			metadata TEXT NOT NULL DEFAULT '{}',
+			is_internal BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			deleted_at DATETIME
+		)`,
 	}
 	for _, stmt := range tables {
 		if err := db.Exec(stmt).Error; err != nil {
@@ -510,6 +541,63 @@ func setupCoverageFindingUpsertTestDB(t *testing.T) *gorm.DB {
 		}
 	}
 	return db
+}
+
+func TestSupportCoverageDailyAnalyzer_RunOverridesHumanResolutionInStoredRawOutput(t *testing.T) {
+	db := setupCoverageFindingUpsertTestDB(t)
+	analysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
+	coverageRepo := repository.NewSupportCoverageRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	provider := &scriptedSupportPlannerLLM{
+		responses: []llm.ChatResponse{{
+			Content: `{"is_support_query":true,"conversation_type":"support_query","classification_reason":"customer asks a billing support question","has_gap":true,"gap_kind":"content","gap_category":"knowledge","canonical_title":"Billing update steps","customer_need":"Customer needed billing update steps.","ai_failure":"AI did not know the billing update flow.","human_resolution":"A human should explain the billing flow.","decision_reason":"The missing answer should be documented.","search_query":"","should_run_retrieval":false,"recommended_fixes":[{"type":"create_article","target_type":"docs","target_id":"","target_title":"Billing update steps","target_url":"","priority":"primary","rationale":"Customers need documented billing steps.","suggested_change":"Create a billing update article.","implementation_notes":"Use the product billing settings flow."}],"confidence":0.82}`,
+		}},
+	}
+	analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5").
+		SetCoverageRepositories(coverageRepo, analysisRepo).
+		SetConversationRepositories(nil, messageRepo)
+	ctx := context.Background()
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	if err := db.Exec(`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, message_type, content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"m-1", "ws-1", "conversation-no-human", "customer", "reply", "How do I update billing details?", base).Error; err != nil {
+		t.Fatalf("seed message: %v", err)
+	}
+
+	created, err := analyzer.runConversationCoverageAnalysis(ctx, "ws-1", "run-1", model.SupportConversation{
+		ID:          "conversation-no-human",
+		WorkspaceID: "ws-1",
+		Subject:     "Billing update",
+		Status:      model.SupportConversationStatusOpen,
+		UpdatedAt:   base,
+	})
+	if err != nil {
+		t.Fatalf("runConversationCoverageAnalysis: %v", err)
+	}
+	if !created {
+		t.Fatal("expected gap to be created")
+	}
+
+	var analysis model.SupportCoverageConversationAnalysis
+	if err := db.First(&analysis, "conversation_id = ?", "conversation-no-human").Error; err != nil {
+		t.Fatalf("load analysis: %v", err)
+	}
+	if analysis.HumanResolution != "No human response observed" {
+		t.Fatalf("stored human_resolution = %q", analysis.HumanResolution)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(analysis.RawOutput, &raw); err != nil {
+		t.Fatalf("unmarshal raw output: %v", err)
+	}
+	if raw["human_resolution"] != "No human response observed" {
+		t.Fatalf("raw human_resolution = %q, want override", raw["human_resolution"])
+	}
+	var suggestionCount int64
+	if err := db.Model(&model.SupportGapSuggestion{}).Count(&suggestionCount).Error; err != nil {
+		t.Fatalf("count suggestions: %v", err)
+	}
+	if suggestionCount != 0 {
+		t.Fatalf("expected no auto-generated suggestion without human reply, got %d", suggestionCount)
+	}
 }
 
 func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesGapEvidenceRecommendationsAndSuggestion(t *testing.T) {
@@ -538,6 +626,7 @@ func TestSupportCoverageDailyAnalyzer_UpsertFindingCreatesGapEvidenceRecommendat
 		ConversationID: "conversation-1",
 		MessageID:      "message-1",
 		AnalysisID:     analysisID,
+		HasHumanReply:  true,
 		Result: CoverageConversationAnalysisResult{
 			HasGap:          true,
 			GapKind:         "content",
@@ -783,5 +872,449 @@ func TestSupportCoverageDailyAnalyzer_GenerateKnowledgeSuggestion(t *testing.T) 
 				t.Fatalf("prompt should guard against unsupported claims: %s", provider.requests[0].SystemPrompt)
 			}
 		})
+	}
+}
+
+func TestClassifyCoverageConversationLocally(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    CoverageConversationAnalysisInput
+		wantSkip bool
+		wantType string
+	}{
+		{
+			name: "no customer messages",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Internal note",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "user", Content: "Forwarding this for reference"},
+				},
+			},
+			wantSkip: true,
+			wantType: "other",
+		},
+		{
+			name: "auto-reply subject",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Out of Office: Re: Your inquiry",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "I am currently out of the office."},
+				},
+			},
+			wantSkip: true,
+			wantType: "auto_reply",
+		},
+		{
+			name: "delivery status notification",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Delivery Status Notification (Failure)",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "This is an automatically generated Delivery Status Notification."},
+				},
+			},
+			wantSkip: true,
+			wantType: "auto_reply",
+		},
+		{
+			name: "automatic reply",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Automatic Reply: Meeting request",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Thank you for your email. I will respond shortly."},
+				},
+			},
+			wantSkip: true,
+			wantType: "auto_reply",
+		},
+		{
+			name: "newsletter with unsubscribe",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Weekly Product Update",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Check out our latest features! Click here to unsubscribe from this list."},
+				},
+			},
+			wantSkip: true,
+			wantType: "newsletter",
+		},
+		{
+			name: "cold outreach with book a call",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Quick question about your growth",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Hi, we help companies like yours increase traffic. Let's book a call to discuss!"},
+				},
+			},
+			wantSkip: true,
+			wantType: "cold_outreach",
+		},
+		{
+			name: "cold outreach with question mark — not skipped",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Partnership opportunity",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Would you be interested in a partnership opportunity?"},
+				},
+			},
+			wantSkip: false,
+		},
+		{
+			name: "newsletter pattern but has question — not skipped",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Weekly Product Update",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "Can I unsubscribe from this list? How do I manage that?"},
+				},
+			},
+			wantSkip: false,
+		},
+		{
+			name: "real support query",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Help with billing",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "I was charged twice for my subscription. Can you help?"},
+				},
+			},
+			wantSkip: false,
+		},
+		{
+			name: "prospect pricing question",
+			input: CoverageConversationAnalysisInput{
+				Subject: "Pricing inquiry",
+				Messages: []CoverageConversationMessage{
+					{SenderType: "customer", Content: "What are your enterprise pricing plans?"},
+				},
+			},
+			wantSkip: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			classification, skip := classifyCoverageConversationLocally(tc.input)
+			if skip != tc.wantSkip {
+				t.Fatalf("skip = %v, want %v (classification: %+v)", skip, tc.wantSkip, classification)
+			}
+			if tc.wantSkip && classification.ConversationType != tc.wantType {
+				t.Fatalf("ConversationType = %q, want %q", classification.ConversationType, tc.wantType)
+			}
+		})
+	}
+}
+
+func TestNormalizeCoverageConversationAnalysisResult_Classification(t *testing.T) {
+	cases := []struct {
+		name             string
+		input            CoverageConversationAnalysisResult
+		wantSupport      bool
+		wantType         string
+		wantHasGap       bool
+		wantFixesCleared bool
+	}{
+		{
+			name: "support query passes through",
+			input: CoverageConversationAnalysisResult{
+				IsSupportQuery:   true,
+				ConversationType: "support_query",
+				HasGap:           true,
+				GapKind:          "content",
+				RecommendedFixes: []CoverageRecommendedFix{{Type: "create_article", Priority: "primary"}},
+			},
+			wantSupport: true,
+			wantType:    "support_query",
+			wantHasGap:  true,
+		},
+		{
+			name: "newsletter clears gap fields",
+			input: CoverageConversationAnalysisResult{
+				IsSupportQuery:   false,
+				ConversationType: "newsletter",
+				HasGap:           true,
+				GapKind:          "content",
+				RecommendedFixes: []CoverageRecommendedFix{{Type: "create_article"}},
+			},
+			wantSupport:      false,
+			wantType:         "newsletter",
+			wantHasGap:       false,
+			wantFixesCleared: true,
+		},
+		{
+			name: "empty conversation_type defaults to support_query",
+			input: CoverageConversationAnalysisResult{
+				ConversationType: "",
+				HasGap:           true,
+			},
+			wantSupport: true,
+			wantType:    "support_query",
+			wantHasGap:  true,
+		},
+		{
+			name: "unknown conversation_type becomes other",
+			input: CoverageConversationAnalysisResult{
+				ConversationType: "marketing_blast",
+				HasGap:           true,
+			},
+			wantSupport:      false,
+			wantType:         "other",
+			wantHasGap:       false,
+			wantFixesCleared: true,
+		},
+		{
+			name: "inconsistent: is_support_query=true but type=spam — type wins",
+			input: CoverageConversationAnalysisResult{
+				IsSupportQuery:   true,
+				ConversationType: "spam",
+				HasGap:           true,
+				RecommendedFixes: []CoverageRecommendedFix{{Type: "create_article"}},
+			},
+			wantSupport:      false,
+			wantType:         "spam",
+			wantHasGap:       false,
+			wantFixesCleared: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := tc.input
+			normalizeCoverageConversationAnalysisResult(&result)
+			if result.IsSupportQuery != tc.wantSupport {
+				t.Fatalf("IsSupportQuery = %v, want %v", result.IsSupportQuery, tc.wantSupport)
+			}
+			if result.ConversationType != tc.wantType {
+				t.Fatalf("ConversationType = %q, want %q", result.ConversationType, tc.wantType)
+			}
+			if result.HasGap != tc.wantHasGap {
+				t.Fatalf("HasGap = %v, want %v", result.HasGap, tc.wantHasGap)
+			}
+			if tc.wantFixesCleared && len(result.RecommendedFixes) != 0 {
+				t.Fatalf("expected fixes cleared, got %d", len(result.RecommendedFixes))
+			}
+		})
+	}
+}
+
+func TestSupportCoverageDailyAnalyzer_AnalyzeConversationClassifiesNonSupport(t *testing.T) {
+	response := `{"is_support_query":false,"conversation_type":"cold_outreach","classification_reason":"vendor pitch for SEO services","has_gap":false,"gap_kind":"","gap_category":"","canonical_title":"","customer_need":"","ai_failure":"","human_resolution":"","decision_reason":"","search_query":"","should_run_retrieval":false,"recommended_fixes":[],"confidence":0}`
+
+	provider := &scriptedSupportPlannerLLM{
+		responses: []llm.ChatResponse{{Content: response}},
+	}
+	analyzer := NewSupportCoverageDailyAnalyzer(provider, "openai", "gpt-5.5")
+
+	result, _, err := analyzer.AnalyzeConversation(context.Background(), CoverageConversationAnalysisInput{
+		WorkspaceID:    "ws-1",
+		ConversationID: "conversation-1",
+		Subject:        "SEO services for your company",
+		Messages: []CoverageConversationMessage{
+			{ID: "m-1", SenderType: "customer", Content: "Hi, I noticed your website could use some SEO improvements. Book a call with us!"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeConversation: %v", err)
+	}
+	if result.IsSupportQuery {
+		t.Fatal("expected IsSupportQuery=false for cold outreach")
+	}
+	if result.ConversationType != "cold_outreach" {
+		t.Fatalf("ConversationType = %q, want cold_outreach", result.ConversationType)
+	}
+	if result.HasGap {
+		t.Fatal("expected HasGap=false for non-support conversation")
+	}
+}
+
+// --- Segment builder tests ---
+
+func coverageTestMessageIDs(messages []model.SupportMessage) []string {
+	ids := make([]string, 0, len(messages))
+	for _, message := range messages {
+		ids = append(ids, message.ID)
+	}
+	return ids
+}
+
+func TestBuildLatestCoverageConversationSegment_NoLifecycleEventsUsesAllPublicMessages(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	messages := []model.SupportMessage{
+		{ID: "internal", SenderType: "user", MessageType: "reply", Content: "Internal", IsInternal: true, CreatedAt: base},
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "How do I reset password?", CreatedAt: base.Add(time.Minute)},
+		{ID: "m-2", SenderType: "ai", MessageType: "reply", Content: "Try settings.", CreatedAt: base.Add(2 * time.Minute)},
+	}
+
+	segment := BuildLatestCoverageConversationSegment(messages)
+	if segment == nil {
+		t.Fatal("expected segment")
+	}
+	if segment.StartMessageID != "m-1" || segment.EndMessageID != "m-2" {
+		t.Fatalf("unexpected segment bounds: %+v", segment)
+	}
+	if segment.Resolved {
+		t.Fatal("segment should not be resolved")
+	}
+	if len(segment.PublicMessages) != 2 {
+		t.Fatalf("public messages = %d, want 2", len(segment.PublicMessages))
+	}
+}
+
+func TestBuildLatestCoverageConversationSegment_ReopenedThreadStartsAtFirstPublicMessageAfterResolved(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	resolved := string(model.SystemEventResolved)
+	reopened := string(model.SystemEventReopened)
+	messages := []model.SupportMessage{
+		{ID: "old-customer", SenderType: "customer", MessageType: "reply", Content: "Refund question", CreatedAt: base},
+		{ID: "old-agent", SenderType: "user", MessageType: "reply", Content: "Refunded", CreatedAt: base.Add(time.Minute)},
+		{ID: "resolved-1", SenderType: "user", MessageType: "system", SystemEventType: &resolved, IsInternal: true, Content: "Resolved conversation", CreatedAt: base.Add(2 * time.Minute)},
+		{ID: "new-customer", SenderType: "customer", MessageType: "reply", Content: "Now I need SSO help", CreatedAt: base.Add(3 * time.Minute)},
+		{ID: "reopened-1", SenderType: "user", MessageType: "system", SystemEventType: &reopened, IsInternal: true, Content: "Reopened conversation", CreatedAt: base.Add(4 * time.Minute)},
+		{ID: "new-ai", SenderType: "ai", MessageType: "reply", Content: "Let me check SSO docs.", CreatedAt: base.Add(5 * time.Minute)},
+	}
+
+	segment := BuildLatestCoverageConversationSegment(messages)
+	if segment == nil {
+		t.Fatal("expected segment")
+	}
+	gotIDs := coverageTestMessageIDs(segment.PublicMessages)
+	wantIDs := []string{"new-customer", "new-ai"}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("segment messages = %v, want %v", gotIDs, wantIDs)
+	}
+	if segment.StartMessageID != "new-customer" {
+		t.Fatalf("start = %q, want new-customer", segment.StartMessageID)
+	}
+}
+
+func TestBuildLatestCoverageConversationSegment_ResolvedConversationUsesLatestClosedSegment(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	resolved := string(model.SystemEventResolved)
+	messages := []model.SupportMessage{
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "How do I invite a user?", CreatedAt: base},
+		{ID: "m-2", SenderType: "user", MessageType: "reply", Content: "Use Settings > Members.", CreatedAt: base.Add(time.Minute)},
+		{ID: "resolved-1", SenderType: "user", MessageType: "system", SystemEventType: &resolved, IsInternal: true, Content: "Resolved conversation", CreatedAt: base.Add(2 * time.Minute)},
+	}
+
+	segment := BuildLatestCoverageConversationSegment(messages)
+	if segment == nil {
+		t.Fatal("expected segment")
+	}
+	if !segment.Resolved {
+		t.Fatal("expected latest segment to be marked resolved")
+	}
+	gotIDs := coverageTestMessageIDs(segment.PublicMessages)
+	wantIDs := []string{"m-1", "m-2"}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("segment messages = %v, want %v", gotIDs, wantIDs)
+	}
+}
+
+func TestCoverageSegmentTranscriptHashIncludesSegmentBoundary(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	messages := []model.SupportMessage{
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "Question", CreatedAt: base},
+	}
+	first := CoverageConversationSegment{ID: "m-1:resolved-1", StartMessageID: "m-1", EndMessageID: "resolved-1", PublicMessages: messages}
+	second := CoverageConversationSegment{ID: "m-1:m-1", StartMessageID: "m-1", EndMessageID: "m-1", PublicMessages: messages}
+
+	if CoverageSegmentTranscriptHash(first) == CoverageSegmentTranscriptHash(second) {
+		t.Fatal("segment boundary should affect transcript hash")
+	}
+}
+
+func TestCoverageConversationAnalysisInputUsesLatestReopenedSegment(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	resolved := string(model.SystemEventResolved)
+	reopened := string(model.SystemEventReopened)
+	conversation := model.SupportConversation{
+		ID:          "conversation-1",
+		WorkspaceID: "ws-1",
+		Subject:     "Mixed thread",
+		Status:      model.SupportConversationStatusOpen,
+	}
+	messages := []model.SupportMessage{
+		{ID: "old-customer", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "customer", MessageType: "reply", Content: "Refund issue", CreatedAt: base},
+		{ID: "old-agent", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "user", MessageType: "reply", Content: "Refunded", CreatedAt: base.Add(time.Minute)},
+		{ID: "resolved-1", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "user", MessageType: "system", SystemEventType: &resolved, IsInternal: true, Content: "Resolved conversation", CreatedAt: base.Add(2 * time.Minute)},
+		{ID: "new-customer", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "customer", MessageType: "reply", Content: "SSO setup is failing", CreatedAt: base.Add(3 * time.Minute)},
+		{ID: "reopened-1", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "user", MessageType: "system", SystemEventType: &reopened, IsInternal: true, Content: "Reopened conversation", CreatedAt: base.Add(4 * time.Minute)},
+		{ID: "new-ai", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "ai", MessageType: "reply", Content: "Try SAML settings.", CreatedAt: base.Add(5 * time.Minute)},
+	}
+
+	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, nil)
+	if err != nil {
+		t.Fatalf("BuildCoverageConversationAnalysisInput: %v", err)
+	}
+	gotIDs := make([]string, 0, len(input.Messages))
+	for _, message := range input.Messages {
+		gotIDs = append(gotIDs, message.ID)
+		if strings.Contains(message.Content, "Refund") {
+			t.Fatalf("old segment leaked into analyzer input: %+v", input.Messages)
+		}
+	}
+	wantIDs := []string{"new-customer", "new-ai"}
+	if !slices.Equal(gotIDs, wantIDs) {
+		t.Fatalf("input message ids = %v, want %v", gotIDs, wantIDs)
+	}
+	if input.SegmentID == "" || input.SegmentStartMessageID != "new-customer" {
+		t.Fatalf("missing segment metadata: %+v", input)
+	}
+}
+
+func TestCoverageConversationAnalysisInputFiltersRetrievalTracesToSentSegmentMessages(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	resolved := string(model.SystemEventResolved)
+	conversation := model.SupportConversation{ID: "conversation-1", WorkspaceID: "ws-1"}
+	messages := []model.SupportMessage{
+		{ID: "old-ai", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "ai", MessageType: "reply", Content: "Old answer", CreatedAt: base},
+		{ID: "resolved-1", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "user", MessageType: "system", SystemEventType: &resolved, IsInternal: true, Content: "Resolved", CreatedAt: base.Add(time.Minute)},
+		{ID: "new-customer", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "customer", MessageType: "reply", Content: "New issue", CreatedAt: base.Add(2 * time.Minute)},
+		{ID: "new-ai", WorkspaceID: "ws-1", ConversationID: "conversation-1", SenderType: "ai", MessageType: "reply", Content: "New answer", CreatedAt: base.Add(3 * time.Minute)},
+	}
+	traces := []model.SupportAIRetrievalTrace{
+		{MessageID: "old-ai", SearchQueries: json.RawMessage(`["refund"]`), Results: json.RawMessage(`[]`), CitedSourceIDs: json.RawMessage(`[]`)},
+		{MessageID: "new-ai", SearchQueries: json.RawMessage(`["sso"]`), Results: json.RawMessage(`[]`), CitedSourceIDs: json.RawMessage(`[]`)},
+	}
+
+	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, traces)
+	if err != nil {
+		t.Fatalf("BuildCoverageConversationAnalysisInput: %v", err)
+	}
+	if len(input.RetrievalTraces) != 1 || input.RetrievalTraces[0].MessageID != "new-ai" {
+		t.Fatalf("retrieval traces were not filtered to sent segment messages: %+v", input.RetrievalTraces)
+	}
+}
+
+func TestCoverageConversationAnalysisInputSetsHasHumanReplyTrue(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	conversation := model.SupportConversation{ID: "c-1", WorkspaceID: "ws-1"}
+	messages := []model.SupportMessage{
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "Help", CreatedAt: base},
+		{ID: "m-2", SenderType: "ai", MessageType: "reply", Content: "Let me check", CreatedAt: base.Add(time.Minute)},
+		{ID: "m-3", SenderType: "user", MessageType: "reply", Content: "Here is the fix", CreatedAt: base.Add(2 * time.Minute)},
+	}
+
+	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, nil)
+	if err != nil {
+		t.Fatalf("BuildCoverageConversationAnalysisInput: %v", err)
+	}
+	if !input.HasHumanReply {
+		t.Fatal("expected HasHumanReply=true when user messages exist")
+	}
+}
+
+func TestCoverageConversationAnalysisInputSetsHasHumanReplyFalseWhenNoUserMessages(t *testing.T) {
+	base := time.Date(2026, 4, 30, 9, 0, 0, 0, time.UTC)
+	conversation := model.SupportConversation{ID: "c-1", WorkspaceID: "ws-1"}
+	messages := []model.SupportMessage{
+		{ID: "m-1", SenderType: "customer", MessageType: "reply", Content: "Help", CreatedAt: base},
+		{ID: "m-2", SenderType: "ai", MessageType: "reply", Content: "Try this", CreatedAt: base.Add(time.Minute)},
+	}
+
+	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, nil)
+	if err != nil {
+		t.Fatalf("BuildCoverageConversationAnalysisInput: %v", err)
+	}
+	if input.HasHumanReply {
+		t.Fatal("expected HasHumanReply=false when no user messages exist")
 	}
 }

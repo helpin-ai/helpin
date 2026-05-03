@@ -90,6 +90,7 @@ describe('pmImportService Shortcut API import', () => {
       'ws-1',
       'sc-token',
       { 'owner@example.com': 'user-1' },
+      { 'owner@example.com': 'member-1' },
       { 'Dev Team': 'existing:team-1' },
       mappings,
       { import_archived: true, import_completed: true },
@@ -104,6 +105,7 @@ describe('pmImportService Shortcut API import', () => {
         body: JSON.stringify({
           api_token: 'sc-token',
           user_mappings: { 'owner@example.com': 'user-1' },
+          member_mappings: { 'owner@example.com': 'member-1' },
           team_mappings: { 'Dev Team': 'existing:team-1' },
           workflow_state_mappings: mappings,
           options: { import_archived: true, import_completed: true },

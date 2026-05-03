@@ -93,7 +93,7 @@ func ResolveApprovalState(resolved ResolvedProfile) string {
 
 func defaultProfileNameForPreset(presetKey string, isSystem bool) string {
 	switch strings.TrimSpace(presetKey) {
-	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator:
+	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetCommandAgent:
 		return model.AgentPresetEpicPlanner
 	case model.AgentPresetSupportAgent:
 		return model.AgentPresetSupportAgent
