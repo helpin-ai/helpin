@@ -157,6 +157,7 @@ func main() {
 	docsDocumentKeyRepo := repository.NewDocsDocumentKeyRepository(db)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsBlockRepo := repository.NewDocsBlockRepository(db)
+	docsAISectionCandidateRepo := repository.NewDocsAISectionCandidateRepository(db)
 	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
@@ -454,6 +455,8 @@ func main() {
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, nil)
 	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
+	docsBlockService.SetActivityService(pmActivityService)
+	supportCoverageService.SetDocsBlockService(docsBlockService)
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, storyRepo, docsDocumentRepo, nil)
 	releaseFactsService := service.NewReleaseFactsService(
@@ -546,6 +549,7 @@ func main() {
 		docsDocumentKeyRepo,
 		docsContentRepo,
 		docsBlockRepo,
+		docsAISectionCandidateRepo,
 		docsVersionRepo,
 		docsLinkRepo,
 		docsSearchRepo,

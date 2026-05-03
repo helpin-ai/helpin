@@ -130,7 +130,7 @@ export const WORKSPACE_NOTIFICATION_CATEGORIES: NotificationCategory[] = [
   { key: 'agent_attention', label: 'Agent attention', description: 'Agent runs waiting for your input or approval' },
   { key: 'status_changes', label: 'Status changes', description: 'Updates to status, priority, or blocking state' },
   { key: 'comments', label: 'Comments and replies', description: 'New comments on work you follow' },
-  { key: 'mentions', label: 'Mentions', description: 'When someone mentions you in comments, descriptions, or checklists' },
+  { key: 'mentions', label: 'Mentions', description: 'When someone mentions you in comments, docs, descriptions, or checklists' },
   { key: 'subscriptions', label: 'Following', description: 'Other updates on work you follow' },
   { key: 'sprints', label: 'Sprints', description: 'Sprint creation, planning, and schedule updates' },
 ]

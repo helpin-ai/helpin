@@ -11,6 +11,7 @@ import {
   ArrowRight01Icon,
   Clock01Icon,
   Copy01Icon,
+  LeftToRightListBulletIcon,
   ViewIcon,
   LinkSquare01Icon,
   File01Icon,
@@ -25,6 +26,7 @@ import {
   Cancel01Icon,
   Loading01Icon,
   MagicWand01Icon,
+  Message01Icon,
   ArchiveRestoreIcon,
   FolderInputIcon,
   LockIcon,
@@ -35,6 +37,7 @@ import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams'
 import { useAuthStore } from '@/stores/authStore'
 import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -45,6 +48,7 @@ import {
   useDocsSpace,
   useDocsCollections,
   useDocsHelpcenterArticleTranslations,
+  useDocsHelpcenterConfig,
   useDocsHelpcenterCollectionTranslations,
   useDocsHelpcenterLocales,
   useDocsHelpcenterSpaceTranslations,
@@ -62,6 +66,7 @@ import {
   useUnarchiveDocsDocument,
   useDeleteDocsDocument,
   useAssignableMembers,
+  useAgents,
   useWorkspaceAccess,
   usePermissions,
   useToggleDocShare,
@@ -84,7 +89,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { DocsEditor, type DocsEditingPresenceSignal } from '@/components/docs/DocsEditor'
+import { DocsEditor, type DocsCommentAnchor, type DocsCommentAnchorDecoration, type DocsEditingPresenceSignal } from '@/components/docs/DocsEditor'
 import {
   buildCollectionTree,
   collectionAncestorChain,
@@ -100,14 +105,17 @@ import { ArticleLocalePillRail } from '@/components/docs/helpcenter/ArticleLocal
 import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/MissingArticleTranslationDialog'
 import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
+import { CommentThread } from '@/components/pm/CommentThread'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
+import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
 import { buildHelpcenterPreviewUrlFromEnv } from '@/lib/helpcenterPreview'
 import { docsService } from '@/lib/services/docsService'
+import { docsCommentService } from '@/lib/services/docsCommentService'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import { queryKeys } from '@/lib/queryKeys'
-import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import type { DocsReferenceItem, DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import type { CommentWithAuthor } from '@/lib/pmTypes'
 import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
@@ -132,6 +140,68 @@ function DocCollectionIcon({ name }: { name?: string | null }) {
     if (Icon) return <Icon className="h-3 w-3 shrink-0" />;
   }
   return <FolderOpenIcon className="h-3 w-3 shrink-0" />;
+}
+
+interface DocumentOutlineItem {
+  index: number
+  level: number
+  text: string
+}
+
+function collectDocumentOutline(content: JSONContent | null | undefined): DocumentOutlineItem[] {
+  const items: DocumentOutlineItem[] = []
+  const walk = (node: JSONContent | undefined) => {
+    if (!node) return
+    if (node.type === 'heading') {
+      const text = collectJSONText(node).trim()
+      if (text) {
+        items.push({
+          index: items.length,
+          level: typeof node.attrs?.level === 'number' ? node.attrs.level : 2,
+          text,
+        })
+      }
+    }
+    node.content?.forEach(walk)
+  }
+  walk(content ?? undefined)
+  return items
+}
+
+function collectJSONText(node: JSONContent): string {
+  if (typeof node.text === 'string') return node.text
+  return node.content?.map(collectJSONText).join('') ?? ''
+}
+
+function DocsOutlineSidebar({
+  items,
+  onSelect,
+}: {
+  items: DocumentOutlineItem[]
+  onSelect: (index: number) => void
+}) {
+  if (items.length === 0) return null
+  return (
+    <aside className="hidden w-56 shrink-0 overflow-y-auto border-l border-border/60 px-3 py-5 xl:block">
+      <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase text-muted-foreground">
+        <LeftToRightListBulletIcon className="h-3.5 w-3.5" />
+        <span>Outline</span>
+      </div>
+      <div className="space-y-0.5">
+        {items.map((item) => (
+          <button
+            key={`${item.index}:${item.text}`}
+            type="button"
+            className="block w-full truncate rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            style={{ paddingLeft: `${8 + Math.max(0, item.level - 2) * 10}px` }}
+            onClick={() => onSelect(item.index)}
+          >
+            {item.text}
+          </button>
+        ))}
+      </div>
+    </aside>
+  )
 }
 
 interface ArticleTranslationDraftState {
@@ -220,6 +290,7 @@ export function DocsDocumentDetail({
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
   const coverageGapClosedRef = useRef(false)
+  const editorShellRef = useRef<HTMLDivElement | null>(null)
   const [coverageInitialContent] = useState(() =>
     loadCoverageHandoffContent(fromGapId, fromSuggestionId),
   )
@@ -248,6 +319,12 @@ export function DocsDocumentDetail({
 
   const { data: space } = useDocsSpace(wsId, doc?.space_id ?? '')
   const { data: members = [] } = useAssignableMembers(wsId)
+  const { teams = [] } = useWorkspaceTeams(wsId)
+  const { data: workspaceAgents = [] } = useAgents(wsId)
+  const documentAgents = useMemo(
+    () => workspaceAgents.filter((agent) => agent.allowed_targets?.includes('document')),
+    [workspaceAgents],
+  )
   const remoteViewers = useDocsPresenceStore((s) => s.viewingUsers[docId] ?? EMPTY_DOC_VIEWERS)
   const remoteEditors = useDocsPresenceStore((s) => s.editingUsers[docId] ?? EMPTY_DOC_EDITORS)
   const wsSendRaw = useWSStore((s) => s.send)
@@ -317,6 +394,23 @@ export function DocsDocumentDetail({
     return [...editors, ...viewers]
   }, [activeDocEditors, activeDocViewers])
 
+  useEffect(() => {
+    let cancelled = false
+    if (!wsId || !docId || !doc) {
+      setComments([])
+      return
+    }
+    setCommentsLoading(true)
+    docsCommentService.list(wsId, 'doc', docId).then(({ data }) => {
+      if (!cancelled) setComments(data ?? [])
+    }).finally(() => {
+      if (!cancelled) setCommentsLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [doc?.id, docId, wsId])
+
   // Lock-aware editing: locked docs are read-only for everyone — unlock to edit
   const effectiveReadOnly = !canEditDocs || doc?.status === 'archived' || !!doc?.is_locked
   const canUnlock = doc?.is_locked && (doc.locked_by === currentUserId || isAdmin)
@@ -325,6 +419,14 @@ export function DocsDocumentDetail({
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [comments, setComments] = useState<CommentWithAuthor[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [commentAnchor, setCommentAnchor] = useState<DocsCommentAnchor | null>(null)
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null)
+  const [referencesOpen, setReferencesOpen] = useState(false)
+  const [references, setReferences] = useState<DocsReferenceItem[]>([])
+  const [referencesLoading, setReferencesLoading] = useState(false)
   const [editingTranslationLocale, setEditingTranslationLocale] = useState<string | null>(null)
   const [pendingTranslationLocale, setPendingTranslationLocale] = useState<string | null>(null)
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
@@ -341,6 +443,20 @@ export function DocsDocumentDetail({
   // Version preview state — when set, the editor shows version content read-only
   const [previewVersion, setPreviewVersion] = useState<DocsVersion | null>(null)
   const revertVersion = useRevertDocsVersion(wsId)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!referencesOpen || !wsId || !docId || !doc) return
+    setReferencesLoading(true)
+    docsService.listReferences(wsId, docId).then(({ data }) => {
+      if (!cancelled) setReferences(data?.items ?? [])
+    }).finally(() => {
+      if (!cancelled) setReferencesLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [doc?.id, docId, referencesOpen, wsId])
 
   const handlePreview = useCallback((version: DocsVersion) => {
     setPreviewVersion((prev) => prev?.id === version.id ? null : version)
@@ -480,6 +596,35 @@ export function DocsDocumentDetail({
     })
   }, [docId, wsSendRaw])
 
+  const handleCreateCommentAnchor = useCallback((anchor: DocsCommentAnchor) => {
+    setCommentAnchor(anchor)
+    setActiveCommentId(null)
+    setCommentsOpen(true)
+  }, [])
+
+  const handleOpenComment = useCallback((commentId: string) => {
+    setActiveCommentId(commentId)
+    setCommentsOpen(true)
+    window.setTimeout(() => {
+      document
+        .querySelector(`[data-comment-thread-id="${CSS.escape(commentId)}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 0)
+  }, [])
+
+  const commentAnchors = useMemo<DocsCommentAnchorDecoration[]>(() => {
+    return comments
+      .flatMap((entry) => [entry, ...(entry.replies ?? [])])
+      .map((entry) => entry.comment)
+      .filter((comment) => comment.block_id || comment.range || comment.anchor_text)
+      .map((comment) => ({
+        id: comment.id,
+        block_id: comment.block_id,
+        range: comment.range,
+        anchor_text: comment.anchor_text,
+      }))
+  }, [comments])
+
   const handleSave = useCallback(
     async (json: JSONContent) => {
       await saveContent.mutateAsync({ docId, content: json })
@@ -509,6 +654,7 @@ export function DocsDocumentDetail({
   )
 
   const isExternalHelpCenter = space?.type === 'external_capable'
+  const { data: helpcenterConfig } = useDocsHelpcenterConfig(wsId)
   const defaultLocale = localesConfig?.default_locale ?? 'en'
   const enabledLocales = localesConfig?.enabled_locales?.length
     ? localesConfig.enabled_locales
@@ -566,13 +712,25 @@ export function DocsDocumentDetail({
     ? emptyTranslationDraft(activeLocale)
     : translationDrafts[translationDraftKey(docId, activeLocale)] ?? translationDraftFromTranslation(activeLocale, activeTranslation)
   const displayedTitle = isSourceLocaleActive ? titleDraft : activeTranslationDraft.title
+  const outlineContent = previewVersion
+    ? previewVersion.content as JSONContent | null
+    : isSourceLocaleActive
+      ? coverageInitialContent ?? (content?.content as JSONContent | null)
+      : activeTranslationDraft.content
+  const outlineItems = useMemo(() => collectDocumentOutline(outlineContent), [outlineContent])
+  const handleOutlineSelect = useCallback((index: number) => {
+    const headings = editorShellRef.current?.querySelectorAll('.docs-editor-prose h1, .docs-editor-prose h2, .docs-editor-prose h3, .docs-editor-prose h4, .docs-editor-prose h5, .docs-editor-prose h6')
+    const heading = headings?.[index] as HTMLElement | undefined
+    heading?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
 
   const preparePublishedContent = useCallback(async (rawContent: JSONContent | null | undefined) => {
     if (!isExternalHelpCenter || !rawContent) return undefined
     return prepareDocsContentForPublish(rawContent, {
       uploadConfig: { workspaceId: wsId, entityType: 'editor_upload', entityId: docId },
+      diagramTheme: { brandColor: helpcenterConfig?.brand_color },
     })
-  }, [docId, isExternalHelpCenter, wsId])
+  }, [docId, helpcenterConfig?.brand_color, isExternalHelpCenter, wsId])
 
   useTitle(displayedTitle || 'Document')
 
@@ -814,7 +972,7 @@ export function DocsDocumentDetail({
   const activePublishLabel = !isPublished
     ? `Publish${localeSuffix}`
     : hasUnpublishedChanges
-      ? `Update${localeSuffix}`
+      ? `Publish update${localeSuffix}`
       : `Published${localeSuffix}`
   const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
   const parentTranslationsMissing = !isSourceLocaleActive && Boolean(activeLocaleRow?.publishBlockedReason)
@@ -949,17 +1107,23 @@ export function DocsDocumentDetail({
           ))}
         </nav>
 
-        {!showLocalePills && !(isPublished && hasUnpublishedChanges) && (
-          <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>
-            {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-          </span>
-        )}
-
-        {showContextualPublish && isPublished && hasUnpublishedChanges && (
-          <span className="shrink-0 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-            Unpublished changes
-          </span>
-        )}
+        {!showLocalePills && (() => {
+          if (doc.status === 'archived') {
+            return <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>Archived</span>
+          }
+          if (!isPublished) {
+            return <span className={`shrink-0 text-xs font-medium ${docStatusColor('draft')}`}>Draft</span>
+          }
+          const audience = isExternalHelpCenter ? 'help center' : 'internal'
+          return (
+            <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              Published · {audience}
+              {hasUnpublishedChanges && (
+                <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span>
+              )}
+            </span>
+          )
+        })()}
 
         {headerPresencePeople.length > 0 && (
           <div className={`hidden shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 md:flex ${
@@ -1029,11 +1193,11 @@ export function DocsDocumentDetail({
           </Button>
         )}
 
-        {showContextualPublish && (
+        {showContextualPublish && !(isPublished && !hasUnpublishedChanges) && (
           <>
             <Button
               size="sm"
-              variant={isPublished && !hasUnpublishedChanges ? 'secondary' : 'default'}
+              variant="default"
               className="h-7 gap-1.5 text-xs"
               onClick={async () => {
                 if (isSourceLocaleActive) {
@@ -1208,7 +1372,7 @@ export function DocsDocumentDetail({
       {/* Main content area */}
       <div className="flex min-h-0 flex-1">
         {/* Editor */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div ref={editorShellRef} className="flex min-w-0 flex-1 flex-col">
           {previewVersion ? (
             <DocsEditor
               key={`preview-${previewVersion.id}`}
@@ -1216,6 +1380,14 @@ export function DocsDocumentDetail({
               initialContent={previewVersion.content as JSONContent | null}
               onSave={handleSave}
               readOnly
+              members={members}
+              teams={teams}
+              agents={documentAgents}
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              documentId={docId}
+              commentAnchors={commentAnchors}
+              onOpenComment={handleOpenComment}
             />
           ) : (
             <DocsEditor
@@ -1225,7 +1397,7 @@ export function DocsDocumentDetail({
               slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug}
               slugHelperText={
                 isPublished && hasUnpublishedChanges
-                  ? 'Slug changes will go live when you update this article.'
+                  ? 'Slug changes take effect when you publish an update.'
                   : undefined
               }
               onSlugChange={
@@ -1234,7 +1406,7 @@ export function DocsDocumentDetail({
                     ? async (newSlug) => {
                         const res = await docsService.updateArticleSlug(wsId, docId, newSlug)
                         if (res.error) throw new Error(res.error)
-                        toast.success(sourceLivePublished ? 'Slug saved. It will go live when you update the article.' : 'Slug saved')
+                        toast.success(sourceLivePublished ? 'Slug saved. It will take effect when you publish an update.' : 'Slug saved')
                         queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
                       }
                     : undefined
@@ -1244,7 +1416,7 @@ export function DocsDocumentDetail({
                         if (res.error) throw new Error(res.error)
                         toast.success(
                           translationLivePublished
-                            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will go live when you update the translation.`
+                            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will take effect when you publish an update.`
                             : `${getHelpcenterLocaleLabel(activeLocale)} slug saved`,
                         )
                         queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
@@ -1269,9 +1441,20 @@ export function DocsDocumentDetail({
                   : null
               }
               onEditingPresenceChange={!effectiveReadOnly && !previewVersion ? handleEditingPresenceChange : undefined}
+              onCreateCommentAnchor={!effectiveReadOnly ? handleCreateCommentAnchor : undefined}
+              commentAnchors={commentAnchors}
+              onOpenComment={handleOpenComment}
+              members={members}
+              teams={teams}
+              agents={documentAgents}
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              documentId={docId}
             />
           )}
         </div>
+
+        <DocsOutlineSidebar items={outlineItems} onSelect={handleOutlineSelect} />
 
         {/* Metadata sidebar */}
         {metaOpen && (
@@ -1291,7 +1474,9 @@ export function DocsDocumentDetail({
                     doc.status === 'archived' ? 'text-muted-foreground' :
                     'text-amber-600 dark:text-amber-400'
                   }`}>
-                    {doc.status === 'published' ? 'Published' : doc.status === 'archived' ? 'Archived' : 'Draft'}
+                    {doc.status === 'published'
+                      ? `Published · ${isExternalHelpCenter ? 'help center' : 'internal'}`
+                      : doc.status === 'archived' ? 'Archived' : 'Draft'}
                   </span>
                 </div>
                 <Separator className="my-4" />
@@ -1310,7 +1495,9 @@ export function DocsDocumentDetail({
                     activeTranslationStatus === 'needs_review' ? 'text-blue-600 dark:text-blue-400' :
                     'text-amber-600 dark:text-amber-400'
                   }`}>
-                    {activeTranslationStatus === 'published' ? 'Published' : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
+                    {activeTranslationStatus === 'published'
+                      ? `Published · ${isExternalHelpCenter ? 'help center' : 'internal'}`
+                      : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
                   </span>
                 </div>
                 <Separator className="my-4" />
@@ -1574,6 +1761,32 @@ export function DocsDocumentDetail({
                   <LinkSquare01Icon className="h-3.5 w-3.5" />
                   Linked Items
                 </button>
+                <button
+                  type="button"
+                  onClick={() => { setCommentsOpen(true); setMetaOpen(false) }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Message01Icon className="h-3.5 w-3.5" />
+                  Comments
+                  {comments.length > 0 && (
+                    <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                      {comments.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setReferencesOpen(true); setMetaOpen(false) }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Link01Icon className="h-3.5 w-3.5" />
+                  References
+                  {references.length > 0 && (
+                    <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                      {references.length}
+                    </span>
+                  )}
+                </button>
               </div>
               </>
             )}
@@ -1655,15 +1868,15 @@ export function DocsDocumentDetail({
                           return
                         }
                         unpublishDoc.mutate(docId, {
-                          onSuccess: () => toast.success('Reverted to draft'),
-                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
+                          onSuccess: () => toast.success('Moved to draft'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to move to draft'),
                         })
                       }}
                       disabled={unpublishDoc.isPending || doc.is_locked}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
                       <RotateLeft01Icon className="h-3.5 w-3.5" />
-                      Revert to draft
+                      Move to draft
                     </button>
                   )}
                   <button
@@ -1712,6 +1925,112 @@ export function DocsDocumentDetail({
           canEdit={canEditDocs}
           previewingVersionId={previewVersion?.id}
         />
+        {commentsOpen && (
+          <aside className="flex w-96 shrink-0 flex-col overflow-hidden border-l border-border/60 bg-background">
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Message01Icon className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Comments</span>
+                {comments.length > 0 && (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {comments.length}
+                  </span>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setCommentsOpen(false)}
+              >
+                <Cancel01Icon className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {commentsLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                  Loading comments...
+                </div>
+              ) : (
+                <CommentThread
+                  workspaceId={wsId}
+                  entityType="doc"
+                  entityId={docId}
+                  comments={comments}
+                  currentUserId={currentUserId}
+                  teams={teams}
+                  members={members}
+                  commentService={docsCommentService}
+                  attachmentsEnabled={false}
+                  commentAnchor={commentAnchor}
+                  activeCommentId={activeCommentId}
+                  onCommentAnchorConsumed={() => setCommentAnchor(null)}
+                  onCommentsChange={setComments}
+                />
+              )}
+            </div>
+          </aside>
+        )}
+        {referencesOpen && (
+          <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border/60 bg-background">
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Link01Icon className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">References</span>
+                {references.length > 0 && (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {references.length}
+                  </span>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setReferencesOpen(false)}
+              >
+                <Cancel01Icon className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {referencesLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                  Loading references...
+                </div>
+              ) : references.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border/70 p-3 text-xs text-muted-foreground">
+                  No references yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {references.map((item) => (
+                    <div key={item.id} className="rounded-md border border-border/60 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{item.title}</span>
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                          {item.kind.replaceAll('_', ' ')}
+                        </span>
+                      </div>
+                      {item.description && (
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
+                      )}
+                      {(item.block_id || item.entity_type) && (
+                        <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                          {item.entity_type && <span className="rounded bg-muted px-1.5 py-0.5">{item.entity_type}</span>}
+                          {item.block_id && <span className="rounded bg-muted px-1.5 py-0.5">Block</span>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
+        )}
       </div>
 
       {/* Slide-out panels */}
@@ -1822,21 +2141,20 @@ export function DocsDocumentDetail({
       <ConfirmDialog
         open={revertConfirmOpen}
         onOpenChange={setRevertConfirmOpen}
-        title="Revert to draft"
+        title="Move to draft"
         variant="destructive"
         description={(() => {
           const count = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').length
-          return `This will revert the source article and ${count} published translation${count !== 1 ? 's' : ''} to draft. They will no longer be visible on the public help center.`
+          return `This will move the source article and ${count} published translation${count !== 1 ? 's' : ''} back to draft. They will no longer be visible on the public help center.`
         })()}
-        confirmLabel="Revert all to draft"
+        confirmLabel="Move all to draft"
         onConfirm={() => {
-          // Unpublish all published translations first, then the source
           const publishedLocales = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').map(r => r.locale)
           Promise.all(publishedLocales.map(locale => unpublishArticleTranslation.mutateAsync(locale).catch(() => {})))
             .then(() => {
               unpublishDoc.mutate(docId, {
-                onSuccess: () => toast.success(`Reverted to draft (${publishedLocales.length} translation${publishedLocales.length !== 1 ? 's' : ''} also reverted)`),
-                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
+                onSuccess: () => toast.success(`Moved to draft (${publishedLocales.length} translation${publishedLocales.length !== 1 ? 's' : ''} also moved)`),
+                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to move to draft'),
               })
             })
           setRevertConfirmOpen(false)

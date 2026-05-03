@@ -17,6 +17,7 @@ declare module '@tiptap/core' {
         height?: string;
         aspectRatio?: number | null;
         attachmentId?: string | null;
+        caption?: string | null;
       }) => ReturnType;
     };
   }
@@ -43,6 +44,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       height: { default: 'auto' },
       aspectRatio: { default: null },
       attachmentId: { default: null },
+      caption: { default: null },
       alignment: { default: 'center' },
       linkUrl: { default: null },
       linkNewTab: { default: true },
@@ -63,6 +65,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
             ? Number(dom.getAttribute('data-aspect-ratio'))
             : null,
           attachmentId: dom.getAttribute('data-attachment-id'),
+          caption: dom.getAttribute('data-caption'),
           alignment: dom.getAttribute('data-alignment') || 'center',
           linkUrl: dom.getAttribute('data-link-url') || null,
           linkNewTab: dom.getAttribute('data-link-new-tab') !== 'false',
@@ -72,10 +75,11 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
   },
 
   renderHTML({ HTMLAttributes }) {
-    const { aspectRatio, attachmentId, alignment, linkUrl, linkNewTab, ...rest } = HTMLAttributes;
+    const { aspectRatio, attachmentId, caption, alignment, linkUrl, linkNewTab, ...rest } = HTMLAttributes;
     return ['img', mergeAttributes(this.options.HTMLAttributes, rest, {
       ...(aspectRatio ? { 'data-aspect-ratio': aspectRatio } : {}),
       ...(attachmentId ? { 'data-attachment-id': attachmentId } : {}),
+      ...(caption ? { 'data-caption': caption } : {}),
       ...(alignment && alignment !== 'center' ? { 'data-alignment': alignment } : {}),
       ...(linkUrl ? { 'data-link-url': linkUrl, 'data-link-new-tab': String(linkNewTab ?? true) } : {}),
     })];

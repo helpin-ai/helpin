@@ -5,6 +5,8 @@ import type {
   DocsDocument,
   DocsContent,
   DocsBlock,
+  AISectionCandidateResponse,
+  DocsReferencesResponse,
   DocsVersion,
   DocsLink,
   DocsHelpcenterConfig,
@@ -37,6 +39,9 @@ import type {
   UpsertDocsHelpcenterArticleTranslationRequest,
   DocsArticleFeedbackRequest,
   PublicDocResponse,
+  DocsResolvedEmbed,
+  DocsEntityRefRequest,
+  ResolveDocsEntityRefsResponse,
 } from '../docsTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -123,6 +128,16 @@ export const docsService = {
     api.post<DocsContent>(`/docs/documents/${docId}/blocks/reorder${qs(wsId)}`, payload),
   deleteBlock: (wsId: string, docId: string, blockId: string) =>
     api.del<DocsContent>(`/docs/documents/${docId}/blocks/${blockId}${qs(wsId)}`),
+  getAISectionCandidate: (wsId: string, docId: string, blockId: string) =>
+    api.get<AISectionCandidateResponse>(`/docs/documents/${docId}/blocks/${blockId}/ai-section/candidate${qs(wsId)}`),
+  regenerateAISection: (wsId: string, docId: string, blockId: string, payload: { agent_id: string; instructions?: string }) =>
+    api.post<AISectionCandidateResponse>(`/docs/documents/${docId}/blocks/${blockId}/ai-section/regenerate${qs(wsId)}`, payload),
+  approveAISection: (wsId: string, docId: string, blockId: string) =>
+    api.post<AISectionCandidateResponse>(`/docs/documents/${docId}/blocks/${blockId}/ai-section/approve${qs(wsId)}`, {}),
+  rejectAISection: (wsId: string, docId: string, blockId: string) =>
+    api.post<AISectionCandidateResponse>(`/docs/documents/${docId}/blocks/${blockId}/ai-section/reject${qs(wsId)}`, {}),
+  listReferences: (wsId: string, docId: string) =>
+    api.get<DocsReferencesResponse>(`/docs/documents/${docId}/references${qs(wsId)}`),
 
   // ── Versions ────────────────────────────────────────────────────────────
   listVersions: (wsId: string, docId: string) =>
@@ -163,6 +178,10 @@ export const docsService = {
     if (filters?.limit) search.set('limit', String(filters.limit));
     return api.get<DocsSearchResult[]>(`/docs/search?${search.toString()}`);
   },
+  resolveEmbed: (wsId: string, url: string) =>
+    api.get<DocsResolvedEmbed>(`/docs/embeds/resolve${qs(wsId)}&url=${encodeURIComponent(url)}`),
+  resolveEntityRefs: (wsId: string, refs: DocsEntityRefRequest[]) =>
+    api.post<ResolveDocsEntityRefsResponse>(`/docs/entity-refs/resolve${qs(wsId)}`, { refs }),
 
   // ── Help Center Config ──────────────────────────────────────────────────
   getHelpcenterConfig: (wsId: string) =>

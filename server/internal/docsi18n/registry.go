@@ -35,6 +35,7 @@ func DefaultRegistry() *Registry {
 		newContainerHandler("listItem"),
 		newContainerHandler("blockquote"),
 		newContainerHandler("callout"),
+		newContainerHandler("aiSection"),
 		newContainerHandler("table"),
 		newContainerHandler("tableRow"),
 		newContainerHandler("tableHeader"),
@@ -47,6 +48,8 @@ func DefaultRegistry() *Registry {
 		preserveOnlyHandler{nodeType: "codeBlock"},
 		preserveOnlyHandler{nodeType: "htmlBlock"},
 		preserveOnlyHandler{nodeType: "videoEmbed"},
+		preserveOnlyHandler{nodeType: "entityEmbed"},
+		preserveOnlyHandler{nodeType: "citationBlock"},
 		preserveOnlyHandler{nodeType: "horizontalRule"},
 		preserveOnlyHandler{nodeType: "hardBreak"},
 	)

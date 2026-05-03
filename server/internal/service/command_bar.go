@@ -2436,7 +2436,7 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 
 	if targetType == "document" || containsAny(lower, "doc", "document", "article", "knowledge base", "stale") {
 		recognized = true
-		tools = append(tools, "list_documents", "list_collections", "read_document", "search_documents")
+		tools = append(tools, "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents")
 	}
 	if containsAny(lower, "web", "website", "url", "internet", "research", "source", "sources", "stale", "latest", "fetch", "crawl", "find info", "find information", "enrich") {
 		recognized = true
@@ -2445,6 +2445,14 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 	if containsAny(lower, "update doc", "update document", "refresh doc", "refresh document", "rewrite", "edit doc", "edit document", "write doc", "write document", "stale") {
 		recognized = true
 		tools = append(tools, "request_approval", "write_document_content")
+	}
+	if targetType == "document" && containsAny(lower, "block", "section", "sections", "paragraph", "paragraphs", "precise edit", "targeted edit") {
+		recognized = true
+		tools = append(tools, "request_approval", "update_document_block")
+	}
+	if targetType == "document" && containsAny(lower, "link", "attach", "associate", "reference") && containsAny(lower, "task", "story", "epic", "deal", "contact", "company", "crm", "support") {
+		recognized = true
+		tools = append(tools, "request_approval", "link_document_to_object")
 	}
 	if containsAny(lower, "create doc", "create document", "new doc", "new document", "draft doc", "draft document", "write a doc", "write an article") {
 		recognized = true
@@ -2542,7 +2550,7 @@ func safeOneShotCommandToolsForTarget(pageContext model.CommandBarPageContext, a
 	case "task":
 		tools = append(tools, "get_task_context", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks")
 	case "document":
-		tools = append(tools, "list_documents", "list_collections", "read_document", "search_documents")
+		tools = append(tools, "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "list_deals", "list_contacts", "list_buyer_signals")
 	case "crm_contact", "crm_deal":
 		tools = append(tools, "list_deals", "list_contacts", "list_buyer_signals")
 	default:
@@ -2582,6 +2590,7 @@ func commandBarHasUsefulOneShotContextTool(tools []string) bool {
 			"list_documents",
 			"list_collections",
 			"read_document",
+			"get_document_blocks",
 			"search_documents",
 			"list_deals",
 			"list_contacts",
@@ -2656,6 +2665,8 @@ func commandBarToolIsMutation(tool string) bool {
 		"ensure_task_label",
 		"update_deal_stage",
 		"update_task_state",
+		"update_document_block",
+		"link_document_to_object",
 		"write_document_content":
 		return true
 	default:
