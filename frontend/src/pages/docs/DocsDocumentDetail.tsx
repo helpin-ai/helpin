@@ -107,7 +107,7 @@ import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialo
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { CommentThread } from '@/components/pm/CommentThread'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
+import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
 import { buildHelpcenterPreviewUrlFromEnv } from '@/lib/helpcenterPreview'
 import { docsService } from '@/lib/services/docsService'
@@ -972,7 +972,7 @@ export function DocsDocumentDetail({
   const activePublishLabel = !isPublished
     ? `Publish${localeSuffix}`
     : hasUnpublishedChanges
-      ? `Update${localeSuffix}`
+      ? `Publish update${localeSuffix}`
       : `Published${localeSuffix}`
   const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
   const parentTranslationsMissing = !isSourceLocaleActive && Boolean(activeLocaleRow?.publishBlockedReason)
@@ -1107,17 +1107,23 @@ export function DocsDocumentDetail({
           ))}
         </nav>
 
-        {!showLocalePills && !(isPublished && hasUnpublishedChanges) && (
-          <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>
-            {DOC_STATUS_LABELS[doc.status] ?? doc.status}
-          </span>
-        )}
-
-        {showContextualPublish && isPublished && hasUnpublishedChanges && (
-          <span className="shrink-0 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-            Unpublished changes
-          </span>
-        )}
+        {!showLocalePills && (() => {
+          if (doc.status === 'archived') {
+            return <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>Archived</span>
+          }
+          if (!isPublished) {
+            return <span className={`shrink-0 text-xs font-medium ${docStatusColor('draft')}`}>Draft</span>
+          }
+          const audience = isExternalHelpCenter ? 'help center' : 'internal'
+          return (
+            <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              Published · {audience}
+              {hasUnpublishedChanges && (
+                <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span>
+              )}
+            </span>
+          )
+        })()}
 
         {headerPresencePeople.length > 0 && (
           <div className={`hidden shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 md:flex ${
@@ -1187,11 +1193,11 @@ export function DocsDocumentDetail({
           </Button>
         )}
 
-        {showContextualPublish && (
+        {showContextualPublish && !(isPublished && !hasUnpublishedChanges) && (
           <>
             <Button
               size="sm"
-              variant={isPublished && !hasUnpublishedChanges ? 'secondary' : 'default'}
+              variant="default"
               className="h-7 gap-1.5 text-xs"
               onClick={async () => {
                 if (isSourceLocaleActive) {
@@ -1391,7 +1397,7 @@ export function DocsDocumentDetail({
               slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug}
               slugHelperText={
                 isPublished && hasUnpublishedChanges
-                  ? 'Slug changes will go live when you update this article.'
+                  ? 'Slug changes take effect when you publish an update.'
                   : undefined
               }
               onSlugChange={
@@ -1400,7 +1406,7 @@ export function DocsDocumentDetail({
                     ? async (newSlug) => {
                         const res = await docsService.updateArticleSlug(wsId, docId, newSlug)
                         if (res.error) throw new Error(res.error)
-                        toast.success(sourceLivePublished ? 'Slug saved. It will go live when you update the article.' : 'Slug saved')
+                        toast.success(sourceLivePublished ? 'Slug saved. It will take effect when you publish an update.' : 'Slug saved')
                         queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
                       }
                     : undefined
@@ -1410,7 +1416,7 @@ export function DocsDocumentDetail({
                         if (res.error) throw new Error(res.error)
                         toast.success(
                           translationLivePublished
-                            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will go live when you update the translation.`
+                            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will take effect when you publish an update.`
                             : `${getHelpcenterLocaleLabel(activeLocale)} slug saved`,
                         )
                         queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
@@ -1468,7 +1474,9 @@ export function DocsDocumentDetail({
                     doc.status === 'archived' ? 'text-muted-foreground' :
                     'text-amber-600 dark:text-amber-400'
                   }`}>
-                    {doc.status === 'published' ? 'Published' : doc.status === 'archived' ? 'Archived' : 'Draft'}
+                    {doc.status === 'published'
+                      ? `Published · ${isExternalHelpCenter ? 'help center' : 'internal'}`
+                      : doc.status === 'archived' ? 'Archived' : 'Draft'}
                   </span>
                 </div>
                 <Separator className="my-4" />
@@ -1487,7 +1495,9 @@ export function DocsDocumentDetail({
                     activeTranslationStatus === 'needs_review' ? 'text-blue-600 dark:text-blue-400' :
                     'text-amber-600 dark:text-amber-400'
                   }`}>
-                    {activeTranslationStatus === 'published' ? 'Published' : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
+                    {activeTranslationStatus === 'published'
+                      ? `Published · ${isExternalHelpCenter ? 'help center' : 'internal'}`
+                      : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
                   </span>
                 </div>
                 <Separator className="my-4" />
@@ -1858,15 +1868,15 @@ export function DocsDocumentDetail({
                           return
                         }
                         unpublishDoc.mutate(docId, {
-                          onSuccess: () => toast.success('Reverted to draft'),
-                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
+                          onSuccess: () => toast.success('Moved to draft'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to move to draft'),
                         })
                       }}
                       disabled={unpublishDoc.isPending || doc.is_locked}
                       className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
                       <RotateLeft01Icon className="h-3.5 w-3.5" />
-                      Revert to draft
+                      Move to draft
                     </button>
                   )}
                   <button
@@ -2131,21 +2141,20 @@ export function DocsDocumentDetail({
       <ConfirmDialog
         open={revertConfirmOpen}
         onOpenChange={setRevertConfirmOpen}
-        title="Revert to draft"
+        title="Move to draft"
         variant="destructive"
         description={(() => {
           const count = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').length
-          return `This will revert the source article and ${count} published translation${count !== 1 ? 's' : ''} to draft. They will no longer be visible on the public help center.`
+          return `This will move the source article and ${count} published translation${count !== 1 ? 's' : ''} back to draft. They will no longer be visible on the public help center.`
         })()}
-        confirmLabel="Revert all to draft"
+        confirmLabel="Move all to draft"
         onConfirm={() => {
-          // Unpublish all published translations first, then the source
           const publishedLocales = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').map(r => r.locale)
           Promise.all(publishedLocales.map(locale => unpublishArticleTranslation.mutateAsync(locale).catch(() => {})))
             .then(() => {
               unpublishDoc.mutate(docId, {
-                onSuccess: () => toast.success(`Reverted to draft (${publishedLocales.length} translation${publishedLocales.length !== 1 ? 's' : ''} also reverted)`),
-                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
+                onSuccess: () => toast.success(`Moved to draft (${publishedLocales.length} translation${publishedLocales.length !== 1 ? 's' : ''} also moved)`),
+                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to move to draft'),
               })
             })
           setRevertConfirmOpen(false)
