@@ -7,6 +7,16 @@ export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 export type SupportConversationTriageStatus = 'not_run' | 'suggested' | 'auto_moved' | 'dismissed' | 'overridden';
 export type SupportConversationTriageSource = 'rule' | 'ai';
 export type SupportConversationTriageFeedbackAction = 'accepted' | 'dismissed' | 'corrected';
+export type SupportSystemTag = 'ai_handoff' | 'ai_resolved';
+
+export interface SupportTag {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface SupportConversationTriage {
   id: string;
@@ -63,15 +73,24 @@ export interface SupportConversation {
   team_last_seen_at?: string;
   contact_last_seen_at?: string;
   triage?: SupportConversationTriage | null;
+  tags?: SupportTag[];
+  system_tags?: SupportSystemTag[];
   created_at: string;
   updated_at: string;
 }
 
 export interface UnreadStats {
-  total: number;
-  my_inbox: number;
-  unassigned: number;
+  inbox: number;
+  mine: number;
+  waiting: number;
   ai_active: number;
+  inbox_total?: number;
+  mine_total?: number;
+  waiting_total?: number;
+  ai_active_total?: number;
+  total?: number;
+  my_inbox?: number;
+  unassigned?: number;
 }
 
 export interface SupportInboxScope {
@@ -81,9 +100,35 @@ export interface SupportInboxScope {
   icon: string;
   is_shared: boolean;
   is_default: boolean;
+  total_count?: number;
   unread_count: number;
   active: boolean;
   linked_team_id?: string | null;
+}
+
+export type SupportInboxViewFilters = Record<string, string>;
+
+export interface SupportInboxView {
+  id: string;
+  workspace_id: string;
+  name: string;
+  filters: SupportInboxViewFilters;
+  is_shared: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportInboxViewRequest {
+  name: string;
+  filters: SupportInboxViewFilters;
+  is_shared: boolean;
+}
+
+export interface UpdateSupportInboxViewRequest {
+  name?: string;
+  filters?: SupportInboxViewFilters;
+  is_shared?: boolean;
 }
 
 export interface SupportInboxScopeListResponse {

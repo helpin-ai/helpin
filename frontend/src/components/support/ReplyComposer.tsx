@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo, type ReactNode } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo, type KeyboardEvent, type ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -483,6 +483,21 @@ function ShortcutFormPanel({
     setCategoryOpen(false);
   };
 
+  const focusMessageField = () => {
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const moveFromCategoryToMessage = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Tab' || event.shiftKey) return;
+    event.preventDefault();
+    if (normalizedCategorySearch) {
+      selectCategory(exactCategoryMatch ?? filteredCategories[0] ?? normalizedCategorySearch);
+    } else {
+      setCategoryOpen(false);
+    }
+    focusMessageField();
+  };
+
   const insertAtSelection = (value: string) => {
     const textarea = textareaRef.current;
     if (!textarea) {
@@ -580,6 +595,7 @@ function ShortcutFormPanel({
               <PopoverTrigger asChild>
                 <button
                   type="button"
+                  onKeyDown={moveFromCategoryToMessage}
                   className="flex h-8 w-full items-center justify-between rounded-md border border-transparent bg-input/50 px-3 text-left text-sm outline-none transition-colors hover:bg-input focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
                 >
                   <span className="truncate">{selectedCategory}</span>
@@ -593,6 +609,10 @@ function ShortcutFormPanel({
                     onValueChange={setCategorySearch}
                     placeholder="Choose or type a category"
                     onKeyDown={(event) => {
+                      if (event.key === 'Tab' && !event.shiftKey) {
+                        moveFromCategoryToMessage(event);
+                        return;
+                      }
                       if (event.key !== 'Enter' || !normalizedCategorySearch) return;
                       event.preventDefault();
                       selectCategory(exactCategoryMatch ?? filteredCategories[0] ?? normalizedCategorySearch);
@@ -797,7 +817,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
 
   // Toolbar visibility — show when the editor is focused, or while interacting
   // with the toolbar itself, or when the link modal is open.
-  const [, setEditorFocused] = useState(false);
+  const [editorFocused, setEditorFocused] = useState(false);
   const toolbarHasPointerRef = useRef(false);
   // toolbarHasPointerRef still used by the merged bottom bar to keep editor focus state
 
@@ -1522,7 +1542,12 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   return (
     <div
       className={cn(
-        'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card shadow-lg transition-all',
+        'relative mx-3 mb-4 rounded-xl border border-border/40 bg-card shadow-lg transition-[border-color,box-shadow,background-color]',
+        editorFocused && (
+          isNote
+            ? 'border-amber-400 ring-2 ring-amber-400/25 shadow-amber-500/10 dark:border-amber-500 dark:ring-amber-500/25'
+            : 'border-blue-500 ring-2 ring-blue-500/25 shadow-blue-500/10 dark:border-blue-400 dark:ring-blue-400/25'
+        ),
         isNote && 'bg-amber-50/50 dark:bg-amber-950/10'
       )}
     >
