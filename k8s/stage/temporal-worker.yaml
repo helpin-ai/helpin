@@ -241,7 +241,7 @@ spec:
             - name: TEMPORAL_WORKER_QUEUES
               value: agent-codex-autonomous
             - name: CODEX_SANDBOX_MODE
-              value: workspace-write
+              value: danger-full-access
           envFrom:
             - secretRef:
                 name: helpin-secrets

@@ -92,6 +92,9 @@ func setupEmailSyncActivitiesTestDB(t *testing.T) *gorm.DB {
 			avatar_url TEXT,
 			source TEXT,
 			custom_properties BLOB NOT NULL DEFAULT (CAST('{}' AS BLOB)),
+			email_status TEXT NOT NULL DEFAULT 'valid',
+			email_status_reason TEXT,
+			email_status_updated_at DATETIME,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)`,

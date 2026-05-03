@@ -365,6 +365,7 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM agent_handoffs WHERE workspace_id = ?",
 
 			// Support module
+			"DELETE FROM support_inbox_views WHERE workspace_id = ?",
 			"DELETE FROM support_conversations WHERE workspace_id = ?",
 			"DELETE FROM support_widget_sessions WHERE workspace_id = ?",
 			"DELETE FROM support_widget_installations WHERE workspace_id = ?",

@@ -21,6 +21,17 @@ interface AuthState {
     rememberMe?: boolean,
     options?: { useAutofill?: boolean },
   ) => Promise<{ error: string | null; cancelled?: boolean }>
+  signInWithPassword: (
+    email: string,
+    password: string,
+    rememberMe?: boolean,
+  ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string }>
+  verify2FASignIn: (
+    twoFaToken: string,
+    code: string,
+    useRecoveryCode: boolean,
+    rememberMe?: boolean,
+  ) => Promise<{ error: string | null }>
   signOut: () => void
 }
 
@@ -121,6 +132,38 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     if (!data.user || !data.access_token || !data.refresh_token) {
       return { error: 'Passkey sign in failed' }
+    }
+
+    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)
+    if (adminError) {
+      return { error: adminError }
+    }
+    return { error: null }
+  },
+
+  signInWithPassword: async (email: string, password: string, rememberMe = false) => {
+    const { data, error } = await authService.signin(email, password, rememberMe)
+    if (error || !data) {
+      return { error: error || 'Sign in failed' }
+    }
+    if (data.requires_2fa && data.two_fa_token) {
+      return { error: null, requires2FA: true, twoFAToken: data.two_fa_token }
+    }
+    if (!data.user || !data.access_token || !data.refresh_token) {
+      return { error: 'Sign in failed' }
+    }
+
+    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)
+    if (adminError) {
+      return { error: adminError }
+    }
+    return { error: null }
+  },
+
+  verify2FASignIn: async (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe = false) => {
+    const { data, error } = await authService.verify2FASignin(twoFaToken, code, useRecoveryCode)
+    if (error || !data || !data.user || !data.access_token || !data.refresh_token) {
+      return { error: error || 'Verification failed' }
     }
 
     const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)

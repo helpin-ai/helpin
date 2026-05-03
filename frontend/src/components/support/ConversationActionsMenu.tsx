@@ -20,17 +20,20 @@ import {
 import { Input } from '@/components/ui/input';
 import {
   Delete01Icon,
+  InboxIcon,
   Link01Icon,
   MailOpenIcon,
   Message01Icon,
+  OctagonXIcon,
   PencilEdit01Icon,
 } from '@/lib/icons';
-import type { SupportConversation } from '@/lib/pmTypes';
+import type { ConversationStatus, SupportConversation } from '@/lib/pmTypes';
 import {
   useDeleteConversation,
   useMarkConversationRead,
   useMarkConversationUnread,
   useMoveConversation,
+  useUpdateConversationStatus,
   useUpdateConversationSubject,
 } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -76,6 +79,7 @@ export function ConversationActionsMenu({
   const markConversationRead = useMarkConversationRead(workspaceId);
   const markConversationUnread = useMarkConversationUnread(workspaceId);
   const updateSubject = useUpdateConversationSubject(workspaceId);
+  const updateStatus = useUpdateConversationStatus(workspaceId);
   const deleteConversation = useDeleteConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug);
@@ -124,6 +128,15 @@ export function ConversationActionsMenu({
       onSuccess: () => {
         setSubjectDialogOpen(false);
         toast.success('Conversation subject updated');
+      },
+    });
+  };
+
+  const handleToggleSpam = () => {
+    const nextStatus: ConversationStatus = conversation.status === 'spam' ? 'open' : 'spam';
+    updateStatus.mutate({ conversationId: conversation.id, status: nextStatus }, {
+      onSuccess: () => {
+        toast.success(nextStatus === 'spam' ? 'Marked as spam' : 'Restored to inbox');
       },
     });
   };
@@ -192,6 +205,27 @@ export function ConversationActionsMenu({
               ))}
             </>
           )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className={
+              conversation.status === 'spam'
+                ? itemClassName
+                : `${itemClassName} text-destructive focus:text-destructive`
+            }
+            onClick={handleToggleSpam}
+          >
+            {conversation.status === 'spam' ? (
+              <>
+                <InboxIcon className={iconClassName} />
+                Restore to inbox
+              </>
+            ) : (
+              <>
+                <OctagonXIcon className={iconClassName} />
+                Mark as spam
+              </>
+            )}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className={`${itemClassName} text-destructive focus:text-destructive`}

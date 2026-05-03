@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>AI message footer — Variant C</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --card: #ffffff;
+    --border: #e5e7eb;
+    --muted: #6b7280;
+    --fg: #111827;
+    --primary: #2563eb;
+    --primary-soft: #eff6ff;
+    --primary-ring: #dbeafe;
+    --bubble: #1f2937;
+    --bubble-fg: #f9fafb;
+  }
+  body { background: var(--bg); color: var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .bubble {
+    background: var(--bubble);
+    color: var(--bubble-fg);
+    border-radius: 18px 18px 4px 18px;
+    padding: 12px 14px;
+    max-width: 520px;
+    line-height: 1.45;
+    font-size: 14px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .meta { font-size: 11px; color: var(--muted); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--primary-soft); color: var(--primary);
+    font-weight: 500; font-size: 11px;
+    border: 1px solid var(--primary-ring);
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px;
+    color: var(--muted); font-size: 11px;
+    background: #f3f4f6;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: background .12s, color .12s, border-color .12s;
+    user-select: none;
+  }
+  .chip:hover { background: #fff; color: var(--fg); border-color: #d1d5db; }
+  .chip[aria-expanded="true"] { background: #fff; color: var(--fg); border-color: #d1d5db; }
+  .chev { transition: transform .15s ease; }
+  .chip[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  .source-card {
+    border: 1px solid var(--border);
+    background: #fafafa;
+    border-radius: 12px;
+    padding: 6px;
+    max-width: 520px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  }
+  .source-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+    color: #1f2937; font-size: 13px; text-decoration: none;
+    transition: background .12s;
+  }
+  .source-link + .source-link { border-top: 1px solid var(--border); }
+  .source-link:hover { background: #fff; color: var(--primary); }
+  .source-link:hover .src-title { text-decoration: underline; }
+  .source-link svg.icon { color: var(--muted); flex: 0 0 auto; }
+  .source-link .external { color: #9ca3af; opacity: 0; transition: opacity .12s; margin-left: auto; flex: 0 0 auto; }
+  .source-link:hover .external { opacity: 1; color: var(--primary); }
+  .read { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .read svg { color: var(--primary); }
+  .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; max-width: 520px; }
+  .footer-left { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .panel { display: none; }
+  .panel.open { display: block; animation: pop .14s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+  .label { font-weight: 600; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+  .col { max-width: 760px; margin: 0 auto; }
+  .dot { color: #d1d5db; }
+</style>
+</head>
+<body class="py-10">
+
+<div class="col space-y-8">
+
+  <header class="px-1">
+    <h1 class="text-lg font-semibold">AI message footer — Variant C (refined)</h1>
+    <p class="text-sm text-gray-500 mt-1">Confidence + sources on the left, "Read in chat" on the right. Sources open on click. Each source is a hyperlink.</p>
+  </header>
+
+  <!-- Default state: collapsed -->
+  <section class="card">
+    <div class="label mb-3">Collapsed</div>
+    <div class="flex justify-end">
+      <div class="w-full" style="max-width:520px;">
+        <div class="bubble">
+          <p>Yes! Here's a quick rundown of <strong>Contentpen pricing</strong>:</p>
+          <ul class="list-disc pl-5 mt-2 text-[13.5px] opacity-95">
+            <li>Starter — $39/month (10 articles + 30 AI images)</li>
+            <li>Premium — $79/month</li>
+            <li>Agency — $199/month</li>
+          </ul>
+          <p class="mt-2">Corporate users and agencies can save up to <strong>$716/year</strong> on annual plans.</p>
+        </div>
+
+        <div class="mt-1.5 footer-row">
+          <div class="footer-left">
+            <span class="pill" title="AI confidence score">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4Z"/></svg>
+              84% confident
+            </span>
+            <button class="chip" type="button" aria-expanded="false" data-toggle="sources1" aria-controls="sources1">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              3 sources
+              <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <span class="read">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 12 8 17 15 10"/><polyline points="11 12 16 17 23 6"/></svg>
+            Read in chat
+          </span>
+        </div>
+
+        <div id="sources1" class="panel mt-1.5">
+          <div class="source-card">
+            <a class="source-link" href="#" target="_blank" rel="noopener">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span class="src-title">The future of blog writing services: AI vs traditional writers</span>
+              <svg class="external" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+            <a class="source-link" href="#" target="_blank" rel="noopener">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span class="src-title">Top 10 Wordtune Alternatives in 2026 (Better and Cheaper)</span>
+              <svg class="external" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+            <a class="source-link" href="#" target="_blank" rel="noopener">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span class="src-title">12 best Scalenut alternatives in 2026: Tested and reviewed</span>
+              <svg class="external" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="mt-4 text-xs text-gray-500">Click <strong>3 sources</strong> to expand. Each row is a real link that opens the help-center article.</p>
+  </section>
+
+  <!-- Pre-expanded state for visual reference -->
+  <section class="card">
+    <div class="label mb-3">Expanded</div>
+    <div class="flex justify-end">
+      <div class="w-full" style="max-width:520px;">
+        <div class="bubble">
+          <p>Yes! Here's a quick rundown of <strong>Contentpen pricing</strong>:</p>
+          <ul class="list-disc pl-5 mt-2 text-[13.5px] opacity-95">
+            <li>Starter — $39/month (10 articles + 30 AI images)</li>
+            <li>Premium — $79/month</li>
+            <li>Agency — $199/month</li>
+          </ul>
+        </div>
+
+        <div class="mt-1.5 footer-row">
+          <div class="footer-left">
+            <span class="pill">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4Z"/></svg>
+              84% confident
+            </span>
+            <button class="chip" type="button" aria-expanded="true" data-toggle="sources2" aria-controls="sources2">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              3 sources
+              <svg class="chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <span class="read">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 12 8 17 15 10"/><polyline points="11 12 16 17 23 6"/></svg>
+            Read in chat
+          </span>
+        </div>
+
+        <div id="sources2" class="panel open mt-1.5">
+          <div class="source-card">
+            <a class="source-link" href="#" target="_blank" rel="noopener">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span class="src-title">The future of blog writing services: AI vs traditional writers</span>
+              <svg class="external" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+            <a class="source-link" href="#" target="_blank" rel="noopener">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span class="src-title">Top 10 Wordtune Alternatives in 2026 (Better and Cheaper)</span>
+              <svg class="external" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+            <a class="source-link" href="#" target="_blank" rel="noopener">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span class="src-title">12 best Scalenut alternatives in 2026: Tested and reviewed</span>
+              <svg class="external" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="text-center text-xs text-gray-500 pt-2">Layout matches the real bubble width (max-width 520px). When you're happy, I'll wire this into <code>MessageBubble.tsx</code>.</p>
+</div>
+
+<script>
+  document.querySelectorAll('[data-toggle]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-toggle');
+      const panel = document.getElementById(id);
+      const open = panel.classList.toggle('open');
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,113 @@
+name: Email E2E (MailSlurp)
+
+# Real-provider email tests via MailSlurp + Postmark staging. See
+# `docs/test-suite-ci-email-plan.md` Phase 6 / Scenarios A–G.
+#
+# Runs:
+# - Daily schedule (03:30 UTC, after Nightly).
+# - Manual workflow_dispatch.
+# - NOT on pull_request — secrets are not available to forked PRs and these
+#   tests cost money. To run pre-merge from an internal branch, use
+#   workflow_dispatch and pass the branch name.
+#
+# Behavior when secrets are missing:
+# - Job exits early with a clear "secrets-missing" status, NOT a failure.
+#   This keeps the schedule from going red while MailSlurp/Postmark are
+#   being provisioned.
+#
+# Required repo/org secrets (set these once before promoting):
+# - MAILSLURP_API_KEY        — MailSlurp account API key
+# - POSTMARK_REPLY_SERVER_TOKEN — Postmark server token for support replies
+# - POSTMARK_REPLY_FROM_EMAIL — verified sender for support replies
+# - POSTMARK_INBOUND_DOMAIN  — domain whose MX points at staging API
+# - SUPPORT_REPLY_DOMAIN     — domain for Reply-To threading
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to run against'
+        required: false
+        default: 'develop'
+
+concurrency:
+  group: email-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  preflight:
+    name: Check secrets
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 2
+    outputs:
+      have_secrets: ${{ steps.check.outputs.have_secrets }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          MAILSLURP_API_KEY: ${{ secrets.MAILSLURP_API_KEY }}
+          POSTMARK_REPLY_SERVER_TOKEN: ${{ secrets.POSTMARK_REPLY_SERVER_TOKEN }}
+          POSTMARK_REPLY_FROM_EMAIL: ${{ secrets.POSTMARK_REPLY_FROM_EMAIL }}
+        run: |
+          if [ -n "$MAILSLURP_API_KEY" ] && [ -n "$POSTMARK_REPLY_SERVER_TOKEN" ] && [ -n "$POSTMARK_REPLY_FROM_EMAIL" ]; then
+            echo "have_secrets=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::email-e2e secrets present — running suite"
+          else
+            echo "have_secrets=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::email-e2e secrets missing — skipping (this is expected until secrets are provisioned)"
+          fi
+
+  # Scenario suite. Scenario names use `TestMailSlurpScenario...` so failures
+  # report the specific behavior that broke.
+  #
+  # Scenarios map to docs/test-suite-ci-email-plan.md Phase 6 as they land.
+  # Test files use the `email_e2e` build tag and are kept out of the
+  # default unit-test path because they send real provider email.
+  scenarios:
+    name: MailSlurp scenarios
+    needs: preflight
+    if: needs.preflight.outputs.have_secrets == 'true'
+    runs-on: arc-runners-helpin-ai
+    # Real email is slow because delivery polling waits on external providers.
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: '1'
+      MAILSLURP_API_KEY: ${{ secrets.MAILSLURP_API_KEY }}
+      POSTMARK_REPLY_SERVER_TOKEN: ${{ secrets.POSTMARK_REPLY_SERVER_TOKEN }}
+      POSTMARK_REPLY_FROM_EMAIL: ${{ secrets.POSTMARK_REPLY_FROM_EMAIL }}
+      POSTMARK_INBOUND_DOMAIN: ${{ secrets.POSTMARK_INBOUND_DOMAIN }}
+      SUPPORT_REPLY_DOMAIN: ${{ secrets.SUPPORT_REPLY_DOMAIN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Verify gcc available (CGO requires it)
+        run: |
+          if ! command -v gcc >/dev/null 2>&1; then
+            echo "::warning::gcc not found; installing gcc"
+            (command -v sudo >/dev/null 2>&1 && sudo apt-get update && sudo apt-get install -y gcc) \
+              || (apt-get update && apt-get install -y gcc) \
+              || echo "::error::could not install gcc — CGO tests will fail"
+          fi
+          gcc --version || true
+      - name: Run MailSlurp scenarios
+        working-directory: server
+        run: |
+          if go test -tags=email_e2e -run='^TestMailSlurpScenario' ./internal/service 2>&1; then
+            echo "::notice::MailSlurp scenarios passed"
+          else
+            STATUS=$?
+            # 5xx from MailSlurp / Postmark surfaces as `t.Skip` via the
+            # plan's `skipOnProviderError` helper. A non-skip failure means
+            # actual product breakage and should fail the job.
+            echo "::warning::MailSlurp scenarios exited with status $STATUS"
+            exit $STATUS
+          fi
