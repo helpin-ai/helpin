@@ -69,6 +69,13 @@ const markdownComponents = {
       <table>{children}</table>
     </div>
   ),
+  img: ({ className, loading, ...props }: ComponentPropsWithoutRef<'img'>) => (
+    <img
+      {...props}
+      loading={loading ?? 'lazy'}
+      className={`max-h-60 max-w-full rounded-lg object-cover ${className ?? ''}`.trim()}
+    />
+  ),
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -251,6 +258,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
+  const hasDisplayContent = displayContent.trim().length > 0;
   const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
   const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
 
@@ -316,6 +324,78 @@ export const MessageBubble = memo(function MessageBubble({
       .join('\n');
     restoreComposerDraft(`${quoted}\n\n`);
   }, [displayContent, restoreComposerDraft]);
+
+  const renderFileAttachments = (tone: 'default' | 'note' = 'default', className = '') => {
+    if (fileAttachments.length === 0) return null;
+
+    const linkClassName = tone === 'note'
+      ? 'flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-100/40 px-3 py-2 text-xs text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-100 dark:hover:bg-amber-900/30'
+      : 'flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/50';
+
+    return (
+      <div className={`${className} space-y-1.5`.trim()}>
+        {fileAttachments.map((att) => (
+          <a
+            key={att.id}
+            href={att.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={linkClassName}
+          >
+            <AttachmentIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />
+            <span className="truncate font-medium">{att.file_name}</span>
+            <span className="shrink-0 opacity-60">{formatFileSize(att.file_size)}</span>
+            <Download04Icon className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
+          </a>
+        ))}
+      </div>
+    );
+  };
+
+  const renderImageAttachments = (className = '') => {
+    if (imageAttachments.length === 0) return null;
+
+    return (
+      <div className={`${className} space-y-1.5`.trim()}>
+        {imageAttachments.map((att) => (
+          <button
+            key={att.id}
+            type="button"
+            onClick={() => setLightboxSrc(att.url)}
+            className="block cursor-zoom-in overflow-hidden rounded-xl transition-opacity hover:opacity-90"
+          >
+            <img
+              src={att.url}
+              alt={att.file_name}
+              className="max-h-60 max-w-full rounded-xl object-cover"
+              loading="lazy"
+            />
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const lightboxPortal = lightboxSrc ? createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={() => setLightboxSrc(null)}
+    >
+      <button
+        onClick={() => setLightboxSrc(null)}
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
+      >
+        <Cancel01Icon className="h-5 w-5" />
+      </button>
+      <img
+        src={lightboxSrc}
+        alt="Preview"
+        className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>,
+    document.body,
+  ) : null;
 
   const resolvedAvatarUrl = message.sender_avatar_url
     ?? fallbackAvatarUrl
@@ -456,31 +536,38 @@ export const MessageBubble = memo(function MessageBubble({
   // ── Internal note: right-aligned card with amber accent ──
   if (isInternal) {
     return (
-      <div className={`flex justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
-        <div className="max-w-[85%]">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
-                <div className="mb-1.5 flex items-center gap-1.5">
-                  <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                    <span className="font-semibold">{resolvedSenderName}</span>
-                    <span className="font-normal"> left a private note</span>
-                  </span>
-                </div>
-                <div className="prose-chat text-sm leading-relaxed text-amber-900 dark:text-amber-200">
-                  {mentionParts ? (
-                    <p className="whitespace-pre-wrap">{mentionParts}</p>
-                  ) : (
-                    <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
+      <>
+        <div className={`flex justify-end ${isConsecutive ? 'mt-1' : 'mt-5'}`}>
+          <div className="max-w-[85%]">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="rounded-lg border-r-[3px] border-r-amber-400 bg-amber-50 px-4 py-2.5 [overflow-wrap:anywhere] dark:bg-amber-950/20">
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <StickyNote01Icon className="h-3 w-3 text-amber-500 dark:text-amber-400" />
+                    <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                      <span className="font-semibold">{resolvedSenderName}</span>
+                      <span className="font-normal"> left a private note</span>
+                    </span>
+                  </div>
+                  {hasDisplayContent && (
+                    <div className="prose-chat text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+                      {mentionParts ? (
+                        <p className="whitespace-pre-wrap">{mentionParts}</p>
+                      ) : (
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
+                      )}
+                    </div>
                   )}
+                  {renderFileAttachments('note', hasDisplayContent ? 'mt-2' : 'mt-1.5')}
+                  {renderImageAttachments(hasDisplayContent || fileAttachments.length > 0 ? 'mt-2' : 'mt-1.5')}
                 </div>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="top">{tooltipContent}</TooltipContent>
-          </Tooltip>
+              </TooltipTrigger>
+              <TooltipContent side="top">{tooltipContent}</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-      </div>
+        {lightboxPortal}
+      </>
     );
   }
 
@@ -578,22 +665,7 @@ export const MessageBubble = memo(function MessageBubble({
                     )
                   )}
                   {fileAttachments.length > 0 && (
-                    <div className={`${displayContent ? 'mt-2' : ''} space-y-1.5`}>
-                      {fileAttachments.map((att) => (
-                        <a
-                          key={att.id}
-                          href={att.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground transition-colors hover:bg-muted/50"
-                        >
-                          <AttachmentIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                          <span className="truncate font-medium">{att.file_name}</span>
-                          <span className="shrink-0 opacity-60">{formatFileSize(att.file_size)}</span>
-                          <Download04Icon className="ml-auto h-3.5 w-3.5 shrink-0 opacity-60" />
-                        </a>
-                      ))}
-                    </div>
+                    renderFileAttachments('default', displayContent ? 'mt-2' : '')
                   )}
                   {linkPreviews.length > 0 && (
                     <div className={`${displayContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
@@ -615,23 +687,7 @@ export const MessageBubble = memo(function MessageBubble({
 
           {/* Image attachments: outside the bubble, clickable for preview */}
           {imageAttachments.length > 0 && (
-            <div className={`${showBubble ? 'mt-1.5' : ''} space-y-1.5`}>
-              {imageAttachments.map((att) => (
-                <button
-                  key={att.id}
-                  type="button"
-                  onClick={() => setLightboxSrc(att.url)}
-                  className="block cursor-zoom-in overflow-hidden rounded-xl transition-opacity hover:opacity-90"
-                >
-                  <img
-                    src={att.url}
-                    alt={att.file_name}
-                    className="max-h-60 max-w-full rounded-xl object-cover"
-                    loading="lazy"
-                  />
-                </button>
-              ))}
-            </div>
+            renderImageAttachments(showBubble ? 'mt-1.5' : '')
           )}
         </div>
         </MessageActionsContextMenu>
@@ -668,26 +724,7 @@ export const MessageBubble = memo(function MessageBubble({
       />
 
       {/* Lightbox modal — rendered in portal for full-screen overlay */}
-      {lightboxSrc && createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-sm animate-in fade-in duration-150"
-          onClick={() => setLightboxSrc(null)}
-        >
-          <button
-            onClick={() => setLightboxSrc(null)}
-            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
-          >
-            <Cancel01Icon className="h-5 w-5" />
-          </button>
-          <img
-            src={lightboxSrc}
-            alt="Preview"
-            className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>,
-        document.body,
-      )}
+      {lightboxPortal}
 
       {/* Status below the bubble row — outside the avatar alignment */}
       {(hasStatusBelow || hasCancellableFooter) && (

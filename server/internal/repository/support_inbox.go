@@ -88,6 +88,37 @@ func (r *SupportMessageRepository) GetByIDs(ctx context.Context, ids []string) (
 	return messages, nil
 }
 
+// ListEmailFallbackReconciliationCandidates returns recent outbound replies
+// that still need offline email fallback processing. The service layer performs
+// the final per-workspace delay, duplicate-log, and presence checks before
+// sending.
+func (r *SupportMessageRepository) ListEmailFallbackReconciliationCandidates(ctx context.Context, after, before time.Time, limit int) ([]model.SupportMessage, error) {
+	if limit < 1 || limit > 1000 {
+		limit = 25
+	}
+	var messages []model.SupportMessage
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportMessage{}).
+		Joins("JOIN support_conversations sc ON sc.id = support_messages.conversation_id AND sc.workspace_id = support_messages.workspace_id").
+		Where("support_messages.email_notified_at IS NULL").
+		Where("support_messages.is_internal = ?", false).
+		Where("COALESCE(NULLIF(support_messages.message_type, ''), 'reply') = ?", "reply").
+		Where("support_messages.sender_type <> ?", "customer").
+		Where("support_messages.created_at <= ?", before).
+		Where("support_messages.created_at >= ?", after).
+		Where("(support_messages.cancellable_until IS NULL OR support_messages.cancellable_until <= ?)", before).
+		Where("sc.customer_email IS NOT NULL AND TRIM(sc.customer_email) <> ''").
+		Where("sc.email_unsubscribed = ?", false).
+		Where("LOWER(sc.status) NOT IN ?", []string{"closed", "resolved", "spam"}).
+		Where("(sc.contact_last_seen_at IS NULL OR support_messages.created_at > sc.contact_last_seen_at)").
+		Order("support_messages.created_at ASC").
+		Limit(limit).
+		Find(&messages).Error; err != nil {
+		return nil, fmt.Errorf("list email fallback reconciliation candidates: %w", err)
+	}
+	return messages, nil
+}
+
 // UpdateEmailNotifiedAt stamps email_notified_at for the provided message IDs.
 func (r *SupportMessageRepository) UpdateEmailNotifiedAt(ctx context.Context, ids []string, notifiedAt time.Time) error {
 	if len(ids) == 0 {

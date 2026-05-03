@@ -300,8 +300,8 @@ describe('ChatWindow', () => {
     expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
   });
 
-  it('shows talk to human when enabled and the conversation is idle', () => {
-    const { getByText } = render(
+  it('does not show talk to human on the first customer message', () => {
+    const { queryByText } = render(
       <ChatWindow
         config={{
           ...baseConfig,
@@ -311,6 +311,42 @@ describe('ChatWindow', () => {
           },
         }}
         messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByText('Talk to a human')).toBeNull();
+  });
+
+  it('shows talk to human when enabled after an AI reply and the conversation is idle', () => {
+    const { getByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'ai' as const,
+            content: 'I found the setup steps.',
+            senderName: 'Helpin AI',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
         isOpen={true}
         onClose={() => {}}
         onSendMessage={() => {}}
@@ -338,7 +374,18 @@ describe('ChatWindow', () => {
             escalationMessage: "I'm handing this over to a human teammate now.",
           },
         }}
-        messages={[sampleMessage]}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'ai' as const,
+            content: 'I can help with that.',
+            senderName: 'Helpin AI',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
         isOpen={true}
         onClose={() => {}}
         onSendMessage={() => {}}

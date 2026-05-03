@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowRight02Icon, BotIcon, ArrowDown01Icon, InboxIcon, PencilEdit01Icon, PlusSignIcon, Settings02Icon, SparklesIcon, Delete01Icon, WorkflowSquare01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { TeamInboxDialog } from '@/components/support/TeamInboxDialog';
@@ -280,6 +280,132 @@ function RuleDialog({
   );
 }
 
+function RoutingSection({
+  id,
+  title,
+  description,
+  icon,
+  status,
+  action,
+  expanded,
+  onToggle,
+  children,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  icon: ReactNode;
+  status?: ReactNode;
+  action?: ReactNode;
+  expanded: boolean;
+  onToggle: (id: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex items-center border-b">
+        <button
+          type="button"
+          onClick={() => onToggle(id)}
+          className="flex min-w-0 flex-1 items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/35"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+            {icon}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-foreground">{title}</span>
+            <span className="mt-0.5 block text-sm text-muted-foreground">{description}</span>
+          </span>
+          {status}
+          <ArrowDown01Icon className={cn(
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150',
+            expanded && 'rotate-180',
+          )} />
+        </button>
+        {action ? <div className="shrink-0 pr-4">{action}</div> : null}
+      </div>
+      <div className="accordion-animate" data-open={expanded}>
+        <div>{children}</div>
+      </div>
+    </section>
+  );
+}
+
+function RoutingSettingRow({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('grid gap-4 border-b px-5 py-4 last:border-b-0 md:grid-cols-[minmax(180px,0.42fr)_1fr]', className)}>
+      <div className="min-w-0">
+        <Label className="text-sm font-medium">{title}</Label>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+      </div>
+      <div className="min-w-0 md:justify-self-stretch">{children}</div>
+    </div>
+  );
+}
+
+function ConfidenceThresholdControl({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: number;
+  disabled: boolean;
+  onChange: (value: number) => void;
+}) {
+  const percent = Math.round(value * 100);
+  const fillPercent = Math.max(0, Math.min(100, ((value - 0.5) / 0.5) * 100));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-muted-foreground">Minimum score for auto-routing</span>
+        <span className="text-sm font-medium tabular-nums text-foreground">{percent}%</span>
+      </div>
+      <div className="relative h-2 w-full">
+        <div className="absolute inset-y-0 left-0 right-0 rounded-full bg-border" />
+        <div
+          className="absolute inset-y-0 left-0 rounded-full bg-foreground"
+          style={{ width: `${fillPercent}%` }}
+        />
+        <input
+          type="range"
+          min="0.5"
+          max="1"
+          step="0.01"
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="absolute inset-0 h-full w-full cursor-pointer appearance-none bg-transparent accent-foreground disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-background [&::-webkit-slider-thumb]:bg-foreground [&::-webkit-slider-thumb]:shadow [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-background [&::-moz-range-thumb]:bg-foreground"
+        />
+      </div>
+      <div className="grid grid-cols-3 gap-3 text-xs text-muted-foreground">
+        <div>
+          <p className="font-medium text-foreground">Low <span className="font-normal text-muted-foreground">(Manual Review)</span></p>
+          <p>Most matches surface as inline suggestions.</p>
+        </div>
+        <div className="text-center">
+          <p className="font-medium text-foreground">Balanced</p>
+          <p>Confident matches auto-route, the rest stay inline.</p>
+        </div>
+        <div className="text-right">
+          <p className="font-medium text-foreground">Aggressive <span className="font-normal text-muted-foreground">(Auto-routing)</span></p>
+          <p>Lean into auto-move, fewer manual reviews.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main component ──────────────────────────────────────────────────── */
 
 export function ConversationRoutingTab({ workspaceId }: { workspaceId: string }) {
@@ -299,12 +425,22 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
 
   const [draft, setDraft] = useState<RoutingSettingsDraft>(DEFAULT_ROUTING_SETTINGS);
   const [editingMailbox, setEditingMailbox] = useState<SupportMailbox | null>(null);
+  const [mailboxDialogOpen, setMailboxDialogOpen] = useState(false);
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<SupportTriageRule | null>(null);
 
+  const openCreateMailbox = () => {
+    setEditingMailbox(null);
+    setMailboxDialogOpen(true);
+  };
+  const openEditMailbox = (mailbox: SupportMailbox) => {
+    setEditingMailbox(mailbox);
+    setMailboxDialogOpen(true);
+  };
+
   // Accordion state
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['routing-rules', 'ai-triage']),
+    new Set(['inbox-catalog', 'routing-rules', 'ai-triage', 'advanced']),
   );
   const toggleSection = (id: string) => {
     setExpandedSections((prev) => {
@@ -380,7 +516,7 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
     <div className="space-y-3">
       {/* Floating save bar */}
       {isDirty && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur">
           <Badge variant="secondary">Unsaved changes</Badge>
           <Button size="sm" onClick={handleSaveSettings} disabled={updateSettings.isPending}>
             {updateSettings.isPending ? 'Saving...' : 'Save'}
@@ -388,446 +524,352 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
         </div>
       )}
 
-      {/* ── Pipeline overview ────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 rounded-lg border border-dashed border-border/80 bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">How routing works:</span>
-        <span>Rules</span>
-        <ArrowRight02Icon className="h-3 w-3 shrink-0" />
-        <span>AI Triage</span>
-        <ArrowRight02Icon className="h-3 w-3 shrink-0" />
-        <span>Fallback Inbox</span>
-      </div>
+      <RoutingSection
+        id="inbox-catalog"
+        title="Inboxes & Routing Prompts"
+        description="Where conversations land and how AI identifies each inbox."
+        icon={<InboxIcon className="h-4 w-4" />}
+        status={<Badge variant="secondary" className="mr-2">{activeMailboxes.length + 1}</Badge>}
+        action={(
+          <Button size="sm" variant="outline" onClick={openCreateMailbox}>
+            <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />
+            Add Inbox
+          </Button>
+        )}
+        expanded={isExpanded('inbox-catalog')}
+        onToggle={toggleSection}
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Inbox</TableHead>
+              <TableHead>Eligible</TableHead>
+              <TableHead>Routing Prompt</TableHead>
+              <TableHead className="w-[100px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell>
+                <div className="font-medium">Shared Inbox</div>
+                <div className="text-xs text-muted-foreground">Default fallback queue</div>
+              </TableCell>
+              <TableCell><Badge variant="secondary">Always</Badge></TableCell>
+              <TableCell className="max-w-[360px] whitespace-normal text-sm text-muted-foreground">
+                General support and uncategorized conversations.
+              </TableCell>
+              <TableCell />
+            </TableRow>
+            {activeMailboxes.map((mailbox) => (
+              <TableRow key={mailbox.id}>
+                <TableCell>
+                  <div className="font-medium">{mailbox.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    #{mailbox.handle}
+                    {mailbox.linked_team_name ? ` · ${mailbox.linked_team_name}` : ''}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={mailbox.triage_eligible ? 'secondary' : 'outline'}>
+                    {mailbox.triage_eligible ? 'Yes' : 'No'}
+                  </Badge>
+                </TableCell>
+                <TableCell className="max-w-[360px] whitespace-normal text-sm text-muted-foreground">
+                  {mailbox.routing_prompt?.trim() || mailbox.description?.trim() || 'No routing prompt configured.'}
+                </TableCell>
+                <TableCell>
+                  <Button variant="ghost" size="sm" onClick={() => openEditMailbox(mailbox)}>
+                    <PencilEdit01Icon className="mr-1.5 h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <div className="flex items-center justify-center border-t px-5 py-3">
+          <Button variant="ghost" size="sm" onClick={openCreateMailbox} className="text-muted-foreground hover:text-foreground">
+            <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />
+            Add Inbox
+          </Button>
+        </div>
+      </RoutingSection>
 
-      {/* ── 1. Routing Rules ─────────────────────────────────────────── */}
-      <div className={cn(
-        'overflow-hidden rounded-lg border bg-card transition-colors',
-        isExpanded('routing-rules') ? 'border-primary/20' : 'border-border/60',
-      )}>
-        <div className="flex items-center">
-          <button
-            type="button"
-            onClick={() => toggleSection('routing-rules')}
-            className="flex flex-1 items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+      <RoutingSection
+        id="routing-rules"
+        title="Routing Rules"
+        description="Exact-match rules that run first, before AI triage."
+        icon={<WorkflowSquare01Icon className="h-4 w-4" />}
+        status={rules.length > 0 ? <Badge variant="secondary" className="mr-2">{rules.length}</Badge> : null}
+        action={(
+          <Button size="sm" onClick={openCreateRule} disabled={activeMailboxes.length === 0}>
+            <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />
+            New Rule
+          </Button>
+        )}
+        expanded={isExpanded('routing-rules')}
+        onToggle={toggleSection}
+      >
+        {rules.length === 0 ? (
+          <div className="flex min-h-[200px] flex-col items-center justify-center px-6 py-12 text-center">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
               <WorkflowSquare01Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium">Routing Rules</p>
-              <p className="text-sm text-muted-foreground">Exact-match rules that run first</p>
-            </div>
-            {rules.length > 0 && <Badge variant="secondary" className="mr-2">{rules.length}</Badge>}
-            <ArrowDown01Icon className={cn(
-              'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
-              isExpanded('routing-rules') && 'rotate-180',
-            )} />
-          </button>
-          <div className="pr-4">
-            <Button size="sm" onClick={openCreateRule} disabled={activeMailboxes.length === 0}>
+            </span>
+            <p className="mt-4 text-sm font-medium text-foreground">No routing rules yet</p>
+            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+              Add rules for deterministic matches before AI triage runs.
+            </p>
+            <Button className="mt-5" variant="outline" size="sm" onClick={openCreateRule} disabled={activeMailboxes.length === 0}>
               <PlusSignIcon className="mr-1.5 h-3.5 w-3.5" />
               New Rule
             </Button>
           </div>
-        </div>
-        <div className="accordion-animate" data-open={isExpanded('routing-rules')}>
-          <div>
-            <div className="border-t border-border">
-              {rules.length === 0 ? (
-                <div className="px-6 py-10 text-center">
-                  <SparklesIcon className="mx-auto h-6 w-6 text-muted-foreground/60" />
-                  <p className="mt-3 text-sm font-medium">No routing rules yet</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Add rules for deterministic matches before AI triage runs.
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {rules.map((rule) => (
-                    <div key={rule.id} className={cn('px-5 py-4', !rule.active && 'opacity-60')}>
-                      {/* Header row: priority badge, name, status, actions */}
-                      <div className="flex items-start gap-3">
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
-                          {rule.priority}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium">{rule.name}</span>
-                            <span className={cn(
-                              'inline-flex h-1.5 w-1.5 rounded-full',
-                              rule.active ? 'bg-emerald-500' : 'bg-muted-foreground/40',
-                            )} />
-                            <span className="text-xs text-muted-foreground">
-                              {rule.active ? 'Active' : 'Inactive'}
-                            </span>
-                          </div>
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            Route to <span className="font-medium text-foreground">{rule.target_mailbox_name ?? 'Unknown inbox'}</span>
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditRule(rule)}>
-                            <PencilEdit01Icon className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteRule(rule)}>
-                            <Delete01Icon className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Condition chips */}
-                      <div className="mt-3 space-y-2 pl-10">
-                        {(rule.conditions.phrase_contains?.length ?? 0) > 0 && (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">Text contains:</span>
-                            {rule.conditions.phrase_contains.map((phrase) => (
-                              <Badge key={phrase} variant="outline" className="h-5 rounded-full px-2 text-[11px] font-normal">
-                                {phrase}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                        {(rule.conditions.email_domain_equals?.length ?? 0) > 0 && (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-xs text-muted-foreground">Email domain:</span>
-                            {rule.conditions.email_domain_equals.map((domain) => (
-                              <Badge key={domain} variant="outline" className="h-5 rounded-full px-2 text-[11px] font-normal">
-                                {domain}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Footer hint */}
-                  <div className="flex items-center justify-center gap-2 px-5 py-3 text-xs text-muted-foreground">
-                    <SparklesIcon className="h-3 w-3" />
-                    <span>No more rules — AI triage handles the rest</span>
+        ) : (
+          <div className="divide-y">
+            {rules.map((rule) => (
+              <div key={rule.id} className={cn('grid gap-4 px-5 py-4 md:grid-cols-[42px_minmax(0,1fr)_auto]', !rule.active && 'opacity-65')}>
+                <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted text-xs font-medium text-muted-foreground">
+                  {rule.priority}
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">{rule.name}</p>
+                    <Badge variant={rule.active ? 'secondary' : 'outline'} className="h-5 px-2 text-[11px]">
+                      {rule.active ? 'Active' : 'Inactive'}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      Routes to {rule.target_mailbox_name ?? 'Unknown inbox'}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(rule.conditions.phrase_contains ?? []).map((phrase) => (
+                      <Badge key={phrase} variant="outline" className="h-6 px-2 text-[11px] font-normal">
+                        Text: {phrase}
+                      </Badge>
+                    ))}
+                    {(rule.conditions.email_domain_equals ?? []).map((domain) => (
+                      <Badge key={domain} variant="outline" className="h-6 px-2 text-[11px] font-normal">
+                        Domain: {domain}
+                      </Badge>
+                    ))}
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 2. AI Triage ─────────────────────────────────────────────── */}
-      <div className={cn(
-        'overflow-hidden rounded-lg border bg-card transition-colors',
-        isExpanded('ai-triage') ? 'border-primary/20' : 'border-border/60',
-      )}>
-        <button
-          type="button"
-          onClick={() => toggleSection('ai-triage')}
-          className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <BotIcon className="h-4 w-4" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">AI Triage</p>
-            <p className="text-sm text-muted-foreground">Classify unmatched conversations by meaning</p>
-          </div>
-          {draft.triage_enabled && <Badge variant="secondary" className="mr-2">On</Badge>}
-          <ArrowDown01Icon className={cn(
-            'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
-            isExpanded('ai-triage') && 'rotate-180',
-          )} />
-        </button>
-        <div className="accordion-animate" data-open={isExpanded('ai-triage')}>
-          <div>
-            <div className="border-t border-border px-6 py-6 space-y-5">
-              {/* Enable toggle */}
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <Label>Enable AI Triage</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Automatically classify new conversations and suggest or assign the best inbox.
-                  </p>
+                <div className="flex items-start justify-end gap-1">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditRule(rule)} aria-label={`Edit ${rule.name}`}>
+                    <PencilEdit01Icon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDeleteRule(rule)} aria-label={`Delete ${rule.name}`}>
+                    <Delete01Icon className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-                <Switch
-                  checked={draft.triage_enabled}
-                  onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_enabled: checked }))}
-                />
               </div>
+            ))}
+          </div>
+        )}
+      </RoutingSection>
 
-              {draft.triage_enabled && (
-                <div className="border-t border-border pt-5 space-y-5">
-                  {/* Channels */}
-                  <div className="space-y-3">
-                    <div>
-                      <Label>Triage Channels</Label>
-                      <p className="text-sm text-muted-foreground">Which conversation sources should AI classify</p>
-                    </div>
-                    <div className="flex flex-wrap gap-x-6 gap-y-2">
-                      <label className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={draft.triage_widget_enabled}
-                          disabled={updateSettings.isPending}
-                          onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_widget_enabled: Boolean(checked) }))}
-                        />
-                        Widget
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={draft.triage_email_enabled}
-                          disabled={updateSettings.isPending}
-                          onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_email_enabled: Boolean(checked) }))}
-                        />
-                        Email
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={draft.triage_internal_enabled}
-                          disabled={updateSettings.isPending}
-                          onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_internal_enabled: Boolean(checked) }))}
-                        />
-                        Internal & API
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Confidence threshold */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>Confidence Threshold</Label>
-                        <p className="text-sm text-muted-foreground">Minimum score for auto-routing</p>
-                      </div>
-                      <span className="text-sm font-medium tabular-nums">
-                        {Math.round(draft.triage_confidence_threshold * 100)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="1"
-                      step="0.01"
-                      value={draft.triage_confidence_threshold}
-                      disabled={updateSettings.isPending}
-                      onChange={(event) => setDraft((c) => ({
-                        ...c,
-                        triage_confidence_threshold: Number(event.target.value),
-                      }))}
-                      className="w-full accent-primary"
-                    />
-                  </div>
-
-                  {/* Auto-move */}
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <Label>Auto-Move Conversations</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Move high-confidence matches automatically. When off, agents see suggestions instead.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={draft.triage_auto_move_enabled}
-                      disabled={updateSettings.isPending}
-                      onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_auto_move_enabled: checked }))}
-                    />
-                  </div>
-                </div>
-              )}
+      <RoutingSection
+        id="ai-triage"
+        title="AI Triage"
+        description="Classify unmatched conversations by meaning."
+        icon={<BotIcon className="h-4 w-4" />}
+        status={draft.triage_enabled ? (
+          <Badge variant="outline" className="mr-2 gap-1.5 border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            On
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="mr-2 gap-1.5 text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+            Off
+          </Badge>
+        )}
+        expanded={isExpanded('ai-triage')}
+        onToggle={toggleSection}
+      >
+        <div className="divide-y">
+          <RoutingSettingRow
+            title="Enable AI Triage"
+            description="Automatically classify new conversations and suggest or assign the best inbox."
+            className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+          >
+            <div className="flex justify-start md:justify-end">
+              <Switch
+                checked={draft.triage_enabled}
+                disabled={updateSettings.isPending}
+                onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_enabled: checked }))}
+              />
             </div>
-          </div>
-        </div>
-      </div>
+          </RoutingSettingRow>
 
-      {/* ── 3. Inbox Catalog ─────────────────────────────────────────── */}
-      <div className={cn(
-        'overflow-hidden rounded-lg border bg-card transition-colors',
-        isExpanded('inbox-catalog') ? 'border-primary/20' : 'border-border/60',
-      )}>
-        <button
-          type="button"
-          onClick={() => toggleSection('inbox-catalog')}
-          className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <InboxIcon className="h-4 w-4" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">Inboxes & Routing Prompts</p>
-            <p className="text-sm text-muted-foreground">Where conversations land and how AI identifies each inbox</p>
-          </div>
-          <ArrowDown01Icon className={cn(
-            'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
-            isExpanded('inbox-catalog') && 'rotate-180',
-          )} />
-        </button>
-        <div className="accordion-animate" data-open={isExpanded('inbox-catalog')}>
-          <div>
-            <div className="border-t border-border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Inbox</TableHead>
-                    <TableHead>Eligible</TableHead>
-                    <TableHead>Routing Prompt</TableHead>
-                    <TableHead className="w-[100px]" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell>
-                      <div className="font-medium">Shared Inbox</div>
-                      <div className="text-xs text-muted-foreground">Default fallback queue</div>
-                    </TableCell>
-                    <TableCell><Badge variant="secondary">Always</Badge></TableCell>
-                    <TableCell className="max-w-[300px] whitespace-normal text-sm text-muted-foreground">
-                      General support and uncategorized conversations.
-                    </TableCell>
-                    <TableCell />
-                  </TableRow>
-                  {activeMailboxes.map((mailbox) => (
-                    <TableRow key={mailbox.id}>
-                      <TableCell>
-                        <div className="font-medium">{mailbox.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          #{mailbox.handle}
-                          {mailbox.linked_team_name ? ` · ${mailbox.linked_team_name}` : ''}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={mailbox.triage_eligible ? 'secondary' : 'outline'}>
-                          {mailbox.triage_eligible ? 'Yes' : 'No'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[300px] whitespace-normal text-sm text-muted-foreground">
-                        {mailbox.routing_prompt?.trim() || mailbox.description?.trim() || 'No routing prompt configured.'}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="sm" onClick={() => setEditingMailbox(mailbox)}>
-                          <PencilEdit01Icon className="mr-1.5 h-3.5 w-3.5" />
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 4. Advanced Settings ──────────────────────────────────────── */}
-      <div className={cn(
-        'overflow-hidden rounded-lg border bg-card transition-colors',
-        isExpanded('advanced') ? 'border-primary/20' : 'border-border/60',
-      )}>
-        <button
-          type="button"
-          onClick={() => toggleSection('advanced')}
-          className="flex w-full items-center gap-4 px-4 py-4 text-left transition-colors hover:bg-muted/40"
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Settings02Icon className="h-4 w-4" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">Advanced Settings</p>
-            <p className="text-sm text-muted-foreground">Fallback behavior, daily limits, and spam prevention</p>
-          </div>
-          <ArrowDown01Icon className={cn(
-            'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
-            isExpanded('advanced') && 'rotate-180',
-          )} />
-        </button>
-        <div className="accordion-animate" data-open={isExpanded('advanced')}>
-          <div>
-            <div className="border-t border-border px-6 py-6 space-y-5">
-              {/* Fallback behavior */}
-              <div className="space-y-2">
-                <Label htmlFor="triage-fallback-behavior">Fallback Behavior</Label>
-                <p className="text-sm text-muted-foreground">
-                  Where unmatched conversations land when AI can't confidently classify them
-                </p>
-                <Select
-                  value={draft.triage_fallback_behavior}
-                  onValueChange={(value: 'shared' | 'default') => setDraft((c) => ({ ...c, triage_fallback_behavior: value }))}
+          <RoutingSettingRow
+            title="Triage Channels"
+            description="Which conversation sources should AI classify."
+            className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+          >
+            <div className={cn('flex flex-wrap justify-start gap-x-6 gap-y-3 md:justify-end', controlsDisabled && 'opacity-55')}>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={draft.triage_widget_enabled}
                   disabled={controlsDisabled}
-                >
-                  <SelectTrigger id="triage-fallback-behavior" className="w-full sm:w-64">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="shared">Keep in Shared Inbox</SelectItem>
-                    <SelectItem value="default">Keep in Default Inbox</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Re-run on meaning change */}
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <Label>Re-Run When Meaning Changes</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Re-classify if a follow-up message changes the topic. Off by default for predictable routing.
-                  </p>
-                </div>
-                <Switch
-                  checked={draft.triage_rerun_on_meaning_change}
-                  disabled={controlsDisabled}
-                  onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_rerun_on_meaning_change: checked }))}
+                  onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_widget_enabled: Boolean(checked) }))}
                 />
-              </div>
-
-              <div className="border-t border-border pt-5 space-y-5">
-                {/* Daily budget */}
-                <div className="space-y-2">
-                  <Label htmlFor="triage-daily-budget">Daily AI Budget</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Maximum AI classifications per day across this workspace
-                  </p>
-                  <Input
-                    id="triage-daily-budget"
-                    type="number"
-                    min={0}
-                    disabled={controlsDisabled}
-                    value={draft.triage_daily_budget}
-                    onChange={(event) => setDraft((c) => ({
-                      ...c,
-                      triage_daily_budget: Math.max(0, Number(event.target.value) || 0),
-                    }))}
-                    className="w-full sm:w-32"
-                  />
-                </div>
-
-                {/* Skip spam */}
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <Label>Skip Spam Conversations</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Don't spend AI budget on conversations already flagged as spam
-                    </p>
-                  </div>
-                  <Switch
-                    checked={draft.triage_skip_spam_conversations}
-                    disabled={controlsDisabled}
-                    onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_skip_spam_conversations: checked }))}
-                  />
-                </div>
-
-                {/* Deduplicate */}
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <Label>Deduplicate First Messages</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Reuse recent classifications when identical messages arrive in a burst
-                    </p>
-                  </div>
-                  <Switch
-                    checked={draft.triage_deduplicate_first_message}
-                    disabled={controlsDisabled}
-                    onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_deduplicate_first_message: checked }))}
-                  />
-                </div>
-              </div>
+                Widget
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={draft.triage_email_enabled}
+                  disabled={controlsDisabled}
+                  onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_email_enabled: Boolean(checked) }))}
+                />
+                Email
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={draft.triage_internal_enabled}
+                  disabled={controlsDisabled}
+                  onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_internal_enabled: Boolean(checked) }))}
+                />
+                Internal & API
+              </label>
             </div>
+          </RoutingSettingRow>
+
+          <RoutingSettingRow title="Confidence Threshold">
+            <ConfidenceThresholdControl
+              value={draft.triage_confidence_threshold}
+              disabled={controlsDisabled}
+              onChange={(value) => setDraft((c) => ({ ...c, triage_confidence_threshold: value }))}
+            />
+          </RoutingSettingRow>
+
+          <RoutingSettingRow
+            title="Auto-Move Conversations"
+            description="Move high-confidence matches automatically. When off, agents see suggestions instead."
+            className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+          >
+            <div className="flex justify-start md:justify-end">
+              <Switch
+                checked={draft.triage_auto_move_enabled}
+                disabled={controlsDisabled}
+                onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_auto_move_enabled: checked }))}
+              />
+            </div>
+          </RoutingSettingRow>
+        </div>
+      </RoutingSection>
+
+      <RoutingSection
+        id="advanced"
+        title="Advanced Settings"
+        description="Fallback behavior, daily limits, and spam prevention."
+        icon={<Settings02Icon className="h-4 w-4" />}
+        expanded={isExpanded('advanced')}
+        onToggle={toggleSection}
+      >
+        <div className="divide-y">
+          <RoutingSettingRow
+            title="Fallback Behavior"
+            description="Where unmatched conversations land."
+            className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+          >
+            <div className="flex justify-start md:justify-end">
+              <Select
+                value={draft.triage_fallback_behavior}
+                onValueChange={(value: 'shared' | 'default') => setDraft((c) => ({ ...c, triage_fallback_behavior: value }))}
+                disabled={controlsDisabled}
+              >
+                <SelectTrigger id="triage-fallback-behavior" className="w-full sm:w-64">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="shared">Keep in Shared Inbox</SelectItem>
+                  <SelectItem value="default">Keep in Default Inbox</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </RoutingSettingRow>
+
+          <RoutingSettingRow
+            title="Re-Run When Meaning Changes"
+            description="Re-classify if a follow-up message changes the topic."
+            className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+          >
+            <div className="flex justify-start md:justify-end">
+              <Switch
+                checked={draft.triage_rerun_on_meaning_change}
+                disabled={controlsDisabled}
+                onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_rerun_on_meaning_change: checked }))}
+              />
+            </div>
+          </RoutingSettingRow>
+
+          <RoutingSettingRow
+            title="Daily AI Budget"
+            description="Maximum AI classifications per day across this workspace."
+            className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+          >
+            <div className="flex justify-start md:justify-end">
+              <Input
+                id="triage-daily-budget"
+                type="number"
+                min={0}
+                disabled={controlsDisabled}
+                value={draft.triage_daily_budget}
+                onChange={(event) => setDraft((c) => ({
+                  ...c,
+                  triage_daily_budget: Math.max(0, Number(event.target.value) || 0),
+                }))}
+                className="w-full sm:w-32"
+              />
+            </div>
+          </RoutingSettingRow>
+
+          <RoutingSettingRow
+            title="Skip Spam Conversations"
+            description="Do not spend AI budget on conversations already flagged as spam."
+            className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+          >
+            <div className="flex justify-start md:justify-end">
+              <Switch
+                checked={draft.triage_skip_spam_conversations}
+                disabled={controlsDisabled}
+                onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_skip_spam_conversations: checked }))}
+              />
+            </div>
+          </RoutingSettingRow>
+
+          <RoutingSettingRow
+            title="Deduplicate First Messages"
+            description="Reuse recent classifications when identical messages arrive in a burst."
+            className="md:grid-cols-[minmax(220px,0.42fr)_auto]"
+          >
+            <div className="flex justify-start md:justify-end">
+              <Switch
+                checked={draft.triage_deduplicate_first_message}
+                disabled={controlsDisabled}
+                onCheckedChange={(checked) => setDraft((c) => ({ ...c, triage_deduplicate_first_message: checked }))}
+              />
+            </div>
+          </RoutingSettingRow>
+        </div>
+      </RoutingSection>
+
+      <div className="flex flex-col gap-3 rounded-lg border bg-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border text-muted-foreground">
+            <SparklesIcon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">How it works</p>
+            <p className="text-sm text-muted-foreground">
+              Rules run first <ArrowRight02Icon className="mx-1 inline h-3 w-3" /> AI triage classifies <ArrowRight02Icon className="mx-1 inline h-3 w-3" /> unmatched conversations go to fallback.
+            </p>
           </div>
         </div>
+        <Button variant="outline" size="sm" onClick={() => toggleSection('advanced')}>
+          View routing controls
+        </Button>
       </div>
 
       {/* Dialogs */}
@@ -842,11 +884,10 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
 
       <TeamInboxDialog
         workspaceId={workspaceId}
-        open={!!editingMailbox}
+        open={mailboxDialogOpen}
         onOpenChange={(open) => {
-          if (!open) {
-            setEditingMailbox(null);
-          }
+          setMailboxDialogOpen(open);
+          if (!open) setEditingMailbox(null);
         }}
         mailbox={editingMailbox}
       />

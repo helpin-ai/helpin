@@ -187,6 +187,8 @@ jobs:
             -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/server:prod-latest \
+            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:prod-api \
+            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:prod-api,mode=max \
             --push \
             build-prod-server/server/
           docker buildx build \
@@ -195,6 +197,8 @@ jobs:
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:prod-latest \
+            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:prod-temporal-worker \
+            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:prod-temporal-worker,mode=max \
             --push \
             build-prod-server/server/
           docker buildx build \
@@ -203,6 +207,8 @@ jobs:
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:prod-latest \
+            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:prod-migrate \
+            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:prod-migrate,mode=max \
             --push \
             build-prod-server/server/
 

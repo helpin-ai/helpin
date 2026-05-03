@@ -29,6 +29,27 @@ func TestDefaultSupportInboxSettingsEnableEmailFallback(t *testing.T) {
 	}
 }
 
+func TestParseSettingsForcesEmailFallbackEnabled(t *testing.T) {
+	settings := parseSettings(`{"email_fallback_enabled":false}`)
+
+	if !settings.EmailFallbackEnabled {
+		t.Fatal("expected email fallback to be forced enabled")
+	}
+}
+
+func TestMergeSettingsUpdateCannotDisableEmailFallback(t *testing.T) {
+	current := model.DefaultSupportInboxSettings()
+	disabled := false
+
+	merged := mergeSettingsUpdate(current, model.UpdateInstallationSettingsRequest{
+		EmailFallbackEnabled: &disabled,
+	})
+
+	if !merged.EmailFallbackEnabled {
+		t.Fatal("expected email fallback to remain enabled")
+	}
+}
+
 func TestMergeSettingsUpdateAppliesEmailFallbackFreshnessWindow(t *testing.T) {
 	current := model.DefaultSupportInboxSettings()
 	current.EmailFallbackDelaySecs = 120

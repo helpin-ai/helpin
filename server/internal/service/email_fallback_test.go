@@ -43,6 +43,7 @@ type emailFallbackTestEnv struct {
 	redisServer  *miniredis.Miniredis
 	service      *EmailFallbackService
 	routeRepo    *repository.SupportEmailRouteRepository
+	senderRepo   *repository.SupportEmailSenderRepository
 	messageRepo  *repository.SupportMessageRepository
 	convRepo     *repository.SupportConversationRepository
 	emailLogRepo *repository.SupportEmailLogRepository
@@ -80,6 +81,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 	messageRepo := repository.NewSupportMessageRepository(db)
 	convRepo := repository.NewSupportConversationRepository(db)
 	routeRepo := repository.NewSupportEmailRouteRepository(db)
+	senderRepo := repository.NewSupportEmailSenderRepository(db)
 	emailLogRepo := repository.NewSupportEmailLogRepository(db)
 	webhookRepo := repository.NewSupportEmailWebhookEventRepository(db)
 	installRepo := repository.NewSupportInboxInstallationRepository(db)
@@ -119,6 +121,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 	)
 	supportInboxService := NewSupportInboxService(convRepo, repository.NewSupportMailboxRepository(db), messageRepo, nil, nil, installRepo, sessionRepo, nil, nil, nil, repository.NewCRMContactRepository(db), nil, nil, nil, nil)
 	supportInboxService.SetEmailRouteRepository(routeRepo)
+	supportInboxService.SetEmailSenderRepository(senderRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
 	supportInboxService.SetRouteDomain("on.helpin.email")
 	service.SetSupportInboxService(supportInboxService)
@@ -128,6 +131,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 		redisServer:  redisServer,
 		service:      service,
 		routeRepo:    routeRepo,
+		senderRepo:   senderRepo,
 		messageRepo:  messageRepo,
 		convRepo:     convRepo,
 		emailLogRepo: emailLogRepo,
@@ -519,6 +523,345 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackFromName = "Acme Support"
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666667"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Pricing question",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Alex Agent"),
+		Content:           "We can help with billing.",
+		MessageType:       "reply",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	var attempts []capturedPostmarkRequest
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+			var captured capturedPostmarkRequest
+			if err := json.Unmarshal(body, &captured); err != nil {
+				return nil, err
+			}
+			attempts = append(attempts, captured)
+			if len(attempts) == 1 {
+				return &http.Response{
+					StatusCode: http.StatusUnprocessableEntity,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{
+						"ErrorCode": 300,
+						"Message": "The 'From' address you supplied (inbox@acme.on.helpin.email) is not a Sender Signature on your account."
+					}`)),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-fallback-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
+		t.Fatalf("fire email: %v", err)
+	}
+
+	if len(attempts) != 2 {
+		t.Fatalf("expected branded sender attempt and verified fallback attempt, got %d", len(attempts))
+	}
+	if !strings.Contains(attempts[0].From, "Alex Agent - Acme Support <inbox@acme.on.helpin.email>") {
+		t.Fatalf("unexpected first from: %q", attempts[0].From)
+	}
+	if !strings.Contains(attempts[1].From, "Alex Agent - Acme Support <noreply@example.com>") {
+		t.Fatalf("unexpected fallback from: %q", attempts[1].From)
+	}
+	expectedReplyTo := "conv-" + conversationID + "@replies.helpin.ai"
+	if attempts[0].ReplyTo != expectedReplyTo || attempts[1].ReplyTo != expectedReplyTo {
+		t.Fatalf("reply-to changed across retry: first=%q second=%q", attempts[0].ReplyTo, attempts[1].ReplyTo)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected one outbound log, got %d", len(logs))
+	}
+	if logs[0].FromEmail != "noreply@example.com" {
+		t.Fatalf("expected fallback from in email log, got %q", logs[0].FromEmail)
+	}
+	if logs[0].PostmarkMessageID == nil || *logs[0].PostmarkMessageID != "pm-fallback-1" {
+		t.Fatalf("unexpected postmark message id: %#v", logs[0].PostmarkMessageID)
+	}
+}
+
+func TestEmailFallbackReconcileMissedOutboundReplySendsOnce(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666667"
+	anonymousID := "anon-reconcile"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Missed queue reply",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		ID:                "55555555-5555-5555-5555-555555555555",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Alex Agent"),
+		Content:           "This reply missed the redis queue.",
+		MessageType:       "reply",
+		CreatedAt:         fixedNow.Add(-3 * time.Minute),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	sendCount := 0
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-reconcile-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	sent, err := env.service.ReconcileMissedOutboundEmails(ctx, 10)
+	if err != nil {
+		t.Fatalf("reconcile missed outbound emails: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("expected one reconciled send, got %d", sent)
+	}
+	if sendCount != 1 {
+		t.Fatalf("expected one postmark send, got %d", sendCount)
+	}
+
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded.EmailNotifiedAt == nil {
+		t.Fatal("expected email_notified_at to be set")
+	}
+
+	sent, err = env.service.ReconcileMissedOutboundEmails(ctx, 10)
+	if err != nil {
+		t.Fatalf("second reconcile missed outbound emails: %v", err)
+	}
+	if sent != 0 {
+		t.Fatalf("expected second reconcile to send nothing, got %d", sent)
+	}
+	if sendCount != 1 {
+		t.Fatalf("expected no duplicate postmark send, got %d", sendCount)
+	}
+}
+
+func TestEmailFallbackReconcileSkipsStaleMissedOutboundReply(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666677"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Stale missed queue reply",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		ID:             "55555555-5555-5555-5555-555555555557",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "This reply is too old to reconcile.",
+		MessageType:    "reply",
+		CreatedAt:      fixedNow.Add(-20 * time.Minute),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	env.service.emailClient.SetHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected postmark send for stale reconcile candidate")
+		return nil, nil
+	})})
+
+	sent, err := env.service.ReconcileMissedOutboundEmails(ctx, 10)
+	if err != nil {
+		t.Fatalf("reconcile missed outbound emails: %v", err)
+	}
+	if sent != 0 {
+		t.Fatalf("expected stale reconcile candidate to send nothing, got %d", sent)
+	}
+
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded.EmailNotifiedAt != nil {
+		t.Fatal("did not expect email_notified_at to be set")
+	}
+}
+
+func TestEmailFallbackBackfillSendsStaleMissedOutboundReplyInWindow(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666678"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Bug-window missed reply",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		ID:             "55555555-5555-5555-5555-555555555558",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "This stale reply should be recovered by explicit backfill.",
+		MessageType:    "reply",
+		CreatedAt:      fixedNow.Add(-20 * time.Minute),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	sendCount := 0
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-backfill-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	result, err := env.service.BackfillMissedOutboundEmails(ctx, EmailFallbackBackfillOptions{
+		From:   fixedNow.Add(-30 * time.Minute),
+		To:     fixedNow,
+		Limit:  10,
+		DryRun: false,
+	})
+	if err != nil {
+		t.Fatalf("backfill missed outbound emails: %v", err)
+	}
+	if result.SentMessages != 1 || result.SentConversations != 1 {
+		t.Fatalf("unexpected backfill result: %+v", result)
+	}
+	if sendCount != 1 {
+		t.Fatalf("expected one postmark send, got %d", sendCount)
+	}
+
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded.EmailNotifiedAt == nil {
+		t.Fatal("expected email_notified_at to be set")
+	}
+}
+
 func TestEmailFallbackFireEmailSendsOnlyUnreadEligibleMessages(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -738,7 +1081,7 @@ func TestFreshEmailFallbackMessagesDropsOnlyStaleMessages(t *testing.T) {
 	}
 }
 
-func TestEmailFallbackFireEmailVisitorOnlineUnreadPostpones(t *testing.T) {
+func TestEmailFallbackFireEmailVisitorOnlineUnreadPostponesWithinGraceWindow(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
 	settings.EmailFallbackEnabled = true
@@ -771,7 +1114,7 @@ func TestEmailFallbackFireEmailVisitorOnlineUnreadPostpones(t *testing.T) {
 		SenderType:     "user",
 		Content:        "Unread while online",
 		MessageType:    "reply",
-		CreatedAt:      fixedNow.Add(-time.Minute),
+		CreatedAt:      fixedNow.Add(-120 * time.Second),
 	}
 	if err := env.messageRepo.Create(ctx, msg); err != nil {
 		t.Fatalf("create message: %v", err)
@@ -804,6 +1147,92 @@ func TestEmailFallbackFireEmailVisitorOnlineUnreadPostpones(t *testing.T) {
 		t.Fatalf("check msg list: %v", err)
 	} else if exists != 1 {
 		t.Fatalf("expected msg list to remain, exists=%d", exists)
+	}
+}
+
+func TestEmailFallbackFireEmailVisitorOnlineUnreadSendsAfterGraceWindow(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	settings.EmailFallbackMaxDeliveryAgeSecs = 600
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666672"
+	anonymousID := "anon-online-unread-after-grace"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Unread online after grace",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		SenderType:     "user",
+		Content:        "Unread after online grace",
+		MessageType:    "reply",
+		CreatedAt:      fixedNow.Add(-151 * time.Second),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+	if err := env.redis.ZAdd(ctx, emailFallbackOutboxKey, redis.Z{Score: float64(fixedNow.Unix()), Member: conversationID}).Err(); err != nil {
+		t.Fatalf("seed outbox: %v", err)
+	}
+	if err := env.redis.RPush(ctx, env.service.msgListKey(conversationID), msg.ID).Err(); err != nil {
+		t.Fatalf("seed msg list: %v", err)
+	}
+	if err := env.service.hub.Presence.SetVisitorOnline(ctx, workspaceID, anonymousID, "conn-1"); err != nil {
+		t.Fatalf("set visitor online: %v", err)
+	}
+
+	sendCount := 0
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-online-after-grace",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
+		t.Fatalf("fire email: %v", err)
+	}
+	if sendCount != 1 {
+		t.Fatalf("expected postmark send after online grace, got %d", sendCount)
+	}
+	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	if err != nil {
+		t.Fatalf("reload message: %v", err)
+	}
+	if reloaded.EmailNotifiedAt == nil {
+		t.Fatal("expected email_notified_at to be set")
+	}
+	if exists, err := env.redis.Exists(ctx, emailFallbackOutboxKey, env.service.msgListKey(conversationID)).Result(); err != nil {
+		t.Fatalf("check redis cleanup: %v", err)
+	} else if exists != 0 {
+		t.Fatalf("expected redis cleanup, found %d keys", exists)
 	}
 }
 
@@ -1694,6 +2123,134 @@ func TestEmailFallbackProcessInboundEmailRouteMarksHighSpamScoreAsSpam(t *testin
 	}
 	if score, ok := metadata["postmark_spam_score"].(float64); !ok || score != 5.3 {
 		t.Fatalf("expected postmark_spam_score=5.3, got %#v", metadata["postmark_spam_score"])
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailVerifiesSenderForwarding(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", "22222222-2222-2222-2222-222222222222")
+	sender.ForwardingVerificationToken = "abc123"
+	sender.ForwardingAddress = "verify-abc123@on.helpin.email"
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := env.senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		MailboxHash:       "verify-abc123",
+		OriginalRecipient: sender.ForwardingAddress,
+		To:                sender.Email,
+		FromFull:          model.PostmarkAddress{Email: "customer@example.com", Name: "Taylor"},
+		Subject:           "Forwarding test",
+		MessageID:         "pm-sender-verify-1",
+		StrippedTextReply: "Testing forwarding",
+		Headers: []model.PostmarkHeader{
+			{Name: "To", Value: sender.Email},
+		},
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-sender-verify-1"}`); err != nil {
+		t.Fatalf("process sender verification email: %v", err)
+	}
+
+	updated, err := env.senderRepo.GetByID(ctx, workspaceID, sender.ID)
+	if err != nil {
+		t.Fatalf("reload sender: %v", err)
+	}
+	if updated == nil || updated.ForwardingStatus != supportEmailSenderForwardingVerified || updated.ForwardingVerifiedAt == nil {
+		t.Fatalf("expected sender forwarding verified, got %#v", updated)
+	}
+
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("verification email should not create conversation, got total=%d", total)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailVerifiesSenderForwardingFromRecipientAddress(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", "22222222-2222-2222-2222-222222222222")
+	sender.ForwardingVerificationToken = "abc123"
+	sender.ForwardingAddress = "verify-abc123@on.helpin.email"
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := env.senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		OriginalRecipient: "Forward Verify <" + sender.ForwardingAddress + ">",
+		ToFull: []model.PostmarkAddress{
+			{Email: sender.Email, Name: "Support"},
+		},
+		FromFull:  model.PostmarkAddress{Email: "customer@example.com", Name: "Taylor"},
+		Subject:   "Forwarding test",
+		MessageID: "pm-sender-verify-from-recipient-1",
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-sender-verify-from-recipient-1"}`); err != nil {
+		t.Fatalf("process sender verification email: %v", err)
+	}
+
+	updated, err := env.senderRepo.GetByID(ctx, workspaceID, sender.ID)
+	if err != nil {
+		t.Fatalf("reload sender: %v", err)
+	}
+	if updated == nil || updated.ForwardingStatus != supportEmailSenderForwardingVerified || updated.ForwardingVerifiedAt == nil {
+		t.Fatalf("expected sender forwarding verified from recipient address, got %#v", updated)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailMarksSenderForwardingFailedWithoutSenderEvidence(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	sender := verifiedSender(workspaceID, nil, "support@example.com", "none", "22222222-2222-2222-2222-222222222222")
+	sender.ForwardingVerificationToken = "abc123"
+	sender.ForwardingAddress = "verify-abc123@on.helpin.email"
+	sender.ForwardingStatus = supportEmailSenderForwardingPending
+	if err := env.senderRepo.Create(ctx, sender); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		OriginalRecipient: sender.ForwardingAddress,
+		To:                "not-support@example.com",
+		FromFull:          model.PostmarkAddress{Email: "customer@example.com", Name: "Taylor"},
+		Subject:           "Forwarding test",
+		MessageID:         "pm-sender-verify-failed-1",
+		Headers: []model.PostmarkHeader{
+			{Name: "X-Forwarded-To", Value: "not-support@example.com"},
+		},
+	}
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-sender-verify-failed-1"}`); err != nil {
+		t.Fatalf("process sender verification email: %v", err)
+	}
+
+	updated, err := env.senderRepo.GetByID(ctx, workspaceID, sender.ID)
+	if err != nil {
+		t.Fatalf("reload sender: %v", err)
+	}
+	if updated == nil || updated.ForwardingStatus != supportEmailSenderForwardingFailed || updated.ForwardingLastError == nil {
+		t.Fatalf("expected sender forwarding failed, got %#v", updated)
+	}
+
+	_, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("failed verification email should not create conversation, got total=%d", total)
 	}
 }
 
