@@ -5,7 +5,7 @@ import '@excalidraw/excalidraw/index.css';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { Download04Icon, PencilEdit01Icon, SourceCodeIcon, Delete01Icon } from '@/lib/icons';
+import { Download04Icon, PencilEdit01Icon, Delete01Icon } from '@/lib/icons';
 import {
   excalidrawPngFile,
   exportExcalidrawPngBlob,
@@ -148,63 +148,57 @@ export function ExcalidrawNodeView({ node, updateAttributes, deleteNode, editor 
 
   return (
     <NodeViewWrapper>
-      <div className="not-prose my-6 rounded-md border border-border bg-background shadow-sm" contentEditable={false}>
-        <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <SourceCodeIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="truncate text-sm font-medium text-foreground">{title}</span>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {!isEmpty && (
-              <QuickTooltip label="Download PNG">
+      <div className="not-prose group/excalidraw relative my-6 rounded-md" contentEditable={false}>
+        <div className="pointer-events-none absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/excalidraw:pointer-events-auto group-hover/excalidraw:opacity-100">
+          {!isEmpty && (
+            <QuickTooltip label="Download PNG">
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void downloadPng();
+                }}
+              >
+                <Download04Icon className="h-3.5 w-3.5" />
+              </button>
+            </QuickTooltip>
+          )}
+          {editable && (
+            <>
+              <QuickTooltip label="Edit drawing">
                 <button
                   type="button"
-                  className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  className="flex h-7 w-7 items-center justify-center rounded bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-foreground"
                   onClick={(event) => {
                     event.stopPropagation();
-                    void downloadPng();
+                    openEditor();
                   }}
                 >
-                  <Download04Icon className="h-3.5 w-3.5" />
+                  <PencilEdit01Icon className="h-3.5 w-3.5" />
                 </button>
               </QuickTooltip>
-            )}
-            {editable && (
-              <>
-                <QuickTooltip label="Edit drawing">
-                  <button
-                    type="button"
-                    className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openEditor();
-                    }}
-                  >
-                    <PencilEdit01Icon className="h-3.5 w-3.5" />
-                  </button>
-                </QuickTooltip>
-                <QuickTooltip label="Delete">
-                  <button
-                    type="button"
-                    className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-destructive"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      deleteNode();
-                    }}
-                  >
-                    <Delete01Icon className="h-3.5 w-3.5" />
-                  </button>
-                </QuickTooltip>
-              </>
-            )}
-          </div>
+              <QuickTooltip label="Delete">
+                <button
+                  type="button"
+                  className="flex h-7 w-7 items-center justify-center rounded bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-muted hover:text-destructive"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteNode();
+                  }}
+                >
+                  <Delete01Icon className="h-3.5 w-3.5" />
+                </button>
+              </QuickTooltip>
+            </>
+          )}
         </div>
         <button
           type="button"
-          className="block w-full bg-[linear-gradient(90deg,color-mix(in_oklch,var(--muted)_70%,transparent)_1px,transparent_1px),linear-gradient(color-mix(in_oklch,var(--muted)_70%,transparent)_1px,transparent_1px)] bg-[size:24px_24px] p-4 text-left"
+          className="block w-full p-0 text-left"
           onClick={editable ? openEditor : undefined}
         >
-          <div className="flex min-h-64 items-center justify-center overflow-hidden rounded border border-border/60 bg-background">
+          <div className="flex min-h-64 items-center justify-center overflow-hidden rounded">
             {previewUrl ? (
               <img src={previewUrl} alt={title} className="max-h-[28rem] w-full object-contain" draggable={false} />
             ) : (

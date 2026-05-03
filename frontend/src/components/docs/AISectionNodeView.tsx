@@ -1,10 +1,11 @@
-import { ChangeSet, simplifyChanges } from '@tiptap/pm/changeset';
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import { Transform } from '@tiptap/pm/transform';
+import { DOMSerializer, type Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { AiMagicIcon, Tick01Icon, AlertCircleIcon, SourceCodeIcon } from '@/lib/icons';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAgents } from '@/hooks/queries/useAgents';
 import { docsService } from '@/lib/services/docsService';
 import type { DocsAISectionCandidate } from '@/lib/docsTypes';
@@ -31,8 +32,8 @@ const STATUS_STYLES: Record<AISectionStatus, string> = {
 type AISectionDiffChunk = {
   id: string;
   kind: 'added' | 'removed' | 'changed' | 'unchanged';
-  before?: string;
-  after?: string;
+  beforeHtml?: string;
+  afterHtml?: string;
 };
 
 function candidateSources(candidate: DocsAISectionCandidate | null): CitationSourceRef[] {
@@ -55,23 +56,86 @@ function extractPlainText(value: unknown): string {
   return [ownText, childText].filter(Boolean).join(ownText && childText ? '' : '\n').trim();
 }
 
-function safeTextBetween(node: ProseMirrorNode, from: number, to: number): string {
-  const size = node.content.size;
-  const start = Math.max(0, Math.min(from, size));
-  const end = Math.max(start, Math.min(to, size));
-  return node.textBetween(start, end, '\n', '\n').trim();
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function nodeToHtml(node: ProseMirrorNode): string {
+  try {
+    const serializer = DOMSerializer.fromSchema(node.type.schema);
+    const dom = serializer.serializeNode(node);
+    const container = document.createElement('div');
+    container.appendChild(dom);
+    return container.innerHTML;
+  } catch {
+    return escapeHtml(node.textContent);
+  }
+}
+
+function diffBlocks(beforeNode: ProseMirrorNode, afterNode: ProseMirrorNode): AISectionDiffChunk[] {
+  const beforeBlocks: ProseMirrorNode[] = [];
+  const afterBlocks: ProseMirrorNode[] = [];
+  beforeNode.content.forEach((child) => beforeBlocks.push(child));
+  afterNode.content.forEach((child) => afterBlocks.push(child));
+
+  const beforeKeys = beforeBlocks.map((node) => JSON.stringify(node.toJSON()));
+  const afterKeys = afterBlocks.map((node) => JSON.stringify(node.toJSON()));
+
+  const m = beforeKeys.length;
+  const n = afterKeys.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = beforeKeys[i - 1] === afterKeys[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  const ops: { kind: 'unchanged' | 'added' | 'removed'; node: ProseMirrorNode }[] = [];
+  let i = m;
+  let j = n;
+  while (i > 0 && j > 0) {
+    if (beforeKeys[i - 1] === afterKeys[j - 1]) {
+      ops.unshift({ kind: 'unchanged', node: beforeBlocks[i - 1] });
+      i--; j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      ops.unshift({ kind: 'removed', node: beforeBlocks[i - 1] });
+      i--;
+    } else {
+      ops.unshift({ kind: 'added', node: afterBlocks[j - 1] });
+      j--;
+    }
+  }
+  while (i > 0) { i--; ops.unshift({ kind: 'removed', node: beforeBlocks[i] }); }
+  while (j > 0) { j--; ops.unshift({ kind: 'added', node: afterBlocks[j] }); }
+
+  return ops.map((op, index) => {
+    const html = nodeToHtml(op.node);
+    if (op.kind === 'unchanged') return { id: `b-${index}`, kind: 'unchanged', beforeHtml: html };
+    if (op.kind === 'added') return { id: `b-${index}`, kind: 'added', afterHtml: html };
+    return { id: `b-${index}`, kind: 'removed', beforeHtml: html };
+  });
 }
 
 function fallbackAISectionDiff(currentContent: unknown, candidate: DocsAISectionCandidate | null): AISectionDiffChunk[] {
   const before = extractPlainText(currentContent || candidate?.current_content).trim();
   const after = (candidate?.candidate_text || extractPlainText(candidate?.candidate_content)).trim();
   if (!before && !after) {
-    return [{ id: 'empty', kind: 'unchanged', before: 'No visible text changes.' }];
+    return [{ id: 'empty', kind: 'unchanged', beforeHtml: 'No visible text changes.' }];
   }
   if (before === after) {
-    return [{ id: 'same', kind: 'unchanged', before: before || 'No visible text changes.' }];
+    return [{ id: 'same', kind: 'unchanged', beforeHtml: escapeHtml(before) || 'No visible text changes.' }];
   }
-  return [{ id: 'fallback', kind: before && after ? 'changed' : before ? 'removed' : 'added', before, after }];
+  return [{
+    id: 'fallback',
+    kind: before && after ? 'changed' : before ? 'removed' : 'added',
+    beforeHtml: escapeHtml(before),
+    afterHtml: escapeHtml(after),
+  }];
 }
 
 function buildAISectionDiff(editor: NodeViewProps['editor'], currentContent: unknown, candidate: DocsAISectionCandidate | null): AISectionDiffChunk[] {
@@ -79,28 +143,47 @@ function buildAISectionDiff(editor: NodeViewProps['editor'], currentContent: unk
   try {
     const before = editor.schema.nodeFromJSON((candidate.current_content || currentContent) as Record<string, unknown>);
     const after = editor.schema.nodeFromJSON(candidate.candidate_content as Record<string, unknown>);
-    const transform = new Transform(before);
-    transform.replaceWith(0, before.content.size, after.content);
-    const changes = simplifyChanges(
-      ChangeSet.create(before).addSteps(transform.doc, transform.mapping.maps, { source: 'ai_section_candidate' }).changes,
-      transform.doc,
-    );
-    if (changes.length === 0) {
-      return [{ id: 'same', kind: 'unchanged', before: 'No visible text changes.' }];
+    const chunks = diffBlocks(before, after);
+    if (chunks.length === 0 || chunks.every((chunk) => chunk.kind === 'unchanged')) {
+      return chunks.length > 0 ? chunks : [{ id: 'same', kind: 'unchanged', beforeHtml: 'No visible text changes.' }];
     }
-    return changes.map((change, index) => {
-      const beforeText = safeTextBetween(before, change.fromA, change.toA);
-      const afterText = safeTextBetween(transform.doc, change.fromB, change.toB);
-      return {
-        id: `${change.fromA}:${change.toA}:${change.fromB}:${change.toB}:${index}`,
-        kind: beforeText && afterText ? 'changed' : beforeText ? 'removed' : 'added',
-        before: beforeText,
-        after: afterText,
-      };
-    });
+    return chunks;
   } catch {
     return fallbackAISectionDiff(currentContent, candidate);
   }
+}
+
+const BLOCK_BASE = 'prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0';
+const ADDED_BLOCK = `${BLOCK_BASE} rounded-sm bg-emerald-50/70 px-2 py-1 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100`;
+const REMOVED_BLOCK = `${BLOCK_BASE} rounded-sm bg-red-50/70 px-2 py-1 text-red-900 line-through decoration-red-600/70 decoration-1 dark:bg-red-950/30 dark:text-red-100 dark:decoration-red-400/70`;
+const UNCHANGED_BLOCK = `${BLOCK_BASE} text-foreground`;
+
+function BlockDiffEntry({ chunk }: { chunk: AISectionDiffChunk }) {
+  if (chunk.kind === 'added') {
+    return <ins className={`block ${ADDED_BLOCK} no-underline`} dangerouslySetInnerHTML={{ __html: chunk.afterHtml || '' }} />;
+  }
+  if (chunk.kind === 'removed') {
+    return <del className={`block ${REMOVED_BLOCK}`} dangerouslySetInnerHTML={{ __html: chunk.beforeHtml || '' }} />;
+  }
+  if (chunk.kind === 'changed') {
+    return (
+      <div className="space-y-1">
+        {chunk.beforeHtml ? <del className={`block ${REMOVED_BLOCK}`} dangerouslySetInnerHTML={{ __html: chunk.beforeHtml }} /> : null}
+        {chunk.afterHtml ? <ins className={`block ${ADDED_BLOCK} no-underline`} dangerouslySetInnerHTML={{ __html: chunk.afterHtml }} /> : null}
+      </div>
+    );
+  }
+  return <div className={UNCHANGED_BLOCK} dangerouslySetInnerHTML={{ __html: chunk.beforeHtml || '' }} />;
+}
+
+function InlineAISectionDiff({ chunks }: { chunks: AISectionDiffChunk[] }) {
+  return (
+    <div className="space-y-1.5 text-sm leading-6">
+      {chunks.map((chunk) => (
+        <BlockDiffEntry key={chunk.id} chunk={chunk} />
+      ))}
+    </div>
+  );
 }
 
 function sourceCanShowExcerpt(source: CitationSourceRef): boolean {
@@ -150,6 +233,9 @@ export function AISectionNodeView({ node, updateAttributes, editor, getPos }: No
   const wrapperRef = useRef<HTMLElement>(null);
   const { data: agents = [] } = useAgents(workspaceId ?? '');
   const docAgents = agents.filter((agent) => (agent.allowed_targets ?? []).includes('document'));
+  const selectedDocAgentId = docAgents.some((agent) => agent.id === selectedAgentId)
+    ? selectedAgentId
+    : docAgents[0]?.id ?? '';
   const diffChunks = useMemo(
     () => buildAISectionDiff(editor, node.toJSON(), candidate),
     [candidate, editor, node],
@@ -160,16 +246,6 @@ export function AISectionNodeView({ node, updateAttributes, editor, getPos }: No
     ? formatDate((candidate.source_refs as { generated_at?: unknown } | undefined)?.generated_at)
     : generatedAt;
   const trimmedInstructions = instructions.trim();
-
-  useEffect(() => {
-    setTitleDraft(title);
-  }, [title]);
-
-  useEffect(() => {
-    if (!selectedAgentId && docAgents.length > 0) {
-      setSelectedAgentId(docAgents[0].id);
-    }
-  }, [docAgents, selectedAgentId]);
 
   useEffect(() => {
     if (!editable || !workspaceId || !documentId || !blockId) return;
@@ -246,7 +322,7 @@ export function AISectionNodeView({ node, updateAttributes, editor, getPos }: No
   };
 
   const regenerate = async () => {
-    if (!workspaceId || !documentId || !blockId || !selectedAgentId) return;
+    if (!workspaceId || !documentId || !blockId || !selectedDocAgentId) return;
     if (!trimmedInstructions) {
       setFocused(true);
       toast.error('Add regeneration instructions first');
@@ -254,7 +330,7 @@ export function AISectionNodeView({ node, updateAttributes, editor, getPos }: No
     }
     setBusy('regenerate');
     const { data, error } = await docsService.regenerateAISection(workspaceId, documentId, blockId, {
-      agent_id: selectedAgentId,
+      agent_id: selectedDocAgentId,
       instructions: trimmedInstructions,
     });
     setBusy(null);
@@ -330,16 +406,21 @@ export function AISectionNodeView({ node, updateAttributes, editor, getPos }: No
     <NodeViewWrapper>
       <section
         ref={wrapperRef}
-        className={`docs-ai-section group/ai-section my-5 overflow-hidden rounded-md border border-border bg-background shadow-sm transition-shadow ${
-          focused ? 'ring-2 ring-primary/30' : ''
+        className={`docs-ai-section group/ai-section relative my-5 rounded-sm border-l-2 pl-4 transition-colors ${
+          focused ? 'border-primary/60' : 'border-primary/20 hover:border-primary/40'
         }`}
         data-ai-section=""
         data-ai-section-status={displayedStatus}
       >
-        <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/35 px-3 py-2" contentEditable={false}>
+        <div
+          className={`flex flex-wrap items-center gap-2 px-1 py-1.5 transition-opacity ${
+            focused || candidate ? 'opacity-100' : 'opacity-0 group-hover/ai-section:opacity-100'
+          }`}
+          contentEditable={false}
+        >
           <AiMagicIcon className="h-4 w-4 text-primary" />
           {editable && editingTitle ? (
-            <input
+            <Input
               value={titleDraft}
               onChange={(event) => setTitleDraft(event.target.value)}
               onBlur={saveTitle}
@@ -350,14 +431,18 @@ export function AISectionNodeView({ node, updateAttributes, editor, getPos }: No
                   setEditingTitle(false);
                 }
               }}
-              className="h-7 min-w-36 flex-1 rounded border border-border bg-background px-2 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/25"
+              className="h-7 min-w-36 flex-1 text-sm font-medium"
               autoFocus
             />
           ) : (
             <button
               type="button"
               disabled={!editable}
-              onClick={() => editable && setEditingTitle(true)}
+              onClick={() => {
+                if (!editable) return;
+                setTitleDraft(title);
+                setEditingTitle(true);
+              }}
               className="min-w-0 flex-1 truncate text-left text-sm font-medium text-foreground disabled:cursor-default"
             >
               {title}
@@ -368,57 +453,90 @@ export function AISectionNodeView({ node, updateAttributes, editor, getPos }: No
             {STATUS_LABELS[displayedStatus]}
           </span>
           {editable && focused && (
-            <select
-              value={status}
-              onChange={(event) => updateAttributes({ status: event.target.value })}
-              className="h-7 rounded border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-primary/25"
-            >
-              <option value="draft">Draft</option>
-              <option value="generated">Generated</option>
-              <option value="needs_review">Needs review</option>
-              <option value="approved">Approved</option>
-              <option value="error">Error</option>
-            </select>
+            <Select value={status} onValueChange={(value) => updateAttributes({ status: value })}>
+              <SelectTrigger size="sm" className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="generated">Generated</SelectItem>
+                <SelectItem value="needs_review">Needs review</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="error">Error</SelectItem>
+              </SelectContent>
+            </Select>
           )}
-          {editable && (
-            <button
+          {editable && candidate && (
+            <>
+              <Button type="button" size="sm" variant="outline" onClick={reject} disabled={busy !== null}>
+                {busy === 'reject' ? 'Rejecting...' : 'Reject'}
+              </Button>
+              <Button type="button" size="sm" onClick={approve} disabled={busy !== null}>
+                {busy === 'approve' ? 'Approving...' : 'Approve'}
+              </Button>
+            </>
+          )}
+          {editable && !candidate && (
+            <Button
               type="button"
+              size="sm"
+              variant="outline"
               onClick={regenerate}
-              disabled={!selectedAgentId || !trimmedInstructions || busy !== null || Boolean(pendingRunId)}
-              className="h-7 rounded border border-border bg-background px-2 text-xs font-medium hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!selectedDocAgentId || !trimmedInstructions || busy !== null || Boolean(pendingRunId)}
               contentEditable={false}
               title={!trimmedInstructions ? 'Add regeneration instructions first' : 'Regenerate this AI section'}
             >
               {busy === 'regenerate' ? 'Regenerating...' : 'Regenerate'}
-            </button>
+            </Button>
           )}
         </div>
         {editable && !candidate && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-muted/15 px-3 py-2" contentEditable={false}>
-            <select
-              value={selectedAgentId}
-              onChange={(event) => setSelectedAgentId(event.target.value)}
-              disabled={Boolean(pendingRunId)}
-              className="h-8 min-w-36 rounded border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-primary/25"
+          <div
+            className={`flex flex-wrap items-center gap-2 px-1 py-1.5 transition-opacity ${
+              focused ? 'opacity-100' : 'opacity-0 group-hover/ai-section:opacity-100'
+            }`}
+            contentEditable={false}
+          >
+            <Select
+              value={selectedDocAgentId}
+              onValueChange={(value) => setSelectedAgentId(value)}
+              disabled={Boolean(pendingRunId) || docAgents.length === 0}
             >
-              {docAgents.length === 0 ? (
-                <option value="">No document agent</option>
-              ) : docAgents.map((agent) => (
-                <option key={agent.id} value={agent.id}>{agent.name}</option>
-              ))}
-            </select>
-            <input
+              <SelectTrigger size="sm" className="min-w-36">
+                <SelectValue placeholder={docAgents.length === 0 ? 'No document agent' : 'Select agent'} />
+              </SelectTrigger>
+              <SelectContent>
+                {docAgents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
               value={instructions}
               onChange={(event) => setInstructions(event.target.value)}
               placeholder="Required: what should this section say? Include URLs to research."
               disabled={Boolean(pendingRunId)}
-              className="h-8 min-w-48 flex-1 rounded border border-border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-primary/25"
+              className="h-8 min-w-48 flex-1 text-xs"
             />
-            {pendingRunId && <span className="text-xs text-muted-foreground">Generating candidate...</span>}
+            {pendingRunId && (
+              <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                Generating
+                <span className="inline-flex items-center gap-0.5 text-base leading-none">
+                  <span className="animate-bounce [animation-delay:0ms] [animation-duration:1s]">.</span>
+                  <span className="animate-bounce [animation-delay:150ms] [animation-duration:1s]">.</span>
+                  <span className="animate-bounce [animation-delay:300ms] [animation-duration:1s]">.</span>
+                </span>
+              </span>
+            )}
           </div>
         )}
         {(ownerAgentName || model || displayedGeneratedAt || displayedSourceCount > 0) && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5 text-[11px] text-muted-foreground" contentEditable={false}>
+          <div
+            className={`flex flex-wrap items-center gap-2 px-1 py-1 text-[11px] text-muted-foreground transition-opacity ${
+              focused ? 'opacity-100' : 'opacity-0 group-hover/ai-section:opacity-100'
+            }`}
+            contentEditable={false}
+          >
             {ownerAgentName && <span>{ownerAgentName}</span>}
             {model && <span>{model}</span>}
             {displayedGeneratedAt && <span>Generated {displayedGeneratedAt}</span>}
@@ -430,57 +548,22 @@ export function AISectionNodeView({ node, updateAttributes, editor, getPos }: No
             )}
           </div>
         )}
-        <div className="px-4 py-3 [&>*:last-child]:mb-0">
+        <div className={candidate ? 'hidden' : 'py-1 [&>*:last-child]:mb-0'}>
           <NodeViewContent />
         </div>
         {candidate && (
-          <div className="border-t border-border bg-muted/20 px-4 py-3" contentEditable={false}>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-foreground">Generated candidate</span>
-              <span className="text-[11px] text-muted-foreground">
-                {candidate.model || 'AI'}
-                {candidate.prompt_hash ? ` / prompt ${candidate.prompt_hash.slice(0, 8)}` : ''}
-              </span>
-            </div>
-            <div className="rounded border border-border bg-background">
-              <div className="border-b border-border px-2 py-1.5 text-[11px] font-medium uppercase text-muted-foreground">Structured diff</div>
-              <div className="max-h-64 overflow-auto">
-                {diffChunks.map((chunk) => (
-                  <div key={chunk.id} className="grid border-b border-border/60 last:border-b-0 md:grid-cols-2">
-                    <div className={`min-h-10 whitespace-pre-wrap p-2 text-xs ${chunk.kind === 'added' ? 'bg-muted/30 text-muted-foreground' : chunk.kind === 'removed' || chunk.kind === 'changed' ? 'bg-red-50 text-red-900 dark:bg-red-950/20 dark:text-red-200' : 'text-muted-foreground'}`}>
-                      <div className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">Current</div>
-                      {chunk.before || (chunk.kind === 'added' ? 'No prior text' : 'No visible text')}
-                    </div>
-                    <div className={`min-h-10 whitespace-pre-wrap p-2 text-xs ${chunk.kind === 'removed' ? 'bg-muted/30 text-muted-foreground' : chunk.kind === 'added' || chunk.kind === 'changed' ? 'bg-emerald-50 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200' : 'text-foreground'}`}>
-                      <div className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">Candidate</div>
-                      {chunk.after || (chunk.kind === 'removed' ? 'Removed' : chunk.before || 'No visible text')}
-                    </div>
+          <div className="py-1" contentEditable={false}>
+            <InlineAISectionDiff chunks={diffChunks} />
+            {sources.length > 0 && (
+              <div className="mt-3 space-y-1 border-t border-border/60 pt-2">
+                <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Sources</div>
+                {sources.slice(0, 5).map((source) => (
+                  <div key={`${source.sourceType}:${source.sourceId}`} className="text-xs">
+                    <span className="font-medium text-foreground">{source.title || source.sourceId}</span>
+                    {sourceCanShowExcerpt(source) && <span className="text-muted-foreground"> - {source.excerpt}</span>}
+                    {source.access === 'redacted' && <span className="text-muted-foreground"> - Restricted source</span>}
                   </div>
                 ))}
-              </div>
-            </div>
-            {editable && (
-              <div className="mt-3 flex justify-end gap-2">
-                <button type="button" onClick={reject} disabled={busy !== null} className="h-8 rounded border border-border bg-background px-3 text-xs font-medium hover:bg-muted disabled:opacity-50">
-                  {busy === 'reject' ? 'Rejecting...' : 'Reject'}
-                </button>
-                <button type="button" onClick={approve} disabled={busy !== null} className="h-8 rounded bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                  {busy === 'approve' ? 'Approving...' : 'Approve'}
-                </button>
-              </div>
-            )}
-            {sources.length > 0 && (
-              <div className="mt-3 rounded border border-border bg-background p-2">
-                <div className="mb-1 text-[11px] font-medium uppercase text-muted-foreground">Sources</div>
-                <div className="space-y-1">
-                  {sources.slice(0, 5).map((source) => (
-                    <div key={`${source.sourceType}:${source.sourceId}`} className="text-xs">
-                      <span className="font-medium text-foreground">{source.title || source.sourceId}</span>
-                      {sourceCanShowExcerpt(source) && <span className="text-muted-foreground"> - {source.excerpt}</span>}
-                      {source.access === 'redacted' && <span className="text-muted-foreground"> - Restricted source</span>}
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
           </div>
