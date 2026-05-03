@@ -1,6 +1,7 @@
 import { api } from '../api';
 import type {
   CommentWithAuthor,
+  Comment,
   CreateCommentRequest,
   ReactionSummary,
   UpdateCommentRequest,
@@ -17,6 +18,10 @@ export const pmCommentService = {
   update: (workspaceId: string, id: string, payload: UpdateCommentRequest) =>
     api.put(`/pm/comments/${id}?${qs(workspaceId)}`, payload),
   remove: (workspaceId: string, id: string) => api.del(`/pm/comments/${id}?${qs(workspaceId)}`),
+  resolve: (workspaceId: string, id: string) =>
+    api.post<Comment>(`/pm/comments/${id}/resolve?${qs(workspaceId)}`),
+  reopen: (workspaceId: string, id: string) =>
+    api.post<Comment>(`/pm/comments/${id}/reopen?${qs(workspaceId)}`),
   toggleReaction: (workspaceId: string, commentId: string, emoji: string) =>
     api.post<ReactionSummary[]>(`/pm/comments/${commentId}/reactions?${qs(workspaceId)}`, { emoji }),
 };

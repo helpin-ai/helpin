@@ -7,7 +7,7 @@ export type SpaceType = 'internal' | 'external_capable';
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
 export type VersionType = 'manual' | 'auto' | 'publish' | 'revert';
 export type LinkContext = 'attached' | 'mentioned' | 'created_from' | 'linked_in_content';
-export type LinkedObjectType = 'epic' | 'task' | 'story' | 'project' | 'objective' | 'sprint' | 'support_conversation';
+export type LinkedObjectType = 'epic' | 'task' | 'story' | 'project' | 'objective' | 'sprint' | 'support_conversation' | 'deal' | 'contact' | 'company';
 
 // ─── Core models ────────────────────────────────────────────────────────────
 
@@ -116,6 +116,107 @@ export interface DocsBlock {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  agent_readable?: DocsBlockAgentProjection;
+}
+
+export interface DocsBlockAgentProjection {
+  kind: string;
+  block_id: string;
+  text?: string;
+  attrs?: Record<string, unknown>;
+  entity_refs?: DocsBlockAgentRef[];
+  citations?: DocsBlockAgentRef[];
+  actions?: DocsBlockAgentAction[];
+}
+
+export interface DocsBlockAgentRef {
+  type: string;
+  id: string;
+  title?: string;
+  access?: 'granted' | 'redacted' | 'unknown';
+  redacted?: boolean;
+}
+
+export interface DocsBlockAgentAction {
+  type: string;
+  label: string;
+}
+
+export interface DocsAISectionCandidate {
+  id: string;
+  workspace_id: string;
+  document_id: string;
+  block_id: string;
+  agent_run_id?: string | null;
+  status: 'ready' | 'approved' | 'rejected' | 'failed';
+  current_content: unknown;
+  candidate_content: unknown;
+  candidate_text?: string;
+  source_refs?: unknown;
+  prompt?: string | null;
+  prompt_hash?: string | null;
+  model?: string | null;
+  created_by: string;
+  approved_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AISectionCandidateResponse {
+  candidate: DocsAISectionCandidate | null;
+  agent_run?: import('./pmTypes').AgentRun;
+  content?: DocsContent;
+}
+
+export interface DocsReferenceItem {
+  id: string;
+  kind: 'doc_link' | 'entity_embed' | 'citation' | 'comment' | 'agent_run' | string;
+  title: string;
+  description?: string;
+  document_id?: string;
+  block_id?: string;
+  entity_type?: string;
+  entity_id?: string;
+  reference_id?: string;
+  reference_url?: string;
+  status?: 'available' | 'unavailable' | string;
+  access?: 'granted' | 'unavailable' | string;
+  created_at?: string;
+}
+
+export interface DocsReferencesResponse {
+  items: DocsReferenceItem[];
+}
+
+export interface DocsEntityRefRequest {
+  entity_type: string;
+  entity_id: string;
+  label?: string;
+  display_id?: string | number | null;
+}
+
+export interface DocsResolvedEntityRef {
+  entity_type: string;
+  entity_id: string;
+  status: 'available' | 'unavailable';
+  access: 'granted' | 'unavailable' | 'redacted';
+  title: string;
+  display_id?: string | number | null;
+  meta?: string;
+  state_label?: string;
+  href?: string;
+}
+
+export interface ResolveDocsEntityRefsResponse {
+  refs: DocsResolvedEntityRef[];
+}
+
+export interface DocsResolvedEmbed {
+  url: string;
+  provider: string;
+  title: string;
+  description?: string;
+  image_url?: string | null;
 }
 
 export interface DocsVersion {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon } from '@/lib/icons';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -12,7 +12,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
-import type { CommentWithAuthor, ReactionSummary, AttachmentResponse } from '@/lib/pmTypes';
+import type { Comment, CommentWithAuthor, ReactionSummary, AttachmentResponse } from '@/lib/pmTypes';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 
 // File type icons
@@ -266,6 +266,15 @@ interface CommentThreadProps {
   currentUserId?: string;
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
+  commentService?: typeof pmCommentService;
+  attachmentsEnabled?: boolean;
+  commentAnchor?: {
+    block_id?: string;
+    range?: Record<string, unknown>;
+    anchor_text?: string;
+  } | null;
+  activeCommentId?: string | null;
+  onCommentAnchorConsumed?: () => void;
   onCommentsChange: (comments: CommentWithAuthor[]) => void;
 }
 
@@ -279,6 +288,11 @@ export function CommentThread({
   currentUserId,
   teams = [],
   members = [],
+  commentService = pmCommentService,
+  attachmentsEnabled = true,
+  commentAnchor = null,
+  activeCommentId = null,
+  onCommentAnchorConsumed,
   onCommentsChange,
 }: CommentThreadProps) {
   const [commentLoading, setCommentLoading] = useState(false);
@@ -446,10 +460,13 @@ export function CommentThread({
     setCommentLoading(true);
 
     const attachmentIds = pendingAttachments.map((a) => a.id);
-    const { data, error } = await pmCommentService.create(workspaceId, {
+    const { data, error } = await commentService.create(workspaceId, {
       entity_type: entityType,
       entity_id: entityId,
       body: body.trim() || '(attachment)',
+      block_id: commentAnchor?.block_id,
+      range: commentAnchor?.range,
+      anchor_text: commentAnchor?.anchor_text,
       attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
     });
     if (error || !data) {
@@ -457,10 +474,11 @@ export function CommentThread({
       return;
     }
     setPendingAttachments([]);
+    onCommentAnchorConsumed?.();
 
     // Reload comments to get attachments in response
     if (attachmentIds.length > 0) {
-      const { data: refreshed } = await pmCommentService.list(workspaceId, entityType, entityId);
+      const { data: refreshed } = await commentService.list(workspaceId, entityType, entityId);
       if (refreshed) {
         onCommentsChange(refreshed);
         setCommentLoading(false);
@@ -478,7 +496,7 @@ export function CommentThread({
     setReplyLoading(true);
 
     const attachmentIds = replyFiles.map((a) => a.id);
-    const { data, error } = await pmCommentService.create(workspaceId, {
+    const { data, error } = await commentService.create(workspaceId, {
       entity_type: entityType,
       entity_id: entityId,
       body: body.trim() || '(attachment)',
@@ -497,7 +515,7 @@ export function CommentThread({
 
     // Reload if attachments were included
     if (attachmentIds.length > 0) {
-      const { data: refreshed } = await pmCommentService.list(workspaceId, entityType, entityId);
+      const { data: refreshed } = await commentService.list(workspaceId, entityType, entityId);
       if (refreshed) {
         onCommentsChange(refreshed);
         setReplyLoading(false);
@@ -541,7 +559,7 @@ export function CommentThread({
     if (!body && editPendingAttachments.length === 0) return;
     setEditSaving(true);
     const attachmentIds = editPendingAttachments.map((a) => a.id);
-    const { error } = await pmCommentService.update(workspaceId, editingCommentId, {
+    const { error } = await commentService.update(workspaceId, editingCommentId, {
       body: body || '(attachment)',
       attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
     });
@@ -551,7 +569,7 @@ export function CommentThread({
     }
 
     // Always reload so attachment tiles (existing + newly linked) stay in sync.
-    const { data: refreshed } = await pmCommentService.list(workspaceId, entityType, entityId);
+    const { data: refreshed } = await commentService.list(workspaceId, entityType, entityId);
     if (refreshed) onCommentsChange(refreshed);
 
     setEditingCommentId(null);
@@ -570,7 +588,7 @@ export function CommentThread({
             .find((comment) => comment.comment.id === id)?.comment.body ?? '',
         )
       : [];
-    const { error } = await pmCommentService.remove(workspaceId, id);
+    const { error } = await commentService.remove(workspaceId, id);
     if (error) return;
     if (attachmentIds.length > 0) {
       await Promise.allSettled(
@@ -589,7 +607,7 @@ export function CommentThread({
   };
 
   const toggleReaction = async (commentId: string, emoji: string) => {
-    const { data, error } = await pmCommentService.toggleReaction(workspaceId, commentId, emoji);
+    const { data, error } = await commentService.toggleReaction(workspaceId, commentId, emoji);
     if (error || !data) return;
 
     const updateReactions = (list: CommentWithAuthor[]): CommentWithAuthor[] =>
@@ -603,6 +621,25 @@ export function CommentThread({
         return c;
       });
     onCommentsChange(updateReactions(comments));
+  };
+
+  const setCommentResolved = async (commentId: string, resolved: boolean) => {
+    const action = resolved ? commentService.resolve : commentService.reopen;
+    const { data, error } = await action(workspaceId, commentId);
+    if (error || !data) return;
+
+    const updatedComment = data as Comment;
+    const updateComment = (list: CommentWithAuthor[]): CommentWithAuthor[] =>
+      list.map((c) => {
+        if (c.comment.id === commentId) {
+          return { ...c, comment: updatedComment };
+        }
+        if (c.replies) {
+          return { ...c, replies: updateComment(c.replies) };
+        }
+        return c;
+      });
+    onCommentsChange(updateComment(comments));
   };
 
   const toggleThread = (commentId: string) => {
@@ -624,8 +661,8 @@ export function CommentThread({
           placeholder="Edit comment..."
           teams={teams}
           members={members}
-          onImageSelect={(files) => void handleEditImageUpload(files)}
-          onFileSelect={() => void handleEditFileUpload()}
+          onImageSelect={attachmentsEnabled ? (files) => void handleEditImageUpload(files) : undefined}
+          onFileSelect={attachmentsEnabled ? () => void handleEditFileUpload() : undefined}
           uploadedFiles={editPendingAttachments}
           onRemoveUploadedFile={(id) => void removeEditPendingAttachment(id)}
           initialContent={editingCommentBody}
@@ -649,9 +686,10 @@ export function CommentThread({
     const hoverClass = isReply ? 'group-hover/reply:opacity-100' : 'group-hover:opacity-100';
     const btnSize = isReply ? 'h-5 w-5' : 'h-6 w-6';
     const iconSize = isReply ? 'h-2.5 w-2.5' : 'h-3 w-3';
+    const isResolved = Boolean(entry.comment.resolved_at);
 
     return (
-      <div className={groupClass}>
+      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''}`}>
         <div className="flex items-center gap-2">
           <UserAvatar
             name={entry.author.full_name || entry.author.email}
@@ -660,6 +698,12 @@ export function CommentThread({
           />
           <span className="text-xs font-semibold">{entry.author.full_name || entry.author.email}</span>
           <span className="text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
+          {isResolved && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+              <CheckmarkCircle02Icon className="h-3 w-3" />
+              Resolved
+            </span>
+          )}
           <div className={`ml-auto flex items-center gap-0.5 opacity-0 ${hoverClass} transition-opacity`}>
             <Popover>
               <PopoverTrigger asChild>
@@ -682,6 +726,17 @@ export function CommentThread({
                   onClick={() => toggleThread(entry.comment.id)}
                 >
                   <ArrowTurnBackwardIcon className={iconSize} />
+                </button>
+              </QuickTooltip>
+            )}
+            {!isReply && (
+              <QuickTooltip label={isResolved ? 'Reopen' : 'Resolve'}>
+                <button
+                  type="button"
+                  className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
+                  onClick={() => void setCommentResolved(entry.comment.id, !isResolved)}
+                >
+                  {isResolved ? <ArrowReloadHorizontalIcon className={iconSize} /> : <CheckmarkCircle02Icon className={iconSize} />}
                 </button>
               </QuickTooltip>
             )}
@@ -712,12 +767,25 @@ export function CommentThread({
         {isEditing ? (
           renderEditForm(indent)
         ) : (
-          <CommentBody
-            body={entry.comment.body}
-            members={members}
-            teams={teams}
-            className={`mt-1.5 ${indent}`}
-          />
+          <>
+            {(entry.comment.anchor_text || entry.comment.block_id) && (
+              <div className={`mt-1.5 ${indent}`}>
+                <div className="rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
+                  {entry.comment.anchor_text ? (
+                    <span className="line-clamp-2">On: "{entry.comment.anchor_text}"</span>
+                  ) : (
+                    <span>On block {entry.comment.block_id}</span>
+                  )}
+                </div>
+              </div>
+            )}
+            <CommentBody
+              body={entry.comment.body}
+              members={members}
+              teams={teams}
+              className={`mt-1.5 ${indent}`}
+            />
+          </>
         )}
         {/* Attachments */}
         {entry.attachments && entry.attachments.length > 0 && (
@@ -750,10 +818,11 @@ export function CommentThread({
       {comments.map((entry, idx) => {
         const hasReplies = (entry.reply_count ?? 0) > 0;
         const isExpanded = expandedThreads.has(entry.comment.id);
+        const isActive = activeCommentId === entry.comment.id;
         return (
-          <div key={entry.comment.id}>
+          <div key={entry.comment.id} data-comment-thread-id={entry.comment.id}>
             {idx > 0 && <Separator />}
-            <div className="group px-4 py-3">
+            <div className={`group px-4 py-3 transition-colors ${isActive ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/20' : ''}`}>
               {renderComment(entry, false)}
 
               {/* Thread toggle */}
@@ -787,8 +856,8 @@ export function CommentThread({
                       placeholder="Write a reply..."
                       teams={teams}
                       members={members}
-                      onImageSelect={(files) => handleImageUpload(files, entry.comment.id)}
-                      onFileSelect={() => handleFileUpload(entry.comment.id)}
+                      onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files, entry.comment.id) : undefined}
+                      onFileSelect={attachmentsEnabled ? () => handleFileUpload(entry.comment.id) : undefined}
                       uploadedFiles={replyPendingAttachments.get(entry.comment.id) ?? []}
                       onRemoveUploadedFile={(id) => removePendingAttachment(id, entry.comment.id)}
                     />
@@ -803,14 +872,19 @@ export function CommentThread({
       {/* Comment input */}
       {comments.length > 0 && <Separator />}
       <div>
+        {commentAnchor && (
+          <div className="border-b border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
+            Commenting on {commentAnchor.anchor_text ? `"${commentAnchor.anchor_text}"` : 'selected block'}
+          </div>
+        )}
         <CommentEditor
           onSubmit={addComment}
           loading={commentLoading}
           placeholder="Leave a comment... (type @ to mention)"
           teams={teams}
           members={members}
-          onImageSelect={(files) => handleImageUpload(files)}
-          onFileSelect={() => handleFileUpload()}
+          onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files) : undefined}
+          onFileSelect={attachmentsEnabled ? () => handleFileUpload() : undefined}
           uploadedFiles={pendingAttachments}
           onRemoveUploadedFile={(id) => removePendingAttachment(id)}
         />

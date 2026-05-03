@@ -15,6 +15,14 @@ const ADDRESSABLE_BLOCK_TYPES = new Set([
   'image',
   'videoEmbed',
   'htmlBlock',
+  'aiSection',
+  'citationBlock',
+  'entityEmbed',
+  'savedViewEmbed',
+  'toggleSection',
+  'fileAttachment',
+  'tableOfContents',
+  'richEmbed',
   'horizontalRule',
 ])
 
@@ -46,6 +54,49 @@ export const BlockIdExtension = Extension.create({
             renderHTML: (attributes) => {
               if (!attributes.blockId) return {}
               return { 'data-block-id': attributes.blockId }
+            },
+          },
+          staleState: {
+            default: null,
+            parseHTML: (element) => element.getAttribute('data-docs-stale-state'),
+            renderHTML: (attributes) => {
+              if (!attributes.staleState) return {}
+              return {
+                'data-docs-stale': 'true',
+                'data-docs-stale-state': attributes.staleState,
+              }
+            },
+          },
+          staleReason: {
+            default: null,
+            parseHTML: (element) => element.getAttribute('data-docs-stale-reason'),
+            renderHTML: (attributes) => {
+              if (!attributes.staleReason) return {}
+              return { 'data-docs-stale-reason': attributes.staleReason }
+            },
+          },
+          staleSource: {
+            default: null,
+            parseHTML: (element) => element.getAttribute('data-docs-stale-source'),
+            renderHTML: (attributes) => {
+              if (!attributes.staleSource) return {}
+              return { 'data-docs-stale-source': attributes.staleSource }
+            },
+          },
+          staleGapId: {
+            default: null,
+            parseHTML: (element) => element.getAttribute('data-docs-stale-gap-id'),
+            renderHTML: (attributes) => {
+              if (!attributes.staleGapId) return {}
+              return { 'data-docs-stale-gap-id': attributes.staleGapId }
+            },
+          },
+          staleMarkedAt: {
+            default: null,
+            parseHTML: (element) => element.getAttribute('data-docs-stale-marked-at'),
+            renderHTML: (attributes) => {
+              if (!attributes.staleMarkedAt) return {}
+              return { 'data-docs-stale-marked-at': attributes.staleMarkedAt }
             },
           },
         },

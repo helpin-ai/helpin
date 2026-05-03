@@ -28,9 +28,9 @@ export async function uploadEditorFile(
     {
       entity_type: config.entityType,
       entity_id: config.entityId,
-      file_name: file.name || 'pasted-image.png',
+      file_name: file.name || 'attachment',
       file_size: file.size,
-      content_type: file.type,
+      content_type: file.type || 'application/octet-stream',
     },
   );
 

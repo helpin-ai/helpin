@@ -239,7 +239,11 @@ func (r *PMCommentRepository) GetByID(ctx context.Context, id string) (*model.PM
 
 // Create inserts a comment.
 func (r *PMCommentRepository) Create(ctx context.Context, comment *model.PMComment) error {
-	if err := r.db.WithContext(ctx).Create(comment).Error; err != nil {
+	db := r.db.WithContext(ctx)
+	if comment.ResolvedAt == nil && comment.ResolvedBy == nil {
+		db = db.Omit("ResolvedAt", "ResolvedBy")
+	}
+	if err := db.Create(comment).Error; err != nil {
 		return fmt.Errorf("create comment: %w", err)
 	}
 	return nil
@@ -247,8 +251,26 @@ func (r *PMCommentRepository) Create(ctx context.Context, comment *model.PMComme
 
 // Update updates a comment.
 func (r *PMCommentRepository) Update(ctx context.Context, comment *model.PMComment) error {
-	if err := r.db.WithContext(ctx).Save(comment).Error; err != nil {
+	db := r.db.WithContext(ctx)
+	if comment.ResolvedAt == nil && comment.ResolvedBy == nil {
+		db = db.Omit("ResolvedAt", "ResolvedBy")
+	}
+	if err := db.Save(comment).Error; err != nil {
 		return fmt.Errorf("update comment: %w", err)
+	}
+	return nil
+}
+
+// UpdateResolution updates only the comment resolution fields.
+func (r *PMCommentRepository) UpdateResolution(ctx context.Context, id string, resolvedAt interface{}, resolvedBy interface{}) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMComment{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"resolved_at": resolvedAt,
+			"resolved_by": resolvedBy,
+		}).Error; err != nil {
+		return fmt.Errorf("update comment resolution: %w", err)
 	}
 	return nil
 }

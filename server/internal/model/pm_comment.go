@@ -4,14 +4,19 @@ import "time"
 
 // PMComment represents comments for tasks/epics/docs.
 type PMComment struct {
-	ID         string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	EntityType string    `json:"entity_type" gorm:"not null"`
-	EntityID   string    `json:"entity_id" gorm:"type:uuid;not null;index"`
-	AuthorID   string    `json:"author_id" gorm:"type:uuid;not null;index"`
-	Body       string    `json:"body" gorm:"not null"`
-	ParentID   *string   `json:"parent_id" gorm:"type:uuid;index"`
-	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID         string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	EntityType string     `json:"entity_type" gorm:"not null"`
+	EntityID   string     `json:"entity_id" gorm:"type:uuid;not null;index"`
+	AuthorID   string     `json:"author_id" gorm:"type:uuid;not null;index"`
+	Body       string     `json:"body" gorm:"not null"`
+	ParentID   *string    `json:"parent_id" gorm:"type:uuid;index"`
+	BlockID    *string    `json:"block_id,omitempty" gorm:"type:uuid;index"`
+	Range      JSONB      `json:"range,omitempty" gorm:"column:block_range;type:jsonb"`
+	AnchorText string     `json:"anchor_text,omitempty"`
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	ResolvedBy *string    `json:"resolved_by,omitempty" gorm:"type:uuid"`
+	CreatedAt  time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt  time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMComment) TableName() string { return "pm_comments" }
@@ -40,6 +45,9 @@ type CreateCommentRequest struct {
 	EntityID      string   `json:"entity_id"`
 	Body          string   `json:"body"`
 	ParentID      *string  `json:"parent_id"`
+	BlockID       *string  `json:"block_id,omitempty"`
+	Range         JSONB    `json:"range,omitempty"`
+	AnchorText    string   `json:"anchor_text,omitempty"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
 }
 
