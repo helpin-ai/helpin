@@ -3,6 +3,7 @@ import { settingsService } from '@/lib/services/settingsService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import type {
+  ManagedWorkspaceModule,
   TeamEstimateSettings,
   TeamFieldVisibility,
   WorkspaceModuleAccessSettings,
@@ -98,7 +99,7 @@ export function useInvalidateSettings(wsId: string) {
 export function useCreateModuleGrant(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (input: { module: 'crm' | 'support'; subject_type: 'team' | 'workspace_member'; subject_id: string }) =>
+    mutationFn: async (input: { module: ManagedWorkspaceModule; subject_type: 'team' | 'workspace_member'; subject_id: string }) =>
       unwrap(await settingsService.createModuleGrant(wsId, input)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.workspaces.moduleAccess(wsId) })
