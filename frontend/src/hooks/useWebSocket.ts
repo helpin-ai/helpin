@@ -61,12 +61,13 @@ interface UseWebSocketOptions {
 export type WSSend = (type: string, data: Record<string, unknown>) => void
 
 function getWSUrl(workspaceId: string): string {
-  const token = localStorage.getItem('access_token')
-  if (!token || !workspaceId) return ''
+  if (!workspaceId) return ''
 
   // Swap http(s) → ws(s) and replace trailing /api with /api/ws
   const base = API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '/api')
-  return `${base}/ws?token=${encodeURIComponent(token)}&workspace_id=${encodeURIComponent(workspaceId)}`
+  const token = localStorage.getItem('access_token')
+  const tokenParam = token ? `token=${encodeURIComponent(token)}&` : ''
+  return `${base}/ws?${tokenParam}workspace_id=${encodeURIComponent(workspaceId)}`
 }
 
 export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsPresenceSnapshot }: UseWebSocketOptions) {

@@ -42,9 +42,15 @@ export function clearClientSession() {
 }
 
 function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
-  localStorage.setItem('access_token', accessToken);
-  localStorage.setItem('refresh_token', refreshToken);
-  localStorage.setItem('remember_me', rememberMe ? '1' : '0');
+  void accessToken;
+  void refreshToken;
+  try {
+    localStorage.setItem('remember_me', rememberMe ? '1' : '0');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+  } catch {
+    // Ignore storage access failures after cookie-based login.
+  }
   useAuthStore.setState({ user, serverUnreachable: false });
 }
 
@@ -57,22 +63,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (_initializing) return;
     _initializing = true;
     try {
-      const token = localStorage.getItem('access_token');
-      if (token) {
-        const { data, error, isNetworkError } = await authService.me();
-        if (data && !error) {
-          set({ user: data, loading: false, serverUnreachable: false });
-        } else if (isNetworkError) {
-          // Server unreachable / CORS error — keep tokens, don't log out
-          set({ loading: false, serverUnreachable: true });
-        } else {
-          // Genuine auth failure (401, invalid token, etc.) — clear session
+      const { data, error, isNetworkError } = await authService.me();
+      if (data && !error) {
+        set({ user: data, loading: false, serverUnreachable: false });
+      } else if (isNetworkError) {
+        // Server unreachable / CORS error — preserve the browser cookie session.
+        set({ loading: false, serverUnreachable: true });
+      } else {
+        try {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
-          set({ loading: false, serverUnreachable: false });
+        } catch {
+          // Ignore storage access failures.
         }
-      } else {
-        set({ loading: false });
+        set({ user: null, loading: false, serverUnreachable: false });
       }
     } finally {
       _initializing = false;
@@ -86,11 +90,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (data.requires_2fa && data.two_fa_token) {
       return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
     }
-    if (!data.user || !data.access_token || !data.refresh_token) {
+    if (!data.user) {
       return { error: 'Sign in failed' };
     }
 
-    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
+    persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
     return { error: null };
   },
 
@@ -102,11 +106,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (data.requires_2fa && data.two_fa_token) {
       return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
     }
-    if (!data.user || !data.access_token || !data.refresh_token) {
+    if (!data.user) {
       return { error: 'Passkey sign in failed' };
     }
 
-    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
+    persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
     return { error: null };
   },
 
@@ -126,6 +130,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signOut: () => {
+    void authService.signout();
     clearClientSession();
     set({ user: null });
     window.location.replace('/login');

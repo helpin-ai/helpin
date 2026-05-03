@@ -67,6 +67,7 @@ type UserProfile struct {
 	DefaultWorkspaceID    *string   `json:"default_workspace_id"`
 	TwoFAEnabled          bool      `json:"two_fa_enabled"`
 	IsPlatformAdmin       bool      `json:"is_platform_admin"`
+	MFASatisfiedInToken   bool      `json:"mfa_satisfied_in_token,omitempty"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }

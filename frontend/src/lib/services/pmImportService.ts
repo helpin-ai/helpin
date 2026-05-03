@@ -174,6 +174,7 @@ async function jsonRequest<T>(path: string, body: unknown): Promise<{ data: T | 
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -194,6 +195,7 @@ async function jsonRequest<T>(path: string, body: unknown): Promise<{ data: T | 
 function statusRequest<T>(path: string): Promise<{ data: T | null; error: string | null }> {
   const token = localStorage.getItem('access_token');
   return fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -214,6 +216,7 @@ function postStatusRequest<T>(path: string): Promise<{ data: T | null; error: st
   const token = localStorage.getItem('access_token');
   return fetch(`${API_BASE}${path}`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

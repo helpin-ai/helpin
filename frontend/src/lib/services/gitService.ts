@@ -24,6 +24,7 @@ async function gitRawRequest<T>(path: string, options: RequestInit = {}) {
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
