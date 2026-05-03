@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowReloadHorizontalIcon, ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon } from '@/lib/icons';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -307,13 +307,25 @@ export function CommentThread({
   const [pendingAttachments, setPendingAttachments] = useState<PendingFile[]>([]);
   const [editPendingAttachments, setEditPendingAttachments] = useState<PendingFile[]>([]);
   const [replyPendingAttachments, setReplyPendingAttachments] = useState<Map<string, PendingFile[]>>(new Map());
+  const pendingAttachmentsRef = useRef(pendingAttachments);
+  const replyPendingAttachmentsRef = useRef(replyPendingAttachments);
 
   // Member name map for reaction tooltips
-  const memberNameMap = useRef(new Map<string, string>());
-  memberNameMap.current.clear();
-  for (const m of members) {
-    memberNameMap.current.set(m.user_id || m.id, m.display_name);
-  }
+  const memberNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of members) {
+      map.set(m.user_id || m.id, m.display_name);
+    }
+    return map;
+  }, [members]);
+
+  useEffect(() => {
+    pendingAttachmentsRef.current = pendingAttachments;
+  }, [pendingAttachments]);
+
+  useEffect(() => {
+    replyPendingAttachmentsRef.current = replyPendingAttachments;
+  }, [replyPendingAttachments]);
 
   // Upload a file immediately and return the attachment ID + public URL
   const uploadFileImmediately = useCallback(async (file: File): Promise<PendingFile | null> => {
@@ -338,8 +350,8 @@ export function CommentThread({
   useEffect(
     () => () => {
       const attachmentIds = [
-        ...pendingAttachments.map((attachment) => attachment.id),
-        ...Array.from(replyPendingAttachments.values()).flatMap((attachments) =>
+        ...pendingAttachmentsRef.current.map((attachment) => attachment.id),
+        ...Array.from(replyPendingAttachmentsRef.current.values()).flatMap((attachments) =>
           attachments.map((attachment) => attachment.id),
         ),
       ];
@@ -347,10 +359,12 @@ export function CommentThread({
         return;
       }
       void Promise.allSettled(
-        attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+        attachmentIds.map((attachmentId) =>
+          pmAttachmentService.remove(workspaceId, attachmentId, { pendingOnly: true }),
+        ),
       );
     },
-    [pendingAttachments, replyPendingAttachments, workspaceId],
+    [workspaceId],
   );
 
   const handleFileUpload = useCallback(async (parentId?: string) => {
@@ -395,7 +409,7 @@ export function CommentThread({
 
   const removePendingAttachment = useCallback(async (attachmentId: string, parentId?: string) => {
     // Delete from S3/DB
-    await pmAttachmentService.remove(workspaceId, attachmentId);
+    await pmAttachmentService.remove(workspaceId, attachmentId, { pendingOnly: true });
     if (parentId) {
       setReplyPendingAttachments((prev) => {
         const next = new Map(prev);
@@ -434,7 +448,7 @@ export function CommentThread({
   }, [uploadFileImmediately]);
 
   const removeEditPendingAttachment = useCallback(async (attachmentId: string) => {
-    await pmAttachmentService.remove(workspaceId, attachmentId);
+    await pmAttachmentService.remove(workspaceId, attachmentId, { pendingOnly: true });
     setEditPendingAttachments((prev) => prev.filter((f) => f.id !== attachmentId));
   }, [workspaceId]);
 
@@ -548,7 +562,7 @@ export function CommentThread({
     setEditPendingAttachments([]);
     if (orphanIds.length > 0) {
       await Promise.allSettled(
-        orphanIds.map((id) => pmAttachmentService.remove(workspaceId, id)),
+        orphanIds.map((id) => pmAttachmentService.remove(workspaceId, id, { pendingOnly: true })),
       );
     }
   }, [editPendingAttachments, workspaceId]);
@@ -804,7 +818,7 @@ export function CommentThread({
             <CommentReactions
               reactions={entry.reactions ?? []}
               currentUserId={currentUserId}
-              memberNameMap={memberNameMap.current}
+              memberNameMap={memberNameMap}
               onToggle={(emoji) => toggleReaction(entry.comment.id, emoji)}
             />
           </div>

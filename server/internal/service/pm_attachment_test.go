@@ -138,3 +138,50 @@ func TestPMAttachmentRepository_ReassignToEntity(t *testing.T) {
 		t.Fatalf("entity_id = %q, want %q", attachment.EntityID, "objective-1")
 	}
 }
+
+func TestPMAttachmentRepository_DeleteEditorUploadOnlyRemovesEditorUploads(t *testing.T) {
+	t.Parallel()
+
+	_, repo, db, workspaceID, userID := newAttachmentTestEnv(t)
+	ctx := context.Background()
+
+	seedEditorUploadAttachment(t, db, "attachment-editor-upload", workspaceID, workspaceID, userID)
+	seedEditorUploadAttachment(t, db, "attachment-comment", workspaceID, workspaceID, userID)
+	if err := repo.ReassignToEntity(ctx, []string{"attachment-comment"}, "comment", "comment-1"); err != nil {
+		t.Fatalf("ReassignToEntity: %v", err)
+	}
+
+	deleted, err := repo.DeleteEditorUpload(ctx, "attachment-comment")
+	if err != nil {
+		t.Fatalf("DeleteEditorUpload reassigned attachment: %v", err)
+	}
+	if deleted {
+		t.Fatal("expected reassigned attachment not to be deleted")
+	}
+	deleted, err = repo.DeleteEditorUpload(ctx, "attachment-editor-upload")
+	if err != nil {
+		t.Fatalf("DeleteEditorUpload editor upload: %v", err)
+	}
+	if !deleted {
+		t.Fatal("expected editor upload attachment to be deleted")
+	}
+
+	reassigned, err := repo.GetByID(ctx, "attachment-comment")
+	if err != nil {
+		t.Fatalf("GetByID reassigned: %v", err)
+	}
+	if reassigned == nil {
+		t.Fatal("expected reassigned attachment to be preserved")
+	}
+	if reassigned.EntityType != "comment" {
+		t.Fatalf("entity_type = %q, want comment", reassigned.EntityType)
+	}
+
+	editorUpload, err := repo.GetByID(ctx, "attachment-editor-upload")
+	if err != nil {
+		t.Fatalf("GetByID editor upload: %v", err)
+	}
+	if editorUpload != nil {
+		t.Fatal("expected editor upload attachment to be deleted")
+	}
+}
