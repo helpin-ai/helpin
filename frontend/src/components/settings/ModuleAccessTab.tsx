@@ -2,6 +2,7 @@ import { memo, useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowDown01Icon,
+  BotIcon,
   Briefcase01Icon,
   HeadphonesIcon,
   LockIcon,
@@ -42,6 +43,7 @@ import {
 } from '@/hooks/queries/useSettings'
 import { useWorkspaceMembers } from '@/hooks/queries'
 import type {
+  ManagedWorkspaceModule,
   MemberWithUser,
   WorkspaceModuleGrant,
   WorkspacePerson,
@@ -49,7 +51,7 @@ import type {
 } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-type ModuleKey = 'crm' | 'support'
+type ModuleKey = ManagedWorkspaceModule
 
 const MODULE_META: Record<
   ModuleKey,
@@ -77,9 +79,17 @@ const MODULE_META: Record<
     color: 'text-emerald-600 dark:text-emerald-400',
     bgColor: 'bg-emerald-50 dark:bg-emerald-950/40',
   },
+  automation: {
+    title: 'Automation',
+    description:
+      'Control which teams and members can access Automation. Owners and admins always retain full access.',
+    icon: BotIcon,
+    color: 'text-violet-600 dark:text-violet-400',
+    bgColor: 'bg-violet-50 dark:bg-violet-950/40',
+  },
 }
 
-const MODULES: ModuleKey[] = ['crm', 'support']
+const MODULES: ModuleKey[] = ['crm', 'support', 'automation']
 
 type ModuleAccessTabProps = {
   workspaceId: string
@@ -114,8 +124,8 @@ export function ModuleAccessTab({
             Access management is restricted
           </CardTitle>
           <CardDescription className="max-w-sm mx-auto">
-            You need the module access management permission to edit CRM and
-            Support grants. Contact a workspace owner or admin for access.
+            You need the module access management permission to edit module
+            grants. Contact a workspace owner or admin for access.
           </CardDescription>
         </CardHeader>
       </Card>
