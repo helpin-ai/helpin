@@ -35,3 +35,18 @@ export function saveCollapsedSettingsGroups(groups: Set<string>) {
     localStorage.setItem('settings_sidebar_collapsed', JSON.stringify([...groups]));
   } catch {}
 }
+
+export function getDocsOutlineOpen(workspaceId: string): boolean | null {
+  try {
+    const raw = localStorage.getItem(`docs_outline_open_${workspaceId}`);
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+  } catch {}
+  return null;
+}
+
+export function setDocsOutlineOpen(workspaceId: string, open: boolean) {
+  try {
+    localStorage.setItem(`docs_outline_open_${workspaceId}`, open ? 'true' : 'false');
+  } catch {}
+}

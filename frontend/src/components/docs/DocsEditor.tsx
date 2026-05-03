@@ -132,7 +132,7 @@ function ToolbarButton({
 
 // ── Save status indicator ───────────────────────────────────────────────────
 
-type SaveStatus = 'idle' | 'saved' | 'saving' | 'unsaved'
+export type SaveStatus = 'idle' | 'saved' | 'saving' | 'unsaved'
 
 export interface DocsEditingPresenceSignal {
   area: 'title' | 'body'
@@ -150,7 +150,7 @@ function formatLastSaved(date: Date): string {
   return `${hours} hours ago`
 }
 
-function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedAt: Date | null }) {
+export function SaveIndicator({ status, lastSavedAt }: { status: SaveStatus; lastSavedAt: Date | null }) {
   const [, setTick] = useState(0)
 
   // Re-render every 30s to update "last saved X ago"
@@ -805,6 +805,7 @@ interface DocsEditorProps {
   workspaceId?: string
   workspaceSlug?: string
   documentId?: string
+  onSaveStatusChange?: (status: SaveStatus, lastSavedAt: Date | null) => void
 }
 
 export function DocsEditor({
@@ -830,9 +831,13 @@ export function DocsEditor({
   workspaceId,
   workspaceSlug,
   documentId,
+  onSaveStatusChange,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  useEffect(() => {
+    onSaveStatusChange?.(saveStatus, lastSavedAt)
+  }, [saveStatus, lastSavedAt, onSaveStatusChange])
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const savedFadeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const savingRef = useRef(false)
@@ -1772,9 +1777,9 @@ img { max-width: 100%; }
             <p className="text-sm font-medium text-foreground">{generatingOverlay}</p>
           </div>
         )}
-        {/* Markdown menu (left) + Save indicator (right) — floating */}
+        {/* Import/Export — right-aligned, floating */}
         {!readOnly && (
-          <div className="sticky top-2 z-10 flex items-center justify-between px-4 pointer-events-none">
+          <div className="sticky top-2 z-10 flex items-center justify-end gap-2 px-4 pointer-events-none">
             <div className="pointer-events-auto">
               <ImportExportMenu
                 getMarkdown={getMarkdown}
@@ -1786,9 +1791,6 @@ img { max-width: 100%; }
                 onToggleSource={toggleSourceView}
                 sourceView={sourceView}
               />
-            </div>
-            <div className="pointer-events-auto rounded-md bg-background/80 backdrop-blur-sm px-2 py-0.5 shadow-sm border border-border/40">
-              <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
             </div>
           </div>
         )}
