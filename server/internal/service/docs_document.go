@@ -175,7 +175,11 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 	}
 	// collection_id is handled above via move semantics, skip raw patch.
 	if req.OwnerID != nil {
-		updates["owner_id"] = *req.OwnerID
+		if *req.OwnerID == "" {
+			updates["owner_id"] = nil
+		} else {
+			updates["owner_id"] = *req.OwnerID
+		}
 	}
 	if req.TemplateKey != nil {
 		updates["template_key"] = *req.TemplateKey
