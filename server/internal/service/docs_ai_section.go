@@ -500,7 +500,14 @@ func (s *DocsAISectionService) collectSources(ctx context.Context, workspaceID, 
 		}
 	}
 	if s.conversationRepo != nil {
-		conversations, _, err := s.conversationRepo.List(ctx, workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil, "", query)
+		conversations, _, err := s.conversationRepo.List(ctx, repository.ConversationRepositoryListParams{
+			ConversationListParams: repository.ConversationListParams{
+				WorkspaceID: workspaceID,
+				Pagination:  model.PMPagination{Page: 1, PerPage: 2},
+				Search:      query,
+			},
+			Role: model.RoleOwner,
+		})
 		if err == nil {
 			for _, conv := range conversations {
 				sources = append(sources, map[string]any{
