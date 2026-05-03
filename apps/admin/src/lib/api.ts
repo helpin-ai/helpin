@@ -13,6 +13,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -20,13 +21,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       },
     })
 
-    if (response.status === 401 && !path.startsWith('/auth/')) {
+    if (response.status === 401 && shouldAttemptRefresh(path)) {
       const refreshed = await tryRefreshToken()
 
       if (refreshed) {
         const nextToken = localStorage.getItem('access_token')
         const retryResponse = await fetch(`${API_BASE}${path}`, {
           ...options,
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             ...(nextToken ? { Authorization: `Bearer ${nextToken}` } : {}),
@@ -48,6 +50,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
         }
 
         return { data: await retryResponse.json(), error: null, status: retryResponse.status }
+      }
+
+      if (path === '/auth/me') {
+        return { data: null, error: 'Session expired', status: 401 }
       }
 
       clearStoredSession()
@@ -79,6 +85,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
   }
 }
 
+function shouldAttemptRefresh(path: string): boolean {
+  return path === '/auth/me' || !path.startsWith('/auth/')
+}
+
 function clearStoredSession(): void {
   localStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
@@ -87,26 +97,22 @@ function clearStoredSession(): void {
 
 async function tryRefreshToken(): Promise<boolean> {
   const refreshToken = localStorage.getItem('refresh_token')
-  if (!refreshToken) {
-    return false
-  }
 
   try {
     const response = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
     })
 
     if (!response.ok) {
       return false
     }
 
-    const data = await response.json()
-    localStorage.setItem('access_token', data.access_token)
-    localStorage.setItem('refresh_token', data.refresh_token)
+    await response.json().catch(() => null)
     return true
   } catch {
     return false
@@ -120,9 +126,7 @@ let refreshTimerId: ReturnType<typeof setInterval> | null = null
 export function startTokenRefreshTimer(): void {
   stopTokenRefreshTimer()
   refreshTimerId = setInterval(() => {
-    if (localStorage.getItem('refresh_token')) {
-      void tryRefreshToken()
-    }
+    void tryRefreshToken()
   }, TOKEN_REFRESH_INTERVAL)
 }
 
@@ -135,7 +139,7 @@ export function stopTokenRefreshTimer(): void {
 
 export function setupVisibilityRefresh(): void {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && localStorage.getItem('refresh_token')) {
+    if (document.visibilityState === 'visible') {
       void tryRefreshToken()
     }
   })

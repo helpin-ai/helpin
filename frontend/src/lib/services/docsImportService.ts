@@ -139,13 +139,12 @@ export const docsImportService = {
     if (payload.source_commit) {
       formData.append('source_commit', payload.source_commit);
     }
-    const token = localStorage.getItem('access_token');
     try {
       const res = await fetch(
         `${API_BASE}/docs/import/nextra/preview${qs(workspaceId)}`,
         {
           method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: 'include',
           body: formData,
         },
       );

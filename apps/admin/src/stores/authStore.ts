@@ -75,8 +75,9 @@ function persistAuthSession(user: User, accessToken: string, refreshToken: strin
     return 'This account is not authorized for admin tools.'
   }
 
-  localStorage.setItem('access_token', accessToken)
-  localStorage.setItem('refresh_token', refreshToken)
+  void refreshToken
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
   localStorage.setItem('remember_me', rememberMe ? '1' : '0')
   set({ user: withTokenState(user, accessToken), serverUnreachable: false, loading: false })
   return null
@@ -95,15 +96,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     initializing = true
 
     try {
-      const token = localStorage.getItem('access_token')
-      if (!token) {
-        set({ loading: false, serverUnreachable: false })
-        return
-      }
-
       const { data, error, isNetworkError } = await authService.me()
-      if (data && !error && data.is_platform_admin && claimsAllowAdmin(token)) {
-        set({ user: withTokenState(data, token), loading: false, serverUnreachable: false })
+      if (data && !error && data.is_platform_admin && data.mfa_satisfied_in_token) {
+        set({ user: { ...data, mfa_satisfied_in_token: true }, loading: false, serverUnreachable: false })
         return
       }
 
@@ -130,11 +125,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
       return { error: error || 'Passkey sign in failed' }
     }
-    if (!data.user || !data.access_token || !data.refresh_token) {
+    if (!data.user || !data.access_token) {
       return { error: 'Passkey sign in failed' }
     }
 
-    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)
+    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token ?? '', rememberMe, set)
     if (adminError) {
       return { error: adminError }
     }
@@ -149,11 +144,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (data.requires_2fa && data.two_fa_token) {
       return { error: null, requires2FA: true, twoFAToken: data.two_fa_token }
     }
-    if (!data.user || !data.access_token || !data.refresh_token) {
+    if (!data.user || !data.access_token) {
       return { error: 'Sign in failed' }
     }
 
-    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)
+    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token ?? '', rememberMe, set)
     if (adminError) {
       return { error: adminError }
     }
@@ -162,11 +157,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   verify2FASignIn: async (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe = false) => {
     const { data, error } = await authService.verify2FASignin(twoFaToken, code, useRecoveryCode)
-    if (error || !data || !data.user || !data.access_token || !data.refresh_token) {
+    if (error || !data || !data.user || !data.access_token) {
       return { error: error || 'Verification failed' }
     }
 
-    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe, set)
+    const adminError = persistAuthSession(data.user, data.access_token, data.refresh_token ?? '', rememberMe, set)
     if (adminError) {
       return { error: adminError }
     }
@@ -174,6 +169,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signOut: () => {
+    void authService.signout()
     clearAuthSession()
     set({ user: null, serverUnreachable: false })
     window.location.href = '/admin/login'

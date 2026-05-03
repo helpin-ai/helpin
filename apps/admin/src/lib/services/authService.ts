@@ -12,4 +12,5 @@ export const authService = {
         : { two_fa_token: twoFaToken, totp_code: code },
     ),
   me: () => api.get<User>('/auth/me'),
+  signout: () => api.post<{ message: string }>('/auth/signout', {}),
 }

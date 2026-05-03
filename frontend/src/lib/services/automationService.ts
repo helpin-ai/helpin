@@ -89,14 +89,13 @@ export const automationService = {
     api.post<WorkspaceSkillResponse>(`/automation/library/skills${qs(workspaceId)}`, data),
 
   importSkill: async (workspaceId: string, file: File, sourceRuntime?: string): Promise<{ data: WorkspaceSkillResponse | null; error: string | null }> => {
-    const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('archive', file);
     if (sourceRuntime) formData.append('source_runtime', sourceRuntime);
     try {
       const res = await fetch(`${API_BASE}/automation/library/skills/import${qs(workspaceId)}`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
         body: formData,
       });
       if (!res.ok) {

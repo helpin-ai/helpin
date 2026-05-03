@@ -11,12 +11,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
+import { consumeRedirectAfterLogin } from '@/lib/authRedirect';
 
 export default function Login() {
   useTitle('Sign In');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [twoFaToken, setTwoFaToken] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
@@ -30,6 +31,12 @@ export default function Login() {
     const redirect = new URLSearchParams(window.location.search).get('redirect');
     if (redirect && redirect.startsWith('/join/')) {
       navigate({ to: redirect as string });
+      return;
+    }
+
+    const redirectAfterLogin = consumeRedirectAfterLogin();
+    if (redirectAfterLogin) {
+      window.location.assign(redirectAfterLogin);
       return;
     }
 
@@ -79,28 +86,7 @@ export default function Login() {
 
       setLoading(true);
       try {
-        const redirect = new URLSearchParams(window.location.search).get('redirect');
-        if (redirect && redirect.startsWith('/join/')) {
-          navigate({ to: redirect as string });
-          return;
-        }
-
-        const { data: workspaces } = await workspacesService.list();
-        if (cancelled) {
-          return;
-        }
-
-        if (workspaces && workspaces.length > 0) {
-          const user = useAuthStore.getState().user;
-          const defaultWs = user?.default_workspace_id
-            ? workspaces.find((workspace) => workspace.id === user.default_workspace_id)
-            : null;
-          const targetSlug = defaultWs ? defaultWs.slug : workspaces[0].slug;
-          navigate({ to: '/w/$slug/pm/my-work', params: { slug: targetSlug } });
-          return;
-        }
-
-        navigate({ to: '/workspaces' });
+        await completeLoginRedirect();
       } finally {
         setLoading(false);
       }

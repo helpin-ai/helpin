@@ -122,6 +122,7 @@ func (h *InviteHandler) AcceptWithSignup(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	setAuthCookies(w, r, result.AccessToken, result.RefreshToken)
 	writeJSON(w, http.StatusCreated, result)
 }
 
