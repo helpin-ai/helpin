@@ -103,7 +103,7 @@ func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
 			Name:           "Command Agent",
 			PresetKey:      model.AgentPresetCommandAgent,
 			AllowedTargets: []string{"document"},
-			AllowedTools:   []string{"update_plan", "request_user_input", "request_approval", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "list_documents", "list_collections", "read_document", "search_documents", "write_document_content", "create_document"},
+			AllowedTools:   []string{"update_plan", "request_user_input", "request_approval", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents", "write_document_content", "update_document_block", "link_document_to_object", "create_document"},
 		},
 	}
 
@@ -118,7 +118,7 @@ func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
 	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
 		t.Fatalf("expected one-shot step kind, got %q", step.PlanKind)
 	}
-	for _, required := range []string{"web_search_exa", "read_document", "write_document_content"} {
+	for _, required := range []string{"web_search_exa", "read_document", "get_document_blocks", "write_document_content", "update_document_block"} {
 		if !slices.Contains(step.AllowedTools, required) {
 			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
 		}
@@ -611,6 +611,11 @@ func TestCRMEnrichmentToolsAreCommandAgentOnlyPresetTools(t *testing.T) {
 		}
 		if slices.Contains(crmOperator.AllowedTools, tool) {
 			t.Fatalf("did not expect CRM Operator to allow %q in first slice", tool)
+		}
+	}
+	for _, tool := range []string{"web_search_exa", "fetch_url", "read_document", "get_document_blocks", "write_document_content", "update_document_block", "link_document_to_object"} {
+		if !slices.Contains(commandAgent.AllowedTools, tool) {
+			t.Fatalf("expected Command Agent to allow document one-shot tool %q", tool)
 		}
 	}
 }

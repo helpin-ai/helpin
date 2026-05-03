@@ -1809,7 +1809,7 @@ func (s *DocsHelpcenterService) getPublicArticleUncached(ctx context.Context, wo
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := tiptap.RenderHTML(translation.Content)
+		rendered, err := RenderPublicDocsHTML(translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2124,7 +2124,7 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalPathUncached
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := tiptap.RenderHTML(translation.Content)
+		rendered, err := RenderPublicDocsHTML(translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2256,7 +2256,7 @@ func (s *DocsHelpcenterService) getPublicArticleByLocalizedCanonicalKeyUncached(
 
 	var contentHTML *string
 	if len(translation.Content) > 0 {
-		rendered, err := tiptap.RenderHTML(translation.Content)
+		rendered, err := RenderPublicDocsHTML(translation.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2357,7 +2357,7 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalPathUncached(ctx cont
 	// Render TipTap JSON -> HTML for public display.
 	var contentHTML *string
 	if content != nil && len(content.Content) > 0 {
-		rendered, err := tiptap.RenderHTML(content.Content)
+		rendered, err := RenderPublicDocsHTML(content.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}
@@ -2440,7 +2440,7 @@ func (s *DocsHelpcenterService) getPublicArticleByCanonicalKeyUncached(ctx conte
 
 	var contentHTML *string
 	if content != nil && len(content.Content) > 0 {
-		rendered, err := tiptap.RenderHTML(content.Content)
+		rendered, err := RenderPublicDocsHTML(content.Content)
 		if err == nil && rendered != "" {
 			contentHTML = &rendered
 		}

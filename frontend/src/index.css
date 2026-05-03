@@ -575,13 +575,37 @@
 .docs-editor-prose .docs-callout,
 .docs-editor-prose .docs-image-block,
 .docs-editor-prose .docs-html-block,
-.docs-editor-prose .docs-video-embed {
+.docs-editor-prose .docs-video-embed,
+.docs-editor-prose .docs-saved-view-embed,
+.docs-editor-prose .docs-toggle-section {
   margin-top: 1.5rem;
   margin-bottom: 1.5rem;
 }
 .docs-editor-prose .docs-callout > *:last-child,
 .docs-editor-prose .docs-html-block > *:last-child {
   margin-bottom: 0;
+}
+.docs-editor-prose [data-docs-stale="true"] {
+  position: relative;
+  border-left: 3px solid oklch(0.68 0.16 55);
+  padding-left: 0.75rem;
+}
+.docs-editor-prose [data-docs-stale="true"]::after {
+  content: 'Needs review';
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.5rem;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 0.25rem;
+  background: oklch(0.95 0.04 75);
+  color: oklch(0.42 0.12 55);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.dark .docs-editor-prose [data-docs-stale="true"]::after {
+  background: oklch(0.32 0.08 55);
+  color: oklch(0.88 0.08 75);
 }
 
 .tiptap ul[data-type="taskList"] {
@@ -611,6 +635,20 @@
   text-decoration: line-through;
   opacity: 0.6;
 }
+.tiptap ul[data-type="taskList"] li[data-assignee-name]::after,
+.tiptap ul[data-type="taskList"] li[data-due-date]::after {
+  content: attr(data-assignee-name) ' ' attr(data-due-date);
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 0.05rem;
+  border-radius: 0.25rem;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  white-space: nowrap;
+}
 .mention-highlight {
   color: oklch(0.45 0.2 260);
   font-weight: 500;
@@ -621,6 +659,23 @@
 .dark .mention-highlight {
   color: oklch(0.75 0.16 260);
   background: oklch(0.55 0.15 260 / 0.15);
+}
+.docs-comment-highlight {
+  cursor: pointer;
+  border-radius: 0.2rem;
+  background: oklch(0.86 0.13 85 / 0.55);
+  box-shadow: inset 0 -1px 0 oklch(0.64 0.16 70 / 0.65);
+}
+.docs-comment-highlight:hover {
+  background: oklch(0.82 0.14 85 / 0.72);
+}
+.dark .docs-comment-highlight {
+  background: oklch(0.48 0.11 85 / 0.45);
+  box-shadow: inset 0 -1px 0 oklch(0.73 0.14 85 / 0.7);
+}
+.docs-comment-block-highlight {
+  cursor: pointer;
+  box-shadow: inset 3px 0 0 oklch(0.64 0.16 70 / 0.75);
 }
 
 /* Prose-chat: compact markdown styles for support message bubbles */

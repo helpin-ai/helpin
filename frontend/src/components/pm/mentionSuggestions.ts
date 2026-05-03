@@ -1,14 +1,21 @@
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
+import type { Agent } from '@/lib/pmTypes';
+import type { DocsEntitySearchType } from '@/components/docs/entitySearch';
 
 export type MentionableTeam = Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>;
+export type MentionableAgent = Pick<Agent, 'id' | 'name' | 'role'>;
 
 export interface MentionSuggestionItem {
   id: string;
-  type: 'member' | 'team';
+  type: 'member' | 'team' | 'agent' | 'entity';
   handle: string;
   label: string;
   secondaryText?: string;
   avatarUrl?: string;
+  entityType?: DocsEntitySearchType;
+  entityId?: string;
+  displayId?: string | number | null;
+  href?: string;
 }
 
 const normalizeMentionHandle = (value: string) =>
@@ -34,6 +41,9 @@ export const getMemberMentionHandle = (member: AssignableMember) => {
 };
 
 const buildMemberSuggestion = (member: AssignableMember): MentionSuggestionItem | null => {
+  if (member.status === 'inactive') {
+    return null;
+  }
   const handle = getMemberMentionHandle(member);
   if (!handle) {
     return null;
@@ -64,6 +74,21 @@ const buildTeamSuggestion = (team: MentionableTeam): MentionSuggestionItem | nul
   };
 };
 
+const buildAgentSuggestion = (agent: MentionableAgent): MentionSuggestionItem | null => {
+  const handle = normalizeMentionHandle(agent.name);
+  if (!handle) {
+    return null;
+  }
+
+  return {
+    id: agent.id,
+    type: 'agent',
+    handle,
+    label: agent.name,
+    secondaryText: agent.role || 'Agent',
+  };
+};
+
 const matchesMentionQuery = (item: MentionSuggestionItem, query: string) => {
   if (!query) {
     return true;
@@ -77,6 +102,12 @@ const matchesMentionQuery = (item: MentionSuggestionItem, query: string) => {
 };
 
 const compareMentionSuggestions = (query: string) => (a: MentionSuggestionItem, b: MentionSuggestionItem) => {
+  const aExact = a.handle === query ? 0 : 1;
+  const bExact = b.handle === query ? 0 : 1;
+  if (aExact !== bExact) {
+    return aExact - bExact;
+  }
+
   const aStartsWith = a.handle.startsWith(query) ? 0 : 1;
   const bStartsWith = b.handle.startsWith(query) ? 0 : 1;
   if (aStartsWith !== bStartsWith) {
@@ -84,7 +115,8 @@ const compareMentionSuggestions = (query: string) => (a: MentionSuggestionItem, 
   }
 
   if (a.type !== b.type) {
-    return a.type === 'member' ? -1 : 1;
+    const priority = { member: 0, team: 1, agent: 2, entity: 3 };
+    return priority[a.type] - priority[b.type];
   }
 
   return a.label.localeCompare(b.label);
@@ -107,6 +139,7 @@ export function getMentionSuggestions(
   members: AssignableMember[],
   teams: MentionableTeam[] = [],
   limit = 8,
+  agents: MentionableAgent[] = [],
 ): MentionSuggestionItem[] {
   const normalizedQuery = normalizeMentionHandle(query ?? '');
   const items = [
@@ -115,6 +148,9 @@ export function getMentionSuggestions(
       .filter((item): item is MentionSuggestionItem => item !== null),
     ...teams
       .map(buildTeamSuggestion)
+      .filter((item): item is MentionSuggestionItem => item !== null),
+    ...agents
+      .map(buildAgentSuggestion)
       .filter((item): item is MentionSuggestionItem => item !== null),
   ]
     .filter((item) => matchesMentionQuery(item, normalizedQuery))

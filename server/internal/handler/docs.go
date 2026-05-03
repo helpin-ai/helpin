@@ -64,6 +64,8 @@ type DocsHandler struct {
 	documentSvc          *service.DocsDocumentService
 	contentSvc           *service.DocsContentService
 	blockSvc             *service.DocsBlockService
+	aiSectionSvc         *service.DocsAISectionService
+	referencesSvc        *service.DocsReferencesService
 	versionSvc           *service.DocsVersionService
 	linkSvc              *service.DocsLinkService
 	helpcenterSvc        *service.DocsHelpcenterService
@@ -71,7 +73,10 @@ type DocsHandler struct {
 	searchSvc            *service.DocsSearchService
 	importService        *service.DocsImportService
 	embeddingSvc         *service.DocsEmbeddingService
+	embedResolverSvc     *service.DocsEmbedResolverService
+	entityRefResolverSvc *service.DocsEntityReferenceResolverService
 	agentService         *service.AgentService
+	commentService       *service.PMCommentService
 	jwtManager           *auth.JWTManager
 	supportEventRecorder service.SupportEventRecorder
 }
@@ -83,6 +88,8 @@ func NewDocsHandler(
 	documentSvc *service.DocsDocumentService,
 	contentSvc *service.DocsContentService,
 	blockSvc *service.DocsBlockService,
+	aiSectionSvc *service.DocsAISectionService,
+	referencesSvc *service.DocsReferencesService,
 	versionSvc *service.DocsVersionService,
 	linkSvc *service.DocsLinkService,
 	helpcenterSvc *service.DocsHelpcenterService,
@@ -90,24 +97,32 @@ func NewDocsHandler(
 	searchSvc *service.DocsSearchService,
 	importService *service.DocsImportService,
 	embeddingSvc *service.DocsEmbeddingService,
+	embedResolverSvc *service.DocsEmbedResolverService,
+	entityRefResolverSvc *service.DocsEntityReferenceResolverService,
 	agentService *service.AgentService,
+	commentService *service.PMCommentService,
 	jwtManager *auth.JWTManager,
 ) *DocsHandler {
 	return &DocsHandler{
-		spaceSvc:       spaceSvc,
-		collectionSvc:  collectionSvc,
-		documentSvc:    documentSvc,
-		contentSvc:     contentSvc,
-		blockSvc:       blockSvc,
-		versionSvc:     versionSvc,
-		linkSvc:        linkSvc,
-		helpcenterSvc:  helpcenterSvc,
-		translationSvc: translationSvc,
-		searchSvc:      searchSvc,
-		importService:  importService,
-		embeddingSvc:   embeddingSvc,
-		agentService:   agentService,
-		jwtManager:     jwtManager,
+		spaceSvc:             spaceSvc,
+		collectionSvc:        collectionSvc,
+		documentSvc:          documentSvc,
+		contentSvc:           contentSvc,
+		blockSvc:             blockSvc,
+		aiSectionSvc:         aiSectionSvc,
+		referencesSvc:        referencesSvc,
+		versionSvc:           versionSvc,
+		linkSvc:              linkSvc,
+		helpcenterSvc:        helpcenterSvc,
+		translationSvc:       translationSvc,
+		searchSvc:            searchSvc,
+		importService:        importService,
+		embeddingSvc:         embeddingSvc,
+		embedResolverSvc:     embedResolverSvc,
+		entityRefResolverSvc: entityRefResolverSvc,
+		agentService:         agentService,
+		commentService:       commentService,
+		jwtManager:           jwtManager,
 	}
 }
 
@@ -124,6 +139,35 @@ func (h *DocsHandler) recordSupportEvent(input service.SupportEventInput) {
 		return
 	}
 	h.supportEventRecorder.RecordEventBestEffort(input)
+}
+
+func (h *DocsHandler) requireDocumentInWorkspace(w http.ResponseWriter, r *http.Request, docID string) (*model.DocsDocument, bool) {
+	doc, err := h.documentSvc.Get(r.Context(), docID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil, false
+	}
+	if doc == nil || doc.WorkspaceID != getWorkspaceID(r) {
+		writeError(w, http.StatusNotFound, "document not found")
+		return nil, false
+	}
+	return doc, true
+}
+
+func (h *DocsHandler) requireDocsComment(w http.ResponseWriter, r *http.Request, commentID string) (*model.PMComment, bool) {
+	comment, err := h.commentService.Get(r.Context(), commentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return nil, false
+	}
+	if comment == nil || comment.EntityType != "doc" {
+		writeError(w, http.StatusNotFound, "comment not found")
+		return nil, false
+	}
+	if _, ok := h.requireDocumentInWorkspace(w, r, comment.EntityID); !ok {
+		return nil, false
+	}
+	return comment, true
 }
 
 // ─── Spaces ─────────────────────────────────────────────────────────────────
@@ -750,8 +794,12 @@ func (h *DocsHandler) SaveMarkdownContent(w http.ResponseWriter, r *http.Request
 }
 
 func (h *DocsHandler) ListBlocks(w http.ResponseWriter, r *http.Request) {
-	blocks, err := h.blockSvc.List(r.Context(), chi.URLParam(r, "docId"))
+	blocks, err := h.blockSvc.List(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"))
 	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -819,6 +867,247 @@ func (h *DocsHandler) DeleteBlock(w http.ResponseWriter, r *http.Request) {
 	go h.versionSvc.MaybeAutoSnapshot(r.Context(), chi.URLParam(r, "docId"), userID)
 	h.queueEmbeddingSync(r.Context(), chi.URLParam(r, "docId"))
 	writeJSON(w, http.StatusOK, content)
+}
+
+func (h *DocsHandler) RegenerateAISection(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	var req model.RegenerateAISectionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.aiSectionSvc.Regenerate(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"), chi.URLParam(r, "blockId"), userID, req)
+	if err != nil {
+		writeDocsBlockMutationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
+func (h *DocsHandler) GetAISectionCandidate(w http.ResponseWriter, r *http.Request) {
+	candidate, err := h.aiSectionSvc.LatestCandidate(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"), chi.URLParam(r, "blockId"))
+	if err != nil {
+		writeDocsBlockMutationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, model.AISectionCandidateResponse{Candidate: candidate})
+}
+
+func (h *DocsHandler) ApproveAISection(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	resp, err := h.aiSectionSvc.Approve(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"), chi.URLParam(r, "blockId"), userID)
+	if err != nil {
+		writeDocsBlockMutationError(w, err)
+		return
+	}
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), chi.URLParam(r, "docId"), userID)
+	h.queueEmbeddingSync(r.Context(), chi.URLParam(r, "docId"))
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *DocsHandler) RejectAISection(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	resp, err := h.aiSectionSvc.Reject(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"), chi.URLParam(r, "blockId"), userID)
+	if err != nil {
+		writeDocsBlockMutationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// ListComments handles GET /api/docs/documents/{docId}/comments.
+func (h *DocsHandler) ListComments(w http.ResponseWriter, r *http.Request) {
+	if h.commentService == nil {
+		writeError(w, http.StatusInternalServerError, "comment service not configured")
+		return
+	}
+	docID := chi.URLParam(r, "docId")
+	if _, ok := h.requireDocumentInWorkspace(w, r, docID); !ok {
+		return
+	}
+	comments, err := h.commentService.List(r.Context(), "doc", docID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if comments == nil {
+		comments = []model.CommentWithAuthor{}
+	}
+	writeJSON(w, http.StatusOK, comments)
+}
+
+// CreateComment handles POST /api/docs/documents/{docId}/comments.
+func (h *DocsHandler) CreateComment(w http.ResponseWriter, r *http.Request) {
+	if h.commentService == nil {
+		writeError(w, http.StatusInternalServerError, "comment service not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	userID := middleware.GetUserID(r.Context())
+	var req model.CreateCommentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.EntityType = "doc"
+	req.EntityID = chi.URLParam(r, "docId")
+	if _, ok := h.requireDocumentInWorkspace(w, r, req.EntityID); !ok {
+		return
+	}
+	comment, err := h.commentService.Create(r.Context(), req, userID, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, comment)
+}
+
+// UpdateComment handles PUT /api/docs/comments/{id}.
+func (h *DocsHandler) UpdateComment(w http.ResponseWriter, r *http.Request) {
+	if h.commentService == nil {
+		writeError(w, http.StatusInternalServerError, "comment service not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	userID := middleware.GetUserID(r.Context())
+	var req model.UpdateCommentRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	commentID := chi.URLParam(r, "id")
+	if _, ok := h.requireDocsComment(w, r, commentID); !ok {
+		return
+	}
+	comment, err := h.commentService.Update(r.Context(), commentID, req, userID, false, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, comment)
+}
+
+// DeleteComment handles DELETE /api/docs/comments/{id}.
+func (h *DocsHandler) DeleteComment(w http.ResponseWriter, r *http.Request) {
+	if h.commentService == nil {
+		writeError(w, http.StatusInternalServerError, "comment service not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	userID := middleware.GetUserID(r.Context())
+	commentID := chi.URLParam(r, "id")
+	if _, ok := h.requireDocsComment(w, r, commentID); !ok {
+		return
+	}
+	if err := h.commentService.Delete(r.Context(), commentID, userID, false, workspaceID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "comment deleted"})
+}
+
+// ResolveComment handles POST /api/docs/comments/{id}/resolve.
+func (h *DocsHandler) ResolveComment(w http.ResponseWriter, r *http.Request) {
+	if h.commentService == nil {
+		writeError(w, http.StatusInternalServerError, "comment service not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	userID := middleware.GetUserID(r.Context())
+	commentID := chi.URLParam(r, "id")
+	if _, ok := h.requireDocsComment(w, r, commentID); !ok {
+		return
+	}
+	comment, err := h.commentService.SetResolved(r.Context(), commentID, true, userID, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, comment)
+}
+
+// ReopenComment handles POST /api/docs/comments/{id}/reopen.
+func (h *DocsHandler) ReopenComment(w http.ResponseWriter, r *http.Request) {
+	if h.commentService == nil {
+		writeError(w, http.StatusInternalServerError, "comment service not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	userID := middleware.GetUserID(r.Context())
+	commentID := chi.URLParam(r, "id")
+	if _, ok := h.requireDocsComment(w, r, commentID); !ok {
+		return
+	}
+	comment, err := h.commentService.SetResolved(r.Context(), commentID, false, userID, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, comment)
+}
+
+// ToggleCommentReaction handles POST /api/docs/comments/{id}/reactions.
+func (h *DocsHandler) ToggleCommentReaction(w http.ResponseWriter, r *http.Request) {
+	if h.commentService == nil {
+		writeError(w, http.StatusInternalServerError, "comment service not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	userID := middleware.GetUserID(r.Context())
+	var req model.ToggleReactionRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	commentID := chi.URLParam(r, "id")
+	if _, ok := h.requireDocsComment(w, r, commentID); !ok {
+		return
+	}
+	reactions, err := h.commentService.ToggleReaction(r.Context(), commentID, userID, req.Emoji, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, reactions)
+}
+
+// ListReferences handles GET /api/docs/documents/{docId}/references.
+func (h *DocsHandler) ListReferences(w http.ResponseWriter, r *http.Request) {
+	if h.referencesSvc == nil {
+		writeError(w, http.StatusInternalServerError, "references service not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	docID := chi.URLParam(r, "docId")
+	if _, ok := h.requireDocumentInWorkspace(w, r, docID); !ok {
+		return
+	}
+	refs, err := h.referencesSvc.List(r.Context(), workspaceID, docID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, refs)
+}
+
+// ResolveEntityRefs handles POST /api/docs/entity-refs/resolve.
+func (h *DocsHandler) ResolveEntityRefs(w http.ResponseWriter, r *http.Request) {
+	if h.entityRefResolverSvc == nil {
+		writeError(w, http.StatusInternalServerError, "entity reference resolver service not configured")
+		return
+	}
+	workspaceID := getWorkspaceID(r)
+	var req model.ResolveDocsEntityRefsRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resolved, err := h.entityRefResolverSvc.Resolve(r.Context(), workspaceID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resolved)
 }
 
 // ─── Versions ───────────────────────────────────────────────────────────────
@@ -1062,6 +1351,29 @@ func (h *DocsHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, results)
+}
+
+func (h *DocsHandler) ResolveEmbed(w http.ResponseWriter, r *http.Request) {
+	if h.embedResolverSvc == nil {
+		writeError(w, http.StatusServiceUnavailable, "embed resolver is not configured")
+		return
+	}
+	rawURL := strings.TrimSpace(r.URL.Query().Get("url"))
+	if rawURL == "" {
+		writeError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	resolved, err := h.embedResolverSvc.Resolve(r.Context(), rawURL)
+	if err != nil {
+		if errors.Is(err, service.ErrDocsInvalidEmbedURL) {
+			writeError(w, http.StatusBadRequest, "invalid embed url")
+			return
+		}
+		slog.WarnContext(r.Context(), "docs embed resolve failed", "error", err)
+		writeError(w, http.StatusBadGateway, "failed to resolve embed")
+		return
+	}
+	writeJSON(w, http.StatusOK, resolved)
 }
 
 // ─── Help Center Config ─────────────────────────────────────────────────────
@@ -1789,7 +2101,7 @@ func (h *DocsHandler) PublicGetSharedDoc(w http.ResponseWriter, r *http.Request)
 
 	writeJSON(w, http.StatusOK, model.PublicDocResponse{
 		Document: doc,
-		Content:  content,
+		Content:  service.RedactPublicDocsContent(content),
 	})
 }
 

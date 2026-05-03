@@ -10,6 +10,7 @@ import { useRealtimeSync } from '@/hooks/useRealtimeSync'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { GlobalCreateModals } from '@/components/pm/GlobalCreateModals'
+import { GlobalEpicPanel } from '@/components/pm/GlobalEpicPanel'
 import { GlobalTaskPanel } from '@/components/pm/GlobalTaskPanel'
 import { PageContextProvider } from '@/components/command-bar/pageContext'
 import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
@@ -107,6 +108,7 @@ function WorkspaceLayout() {
               </div>
               <MemoizedGlobalCreateModals workspaceId={currentWorkspace.id} />
               <MemoizedGlobalTaskPanel workspaceId={currentWorkspace.id} />
+              <MemoizedGlobalEpicPanel workspaceId={currentWorkspace.id} />
             </PageContextProvider>
           </SidebarInset>
         </SidebarProvider>
@@ -131,3 +133,4 @@ function RouteAwareAskAgentsDock() {
 
 const MemoizedGlobalCreateModals = memo(GlobalCreateModals)
 const MemoizedGlobalTaskPanel = memo(GlobalTaskPanel)
+const MemoizedGlobalEpicPanel = memo(GlobalEpicPanel)
