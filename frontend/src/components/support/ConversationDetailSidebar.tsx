@@ -195,12 +195,11 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
             ) : null}
           </CollapsibleSection>
 
-          <CollapsibleSection title="Tags" icon={Tag01Icon} count={(conversation.tags?.length ?? 0) + (conversation.system_tags?.length ?? 0)} defaultOpen>
+          <CollapsibleSection title="Tags" icon={Tag01Icon} count={conversation.tags?.length ?? 0} defaultOpen>
             <SupportTagPicker
               workspaceId={workspaceId}
               conversationId={conversation.id}
               selectedTags={conversation.tags ?? []}
-              systemTags={conversation.system_tags ?? []}
             />
           </CollapsibleSection>
 

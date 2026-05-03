@@ -22,18 +22,22 @@ import { EmptyState } from './EmptyState';
 import {
   buildConversationListRequestFilters,
   buildSupportInboxViewFilters,
+  defaultAIStatesForNav,
+  defaultAssignmentForNav,
   defaultStatesForNav,
   filterSupportConversations,
   hasConversationListChanges,
   statesEqual,
+  stringArraysEqual,
+  type ConversationAIStateFilter,
   type ConversationAssignmentFilter,
   type ConversationListFilters,
   type ConversationSortOrder,
   type ConversationStateFilter,
 } from '@/lib/supportInboxFilters';
-import type { SupportInboxScope, SupportSystemTag, SupportTag } from '@/lib/pmTypes';
+import type { SupportInboxScope, SupportTag } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
-import { SUPPORT_SYSTEM_TAGS, SupportTagBadge } from './SupportTagPicker';
+import { SupportTagBadge } from './SupportTagPicker';
 
 const SkeletonRow = memo(function SkeletonRow() {
   return (
@@ -116,15 +120,14 @@ function titleForView(navFilter: NavFilter): string {
   }
 }
 
-function filterCount(filters: ConversationListFilters, selectedMailboxId: string, navFilter: NavFilter, searchQuery: string): number {
+function filterCount(filters: ConversationListFilters, navFilter: NavFilter, searchQuery: string): number {
   let count = 0;
-  if (selectedMailboxId !== 'all') count += 1;
   if (searchQuery.trim()) count += 1;
   if (!statesEqual(filters.states, defaultStatesForNav(navFilter))) count += 1;
-  if (filters.assignment.length > 0) count += 1;
+  if (!stringArraysEqual(filters.assignment, defaultAssignmentForNav(navFilter))) count += 1;
   if (filters.mailboxIds.length > 0) count += 1;
   if (filters.tagIds.length > 0) count += 1;
-  if (filters.systemTags.length > 0) count += 1;
+  if (!stringArraysEqual(filters.aiStates, defaultAIStatesForNav(navFilter))) count += 1;
   if (filters.sort !== 'newest') count += 1;
   return count;
 }
@@ -166,28 +169,16 @@ function FilterSection({ title, children }: { title: string; children: ReactNode
 function TagFilterSelector({
   tags,
   selectedTagIds,
-  selectedSystemTags,
   onToggleTag,
-  onToggleSystemTag,
 }: {
   tags: SupportTag[];
   selectedTagIds: string[];
-  selectedSystemTags: SupportSystemTag[];
   onToggleTag: (tagId: string) => void;
-  onToggleSystemTag: (tag: SupportSystemTag) => void;
 }) {
   const selectedTags = tags.filter((tag) => selectedTagIds.includes(tag.id));
 
   return (
     <>
-      {selectedSystemTags.map((tag) => (
-        <SupportTagBadge
-          key={tag}
-          name={SUPPORT_SYSTEM_TAGS[tag].name}
-          color={SUPPORT_SYSTEM_TAGS[tag].color}
-          onRemove={() => onToggleSystemTag(tag)}
-        />
-      ))}
       {selectedTags.map((tag) => (
         <SupportTagBadge
           key={tag.id}
@@ -215,27 +206,8 @@ function TagFilterSelector({
               <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
                 No tags found
               </CommandEmpty>
-              <CommandGroup heading="System">
-                {([
-                  ['AI handoff', 'ai_handoff'],
-                  ['AI resolved', 'ai_resolved'],
-                ] as Array<[string, SupportSystemTag]>).map(([label, value]) => (
-                  <CommandItem
-                    key={value}
-                    value={label}
-                    data-checked={selectedSystemTags.includes(value)}
-                    onSelect={() => onToggleSystemTag(value)}
-                  >
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: SUPPORT_SYSTEM_TAGS[value].color }}
-                    />
-                    <span className="truncate">{label}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
               {tags.length > 0 && (
-                <CommandGroup heading="Tags">
+                <CommandGroup>
                   {tags.map((tag) => (
                     <CommandItem
                       key={tag.id}
@@ -328,6 +300,8 @@ export function ConversationList({
 
   const filteredConversations = useMemo(() => {
     const hasExplicitStateFilters = !statesEqual(conversationListFilters.states, defaultStatesForNav(navFilter));
+    const hasExplicitAIStateFilters = !stringArraysEqual(conversationListFilters.aiStates, defaultAIStatesForNav(navFilter));
+    const shouldSkipSidebarViewFilter = hasExplicitStateFilters || ((navFilter === 'ai_active' || navFilter === 'resolved_by_ai') && hasExplicitAIStateFilters);
     return filterSupportConversations(conversations, {
       navFilter,
       mailboxScope: selectedMailboxId === 'all' && conversationListFilters.mailboxIds.length === 0 && navFilter === 'inbox' ? 'shared' : selectedMailboxId,
@@ -335,9 +309,10 @@ export function ConversationList({
       userId,
       searchQuery: '',
       sortOrder: conversationListFilters.sort,
-      skipViewFilter: hasExplicitStateFilters,
+      skipViewFilter: shouldSkipSidebarViewFilter,
+      aiStates: conversationListFilters.aiStates,
     });
-  }, [conversationListFilters.mailboxIds, conversationListFilters.sort, conversationListFilters.states, conversations, navFilter, selectedMailboxId, userId]);
+  }, [conversationListFilters.aiStates, conversationListFilters.mailboxIds, conversationListFilters.sort, conversationListFilters.states, conversations, navFilter, selectedMailboxId, userId]);
   const mailboxMoveOptions = useMemo(
     () => [inboxScopes?.shared_inbox, ...(inboxScopes?.mailboxes ?? [])].filter(Boolean) as SupportInboxScope[],
     [inboxScopes]
@@ -351,11 +326,14 @@ export function ConversationList({
     return inboxScopes?.mailboxes?.find((mailbox) => mailbox.id === selectedMailboxId)?.name ?? null;
   }, [inboxScopes, selectedMailboxId]);
   const viewTitle = titleForView(navFilter);
-  const listTitle = selectedMailboxName ? `${selectedMailboxName} / ${viewTitle}` : viewTitle;
-  const activeFilterCount = filterCount(conversationListFilters, selectedMailboxId, navFilter, searchQuery);
+  const listTitle = selectedMailboxName
+    ? navFilter === 'inbox'
+      ? `${selectedMailboxName} inbox`
+      : `${selectedMailboxName}: ${viewTitle}`
+    : viewTitle;
+  const activeFilterCount = filterCount(conversationListFilters, navFilter, searchQuery);
   const canSaveCurrentView = hasConversationListChanges({
     navFilter,
-    selectedMailboxId,
     searchQuery,
     listFilters: conversationListFilters,
   });
@@ -402,8 +380,9 @@ export function ConversationList({
     const nextAssignments = currentAssignments.includes(assignment)
       ? currentAssignments.filter((value) => value !== assignment)
       : [...currentAssignments, assignment];
+    if (navFilter === 'mine' && nextAssignments.length === 0) return;
     setConversationListFilter('assignment', nextAssignments);
-  }, [conversationListFilters.assignment, setConversationListFilter]);
+  }, [conversationListFilters.assignment, navFilter, setConversationListFilter]);
 
   const toggleMailboxFilter = useCallback((mailboxId: string) => {
     if (mailboxId === 'all') {
@@ -437,13 +416,13 @@ export function ConversationList({
     setConversationListFilter('tagIds', nextTags);
   }, [conversationListFilters.tagIds, setConversationListFilter]);
 
-  const toggleSystemTagFilter = useCallback((tag: SupportSystemTag) => {
-    const currentTags = conversationListFilters.systemTags;
-    const nextTags = currentTags.includes(tag)
-      ? currentTags.filter((value) => value !== tag)
-      : [...currentTags, tag];
-    setConversationListFilter('systemTags', nextTags);
-  }, [conversationListFilters.systemTags, setConversationListFilter]);
+  const toggleAIStateFilter = useCallback((aiState: ConversationAIStateFilter) => {
+    const currentStates = conversationListFilters.aiStates;
+    const nextStates = currentStates.includes(aiState)
+      ? currentStates.filter((value) => value !== aiState)
+      : [...currentStates, aiState];
+    setConversationListFilter('aiStates', nextStates);
+  }, [conversationListFilters.aiStates, setConversationListFilter]);
 
   const handleSaveView = useCallback(() => {
     const name = saveViewName.trim();
@@ -528,7 +507,9 @@ export function ConversationList({
               </PopoverTrigger>
               <PopoverContent side="right" align="start" sideOffset={8} className="w-[380px] p-3">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold">View & filters</div>
+                  <div className="min-w-0 text-sm font-semibold">
+                    <span className="block truncate">{listTitle} filters</span>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -559,11 +540,28 @@ export function ConversationList({
                       </FilterPill>
                     ))}
                   </FilterSection>
-                  <FilterSection title="Assigned to">
+                  <FilterSection title="AI state">
+                    {([
+                      ['AI handling', 'handling'],
+                      ['AI handoff', 'handoff'],
+                      ['AI resolved', 'resolved'],
+                    ] as Array<[string, ConversationAIStateFilter]>).map(([label, value]) => (
+                      <FilterPill
+                        key={value}
+                        selected={conversationListFilters.aiStates.includes(value)}
+                        onClick={() => toggleAIStateFilter(value)}
+                      >
+                        {label}
+                      </FilterPill>
+                    ))}
+                  </FilterSection>
+                  <FilterSection title="Assignment">
                     {[
-                      ['Me', 'me'],
+                      ['Assigned to me', 'me'],
+                      ['Mentioned me', 'mentioned_me'],
+                      ['Opened by me', 'opened_by_me'],
                       ['Unassigned', 'unassigned'],
-                      ['Others', 'others'],
+                      ['Assigned to others', 'others'],
                     ].map(([label, value]) => (
                       <FilterPill
                         key={value}
@@ -578,9 +576,7 @@ export function ConversationList({
                     <TagFilterSelector
                       tags={supportTags}
                       selectedTagIds={conversationListFilters.tagIds}
-                      selectedSystemTags={conversationListFilters.systemTags}
                       onToggleTag={toggleTagFilter}
-                      onToggleSystemTag={toggleSystemTagFilter}
                     />
                   </FilterSection>
                   <FilterSection title="Team inbox">

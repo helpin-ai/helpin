@@ -53,6 +53,7 @@ type SupportConversationFilters = {
   filter?: string;
   mailbox_id?: string | null;
   ai_state?: string;
+  ai?: string;
   flow_state?: string;
   search?: string;
   assigned_to?: string;

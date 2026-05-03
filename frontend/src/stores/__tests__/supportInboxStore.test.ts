@@ -27,7 +27,7 @@ function resetStore() {
       assignment: [],
       mailboxIds: [],
       tagIds: [],
-      systemTags: [],
+      aiStates: [],
       sort: 'newest',
     },
     activeCustomViewId: null,
@@ -137,7 +137,7 @@ describe('supportInboxStore', () => {
         assignment: ['unassigned'],
         mailboxIds: [],
         tagIds: ['tag-billing'],
-        systemTags: ['ai_handoff'],
+        aiStates: ['handoff'],
         sort: 'oldest',
       },
     });
@@ -149,9 +149,23 @@ describe('supportInboxStore', () => {
       assignment: [],
       mailboxIds: [],
       tagIds: [],
-      systemTags: [],
+      aiStates: [],
       sort: 'newest',
     });
+  });
+
+  it('uses visible Assignment defaults for Mine without affecting other sidebar items', () => {
+    useSupportInboxStore.getState().setNavFilter('mine');
+
+    expect(useSupportInboxStore.getState().conversationListFilters.assignment).toEqual([
+      'me',
+      'mentioned_me',
+      'opened_by_me',
+    ]);
+
+    useSupportInboxStore.getState().setNavFilter('waiting');
+
+    expect(useSupportInboxStore.getState().conversationListFilters.assignment).toEqual([]);
   });
 
   it('applies a custom support view to the list state', () => {
@@ -163,7 +177,7 @@ describe('supportInboxStore', () => {
         mailbox_id: 'mailbox-billing',
         assignment: 'unassigned',
         tag_ids: 'tag-billing,tag-vip',
-        system_tags: 'ai_handoff',
+        ai: 'handoff',
         sort: 'oldest',
         search: 'refund',
       },
@@ -178,7 +192,7 @@ describe('supportInboxStore', () => {
       assignment: ['unassigned'],
       mailboxIds: [],
       tagIds: ['tag-billing', 'tag-vip'],
-      systemTags: ['ai_handoff'],
+      aiStates: ['handoff'],
       sort: 'oldest',
     });
   });

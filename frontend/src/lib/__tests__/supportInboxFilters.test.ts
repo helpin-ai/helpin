@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildConversationListRequestFilters, defaultConversationListFiltersForNav, filterSupportConversations } from '../supportInboxFilters';
+import {
+  buildConversationListRequestFilters,
+  buildSupportInboxViewFilters,
+  defaultAssignmentForNav,
+  defaultConversationListFiltersForNav,
+  filterSupportConversations,
+  hasConversationListChanges,
+} from '../supportInboxFilters';
 import type { SupportConversation } from '../pmTypes';
 
 function buildConversation(overrides: Partial<SupportConversation>): SupportConversation {
@@ -172,7 +179,7 @@ describe('buildConversationListRequestFilters', () => {
     });
   });
 
-  it('adds user and system tag filters without changing the sidebar view', () => {
+  it('adds user tag and AI state filters without changing the sidebar view', () => {
     expect(buildConversationListRequestFilters({
       navFilter: 'inbox',
       selectedMailboxId: 'all',
@@ -180,13 +187,13 @@ describe('buildConversationListRequestFilters', () => {
       listFilters: {
         ...defaultConversationListFiltersForNav('inbox'),
         tagIds: ['tag-billing', 'tag-vip'],
-        systemTags: ['ai_handoff'],
+        aiStates: ['handoff'],
       },
     })).toEqual({
       filter: 'inbox',
       mailbox_id: 'shared',
       tag_ids: 'tag-billing,tag-vip',
-      system_tags: 'ai_handoff',
+      ai: 'handoff',
     });
   });
 
@@ -203,11 +210,28 @@ describe('buildConversationListRequestFilters', () => {
   });
 
   it('shows Mine globally as Open plus Waiting without changing the backend mine filter', () => {
+    expect(defaultAssignmentForNav('mine')).toEqual(['me', 'mentioned_me', 'opened_by_me']);
     expect(buildConversationListRequestFilters({
       navFilter: 'mine',
       selectedMailboxId: 'all',
       searchQuery: '',
       listFilters: defaultConversationListFiltersForNav('mine'),
+    })).toEqual({ filter: 'mine' });
+  });
+
+  it('only sends Mine assignment filters after they differ from the visible Mine defaults', () => {
+    expect(buildConversationListRequestFilters({
+      navFilter: 'mine',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: { ...defaultConversationListFiltersForNav('mine'), assignment: ['mentioned_me'] },
+    })).toEqual({ filter: 'mine', assigned_to: 'mentioned_me' });
+
+    expect(buildConversationListRequestFilters({
+      navFilter: 'mine',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: { ...defaultConversationListFiltersForNav('mine'), assignment: [] },
     })).toEqual({ filter: 'mine' });
   });
 
@@ -224,7 +248,23 @@ describe('buildConversationListRequestFilters', () => {
       selectedMailboxId: 'all',
       searchQuery: '',
       listFilters: defaultConversationListFiltersForNav('ai_active'),
-    })).toEqual({ flow_state: 'ai_handling' });
+    })).toEqual({ ai: 'handling' });
+  });
+
+  it('uses the visible AI state selection for AI sidebar views', () => {
+    expect(buildConversationListRequestFilters({
+      navFilter: 'resolved_by_ai',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: defaultConversationListFiltersForNav('resolved_by_ai'),
+    })).toEqual({ ai: 'resolved' });
+
+    expect(buildConversationListRequestFilters({
+      navFilter: 'ai_active',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: { ...defaultConversationListFiltersForNav('ai_active'), aiStates: ['handoff', 'resolved'] },
+    })).toEqual({ ai: 'handoff,resolved' });
   });
 
   it('allows Inbox to be explicitly expanded to all inboxes', () => {
@@ -234,5 +274,46 @@ describe('buildConversationListRequestFilters', () => {
       searchQuery: '',
       listFilters: { ...defaultConversationListFiltersForNav('inbox'), mailboxIds: ['all'] },
     })).toEqual({ filter: 'inbox' });
+  });
+});
+
+describe('hasConversationListChanges', () => {
+  it('does not treat the selected sidebar team inbox as a filter change', () => {
+    expect(hasConversationListChanges({
+      navFilter: 'inbox',
+      searchQuery: '',
+      listFilters: defaultConversationListFiltersForNav('inbox'),
+    })).toBe(false);
+  });
+
+  it('treats team inbox selections inside the filter popover as filter changes', () => {
+    expect(hasConversationListChanges({
+      navFilter: 'inbox',
+      searchQuery: '',
+      listFilters: { ...defaultConversationListFiltersForNav('inbox'), mailboxIds: ['mailbox-sales'] },
+    })).toBe(true);
+  });
+});
+
+describe('buildSupportInboxViewFilters', () => {
+  it('does not persist default Mine assignment chips unless the user changes them', () => {
+    expect(buildSupportInboxViewFilters({
+      navFilter: 'mine',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: defaultConversationListFiltersForNav('mine'),
+    })).toEqual({
+      nav_filter: 'mine',
+      states: 'open,waiting_on_customer',
+    });
+
+    expect(buildSupportInboxViewFilters({
+      navFilter: 'mine',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: { ...defaultConversationListFiltersForNav('mine'), assignment: ['me'] },
+    })).toMatchObject({
+      assignment: 'me',
+    });
   });
 });

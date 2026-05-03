@@ -70,6 +70,11 @@ func (h *SupportInboxViewHandler) Create(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *SupportInboxViewHandler) Update(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
 	var req model.UpdateSupportInboxViewRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -80,7 +85,7 @@ func (h *SupportInboxViewHandler) Update(w http.ResponseWriter, r *http.Request)
 	if actor != nil {
 		role = actor.Role
 	}
-	view, err := h.viewService.Update(r.Context(), chi.URLParam(r, "viewId"), middleware.GetUserID(r.Context()), role, req)
+	view, err := h.viewService.Update(r.Context(), workspaceID, chi.URLParam(r, "viewId"), middleware.GetUserID(r.Context()), role, req)
 	if err != nil {
 		if isSupportInboxViewForbidden(err) {
 			writeError(w, http.StatusForbidden, err.Error())
@@ -93,12 +98,17 @@ func (h *SupportInboxViewHandler) Update(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *SupportInboxViewHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
 	actor := authorization.GetActor(r.Context())
 	role := ""
 	if actor != nil {
 		role = actor.Role
 	}
-	err := h.viewService.Delete(r.Context(), chi.URLParam(r, "viewId"), middleware.GetUserID(r.Context()), role)
+	err := h.viewService.Delete(r.Context(), workspaceID, chi.URLParam(r, "viewId"), middleware.GetUserID(r.Context()), role)
 	if err != nil {
 		if isSupportInboxViewForbidden(err) {
 			writeError(w, http.StatusForbidden, err.Error())

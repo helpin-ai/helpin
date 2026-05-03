@@ -58,10 +58,10 @@ describe('supportInboxRouting', () => {
       searchQuery: '',
       listFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: [],
+        assignment: ['me', 'mentioned_me', 'opened_by_me'],
         mailboxIds: [],
         tagIds: [],
-        systemTags: [],
+        aiStates: [],
         sort: 'newest',
       },
     })).toEqual({ view: 'mine' });
@@ -76,13 +76,33 @@ describe('supportInboxRouting', () => {
         assignment: [],
         mailboxIds: [],
         tagIds: [],
-        systemTags: [],
+        aiStates: [],
         sort: 'newest',
       },
     })).toEqual({});
   });
 
-  it('stores tag filters in the URL', () => {
+  it('stores Assignment filters only when they differ from the sidebar default', () => {
+    expect(buildSupportInboxSearch({
+      navFilter: 'mine',
+      selectedMailboxId: 'all',
+      statusFilter: 'all',
+      searchQuery: '',
+      listFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: ['me'],
+        mailboxIds: [],
+        tagIds: [],
+        aiStates: [],
+        sort: 'newest',
+      },
+    })).toEqual({
+      view: 'mine',
+      assigned_to: 'me',
+    });
+  });
+
+  it('stores tag and AI state filters in the URL', () => {
     expect(buildSupportInboxSearch({
       navFilter: 'inbox',
       selectedMailboxId: 'all',
@@ -93,12 +113,12 @@ describe('supportInboxRouting', () => {
         assignment: [],
         mailboxIds: [],
         tagIds: ['tag-billing'],
-        systemTags: ['ai_handoff'],
+        aiStates: ['handoff'],
         sort: 'newest',
       },
     })).toEqual({
       tag_ids: 'tag-billing',
-      system_tags: 'ai_handoff',
+      ai: 'handoff',
     });
   });
 });

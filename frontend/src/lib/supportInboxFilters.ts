@@ -1,4 +1,4 @@
-import type { SupportConversation, SupportSystemTag } from './pmTypes';
+import type { SupportConversation } from './pmTypes';
 import type { NavFilter } from '@/stores/supportInboxStore';
 import {
   isAIActiveConversation,
@@ -7,16 +7,17 @@ import {
   isResolvedByAIConversation,
 } from '@/components/support/helpers';
 
-export type ConversationAssignmentFilter = 'me' | 'unassigned' | 'others';
+export type ConversationAssignmentFilter = 'me' | 'mentioned_me' | 'opened_by_me' | 'unassigned' | 'others';
 export type ConversationSortOrder = 'newest' | 'oldest';
 export type ConversationStateFilter = 'open' | 'waiting_on_customer' | 'resolved' | 'spam';
+export type ConversationAIStateFilter = 'handling' | 'handoff' | 'resolved';
 
 export interface ConversationListFilters {
   states: ConversationStateFilter[];
   assignment: ConversationAssignmentFilter[];
   mailboxIds: string[];
   tagIds: string[];
-  systemTags: SupportSystemTag[];
+  aiStates: ConversationAIStateFilter[];
   sort: ConversationSortOrder;
 }
 
@@ -25,7 +26,7 @@ export const DEFAULT_CONVERSATION_LIST_FILTERS: ConversationListFilters = {
   assignment: [],
   mailboxIds: [],
   tagIds: [],
-  systemTags: [],
+  aiStates: [],
   sort: 'newest',
 };
 
@@ -40,7 +41,7 @@ export type ConversationListRequestFilters = {
   sort?: string;
   statuses?: string;
   tag_ids?: string;
-  system_tags?: string;
+  ai?: string;
 };
 
 export function defaultStatesForNav(navFilter: NavFilter): ConversationStateFilter[] {
@@ -62,13 +63,28 @@ export function defaultStatesForNav(navFilter: NavFilter): ConversationStateFilt
   }
 }
 
+export function defaultAIStatesForNav(navFilter: NavFilter): ConversationAIStateFilter[] {
+  switch (navFilter) {
+    case 'ai_active':
+      return ['handling'];
+    case 'resolved_by_ai':
+      return ['resolved'];
+    default:
+      return [];
+  }
+}
+
+export function defaultAssignmentForNav(navFilter: NavFilter): ConversationAssignmentFilter[] {
+  return navFilter === 'mine' ? ['me', 'mentioned_me', 'opened_by_me'] : [];
+}
+
 export function defaultConversationListFiltersForNav(navFilter: NavFilter): ConversationListFilters {
   return {
     states: defaultStatesForNav(navFilter),
-    assignment: [],
+    assignment: defaultAssignmentForNav(navFilter),
     mailboxIds: [],
     tagIds: [],
-    systemTags: [],
+    aiStates: defaultAIStatesForNav(navFilter),
     sort: 'newest',
   };
 }
@@ -89,10 +105,37 @@ function normalizeAssignmentFilters(value: unknown): ConversationAssignmentFilte
   for (const item of raw) {
     const trimmed = String(item).trim();
     if (
-      (trimmed === 'me' || trimmed === 'unassigned' || trimmed === 'others') &&
+      (trimmed === 'me' ||
+        trimmed === 'mentioned_me' ||
+        trimmed === 'opened_by_me' ||
+        trimmed === 'unassigned' ||
+        trimmed === 'others') &&
       !normalized.includes(trimmed)
     ) {
       normalized.push(trimmed);
+    }
+  }
+  return normalized;
+}
+
+export function normalizeAIStateFilters(value: unknown): ConversationAIStateFilter[] {
+  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  const normalized: ConversationAIStateFilter[] = [];
+  for (const item of raw) {
+    const trimmed = String(item).trim();
+    const mapped =
+      trimmed === 'ai_handoff' || trimmed === 'needs_human'
+        ? 'handoff'
+        : trimmed === 'ai_resolved' || trimmed === 'resolved_by_ai'
+          ? 'resolved'
+          : trimmed === 'ai_handling' || trimmed === 'ai-active' || trimmed === 'ai_active'
+            ? 'handling'
+            : trimmed;
+    if (
+      (mapped === 'handling' || mapped === 'handoff' || mapped === 'resolved') &&
+      !normalized.includes(mapped)
+    ) {
+      normalized.push(mapped);
     }
   }
   return normalized;
@@ -105,34 +148,31 @@ export function normalizeConversationListFilters(
   const defaults = defaultConversationListFiltersForNav(navFilter);
   return {
     states: filters?.states && filters.states.length > 0 ? filters.states : defaults.states,
-    assignment: normalizeAssignmentFilters(filters?.assignment),
+    assignment: filters && 'assignment' in filters ? normalizeAssignmentFilters(filters.assignment) : defaults.assignment,
     mailboxIds: filters?.mailboxIds ?? defaults.mailboxIds,
     tagIds: filters?.tagIds ?? defaults.tagIds,
-    systemTags: filters?.systemTags ?? defaults.systemTags,
+    aiStates: filters && 'aiStates' in filters ? normalizeAIStateFilters(filters.aiStates) : defaults.aiStates,
     sort: filters?.sort ?? defaults.sort,
   };
 }
 
 export function hasConversationListChanges({
   navFilter,
-  selectedMailboxId,
   searchQuery,
   listFilters,
 }: {
   navFilter: NavFilter;
-  selectedMailboxId: string;
   searchQuery: string;
   listFilters: Partial<ConversationListFilters> | undefined;
 }): boolean {
   const normalized = normalizeConversationListFilters(listFilters, navFilter);
   return (
-    selectedMailboxId !== 'all' ||
     searchQuery.trim().length > 0 ||
     !statesEqual(normalized.states, defaultStatesForNav(navFilter)) ||
-    normalized.assignment.length > 0 ||
+    !stringArraysEqual(normalized.assignment, defaultAssignmentForNav(navFilter)) ||
     normalized.mailboxIds.length > 0 ||
     normalized.tagIds.length > 0 ||
-    normalized.systemTags.length > 0 ||
+    !stringArraysEqual(normalized.aiStates, defaultAIStatesForNav(navFilter)) ||
     normalized.sort !== 'newest'
   );
 }
@@ -155,10 +195,12 @@ export function buildSupportInboxViewFilters({
   filters.states = normalizedFilters.states.join(',');
   if (selectedMailboxId !== 'all') filters.mailbox_id = selectedMailboxId;
   if (searchQuery.trim()) filters.search = searchQuery.trim();
-  if (normalizedFilters.assignment.length > 0) filters.assignment = normalizedFilters.assignment.join(',');
+  if (!stringArraysEqual(normalizedFilters.assignment, defaultAssignmentForNav(navFilter))) {
+    if (normalizedFilters.assignment.length > 0) filters.assignment = normalizedFilters.assignment.join(',');
+  }
   if (normalizedFilters.mailboxIds.length > 0) filters.mailbox_ids = normalizedFilters.mailboxIds.join(',');
   if (normalizedFilters.tagIds.length > 0) filters.tag_ids = normalizedFilters.tagIds.join(',');
-  if (normalizedFilters.systemTags.length > 0) filters.system_tags = normalizedFilters.systemTags.join(',');
+  if (normalizedFilters.aiStates.length > 0) filters.ai = normalizedFilters.aiStates.join(',');
   if (normalizedFilters.sort !== 'newest') filters.sort = normalizedFilters.sort;
   return filters;
 }
@@ -207,10 +249,7 @@ export function buildConversationListRequestFilters({
         f.status = 'spam';
         break;
       case 'ai_active':
-        f.flow_state = 'ai_handling';
-        break;
       case 'resolved_by_ai':
-        f.flow_state = 'resolved_by_ai';
         break;
     }
   } else {
@@ -219,19 +258,18 @@ export function buildConversationListRequestFilters({
         f.filter = 'mine';
         break;
       case 'ai_active':
-        f.flow_state = 'ai_handling';
-        break;
       case 'resolved_by_ai':
-        f.flow_state = 'resolved_by_ai';
         break;
     }
   }
 
   if (searchQuery.trim()) f.search = searchQuery.trim();
   if (hasExplicitStates) f.statuses = selectedStates.join(',');
-  if (normalizedFilters.assignment.length > 0) f.assigned_to = normalizedFilters.assignment.join(',');
+  if (!stringArraysEqual(normalizedFilters.assignment, defaultAssignmentForNav(navFilter))) {
+    if (normalizedFilters.assignment.length > 0) f.assigned_to = normalizedFilters.assignment.join(',');
+  }
   if (normalizedFilters.tagIds.length > 0) f.tag_ids = normalizedFilters.tagIds.join(',');
-  if (normalizedFilters.systemTags.length > 0) f.system_tags = normalizedFilters.systemTags.join(',');
+  if (normalizedFilters.aiStates.length > 0) f.ai = normalizedFilters.aiStates.join(',');
   if (normalizedFilters.sort !== 'newest') f.sort = normalizedFilters.sort;
   return Object.keys(f).length > 0 ? f : undefined;
 }
@@ -252,6 +290,25 @@ function matchesMailboxScopes(conversation: SupportConversation, mailboxScopes: 
   return mailboxScopes.some((scope) => matchesMailboxScope(conversation, scope));
 }
 
+function matchesAIState(conversation: SupportConversation, aiState: ConversationAIStateFilter): boolean {
+  switch (aiState) {
+    case 'handling':
+      return isAIActiveConversation(conversation);
+    case 'handoff':
+      return conversation.ai_state === 'escalated' ||
+        !!conversation.ai_escalated_at ||
+        (!!conversation.customer_requested_human_at && (conversation.ai_state != null || (conversation.ai_turn_count ?? 0) > 0)) ||
+        (
+          (conversation.flow_state === 'waiting_for_human' ||
+            conversation.flow_state === 'queued_for_human' ||
+            conversation.flow_state === 'after_hours_queue') &&
+          (conversation.ai_state != null || (conversation.ai_turn_count ?? 0) > 0)
+        );
+    case 'resolved':
+      return isResolvedByAIConversation(conversation);
+  }
+}
+
 export function filterSupportConversations(
   conversations: SupportConversation[],
   options: {
@@ -263,9 +320,10 @@ export function filterSupportConversations(
     searchQuery: string;
     sortOrder?: ConversationSortOrder;
     skipViewFilter?: boolean;
+    aiStates?: ConversationAIStateFilter[];
   }
 ): SupportConversation[] {
-  const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false } = options;
+  const { navFilter, mailboxScope, mailboxScopes = [], statusFilter = 'all', userId, searchQuery, sortOrder = 'newest', skipViewFilter = false, aiStates = [] } = options;
   let result = conversations.filter((conversation) =>
     mailboxScopes.length > 0 ? matchesMailboxScopes(conversation, mailboxScopes) : matchesMailboxScope(conversation, mailboxScope)
   );
@@ -290,6 +348,10 @@ export function filterSupportConversations(
     } else if (navFilter === 'resolved_by_ai') {
       result = result.filter(isResolvedByAIConversation);
     }
+  }
+
+  if (aiStates.length > 0) {
+    result = result.filter((conversation) => aiStates.some((aiState) => matchesAIState(conversation, aiState)));
   }
 
   if (searchQuery.trim()) {

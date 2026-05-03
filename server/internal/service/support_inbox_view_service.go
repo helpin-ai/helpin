@@ -58,8 +58,11 @@ func (s *SupportInboxViewService) Create(ctx context.Context, workspaceID, userI
 	return view, nil
 }
 
-func (s *SupportInboxViewService) Update(ctx context.Context, id, userID, role string, req model.UpdateSupportInboxViewRequest) (*model.SupportInboxView, error) {
-	view, err := s.viewRepo.GetByID(ctx, id)
+func (s *SupportInboxViewService) Update(ctx context.Context, workspaceID, id, userID, role string, req model.UpdateSupportInboxViewRequest) (*model.SupportInboxView, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	view, err := s.viewRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +99,11 @@ func (s *SupportInboxViewService) Update(ctx context.Context, id, userID, role s
 	return view, nil
 }
 
-func (s *SupportInboxViewService) Delete(ctx context.Context, id, userID, role string) error {
-	view, err := s.viewRepo.GetByID(ctx, id)
+func (s *SupportInboxViewService) Delete(ctx context.Context, workspaceID, id, userID, role string) error {
+	if strings.TrimSpace(workspaceID) == "" {
+		return fmt.Errorf("workspace_id is required")
+	}
+	view, err := s.viewRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return err
 	}
@@ -107,7 +113,7 @@ func (s *SupportInboxViewService) Delete(ctx context.Context, id, userID, role s
 	if !canModifySupportInboxView(view, userID, role) {
 		return fmt.Errorf("forbidden: you cannot delete this view")
 	}
-	if err := s.viewRepo.Delete(ctx, id); err != nil {
+	if err := s.viewRepo.Delete(ctx, workspaceID, id); err != nil {
 		s.logger.ErrorContext(ctx, "failed to delete support inbox view", "error", err, "view_id", id)
 		return err
 	}

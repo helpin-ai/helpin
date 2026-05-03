@@ -1,5 +1,5 @@
 import type { NavFilter } from '@/stores/supportInboxStore';
-import { defaultStatesForNav, statesEqual } from '@/lib/supportInboxFilters';
+import { defaultAIStatesForNav, defaultAssignmentForNav, defaultStatesForNav, statesEqual, stringArraysEqual } from '@/lib/supportInboxFilters';
 import type { ConversationListFilters } from '@/lib/supportInboxFilters';
 
 export type SupportInboxRouteSearch = {
@@ -106,8 +106,8 @@ export function buildSupportInboxSearch({
   if (activeCustomViewId) {
     search.custom_view = activeCustomViewId;
   }
-  if (listFilters?.assignment && listFilters.assignment.length > 0) {
-    search.assigned_to = listFilters.assignment.join(',');
+  if (listFilters?.assignment && !stringArraysEqual(listFilters.assignment, defaultAssignmentForNav(navFilter))) {
+    if (listFilters.assignment.length > 0) search.assigned_to = listFilters.assignment.join(',');
   }
   if (listFilters?.sort && listFilters.sort !== 'newest') {
     search.sort = listFilters.sort;
@@ -121,8 +121,10 @@ export function buildSupportInboxSearch({
   if (listFilters?.tagIds && listFilters.tagIds.length > 0) {
     search.tag_ids = listFilters.tagIds.join(',');
   }
-  if (listFilters?.systemTags && listFilters.systemTags.length > 0) {
-    search.system_tags = listFilters.systemTags.join(',');
+  if (listFilters?.aiStates && !stringArraysEqual(listFilters.aiStates, defaultAIStatesForNav(navFilter))) {
+    if (listFilters.aiStates.length > 0) {
+      search.ai = listFilters.aiStates.join(',');
+    }
   }
   return search;
 }

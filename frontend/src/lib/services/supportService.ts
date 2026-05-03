@@ -58,6 +58,7 @@ export const supportService = {
       mailbox_id?: string | null;
       mailbox_ids?: string;
       ai_state?: string;
+      ai?: string;
       flow_state?: string;
       search?: string;
       assigned_to?: string;
@@ -76,6 +77,7 @@ export const supportService = {
     if (filters?.mailbox_id && filters.mailbox_id !== 'all') path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
     if (filters?.mailbox_ids) path += `&mailbox_ids=${encodeURIComponent(filters.mailbox_ids)}`;
     if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`;
+    if (filters?.ai) path += `&ai=${encodeURIComponent(filters.ai)}`;
     if (filters?.flow_state) path += `&flow_state=${encodeURIComponent(filters.flow_state)}`;
     if (filters?.search?.trim()) path += `&search=${encodeURIComponent(filters.search.trim())}`;
     if (filters?.assigned_to) path += `&assigned_to=${encodeURIComponent(filters.assigned_to)}`;

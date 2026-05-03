@@ -13,8 +13,7 @@ import { ConversationDetailSidebar } from './ConversationDetailSidebar';
 import { CreateConversationDialog } from './CreateConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
-import { defaultStatesForNav, statesEqual, stringArraysEqual, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
-import type { SupportSystemTag } from '@/lib/pmTypes';
+import { defaultAIStatesForNav, defaultAssignmentForNav, defaultStatesForNav, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
 
 function parseRouteStates(value: string | undefined, navFilter: ReturnType<typeof navFilterFromView>): ConversationStateFilter[] {
   if (!value) return defaultStatesForNav(navFilter);
@@ -32,18 +31,39 @@ function parseRouteStringList(value: string | undefined): string[] {
   return value.split(',').map((entry) => entry.trim()).filter(Boolean);
 }
 
-function parseRouteSystemTags(value: string | undefined, legacyAI: string | undefined): SupportSystemTag[] {
-  const tags = parseRouteStringList(value).filter((tag): tag is SupportSystemTag =>
-    tag === 'ai_handoff' ||
-    tag === 'ai_resolved'
+function parseRouteAssignments(value: string | undefined, navFilter: ReturnType<typeof navFilterFromView>): ConversationAssignmentFilter[] {
+  if (!value) return defaultAssignmentForNav(navFilter);
+  if (value === 'none') return [];
+  return parseRouteStringList(value).filter((entry): entry is ConversationAssignmentFilter =>
+    entry === 'me' ||
+    entry === 'mentioned_me' ||
+    entry === 'opened_by_me' ||
+    entry === 'unassigned' ||
+    entry === 'others'
   );
-  if (legacyAI === 'needs_human' && !tags.includes('ai_handoff')) {
-    tags.push('ai_handoff');
+}
+
+function parseRouteAIStates(value: string | undefined, legacySystemTags: string | undefined, navFilter: ReturnType<typeof navFilterFromView>): ConversationAIStateFilter[] {
+  if (!value && !legacySystemTags) return defaultAIStatesForNav(navFilter);
+  const values = [...parseRouteStringList(value), ...parseRouteStringList(legacySystemTags)];
+  const states: ConversationAIStateFilter[] = [];
+  for (const item of values) {
+    const mapped =
+      item === 'ai_handoff' || item === 'needs_human'
+        ? 'handoff'
+        : item === 'ai_resolved' || item === 'resolved_by_ai'
+          ? 'resolved'
+          : item === 'ai_handling' || item === 'ai-active' || item === 'ai_active'
+            ? 'handling'
+            : item;
+    if (
+      (mapped === 'handling' || mapped === 'handoff' || mapped === 'resolved') &&
+      !states.includes(mapped)
+    ) {
+      states.push(mapped);
+    }
   }
-  if (legacyAI === 'resolved_by_ai' && !tags.includes('ai_resolved')) {
-    tags.push('ai_resolved');
-  }
-  return tags;
+  return states;
 }
 
 export function SupportInboxLayout() {
@@ -110,12 +130,10 @@ export function SupportInboxLayout() {
     const nextSearchQuery = routeSearch.q || '';
     const nextConversationListFilters: ConversationListFilters = {
       states: parseRouteStates(routeSearch.states, effectiveNavFilter),
-      assignment: parseRouteStringList(routeSearch.assigned_to).filter((entry): entry is ConversationAssignmentFilter =>
-        entry === 'me' || entry === 'unassigned' || entry === 'others'
-      ),
+      assignment: parseRouteAssignments(routeSearch.assigned_to, effectiveNavFilter),
       mailboxIds: parseRouteStringList(routeSearch.mailbox_ids),
       tagIds: parseRouteStringList(routeSearch.tag_ids),
-      systemTags: parseRouteSystemTags(routeSearch.system_tags, routeSearch.ai),
+      aiStates: parseRouteAIStates(routeSearch.ai, routeSearch.system_tags, effectiveNavFilter),
       sort: routeSearch.sort === 'oldest' ? 'oldest' : 'newest',
     };
 
@@ -163,7 +181,7 @@ export function SupportInboxLayout() {
       !stringArraysEqual(nextConversationListFilters.assignment, currentState.conversationListFilters.assignment) ||
       !stringArraysEqual(nextConversationListFilters.mailboxIds, currentState.conversationListFilters.mailboxIds) ||
       !stringArraysEqual(nextConversationListFilters.tagIds, currentState.conversationListFilters.tagIds) ||
-      !stringArraysEqual(nextConversationListFilters.systemTags, currentState.conversationListFilters.systemTags) ||
+      !stringArraysEqual(nextConversationListFilters.aiStates, currentState.conversationListFilters.aiStates) ||
       nextConversationListFilters.sort !== currentState.conversationListFilters.sort
     ) {
       syncRouteState({

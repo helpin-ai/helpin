@@ -5,6 +5,10 @@ import "time"
 const (
 	SupportSystemTagAIHandoff  = "ai_handoff"
 	SupportSystemTagAIResolved = "ai_resolved"
+
+	SupportAIFilterHandling = "handling"
+	SupportAIFilterHandoff  = "handoff"
+	SupportAIFilterResolved = "resolved"
 )
 
 // SupportTag is a workspace-wide tag for support conversations.

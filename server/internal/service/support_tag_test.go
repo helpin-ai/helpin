@@ -74,6 +74,14 @@ func TestSupportTagService(t *testing.T) {
 	}
 }
 
+func idsFromConversations(conversations []model.SupportConversation) []string {
+	ids := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		ids = append(ids, conversation.ID)
+	}
+	return ids
+}
+
 func TestSupportConversationTagsInList(t *testing.T) {
 	db := newTestDB(t)
 	mustExec(t, db, `CREATE TABLE support_tags (
@@ -124,6 +132,16 @@ func TestSupportConversationTagsInList(t *testing.T) {
 		AIState:     strPtr("resolved"),
 		FlowState:   strPtr(model.SupportConversationFlowStateResolvedByAI),
 	}
+	aiHandling := &model.SupportConversation{
+		ID:          "ai-handling-conv",
+		WorkspaceID: workspaceID,
+		Subject:     "AI is handling",
+		Status:      model.SupportConversationStatusOpen,
+		Priority:    "medium",
+		Channel:     "widget",
+		AIState:     strPtr("pending"),
+		FlowState:   strPtr(model.SupportConversationFlowStateAIHandling),
+	}
 	plain := &model.SupportConversation{
 		ID:          "plain-conv",
 		WorkspaceID: workspaceID,
@@ -132,7 +150,7 @@ func TestSupportConversationTagsInList(t *testing.T) {
 		Priority:    "medium",
 		Channel:     "email",
 	}
-	for _, conversation := range []*model.SupportConversation{handoff, resolvedByAI, plain} {
+	for _, conversation := range []*model.SupportConversation{handoff, resolvedByAI, aiHandling, plain} {
 		if err := conversationRepo.Create(ctx, conversation); err != nil {
 			t.Fatalf("create conversation %s: %v", conversation.ID, err)
 		}
@@ -206,5 +224,33 @@ func TestSupportConversationTagsInList(t *testing.T) {
 	}
 	if len(systemTagFiltered) != 1 || systemTagFiltered[0].ID != resolvedByAI.ID {
 		t.Fatalf("expected only AI resolved conversation by system tag, got %#v", systemTagFiltered)
+	}
+
+	aiFiltered, _, err := conversationRepo.List(ctx, repository.ConversationRepositoryListParams{
+		ConversationListParams: repository.ConversationListParams{
+			WorkspaceID: workspaceID,
+			AIFilters:   []string{"handling", "handoff"},
+			Pagination:  model.PMPagination{Page: 1, PerPage: 50},
+		},
+		Role: model.RoleOwner,
+	})
+	if err != nil {
+		t.Fatalf("filter by AI state: %v", err)
+	}
+	assertContainsExactly(t, idsFromConversations(aiFiltered), []string{aiHandling.ID, handoff.ID})
+
+	invalidSystemTagFiltered, _, err := conversationRepo.List(ctx, repository.ConversationRepositoryListParams{
+		ConversationListParams: repository.ConversationListParams{
+			WorkspaceID: workspaceID,
+			SystemTags:  []string{"unknown_system_tag"},
+			Pagination:  model.PMPagination{Page: 1, PerPage: 50},
+		},
+		Role: model.RoleOwner,
+	})
+	if err != nil {
+		t.Fatalf("filter by invalid system tag: %v", err)
+	}
+	if len(invalidSystemTagFiltered) != 0 {
+		t.Fatalf("expected invalid system tag to return no conversations, got %#v", invalidSystemTagFiltered)
 	}
 }

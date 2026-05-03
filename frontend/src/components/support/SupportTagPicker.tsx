@@ -167,11 +167,6 @@ export function SupportTagBadge({
   );
 }
 
-function SystemTagBadge({ tag }: { tag: SupportSystemTag }) {
-  const meta = SUPPORT_SYSTEM_TAGS[tag];
-  return <SupportTagBadge name={meta.name} color={meta.color} />;
-}
-
 function ManageTagsDialog({
   workspaceId,
   tags,
@@ -466,13 +461,11 @@ export function SupportTagPicker({
   workspaceId,
   conversationId,
   selectedTags,
-  systemTags = [],
   className,
 }: {
   workspaceId: string;
   conversationId: string;
   selectedTags: SupportTag[];
-  systemTags?: SupportSystemTag[];
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -511,9 +504,6 @@ export function SupportTagPicker({
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
-      {systemTags.map((tag) => (
-        <SystemTagBadge key={tag} tag={tag} />
-      ))}
       {selectedTags.map((tag) => (
         <SupportTagBadge
           key={tag.id}
@@ -530,7 +520,7 @@ export function SupportTagPicker({
             className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
           >
             <Tag01Icon className="h-3 w-3" />
-            {selectedTags.length === 0 && systemTags.length === 0 ? 'Add tag' : 'Add'}
+            {selectedTags.length === 0 ? 'Add tag' : 'Add'}
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[240px] p-0">

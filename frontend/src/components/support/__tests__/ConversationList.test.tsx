@@ -42,7 +42,7 @@ describe('ConversationList presence resync', () => {
         assignment: [],
         mailboxIds: [],
         tagIds: [],
-        systemTags: [],
+        aiStates: [],
         sort: 'newest',
       },
     })
@@ -159,10 +159,10 @@ describe('ConversationList presence resync', () => {
       selectedMailboxId: 'mailbox-billing',
       conversationListFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: [],
+        assignment: ['me', 'mentioned_me', 'opened_by_me'],
         mailboxIds: [],
         tagIds: [],
-        systemTags: [],
+        aiStates: [],
         sort: 'newest',
       },
     })
@@ -183,6 +183,81 @@ describe('ConversationList presence resync', () => {
     act(() => root.unmount())
   })
 
+  it('shows Mine Assignment defaults without sending an extra assignment request filter', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'mine',
+      conversationListFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: ['me', 'mentioned_me', 'opened_by_me'],
+        mailboxIds: [],
+        tagIds: [],
+        aiStates: [],
+        sort: 'newest',
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(mockUseInfiniteConversations).toHaveBeenCalledWith('ws-1', {
+      filter: 'mine',
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    expect(filterButton.querySelector('.bg-primary')).toBeNull()
+    act(() => {
+      filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    for (const label of ['Assigned to me', 'Mentioned me', 'Opened by me']) {
+      const button = Array.from(document.body.querySelectorAll('button')).find((item) => item.textContent === label) as HTMLButtonElement
+      expect(button.className).toContain('bg-primary/10')
+    }
+
+    act(() => root.unmount())
+  })
+
+  it('keeps at least one Assignment chip selected in Mine', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'mine',
+      conversationListFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: ['me'],
+        mailboxIds: [],
+        tagIds: [],
+        aiStates: [],
+        sort: 'newest',
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    act(() => {
+      filterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const assignedToMeButton = Array.from(document.body.querySelectorAll('button')).find((item) => item.textContent === 'Assigned to me') as HTMLButtonElement
+    act(() => {
+      assignedToMeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(useSupportInboxStore.getState().conversationListFilters.assignment).toEqual(['me'])
+
+    act(() => root.unmount())
+  })
+
   it('uses status directly for simple lifecycle sidebar views', () => {
     useSupportInboxStore.setState({
       navFilter: 'waiting',
@@ -191,7 +266,7 @@ describe('ConversationList presence resync', () => {
         assignment: [],
         mailboxIds: [],
         tagIds: [],
-        systemTags: [],
+        aiStates: [],
         sort: 'newest',
       },
     })
@@ -226,7 +301,7 @@ describe('ConversationList presence resync', () => {
         assignment: ['unassigned'],
         mailboxIds: [],
         tagIds: ['tag-billing'],
-        systemTags: ['ai_handoff'],
+        aiStates: ['handoff'],
         sort: 'oldest',
       },
     })
@@ -275,7 +350,7 @@ describe('ConversationList presence resync', () => {
         search: 'refund',
         assignment: 'unassigned',
         tag_ids: 'tag-billing',
-        system_tags: 'ai_handoff',
+        ai: 'handoff',
         sort: 'oldest',
       },
     }, expect.any(Object))
@@ -305,6 +380,40 @@ describe('ConversationList presence resync', () => {
     })
 
     expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent === 'Save as view')).toBe(true)
+
+    act(() => root.unmount())
+  })
+
+  it('does not show the filter dot for a selected team inbox context', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'inbox',
+      selectedMailboxId: 'mailbox-billing',
+      conversationListFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: [],
+        mailboxIds: [],
+        tagIds: [],
+        aiStates: [],
+        sort: 'newest',
+      },
+    })
+    mockUseInboxScopes.mockReturnValue({
+      data: {
+        shared_inbox: { id: 'shared', name: 'Main inbox' },
+        mailboxes: [{ id: 'mailbox-billing', name: 'Billing' }],
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    const filterButton = container.querySelector('[aria-label="Conversation filters"]') as HTMLButtonElement
+    expect(filterButton.querySelector('.bg-primary')).toBeNull()
 
     act(() => root.unmount())
   })
@@ -353,7 +462,7 @@ describe('ConversationList presence resync', () => {
         assignment: [],
         mailboxIds: [],
         tagIds: ['tag-billing'],
-        systemTags: [],
+        aiStates: [],
         sort: 'newest',
       },
     })
@@ -392,7 +501,7 @@ describe('ConversationList presence resync', () => {
         assignment: [],
         mailboxIds: [],
         tagIds: [],
-        systemTags: [],
+        aiStates: [],
         sort: 'newest',
       },
     })

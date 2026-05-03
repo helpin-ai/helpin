@@ -166,6 +166,16 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 	createConversation("assigned-other", now.Add(-2*time.Minute), map[string]any{"assigned_user_id": otherUserID})
 	createConversation("unassigned", now.Add(-1*time.Minute), nil)
 	createConversation("agent-owned", now, map[string]any{"assigned_agent_id": "agent-support-list-filters"})
+	createConversation("opened-by-me", now.Add(time.Minute), map[string]any{"opened_by_user_id": userID})
+	createConversation("mentioned-me", now.Add(2*time.Minute), nil)
+
+	if err := db.Exec(`INSERT INTO support_messages
+		(id, workspace_id, conversation_id, sender_type, message_type, content, is_internal, metadata, created_at, updated_at)
+		VALUES (?, ?, ?, 'user', 'reply', 'Mentioning teammate', 1, ?, ?, ?)`,
+		"msg-assignment-filter-mention", workspaceID, "mentioned-me", `{"mentioned_user_ids":["`+userID+`"]}`, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert mention message: %v", err)
+	}
 
 	listIDs := func(assignedTo, sortOrder string) []string {
 		t.Helper()
@@ -190,11 +200,16 @@ func TestSupportConversationRepositoryListAssignmentAndSortFilters(t *testing.T)
 	}
 
 	assertContainsExactly(t, listIDs("me", ""), []string{"assigned-me"})
-	assertContainsExactly(t, listIDs("unassigned", ""), []string{"unassigned"})
+	assertContainsExactly(t, listIDs("unassigned", ""), []string{"unassigned", "opened-by-me", "mentioned-me"})
 	assertContainsExactly(t, listIDs("others", ""), []string{"assigned-other"})
-	assertContainsExactly(t, listIDs("me,unassigned", ""), []string{"assigned-me", "unassigned"})
+	assertContainsExactly(t, listIDs("opened_by_me", ""), []string{"opened-by-me"})
+	assertContainsExactly(t, listIDs("mentioned_me", ""), []string{"mentioned-me"})
+	assertContainsExactly(t, listIDs("me,mentioned_me,opened_by_me", ""), []string{"assigned-me", "mentioned-me", "opened-by-me"})
+	assertContainsExactly(t, listIDs("me,unassigned", ""), []string{"assigned-me", "unassigned", "opened-by-me", "mentioned-me"})
+	assertContainsExactly(t, listIDs("unknown", ""), []string{})
+	assertContainsExactly(t, listIDs("none", ""), []string{})
 
-	if got, want := listIDs("", "oldest"), []string{"assigned-me", "assigned-other", "unassigned", "agent-owned"}; len(got) != len(want) {
+	if got, want := listIDs("", "oldest"), []string{"assigned-me", "assigned-other", "unassigned", "agent-owned", "opened-by-me", "mentioned-me"}; len(got) != len(want) {
 		t.Fatalf("got ids %v, want %v", got, want)
 	} else {
 		for i := range want {

@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import type {
   ConversationAssignmentFilter,
+  ConversationAIStateFilter,
   ConversationListFilters,
   ConversationSortOrder,
   ConversationStateFilter,
 } from '@/lib/supportInboxFilters';
-import { defaultConversationListFiltersForNav } from '@/lib/supportInboxFilters';
-import type { SupportSystemTag } from '@/lib/pmTypes';
+import { defaultAssignmentForNav, defaultConversationListFiltersForNav } from '@/lib/supportInboxFilters';
 
 export type NavFilter = 'inbox' | 'mine' | 'waiting' | 'resolved' | 'spam' | 'ai_active' | 'resolved_by_ai';
 export type ReplyMode = 'reply' | 'note';
@@ -107,11 +107,19 @@ function parseNavFilter(value: unknown): NavFilter {
 }
 
 function parseAssignmentFilters(value: unknown): ConversationAssignmentFilter[] {
+  if (value === 'none') return [];
   return parseStringList(value).filter((entry): entry is ConversationAssignmentFilter =>
     entry === 'me' ||
+    entry === 'mentioned_me' ||
+    entry === 'opened_by_me' ||
     entry === 'unassigned' ||
     entry === 'others'
   );
+}
+
+function parseAssignmentFiltersForNav(value: unknown, navFilter: NavFilter): ConversationAssignmentFilter[] {
+  if (typeof value !== 'string') return defaultAssignmentForNav(navFilter);
+  return parseAssignmentFilters(value);
 }
 
 function parseSortOrder(value: unknown): ConversationSortOrder {
@@ -123,18 +131,27 @@ function parseStringList(value: unknown): string[] {
   return value.split(',').map((entry) => entry.trim()).filter(Boolean);
 }
 
-function parseSystemTags(value: unknown, legacyAI?: unknown): SupportSystemTag[] {
-  const tags = parseStringList(value).filter((tag): tag is SupportSystemTag =>
-    tag === 'ai_handoff' ||
-    tag === 'ai_resolved'
-  );
-  if (legacyAI === 'needs_human' && !tags.includes('ai_handoff')) {
-    tags.push('ai_handoff');
+function parseAIStateFilters(value: unknown, legacySystemTags?: unknown): ConversationAIStateFilter[] {
+  const filters = parseStringList(value);
+  filters.push(...parseStringList(legacySystemTags));
+  const normalized: ConversationAIStateFilter[] = [];
+  for (const filter of filters) {
+    const mapped =
+      filter === 'ai_handoff' || filter === 'needs_human'
+        ? 'handoff'
+        : filter === 'ai_resolved' || filter === 'resolved_by_ai'
+          ? 'resolved'
+          : filter === 'ai_handling' || filter === 'ai-active' || filter === 'ai_active'
+            ? 'handling'
+            : filter;
+    if (
+      (mapped === 'handling' || mapped === 'handoff' || mapped === 'resolved') &&
+      !normalized.includes(mapped)
+    ) {
+      normalized.push(mapped);
+    }
   }
-  if (legacyAI === 'resolved_by_ai' && !tags.includes('ai_resolved')) {
-    tags.push('ai_resolved');
-  }
-  return tags;
+  return normalized;
 }
 
 function parseStates(value: unknown, navFilter: NavFilter): ConversationStateFilter[] {
@@ -338,10 +355,10 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         searchQuery: filters.search || '',
         conversationListFilters: {
           states: parseStates(filters.states, navFilter),
-          assignment: parseAssignmentFilters(filters.assignment),
+          assignment: parseAssignmentFiltersForNav(filters.assignment, navFilter),
           mailboxIds: parseStringList(filters.mailbox_ids),
           tagIds: parseStringList(filters.tag_ids),
-          systemTags: parseSystemTags(filters.system_tags, filters.ai),
+          aiStates: parseAIStateFilters(filters.ai, filters.system_tags),
           sort: parseSortOrder(filters.sort),
         },
         selectedConversationId: null,

@@ -30,9 +30,9 @@ func (r *SupportInboxViewRepository) ListByWorkspace(ctx context.Context, worksp
 	return views, nil
 }
 
-func (r *SupportInboxViewRepository) GetByID(ctx context.Context, id string) (*model.SupportInboxView, error) {
+func (r *SupportInboxViewRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.SupportInboxView, error) {
 	var view model.SupportInboxView
-	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&view).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, id).First(&view).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -55,8 +55,8 @@ func (r *SupportInboxViewRepository) Update(ctx context.Context, view *model.Sup
 	return nil
 }
 
-func (r *SupportInboxViewRepository) Delete(ctx context.Context, id string) error {
-	if err := r.db.WithContext(ctx).Delete(&model.SupportInboxView{}, "id = ?", strings.TrimSpace(id)).Error; err != nil {
+func (r *SupportInboxViewRepository) Delete(ctx context.Context, workspaceID, id string) error {
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND id = ?", workspaceID, strings.TrimSpace(id)).Delete(&model.SupportInboxView{}).Error; err != nil {
 		return fmt.Errorf("delete support inbox view: %w", err)
 	}
 	return nil

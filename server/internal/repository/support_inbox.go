@@ -593,6 +593,7 @@ type ConversationListParams struct {
 	AIState     []string
 	TagIDs      []string
 	SystemTags  []string
+	AIFilters   []string
 }
 
 // ConversationRepositoryListParams adds resolved actor access data for repository queries.
@@ -687,12 +688,34 @@ func applyConversationTagFilters(query *gorm.DB, alias string, tagIDs, systemTag
 		}
 	}
 	if len(conditions) == 0 {
-		return query
+		return query.Where("1 = 0")
 	}
 	return query.Where("("+strings.Join(conditions, " OR ")+")", args...)
 }
 
-func applyConversationAssignmentFilter(query *gorm.DB, alias, assignedTo, userID string) *gorm.DB {
+func applyConversationAIFilters(query *gorm.DB, alias string, aiFilters []string) *gorm.DB {
+	aiFilters = compactStrings(aiFilters)
+	if len(aiFilters) == 0 {
+		return query
+	}
+	conditions := make([]string, 0, len(aiFilters))
+	for _, filter := range aiFilters {
+		switch strings.TrimSpace(strings.ToLower(filter)) {
+		case model.SupportAIFilterHandling, "ai_handling", "ai-active", "ai_active":
+			conditions = append(conditions, conversationAIActiveCondition(alias))
+		case model.SupportAIFilterHandoff, model.SupportSystemTagAIHandoff, "needs_human":
+			conditions = append(conditions, conversationAIHandoffCondition(alias))
+		case model.SupportAIFilterResolved, model.SupportSystemTagAIResolved, "resolved_by_ai":
+			conditions = append(conditions, conversationResolvedByAICondition(alias))
+		}
+	}
+	if len(conditions) == 0 {
+		return query.Where("1 = 0")
+	}
+	return query.Where("(" + strings.Join(conditions, " OR ") + ")")
+}
+
+func (r *SupportConversationRepository) applyConversationAssignmentFilter(query *gorm.DB, alias, assignedTo, userID string) *gorm.DB {
 	filters := compactStrings(strings.Split(assignedTo, ","))
 	if len(filters) == 0 {
 		return query
@@ -714,6 +737,27 @@ func applyConversationAssignmentFilter(query *gorm.DB, alias, assignedTo, userID
 			}
 			conditions = append(conditions, fmt.Sprintf("%s.assigned_user_id = ?", alias))
 			args = append(args, userID)
+		case "mentioned_me":
+			if seen["mentioned_me"] {
+				continue
+			}
+			seen["mentioned_me"] = true
+			userID = strings.TrimSpace(userID)
+			mentionCondition, mentionArgs := r.mentionExistsCondition(alias, userID)
+			conditions = append(conditions, mentionCondition)
+			args = append(args, mentionArgs...)
+		case "opened_by_me":
+			if seen["opened_by_me"] {
+				continue
+			}
+			seen["opened_by_me"] = true
+			userID = strings.TrimSpace(userID)
+			if userID == "" {
+				conditions = append(conditions, "1 = 0")
+				continue
+			}
+			conditions = append(conditions, fmt.Sprintf("%s.opened_by_user_id = ?", alias))
+			args = append(args, userID)
 		case "unassigned":
 			if seen["unassigned"] {
 				continue
@@ -732,10 +776,12 @@ func applyConversationAssignmentFilter(query *gorm.DB, alias, assignedTo, userID
 			}
 			conditions = append(conditions, fmt.Sprintf("%s.assigned_user_id IS NOT NULL AND %s.assigned_user_id <> ?", alias, alias))
 			args = append(args, userID)
+		case "none":
+			conditions = append(conditions, "1 = 0")
 		}
 	}
 	if len(conditions) == 0 {
-		return query
+		return query.Where("1 = 0")
 	}
 	return query.Where("("+strings.Join(conditions, " OR ")+")", args...)
 }
@@ -778,8 +824,9 @@ func (r *SupportConversationRepository) applyConversationListParams(query *gorm.
 	query = applyConversationFlowState(query, alias, params.FlowState)
 	query = r.applyConversationSearch(query, strings.TrimSpace(params.Search))
 	query = r.applyConversationListFilter(query, alias, params.Filter, params.UserID)
-	query = applyConversationAssignmentFilter(query, alias, params.AssignedTo, params.UserID)
+	query = r.applyConversationAssignmentFilter(query, alias, params.AssignedTo, params.UserID)
 	query = applyConversationTagFilters(query, alias, params.TagIDs, params.SystemTags)
+	query = applyConversationAIFilters(query, alias, params.AIFilters)
 	if len(params.Statuses) > 0 {
 		query = query.Where(fmt.Sprintf("%s.status IN ?", alias), params.Statuses)
 	} else if params.Status != "" {
