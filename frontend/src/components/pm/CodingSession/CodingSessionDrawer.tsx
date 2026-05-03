@@ -30,7 +30,8 @@ export function CodingSessionDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full border-l p-0 data-[side=right]:w-[78vw] data-[side=right]:sm:max-w-[78vw]"
+        className="z-[70] w-full border-l p-0 data-[side=right]:w-[78vw] data-[side=right]:sm:max-w-[78vw]"
+        overlayClassName="z-[70]"
         onPointerDownOutside={stopOutsideDismissPropagation}
         onInteractOutside={stopOutsideDismissPropagation}
       >

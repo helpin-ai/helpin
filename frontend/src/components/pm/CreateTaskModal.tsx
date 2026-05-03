@@ -1104,14 +1104,14 @@ export function CreateTaskModal({
                     )}
                     <label className="flex items-center justify-center gap-2 rounded-md border border-dashed border-border/60 px-3 py-2 cursor-pointer hover:border-border hover:bg-muted/30 transition-colors">
                       <Upload01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Drop files or click to upload (max 10MB)</span>
+                      <span className="text-xs text-muted-foreground">Drop files or click to upload (max 50MB)</span>
                       <input
                         type="file"
                         multiple
                         className="hidden"
                         onChange={(e) => {
                           if (e.target.files?.length) {
-                            const newFiles = Array.from(e.target.files).filter((f) => f.size <= 10 * 1024 * 1024);
+                            const newFiles = Array.from(e.target.files).filter((f) => f.size <= 50 * 1024 * 1024);
                             setPendingFiles((prev) => [...prev, ...newFiles]);
                           }
                           e.target.value = '';

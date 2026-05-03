@@ -55,7 +55,7 @@ export function SidebarPopoverSelect<T extends string>({
             type="button"
             disabled={disabled}
             className={cn(
-              'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
+              'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
               triggerClassName,
             )}
           >
@@ -104,7 +104,7 @@ export function SidebarPopoverSelect<T extends string>({
           type="button"
           disabled={disabled}
           className={cn(
-            'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
+            'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
             triggerClassName,
           )}
         >

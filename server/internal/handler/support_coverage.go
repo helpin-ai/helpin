@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -103,10 +104,13 @@ func (h *SupportCoverageHandler) GetSummary(w http.ResponseWriter, r *http.Reque
 func (h *SupportCoverageHandler) ListGaps(w http.ResponseWriter, r *http.Request) {
 	wsID := middleware.GetWorkspaceID(r.Context())
 	filter := model.SupportCoverageGapFilter{
-		Status:    r.URL.Query().Get("status"),
-		V1GapType: r.URL.Query().Get("v1_gap_type"),
-		IssueKey:  r.URL.Query().Get("issue_key"),
-		Search:    r.URL.Query().Get("search"),
+		Status:      r.URL.Query().Get("status"),
+		GapKind:     r.URL.Query().Get("gap_kind"),
+		GapCategory: r.URL.Query().Get("gap_category"),
+		V1GapType:   r.URL.Query().Get("v1_gap_type"),
+		IssueKey:    r.URL.Query().Get("issue_key"),
+		Search:      r.URL.Query().Get("search"),
+		ShowRaw:     r.URL.Query().Get("show_raw") == "true",
 	}
 	gaps, total, err := h.coverageSvc.ListGaps(r.Context(), wsID, filter)
 	if err != nil {
@@ -425,4 +429,23 @@ func (h *SupportCoverageHandler) SubmitDocsIssueFeedback(w http.ResponseWriter, 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// TriggerReanalysis starts a coverage reanalysis workflow for the workspace.
+func (h *SupportCoverageHandler) TriggerReanalysis(w http.ResponseWriter, r *http.Request) {
+	wsID := middleware.GetWorkspaceID(r.Context())
+	if wsID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if err := h.coverageSvc.TriggerReanalysis(r.Context(), wsID); err != nil {
+		if errors.Is(err, service.ErrReanalysisAlreadyRunning) {
+			writeError(w, http.StatusConflict, "reanalysis already in progress")
+			return
+		}
+		slog.ErrorContext(r.Context(), "trigger coverage reanalysis", "error", err, "workspace_id", wsID)
+		writeError(w, http.StatusInternalServerError, "failed to start reanalysis")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
 }

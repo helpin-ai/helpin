@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -260,13 +261,26 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 			COALESCE(t.canonical_title, t.title, '') AS canonical_title,
 			(SELECT COUNT(*) FROM support_gap_suggestions s WHERE s.gap_id = g.id) AS suggestion_count,
 			(SELECT ga.document_id FROM support_coverage_gap_articles ga WHERE ga.gap_id = g.id LIMIT 1) AS related_article_id,
-			(SELECT COUNT(*) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
+			(SELECT COUNT(DISTINCT COALESCE(e.conversation_id, e.id)) FROM support_gap_evidence e WHERE e.gap_id = g.id AND e.created_at > ?) AS evidence_30d`, evidenceCutoff).
 		Joins("LEFT JOIN support_coverage_topics t ON t.id = g.topic_id").
 		Where("g.workspace_id = ?", workspaceID).
 		Where("g.status != ?", model.SupportCoverageGapStatusMerged)
+	if !filter.ShowRaw {
+		q = applyHideRawEventDetectionGaps(q, "g")
+	}
 
 	if filter.Status != "" {
 		q = q.Where("g.status = ?", filter.Status)
+	}
+	if filter.GapKind != "" {
+		if filter.GapKind == "action" {
+			q = q.Where("g.gap_kind IN (?)", []string{"action", "policy"})
+		} else {
+			q = q.Where("g.gap_kind = ?", filter.GapKind)
+		}
+	}
+	if filter.GapCategory != "" {
+		q = q.Where("g.gap_category = ?", filter.GapCategory)
 	}
 	if filter.V1GapType != "" {
 		q = q.Where("g.v1_gap_type = ?", filter.V1GapType)
@@ -282,11 +296,30 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 	countQ := r.db.WithContext(ctx).
 		Table("support_coverage_gaps").
 		Where("workspace_id = ? AND status != ?", workspaceID, model.SupportCoverageGapStatusMerged)
+	if !filter.ShowRaw {
+		countQ = applyHideRawEventDetectionGaps(countQ, "support_coverage_gaps")
+	}
 	if filter.Status != "" {
 		countQ = countQ.Where("status = ?", filter.Status)
 	}
+	if filter.GapKind != "" {
+		if filter.GapKind == "action" {
+			countQ = countQ.Where("gap_kind IN (?)", []string{"action", "policy"})
+		} else {
+			countQ = countQ.Where("gap_kind = ?", filter.GapKind)
+		}
+	}
+	if filter.GapCategory != "" {
+		countQ = countQ.Where("gap_category = ?", filter.GapCategory)
+	}
 	if filter.V1GapType != "" {
 		countQ = countQ.Where("v1_gap_type = ?", filter.V1GapType)
+	}
+	if filter.IssueKey != "" {
+		countQ = countQ.Where("issue_key = ?", filter.IssueKey)
+	}
+	if filter.Search != "" {
+		countQ = countQ.Where("title LIKE ?", "%"+filter.Search+"%")
 	}
 	if err := countQ.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count gaps: %w", err)
@@ -310,6 +343,30 @@ func (r *SupportCoverageRepository) ListGaps(ctx context.Context, workspaceID st
 		return nil, 0, fmt.Errorf("list gaps: %w", err)
 	}
 	return items, total, nil
+}
+
+func applyHideRawEventDetectionGaps(q *gorm.DB, tableAlias string) *gorm.DB {
+	return q.Where(
+		fmt.Sprintf(`NOT (%s AND %s.v1_gap_type = ? AND %s.confidence < ?)`,
+			metadataSourceEqualsCondition(q, tableAlias),
+			tableAlias,
+			tableAlias,
+		),
+		model.SupportCoverageGapSourceEventDetection,
+		model.SupportCoverageV1GapNeedsReview,
+		0.7,
+	)
+}
+
+func metadataSourceEqualsCondition(q *gorm.DB, tableAlias string) string {
+	switch q.Dialector.Name() {
+	case "postgres":
+		return fmt.Sprintf("COALESCE(%s.metadata ->> 'source' = ?, false)", tableAlias)
+	case "sqlite":
+		return fmt.Sprintf("COALESCE(json_extract(%s.metadata, '$.source') = ?, 0)", tableAlias)
+	default:
+		return fmt.Sprintf("COALESCE(CAST(%s.metadata AS TEXT) LIKE '%%\"source\":\"' || ? || '\"%%', false)", tableAlias)
+	}
 }
 
 func (r *SupportCoverageRepository) ListWorkspacesWithOpenGaps(ctx context.Context) ([]string, error) {
@@ -361,18 +418,55 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		}
 	}
 
-	var evidence []model.SupportGapEvidence
-	r.db.WithContext(ctx).
-		Where("gap_id = ?", gapID).
-		Order("created_at DESC").
+	var evidence []model.SupportGapEvidenceView
+	if err := r.db.WithContext(ctx).
+		Table("support_gap_evidence AS e").
+		Select("e.*, COALESCE(sm.sender_type, '') AS sender_role").
+		Joins("LEFT JOIN support_messages sm ON sm.id = e.message_id AND sm.workspace_id = e.workspace_id").
+		Where("e.gap_id = ?", gapID).
+		Order("e.created_at DESC").
 		Limit(50).
-		Find(&evidence)
+		Find(&evidence).Error; err != nil {
+		return nil, fmt.Errorf("list gap evidence: %w", err)
+	}
+
+	var analysisExplanation *model.SupportCoverageAnalysisExplanation
+	for _, ev := range evidence {
+		if ev.SourceSignal != "daily_conversation_analysis" && ev.EvidenceType != "daily_conversation_analysis" {
+			continue
+		}
+		var metadata struct {
+			CustomerNeed    string `json:"customer_need"`
+			AIFailure       string `json:"ai_failure"`
+			HumanResolution string `json:"human_resolution"`
+			DecisionReason  string `json:"decision_reason"`
+		}
+		if err := json.Unmarshal(ev.Metadata, &metadata); err != nil {
+			continue
+		}
+		if metadata.CustomerNeed == "" && metadata.AIFailure == "" && metadata.HumanResolution == "" && metadata.DecisionReason == "" {
+			continue
+		}
+		analysisExplanation = &model.SupportCoverageAnalysisExplanation{
+			CustomerNeed:    metadata.CustomerNeed,
+			AIFailure:       metadata.AIFailure,
+			HumanResolution: metadata.HumanResolution,
+			DecisionReason:  metadata.DecisionReason,
+		}
+		break
+	}
 
 	var suggestions []model.SupportGapSuggestion
 	r.db.WithContext(ctx).
 		Where("gap_id = ?", gapID).
 		Order("created_at DESC").
 		Find(&suggestions)
+
+	var recommendations []model.SupportCoverageRecommendation
+	r.db.WithContext(ctx).
+		Where("gap_id = ?", gapID).
+		Order("CASE WHEN priority = 'primary' THEN 0 ELSE 1 END, created_at DESC").
+		Find(&recommendations)
 
 	var relatedArticles []model.SupportCoverageGapArticle
 	r.db.WithContext(ctx).
@@ -399,6 +493,8 @@ func (r *SupportCoverageRepository) GetGapDetail(ctx context.Context, workspaceI
 		SupportCoverageGap:  gap,
 		TopicTitle:          topicTitle,
 		StatusChangedByName: statusChangedByName,
+		AnalysisExplanation: analysisExplanation,
+		Recommendations:     recommendations,
 		Evidence:            evidence,
 		Suggestions:         suggestions,
 		RelatedArticles:     relatedArticles,
@@ -420,6 +516,23 @@ func (r *SupportCoverageRepository) CreateSuggestion(ctx context.Context, sugges
 		return nil, fmt.Errorf("create suggestion: %w", err)
 	}
 	return suggestion, nil
+}
+
+func (r *SupportCoverageRepository) SupersedeActiveSuggestions(ctx context.Context, gapID string, now time.Time) error {
+	if gapID == "" {
+		return fmt.Errorf("gap_id is required")
+	}
+	if err := r.db.WithContext(ctx).
+		Model(&model.SupportGapSuggestion{}).
+		Where("gap_id = ? AND is_active", gapID).
+		Updates(map[string]interface{}{
+			"is_active":     false,
+			"superseded_at": now,
+			"updated_at":    now,
+		}).Error; err != nil {
+		return fmt.Errorf("supersede active suggestions: %w", err)
+	}
+	return nil
 }
 
 // GetSuggestionByID loads a suggestion by ID into the provided pointer.
@@ -757,7 +870,30 @@ func (r *SupportCoverageRepository) GetSummary(ctx context.Context, workspaceID 
 		Count(&totalEvidence)
 	summary.TotalEvidenceCount = int(totalEvidence)
 
+	var lastRun model.SupportCoverageAnalysisRun
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageAnalysisRunStatusCompleted).
+		Order("completed_at DESC").
+		First(&lastRun).Error; err == nil && lastRun.CompletedAt != nil {
+		summary.LastAnalyzedAt = lastRun.CompletedAt
+	}
+
 	return summary, nil
+}
+
+// HasCompletedAnalysisRun returns true if the workspace has at least one
+// completed daily coverage analysis run, meaning the LLM analyzer is active
+// and v1 heuristic gap creation can be suppressed for human-resolution signals.
+func (r *SupportCoverageRepository) HasCompletedAnalysisRun(ctx context.Context, workspaceID string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Table("support_coverage_analysis_runs").
+		Where("workspace_id = ? AND status = ?", workspaceID, model.SupportCoverageAnalysisRunStatusCompleted).
+		Limit(1).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check completed analysis run: %w", err)
+	}
+	return count > 0, nil
 }
 
 // CreateSnapshot stores a pre-computed coverage snapshot.

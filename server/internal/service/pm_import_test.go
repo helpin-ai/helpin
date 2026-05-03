@@ -173,6 +173,24 @@ func TestPMImportServiceExecuteShortcutAndIdempotency(t *testing.T) {
 func TestPMImportServiceShortcutAPIEndToEndAndIdempotency(t *testing.T) {
 	db := newImportTestDB(t)
 	svc, workspaceID, adminID := newImportTestService(t, db)
+	docsSpaceID := "docs-space-shortcut"
+	if err := db.Create(&model.DocsSpace{
+		ID:          docsSpaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Imported Shortcut Docs",
+		Slug:        "imported-shortcut-docs",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeInternal,
+		CreatedBy:   adminID,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatalf("seed docs space: %v", err)
+	}
+	svc.SetDocsImportDependencies(
+		NewDocsDocumentService(repository.NewDocsDocumentRepository(db), repository.NewDocsSpaceRepository(db), nil, false),
+		NewDocsContentService(repository.NewDocsContentRepository(db), repository.NewDocsDocumentRepository(db), nil),
+	)
 	handler := newShortcutAPITestHandler(t)
 
 	prevBaseURL := shortcutAPIBaseURL
@@ -188,7 +206,7 @@ func TestPMImportServiceShortcutAPIEndToEndAndIdempotency(t *testing.T) {
 
 	preview, err := svc.PreviewShortcutAPI(context.Background(), workspaceID, adminID, model.ShortcutAPIImportPreviewRequest{
 		APIToken: "test-token",
-		Options:  model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true},
+		Options:  model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true, ImportDocs: true},
 	})
 	if err != nil {
 		t.Fatalf("preview Shortcut API import: %v", err)
@@ -201,6 +219,9 @@ func TestPMImportServiceShortcutAPIEndToEndAndIdempotency(t *testing.T) {
 	}
 	if len(preview.Workflows) != 1 || preview.Workflows[0].ID != "500" {
 		t.Fatalf("expected workflow 500 in preview, got %+v", preview.Workflows)
+	}
+	if preview.Summary.DocsCount != 1 {
+		t.Fatalf("expected 1 Shortcut doc in preview, got %d", preview.Summary.DocsCount)
 	}
 
 	req := model.ShortcutAPIImportExecuteRequest{
@@ -227,7 +248,7 @@ func TestPMImportServiceShortcutAPIEndToEndAndIdempotency(t *testing.T) {
 				},
 			},
 		},
-		Options: model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true},
+		Options: model.ShortcutImportOptions{ImportArchived: true, ImportCompleted: true, ImportDocs: true, DocsSpaceID: docsSpaceID},
 	}
 
 	result, totalRows, err := svc.executeShortcutAPIImport(context.Background(), workspaceID, adminID, req, "")
@@ -251,6 +272,23 @@ func TestPMImportServiceShortcutAPIEndToEndAndIdempotency(t *testing.T) {
 	}
 	if result.SprintsCreated != 1 {
 		t.Fatalf("expected 1 sprint created from Shortcut iteration, got %d", result.SprintsCreated)
+	}
+	if result.DocsCreated != 1 || result.DocsSkipped != 0 {
+		t.Fatalf("expected 1 Shortcut doc created, got created=%d skipped=%d warnings=%v", result.DocsCreated, result.DocsSkipped, result.Warnings)
+	}
+	var docs []model.DocsDocument
+	if err := db.Where("workspace_id = ?", workspaceID).Find(&docs).Error; err != nil {
+		t.Fatalf("load imported docs: %v", err)
+	}
+	if len(docs) != 1 || docs[0].Title != "Shortcut Launch Plan" {
+		t.Fatalf("expected imported Shortcut doc, got %+v", docs)
+	}
+	var docContent model.DocsContent
+	if err := db.Where("document_id = ?", docs[0].ID).First(&docContent).Error; err != nil {
+		t.Fatalf("load imported doc content: %v", err)
+	}
+	if docContent.ImportSourceSystem == nil || *docContent.ImportSourceSystem != shortcutDocsSourceSystem || docContent.ImportSourceObjectID == nil || *docContent.ImportSourceObjectID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("expected Shortcut provenance, got system=%v object=%v", docContent.ImportSourceSystem, docContent.ImportSourceObjectID)
 	}
 
 	var tasks []model.PMTask
@@ -296,6 +334,9 @@ func TestPMImportServiceShortcutAPIEndToEndAndIdempotency(t *testing.T) {
 	}
 	if secondResult.TasksCreated != 0 || secondResult.TasksSkipped != 2 {
 		t.Fatalf("expected API rerun to skip tasks, got created=%d skipped=%d", secondResult.TasksCreated, secondResult.TasksSkipped)
+	}
+	if secondResult.DocsCreated != 0 || secondResult.DocsSkipped != 1 {
+		t.Fatalf("expected API rerun to skip Shortcut doc, got created=%d skipped=%d", secondResult.DocsCreated, secondResult.DocsSkipped)
 	}
 	if err := db.Model(&model.PMComment{}).Count(&comments).Error; err != nil {
 		t.Fatalf("count comments after rerun: %v", err)
@@ -950,6 +991,70 @@ func TestPMImportServiceRewriteShortcutMediaBody(t *testing.T) {
 	}
 }
 
+func TestPMImportServiceRewriteShortcutMediaBodyPreservesFailedMediaAsVisibleLink(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	body := `<p>Video</p><p><img src="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4" alt="demo.mp4"></p><p><a href="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4">open</a></p>`
+	rewritten, created, warnings := svc.rewriteShortcutMediaBody(context.Background(), workspaceID, adminID, "story", "story-123", body, "shortcut-token")
+
+	if created != 0 {
+		t.Fatalf("expected no attachment for failed media, got %d", created)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", warnings)
+	}
+	if !strings.Contains(rewritten, `href="https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.mp4"`) {
+		t.Fatalf("expected original Shortcut URL to remain as link, got %s", rewritten)
+	}
+	if strings.Contains(rewritten, `<img`) {
+		t.Fatalf("expected failed image embed to become a visible link, got %s", rewritten)
+	}
+	if !strings.Contains(rewritten, "Shortcut media not copied: demo.mp4") {
+		t.Fatalf("expected visible failed-media label, got %s", rewritten)
+	}
+}
+
+func TestPMImportServiceRewriteShortcutMediaTextPreservesFailedMarkdownMediaAsLink(t *testing.T) {
+	db := newImportTestDB(t)
+	svc, workspaceID, adminID := newImportTestService(t, db)
+
+	fakeAttachments := &fakeShortcutImportedAttachmentService{
+		publicURLPrefix: "https://cdn.example.com/imported/",
+	}
+	fakeDownloader := &fakeShortcutMediaDownloader{
+		mediaByURL: map[string]shortcutDownloadedMedia{},
+	}
+	svc.attachmentService = fakeAttachments
+	svc.mediaDownloader = fakeDownloader
+
+	rawURL := "https://media.app.shortcut.com/api/attachments/files/clubhouse-assets/example/demo.webm"
+	text := "Review this recording ![demo.webm](" + rawURL + ")"
+	rewritten, created, warnings := svc.rewriteShortcutMediaText(context.Background(), workspaceID, adminID, "task", "story-123", text, "shortcut-token")
+
+	if created != 0 {
+		t.Fatalf("expected no attachment for failed media, got %d", created)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %v", warnings)
+	}
+	if strings.Contains(rewritten, "![demo.webm]") {
+		t.Fatalf("expected failed image markdown to become a normal link, got %s", rewritten)
+	}
+	if !strings.Contains(rewritten, "[Shortcut media not copied: demo.webm") || !strings.Contains(rewritten, "]("+rawURL+")") {
+		t.Fatalf("expected visible fallback markdown link, got %s", rewritten)
+	}
+}
+
 func TestPMImportServiceImportShortcutStoryMediaUpdatesDescriptions(t *testing.T) {
 	db := newImportTestDB(t)
 	svc, workspaceID, adminID := newImportTestService(t, db)
@@ -1213,6 +1318,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			totp_secret_encrypted TEXT,
 			totp_verified BOOLEAN NOT NULL DEFAULT 0,
 			recovery_codes_encrypted TEXT,
+			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -1241,6 +1347,8 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			invited_by TEXT,
 			invited_at DATETIME,
 			accepted_at DATETIME,
+			support_default_team_id TEXT,
+			support_task_dialog_dismissed BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -1255,6 +1363,64 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			default_task_type TEXT NOT NULL DEFAULT 'feature',
 			docs_publisher_enabled BOOLEAN NOT NULL DEFAULT 0,
 			sprints_enabled BOOLEAN NOT NULL DEFAULT 1,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE docs_spaces (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			team_id TEXT,
+			name TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			icon TEXT,
+			visibility TEXT NOT NULL DEFAULT 'workspace_wide',
+			type TEXT NOT NULL DEFAULT 'internal',
+			default_review_days INTEGER,
+			is_system BOOLEAN NOT NULL DEFAULT 0,
+			position INTEGER NOT NULL DEFAULT 0,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE docs_documents (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			space_id TEXT NOT NULL,
+			collection_id TEXT,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'draft',
+			visibility TEXT NOT NULL DEFAULT 'workspace_wide',
+			owner_id TEXT,
+			team_id TEXT,
+			template_key TEXT,
+			excerpt TEXT,
+			icon TEXT,
+			tags TEXT,
+			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
+			is_pinned BOOLEAN NOT NULL DEFAULT 0,
+			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
+			share_token TEXT,
+			is_locked BOOLEAN NOT NULL DEFAULT 0,
+			locked_by TEXT,
+			last_reviewed_at DATETIME,
+			next_review_at DATETIME,
+			published_at DATETIME,
+			created_by TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME
+		)`,
+		`CREATE TABLE docs_contents (
+			id TEXT PRIMARY KEY,
+			document_id TEXT NOT NULL,
+			content JSON,
+			content_text TEXT,
+			word_count INTEGER NOT NULL DEFAULT 0,
+			import_source_html TEXT,
+			import_source_system TEXT,
+			import_source_object_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -1667,6 +1833,34 @@ func newShortcutAPITestHandler(t *testing.T) http.Handler {
 		}
 		write(w, []map[string]any{})
 	})
+	mux.HandleFunc("/documents", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		write(w, []map[string]any{{
+			"id":      "11111111-1111-1111-1111-111111111111",
+			"title":   "Shortcut Launch Plan",
+			"app_url": "https://app.shortcut.com/acme/doc/11111111-1111-1111-1111-111111111111",
+		}})
+	})
+	mux.HandleFunc("/documents/11111111-1111-1111-1111-111111111111", func(w http.ResponseWriter, r *http.Request) {
+		if !requireToken(w, r) {
+			return
+		}
+		if r.URL.Query().Get("content_format") != "html" {
+			http.Error(w, "expected content_format=html", http.StatusBadRequest)
+			return
+		}
+		write(w, map[string]any{
+			"id":               "11111111-1111-1111-1111-111111111111",
+			"title":            "Shortcut Launch Plan",
+			"app_url":          "https://app.shortcut.com/acme/doc/11111111-1111-1111-1111-111111111111",
+			"content_html":     "<h1>Launch Plan</h1><p>Imported doc body.</p>",
+			"content_markdown": "# Launch Plan\n\nImported doc body.",
+			"created_at":       "2026-01-01T00:00:00Z",
+			"updated_at":       "2026-01-02T00:00:00Z",
+		})
+	})
 	mux.HandleFunc("/iterations", func(w http.ResponseWriter, r *http.Request) {
 		if !requireToken(w, r) {
 			return
@@ -1684,8 +1878,8 @@ func newShortcutAPITestHandler(t *testing.T) http.Handler {
 		if !requireToken(w, r) {
 			return
 		}
-		if r.URL.Query().Get("offset") != "0" {
-			write(w, []map[string]any{})
+		if r.URL.RawQuery != "" {
+			http.Error(w, "iteration stories endpoint should not include query params", http.StatusBadRequest)
 			return
 		}
 		write(w, []map[string]any{{"id": 1001}, {"id": 1002}})

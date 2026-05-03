@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -47,7 +48,7 @@ func (h *AuthHandler) Signin(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.authService.Signin(r.Context(), req)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAuthError(w, err)
 		return
 	}
 
@@ -203,7 +204,7 @@ func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.authService.RefreshToken(r.Context(), req.RefreshToken)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAuthError(w, err)
 		return
 	}
 
@@ -269,11 +270,24 @@ func (h *AuthHandler) Verify2FASignin(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.authService.Verify2FASignin(r.Context(), req)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+		writeAuthError(w, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func writeAuthError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrInvalidCredentials):
+		writeErrorCode(w, http.StatusUnauthorized, "invalid credentials", "invalid_credentials")
+	case errors.Is(err, service.ErrTwoFAUnavailable):
+		writeErrorCode(w, http.StatusServiceUnavailable, err.Error(), "two_factor_unavailable")
+	case errors.Is(err, service.ErrBadRequest):
+		writeErrorCode(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), service.ErrBadRequest.Error()+": "), "bad_request")
+	default:
+		writeErrorCode(w, http.StatusUnauthorized, err.Error(), "auth_failed")
+	}
 }
 
 // Disable2FA handles DELETE /api/auth/2fa.

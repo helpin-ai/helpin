@@ -35,7 +35,7 @@ func (s *DocsContentService) Get(ctx context.Context, documentID string) (*model
 // Save creates or updates document content.
 // Automatically extracts content_text and computes word_count in the repository layer.
 func (s *DocsContentService) Save(ctx context.Context, documentID string, content json.RawMessage, actorID string) (*model.DocsContent, error) {
-	saved, err := s.contentRepo.Upsert(ctx, documentID, content)
+	saved, err := s.contentRepo.UpsertWithActor(ctx, documentID, content, actorID)
 	if err != nil {
 		return nil, err
 	}

@@ -248,7 +248,7 @@ func TestBuildUserPromptOmitsSavedSystemPromptAndKeepsContext(t *testing.T) {
 	if strings.Contains(prompt, systemPrompt) {
 		t.Fatalf("did not expect user prompt to repeat saved system prompt\n%s", prompt)
 	}
-	if !strings.HasPrefix(prompt, "Context:\nTask: **Inbox triage automation**") {
+	if !strings.HasPrefix(prompt, "Context:\nCurrent system date is: ") || !strings.Contains(prompt, "\nTask: **Inbox triage automation**") {
 		t.Fatalf("expected user prompt to start with context\n%s", prompt)
 	}
 }

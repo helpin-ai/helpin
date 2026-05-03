@@ -27,6 +27,8 @@ interface ObjectivePickerProps {
   onChange: (objectiveIds: string[]) => void | Promise<void>;
   className?: string;
   addLabel?: string;
+  /** Show only the trigger button, no badges — used for compact inline table cells */
+  triggerOnly?: boolean;
 }
 
 function ObjectiveBadge({
@@ -63,6 +65,7 @@ export function ObjectivePicker({
   onChange,
   className,
   addLabel = 'Add objective',
+  triggerOnly = false,
 }: ObjectivePickerProps) {
   const [open, setOpen] = useState(false);
   const availableObjectives = objectives.filter((objective) => !objective.archived);
@@ -88,7 +91,7 @@ export function ObjectivePicker({
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
-      {selectedObjectives.map((objective) => (
+      {!triggerOnly && selectedObjectives.map((objective) => (
         <ObjectiveBadge
           key={objective.id}
           objective={{

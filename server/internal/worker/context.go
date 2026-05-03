@@ -5,10 +5,23 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 )
+
+// executionContextSync holds the mutexes and shared mutable caches for an
+// ExecutionContext. It lives behind a pointer so that struct-copying an
+// ExecutionContext (used by cloneExecutionContext for short-lived post-run
+// contexts) shares the synchronization primitives instead of copying them —
+// a `go vet` lock-copy error and a real race hazard.
+type executionContextSync struct {
+	toolFileStateMu        sync.Mutex
+	securityScannerCacheMu sync.Mutex
+	securityScannerCache   map[string]securityScannerCacheEntry
+}
 
 // ExecutionContext holds all state for a single agent run execution.
 type ExecutionContext struct {
@@ -71,11 +84,30 @@ type ExecutionContext struct {
 	LastExecutionResult        *ExecutionResult
 	StagedRuntimeSkillRoot     string
 	ToolFileState              *ToolFileState
-	toolFileStateMu            sync.Mutex
-	securityScannerCache       map[string]securityScannerCacheEntry
-	securityScannerCacheMu     sync.Mutex
-	PublishedPreviews          map[string]PublishedPreview
-	CurrentAssistantText       string
+	// syncPtr is *executionContextSync, accessed atomically. We use
+	// unsafe.Pointer (rather than atomic.Pointer[T]) because atomic.Pointer
+	// embeds a noCopy marker that go vet's copylocks analyzer flags when
+	// `clone := *execCtx` copies the struct in cloneExecutionContext.
+	// unsafe.Pointer is safe to copy by value — both original and clone
+	// then point to the same underlying executionContextSync.
+	syncPtr              unsafe.Pointer
+	PublishedPreviews    map[string]PublishedPreview
+	CurrentAssistantText string
+}
+
+// ensureSync atomically initializes (if needed) and returns the
+// synchronization block. Safe under concurrent access — multiple goroutines
+// racing on first init produce a single shared *executionContextSync via CAS.
+func (e *ExecutionContext) ensureSync() *executionContextSync {
+	if p := atomic.LoadPointer(&e.syncPtr); p != nil {
+		return (*executionContextSync)(p)
+	}
+	fresh := &executionContextSync{}
+	if atomic.CompareAndSwapPointer(&e.syncPtr, nil, unsafe.Pointer(fresh)) {
+		return fresh
+	}
+	// Lost the race: another goroutine installed its struct first.
+	return (*executionContextSync)(atomic.LoadPointer(&e.syncPtr))
 }
 
 type LiveExecutionResumeSignal struct {
@@ -208,6 +240,8 @@ type ServiceBridge struct {
 	EnsureEpicSpecDoc    func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error)
 	EnsureTaskPlanDoc    func(ctx context.Context, workspaceID, taskID, actorID string) (*model.DocsDocument, error)
 	GetDocumentContent   func(ctx context.Context, documentID string) (string, error)
+	ListDocumentBlocks   func(ctx context.Context, documentID string) ([]model.DocsBlock, error)
+	UpdateDocumentBlock  func(ctx context.Context, documentID, blockID string, revision int, content json.RawMessage, actorID string) (*model.DocsContent, error)
 	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
 	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
 	UpsertDocumentKey    func(ctx context.Context, record *model.DocsDocumentKey) error

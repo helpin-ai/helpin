@@ -76,7 +76,10 @@ describe('docsService.publishArticleTranslation', () => {
   it('sends an explicit slug on first locale publish when provided', async () => {
     postMock.mockResolvedValueOnce({ data: { locale: 'fr', slug: 'premiers-pas' }, error: null, status: 200 })
 
-    const result = await docsService.publishArticleTranslation('ws-1', 'doc-1', 'fr', 'premiers-pas')
+    const result = await docsService.publishArticleTranslation('ws-1', 'doc-1', {
+      locale: 'fr',
+      slug: 'premiers-pas',
+    })
 
     expect(postMock).toHaveBeenCalledWith(
       '/docs/documents/doc-1/helpcenter/translations/fr/publish?workspace_id=ws-1',

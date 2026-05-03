@@ -1,0 +1,81 @@
+import { Extension } from '@tiptap/core'
+import { Plugin } from '@tiptap/pm/state'
+
+const ADDRESSABLE_BLOCK_TYPES = new Set([
+  'paragraph',
+  'heading',
+  'bulletList',
+  'orderedList',
+  'taskList',
+  'blockquote',
+  'callout',
+  'codeBlock',
+  'table',
+  'resizableImage',
+  'image',
+  'videoEmbed',
+  'htmlBlock',
+  'horizontalRule',
+])
+
+function newBlockId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  const hex = '0123456789abcdef'
+  const chars = Array.from({ length: 36 }, (_, index) => {
+    if ([8, 13, 18, 23].includes(index)) return '-'
+    if (index === 14) return '4'
+    if (index === 19) return hex[8 + Math.floor(Math.random() * 4)]
+    return hex[Math.floor(Math.random() * 16)]
+  })
+  return chars.join('')
+}
+
+export const BlockIdExtension = Extension.create({
+  name: 'blockId',
+
+  addGlobalAttributes() {
+    return [
+      {
+        types: Array.from(ADDRESSABLE_BLOCK_TYPES),
+        attributes: {
+          blockId: {
+            default: null,
+            parseHTML: (element) => element.getAttribute('data-block-id'),
+            renderHTML: (attributes) => {
+              if (!attributes.blockId) return {}
+              return { 'data-block-id': attributes.blockId }
+            },
+          },
+        },
+      },
+    ]
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        appendTransaction: (_transactions, _oldState, newState) => {
+          const tr = newState.tr
+          const seen = new Set<string>()
+          let changed = false
+
+          newState.doc.forEach((node, offset) => {
+            if (!ADDRESSABLE_BLOCK_TYPES.has(node.type.name)) return
+            const current = typeof node.attrs.blockId === 'string' ? node.attrs.blockId.trim() : ''
+            const duplicate = current !== '' && seen.has(current)
+            const blockId = current === '' || duplicate ? newBlockId() : current
+            seen.add(blockId)
+            if (blockId !== current) {
+              tr.setNodeMarkup(offset, undefined, { ...node.attrs, blockId })
+              changed = true
+            }
+          })
+
+          return changed ? tr : null
+        },
+      }),
+    ]
+  },
+})

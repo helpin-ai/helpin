@@ -13,7 +13,7 @@ import { MessageBubble } from '../MessageBubble'
 
 const LONG_PADDLE_URL = 'https://customer-portal.paddle.com/cpl_01jmc9m8bb4r0aqj6pwsfm3e28?action=update_subscription_payment_method&subscription_id=sub_01kjeeddmwt0qjg6snxcavej39&token=pga_eyJhbGciOiJFZERTQSIsImtpZCI6Imp3a18wMWhkazBtZDNzcHRtY3ZoYzR0dG0zZ2JoOSIsInR5cCI6IkpXVCJ9.eyJpZCI6InBnYV8wMWtwMnJtY2dnOHFtbmUyeHg4MWM5c3RldiIsInNlbGxlci1pZCI6IjIxNzkxNyIsInR5cGUiOiJzdGFuZGFyZCIsInZlcnNpb24iOiIxIiwidXNhZ2UiOiJjdXN0b21lci1wb3J0YWwtdXJsIiwic2NvcGUiOiJjdXN0b21lci5hZGp1c3RtZW50LnJlYWQgY3VzdG9tZXIuY2hlY2tvdXQuY3JlYXRlIGN1c3RvbWVyLmNoZWNrb3V0LnJlYWQgY3VzdG9tZXIuY3VzdG9tZXIucmVhZCBjdXN0b21lci5jdXN0b21lci51cGRhdGUgY3VzdG9tZXIuY3VzdG9tZXItYWRkcmVzcy5yZWFkIGN1c3RvbWVyLmN1c3RvbWVyLWFkZHJlc3MudXBkYXRlIGN1c3RvbWVyLmN1c3RvbWVyLWJ1c2luZXNzLnJlYWQgY3VzdG9tZXIuY3VzdG9tZXItYnVzaW5lc3MuY3JlYXRlIGN1c3RvbWVyLmN1c3RvbWVyLWJ1c2luZXNzLnVwZGF0ZSBjdXN0b21lci5jdXN0b21lci1wYXltZW50LW1ldGhvZC5yZWFkIGN1c3RvbWVyLmN1c3RvbWVyLXBheW1lbnQtbWV0aG9kLmRlbGV0ZSBjdXN0b21lci5pbnZvaWNlLnJlYWQgY3VzdG9tZXIuc3Vic2NyaXB0aW9uLWNhbmNlbC5jcmVhdGUgY3VzdG9tZXIuc3Vic2NyaXB0aW9uLWNvbnNlbnQtcmVxdWlyZW1lbnQtZ3JhbnQuY3JlYXRlIGN1c3RvbWVyLnN1YnNjcmlwdGlvbi1jb25zZW50LXJlcXVpcmVtZW50LnJlYWQgY3VzdG9tZXIuc3Vic2NyaXB0aW9uLnJlYWQgY3VzdG9tZXIuc3Vic2NyaXB0aW9uLnVwZGF0ZSBjdXN0b21lci50cmFuc2FjdGlvbi5jcmVhdGUgY3VzdG9tZXIudHJhbnNhY3Rpb24ucmVhZCBjdXN0b21lci50cmFuc2FjdGlvbi51cGRhdGUgY3VzdG9tZXIudHJhbnNhY3Rpb24ub3JpZ2luLnJlYWQiLCJpc3MiOiJndWVzdGFjY2Vzcy1zZXJ2aWNlIiwic3ViIjoiY3RtXzAxa2plZTRxdGpkeTBuMTZ4cmZ4cXllY2NtIiwiZXhwIjoxNzc2MTQ4MzE5LCJpYXQiOjE3NzYwNjE5MTl9.u1Lm-pF347MaDE92MtneXBR6a4KxXiobrEBXjXjVm5Jk49qqGHKSYpUswzVyZy9BU0kl26tvkonj3gjMVquzAA'
 
-function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'delivered_email' | 'read' | 'read_email' | null) {
+function renderBubble(message: SupportMessage, receiptStatus?: 'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -184,13 +184,103 @@ describe('MessageBubble', () => {
       updated_at: '2026-04-24T12:20:00.000Z',
     }
 
-    const delivered = renderBubble(message, 'delivered_email')
+    const sent = renderBubble(message, 'sent_email')
+    expect(sent.container.textContent).toContain('Sent via email')
+    sent.cleanup()
+
+    const delivered = renderBubble({ ...message, id: 'msg-email-status-delivered', email_delivery_status: 'delivered' }, 'delivered_email')
     expect(delivered.container.textContent).toContain('Delivered via email')
     delivered.cleanup()
 
     const read = renderBubble({ ...message, id: 'msg-email-status-2', email_read_at: '2026-04-24T12:22:00.000Z' }, 'read_email')
     expect(read.container.textContent).toContain('Read via email')
     read.cleanup()
+  })
+
+  it('renders internal note image and file attachments with image preview', () => {
+    const message: SupportMessage = {
+      id: 'msg-note-attachments-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'viewer-1',
+      sender_display_name: 'Viewer',
+      content: '',
+      message_type: 'note',
+      is_internal: true,
+      via_channel: 'widget',
+      attachments: [
+        {
+          id: 'att-image-1',
+          file_key: 'support/att-image-1',
+          file_name: 'screenshot.png',
+          file_type: 'image/png',
+          file_size: 2048,
+          url: 'https://cdn.example.com/screenshot.png',
+        },
+        {
+          id: 'att-file-1',
+          file_key: 'support/att-file-1',
+          file_name: 'diagnostics.pdf',
+          file_type: 'application/pdf',
+          file_size: 4096,
+          url: 'https://cdn.example.com/diagnostics.pdf',
+        },
+      ],
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const { container, cleanup } = renderBubble(message)
+
+    const noteCard = container.querySelector('.border-r-amber-400')
+    expect(noteCard).toBeTruthy()
+
+    const fileLink = container.querySelector('a[href="https://cdn.example.com/diagnostics.pdf"]')
+    expect(fileLink?.textContent).toContain('diagnostics.pdf')
+    expect(fileLink?.className).toContain('border-amber-200')
+
+    const image = container.querySelector('img[alt="screenshot.png"]') as HTMLImageElement | null
+    expect(image).toBeTruthy()
+    expect(image?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
+    expect(image?.className).toContain('max-h-60')
+
+    act(() => {
+      image?.closest('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const preview = document.body.querySelector('img[alt="Preview"]') as HTMLImageElement | null
+    expect(preview).toBeTruthy()
+    expect(preview?.getAttribute('src')).toBe('https://cdn.example.com/screenshot.png')
+
+    cleanup()
+  })
+
+  it('constrains markdown images in internal notes', () => {
+    const message: SupportMessage = {
+      id: 'msg-note-markdown-image-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'viewer-1',
+      sender_display_name: 'Viewer',
+      content: 'Here is the screenshot:\n\n![Inline screenshot](https://cdn.example.com/inline.png)',
+      message_type: 'note',
+      is_internal: true,
+      via_channel: 'widget',
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:18:09.000Z',
+    }
+
+    const { container, cleanup } = renderBubble(message)
+
+    const image = container.querySelector('img[alt="Inline screenshot"]') as HTMLImageElement | null
+    expect(image).toBeTruthy()
+    expect(image?.getAttribute('loading')).toBe('lazy')
+    expect(image?.className).toContain('max-h-60')
+    expect(image?.className).toContain('max-w-full')
+
+    cleanup()
   })
 
   it('renders outbound fallback email failure states ahead of read receipts', () => {

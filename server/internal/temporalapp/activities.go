@@ -81,6 +81,11 @@ type ReleaseFactsProvider interface {
 	GetTaskContext(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
 }
 
+type CommandBarPlanAdvancer interface {
+	AdvanceCommandBarPlanAfterRun(ctx context.Context, completedRunID string) (*model.AgentRun, error)
+	StartReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error)
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo             *repository.AgentRunRepository
@@ -110,6 +115,7 @@ type AgentRunActivities struct {
 	docsDocRepo         *repository.DocsDocumentRepository
 	docsDocumentKeyRepo *repository.DocsDocumentKeyRepository
 	docsContentRepo     *repository.DocsContentRepository
+	docsBlockRepo       *repository.DocsBlockRepository
 	docsVersionRepo     *repository.DocsVersionRepository
 	docsLinkRepo        *repository.DocsLinkRepository
 	docsSearchRepo      *repository.DocsSearchRepository
@@ -124,6 +130,7 @@ type AgentRunActivities struct {
 	runtimes            *workerpkg.RuntimeRegistry
 	githubApp           *githubapp.Client
 	runEngine           *RunEngine
+	commandBarAdvancer  CommandBarPlanAdvancer
 }
 
 // NewAgentRunActivities creates the activity set used by shared Temporal workers.
@@ -155,6 +162,7 @@ func NewAgentRunActivities(
 	docsDocRepo *repository.DocsDocumentRepository,
 	docsDocumentKeyRepo *repository.DocsDocumentKeyRepository,
 	docsContentRepo *repository.DocsContentRepository,
+	docsBlockRepo *repository.DocsBlockRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsSearchRepo *repository.DocsSearchRepository,
@@ -169,6 +177,7 @@ func NewAgentRunActivities(
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
 	runEngine *RunEngine,
+	commandBarAdvancer CommandBarPlanAdvancer,
 ) *AgentRunActivities {
 	return &AgentRunActivities{
 		runRepo:             runRepo,
@@ -198,6 +207,7 @@ func NewAgentRunActivities(
 		docsDocRepo:         docsDocRepo,
 		docsDocumentKeyRepo: docsDocumentKeyRepo,
 		docsContentRepo:     docsContentRepo,
+		docsBlockRepo:       docsBlockRepo,
 		docsVersionRepo:     docsVersionRepo,
 		docsLinkRepo:        docsLinkRepo,
 		docsSearchRepo:      docsSearchRepo,
@@ -212,6 +222,7 @@ func NewAgentRunActivities(
 		runtimes:            runtimes,
 		githubApp:           githubApp,
 		runEngine:           runEngine,
+		commandBarAdvancer:  commandBarAdvancer,
 	}
 }
 
@@ -333,6 +344,21 @@ func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID strin
 
 	recordActivityHeartbeatSafe(ctx, "prepared")
 	return nil
+}
+
+func (a *AgentRunActivities) AdvanceCommandBarPlanActivity(ctx context.Context, runID string) error {
+	if a == nil || a.commandBarAdvancer == nil {
+		return nil
+	}
+	_, err := a.commandBarAdvancer.AdvanceCommandBarPlanAfterRun(ctx, runID)
+	return err
+}
+
+func (a *AgentRunActivities) StartReadyCommandBarPlanStepsActivity(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error) {
+	if a == nil || a.commandBarAdvancer == nil {
+		return &CommandBarPlanProgress{Terminal: true, Status: "not_configured"}, nil
+	}
+	return a.commandBarAdvancer.StartReadyCommandBarPlanSteps(ctx, input)
 }
 
 // ExecuteRunActivity executes the agent loop on a shared runner workspace.
@@ -2503,6 +2529,12 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return "", nil
 			}
 			return content.ContentText, nil
+		},
+		ListDocumentBlocks: func(ctx context.Context, documentID string) ([]model.DocsBlock, error) {
+			if a.docsBlockRepo == nil {
+				return []model.DocsBlock{}, nil
+			}
+			return a.docsBlockRepo.ListByDocument(ctx, documentID, false)
 		},
 		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
 			if a.commandExecutor == nil {

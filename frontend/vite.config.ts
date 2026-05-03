@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import path from "path"
 import { defineConfig, loadEnv } from 'vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
@@ -38,5 +39,17 @@ export default defineConfig(({ mode }) => {
       "@helpin-ai/widget-core/styles": path.resolve(__dirname, "../packages/widget-core/src/styles/widget.css"),
       "@helpin-ai/widget-core": path.resolve(__dirname, "../packages/widget-core/dist/index.js"),
     },
+  },
+  // Vitest config — colocated with vite to inherit aliases + plugins.
+  // Per-file `// @vitest-environment jsdom` directives keep working.
+  test: {
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/e2e/**',
+      '**/.idea/**',
+      '**/.git/**',
+      '**/.cache/**',
+    ],
   },
 }})

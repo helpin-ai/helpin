@@ -15,6 +15,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/serv
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/temporal-worker ./cmd/temporal-worker
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/migrate ./cmd/migrate
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/reconcile-git-pr-status ./cmd/reconcile-git-pr-status
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o /app/recover-missed-support-emails ./cmd/recover-missed-support-emails
 
 # ---- Minimal runtime base ----
 FROM alpine:3.19 AS runtime-base
@@ -37,6 +38,7 @@ RUN apk add --no-cache \
 
 COPY --from=builder /app/server .
 COPY --from=builder /app/reconcile-git-pr-status .
+COPY --from=builder /app/recover-missed-support-emails .
 RUN chown -R app:app /app
 
 USER app:app

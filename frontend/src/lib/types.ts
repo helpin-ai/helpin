@@ -169,6 +169,8 @@ export interface WorkspaceAccess {
     user_id: string;
     role: 'owner' | 'admin' | 'member' | 'viewer';
     status: string;
+    support_default_team_id?: string;
+    support_task_dialog_dismissed: boolean;
   };
   permissions: Permission[];
   team_memberships: {
@@ -362,6 +364,7 @@ export interface JobRoleCriteria {
 export interface Invitation {
   id: string;
   workspace_id: string;
+  workspace_member_id?: string;
   email: string;
   role: string;
   status: 'pending' | 'accepted' | 'revoked';
@@ -458,6 +461,7 @@ export interface AutomationTriggerExecutionFilters {
   status?: string;
   source?: string;
   reference_id?: string;
+  run_id?: string;
   fired_after?: string;
   fired_before?: string;
   page?: number;

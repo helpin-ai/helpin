@@ -105,6 +105,57 @@ func (h *PMImportHandler) ShortcutStatus(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *PMImportHandler) ShortcutStatusDetail(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	importID := chi.URLParam(r, "importId")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.GetShortcutStatusDetail(r.Context(), workspaceID, userID, importID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PMImportHandler) ListShortcutStatuses(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.ListShortcutStatuses(r.Context(), workspaceID, userID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PMImportHandler) CancelShortcutImport(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	importID := chi.URLParam(r, "importId")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.CancelShortcutImport(r.Context(), workspaceID, userID, importID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *PMImportHandler) RetryShortcutImport(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	importID := chi.URLParam(r, "importId")
+	userID := middleware.GetUserID(r.Context())
+
+	resp, err := h.importService.RetryShortcutImport(r.Context(), workspaceID, userID, importID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
 func (h *PMImportHandler) PreviewShortcutAPI(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())

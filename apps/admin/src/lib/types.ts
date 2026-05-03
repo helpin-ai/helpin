@@ -4,6 +4,8 @@ export interface User {
   full_name: string
   avatar_url?: string
   default_workspace_id?: string
+  is_platform_admin?: boolean
+  mfa_satisfied_in_token?: boolean
   created_at: string
   updated_at: string
 }

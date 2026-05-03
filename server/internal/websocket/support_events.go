@@ -48,6 +48,21 @@ func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID 
 	return event
 }
 
+// SupportMessageDeletedEvent builds the standard websocket event for a support
+// message soft-delete. Clients invalidate the same message-list cache they use
+// for created events.
+func SupportMessageDeletedEvent(workspaceID, conversationID, messageID, actorID string) Event {
+	return Event{
+		Action:      "deleted",
+		Entity:      "support_conversation_message",
+		EntityID:    messageID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		ParentType:  "support_conversation",
+		ParentID:    conversationID,
+	}
+}
+
 func nilIfEmpty(value string) *string {
 	if value == "" {
 		return nil

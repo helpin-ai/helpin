@@ -10,7 +10,6 @@ import {
   InboxIcon,
   LayoutTable01Icon,
   BulbIcon,
-  Mail01Icon,
   Message01Icon,
   PauseIcon,
   ArrowReloadHorizontalIcon,
@@ -28,7 +27,6 @@ import {
   ChartGanttIcon,
   Layers01Icon,
   OctagonXIcon,
-  UserRemove01Icon,
   Wrench01Icon,
   BookOpen01Icon,
 } from '@/lib/icons';
@@ -143,10 +141,11 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
 }
 
 export const supportFilterItems = [
-  { key: 'my_inbox' as const, label: 'My Inbox', icon: UserIcon },
-  { key: 'unassigned' as const, label: 'Unassigned', icon: UserRemove01Icon },
-  { key: 'mentions' as const, label: 'Mentions', icon: Message01Icon },
-  { key: 'all' as const, label: 'All', icon: Mail01Icon },
+  { key: 'inbox' as const, label: 'Inbox', icon: InboxIcon },
+  { key: 'mine' as const, label: 'Mine', icon: UserIcon },
+  { key: 'waiting' as const, label: 'Waiting', icon: PauseIcon },
+  { key: 'resolved' as const, label: 'Resolved', icon: CheckmarkCircle02Icon },
+  { key: 'spam' as const, label: 'Spam', icon: OctagonXIcon },
 ];
 
 export const supportStatusOptions: readonly { value: string; label: string; icon: IconComponent; color: string }[] = [

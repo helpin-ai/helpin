@@ -272,6 +272,7 @@ export class WidgetManager {
     this.openArticleRequest = null;
     this.articleRequestKey = 0;
     this.isTyping = false;
+    this.isAIThinking = false;
     this.connectionStatus = 'idle';
     this.activeTeammate = undefined;
     this.currentEmail = null;
@@ -833,6 +834,7 @@ export class WidgetManager {
     this.activeTeammate = undefined;
     this.messages = [];
     this.isTyping = false;
+    this.isAIThinking = false;
   }
 
   private mapActiveTeammate(raw: any): WidgetActiveTeammate | undefined {
@@ -975,6 +977,26 @@ export class WidgetManager {
       createdAt: new Date().toISOString(),
     };
     this.messages = [...this.messages, optimisticMsg];
+    const activeConversation = this.activeConversationId
+      ? this.conversations.find((conversation) => conversation.id === this.activeConversationId)
+      : undefined;
+    const humanHandledFlowStates = new Set([
+      'waiting_for_human',
+      'queued_for_human',
+      'after_hours_queue',
+      'assigned_to_human',
+      'resolved_by_human',
+    ]);
+    const expectsAIReply = Boolean(
+      this.widgetConfig?.features?.aiEnabled &&
+        this.widgetConfig?.features?.aiFirst &&
+        !this.messages.some((message) => message.role === 'agent') &&
+        activeConversation?.aiState !== 'escalated' &&
+        !humanHandledFlowStates.has(activeConversation?.flowState || ''),
+    );
+    if (expectsAIReply) {
+      this.isAIThinking = true;
+    }
     this.render();
     this.playSentMessageSound();
 
@@ -1606,6 +1628,7 @@ export class WidgetManager {
 
         if (msg.sender_type !== 'customer') {
           this.isTyping = false;
+          this.isAIThinking = false;
           this.playReceivedMessageSound();
         }
 
@@ -1737,6 +1760,8 @@ export class WidgetManager {
           this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
           this.messages = msgs.map((m: any) => this.mapSupportMessage(m));
+          this.isTyping = false;
+          this.isAIThinking = false;
           this.render();
         }
         break;

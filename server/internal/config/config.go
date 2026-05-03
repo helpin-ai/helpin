@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -65,6 +66,7 @@ type Config struct {
 	GitHubAppPrivateKey string
 
 	// Postmark email (optional — email sending disabled if not set)
+	PostmarkAccountToken              string
 	PostmarkAppServerToken            string
 	PostmarkAppFromEmail              string
 	PostmarkReplyServerToken          string
@@ -77,10 +79,12 @@ type Config struct {
 	AppBaseURL                        string
 	WebAuthnRPID                      string
 	WebAuthnRPOrigins                 []string
+	PlatformAdminEmails               []string
 
 	// CRM encryption & Gmail OAuth (optional — Gmail sync disabled if not set)
 	TOTPEncryptionKey     string
 	CRMEncryptionKey      string
+	PMImportEncryptionKey string
 	GmailClientID         string
 	GmailClientSecret     string
 	GmailOAuthRedirectURL string
@@ -94,6 +98,12 @@ type Config struct {
 	// Query expansion for support AI RAG pipeline (optional — defaults to openai/gpt-5.5)
 	QueryExpansionModel    string
 	QueryExpansionProvider string
+
+	// Command bar intent routing LLM (optional — defaults to router default provider)
+	CommandRouterLLMProvider  string
+	CommandRouterLLMModel     string
+	CommandRouterLLMMaxTokens int
+	CommandRouterLLMTimeoutMS int
 
 	// MaxMind GeoIP configuration (optional — enables GeoIP enrichment for support/widget traffic)
 	MaxMindAccountID   string
@@ -209,6 +219,7 @@ func Load() (*Config, error) {
 		GitHubAppID:                       os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:                     os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:               os.Getenv("GITHUB_APP_PRIVATE_KEY"),
+		PostmarkAccountToken:              strings.TrimSpace(os.Getenv("POSTMARK_ACCOUNT_TOKEN")),
 		PostmarkAppServerToken:            strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
 		PostmarkAppFromEmail:              strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),
 		PostmarkReplyServerToken:          strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_REPLY_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
@@ -221,8 +232,10 @@ func Load() (*Config, error) {
 		AppBaseURL:                        appBaseURL,
 		WebAuthnRPID:                      webAuthnRPID,
 		WebAuthnRPOrigins:                 webAuthnRPOrigins,
+		PlatformAdminEmails:               parseCSV(os.Getenv("PLATFORM_ADMIN_EMAILS")),
 		TOTPEncryptionKey:                 strings.TrimSpace(os.Getenv("TOTP_ENCRYPTION_KEY")),
 		CRMEncryptionKey:                  os.Getenv("CRM_ENCRYPTION_KEY"),
+		PMImportEncryptionKey:             strings.TrimSpace(os.Getenv("PM_IMPORT_ENCRYPTION_KEY")),
 		GmailClientID:                     os.Getenv("GMAIL_CLIENT_ID"),
 		GmailClientSecret:                 os.Getenv("GMAIL_CLIENT_SECRET"),
 		GmailOAuthRedirectURL:             os.Getenv("GMAIL_OAUTH_REDIRECT_URL"),
@@ -232,6 +245,10 @@ func Load() (*Config, error) {
 		CRMLLMModel:                       os.Getenv("CRM_LLM_MODEL"),
 		QueryExpansionModel:               strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_MODEL"), "gpt-5.5")),
 		QueryExpansionProvider:            strings.TrimSpace(firstNonEmpty(os.Getenv("QUERY_EXPANSION_PROVIDER"), "openai")),
+		CommandRouterLLMProvider:          strings.TrimSpace(os.Getenv("COMMAND_ROUTER_LLM_PROVIDER")),
+		CommandRouterLLMModel:             strings.TrimSpace(os.Getenv("COMMAND_ROUTER_LLM_MODEL")),
+		CommandRouterLLMMaxTokens:         parsePositiveIntEnv(os.Getenv("COMMAND_ROUTER_LLM_MAX_TOKENS"), 900),
+		CommandRouterLLMTimeoutMS:         parsePositiveIntEnv(os.Getenv("COMMAND_ROUTER_LLM_TIMEOUT_MS"), 2500),
 		MaxMindAccountID:                  strings.TrimSpace(os.Getenv("MAXMIND_ACCOUNT_ID")),
 		MaxMindDBPath:                     strings.TrimSpace(os.Getenv("MAXMIND_DB_PATH")),
 		MaxMindDownloadURL:                strings.TrimSpace(os.Getenv("MAXMIND_DOWNLOAD_URL")),
@@ -249,6 +266,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func parsePositiveIntEnv(value string, fallback int) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func parseCORSOrigins(value string) []string {
@@ -279,6 +304,25 @@ func parseOptionalOrigins(value string) []string {
 		}
 	}
 	return origins
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		cleaned := strings.TrimSpace(part)
+		if cleaned == "" {
+			continue
+		}
+		key := strings.ToLower(cleaned)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, cleaned)
+	}
+	return out
 }
 
 func originHost(value string) string {

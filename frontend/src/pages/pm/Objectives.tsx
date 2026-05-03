@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
@@ -130,6 +130,7 @@ export function ObjectivesPage() {
   const [filterTeam, setFilterTeam] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterHealth, setFilterHealth] = useState('');
+  const deferredFilterHealth = useDeferredValue(filterHealth);
 
   const { data: objectives = [], isLoading: loading } = useObjectives(workspaceId, {
     archived: false,
@@ -142,14 +143,19 @@ export function ObjectivesPage() {
 
   // Health is client-side filtered (not in API)
   const filtered = useMemo(() => {
-    if (!filterHealth) return objectives;
-    return objectives.filter((o) => o.objective.health === filterHealth);
-  }, [objectives, filterHealth]);
+    if (!deferredFilterHealth) return objectives;
+    return objectives.filter((o) => o.objective.health === deferredFilterHealth);
+  }, [objectives, deferredFilterHealth]);
 
-  const handleArchive = async (id: string) => {
+  const handleArchive = useCallback((id: string) => {
     if (!workspaceId) return;
     deleteObjective.mutate(id);
-  };
+  }, [deleteObjective, workspaceId]);
+
+  const handleOpenObjective = useCallback((id: string) => {
+    if (!workspace?.slug) return;
+    navigate({ to: `/w/${workspace.slug}/pm/objectives/${id}` } as any);
+  }, [navigate, workspace?.slug]);
 
   const activeFilterCount = [filterState, filterTeam, filterType, filterHealth].filter(Boolean).length;
 
@@ -244,13 +250,13 @@ export function ObjectivesPage() {
       {filtered.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3 max-w-6xl">
           {filtered.map((obj) => (
-            <ObjectiveCard
+            <MemoObjectiveCard
               key={obj.objective.id}
               data={obj}
               canEdit={canEdit}
               isAdmin={isAdmin}
-              onArchive={() => handleArchive(obj.objective.id)}
-              onClick={() => navigate({ to: `/w/${workspace!.slug}/pm/objectives/${obj.objective.id}` } as any)}
+              onArchive={handleArchive}
+              onOpen={handleOpenObjective}
             />
           ))}
         </div>
@@ -279,13 +285,13 @@ function ObjectiveCard({
   canEdit,
   isAdmin,
   onArchive,
-  onClick,
+  onOpen,
 }: {
   data: ObjectiveWithDetails;
   canEdit: boolean;
   isAdmin: boolean;
-  onArchive: () => void;
-  onClick: () => void;
+  onArchive: (id: string) => void;
+  onOpen: (id: string) => void;
 }) {
   const { objective, stats, epics } = data;
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
@@ -309,7 +315,8 @@ function ObjectiveCard({
   return (
     <article
       className="group flex flex-col rounded-lg border border-border/60 bg-card transition-all hover:shadow-md hover:border-border cursor-pointer"
-      onClick={onClick}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '280px' }}
+      onClick={() => onOpen(objective.id)}
     >
       {/* Header */}
       <div className="p-3.5 pb-0">
@@ -413,8 +420,16 @@ function ObjectiveCard({
         description="This objective will be hidden from the list. You can restore it later from archived items."
         confirmLabel="Archive"
         variant="default"
-        onConfirm={onArchive}
+        onConfirm={() => onArchive(objective.id)}
       />
     </article>
   );
 }
+
+const MemoObjectiveCard = memo(ObjectiveCard, (prev, next) => (
+  prev.data === next.data &&
+  prev.canEdit === next.canEdit &&
+  prev.isAdmin === next.isAdmin &&
+  prev.onArchive === next.onArchive &&
+  prev.onOpen === next.onOpen
+));
