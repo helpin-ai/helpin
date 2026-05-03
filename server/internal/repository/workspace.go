@@ -224,6 +224,19 @@ func (r *WorkspaceRepository) GetTeamByID(ctx context.Context, workspaceID, team
 	return team, nil
 }
 
+// ListTeams returns all teams in a workspace.
+func (r *WorkspaceRepository) ListTeams(ctx context.Context, workspaceID string) ([]model.WorkspaceTeam, error) {
+	var teams []model.WorkspaceTeam
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("name").
+		Find(&teams).Error
+	if err != nil {
+		return nil, fmt.Errorf("list workspace teams: %w", err)
+	}
+	return teams, nil
+}
+
 // Update modifies workspace fields.
 func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}

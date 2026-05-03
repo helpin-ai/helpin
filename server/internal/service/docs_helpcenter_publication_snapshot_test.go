@@ -28,3 +28,21 @@ func TestPublicationContentEqualDetectsChangedPublishedFromSource(t *testing.T) 
 		t.Fatal("expected changed source block to differ from published snapshot")
 	}
 }
+
+func TestPublicationContentEqualUsesExcalidrawPublishedFromSource(t *testing.T) {
+	current := json.RawMessage(`{"type":"doc","content":[{"type":"excalidraw","attrs":{"title":"Checkout flow","scene":{"elements":[{"id":"shape-1","type":"rectangle"}],"appState":{},"files":{}}}}]}`)
+	published := json.RawMessage(`{"type":"doc","content":[{"type":"resizableImage","attrs":{"src":"https://cdn.example.com/drawing.png","publishedFrom":{"type":"excalidraw","attrs":{"title":"Checkout flow","scene":{"elements":[{"id":"shape-1","type":"rectangle"}],"appState":{},"files":{}}}}}}]}`)
+
+	if !publicationContentEqual(current, published) {
+		t.Fatal("expected excalidraw image snapshot to compare equal to its source block")
+	}
+}
+
+func TestPublicationContentEqualDetectsChangedExcalidrawPublishedFromSource(t *testing.T) {
+	current := json.RawMessage(`{"type":"doc","content":[{"type":"excalidraw","attrs":{"title":"Checkout flow","scene":{"elements":[{"id":"shape-2","type":"ellipse"}],"appState":{},"files":{}}}}]}`)
+	published := json.RawMessage(`{"type":"doc","content":[{"type":"resizableImage","attrs":{"src":"https://cdn.example.com/drawing.png","publishedFrom":{"type":"excalidraw","attrs":{"title":"Checkout flow","scene":{"elements":[{"id":"shape-1","type":"rectangle"}],"appState":{},"files":{}}}}}}]}`)
+
+	if publicationContentEqual(current, published) {
+		t.Fatal("expected changed excalidraw source block to differ from published snapshot")
+	}
+}

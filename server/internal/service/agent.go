@@ -130,6 +130,10 @@ func validateRunAllowedTools(requested []string, agent *model.Agent) error {
 	for _, tool := range parseJSONStringSlice(agent.AllowedTools) {
 		allowedSet[tool] = true
 	}
+	// Output-bound review tools are safe to grant per run. They validate the
+	// run output context before doing anything, so older document agents can use
+	// new review-candidate flows without requiring an agent row migration first.
+	allowedSet["publish_ai_section_candidate"] = true
 	for _, tool := range requested {
 		if !allowedSet[tool] {
 			return fmt.Errorf("tool %q is not allowed for agent %s", tool, strings.TrimSpace(agent.Name))
@@ -2282,6 +2286,9 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
+	}
+	if strings.TrimSpace(targetType) == "doc" {
+		targetType = "document"
 	}
 
 	switch targetType {

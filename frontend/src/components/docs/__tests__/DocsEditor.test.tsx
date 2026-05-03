@@ -19,6 +19,8 @@ function createChain() {
     setTextSelection: vi.fn(() => chain),
     setResizableImage: vi.fn(() => chain),
     setVideoEmbed: vi.fn(() => chain),
+    setEntityEmbed: vi.fn(() => chain),
+    setCitationBlock: vi.fn(() => chain),
     unsetLink: vi.fn(() => chain),
     run: vi.fn(() => true),
   }
@@ -41,7 +43,18 @@ function createMockEditor() {
   }
   const editor = {
     state: {
-      selection: { from: 1, to: 1, empty: true },
+      selection: {
+        from: 1,
+        to: 1,
+        empty: true,
+        $from: {
+          parent: {
+            isTextblock: true,
+            textBetween: vi.fn(() => ''),
+          },
+          parentOffset: 0,
+        },
+      },
       doc,
       tr,
     },
@@ -111,6 +124,7 @@ vi.mock('@tiptap/extension-table', () => ({ Table: { configure: () => ({}) } }))
 vi.mock('@tiptap/extension-table-row', () => ({ TableRow: {} }))
 vi.mock('@tiptap/extension-table-header', () => ({ TableHeader: {} }))
 vi.mock('@tiptap/extension-table-cell', () => ({ TableCell: {} }))
+vi.mock('@tiptap/extension-task-list', () => ({ TaskList: {} }))
 
 vi.mock('@/components/ui/resizable-image-extension', () => ({
   ResizableImageExtension: {},
@@ -127,10 +141,23 @@ vi.mock('../CalloutExtension', () => ({ CalloutExtension: {} }))
 vi.mock('../VideoEmbedExtension', () => ({ VideoEmbedExtension: {} }))
 vi.mock('../HtmlBlockExtension', () => ({ HtmlBlockExtension: {} }))
 vi.mock('../CodeBlockExtension', () => ({ CodeBlockExtension: {} }))
+vi.mock('../ExcalidrawExtension', () => ({ ExcalidrawExtension: { configure: () => ({}) } }))
+vi.mock('../AISectionExtension', () => ({ AISectionExtension: { configure: () => ({}) } }))
+vi.mock('../CitationBlockExtension', () => ({ CitationBlockExtension: { configure: () => ({}) } }))
+vi.mock('../EntityEmbedExtension', () => ({ EntityEmbedExtension: { configure: () => ({}) } }))
+vi.mock('../SavedViewEmbedExtension', () => ({ SavedViewEmbedExtension: { configure: () => ({}) } }))
+vi.mock('../DocsTaskItemExtension', () => ({ DocsTaskItemExtension: {} }))
+vi.mock('../TaskItemMetadataToolbar', () => ({ TaskItemMetadataToolbar: () => null }))
+vi.mock('../ToggleSectionExtension', () => ({ ToggleSectionExtension: {} }))
+vi.mock('../FileAttachmentExtension', () => ({ FileAttachmentExtension: {} }))
+vi.mock('../TableOfContentsExtension', () => ({ TableOfContentsExtension: {} }))
+vi.mock('../RichEmbedExtension', () => ({ RichEmbedExtension: {} }))
 vi.mock('../SearchReplaceExtension', () => ({ SearchReplaceExtension: {} }))
 vi.mock('../SearchReplaceBar', () => ({ SearchReplaceBar: () => null }))
 vi.mock('../EmojiPickerPopover', () => ({ EmojiPickerPopover: () => null }))
 vi.mock('../InsertVideoDialog', () => ({ InsertVideoDialog: () => null }))
+vi.mock('../InsertEmbedDialog', () => ({ InsertEmbedDialog: () => null }))
+vi.mock('../EntityEmbedDialog', () => ({ EntityEmbedDialog: () => null }))
 vi.mock('../TableControls', () => ({ TableControls: () => null }))
 vi.mock('../BlockGapInserter', () => ({ BlockGapInserter: () => null }))
 vi.mock('../SlashMenu', () => ({ SlashMenu: () => null }))
@@ -223,6 +250,11 @@ vi.mock('@/lib/icons', () => {
     QuoteDownIcon: Icon,
     TextUnderlineIcon: Icon,
     Cancel01Icon: Icon,
+    AiMagicIcon: Icon,
+    BookOpen01Icon: Icon,
+    FolderKanbanIcon: Icon,
+    Message01Icon: Icon,
+    Search01Icon: Icon,
   }
 })
 

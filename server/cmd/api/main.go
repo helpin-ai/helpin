@@ -252,6 +252,7 @@ func main() {
 			&model.DocsDocumentKey{},
 			&model.DocsContent{},
 			&model.DocsBlock{},
+			&model.DocsAISectionCandidate{},
 			&model.DocsVersion{},
 			&model.DocsLink{},
 			&model.DocsHelpcenterConfig{},
@@ -572,6 +573,7 @@ func main() {
 	docsDocumentRepo := repository.NewDocsDocumentRepository(db, cfg.DocsOrderingUseSortKey)
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsBlockRepo := repository.NewDocsBlockRepository(db)
+	docsAISectionCandidateRepo := repository.NewDocsAISectionCandidateRepository(db)
 	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
@@ -655,6 +657,7 @@ func main() {
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
+	docsEmbedResolverService := service.NewDocsEmbedResolverService(cfg.CrawlerProxyURLs)
 	emailFallbackService := service.NewEmailFallbackService(
 		redisClient,
 		wsHub,
@@ -878,8 +881,18 @@ func main() {
 	docsSpaceService := service.NewDocsSpaceService(docsSpaceRepo, wsPublisher)
 	docsCollectionService := service.NewDocsCollectionService(docsCollectionRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
 	docsDocumentService := service.NewDocsDocumentService(docsDocumentRepo, docsSpaceRepo, wsPublisher, cfg.DocsOrderingUseSortKey)
+	docsDocumentService.SetRuleEngine(ruleEngine)
 	docsContentService := service.NewDocsContentService(docsContentRepo, docsDocumentRepo, wsPublisher)
+	docsContentService.SetMentionNotificationDependencies(notificationService, workspaceRepo)
+	docsContentService.SetAgentMentionDependencies(agentService)
 	docsBlockService := service.NewDocsBlockService(docsBlockRepo, docsContentService, docsDocumentRepo)
+	docsBlockService.SetActivityService(pmActivityService)
+	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
+	docsAISectionService := service.NewDocsAISectionService(docsAISectionCandidateRepo, docsBlockRepo, docsBlockService, docsDocumentRepo, docsSearchService, supportConversationRepo, agentService, llmProvider, cfg.CrawlerProxyURLs)
+	docsAISectionService.SetRuleEngine(ruleEngine)
+	docsAISectionService.SetActivityService(pmActivityService)
+	docsReferencesService := service.NewDocsReferencesService(docsLinkRepo, docsBlockRepo, docsDocumentRepo, pmCommentService, agentService)
+	var docsEntityReferenceResolverService *service.DocsEntityReferenceResolverService
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
 	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
@@ -908,7 +921,6 @@ func main() {
 	}
 	docsHelpcenterService.SetHelpcenterCache(hcCache)
 	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
-	docsSearchService := service.NewDocsSearchService(docsSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
 	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
@@ -1058,6 +1070,7 @@ func main() {
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	supportCoverageService.SetDocsBlockService(docsBlockService)
 	supportCoverageService.SetTemporalClient(temporalClient)
 	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
 	supportCoverageDailyAnalyzer := service.NewSupportCoverageDailyAnalyzer(llmProvider, cfg.CRMLLMProvider, cfg.CRMLLMModel).
@@ -1092,6 +1105,8 @@ func main() {
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
 	supportInboxService.SetAuthzService(authzService)
+	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
+	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
 
 	// Inject authorization into WebSocket handler for workspace access checks.
 	wsHandler.SetAuthzService(authzService)
@@ -1183,6 +1198,8 @@ func main() {
 			docsDocumentService,
 			docsContentService,
 			docsBlockService,
+			docsAISectionService,
+			docsReferencesService,
 			docsVersionService,
 			docsLinkService,
 			docsHelpcenterService,
@@ -1190,7 +1207,10 @@ func main() {
 			docsSearchService,
 			docsImportService,
 			docsEmbeddingService,
+			docsEmbedResolverService,
+			docsEntityReferenceResolverService,
 			agentService,
+			pmCommentService,
 			jwtManager,
 		),
 		SupportCoverage: handler.NewSupportCoverageHandler(

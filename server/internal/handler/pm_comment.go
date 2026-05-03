@@ -86,6 +86,32 @@ func (h *PMCommentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "comment deleted"})
 }
 
+// Resolve handles POST /api/pm/comments/{id}/resolve.
+func (h *PMCommentHandler) Resolve(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+	comment, err := h.commentService.SetResolved(r.Context(), id, true, userID, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, comment)
+}
+
+// Reopen handles POST /api/pm/comments/{id}/reopen.
+func (h *PMCommentHandler) Reopen(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	id := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+	comment, err := h.commentService.SetResolved(r.Context(), id, false, userID, workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, comment)
+}
+
 // ToggleReaction handles POST /api/pm/comments/{id}/reactions.
 func (h *PMCommentHandler) ToggleReaction(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

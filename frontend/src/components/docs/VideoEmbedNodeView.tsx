@@ -61,7 +61,7 @@ export function VideoEmbedNodeView({ node, deleteNode, editor, getPos }: NodeVie
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
-            referrerPolicy="no-referrer"
+            referrerPolicy="strict-origin-when-cross-origin"
             title={`${PROVIDER_LABELS[provider] ?? 'Video'} embed`}
           />
         </div>

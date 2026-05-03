@@ -801,6 +801,40 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolGetDocumentBlocks)
 
+	r.register("publish_ai_section_candidate", "Publish the generated markdown body for the current Docs AI section as a review candidate. This stores a suggestion only; it does not mutate the document until a human approves it.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID from the run context.",
+			},
+			"block_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The AI section block ID from the run context.",
+			},
+			"content": map[string]interface{}{
+				"type":        "string",
+				"description": "Markdown body for the replacement section. Do not include a document title, provenance notes, or markdown fences.",
+			},
+			"sources": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional source summaries used for the candidate.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"title":       map[string]interface{}{"type": "string"},
+						"url":         map[string]interface{}{"type": "string"},
+						"source_type": map[string]interface{}{"type": "string"},
+						"excerpt":     map[string]interface{}{"type": "string"},
+					},
+					"additionalProperties": true,
+				},
+			},
+		},
+		"required":             []string{"document_id", "block_id", "content"},
+		"additionalProperties": false,
+	}, toolPublishAISectionCandidate)
+
 	r.register("search_documents", "Search documents by keyword across the workspace.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{

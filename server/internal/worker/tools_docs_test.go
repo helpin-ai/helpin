@@ -105,8 +105,8 @@ func TestToolGetDocumentBlocksReturnsCompactBlocksByDefault(t *testing.T) {
 						ID:          "block-1",
 						Type:        "paragraph",
 						Revision:    3,
-						ContentText:  "First block",
-						Content:      json.RawMessage(`{"type":"paragraph","content":[{"type":"text","text":"First block"}]}`),
+						ContentText: "First block",
+						Content:     json.RawMessage(`{"type":"paragraph","content":[{"type":"text","text":"First block"}]}`),
 					},
 				}, nil
 			},
@@ -139,6 +139,102 @@ func TestToolGetDocumentBlocksReturnsCompactBlocksByDefault(t *testing.T) {
 	}
 }
 
+func TestToolPublishAISectionCandidateStoresReviewCandidate(t *testing.T) {
+	current := json.RawMessage(`{
+		"type":"aiSection",
+		"attrs":{"blockId":"block-1","title":"Pricing","status":"draft"},
+		"content":[{"type":"paragraph","content":[{"type":"text","text":"Old pricing"}]}]
+	}`)
+	var published *model.DocsAISectionCandidate
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		AgentID:     "agent-1",
+		RunID:       "run-1",
+		TargetType:  "document",
+		TargetID:    "doc-1",
+		Agent:       &model.Agent{Name: "Docs Agent"},
+		RunInput: &model.AgentRunInputPayload{
+			Output: &model.AgentRunOutputContext{
+				Type:           "docs_ai_section_candidate",
+				IdempotencyKey: "block-1",
+			},
+		},
+		Services: &ServiceBridge{
+			ListDocumentBlocks: func(ctx context.Context, documentID string) ([]model.DocsBlock, error) {
+				if documentID != "doc-1" {
+					t.Fatalf("documentID = %q, want doc-1", documentID)
+				}
+				return []model.DocsBlock{{
+					ID:          "block-1",
+					WorkspaceID: "ws-1",
+					DocumentID:  "doc-1",
+					Type:        "aiSection",
+					Content:     current,
+					ContentText: "Old pricing",
+					Revision:    2,
+				}}, nil
+			},
+			PublishAISectionCandidate: func(ctx context.Context, workspaceID, documentID, blockID, agentID, runID string, currentContent, candidateContent json.RawMessage, candidateText string, sourceRefs model.JSONB, prompt *string, promptHash *string, modelName *string) (*model.DocsAISectionCandidate, error) {
+				published = &model.DocsAISectionCandidate{
+					ID:               "candidate-1",
+					WorkspaceID:      workspaceID,
+					DocumentID:       documentID,
+					BlockID:          blockID,
+					CurrentContent:   currentContent,
+					CandidateContent: candidateContent,
+					CandidateText:    candidateText,
+					SourceRefs:       sourceRefs,
+					PromptHash:       promptHash,
+					Model:            modelName,
+					CreatedBy:        agentID,
+				}
+				return published, nil
+			},
+		},
+	}
+
+	output, err := toolPublishAISectionCandidate(ctx, json.RawMessage(`{
+		"document_id":"doc-1",
+		"block_id":"block-1",
+		"content":"Growth is $84/month. Scale is $199/month.",
+		"sources":[{"title":"Pricing","url":"https://usermaven.com/pricing"}]
+	}`))
+	if err != nil {
+		t.Fatalf("toolPublishAISectionCandidate returned error: %v", err)
+	}
+	if !strings.Contains(output, `"candidate_id":"candidate-1"`) {
+		t.Fatalf("unexpected output %q", output)
+	}
+	if published == nil {
+		t.Fatal("expected candidate to be published")
+	}
+	if published.WorkspaceID != "ws-1" || published.DocumentID != "doc-1" || published.BlockID != "block-1" || published.CreatedBy != "agent-1" {
+		t.Fatalf("unexpected candidate metadata %#v", published)
+	}
+	if !strings.Contains(published.CandidateText, "Growth is $84/month") {
+		t.Fatalf("candidate text = %q", published.CandidateText)
+	}
+	var decoded struct {
+		Attrs   map[string]any `json:"attrs"`
+		Content []struct {
+			Type string `json:"type"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(published.CandidateContent, &decoded); err != nil {
+		t.Fatalf("decode candidate content: %v", err)
+	}
+	if decoded.Attrs["status"] != "needs_review" || decoded.Attrs["ownerAgentId"] != "agent-1" || decoded.Attrs["ownerAgentName"] != "Docs Agent" {
+		t.Fatalf("unexpected attrs %#v", decoded.Attrs)
+	}
+	if len(decoded.Content) == 0 || decoded.Content[0].Type != "paragraph" {
+		t.Fatalf("expected generated paragraph, got %#v", decoded.Content)
+	}
+	if published.PromptHash == nil || *published.PromptHash == "" {
+		t.Fatal("expected prompt hash")
+	}
+}
+
 func TestToolGetDocumentBlocksCanReturnSelectedFullContent(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context: context.Background(),
@@ -149,15 +245,15 @@ func TestToolGetDocumentBlocksCanReturnSelectedFullContent(t *testing.T) {
 						ID:          "block-1",
 						Type:        "paragraph",
 						Revision:    1,
-						ContentText:  "First",
-						Content:      json.RawMessage(`{"type":"paragraph","attrs":{"blockId":"block-1"},"content":[{"type":"text","text":"First"}]}`),
+						ContentText: "First",
+						Content:     json.RawMessage(`{"type":"paragraph","attrs":{"blockId":"block-1"},"content":[{"type":"text","text":"First"}]}`),
 					},
 					{
 						ID:          "block-2",
 						Type:        "heading",
 						Revision:    2,
-						ContentText:  "Second",
-						Content:      json.RawMessage(`{"type":"heading","attrs":{"blockId":"block-2","level":2},"content":[{"type":"text","text":"Second"}]}`),
+						ContentText: "Second",
+						Content:     json.RawMessage(`{"type":"heading","attrs":{"blockId":"block-2","level":2},"content":[{"type":"text","text":"Second"}]}`),
 					},
 				}, nil
 			},
@@ -191,8 +287,8 @@ func TestToolGetDocumentBlocksLimitsFullContentFetches(t *testing.T) {
 			ID:          "block",
 			Type:        "paragraph",
 			Revision:    1,
-			ContentText:  "Body",
-			Content:      json.RawMessage(`{"type":"paragraph"}`),
+			ContentText: "Body",
+			Content:     json.RawMessage(`{"type":"paragraph"}`),
 		}
 	}
 	ctx := &ExecutionContext{

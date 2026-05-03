@@ -68,3 +68,47 @@ export async function uploadEditorImage(
     publicUrl: initData.public_url,
   };
 }
+
+export async function uploadEditorFile(
+  file: File,
+  config: EditorUploadConfig,
+): Promise<EditorImageUploadResult> {
+  if (file.size > MAX_SIZE) {
+    throw new Error('File exceeds maximum size of 50 MB');
+  }
+
+  const { data: initData, error: initError } = await pmAttachmentService.initiateUpload(
+    config.workspaceId,
+    {
+      entity_type: config.entityType,
+      entity_id: config.entityId,
+      file_name: file.name || 'attachment',
+      file_size: file.size,
+      content_type: file.type || 'application/octet-stream',
+    },
+  );
+
+  if (initError || !initData) {
+    throw new Error(initError ?? 'Failed to initiate upload');
+  }
+
+  const { ok, error: s3Error } = await uploadToS3(
+    initData.url,
+    file,
+    undefined,
+    { 'x-amz-acl': 'public-read' },
+  );
+  if (!ok) {
+    throw new Error(s3Error ?? 'Failed to upload to S3');
+  }
+
+  await pmAttachmentService.confirmUpload(config.workspaceId, initData.attachment.id);
+
+  if (!initData.public_url) {
+    throw new Error('Server did not return a public URL');
+  }
+  return {
+    attachmentId: initData.attachment.id,
+    publicUrl: initData.public_url,
+  };
+}

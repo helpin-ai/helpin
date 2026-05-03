@@ -99,6 +99,12 @@ func (s *SupportCoverageService) SetCoverageWorkflowRunner(runner coverageWorkfl
 	s.workflow = runner
 }
 
+func (s *SupportCoverageService) SetDocsBlockService(blockSvc *DocsBlockService) {
+	if s.clusterer != nil {
+		s.clusterer.SetDocsBlockService(blockSvc)
+	}
+}
+
 func (s *SupportCoverageService) EnsureDailyEnrichment(ctx context.Context) error {
 	if s.workflow == nil {
 		return nil

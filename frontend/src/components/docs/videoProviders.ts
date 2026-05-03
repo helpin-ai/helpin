@@ -91,10 +91,26 @@ export function parseVideoUrl(raw: string): VideoInfo | null {
 
     const embedUrl = parser.match(u.pathname, u.searchParams);
     if (embedUrl) {
-      return { provider: parser.provider, sourceUrl: normalized, embedUrl };
+      return { provider: parser.provider, sourceUrl: canonicalSourceUrl(parser.provider, normalized, embedUrl), embedUrl };
     }
   }
   return null;
+}
+
+function canonicalSourceUrl(provider: VideoInfo['provider'], fallback: string, embedUrl: string): string {
+  if (provider !== 'youtube') {
+    return fallback;
+  }
+  try {
+    const u = new URL(embedUrl);
+    const match = u.pathname.match(/^\/embed\/([a-zA-Z0-9_-]{11})$/);
+    if (u.host === 'www.youtube.com' && match) {
+      return `https://www.youtube.com/watch?v=${match[1]}`;
+    }
+  } catch {
+    return fallback;
+  }
+  return fallback;
 }
 
 export const SUPPORTED_PROVIDERS = 'YouTube, Vimeo, Loom, or Wistia';
