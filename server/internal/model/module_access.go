@@ -5,10 +5,11 @@ import "time"
 type ModuleID string
 
 const (
-	ModulePM      ModuleID = "pm"
-	ModuleDocs    ModuleID = "docs"
-	ModuleCRM     ModuleID = "crm"
-	ModuleSupport ModuleID = "support"
+	ModulePM         ModuleID = "pm"
+	ModuleDocs       ModuleID = "docs"
+	ModuleCRM        ModuleID = "crm"
+	ModuleSupport    ModuleID = "support"
+	ModuleAutomation ModuleID = "automation"
 )
 
 var allWorkspaceModules = []ModuleID{
@@ -16,11 +17,13 @@ var allWorkspaceModules = []ModuleID{
 	ModuleDocs,
 	ModuleCRM,
 	ModuleSupport,
+	ModuleAutomation,
 }
 
 var managedWorkspaceModules = []ModuleID{
 	ModuleCRM,
 	ModuleSupport,
+	ModuleAutomation,
 }
 
 func AllWorkspaceModules() []ModuleID {

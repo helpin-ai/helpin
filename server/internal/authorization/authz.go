@@ -126,6 +126,7 @@ func (s *AuthzService) AccessibleModules(ctx context.Context, actor *Actor) ([]m
 	if actor.Role == model.RoleOwner || actor.Role == model.RoleAdmin {
 		allowed[model.ModuleCRM] = struct{}{}
 		allowed[model.ModuleSupport] = struct{}{}
+		allowed[model.ModuleAutomation] = struct{}{}
 		return orderedModules(allowed), nil
 	}
 
