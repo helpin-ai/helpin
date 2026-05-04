@@ -366,6 +366,7 @@ export function TaskListView({
   const headerRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
   const { data: agents = [] } = useAgents(workspaceId);
 
@@ -1096,11 +1097,6 @@ export function TaskListView({
   });
 
   const { rows } = table.getRowModel();
-  // Explicit total width for the virtualizer body and each row so row widths don't depend on
-  // the parent's containing-block layout — that's what was leaving some rows at stale widths
-  // after a column resize. Reused as the memo invalidation key for MemoDataRow.
-  const totalSize = table.getTotalSize();
-  const columnSizingVersion = `${totalSize}`;
   const displayIdWidth = table.getColumn('displayId')?.getSize() ?? 90;
   const typeIconColumn = table.getColumn('typeIcon');
   const typeIconWidth = typeIconColumn?.getSize() ?? 40;
@@ -1331,7 +1327,7 @@ export function TaskListView({
         </div>
 
         {/* Virtualized body */}
-          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: `${totalSize}px`, minWidth: '100%' }}>
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             {hasGroupedRows ? (
               <StickyPinnedGroupOverlay
                 parentRef={parentRef}
@@ -1367,7 +1363,7 @@ export function TaskListView({
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    width: `${totalSize}px`,
+                    width: '100%',
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >

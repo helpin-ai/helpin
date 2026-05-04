@@ -619,6 +619,7 @@ function EpicVirtualTable({
   onToggleGroup,
 }: EpicVirtualTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const table = useReactTable({
     data,
     columns,
@@ -634,12 +635,6 @@ function EpicVirtualTable({
     manualSorting: true,
     getCoreRowModel: getCoreRowModel(),
   });
-
-  // Explicit total width for the virtualizer body and each row so row widths don't depend on
-  // the parent's containing-block layout — that's what was leaving some rows at stale widths
-  // after a column resize. Also used as the memo invalidation key for MemoEpicDataRow.
-  const totalSize = table.getTotalSize();
-  const columnSizingVersion = `${totalSize}`;
 
   const rowByEpicId = useMemo(() => {
     const map = new Map<string, Row<EpicWithStats>>();
@@ -748,7 +743,7 @@ function EpicVirtualTable({
             ))}
           </div>
 
-          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: `${totalSize}px`, minWidth: '100%' }}>
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const item = items[virtualRow.index];
               if (!item) return null;
@@ -760,7 +755,7 @@ function EpicVirtualTable({
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    width: `${totalSize}px`,
+                    width: '100%',
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >

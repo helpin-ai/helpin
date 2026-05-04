@@ -77,10 +77,6 @@ export function PMDataTable<T>({
     getCoreRowModel: getCoreRowModel(),
   });
   const rows = table.getRowModel().rows;
-  // Explicit total width for the virtualizer body and each row so row widths don't depend on
-  // the parent's containing-block layout — that's what was leaving some rows at stale widths
-  // after a column resize.
-  const totalSize = table.getTotalSize();
   const bodyRef = useRef<HTMLDivElement>(null);
   const estimateSize = useCallback(() => ROW_HEIGHT, []);
   const virtualizer = useVirtualizer({
@@ -144,7 +140,7 @@ export function PMDataTable<T>({
 
       {/* Body */}
       <div ref={bodyRef} className={bodyClassName ?? 'overflow-auto'} style={bodyStyle ?? { maxHeight: 'calc(100vh - 220px)' }}>
-        <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: `${totalSize}px`, minWidth: '100%' }}>
+        <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const row = rows[virtualRow.index];
             if (!row) return null;
@@ -158,7 +154,7 @@ export function PMDataTable<T>({
                   position: 'absolute',
                   top: 0,
                   left: 0,
-                  width: `${totalSize}px`,
+                  width: '100%',
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >

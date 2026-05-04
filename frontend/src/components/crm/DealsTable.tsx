@@ -104,6 +104,7 @@ export function DealsTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const parentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setLocalDeals(deals); }, [deals]);
@@ -361,11 +362,6 @@ export function DealsTable({
   });
 
   const { rows } = table.getRowModel();
-  // Explicit total width for the virtualizer body and each row so row widths don't depend on
-  // the parent's containing-block layout — that's what was leaving some rows at stale widths
-  // after a column resize. Also used as the memo invalidation key.
-  const totalSize = table.getTotalSize();
-  const columnSizingVersion = `${totalSize}`;
 
   const estimateSize = useCallback(
     (index: number) => rows[index]?.getIsGrouped() ? GROUP_ROW_HEIGHT : ROW_HEIGHT,
@@ -486,7 +482,7 @@ export function DealsTable({
           </div>
 
           {/* Virtualized body */}
-          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: `${totalSize}px`, minWidth: '100%' }}>
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<CRMDeal>;
               const isGrouped = row.getIsGrouped();
@@ -499,7 +495,7 @@ export function DealsTable({
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    width: `${totalSize}px`,
+                    width: '100%',
                     transform: `translate3d(0, ${virtualRow.start}px, 0)`,
                     contain: 'paint',
                     willChange: 'transform',
