@@ -121,6 +121,12 @@ export interface SupportInboxView {
   updated_at: string;
 }
 
+export interface SupportInboxViewCount {
+  view_id: string;
+  total_count: number;
+  unread_count: number;
+}
+
 export interface CreateSupportInboxViewRequest {
   name: string;
   filters: SupportInboxViewFilters;

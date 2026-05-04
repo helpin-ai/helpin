@@ -670,7 +670,7 @@ func main() {
 	searchService := service.NewSearchService(searchRepo, workspaceRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
-	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, wsPublisher)
+	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, supportConversationRepo, wsPublisher)
 	supportTagService := service.NewSupportTagService(supportTagRepo, supportConversationRepo, wsPublisher)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)

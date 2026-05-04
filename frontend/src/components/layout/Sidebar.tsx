@@ -7,7 +7,7 @@ import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
-import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useUnreadStats } from '@/hooks/queries/useSupport';
+import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useSupportInboxViewCounts, useUnreadStats } from '@/hooks/queries/useSupport';
 import { useDeleteSupportInboxView, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
@@ -73,6 +73,7 @@ export function Sidebar() {
 
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '', hasSupportModule);
   const { data: customViews = [] } = useSupportInboxViews(workspaceId ?? '', hasSupportModule);
+  const { data: customViewCounts = [] } = useSupportInboxViewCounts(workspaceId ?? '', hasSupportModule);
   const { data: builtinViews } = useSupportBuiltinInboxViews(workspaceId ?? '', hasSupportModule);
   const unreadMailboxScope = selectedMailboxId === 'all' ? undefined : selectedMailboxId;
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '', unreadMailboxScope, hasSupportModule);
@@ -91,6 +92,10 @@ export function Sidebar() {
   const sortedCustomViews = useMemo(
     () => [...customViews].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
     [customViews],
+  );
+  const customViewCountMap = useMemo(
+    () => Object.fromEntries(customViewCounts.map((count) => [count.view_id, count])),
+    [customViewCounts],
   );
 
   const builtinViewFilterMap = useMemo(
@@ -385,6 +390,7 @@ export function Sidebar() {
                 activeCustomViewId={activeCustomViewId}
                 currentUserId={user?.id}
                 customViews={sortedCustomViews}
+                customViewCounts={customViewCountMap}
                 canManageSettings={canManageSettings}
                 wsSlug={wsSlug}
                 pathname={location.pathname}

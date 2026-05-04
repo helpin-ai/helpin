@@ -459,6 +459,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // Invalidate unread stats on any non-presence conversation update (includes reason=read)
         queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) })
       }
     } else if (event.entity === 'support_visitor') {
       const store = useSupportPresenceStore.getState()
@@ -506,6 +507,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // New messages change unread counts
         queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) })
       }
     }
 

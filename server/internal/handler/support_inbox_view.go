@@ -58,6 +58,30 @@ func (h *SupportInboxViewHandler) ListBuiltin(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, views)
 }
 
+func (h *SupportInboxViewHandler) ListCounts(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	actor := authorization.GetActor(r.Context())
+	role := ""
+	workspaceMemberID := ""
+	if actor != nil {
+		role = actor.Role
+		workspaceMemberID = actor.WorkspaceMemberID
+	}
+	counts, err := h.viewService.ListCounts(r.Context(), workspaceID, middleware.GetUserID(r.Context()), workspaceMemberID, role)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if counts == nil {
+		counts = []model.SupportInboxViewCount{}
+	}
+	writeJSON(w, http.StatusOK, counts)
+}
+
 func (h *SupportInboxViewHandler) Create(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {

@@ -943,6 +943,39 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 	return conversations, total, nil
 }
 
+// CountByParams returns total and unread counts for the same filter set used by List.
+func (r *SupportConversationRepository) CountByParams(ctx context.Context, params ConversationRepositoryListParams) (int, int, error) {
+	buildQuery := func() *gorm.DB {
+		query := r.db.WithContext(ctx).
+			Table("support_conversations AS sc").
+			Where("sc.workspace_id = ?", params.WorkspaceID)
+		return r.applyConversationListParams(query, "sc", params)
+	}
+
+	var total int64
+	if err := buildQuery().Count(&total).Error; err != nil {
+		return 0, 0, fmt.Errorf("count conversations: %w", err)
+	}
+
+	unreadCondition := fmt.Sprintf(`EXISTS (
+		SELECT 1
+		FROM support_messages sm
+		WHERE sm.conversation_id = sc.id
+		  AND sm.deleted_at IS NULL
+		  AND sm.is_internal = false
+		  AND sm.sender_type = 'customer'
+		  AND sm.message_type = 'reply'
+		  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+	)`, r.epochExpr())
+
+	var unread int64
+	if err := buildQuery().Where(unreadCondition).Count(&unread).Error; err != nil {
+		return 0, 0, fmt.Errorf("count unread conversations: %w", err)
+	}
+
+	return int(total), int(unread), nil
+}
+
 func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, limit int) ([]model.SupportConversation, error) {
 	if workspaceID == "" {
 		return nil, fmt.Errorf("workspace_id is required")

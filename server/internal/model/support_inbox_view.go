@@ -43,3 +43,9 @@ type UpdateSupportInboxBuiltinViewRequest struct {
 	ViewKey string                  `json:"view_key"`
 	Filters SupportInboxViewFilters `json:"filters"`
 }
+
+type SupportInboxViewCount struct {
+	ViewID      string `json:"view_id"`
+	TotalCount  int    `json:"total_count"`
+	UnreadCount int    `json:"unread_count"`
+}

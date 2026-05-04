@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { queryKeys } from '@/lib/queryKeys';
 import { supportService } from '@/lib/services/supportService';
@@ -31,6 +31,7 @@ import type {
   CreateSupportMailboxRequest,
   UpdateSupportMailboxRequest,
   SupportInboxView,
+  SupportInboxViewCount,
   CreateSupportInboxViewRequest,
   UpdateSupportInboxViewRequest,
   UpdateSupportInboxBuiltinViewRequest,
@@ -67,6 +68,10 @@ type SupportConversationFilters = {
   tag_ids?: string;
   system_tags?: string;
 };
+
+function invalidateSupportInboxViewCounts(queryClient: QueryClient, workspaceId: string) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
+}
 
 async function loadConversationListPage(
   workspaceId: string,
@@ -205,6 +210,16 @@ export function useSupportBuiltinInboxViews(workspaceId: string, enabled = true)
   });
 }
 
+export function useSupportInboxViewCounts(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.inboxViewCounts(workspaceId),
+    queryFn: async (): Promise<SupportInboxViewCount[]> => unwrap(await supportService.listInboxViewCounts(workspaceId)),
+    enabled: !!workspaceId && enabled,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useCreateSupportInboxView(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -212,6 +227,7 @@ export function useCreateSupportInboxView(workspaceId: string) {
       supportService.createInboxView(workspaceId, payload).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
     },
   });
 }
@@ -223,6 +239,7 @@ export function useUpdateSupportInboxView(workspaceId: string) {
       supportService.updateInboxView(workspaceId, id, payload).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
       toast.success('View updated');
     },
   });
@@ -235,6 +252,7 @@ export function useUpdateSupportBuiltinInboxView(workspaceId: string) {
       supportService.updateBuiltinInboxView(workspaceId, view_key, { view_key, ...payload }).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.builtinInboxViews(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
       toast.success('View updated');
     },
   });
@@ -246,6 +264,7 @@ export function useDeleteSupportInboxView(workspaceId: string) {
     mutationFn: (id: string) => supportService.deleteInboxView(workspaceId, id).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
     },
   });
 }
@@ -603,6 +622,7 @@ export function useUpdateSupportTag(workspaceId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to update tag', { description: error.message });
@@ -617,6 +637,7 @@ export function useDeleteSupportTag(workspaceId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.tags(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to delete tag', { description: error.message });
@@ -721,6 +742,7 @@ export function useSendMessage(workspaceId: string, conversationId: string | nul
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to send message', { description: error.message });
@@ -754,6 +776,7 @@ export function useDeleteSupportMessage(workspaceId: string, conversationId: str
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
   });
 }
@@ -832,6 +855,7 @@ export function useUpdateConversationStatus(workspaceId: string) {
 
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to update conversation status', { description: error.message });
@@ -847,6 +871,7 @@ export function useAssignAgent(workspaceId: string) {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to assign agent', { description: error.message });
@@ -863,6 +888,7 @@ export function useAssignConversationUser(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to assign conversation', { description: error.message });
@@ -879,6 +905,7 @@ export function useCreateConversation(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to create conversation', { description: error.message });
@@ -906,6 +933,7 @@ export function useCreateTaskFromConversation(workspaceId: string) {
     onSuccess: (_data, { conversationId }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversationAssociations(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.pm.board(workspaceId) });
@@ -958,6 +986,7 @@ export function useMarkConversationUnread(workspaceId: string) {
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to mark as unread', { description: error.message });
@@ -984,6 +1013,7 @@ export function useMarkConversationRead(workspaceId: string) {
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to mark conversation as read', { description: error.message });
@@ -999,6 +1029,7 @@ export function useUpdateConversationSubject(workspaceId: string) {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to update subject', { description: error.message });
@@ -1014,6 +1045,7 @@ export function useAddConversationTag(workspaceId: string) {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to add tag', { description: error.message });
@@ -1029,6 +1061,7 @@ export function useRemoveConversationTag(workspaceId: string) {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to remove tag', { description: error.message });
@@ -1045,6 +1078,7 @@ export function useDeleteConversation(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to delete conversation', { description: error.message });
@@ -1061,6 +1095,7 @@ export function useCreateMailbox(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxes(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to create team inbox', { description: error.message });
@@ -1078,6 +1113,7 @@ export function useUpdateMailbox(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxMembers(workspaceId, variables.mailboxId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to update team inbox', { description: error.message });
@@ -1095,6 +1131,7 @@ export function useArchiveMailbox(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.mailboxMembers(workspaceId, mailboxId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.triageRules(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to archive team inbox', { description: error.message });
@@ -1127,6 +1164,7 @@ export function useMoveConversation(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to move conversation', { description: error.message });
@@ -1144,6 +1182,7 @@ export function useDismissConversationTriage(workspaceId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
     onError: (error: Error) => {
       toast.error('Failed to dismiss routing suggestion', { description: error.message });

@@ -23,6 +23,7 @@ import type {
   SupportAIRewriteDraftResponse,
   SupportInboxScopeListResponse,
   SupportInboxView,
+  SupportInboxViewCount,
   CreateSupportInboxViewRequest,
   UpdateSupportInboxViewRequest,
   UpdateSupportInboxBuiltinViewRequest,
@@ -100,6 +101,8 @@ export const supportService = {
     api.get<SupportInboxView[]>(`/support/inbox/views${qs(workspaceId)}`),
   listBuiltinInboxViews: (workspaceId: string) =>
     api.get<SupportInboxView[]>(`/support/inbox/views/builtin${qs(workspaceId)}`),
+  listInboxViewCounts: (workspaceId: string) =>
+    api.get<SupportInboxViewCount[]>(`/support/inbox/views/counts${qs(workspaceId)}`),
   createInboxView: (workspaceId: string, payload: CreateSupportInboxViewRequest) =>
     api.post<SupportInboxView>(`/support/inbox/views${qs(workspaceId)}`, payload),
   updateInboxView: (workspaceId: string, viewId: string, payload: UpdateSupportInboxViewRequest) =>
