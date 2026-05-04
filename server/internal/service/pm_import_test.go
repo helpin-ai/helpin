@@ -1671,6 +1671,8 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			entities_total INTEGER NOT NULL DEFAULT 0,
 			result TEXT,
 			error TEXT,
+			payload_encrypted TEXT,
+			workflow_id TEXT,
 			started_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
