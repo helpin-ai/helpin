@@ -536,7 +536,16 @@ func (s *PMImportService) shortcutImportStoredOptions(job model.PMImportJob) (*m
 }
 
 func shortcutImportDiagnostics(result *model.ShortcutImportResult) model.ShortcutImportDiagnostics {
-	diag := model.ShortcutImportDiagnostics{}
+	diag := model.ShortcutImportDiagnostics{
+		Counts:               []model.ShortcutImportCount{},
+		WarningGroups:        []model.ShortcutImportWarningGroup{},
+		FailedMedia:          []model.ShortcutImportDiagnosticItem{},
+		UnmappedMembers:      []model.ShortcutImportDiagnosticItem{},
+		UnmappedStates:       []model.ShortcutImportDiagnosticItem{},
+		UnmappedTeams:        []model.ShortcutImportDiagnosticItem{},
+		RetryableFailures:    []model.ShortcutImportDiagnosticItem{},
+		NonRetryableFailures: []model.ShortcutImportDiagnosticItem{},
+	}
 	if result == nil {
 		return diag
 	}

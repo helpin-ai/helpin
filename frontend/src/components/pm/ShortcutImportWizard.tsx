@@ -2119,12 +2119,12 @@ function ShortcutImportDetailPanel({
   onCancel: () => void;
   onRetry: () => void;
 }) {
-  const counts = detail.diagnostics.counts.filter((item) => item.count > 0);
-  const failedMedia = detail.diagnostics.failed_media;
+  const counts = (detail.diagnostics?.counts ?? []).filter((item) => item.count > 0);
+  const failedMedia = detail.diagnostics?.failed_media ?? [];
   const unmapped = [
-    ...detail.diagnostics.unmapped_members,
-    ...detail.diagnostics.unmapped_states,
-    ...detail.diagnostics.unmapped_teams,
+    ...(detail.diagnostics?.unmapped_members ?? []),
+    ...(detail.diagnostics?.unmapped_states ?? []),
+    ...(detail.diagnostics?.unmapped_teams ?? []),
   ];
   return (
     <div className="space-y-4">
@@ -2171,14 +2171,14 @@ function ShortcutImportDetailPanel({
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <DiagnosticList title="Warnings by type" items={detail.diagnostics.warning_groups.map((g) => `${formatDiagnosticLabel(g.type)}: ${g.count.toLocaleString()}`)} />
+        <DiagnosticList title="Warnings by type" items={(detail.diagnostics?.warning_groups ?? []).map((g) => `${formatDiagnosticLabel(g.type)}: ${g.count.toLocaleString()}`)} />
         <DiagnosticList title="Failed media" items={failedMedia.map((item) => item.key || item.message)} empty="No failed media recorded" />
         <DiagnosticList title="Unmapped data" items={unmapped.map((item) => item.message)} empty="No unmapped members, states, or teams recorded" />
         <DiagnosticList
           title="Failure retryability"
           items={[
-            `${detail.diagnostics.retryable_failures.length.toLocaleString()} retryable`,
-            `${detail.diagnostics.non_retryable_failures.length.toLocaleString()} non-retryable`,
+            `${(detail.diagnostics?.retryable_failures ?? []).length.toLocaleString()} retryable`,
+            `${(detail.diagnostics?.non_retryable_failures ?? []).length.toLocaleString()} non-retryable`,
           ]}
         />
       </div>
