@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -479,6 +480,57 @@ func (r *SupportConversationRepository) textPrefixExpr(column string, limit int)
 	return fmt.Sprintf("LEFT(%s, %d)", column, limit)
 }
 
+var (
+	mdAutolinkPattern       = regexp.MustCompile(`<((?:https?|mailto):[^>\s]+)>`)
+	mdImageInlinePattern    = regexp.MustCompile(`!\[([^\]]*)\]\([^)]*\)`)
+	mdLinkInlinePattern     = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
+	mdHTMLTagPattern        = regexp.MustCompile(`<[^>]+>`)
+	mdHeadingPattern        = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s+`)
+	mdBlockquotePattern     = regexp.MustCompile(`(?m)^\s{0,3}>\s?`)
+	mdListBulletPattern     = regexp.MustCompile(`(?m)^\s{0,3}(?:[-*+]|\d+[.)])\s+`)
+	mdTableSepPattern       = regexp.MustCompile(`(?m)^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$`)
+	mdEmphasisPattern       = regexp.MustCompile("(\\*\\*|__|\\*|_|`)")
+	whitespacePattern       = regexp.MustCompile(`\s+`)
+	spaceBeforePunctPattern = regexp.MustCompile(`\s+([,.;:!?\)])`)
+)
+
+// cleanMessageSnippet renders a plain-text preview of a Markdown or HTML
+// message body for inbox row display. It unwraps autolinks, link/image
+// syntax, and table separators, strips emphasis markers, collapses
+// whitespace, and truncates to limit characters with an ellipsis.
+func cleanMessageSnippet(raw string, limit int) string {
+	const notePrefix = "Note: "
+	hasNote := strings.HasPrefix(raw, notePrefix)
+	if hasNote {
+		raw = strings.TrimPrefix(raw, notePrefix)
+	}
+
+	cleaned := raw
+	cleaned = mdAutolinkPattern.ReplaceAllString(cleaned, "$1")
+	cleaned = mdImageInlinePattern.ReplaceAllString(cleaned, "$1")
+	cleaned = mdLinkInlinePattern.ReplaceAllString(cleaned, "$1")
+	cleaned = mdTableSepPattern.ReplaceAllString(cleaned, " ")
+	cleaned = mdHTMLTagPattern.ReplaceAllString(cleaned, " ")
+	cleaned = strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`).Replace(cleaned)
+	cleaned = mdHeadingPattern.ReplaceAllString(cleaned, "")
+	cleaned = mdBlockquotePattern.ReplaceAllString(cleaned, "")
+	cleaned = mdListBulletPattern.ReplaceAllString(cleaned, "")
+	cleaned = strings.ReplaceAll(cleaned, "|", " ")
+	cleaned = mdEmphasisPattern.ReplaceAllString(cleaned, "")
+	cleaned = whitespacePattern.ReplaceAllString(cleaned, " ")
+	cleaned = spaceBeforePunctPattern.ReplaceAllString(cleaned, "$1")
+	cleaned = strings.TrimSpace(cleaned)
+
+	if limit > 0 && len([]rune(cleaned)) > limit {
+		runes := []rune(cleaned)
+		cleaned = strings.TrimRight(string(runes[:limit]), " ") + "…"
+	}
+	if hasNote {
+		cleaned = notePrefix + cleaned
+	}
+	return cleaned
+}
+
 func (r *SupportConversationRepository) latestSessionCountryExpr(column, alias string) string {
 	return fmt.Sprintf(`COALESCE(
 		(SELECT sws.%s
@@ -931,14 +983,21 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 		sm.name AS mailbox_name,
 		sm.handle AS mailbox_handle,
 		sm.icon AS mailbox_icon`,
-			r.textPrefixExpr("m.content", 100),
-			r.textPrefixExpr("m.content", 100),
+			r.textPrefixExpr("m.content", 500),
+			r.textPrefixExpr("m.content", 500),
 			r.epochExpr(),
 			r.latestSessionCountryExpr("country_code", "support_conversations"),
 			r.latestSessionCountryExpr("country_name", "support_conversations"),
 		)).
 		Order(conversationListOrder(params.Sort)).Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
+	}
+	for i := range conversations {
+		if conversations[i].LastMessage == nil {
+			continue
+		}
+		cleaned := cleanMessageSnippet(*conversations[i].LastMessage, 100)
+		conversations[i].LastMessage = &cleaned
 	}
 	return conversations, total, nil
 }
@@ -1178,6 +1237,13 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 		Order("updated_at DESC").
 		Find(&conversations).Error; err != nil {
 		return nil, fmt.Errorf("list conversations by anonymous_id: %w", err)
+	}
+	for i := range conversations {
+		if conversations[i].LastMessage == nil {
+			continue
+		}
+		cleaned := cleanMessageSnippet(*conversations[i].LastMessage, 100)
+		conversations[i].LastMessage = &cleaned
 	}
 	return conversations, nil
 }
