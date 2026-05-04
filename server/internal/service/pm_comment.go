@@ -324,10 +324,27 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	if err != nil {
 		return nil, err
 	}
+	// Replies are nested inside their parent in the repository's grouped
+	// shape, so we have to look at both top-level threads and their replies.
 	for _, item := range comments {
 		if item.Comment.ID == comment.ID {
 			return &item, nil
 		}
+		for _, reply := range item.Replies {
+			if reply.Comment.ID == comment.ID {
+				replyCopy := reply
+				return &replyCopy, nil
+			}
+		}
+	}
+
+	created, err := s.commentRepo.GetWithAuthor(ctx, comment.ID)
+	if err != nil {
+		return nil, err
+	}
+	if created != nil {
+		s.resolveAttachmentURLs(created.Attachments)
+		return created, nil
 	}
 	return nil, fmt.Errorf("comment created but could not be loaded")
 }

@@ -285,6 +285,10 @@ interface CommentThreadProps {
   activeCommentId?: string | null;
   onCommentAnchorConsumed?: () => void;
   onCommentsChange: (comments: CommentWithAuthor[]) => void;
+  /** Hide the bottom-of-list "Add a comment…" composer (used when this thread is rendered inside an inline side card). */
+  hideTopLevelComposer?: boolean;
+  /** Hide all empty-state copy and the empty card itself (used when many threads render side-by-side). */
+  hideEmptyState?: boolean;
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -303,6 +307,8 @@ export function CommentThread({
   activeCommentId = null,
   onCommentAnchorConsumed,
   onCommentsChange,
+  hideTopLevelComposer = false,
+  hideEmptyState = false,
 }: CommentThreadProps) {
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -700,13 +706,16 @@ export function CommentThread({
         <UserAvatar
           name={authorName}
           avatarUrl={entry.author.avatar_url}
+          avatarStyle={entry.author.avatar_style}
+          avatarSeed={entry.author.avatar_seed}
+          avatarBackgroundMode={entry.author.avatar_background_mode}
+          avatarBackgroundColor={entry.author.avatar_background_color}
           className={`${avatarSize} shrink-0 mt-0.5`}
         />
         <div className="min-w-0 flex-1">
-          {/* Header row: name · time   ⋯ */}
+          {/* Header row: name, time, hover actions */}
           <div className="flex items-center gap-1.5">
             <span className="truncate text-xs font-semibold">{authorName}</span>
-            <span className="text-[11px] text-muted-foreground">·</span>
             <span className="shrink-0 text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
             {isResolved && (
               <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
@@ -714,47 +723,79 @@ export function CommentThread({
                 Resolved
               </span>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={`ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded text-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-foreground ${hoverClass}`}
-                  aria-label="Comment actions"
-                >
-                  <MoreHorizontalIcon className="h-3.5 w-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                {!isReply && (
-                  <DropdownMenuItem onSelect={() => toggleThread(entry.comment.id)}>
-                    <ArrowTurnBackwardIcon className="h-3.5 w-3.5" />
-                    Reply
-                  </DropdownMenuItem>
-                )}
-                {!isReply && (
-                  <DropdownMenuItem onSelect={() => void setCommentResolved(entry.comment.id, !isResolved)}>
-                    {isResolved ? <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" /> : <CheckmarkCircle02Icon className="h-3.5 w-3.5" />}
-                    {isResolved ? 'Reopen' : 'Resolve'}
-                  </DropdownMenuItem>
-                )}
-                {isOwn && !isEditing && (
-                  <>
-                    {!isReply && <DropdownMenuSeparator />}
-                    <DropdownMenuItem onSelect={() => startEditComment(entry)}>
-                      <PencilEdit01Icon className="h-3.5 w-3.5" />
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() => deleteComment(entry.comment.id)}
-                      className="text-destructive focus:text-destructive"
+            {!isEditing && (
+              <div className={`ml-auto flex items-center gap-0.5 opacity-0 transition-opacity ${hoverClass}`}>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      aria-label="React"
                     >
-                      <Delete01Icon className="h-3.5 w-3.5" />
-                      Delete
-                    </DropdownMenuItem>
-                  </>
+                      <SmilePlusIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="end" className="w-auto p-1">
+                    <ReactionPicker onPick={(emoji) => toggleReaction(entry.comment.id, emoji)} />
+                  </PopoverContent>
+                </Popover>
+                {!isReply && (
+                  <QuickTooltip label="Reply">
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      onClick={() => toggleThread(entry.comment.id)}
+                      aria-label="Reply"
+                    >
+                      <ArrowTurnBackwardIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </QuickTooltip>
                 )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                {!isReply && (
+                  <QuickTooltip label={isResolved ? 'Reopen' : 'Resolve'}>
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      onClick={() => void setCommentResolved(entry.comment.id, !isResolved)}
+                      aria-label={isResolved ? 'Reopen' : 'Resolve'}
+                    >
+                      {isResolved ? (
+                        <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </QuickTooltip>
+                )}
+                {isOwn && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                        aria-label="More"
+                      >
+                        <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-36">
+                      <DropdownMenuItem onSelect={() => startEditComment(entry)}>
+                        <PencilEdit01Icon className="h-3.5 w-3.5" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() => deleteComment(entry.comment.id)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Delete01Icon className="h-3.5 w-3.5" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            )}
           </div>
 
           {isEditing ? (
@@ -802,36 +843,6 @@ export function CommentThread({
             </div>
           )}
 
-          {/* Hover-revealed inline actions: react + reply */}
-          {!isEditing && (
-            <div className={`mt-1.5 flex items-center gap-1 opacity-0 transition-opacity ${hoverClass}`}>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="flex h-6 w-6 items-center justify-center rounded text-foreground/50 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                    aria-label="Add reaction"
-                  >
-                    <SmilePlusIcon className="h-3.5 w-3.5" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent side="top" align="start" className="w-auto p-1.5">
-                  <ReactionPicker onPick={(emoji) => toggleReaction(entry.comment.id, emoji)} />
-                </PopoverContent>
-              </Popover>
-              {!isReply && (
-                <QuickTooltip label="Reply">
-                  <button
-                    type="button"
-                    className="flex h-6 w-6 items-center justify-center rounded text-foreground/50 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                    onClick={() => toggleThread(entry.comment.id)}
-                  >
-                    <ArrowTurnBackwardIcon className="h-3.5 w-3.5" />
-                  </button>
-                </QuickTooltip>
-              )}
-            </div>
-          )}
         </div>
       </div>
     );
@@ -840,7 +851,7 @@ export function CommentThread({
   return (
     <div className="space-y-3">
       {/* Empty state */}
-      {comments.length === 0 && (
+      {comments.length === 0 && !hideEmptyState && (
         <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center">
           <Message01Icon className="mx-auto mb-2 h-6 w-6 text-muted-foreground/40" />
           <p className="text-sm font-medium text-foreground">No comments yet</p>
@@ -851,65 +862,70 @@ export function CommentThread({
       )}
 
       {/* Thread list */}
-      {comments.map((entry) => {
-        const hasReplies = (entry.reply_count ?? 0) > 0;
-        const isExpanded = expandedThreads.has(entry.comment.id);
-        const isActive = activeCommentId === entry.comment.id;
-        return (
-          <div
-            key={entry.comment.id}
-            data-comment-thread-id={entry.comment.id}
-            className={`rounded-lg px-3 py-2.5 transition-colors ${
-              isActive ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/20' : ''
-            }`}
-          >
-            {renderComment(entry, false)}
-
-            {/* Thread toggle */}
-            {hasReplies && (
-              <button
-                type="button"
-                className="mt-2 ml-9 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                onClick={() => toggleThread(entry.comment.id)}
+      {comments.length > 0 && (
+        <div className="divide-y divide-border/50">
+          {comments.map((entry) => {
+            const hasReplies = (entry.reply_count ?? 0) > 0;
+            const isExpanded = expandedThreads.has(entry.comment.id);
+            const isActive = activeCommentId === entry.comment.id;
+            return (
+              <div
+                key={entry.comment.id}
+                data-comment-thread-id={entry.comment.id}
+                className={`rounded-lg px-3 py-3 transition-colors ${
+                  isActive ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/20' : ''
+                }`}
               >
-                <Message01Icon className="h-3 w-3" />
-                <span>
-                  {entry.reply_count} {entry.reply_count === 1 ? 'reply' : 'replies'}
-                </span>
-                <ArrowRight01Icon className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-              </button>
-            )}
+                {renderComment(entry, false)}
 
-            {/* Nested replies */}
-            {isExpanded && (
-              <div className="mt-3 ml-4 border-l border-border/40 pl-3 space-y-3">
-                {entry.replies?.map((reply) => (
-                  <div key={reply.comment.id}>
-                    {renderComment(reply, true)}
+                {/* Thread toggle */}
+                {hasReplies && (
+                  <button
+                    type="button"
+                    className="mt-2 ml-9 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    onClick={() => toggleThread(entry.comment.id)}
+                  >
+                    <Message01Icon className="h-3 w-3" />
+                    <span>
+                      {entry.reply_count} {entry.reply_count === 1 ? 'reply' : 'replies'}
+                    </span>
+                    <ArrowRight01Icon className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                  </button>
+                )}
+
+                {/* Nested replies */}
+                {isExpanded && (
+                  <div className="mt-3 ml-4 border-l border-border/40 pl-3 space-y-3">
+                    {entry.replies?.map((reply) => (
+                      <div key={reply.comment.id}>
+                        {renderComment(reply, true)}
+                      </div>
+                    ))}
+                    {/* Inline reply editor */}
+                    <div className="pt-1">
+                      <CommentEditor
+                        onSubmit={(body) => addReply(entry.comment.id, body)}
+                        loading={replyLoading}
+                        placeholder="Reply…"
+                        variant="reply"
+                        teams={teams}
+                        members={members}
+                        onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files, entry.comment.id) : undefined}
+                        onFileSelect={attachmentsEnabled ? () => handleFileUpload(entry.comment.id) : undefined}
+                        uploadedFiles={replyPendingAttachments.get(entry.comment.id) ?? []}
+                        onRemoveUploadedFile={(id) => removePendingAttachment(id, entry.comment.id)}
+                      />
+                    </div>
                   </div>
-                ))}
-                {/* Inline reply editor */}
-                <div className="pt-1">
-                  <CommentEditor
-                    onSubmit={(body) => addReply(entry.comment.id, body)}
-                    loading={replyLoading}
-                    placeholder="Reply…"
-                    variant="reply"
-                    teams={teams}
-                    members={members}
-                    onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files, entry.comment.id) : undefined}
-                    onFileSelect={attachmentsEnabled ? () => handleFileUpload(entry.comment.id) : undefined}
-                    uploadedFiles={replyPendingAttachments.get(entry.comment.id) ?? []}
-                    onRemoveUploadedFile={(id) => removePendingAttachment(id, entry.comment.id)}
-                  />
-                </div>
+                )}
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
 
       {/* Top-level composer (creates a new doc/entity-scoped comment) */}
+      {!hideTopLevelComposer && (
       <div>
         {commentAnchor && (
           <div className="mb-1.5 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
@@ -939,6 +955,7 @@ export function CommentThread({
           onRemoveUploadedFile={(id) => removePendingAttachment(id)}
         />
       </div>
+      )}
     </div>
   );
 }
