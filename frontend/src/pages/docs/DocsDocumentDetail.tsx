@@ -731,6 +731,37 @@ export function DocsDocumentDetail({
     heading?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
+  // When the URL has a `#block-<uuid>` fragment, scroll the matching block
+  // into view once content is rendered. Re-run on hashchange and on content
+  // load. Briefly highlights the target so the reader can locate it.
+  useEffect(() => {
+    if (contentLoading) return
+    const scrollToHash = () => {
+      const hash = window.location.hash
+      if (!hash.startsWith('#block-')) return
+      const blockId = hash.slice('#block-'.length)
+      if (!blockId) return
+      const tryScroll = (attempt: number) => {
+        const node = editorShellRef.current?.querySelector<HTMLElement>(
+          `[data-block-id="${CSS.escape(blockId)}"]`,
+        )
+        if (node) {
+          node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          node.classList.add('docs-block-anchor-highlight')
+          window.setTimeout(() => node.classList.remove('docs-block-anchor-highlight'), 1800)
+          return
+        }
+        // The editor may still be hydrating block IDs on first render; retry
+        // a few times with backoff.
+        if (attempt < 8) window.setTimeout(() => tryScroll(attempt + 1), 80 * (attempt + 1))
+      }
+      tryScroll(0)
+    }
+    scrollToHash()
+    window.addEventListener('hashchange', scrollToHash)
+    return () => window.removeEventListener('hashchange', scrollToHash)
+  }, [contentLoading, docId])
+
 
   const preparePublishedContent = useCallback(async (rawContent: JSONContent | null | undefined) => {
     if (!isExternalHelpCenter || !rawContent) return undefined

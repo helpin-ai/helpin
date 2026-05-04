@@ -492,6 +492,16 @@
   transition: opacity 120ms ease 0ms;
 }
 
+/* Brief amber-tinted highlight when arriving at a #block-<uuid> anchor. */
+@keyframes docs-block-anchor-pulse {
+  0% { background-color: var(--color-amber-500, oklch(70% 0.15 75)); }
+  100% { background-color: transparent; }
+}
+.docs-block-anchor-highlight {
+  animation: docs-block-anchor-pulse 1.6s ease-out;
+  border-radius: 4px;
+}
+
 /* Docs article rhythm: used by the docs editor and shared read-only documents. */
 .docs-editor-prose {
   color: var(--foreground);
