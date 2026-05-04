@@ -18,7 +18,7 @@ export interface MentionSuggestionItem {
   href?: string;
 }
 
-const normalizeMentionHandle = (value: string) =>
+export const normalizeMentionHandle = (value: string) =>
   value
     .trim()
     .toLowerCase()

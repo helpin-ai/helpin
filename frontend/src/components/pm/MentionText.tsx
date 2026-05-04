@@ -42,6 +42,7 @@ function MentionChip({ mention }: { mention: MentionMatch }) {
   const ref = useRef<HTMLSpanElement>(null)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isTeam = mention.type === 'team'
+  const isUnresolved = mention.type === 'unresolved'
 
   const show = useCallback(() => {
     if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null }
@@ -102,6 +103,12 @@ function MentionChip({ mention }: { mention: MentionMatch }) {
     </span>,
     document.body,
   ) : null
+
+  if (isUnresolved) {
+    return (
+      <span data-mention-type={mention.type}>@{mention.handle}</span>
+    )
+  }
 
   return (
     <span
