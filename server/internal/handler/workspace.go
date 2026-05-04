@@ -318,6 +318,13 @@ func (h *WorkspaceHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	for i, module := range modules {
 		moduleStrings[i] = string(module)
 	}
+	claims := middleware.ClaimsFrom(r.Context())
+	mfaSatisfied := claims != nil && claims.MFASatisfied
+	securityPolicy, err := h.workspaceService.GetWorkspaceMFAPolicy(r.Context(), actor.WorkspaceID, actor.UserID, mfaSatisfied)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to resolve workspace security policy")
+		return
+	}
 
 	// Fetch full member record for preference fields.
 	member, memberErr := h.workspaceService.GetMyMembership(r.Context(), actor.WorkspaceID, actor.UserID)
@@ -339,5 +346,6 @@ func (h *WorkspaceHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		"permissions":      permStrings,
 		"team_memberships": teamMemberships,
 		"modules":          moduleStrings,
+		"security_policy":  securityPolicy,
 	})
 }

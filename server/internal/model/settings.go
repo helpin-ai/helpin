@@ -22,15 +22,16 @@ func NormalizePlanningMethodology(value string) string {
 
 // WorkspaceSettings represents a row in the workspace_settings table.
 type WorkspaceSettings struct {
-	ID                        string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID               string    `json:"workspace_id" gorm:"type:uuid;uniqueIndex;not null"`
-	QuarterStartDate          *string   `json:"quarter_start_date"`
-	SprintDurationWeeks       int       `json:"sprint_duration_weeks" gorm:"not null;default:2"`
-	NotificationsEnabled      bool      `json:"notifications_enabled" gorm:"not null;default:true"`
-	AutoCalculateBonuses      bool      `json:"auto_calculate_bonuses" gorm:"not null;default:false"`
-	TeamWeight                int       `json:"team_weight" gorm:"not null;default:50"`
-	CreatedAt                 time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt                 time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                   string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID          string    `json:"workspace_id" gorm:"type:uuid;uniqueIndex;not null"`
+	QuarterStartDate     *string   `json:"quarter_start_date"`
+	SprintDurationWeeks  int       `json:"sprint_duration_weeks" gorm:"not null;default:2"`
+	NotificationsEnabled bool      `json:"notifications_enabled" gorm:"not null;default:true"`
+	AutoCalculateBonuses bool      `json:"auto_calculate_bonuses" gorm:"not null;default:false"`
+	TeamWeight           int       `json:"team_weight" gorm:"not null;default:50"`
+	EnforceTwoFactor     bool      `json:"enforce_two_factor" gorm:"not null;default:false"`
+	CreatedAt            time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceSettings) TableName() string { return "workspace_settings" }
@@ -367,6 +368,7 @@ type UpdateSystemSettingsRequest struct {
 	NotificationsEnabled *bool `json:"notifications_enabled"`
 	AutoCalculateBonuses *bool `json:"auto_calculate_bonuses"`
 	TeamWeight           *int  `json:"team_weight"`
+	EnforceTwoFactor     *bool `json:"enforce_two_factor"`
 }
 
 // InitializeSettingsRequest is the payload for initializing workspace settings.
