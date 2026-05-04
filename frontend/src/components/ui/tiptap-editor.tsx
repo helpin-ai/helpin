@@ -52,6 +52,7 @@ import type { WorkspaceTeam, AssignableMember } from '@/lib/types';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { ResizableImageExtension } from './resizable-image-extension';
 import {
+  getMemberMentionHandle,
   getMentionSuggestions,
   type MentionSuggestionItem,
 } from '@/components/pm/mentionSuggestions';
@@ -299,7 +300,19 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         transformPastedText: true,
         transformCopiedText: false,
       }),
-      MentionHighlight,
+      MentionHighlight.configure({
+        validHandles: () => {
+          const handles = new Set<string>();
+          for (const m of membersRef.current) {
+            const handle = getMemberMentionHandle(m);
+            if (handle) handles.add(handle.toLowerCase());
+          }
+          for (const t of teamsRef.current) {
+            if (t.handle) handles.add(t.handle.toLowerCase());
+          }
+          return handles;
+        },
+      }),
     ];
     if (uploadConfig) {
       exts.push(ResizableImageExtension as typeof exts[number]);
