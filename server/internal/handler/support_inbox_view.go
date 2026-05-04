@@ -41,6 +41,23 @@ func (h *SupportInboxViewHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, views)
 }
 
+func (h *SupportInboxViewHandler) ListBuiltin(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	views, err := h.viewService.ListBuiltinViews(r.Context(), workspaceID, middleware.GetUserID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if views == nil {
+		views = []model.SupportInboxView{}
+	}
+	writeJSON(w, http.StatusOK, views)
+}
+
 func (h *SupportInboxViewHandler) Create(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	if workspaceID == "" {
@@ -91,6 +108,26 @@ func (h *SupportInboxViewHandler) Update(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (h *SupportInboxViewHandler) UpdateBuiltin(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	var req model.UpdateSupportInboxBuiltinViewRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.ViewKey = chi.URLParam(r, "viewKey")
+	view, err := h.viewService.UpsertBuiltinView(r.Context(), workspaceID, middleware.GetUserID(r.Context()), req)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

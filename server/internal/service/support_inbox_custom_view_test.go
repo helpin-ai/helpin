@@ -125,6 +125,97 @@ func TestSupportInboxViewServiceScopesUpdateAndDeleteToWorkspace(t *testing.T) {
 	}
 }
 
+func TestSupportInboxViewServiceUpsertsBuiltinViewsInViewsTable(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-support-builtin-views"
+	userID := "user-support-builtin-views"
+	otherUserID := "other-support-builtin-views"
+	seedWorkspace(t, db, workspaceID, "Support Builtin Views", "support-builtin-views", userID)
+	seedWorkspaceMember(t, db, "wm-support-builtin-user", workspaceID, userID, "user-builtin@example.com", "Builtin User", model.RoleMember)
+	seedWorkspaceMember(t, db, "wm-support-builtin-other", workspaceID, otherUserID, "other-builtin@example.com", "Other Builtin", model.RoleMember)
+	service := NewSupportInboxViewService(repository.NewSupportInboxViewRepository(db), nil)
+
+	view, err := service.UpsertBuiltinView(ctx, workspaceID, userID, model.UpdateSupportInboxBuiltinViewRequest{
+		ViewKey: "nav:inbox",
+		Filters: model.SupportInboxViewFilters{
+			"nav_filter":  "inbox",
+			"states":      "open,waiting_on_customer",
+			"mailbox_ids": "all",
+		},
+	})
+	if err != nil {
+		t.Fatalf("upsert builtin view: %v", err)
+	}
+	if view.ViewType != model.SupportInboxViewTypeDefault || view.ViewKey == nil || *view.ViewKey != "nav:inbox" || view.Filters["mailbox_ids"] != "all" {
+		t.Fatalf("unexpected builtin view: %#v", view)
+	}
+
+	updated, err := service.UpsertBuiltinView(ctx, workspaceID, userID, model.UpdateSupportInboxBuiltinViewRequest{
+		ViewKey: "nav:inbox",
+		Filters: model.SupportInboxViewFilters{
+			"nav_filter": "inbox",
+			"states":     "open",
+		},
+	})
+	if err != nil {
+		t.Fatalf("update builtin view: %v", err)
+	}
+	if updated.ID != view.ID {
+		t.Fatalf("expected upsert to update existing view, got %s then %s", view.ID, updated.ID)
+	}
+
+	builtinViews, err := service.ListBuiltinViews(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("list builtin views: %v", err)
+	}
+	if len(builtinViews) != 1 || builtinViews[0].Filters["states"] != "open" {
+		t.Fatalf("unexpected listed builtin views: %#v", builtinViews)
+	}
+
+	customViews, err := service.List(ctx, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("list custom views: %v", err)
+	}
+	if len(customViews) != 0 {
+		t.Fatalf("expected builtin views to stay out of custom view list, got %#v", customViews)
+	}
+	if _, err := service.Update(ctx, workspaceID, view.ID, userID, model.RoleMember, model.UpdateSupportInboxViewRequest{Name: strPtr("Rename Builtin")}); err == nil {
+		t.Fatalf("expected generic custom view update to reject builtin views")
+	}
+	if err := service.Delete(ctx, workspaceID, view.ID, userID, model.RoleMember); err == nil {
+		t.Fatalf("expected generic custom view delete to reject builtin views")
+	}
+
+	otherViews, err := service.ListBuiltinViews(ctx, workspaceID, otherUserID)
+	if err != nil {
+		t.Fatalf("list other builtin views: %v", err)
+	}
+	if len(otherViews) != 0 {
+		t.Fatalf("expected builtin views to be user-scoped, got %#v", otherViews)
+	}
+}
+
+func TestSupportInboxViewServiceRejectsInvalidBuiltinViewKeys(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-support-builtin-invalid"
+	userID := "user-support-builtin-invalid"
+	seedWorkspace(t, db, workspaceID, "Support Builtin Invalid", "support-builtin-invalid", userID)
+	seedWorkspaceMember(t, db, "wm-support-builtin-invalid", workspaceID, userID, "invalid-builtin@example.com", "Invalid Builtin", model.RoleMember)
+	service := NewSupportInboxViewService(repository.NewSupportInboxViewRepository(db), nil)
+
+	_, err := service.UpsertBuiltinView(ctx, workspaceID, userID, model.UpdateSupportInboxBuiltinViewRequest{
+		ViewKey: "bad:key",
+		Filters: model.SupportInboxViewFilters{
+			"states": "open",
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected invalid preference key to be rejected")
+	}
+}
+
 func idsFromSupportViews(views []model.SupportInboxView) []string {
 	ids := make([]string, 0, len(views))
 	for _, view := range views {

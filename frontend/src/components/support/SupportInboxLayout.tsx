@@ -5,15 +5,15 @@ import { Button } from '@/components/ui/button';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAuthStore } from '@/stores/authStore';
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries';
-import { useSupportInboxStore } from '@/stores/supportInboxStore';
-import { useSupportMailboxes } from '@/hooks/queries/useSupport';
+import { supportInboxBuiltinViewKey, useSupportInboxStore } from '@/stores/supportInboxStore';
+import { useSupportInboxViews, useSupportMailboxes } from '@/hooks/queries/useSupport';
 import { ConversationList } from './ConversationList';
 import { MessageThread } from './MessageThread';
 import { ConversationDetailSidebar } from './ConversationDetailSidebar';
 import { CreateConversationDialog } from './CreateConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
-import { defaultAIStatesForNav, defaultAssignmentForNav, defaultStatesForNav, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
+import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
 
 function parseRouteStates(value: string | undefined, navFilter: ReturnType<typeof navFilterFromView>): ConversationStateFilter[] {
   if (!value) return defaultStatesForNav(navFilter);
@@ -77,6 +77,8 @@ export function SupportInboxLayout() {
     searchQuery,
     conversationListFilters,
     activeCustomViewId,
+    customViewDirty,
+    builtinViewFilters,
     selectedMailboxId,
     selectedConversationId,
     activePanel,
@@ -98,28 +100,48 @@ export function SupportInboxLayout() {
   const location = useLocation();
   const params = useParams({ strict: false }) as { conversationId?: string };
   const routeConversationId = params.conversationId ?? null;
+  const routeSearch = useMemo(
+    () => normalizeSupportInboxRouteSearch(location.search as Record<string, unknown>),
+    [location.search],
+  );
+  const { data: routeCustomViews } = useSupportInboxViews(workspaceId, !!routeSearch.custom_view);
   const handleWidgetSettingsClick = useCallback(() => {
     if (!slug) return;
     void navigate({ to: '/w/$slug/settings/chat-general', params: { slug } });
   }, [navigate, slug]);
 
   const supportRouteSearch = useMemo(
-    () => buildSupportInboxSearch({
-      navFilter,
-      selectedMailboxId,
-      statusFilter,
-      searchQuery,
-      activeCustomViewId,
-      listFilters: conversationListFilters,
-    }),
-    [activeCustomViewId, conversationListFilters, navFilter, searchQuery, selectedMailboxId, statusFilter],
+    () => {
+      const savedBuiltinFilters = activeCustomViewId
+        ? null
+        : builtinViewFilters[supportInboxBuiltinViewKey(navFilter, selectedMailboxId)];
+      const savedBuiltinState = savedBuiltinFilters
+        ? parseSupportInboxViewFilters(savedBuiltinFilters, navFilter)
+        : null;
+      const matchesSavedBuiltinView = !activeCustomViewId &&
+        statusFilter === 'all' &&
+        searchQuery.trim() === (savedBuiltinState?.searchQuery ?? '') &&
+        conversationListFiltersEqual(
+          conversationListFilters,
+          savedBuiltinState?.listFilters ?? defaultConversationListFiltersForNav(navFilter),
+        );
+      return buildSupportInboxSearch({
+        navFilter,
+        selectedMailboxId,
+        statusFilter,
+        searchQuery,
+        activeCustomViewId,
+        listFilters: conversationListFilters,
+        includeFilterParams: activeCustomViewId ? customViewDirty : !matchesSavedBuiltinView,
+      });
+    },
+    [activeCustomViewId, builtinViewFilters, conversationListFilters, customViewDirty, navFilter, searchQuery, selectedMailboxId, statusFilter],
   );
 
   // Sync URL params → store on mount / URL change.
   useEffect(() => {
-    const routeSearch = normalizeSupportInboxRouteSearch(location.search as Record<string, unknown>);
     const nextNavFilter = navFilterFromView(routeSearch.view);
-    const nextMailboxId = routeSearch.inbox || 'all';
+    let nextMailboxId = routeSearch.team_inbox || routeSearch.inbox || 'all';
     let effectiveNavFilter = nextNavFilter;
     if (!routeSearch.view) {
       if (routeSearch.status === 'waiting_on_customer') effectiveNavFilter = 'waiting';
@@ -127,8 +149,8 @@ export function SupportInboxLayout() {
       if (routeSearch.status === 'spam') effectiveNavFilter = 'spam';
     }
     const nextStatusFilter = routeSearch.status || 'all';
-    const nextSearchQuery = routeSearch.q || '';
-    const nextConversationListFilters: ConversationListFilters = {
+    let nextSearchQuery = routeSearch.q || '';
+    let nextConversationListFilters: ConversationListFilters = {
       states: parseRouteStates(routeSearch.states, effectiveNavFilter),
       assignment: parseRouteAssignments(routeSearch.assigned_to, effectiveNavFilter),
       mailboxIds: parseRouteStringList(routeSearch.mailbox_ids),
@@ -136,6 +158,34 @@ export function SupportInboxLayout() {
       aiStates: parseRouteAIStates(routeSearch.ai, routeSearch.system_tags, effectiveNavFilter),
       sort: routeSearch.sort === 'oldest' ? 'oldest' : 'newest',
     };
+    const hasExplicitRouteFilters = !!(
+      routeSearch.status ||
+      routeSearch.q ||
+      routeSearch.states ||
+      routeSearch.assigned_to ||
+      routeSearch.mailbox_ids ||
+      routeSearch.tag_ids ||
+      routeSearch.ai ||
+      routeSearch.system_tags ||
+      routeSearch.sort
+    );
+    if (routeSearch.custom_view && !hasExplicitRouteFilters) {
+      const customView = (routeCustomViews ?? []).find((view) => view.id === routeSearch.custom_view);
+      if (customView) {
+        const savedState = parseSupportInboxViewFilters(customView.filters, effectiveNavFilter);
+        effectiveNavFilter = savedState.navFilter;
+        nextMailboxId = savedState.selectedMailboxId;
+        nextSearchQuery = savedState.searchQuery;
+        nextConversationListFilters = savedState.listFilters;
+      }
+    } else if (!routeSearch.custom_view && !hasExplicitRouteFilters) {
+      const savedFilters = builtinViewFilters[supportInboxBuiltinViewKey(effectiveNavFilter, nextMailboxId)];
+      if (savedFilters) {
+        const savedState = parseSupportInboxViewFilters(savedFilters, effectiveNavFilter);
+        nextSearchQuery = savedState.searchQuery;
+        nextConversationListFilters = savedState.listFilters;
+      }
+    }
 
     if (routeConversationId === 'inbox') {
       if (routeSearch.conversation) {
@@ -199,7 +249,9 @@ export function SupportInboxLayout() {
       selectConversation(nextConversationId);
     }
   }, [
-    location.search,
+    routeSearch,
+    routeCustomViews,
+    builtinViewFilters,
     navigate,
     selectConversation,
     syncRouteState,

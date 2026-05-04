@@ -7,7 +7,7 @@ import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
-import { useArchiveMailbox, useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
+import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useUnreadStats } from '@/hooks/queries/useSupport';
 import { useDeleteSupportInboxView, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
@@ -66,12 +66,14 @@ export function Sidebar() {
     activeCustomViewId,
     applyCustomView,
     searchQuery,
+    setBuiltinViewFilters,
     setTeamInboxDialogOpen,
     setEditMailboxId,
   } = useSupportInboxStore();
 
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '', hasSupportModule);
   const { data: customViews = [] } = useSupportInboxViews(workspaceId ?? '', hasSupportModule);
+  const { data: builtinViews } = useSupportBuiltinInboxViews(workspaceId ?? '', hasSupportModule);
   const unreadMailboxScope = selectedMailboxId === 'all' ? undefined : selectedMailboxId;
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '', unreadMailboxScope, hasSupportModule);
   const { data: workspaceUnreadStats } = useUnreadStats(workspaceId ?? '', undefined, hasSupportModule && !!unreadMailboxScope);
@@ -90,6 +92,19 @@ export function Sidebar() {
     () => [...customViews].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
     [customViews],
   );
+
+  const builtinViewFilterMap = useMemo(
+    () => Object.fromEntries(
+      (builtinViews ?? [])
+        .filter((view) => view.view_key)
+        .map((view) => [view.view_key as string, view.filters]),
+    ),
+    [builtinViews],
+  );
+
+  useEffect(() => {
+    setBuiltinViewFilters(builtinViewFilterMap);
+  }, [builtinViewFilterMap, setBuiltinViewFilters]);
 
   const { data: agentRunsData } = useQuery({
     queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),

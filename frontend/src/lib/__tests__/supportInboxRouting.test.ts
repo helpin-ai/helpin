@@ -28,7 +28,7 @@ describe('supportInboxRouting', () => {
     expect(navFilterFromView('resolved_by_ai')).toBe('resolved_by_ai');
   });
 
-  it('builds compact global inbox URLs and explicit mailbox-scoped inbox URLs', () => {
+  it('builds compact global inbox URLs and explicit team inbox URLs', () => {
     expect(viewFromNavFilter('inbox')).toBe('inbox');
     expect(viewFromNavFilter('mine')).toBe('mine');
 
@@ -45,8 +45,54 @@ describe('supportInboxRouting', () => {
       statusFilter: 'all',
       searchQuery: '',
     })).toEqual({
-      view: 'inbox',
-      inbox: 'mailbox-billing',
+      view: 'team',
+      team_inbox: 'mailbox-billing',
+    });
+  });
+
+  it('builds custom view URLs by selected view type and id', () => {
+    expect(navFilterFromView('team')).toBe('inbox');
+    expect(navFilterFromView('custom')).toBe('inbox');
+
+    expect(buildSupportInboxSearch({
+      navFilter: 'waiting',
+      selectedMailboxId: 'mailbox-billing',
+      statusFilter: 'all',
+      searchQuery: '',
+      activeCustomViewId: 'view-billing',
+      listFilters: {
+        states: ['waiting_on_customer'],
+        assignment: ['me'],
+        mailboxIds: ['mailbox-billing'],
+        tagIds: ['tag-billing'],
+        aiStates: ['handoff'],
+        sort: 'oldest',
+      },
+      includeFilterParams: false,
+    })).toEqual({
+      view: 'custom',
+      custom_view: 'view-billing',
+    });
+  });
+
+  it('can keep saved team view URLs clean when filters are represented by the view', () => {
+    expect(buildSupportInboxSearch({
+      navFilter: 'inbox',
+      selectedMailboxId: 'mailbox-billing',
+      statusFilter: 'all',
+      searchQuery: 'refund',
+      listFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: [],
+        mailboxIds: ['mailbox-billing'],
+        tagIds: ['tag-billing'],
+        aiStates: ['handoff'],
+        sort: 'oldest',
+      },
+      includeFilterParams: false,
+    })).toEqual({
+      view: 'team',
+      team_inbox: 'mailbox-billing',
     });
   });
 

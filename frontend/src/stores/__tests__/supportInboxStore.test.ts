@@ -31,6 +31,8 @@ function resetStore() {
       sort: 'newest',
     },
     activeCustomViewId: null,
+    customViewDirty: false,
+    builtinViewFilters: {},
     selectedConversationId: null,
     replyMode: 'reply',
     createDialogOpen: false,
@@ -154,6 +156,57 @@ describe('supportInboxStore', () => {
     });
   });
 
+  it('applies saved sidebar view filters when switching to that sidebar item', () => {
+    useSupportInboxStore.getState().setBuiltinViewFilter('nav:waiting', {
+      nav_filter: 'waiting',
+      states: 'open,waiting_on_customer',
+      search: 'refund',
+      assignment: 'unassigned',
+      tag_ids: 'tag-billing',
+      ai: 'handoff',
+      sort: 'oldest',
+    });
+
+    useSupportInboxStore.getState().setNavFilter('waiting');
+
+    expect(useSupportInboxStore.getState().selectedMailboxId).toBe('all');
+    expect(useSupportInboxStore.getState().searchQuery).toBe('refund');
+    expect(useSupportInboxStore.getState().conversationListFilters).toEqual({
+      states: ['open', 'waiting_on_customer'],
+      assignment: ['unassigned'],
+      mailboxIds: [],
+      tagIds: ['tag-billing'],
+      aiStates: ['handoff'],
+      sort: 'oldest',
+    });
+  });
+
+  it('applies saved team inbox filters when opening that team inbox', () => {
+    useSupportInboxStore.getState().setBuiltinViewFilter('team:mailbox-billing', {
+      nav_filter: 'inbox',
+      states: 'open,waiting_on_customer',
+      search: 'invoice',
+      mailbox_id: 'mailbox-billing',
+      mailbox_ids: 'all',
+      ai: 'handoff',
+      sort: 'oldest',
+    });
+
+    useSupportInboxStore.getState().setSelectedMailboxId('mailbox-billing');
+
+    expect(useSupportInboxStore.getState().navFilter).toBe('inbox');
+    expect(useSupportInboxStore.getState().selectedMailboxId).toBe('mailbox-billing');
+    expect(useSupportInboxStore.getState().searchQuery).toBe('invoice');
+    expect(useSupportInboxStore.getState().conversationListFilters).toEqual({
+      states: ['open', 'waiting_on_customer'],
+      assignment: [],
+      mailboxIds: ['all'],
+      tagIds: [],
+      aiStates: ['handoff'],
+      sort: 'oldest',
+    });
+  });
+
   it('uses visible Assignment defaults for Mine without affecting other sidebar items', () => {
     useSupportInboxStore.getState().setNavFilter('mine');
 
@@ -184,6 +237,7 @@ describe('supportInboxStore', () => {
     });
 
     expect(useSupportInboxStore.getState().activeCustomViewId).toBe('view-1');
+    expect(useSupportInboxStore.getState().customViewDirty).toBe(false);
     expect(useSupportInboxStore.getState().navFilter).toBe('waiting');
     expect(useSupportInboxStore.getState().selectedMailboxId).toBe('mailbox-billing');
     expect(useSupportInboxStore.getState().searchQuery).toBe('refund');
@@ -197,12 +251,22 @@ describe('supportInboxStore', () => {
     });
   });
 
-  it('clears the active custom view when filters are manually changed', () => {
+  it('marks the active custom view dirty when filters are manually changed', () => {
     useSupportInboxStore.setState({ activeCustomViewId: 'view-1' });
 
     useSupportInboxStore.getState().setConversationListFilter('assignment', ['me']);
 
-    expect(useSupportInboxStore.getState().activeCustomViewId).toBeNull();
+    expect(useSupportInboxStore.getState().activeCustomViewId).toBe('view-1');
+    expect(useSupportInboxStore.getState().customViewDirty).toBe(true);
+  });
+
+  it('can mark an updated custom view clean', () => {
+    useSupportInboxStore.setState({ activeCustomViewId: 'view-1', customViewDirty: true });
+
+    useSupportInboxStore.getState().markCustomViewClean();
+
+    expect(useSupportInboxStore.getState().activeCustomViewId).toBe('view-1');
+    expect(useSupportInboxStore.getState().customViewDirty).toBe(false);
   });
 
   it('syncs route state without view and inbox actions resetting each other', () => {

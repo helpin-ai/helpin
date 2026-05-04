@@ -669,6 +669,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			name TEXT NOT NULL,
 			filters TEXT NOT NULL DEFAULT '{}',
 			is_shared BOOLEAN NOT NULL DEFAULT 0,
+			view_type TEXT NOT NULL DEFAULT 'custom',
+			view_key TEXT,
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME

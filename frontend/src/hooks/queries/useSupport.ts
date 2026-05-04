@@ -33,6 +33,7 @@ import type {
   SupportInboxView,
   CreateSupportInboxViewRequest,
   UpdateSupportInboxViewRequest,
+  UpdateSupportInboxBuiltinViewRequest,
   CreateSupportEmailRouteRequest,
   CreateSupportEmailSenderRequest,
   SetSupportEmailSenderDefaultRequest,
@@ -195,6 +196,15 @@ export function useSupportInboxViews(workspaceId: string, enabled = true) {
   });
 }
 
+export function useSupportBuiltinInboxViews(workspaceId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.support.builtinInboxViews(workspaceId),
+    queryFn: async (): Promise<SupportInboxView[]> => unwrap(await supportService.listBuiltinInboxViews(workspaceId)),
+    enabled: !!workspaceId && enabled,
+    staleTime: 30_000,
+  });
+}
+
 export function useCreateSupportInboxView(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -213,6 +223,19 @@ export function useUpdateSupportInboxView(workspaceId: string) {
       supportService.updateInboxView(workspaceId, id, payload).then(unwrap),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViews(workspaceId) });
+      toast.success('View updated');
+    },
+  });
+}
+
+export function useUpdateSupportBuiltinInboxView(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ view_key, ...payload }: UpdateSupportInboxBuiltinViewRequest) =>
+      supportService.updateBuiltinInboxView(workspaceId, view_key, { view_key, ...payload }).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.builtinInboxViews(workspaceId) });
+      toast.success('View updated');
     },
   });
 }

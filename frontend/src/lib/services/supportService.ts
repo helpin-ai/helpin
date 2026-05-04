@@ -25,6 +25,7 @@ import type {
   SupportInboxView,
   CreateSupportInboxViewRequest,
   UpdateSupportInboxViewRequest,
+  UpdateSupportInboxBuiltinViewRequest,
   SupportWorkspaceUnreadCount,
   SupportMailbox,
   CreateSupportMailboxRequest,
@@ -97,10 +98,14 @@ export const supportService = {
     api.get<SupportInboxScopeListResponse>(`/support/inbox/mailboxes/scopes${qs(workspaceId)}`),
   listInboxViews: (workspaceId: string) =>
     api.get<SupportInboxView[]>(`/support/inbox/views${qs(workspaceId)}`),
+  listBuiltinInboxViews: (workspaceId: string) =>
+    api.get<SupportInboxView[]>(`/support/inbox/views/builtin${qs(workspaceId)}`),
   createInboxView: (workspaceId: string, payload: CreateSupportInboxViewRequest) =>
     api.post<SupportInboxView>(`/support/inbox/views${qs(workspaceId)}`, payload),
   updateInboxView: (workspaceId: string, viewId: string, payload: UpdateSupportInboxViewRequest) =>
     api.put<SupportInboxView>(`/support/inbox/views/${viewId}${qs(workspaceId)}`, payload),
+  updateBuiltinInboxView: (workspaceId: string, viewKey: string, payload: UpdateSupportInboxBuiltinViewRequest) =>
+    api.put<SupportInboxView>(`/support/inbox/views/builtin/${encodeURIComponent(viewKey)}${qs(workspaceId)}`, payload),
   deleteInboxView: (workspaceId: string, viewId: string) =>
     api.del(`/support/inbox/views/${viewId}${qs(workspaceId)}`),
   listWorkspaceUnread: () =>
