@@ -420,6 +420,7 @@ export function Sidebar() {
                       searchQuery: next.searchQuery,
                       activeCustomViewId: view.id,
                       listFilters: next.conversationListFilters,
+                      includeFilterParams: false,
                     }),
                   });
                 }}
