@@ -26,6 +26,8 @@ interface CommentEditorProps {
   initialContent?: string
   onCancel?: () => void
   autoFocus?: boolean
+  /** Visual variant — 'primary' for top-level composers, 'reply' for nested reply composers, 'legacy' (default) keeps the existing filled style. */
+  variant?: 'primary' | 'reply' | 'legacy'
 }
 
 function getFileExtension(filename: string): string {
@@ -78,6 +80,7 @@ export function CommentEditor({
   onRemoveUploadedFile,
   initialContent,
   onCancel,
+  variant = 'legacy',
   autoFocus = false,
 }: CommentEditorProps) {
   const [mentionState, setMentionState] = useState<{
@@ -277,8 +280,15 @@ export function CommentEditor({
 
   const canSubmit = !loading && (hasContent || uploadedFiles.length > 0)
 
+  const wrapperClass =
+    variant === 'primary'
+      ? 'relative rounded-lg border border-border/60 bg-background px-3 pt-2 pb-1.5 transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
+      : variant === 'reply'
+        ? 'relative rounded-md border border-border/60 bg-background px-2.5 pt-1.5 pb-1 transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
+        : 'relative bg-muted/50 px-3 pt-2 pb-1.5 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
+
   return (
-    <div className="relative bg-muted/50 px-3 pt-2 pb-1.5 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40">
+    <div className={wrapperClass}>
       {mentionState && mentionState.items.length > 0 ? (
         <div
           className="absolute bottom-full left-0 right-0 z-50 mb-1.5"
