@@ -41,9 +41,6 @@ export const getMemberMentionHandle = (member: AssignableMember) => {
 };
 
 const buildMemberSuggestion = (member: AssignableMember): MentionSuggestionItem | null => {
-  if (member.status === 'inactive') {
-    return null;
-  }
   const handle = getMemberMentionHandle(member);
   if (!handle) {
     return null;
@@ -102,12 +99,6 @@ const matchesMentionQuery = (item: MentionSuggestionItem, query: string) => {
 };
 
 const compareMentionSuggestions = (query: string) => (a: MentionSuggestionItem, b: MentionSuggestionItem) => {
-  const aExact = a.handle === query ? 0 : 1;
-  const bExact = b.handle === query ? 0 : 1;
-  if (aExact !== bExact) {
-    return aExact - bExact;
-  }
-
   const aStartsWith = a.handle.startsWith(query) ? 0 : 1;
   const bStartsWith = b.handle.startsWith(query) ? 0 : 1;
   if (aStartsWith !== bStartsWith) {
@@ -117,6 +108,12 @@ const compareMentionSuggestions = (query: string) => (a: MentionSuggestionItem, 
   if (a.type !== b.type) {
     const priority = { member: 0, team: 1, agent: 2, entity: 3 };
     return priority[a.type] - priority[b.type];
+  }
+
+  const aExact = a.handle === query ? 0 : 1;
+  const bExact = b.handle === query ? 0 : 1;
+  if (aExact !== bExact) {
+    return aExact - bExact;
   }
 
   return a.label.localeCompare(b.label);
