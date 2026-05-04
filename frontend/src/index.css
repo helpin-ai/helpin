@@ -472,6 +472,26 @@
   margin: 0.75rem 0;
 }
 
+/* Docs editor block hover handle (positioned by tiptap-extension-global-drag-handle).
+   The package writes style.left/top via getBoundingClientRect (viewport coords),
+   so the element needs position:fixed for those styles to take effect. */
+.drag-handle {
+  position: fixed;
+  z-index: 30;
+  width: 40px;
+  height: 28px;
+  opacity: 1;
+  /* Show direction: brief delay before fade-in so the handle doesn't
+     flicker as the cursor crosses blocks. */
+  transition: opacity 120ms ease 120ms;
+}
+.drag-handle.hide {
+  opacity: 0;
+  pointer-events: none;
+  /* Hide direction: no delay. */
+  transition: opacity 120ms ease 0ms;
+}
+
 /* Docs article rhythm: used by the docs editor and shared read-only documents. */
 .docs-editor-prose {
   color: var(--foreground);

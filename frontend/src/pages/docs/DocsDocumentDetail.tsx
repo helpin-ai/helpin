@@ -11,7 +11,6 @@ import {
   ArrowRight01Icon,
   Clock01Icon,
   Copy01Icon,
-  Menu01Icon,
   ViewIcon,
   LinkSquare01Icon,
   File01Icon,
@@ -98,10 +97,9 @@ import {
 } from '@/components/docs/docsCollectionTree'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
-import { DocsOutlineSidebar } from '@/components/docs/DocsOutlineSidebar'
+import { DocsOutlineMinimap } from '@/components/docs/DocsOutlineMinimap'
 import { DocsRailHeader } from '@/components/docs/DocsRailHeader'
 import { RailSection } from '@/components/crm/contact-detail/RailSection'
-import { getDocsOutlineOpen, setDocsOutlineOpen } from '@/components/layout/sidebar/state'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
 import type { TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
@@ -146,7 +144,7 @@ function DocCollectionIcon({ name }: { name?: string | null }) {
   return <FolderOpenIcon className="h-3 w-3 shrink-0" />;
 }
 
-import type { DocumentOutlineItem } from '@/components/docs/DocsOutlineSidebar'
+import type { DocumentOutlineItem } from '@/components/docs/DocsOutlineMinimap'
 
 function collectDocumentOutline(content: JSONContent | null | undefined): DocumentOutlineItem[] {
   const items: DocumentOutlineItem[] = []
@@ -260,6 +258,11 @@ export function DocsDocumentDetail({
   const wsSlug = workspace?.slug ?? ''
   const coverageGapClosedRef = useRef(false)
   const editorShellRef = useRef<HTMLDivElement | null>(null)
+  const [editorShellEl, setEditorShellEl] = useState<HTMLDivElement | null>(null)
+  const setEditorShellRef = useCallback((el: HTMLDivElement | null) => {
+    editorShellRef.current = el
+    setEditorShellEl(el)
+  }, [])
   const [coverageInitialContent] = useState(() =>
     loadCoverageHandoffContent(fromGapId, fromSuggestionId),
   )
@@ -728,29 +731,6 @@ export function DocsDocumentDetail({
     heading?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
-  // Outline open state: persisted in localStorage per workspace; defaults to open for docs with >= 6 headings
-  const [outlineOpen, setOutlineOpenState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    return false
-  })
-  useEffect(() => {
-    if (!wsId) return
-    const stored = getDocsOutlineOpen(wsId)
-    if (stored !== null) {
-      setOutlineOpenState(stored)
-    } else {
-      setOutlineOpenState(outlineItems.length >= 6)
-    }
-    // Only re-evaluate when the workspace or doc changes (not on every outline content edit)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsId, docId])
-  const toggleOutline = useCallback(() => {
-    setOutlineOpenState((prev) => {
-      const next = !prev
-      if (wsId) setDocsOutlineOpen(wsId, next)
-      return next
-    })
-  }, [wsId])
 
   const preparePublishedContent = useCallback(async (rawContent: JSONContent | null | undefined) => {
     if (!isExternalHelpCenter || !rawContent) return undefined
@@ -1405,28 +1385,14 @@ export function DocsDocumentDetail({
 
       {/* Main content area */}
       <div className="flex min-h-0 flex-1">
-        {/* Outline (left rail) */}
-        <DocsOutlineSidebar
-          items={outlineItems}
-          open={outlineOpen}
-          onSelect={handleOutlineSelect}
-        />
-
         {/* Editor */}
-        <div ref={editorShellRef} className="relative flex min-w-0 flex-1 flex-col">
-          {/* Floating outline toggle (top-left corner, hidden on small screens) */}
-          {outlineItems.length > 0 && (
-            <QuickTooltip label={outlineOpen ? 'Hide outline' : 'Show outline'}>
-              <button
-                type="button"
-                onClick={toggleOutline}
-                className="absolute left-3 top-3 z-10 hidden h-8 w-8 items-center justify-center rounded-md border border-border/60 bg-background/80 text-muted-foreground backdrop-blur transition-colors hover:bg-muted hover:text-foreground lg:flex"
-                aria-label={outlineOpen ? 'Hide outline' : 'Show outline'}
-              >
-                {outlineOpen ? <ArrowLeft02Icon className="h-4 w-4" /> : <Menu01Icon className="h-4 w-4" />}
-              </button>
-            </QuickTooltip>
-          )}
+        <div ref={setEditorShellRef} className="relative flex min-w-0 flex-1 flex-col">
+          {/* Right-side scrollspy outline minimap */}
+          <DocsOutlineMinimap
+            items={outlineItems}
+            scrollContainer={editorShellEl}
+            onSelect={handleOutlineSelect}
+          />
           {previewVersion ? (
             <DocsEditor
               key={`preview-${previewVersion.id}`}
