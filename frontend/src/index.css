@@ -492,6 +492,28 @@
   transition: opacity 120ms ease 0ms;
 }
 
+/* Docs editor reading column: bounded width, centered by default, slides
+   left when inline comment cards are visible. */
+.docs-editor-wrapper .docs-editor-content-frame {
+  max-width: 56rem;
+  margin-left: max(1.5rem, calc((100% - 56rem) / 2));
+  margin-right: max(1.5rem, calc((100% - 56rem) / 2));
+  transition:
+    margin-left 240ms cubic-bezier(0.2, 0, 0, 1),
+    max-width 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+.docs-editor-wrapper .docs-editor-prose,
+.docs-editor-wrapper [data-docs-title-row] {
+  max-width: 100%;
+}
+@media (min-width: 1280px) {
+  .docs-editor-wrapper.has-side-comments .docs-editor-content-frame {
+    max-width: min(56rem, calc(100% - 22rem));
+    margin-left: max(1.5rem, calc((100% - 56rem) / 2 - 8rem));
+    margin-right: auto;
+  }
+}
+
 /* Brief amber-tinted highlight when arriving at a #block-<uuid> anchor. */
 @keyframes docs-block-anchor-pulse {
   0% { background-color: var(--color-amber-500, oklch(70% 0.15 75)); }
@@ -598,6 +620,14 @@
 }
 .docs-editor-prose table {
   margin: 1.5rem 0;
+  max-width: 100%;
+  table-layout: fixed;
+}
+.docs-editor-prose th,
+.docs-editor-prose td {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .docs-editor-prose hr {
   margin: 2.25rem 0;

@@ -818,6 +818,9 @@ interface DocsEditorProps {
   workspaceSlug?: string
   documentId?: string
   onSaveStatusChange?: (status: SaveStatus, lastSavedAt: Date | null) => void
+  onEditorReady?: (editor: ReturnType<typeof useEditor> | null) => void
+  /** When true, the centered doc column slides left (left margin shrinks) so the right-side gutter can host comment cards. Doc width is unchanged. */
+  hasSideComments?: boolean
 }
 
 export function DocsEditor({
@@ -844,6 +847,8 @@ export function DocsEditor({
   workspaceSlug,
   documentId,
   onSaveStatusChange,
+  onEditorReady,
+  hasSideComments = false,
 }: DocsEditorProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
@@ -1393,7 +1398,7 @@ export function DocsEditor({
     editable: !readOnly,
     editorProps: {
       attributes: {
-        class: 'docs-editor-prose prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[400px] px-6 pt-3 pb-8',
+        class: 'docs-editor-prose prose prose-sm dark:prose-invert focus:outline-none min-h-[400px] px-6 pt-3 pb-8',
       },
       handlePaste(_view, event) {
         const items = event.clipboardData?.items
@@ -1505,6 +1510,10 @@ export function DocsEditor({
   })
 
   editorRef.current = editor
+
+  useEffect(() => {
+    onEditorReady?.(editor)
+  }, [editor, onEditorReady])
 
   useEffect(() => {
     if (!editor) return
@@ -1786,7 +1795,7 @@ img { max-width: 100%; }
       )}
 
       {/* Editor content with title */}
-      <div className={`relative min-h-0 flex-1 docs-editor-wrapper ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'}`}>
+      <div className={`relative min-h-0 flex-1 docs-editor-wrapper ${sourceView ? 'flex flex-col min-h-0' : 'overflow-y-auto'} ${hasSideComments ? 'has-side-comments' : ''}`}>
         {generatingOverlay && (
           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-background/80 backdrop-blur-[2px]">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground mb-3" />
@@ -1855,7 +1864,7 @@ img { max-width: 100%; }
             />
           </div>
         ) : (
-          <div className="mx-auto max-w-4xl">
+          <div className="docs-editor-content-frame mx-auto max-w-4xl">
             {showSearch && editor && (
               <SearchReplaceBar
                 editor={editor}
@@ -1869,7 +1878,7 @@ img { max-width: 100%; }
             )}
             {/* Title */}
             {title !== undefined && (
-              <div className="group/title px-6 pt-10 pb-2">
+              <div className="group/title px-6 pt-10 pb-2" data-docs-title-row>
                 {slug && <SlugDisplay slug={slug} onSlugChange={onSlugChange} readOnly={readOnly} helperText={slugHelperText} />}
                 {onTitleChange && !readOnly ? (
                   <textarea

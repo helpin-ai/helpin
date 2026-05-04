@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
+import type { Editor as TiptapEditor } from '@tiptap/core'
 import {
   ArrowLeft02Icon,
   ArchiveIcon,
@@ -98,6 +99,8 @@ import {
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
 import { DocsOutlineMinimap } from '@/components/docs/DocsOutlineMinimap'
+import { CommentSideGutter } from '@/components/docs/CommentSideGutter'
+import { BlockCommentTrigger } from '@/components/docs/BlockCommentTrigger'
 import { DocsRailHeader } from '@/components/docs/DocsRailHeader'
 import { RailSection } from '@/components/crm/contact-detail/RailSection'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
@@ -431,6 +434,7 @@ export function DocsDocumentDetail({
   const [comments, setComments] = useState<CommentWithAuthor[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentAnchor, setCommentAnchor] = useState<DocsCommentAnchor | null>(null)
+  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null)
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null)
   const [references, setReferences] = useState<DocsReferenceItem[]>([])
   const [referencesLoading, setReferencesLoading] = useState(false)
@@ -606,18 +610,16 @@ export function DocsDocumentDetail({
   const handleCreateCommentAnchor = useCallback((anchor: DocsCommentAnchor) => {
     setCommentAnchor(anchor)
     setActiveCommentId(null)
-    setRailView('comments')
-  }, [setRailView])
+  }, [])
 
   const handleOpenComment = useCallback((commentId: string) => {
     setActiveCommentId(commentId)
-    setRailView('comments')
     window.setTimeout(() => {
       document
-        .querySelector(`[data-comment-thread-id="${CSS.escape(commentId)}"]`)
+        .querySelector(`[data-comment-card-id="${CSS.escape(commentId)}"]`)
         ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }, 0)
-  }, [setRailView])
+  }, [])
 
   const commentAnchors = useMemo<DocsCommentAnchorDecoration[]>(() => {
     return comments
@@ -631,6 +633,9 @@ export function DocsDocumentDetail({
         anchor_text: comment.anchor_text,
       }))
   }, [comments])
+
+  const showInlineComments = railView !== 'comments'
+  const hasVisibleInlineComments = showInlineComments && (comments.length > 0 || commentAnchor != null)
 
   const handleSave = useCallback(
     async (json: JSONContent) => {
@@ -1424,6 +1429,26 @@ export function DocsDocumentDetail({
             scrollContainer={editorShellEl}
             onSelect={handleOutlineSelect}
           />
+          {/* Inline side comments + per-block comment trigger */}
+          {showInlineComments && (
+            <CommentSideGutter
+              editor={editorInstance}
+              workspaceId={wsId}
+              docId={docId}
+              comments={comments}
+              currentUserId={currentUserId}
+              members={members}
+              teams={teams}
+              composingAnchor={commentAnchor}
+              onCommentsChange={setComments}
+              onComposingAnchorConsumed={() => setCommentAnchor(null)}
+              activeCommentId={activeCommentId}
+            />
+          )}
+          <BlockCommentTrigger
+            editor={editorInstance}
+            onComment={(anchor) => handleCreateCommentAnchor(anchor)}
+          />
           {previewVersion ? (
             <DocsEditor
               key={`preview-${previewVersion.id}`}
@@ -1438,6 +1463,8 @@ export function DocsDocumentDetail({
               workspaceSlug={wsSlug}
               documentId={docId}
               onSaveStatusChange={handleEditorSaveStatusChange}
+              onEditorReady={setEditorInstance}
+              hasSideComments={hasVisibleInlineComments}
               commentAnchors={commentAnchors}
               onOpenComment={handleOpenComment}
             />
@@ -1503,6 +1530,8 @@ export function DocsDocumentDetail({
               workspaceSlug={wsSlug}
               documentId={docId}
               onSaveStatusChange={handleEditorSaveStatusChange}
+              onEditorReady={setEditorInstance}
+              hasSideComments={hasVisibleInlineComments}
             />
           )}
         </div>

@@ -54,8 +54,9 @@ export function BlockHoverHandle({ editor }: BlockHoverHandleProps) {
   const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
-    const parent = editor.view.dom.parentElement
-    if (!parent) return
+    const dom = editor.view?.dom
+    const parent = dom?.parentElement
+    if (!dom || !parent) return
     const findHandle = () =>
       parent.querySelector<HTMLElement>(':scope > .drag-handle')
 
