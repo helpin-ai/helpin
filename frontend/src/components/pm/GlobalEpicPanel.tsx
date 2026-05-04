@@ -14,7 +14,6 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import {
   closeEpicRoute,
-  getActiveEpicRoute,
   type EpicOverlayLocationLike,
 } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
@@ -42,8 +41,7 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const contextualEpicId = useEpicPanelStore((s) => s.epicId);
   const requestKey = useEpicPanelStore((s) => s.requestKey);
-  const activeEpicRoute = useMemo(() => getActiveEpicRoute(overlayLocation), [overlayLocation]);
-  const activeEpicId = activeEpicRoute?.epicId ?? contextualEpicId;
+  const activeEpicId = contextualEpicId;
 
   const [epic, setEpic] = useState<EpicWithStats | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
