@@ -820,7 +820,7 @@ func (r *SupportConversationRepository) applyConversationAssignmentFilter(query 
 func (r *SupportConversationRepository) applyMailboxScopes(query *gorm.DB, alias string, mailboxID *string, mailboxIDs []string) *gorm.DB {
 	mailboxIDs = compactStrings(mailboxIDs)
 	if len(mailboxIDs) == 0 {
-		return r.applyMailboxScope(query, mailboxID)
+		return r.applyMailboxScope(query, alias, mailboxID)
 	}
 	ids := make([]string, 0, len(mailboxIDs))
 	includeShared := false
@@ -850,7 +850,7 @@ func (r *SupportConversationRepository) applyMailboxScopes(query *gorm.DB, alias
 }
 
 func (r *SupportConversationRepository) applyConversationListParams(query *gorm.DB, alias string, params ConversationRepositoryListParams) *gorm.DB {
-	query = r.applyMailboxAccess(query, params.WorkspaceMemberID, params.Role)
+	query = r.applyMailboxAccess(query, alias, params.WorkspaceMemberID, params.Role)
 	query = r.applyMailboxScopes(query, alias, params.MailboxID, params.MailboxIDs)
 	query = applyConversationFlowState(query, alias, params.FlowState)
 	query = r.applyConversationSearch(query, strings.TrimSpace(params.Search))
@@ -1053,7 +1053,7 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
-	query = r.applyMailboxAccess(query, workspaceMemberID, role)
+	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
 	if err := query.Select(fmt.Sprintf("support_conversations.*, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
 		r.latestSessionCountryExpr("country_code", "support_conversations"),
 		r.latestSessionCountryExpr("country_name", "support_conversations"),
@@ -1136,7 +1136,7 @@ func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspace
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Where("support_conversations.workspace_id = ? AND support_conversations.id IN ?", workspaceID, ids)
-	query = r.applyMailboxAccess(query, workspaceMemberID, role)
+	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
 	if err := query.
 		Select(fmt.Sprintf("support_conversations.*, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
 			r.latestSessionCountryExpr("country_code", "support_conversations"),
@@ -1395,34 +1395,34 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 	return stats, nil
 }
 
-func (r *SupportConversationRepository) applyMailboxScope(query *gorm.DB, mailboxID *string) *gorm.DB {
+func (r *SupportConversationRepository) applyMailboxScope(query *gorm.DB, alias string, mailboxID *string) *gorm.DB {
 	if mailboxID == nil {
 		return query
 	}
 	if strings.TrimSpace(*mailboxID) == "" {
-		return query.Where("support_conversations.mailbox_id IS NULL")
+		return query.Where(fmt.Sprintf("%s.mailbox_id IS NULL", alias))
 	}
-	return query.Where("support_conversations.mailbox_id = ?", strings.TrimSpace(*mailboxID))
+	return query.Where(fmt.Sprintf("%s.mailbox_id = ?", alias), strings.TrimSpace(*mailboxID))
 }
 
-func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, workspaceMemberID, role string) *gorm.DB {
+func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, alias, workspaceMemberID, role string) *gorm.DB {
 	if isElevatedSupportRole(role) {
 		return query
 	}
 	if strings.TrimSpace(workspaceMemberID) == "" {
 		return query.Where("1 = 0")
 	}
-	return query.Where(`
+	return query.Where(fmt.Sprintf(`
 		(
-			support_conversations.mailbox_id IS NULL
-			OR support_conversations.mailbox_id IN (
+			%s.mailbox_id IS NULL
+			OR %s.mailbox_id IN (
 				SELECT sm.id
 				FROM support_mailboxes sm
 				WHERE sm.active = true
 				  AND `+supportMailboxAccessCondition("sm")+`
 			)
 		)
-	`, workspaceMemberID, workspaceMemberID)
+	`, alias, alias), workspaceMemberID, workspaceMemberID)
 }
 
 // UpdateIdentityByAnonymousID batch-updates all anonymous conversations for a visitor
