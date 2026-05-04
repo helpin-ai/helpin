@@ -641,7 +641,7 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
-	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
@@ -1126,6 +1126,7 @@ func main() {
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
+	authzService.SetWorkspaceMFARepository(workspaceRepo)
 	supportInboxService.SetAuthzService(authzService)
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)

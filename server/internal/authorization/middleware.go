@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -131,9 +132,39 @@ func RequireWorkspaceAccess(authz *AuthzService) func(http.Handler) http.Handler
 			// Store actor and workspace ID in context
 			ctx = WithActor(ctx, actor)
 			ctx = middleware.WithWorkspaceID(ctx, workspaceID)
+
+			if !mfaRouteExempt(r.URL.Path) {
+				policy, err := authz.WorkspaceMFAPolicy(ctx, workspaceID, userID)
+				if err != nil {
+					http.Error(w, "failed to verify workspace security policy", http.StatusInternalServerError)
+					return
+				}
+				claims := middleware.ClaimsFrom(ctx)
+				if policy.EnforceTwoFactor && (claims == nil || !claims.MFASatisfied) {
+					writeForbidden(w, "mfa_required", "mfa")
+					return
+				}
+			}
+
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+func mfaRouteExempt(path string) bool {
+	if strings.HasPrefix(path, "/api/auth/2fa/") || strings.HasPrefix(path, "/api/auth/passkey/") {
+		return true
+	}
+	if path == "/api/auth/me" {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/workspaces/by-slug/") {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/workspaces/") && strings.HasSuffix(path, "/me") {
+		return true
+	}
+	return false
 }
 
 // RequirePermission checks that the actor has the specified permission.

@@ -22,7 +22,7 @@ func newAuthService(t *testing.T) (*AuthService, *repository.UserRepository) {
 	userRepo := repository.NewUserRepository(db)
 	resetRepo := repository.NewPasswordResetTokenRepository(db)
 	jwtMgr := auth.NewJWTManager("test-secret")
-	svc := NewAuthService(userRepo, resetRepo, nil, jwtMgr, nil, nil, "http://localhost:5173", []byte("0123456789abcdef0123456789abcdef"))
+	svc := NewAuthService(userRepo, resetRepo, nil, nil, jwtMgr, nil, nil, "http://localhost:5173", []byte("0123456789abcdef0123456789abcdef"))
 	return svc, userRepo
 }
 
@@ -49,7 +49,7 @@ func newAuthServiceWithResetEmail(t *testing.T) (*AuthService, *repository.UserR
 	resetRepo := repository.NewPasswordResetTokenRepository(db)
 	jwtMgr := auth.NewJWTManager("test-secret")
 	emailSender := &stubAuthEmailSender{}
-	svc := NewAuthService(userRepo, resetRepo, nil, jwtMgr, nil, emailSender, "http://localhost:5173", []byte("0123456789abcdef0123456789abcdef"))
+	svc := NewAuthService(userRepo, resetRepo, nil, nil, jwtMgr, nil, emailSender, "http://localhost:5173", []byte("0123456789abcdef0123456789abcdef"))
 	return svc, userRepo, resetRepo, emailSender
 }
 

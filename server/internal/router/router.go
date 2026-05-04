@@ -372,6 +372,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/auth/2fa/status", h.Auth.Get2FAStatus)
 			r.Post("/auth/2fa/setup", h.Auth.Setup2FA)
 			r.Post("/auth/2fa/verify", h.Auth.Verify2FA)
+			r.Post("/auth/2fa/step-up", h.Auth.StepUp2FA)
 			r.Delete("/auth/2fa", h.Auth.Disable2FA)
 			r.Post("/auth/2fa/regenerate-recovery-codes", h.Auth.RegenerateRecoveryCodes)
 

@@ -1076,6 +1076,9 @@ func (r *SettingsRepository) UpdateSystem(ctx context.Context, workspaceID strin
 	if req.TeamWeight != nil {
 		updates["team_weight"] = *req.TeamWeight
 	}
+	if req.EnforceTwoFactor != nil {
+		updates["enforce_two_factor"] = *req.EnforceTwoFactor
+	}
 
 	if err := r.db.WithContext(ctx).Model(&model.WorkspaceSettings{}).Where("workspace_id = ?", workspaceID).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("update system settings: %w", err)

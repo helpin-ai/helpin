@@ -9,11 +9,11 @@ import type {
   WorkspaceModuleAccessSettings,
 } from '@/lib/types'
 
-export function useWorkspaceSettings(wsId: string) {
+export function useWorkspaceSettings(wsId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.workspaces.settings(wsId),
     queryFn: async () => unwrap(await settingsService.getAll(wsId)),
-    enabled: !!wsId,
+    enabled: !!wsId && (options?.enabled ?? true),
     staleTime: 60_000,
   })
 }
