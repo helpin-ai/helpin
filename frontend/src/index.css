@@ -508,9 +508,24 @@
 }
 @media (min-width: 1280px) {
   .docs-editor-wrapper.has-side-comments .docs-editor-content-frame {
-    max-width: min(56rem, calc(100% - 22rem));
+    max-width: min(
+      56rem,
+      calc(100% - max(1.5rem, calc((100% - 56rem) / 2 - 8rem)) - 23.5rem)
+    );
     margin-left: max(1.5rem, calc((100% - 56rem) / 2 - 8rem));
     margin-right: auto;
+  }
+
+  .docs-comment-side-gutter {
+    left: calc(
+      max(1.5rem, calc((100% - 56rem) / 2 - 8rem)) +
+      min(
+        56rem,
+        calc(100% - max(1.5rem, calc((100% - 56rem) / 2 - 8rem)) - 23.5rem)
+      ) +
+      1.5rem
+    );
+    right: auto;
   }
 }
 

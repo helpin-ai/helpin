@@ -177,7 +177,6 @@ export function ContactsTable({
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
-  const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const columnOrderVersion = useMemo(() => JSON.stringify(columnOrder), [columnOrder]);
   const columnVisibilityVersion = useMemo(() => JSON.stringify(columnVisibility), [columnVisibility]);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -491,6 +490,12 @@ export function ContactsTable({
     getCoreRowModel: getCoreRowModel(),
   });
 
+  // Explicit total width for the virtualizer body and each row so row widths don't depend on
+  // the parent's containing-block layout — that's what was leaving some rows at stale widths
+  // after a column resize. Also used as the memo invalidation key.
+  const totalSize = table.getTotalSize();
+  const columnSizingVersion = `${totalSize}`;
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
@@ -652,7 +657,7 @@ export function ContactsTable({
           )}
 
           {/* Virtualized body */}
-          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: `${totalSize}px`, minWidth: '100%' }}>
             {virtualItems.map((virtualRow) => {
               const row = rows[virtualRow.index] as Row<CRMContact>;
               const isGrouped = row.getIsGrouped();
@@ -665,7 +670,7 @@ export function ContactsTable({
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    width: '100%',
+                    width: `${totalSize}px`,
                     transform: `translate3d(0, ${virtualRow.start}px, 0)`,
                   }}
                 >

@@ -251,7 +251,7 @@ export function CommentSideGutter({
   return (
     <div
       ref={containerRef}
-      className="pointer-events-none absolute right-12 top-0 z-10 hidden w-72 xl:block"
+      className="docs-comment-side-gutter pointer-events-none absolute top-0 z-10 hidden w-72 xl:block"
       aria-label="Comments"
     >
       {orphans.length > 0 && (

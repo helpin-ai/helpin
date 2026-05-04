@@ -1098,7 +1098,7 @@ export function DocsDocumentDetail({
   return (
     <div className="flex h-full flex-col">
       {/* Top bar */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
+      <div className="relative z-30 flex items-center gap-2 border-b border-border/60 bg-background px-3 py-1.5">
         <Button
           variant="ghost"
           size="icon"
