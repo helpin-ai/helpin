@@ -257,6 +257,8 @@ function NotificationDetail({ notification }: { notification: Notification }) {
       navigate({ to: '/w/$slug/pm/objectives/$objectiveId' as string, params: { slug: wsSlug, objectiveId: id } })
     } else if (type === 'support_conversation') {
       navigate({ to: '/w/$slug/support/$conversationId' as string, params: { slug: wsSlug, conversationId: id } })
+    } else if (type === 'doc' || type === 'document') {
+      navigate({ to: '/w/$slug/docs/documents/$docId' as string, params: { slug: wsSlug, docId: id } })
     }
   }
 

@@ -496,6 +496,11 @@ export interface Comment {
   author_id: string;
   body: string;
   parent_id?: string;
+  block_id?: string;
+  range?: Record<string, unknown>;
+  anchor_text?: string;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -513,6 +518,10 @@ export interface CommentWithAuthor {
     email: string;
     full_name: string;
     avatar_url?: string;
+    avatar_style?: string;
+    avatar_seed?: string;
+    avatar_background_mode?: string;
+    avatar_background_color?: string;
     created_at: string;
     updated_at: string;
   };
@@ -1059,6 +1068,9 @@ export interface CreateCommentRequest {
   entity_id: string;
   body: string;
   parent_id?: string;
+  block_id?: string;
+  range?: Record<string, unknown>;
+  anchor_text?: string;
   attachment_ids?: string[];
 }
 

@@ -231,20 +231,21 @@ type ServiceBridge struct {
 	ListBuyerSignals func(ctx context.Context, workspaceID string, dealID *string, limit int) ([]model.CRMBuyerSignal, error)
 
 	// Docs
-	GetDocument          func(ctx context.Context, id string) (*model.DocsDocument, error)
-	GetDocumentKey       func(ctx context.Context, workspaceID, keyType, key string) (*model.DocsDocumentKey, error)
-	ListCollections      func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error)
-	ListDocuments        func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
-	SearchDocuments      func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
-	CreateDocument       func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error)
-	EnsureEpicSpecDoc    func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error)
-	EnsureTaskPlanDoc    func(ctx context.Context, workspaceID, taskID, actorID string) (*model.DocsDocument, error)
-	GetDocumentContent   func(ctx context.Context, documentID string) (string, error)
-	ListDocumentBlocks   func(ctx context.Context, documentID string) ([]model.DocsBlock, error)
-	UpdateDocumentBlock  func(ctx context.Context, documentID, blockID string, revision int, content json.RawMessage, actorID string) (*model.DocsContent, error)
-	WriteDocumentContent func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
-	LinkDocumentToObject func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
-	UpsertDocumentKey    func(ctx context.Context, record *model.DocsDocumentKey) error
+	GetDocument               func(ctx context.Context, id string) (*model.DocsDocument, error)
+	GetDocumentKey            func(ctx context.Context, workspaceID, keyType, key string) (*model.DocsDocumentKey, error)
+	ListCollections           func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error)
+	ListDocuments             func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsDocument, error)
+	SearchDocuments           func(ctx context.Context, workspaceID, query string, limit int) ([]DocsSearchHit, error)
+	CreateDocument            func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error)
+	EnsureEpicSpecDoc         func(ctx context.Context, workspaceID, epicID, actorID string) (*model.DocsDocument, error)
+	EnsureTaskPlanDoc         func(ctx context.Context, workspaceID, taskID, actorID string) (*model.DocsDocument, error)
+	GetDocumentContent        func(ctx context.Context, documentID string) (string, error)
+	ListDocumentBlocks        func(ctx context.Context, documentID string) ([]model.DocsBlock, error)
+	PublishAISectionCandidate func(ctx context.Context, workspaceID, documentID, blockID, agentID, runID string, currentContent, candidateContent json.RawMessage, candidateText string, sourceRefs model.JSONB, prompt *string, promptHash *string, modelName *string) (*model.DocsAISectionCandidate, error)
+	UpdateDocumentBlock       func(ctx context.Context, documentID, blockID string, revision int, content json.RawMessage, actorID string) (*model.DocsContent, error)
+	WriteDocumentContent      func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error
+	LinkDocumentToObject      func(ctx context.Context, workspaceID, documentID, linkedObjectType, linkedObjectID, linkContext, actorID string) error
+	UpsertDocumentKey         func(ctx context.Context, record *model.DocsDocumentKey) error
 
 	// Release facts
 	GetReleaseContext      func(ctx context.Context, workspaceID string, req model.GetReleaseContextRequest) (*model.ReleaseContextResult, error)

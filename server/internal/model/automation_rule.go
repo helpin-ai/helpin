@@ -7,17 +7,20 @@ import (
 
 // Trigger type constants.
 const (
-	TriggerTaskStateEntered  = "task.state_entered"
-	TriggerStoryStateEntered = TriggerTaskStateEntered // legacy alias
-	TriggerAgentRunApproved  = "agent_run.approved"
-	TriggerGitHubPush        = "github.push"
-	TriggerGitHubPROpened    = "github.pull_request_opened"
-	TriggerGitHubPRMerged    = "github.pull_request_merged"
-	TriggerGitHubPRClosed    = "github.pull_request_closed"
-	TriggerGitHubPRReviewReq = "github.pull_request_review_requested"
-	TriggerGitHubReleasePub  = "github.release_published"
-	TriggerGitHubCheckSuite  = "github.check_suite_completed"
-	TriggerCron              = "cron"
+	TriggerTaskStateEntered     = "task.state_entered"
+	TriggerStoryStateEntered    = TriggerTaskStateEntered // legacy alias
+	TriggerAgentRunApproved     = "agent_run.approved"
+	TriggerDocPublished         = "doc.published"
+	TriggerAISectionRegenerated = "ai_section.regenerated"
+	TriggerAISectionApproved    = "ai_section.approved"
+	TriggerGitHubPush           = "github.push"
+	TriggerGitHubPROpened       = "github.pull_request_opened"
+	TriggerGitHubPRMerged       = "github.pull_request_merged"
+	TriggerGitHubPRClosed       = "github.pull_request_closed"
+	TriggerGitHubPRReviewReq    = "github.pull_request_review_requested"
+	TriggerGitHubReleasePub     = "github.release_published"
+	TriggerGitHubCheckSuite     = "github.check_suite_completed"
+	TriggerCron                 = "cron"
 )
 
 // Action type constants.

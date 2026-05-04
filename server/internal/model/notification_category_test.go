@@ -71,6 +71,7 @@ func TestEventTypeToCategory_KnownMappings(t *testing.T) {
 		{"comment.created", NotifCategoryComments},
 		{"story.mention", NotifCategoryMentions},
 		{"sprint.mention", NotifCategoryMentions},
+		{"doc.mention", NotifCategoryMentions},
 		{"task.agent_attention_required", NotifCategoryAgentAttention},
 		{"support_conversation.customer_reply", NotifCategorySupportReplies},
 		{"support_conversation.mentioned", NotifCategorySupportMentions},
@@ -125,7 +126,7 @@ func TestEventTypeToCategory_AllComments(t *testing.T) {
 func TestEventTypeToCategory_AllMentions(t *testing.T) {
 	mentionEvents := []string{
 		"story.mention", "comment.mention", "checklist.mention",
-		"objective.mention", "epic.mention", "sprint.mention",
+		"objective.mention", "epic.mention", "sprint.mention", "doc.mention",
 	}
 	for _, e := range mentionEvents {
 		got := EventTypeToCategory[e]

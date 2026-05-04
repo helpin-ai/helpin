@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { format } from 'date-fns';
 import QRCode from 'qrcode';
 import { useTitle } from '@/hooks/useTitle';
-import { useAuthStore } from '@/stores/authStore';
+import { persistAuthSession, useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/services/authService';
 import { passkeyService } from '@/lib/services/passkeyService';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -446,7 +446,7 @@ export default function Profile() {
   const handleVerifyTwoFASetup = async (e: FormEvent) => {
     e.preventDefault();
     setSetupSubmitting(true);
-    const { error } = await authService.verify2FASetup(setupVerificationCode);
+    const { data, error } = await authService.verify2FASetup(setupVerificationCode);
     setSetupSubmitting(false);
 
     if (error) {
@@ -455,6 +455,9 @@ export default function Profile() {
     }
 
     syncTwoFAState(true);
+    if (data) {
+      persistAuthSession(data.user, data.access_token, data.refresh_token, localStorage.getItem('remember_me') === '1');
+    }
     toast.success('Two-factor authentication enabled');
     resetSetupDialog();
   };

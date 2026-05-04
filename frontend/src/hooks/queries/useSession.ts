@@ -9,11 +9,11 @@ import type { Permission, WorkspaceAccess, WorkspaceMember, WorkspaceModule } fr
  * useSession fetches the legacy my-membership endpoint.
  * Kept for backward compatibility — prefer useWorkspaceAccess for new code.
  */
-export function useSession(wsId: string) {
+export function useSession(wsId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.workspaces.session(wsId),
     queryFn: async () => unwrap(await workspacesService.getMyMembership(wsId)),
-    enabled: !!wsId,
+    enabled: !!wsId && (options?.enabled ?? true),
     staleTime: 5 * 60_000,
   })
 }

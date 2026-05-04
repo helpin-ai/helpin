@@ -1,0 +1,2 @@
+ALTER TABLE workspace_settings
+    ADD COLUMN IF NOT EXISTS enforce_two_factor BOOLEAN NOT NULL DEFAULT FALSE;

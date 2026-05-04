@@ -372,6 +372,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/auth/2fa/status", h.Auth.Get2FAStatus)
 			r.Post("/auth/2fa/setup", h.Auth.Setup2FA)
 			r.Post("/auth/2fa/verify", h.Auth.Verify2FA)
+			r.Post("/auth/2fa/step-up", h.Auth.StepUp2FA)
 			r.Delete("/auth/2fa", h.Auth.Disable2FA)
 			r.Post("/auth/2fa/regenerate-recovery-codes", h.Auth.RegenerateRecoveryCodes)
 
@@ -484,6 +485,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Route("/automation", func(r chi.Router) {
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
+				r.Use(requireModule(model.ModuleAutomation))
 
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/overview", h.Automation.GetOverview)
 				r.Route("/flows", func(r chi.Router) {
@@ -852,6 +854,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/comments", h.PMComment.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/comments/{id}", h.PMComment.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/comments/{id}", h.PMComment.Delete)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/comments/{id}/resolve", h.PMComment.Resolve)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/comments/{id}/reopen", h.PMComment.Reopen)
 				r.With(requirePerm(authorization.PermPMRead)).Post("/comments/{id}/reactions", h.PMComment.ToggleReaction)
 
 				// Attachments — pm.edit
@@ -1065,6 +1069,20 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Patch("/documents/{docId}/blocks/{blockId}", h.Docs.PatchBlock)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/reorder", h.Docs.ReorderBlocks)
 				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/documents/{docId}/blocks/{blockId}", h.Docs.DeleteBlock)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/blocks/{blockId}/ai-section/candidate", h.Docs.GetAISectionCandidate)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/regenerate", h.Docs.RegenerateAISection)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/approve", h.Docs.ApproveAISection)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/reject", h.Docs.RejectAISection)
+
+				// Comments — docs.read / docs.edit
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/comments", h.Docs.ListComments)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/comments", h.Docs.CreateComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Put("/comments/{id}", h.Docs.UpdateComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Delete("/comments/{id}", h.Docs.DeleteComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/comments/{id}/resolve", h.Docs.ResolveComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/comments/{id}/reopen", h.Docs.ReopenComment)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/comments/{id}/reactions", h.Docs.ToggleCommentReaction)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/references", h.Docs.ListReferences)
 
 				// Preview token — docs.read
 				r.With(requirePerm(authorization.PermDocsRead)).Post("/documents/{docId}/preview-token", h.Docs.GeneratePreviewToken)
@@ -1094,6 +1112,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 				// Search
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/search", h.Docs.Search)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/embeds/resolve", h.Docs.ResolveEmbed)
+				r.With(requirePerm(authorization.PermDocsRead)).Post("/entity-refs/resolve", h.Docs.ResolveEntityRefs)
 
 				// Help Center Config — docs.admin
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/helpcenter/config", h.Docs.GetHelpcenterConfig)

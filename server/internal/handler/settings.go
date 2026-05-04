@@ -558,6 +558,13 @@ func (h *SettingsHandler) UpdateSystem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if req.EnforceTwoFactor != nil && *req.EnforceTwoFactor {
+		claims := middleware.ClaimsFrom(r.Context())
+		if claims == nil || !claims.MFASatisfied {
+			writeError(w, http.StatusForbidden, "verify two-factor authentication before enabling enforcement")
+			return
+		}
+	}
 
 	settings, err := h.settingsService.UpdateSystem(r.Context(), workspaceID, req)
 	if err != nil {

@@ -41,7 +41,7 @@ export function clearClientSession() {
   }
 }
 
-function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
+export function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
   localStorage.setItem('access_token', accessToken);
   localStorage.setItem('refresh_token', refreshToken);
   localStorage.setItem('remember_me', rememberMe ? '1' : '0');

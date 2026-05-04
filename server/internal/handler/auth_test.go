@@ -210,6 +210,7 @@ func newAuthHandlerTestFixture(t *testing.T) (*AuthHandler, string) {
 		userRepo,
 		nil,
 		nil,
+		nil,
 		jwtManager,
 		nil,
 		nil,

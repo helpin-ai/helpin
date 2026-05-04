@@ -141,7 +141,8 @@ export type Permission =
   | 'search.read'
   | 'ws.connect';
 
-export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support';
+export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support' | 'automation';
+export type ManagedWorkspaceModule = Extract<WorkspaceModule, 'crm' | 'support' | 'automation'>;
 export type ModuleGrantSubjectType = 'team' | 'workspace_member';
 
 export interface WorkspaceModuleGrant {
@@ -178,6 +179,14 @@ export interface WorkspaceAccess {
     role: string;
   }[];
   modules: WorkspaceModule[];
+  security_policy?: WorkspaceMFAPolicy;
+}
+
+export interface WorkspaceMFAPolicy {
+  enforce_two_factor: boolean;
+  mfa_required: boolean;
+  mfa_enabled: boolean;
+  mfa_satisfied: boolean;
 }
 
 export interface MemberWithUser {
@@ -293,6 +302,7 @@ export interface WorkspaceConfig {
   sprint_duration_weeks: number;
   notifications_enabled: boolean;
   team_weight: number;
+  enforce_two_factor?: boolean;
 }
 
 export interface WorkspaceTeam {

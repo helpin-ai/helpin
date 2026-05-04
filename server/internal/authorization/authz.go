@@ -19,6 +19,10 @@ type ModuleAccessRepository interface {
 	ListAccessibleModules(ctx context.Context, workspaceID, workspaceMemberID string, teamIDs []string) ([]model.ModuleID, error)
 }
 
+type WorkspaceMFARepository interface {
+	GetWorkspaceMFAPolicy(ctx context.Context, workspaceID, userID string) (model.WorkspaceMFAPolicy, error)
+}
+
 // MemberInfo holds the membership data needed for actor resolution.
 type MemberInfo struct {
 	ID     string
@@ -32,6 +36,7 @@ type AuthzService struct {
 	relations  *RelationEngine
 	memberRepo MemberRepository
 	moduleRepo ModuleAccessRepository
+	mfaRepo    WorkspaceMFARepository
 }
 
 // NewAuthzService creates a new AuthzService.
@@ -42,6 +47,17 @@ func NewAuthzService(db *gorm.DB, memberRepo MemberRepository, moduleRepo Module
 		memberRepo: memberRepo,
 		moduleRepo: moduleRepo,
 	}
+}
+
+func (s *AuthzService) SetWorkspaceMFARepository(repo WorkspaceMFARepository) {
+	s.mfaRepo = repo
+}
+
+func (s *AuthzService) WorkspaceMFAPolicy(ctx context.Context, workspaceID, userID string) (model.WorkspaceMFAPolicy, error) {
+	if s.mfaRepo == nil {
+		return model.WorkspaceMFAPolicy{}, nil
+	}
+	return s.mfaRepo.GetWorkspaceMFAPolicy(ctx, workspaceID, userID)
 }
 
 // ResolveActor builds an Actor from a user ID and workspace ID.
@@ -126,6 +142,7 @@ func (s *AuthzService) AccessibleModules(ctx context.Context, actor *Actor) ([]m
 	if actor.Role == model.RoleOwner || actor.Role == model.RoleAdmin {
 		allowed[model.ModuleCRM] = struct{}{}
 		allowed[model.ModuleSupport] = struct{}{}
+		allowed[model.ModuleAutomation] = struct{}{}
 		return orderedModules(allowed), nil
 	}
 

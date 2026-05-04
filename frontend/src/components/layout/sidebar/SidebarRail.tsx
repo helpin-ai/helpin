@@ -31,7 +31,7 @@ export function SidebarRail({
       <div className="flex flex-1 flex-col items-center gap-1.5">
         {railItems
           .filter((item) => {
-            if (item.id === 'crm' || item.id === 'support') {
+            if (item.id === 'crm' || item.id === 'support' || item.id === 'automation') {
               return accessibleModules.includes(item.id)
             }
             return isModuleEnabled(item.id, userEmail)

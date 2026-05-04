@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 // coverage gaps.
 type SupportCoverageClusterer struct {
 	coverageRepo *repository.SupportCoverageRepository
+	blockSvc     *DocsBlockService
 	now          func() time.Time
 }
 
@@ -25,6 +28,10 @@ func NewSupportCoverageClusterer(coverageRepo *repository.SupportCoverageReposit
 		coverageRepo: coverageRepo,
 		now:          time.Now,
 	}
+}
+
+func (c *SupportCoverageClusterer) SetDocsBlockService(blockSvc *DocsBlockService) {
+	c.blockSvc = blockSvc
 }
 
 // stopwords is intentionally conservative. Over-normalizing support queries
@@ -154,7 +161,35 @@ func (c *SupportCoverageClusterer) UpsertTopicGap(ctx context.Context, event *mo
 		if err := c.coverageRepo.LinkGapArticle(ctx, upserted.ID, *event.DocumentID, event.WorkspaceID); err != nil {
 			return nil, err
 		}
+		c.markRelatedDocStale(ctx, event, upserted)
 	}
 
 	return upserted, nil
+}
+
+func (c *SupportCoverageClusterer) markRelatedDocStale(ctx context.Context, event *model.SupportEvent, gap *model.SupportCoverageGap) {
+	if c.blockSvc == nil || event == nil || event.DocumentID == nil || gap == nil {
+		return
+	}
+	blockID := supportEventBlockID(event.Metadata)
+	reason := firstNonEmptyAISection(event.IssueSummary, gap.Title, "Support feedback indicates this content may be stale.")
+	if err := c.blockSvc.MarkStaleFromSupport(ctx, event.WorkspaceID, *event.DocumentID, blockID, gap.ID, reason, event.SourceSignal); err != nil {
+		slog.WarnContext(ctx, "failed to mark docs block stale from support coverage", "error", err, "workspace_id", event.WorkspaceID, "document_id", *event.DocumentID, "gap_id", gap.ID)
+	}
+}
+
+func supportEventBlockID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return ""
+	}
+	for _, key := range []string{"block_id", "blockId", "docs_block_id", "docsBlockId"} {
+		if value, ok := metadata[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

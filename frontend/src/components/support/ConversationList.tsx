@@ -252,6 +252,7 @@ export function ConversationList({
   const setBuiltinViewFilter = useSupportInboxStore((s) => s.setBuiltinViewFilter);
   const syncRouteState = useSupportInboxStore((s) => s.syncRouteState);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
+  const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
@@ -380,6 +381,12 @@ export function ConversationList({
   useEffect(() => {
     onOnboardingEmptyChange?.(shouldShowOnboardingEmptyState);
   }, [onOnboardingEmptyChange, shouldShowOnboardingEmptyState]);
+
+  useEffect(() => {
+    if (selectedConversationId || isLoading || error || filteredConversations.length === 0) return;
+    const firstConversation = filteredConversations[0];
+    handleSelect(firstConversation.id, firstConversation.unread_count);
+  }, [error, filteredConversations, handleSelect, isLoading, selectedConversationId]);
 
   useEffect(() => {
     if (!wsSend || !wsConnected || filteredConversations.length === 0) return;
@@ -813,7 +820,7 @@ export function ConversationList({
 
       {/* Conversation list */}
       <div
-        className="flex-1 min-h-0 overflow-y-auto"
+        className="flex-1 min-h-0 overflow-y-auto pb-6"
         data-support-conversation-scroll
         onScroll={handleListScroll}
       >

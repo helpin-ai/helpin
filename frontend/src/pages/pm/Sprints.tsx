@@ -391,7 +391,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   }
 
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
+    <div className="mx-auto flex max-w-[1600px] 2xl:max-w-[1920px] min-[2560px]:max-w-[2400px] flex-col gap-4">
       {(hasAnySprintUnfiltered || isFiltered) && (
         <SprintPlanningFilters
           teamName={teamName}

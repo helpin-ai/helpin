@@ -2,7 +2,35 @@
 
 ## Status
 
-Planning.
+P0-P2 first implementation pass is complete. The remaining work is hardening and deepening the shipped slices rather than starting the module from scratch.
+
+Implemented so far:
+
+- AI section block with regeneration, candidate storage, preview, approve/reject, stale-candidate protection, docs/support source refs, activity logging, and `ai_section.regenerated` / `ai_section.approved` automation events.
+- PM task/story, epic, and support conversation entity embeds.
+- Doc body mentions with `@user`, `@team`, and `@agent` behavior; agent mentions can start document-targeted runs.
+- Anchored doc comments for blocks/ranges, with replies and reactions.
+- `doc`, `doc_block`, and `ai_section` automation target support plus `doc.published`.
+- References panel for doc links, embeds, anchored comments, citations, and agent runs.
+- Typed block registry and agent-readable block projections.
+- Permission/redaction fields for entity and citation refs.
+- Block and AI-section audit activity logging.
+- Support coverage stale markers for docs/blocks.
+- PM saved-view embed first pass.
+- Semantic callouts, task-list metadata, toggles, image captions, file attachment blocks, inline table of contents, table sort/merge/split controls, and rich embeds.
+
+Remaining hardening:
+
+1. Make AI sections truly agent-owned: the agent run output should become the candidate, with stored `model`, `prompt_hash`, richer provenance, and a proper visual diff before approval.
+2. Use a ProseMirror/Tiptap-aware diff for AI section review. Prefer `@tiptap/pm/changeset` because the frontend already depends on `@tiptap/pm` and Tiptap exposes the matching ProseMirror packages; use plain `diff`/jsdiff only for fallback text comparisons. Avoid the older `react-diff-viewer` package for the primary editor diff path because it is text-oriented and stale for React 19.
+3. Fix epic embeds to open through the same drawer/navigation behavior as task/story embeds instead of full-page route transitions.
+4. Add comment resolve/reopen and emit comment/block audit events such as `block.commented`.
+5. Add CRM entity embeds for deal, contact, and company.
+6. Upgrade saved-view embeds to render actual PM views, then add CRM/support saved views.
+7. Harden permission-aware source rendering, especially support conversations or CRM records the viewer cannot access.
+8. Upgrade task-list assignee/due-date metadata to real member IDs, picker UI, notification behavior, and optional PM task/story conversion.
+9. Complete TOC sidebar behavior, row/column drag and CSV paste cleanup for tables, and richer backend-backed unfurls for embeds.
+10. Ensure doc-targeted one-shot agent runs get the same useful tool surface that command runs get, including web search/research, entity lookup, PM/CRM/support/docs read tools, and any safe write tools needed to complete the requested task.
 
 ## Thesis
 
@@ -18,6 +46,7 @@ The next roadmap should therefore ship one differentiated vertical slice early, 
    - A region of a document owned by an agent.
    - Supports regenerate, generated candidate preview, diff, approval, rejection, and last-generated metadata.
    - Tracks enough provenance to answer who or what generated the section and from which sources.
+   - Diff should be implemented against the structured TipTap/ProseMirror document when possible, not only markdown text.
 
 2. **Entity embed blocks**
    - Ship PM task/story/epic and support conversation/ticket embeds in the first slice.
@@ -126,6 +155,7 @@ The next roadmap should therefore ship one differentiated vertical slice early, 
 ### Agents And Automation
 
 - Docs, blocks, and AI sections should be targetable by manual runs, automation rules, and scheduled maintenance agents.
+- Doc-targeted one-shot agent runs should inherit the same practical tool access as command runs, including web search/research and workspace read tools, so agents can complete documentation tasks without being artificially blind.
 - Agent action blocks should trigger Temporal workflows with audit logging.
 - Automation events should be explicit and reusable rather than hidden inside editor-specific code paths.
 
@@ -146,6 +176,8 @@ The next roadmap should therefore ship one differentiated vertical slice early, 
 - Treat markdown as an import/export format, not the canonical representation for Helpin-native blocks.
 - Prefer saved references to existing PM/CRM/support objects over copied snapshots. Render snapshots only as fallbacks when permissions or deleted records require it.
 - AI section provenance must be permission-aware. If a viewer cannot access a cited support conversation, CRM record, PM object, or source chunk, show a redacted source label and confidence/status metadata, but do not expose restricted text or links.
+- AI section diffs should compare TipTap JSON / ProseMirror nodes for approval UI. `@tiptap/pm/changeset` is the preferred low-dependency option because it stays version-aligned with TipTap; `diff`/jsdiff is acceptable only for plain-text fallback summaries.
+- One-shot document agents should use the same target-aware tool selection path as command-bar runs. When the target is a doc or block, include web search/research tools and PM/CRM/support/docs context tools according to permissions and the task prompt.
 
 ## Assumptions
 

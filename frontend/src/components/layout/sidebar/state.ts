@@ -35,3 +35,4 @@ export function saveCollapsedSettingsGroups(groups: Set<string>) {
     localStorage.setItem('settings_sidebar_collapsed', JSON.stringify([...groups]));
   } catch {}
 }
+
