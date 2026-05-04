@@ -237,6 +237,30 @@ func (r *PMCommentRepository) GetByID(ctx context.Context, id string) (*model.PM
 	return &comment, nil
 }
 
+// GetWithAuthor returns one comment enriched with author, reactions, and attachments.
+func (r *PMCommentRepository) GetWithAuthor(ctx context.Context, id string) (*model.CommentWithAuthor, error) {
+	comment, err := r.GetByID(ctx, id)
+	if err != nil || comment == nil {
+		return nil, err
+	}
+
+	var author model.User
+	if err := r.db.WithContext(ctx).Where("id = ?", comment.AuthorID).First(&author).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("load comment author: %w", err)
+		}
+	}
+
+	reactionsMap := r.loadReactions(ctx, []string{comment.ID})
+	attachmentsMap := r.loadCommentAttachments(ctx, []string{comment.ID})
+	return &model.CommentWithAuthor{
+		Comment:     *comment,
+		Author:      author,
+		Reactions:   reactionsMap[comment.ID],
+		Attachments: attachmentsMap[comment.ID],
+	}, nil
+}
+
 // Create inserts a comment.
 func (r *PMCommentRepository) Create(ctx context.Context, comment *model.PMComment) error {
 	db := r.db.WithContext(ctx)

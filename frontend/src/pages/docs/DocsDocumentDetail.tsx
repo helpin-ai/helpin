@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
+import type { Editor as TiptapEditor } from '@tiptap/core'
 import {
   ArrowLeft02Icon,
   ArchiveIcon,
@@ -11,7 +12,6 @@ import {
   ArrowRight01Icon,
   Clock01Icon,
   Copy01Icon,
-  Menu01Icon,
   ViewIcon,
   LinkSquare01Icon,
   File01Icon,
@@ -98,10 +98,11 @@ import {
 } from '@/components/docs/docsCollectionTree'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
-import { DocsOutlineSidebar } from '@/components/docs/DocsOutlineSidebar'
+import { DocsOutlineMinimap } from '@/components/docs/DocsOutlineMinimap'
+import { CommentSideGutter } from '@/components/docs/CommentSideGutter'
+import { BlockCommentTrigger } from '@/components/docs/BlockCommentTrigger'
 import { DocsRailHeader } from '@/components/docs/DocsRailHeader'
 import { RailSection } from '@/components/crm/contact-detail/RailSection'
-import { getDocsOutlineOpen, setDocsOutlineOpen } from '@/components/layout/sidebar/state'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
 import type { TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
@@ -146,7 +147,7 @@ function DocCollectionIcon({ name }: { name?: string | null }) {
   return <FolderOpenIcon className="h-3 w-3 shrink-0" />;
 }
 
-import type { DocumentOutlineItem } from '@/components/docs/DocsOutlineSidebar'
+import type { DocumentOutlineItem } from '@/components/docs/DocsOutlineMinimap'
 
 function collectDocumentOutline(content: JSONContent | null | undefined): DocumentOutlineItem[] {
   const items: DocumentOutlineItem[] = []
@@ -260,6 +261,11 @@ export function DocsDocumentDetail({
   const wsSlug = workspace?.slug ?? ''
   const coverageGapClosedRef = useRef(false)
   const editorShellRef = useRef<HTMLDivElement | null>(null)
+  const [editorShellEl, setEditorShellEl] = useState<HTMLDivElement | null>(null)
+  const setEditorShellRef = useCallback((el: HTMLDivElement | null) => {
+    editorShellRef.current = el
+    setEditorShellEl(el)
+  }, [])
   const [coverageInitialContent] = useState(() =>
     loadCoverageHandoffContent(fromGapId, fromSuggestionId),
   )
@@ -428,6 +434,7 @@ export function DocsDocumentDetail({
   const [comments, setComments] = useState<CommentWithAuthor[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentAnchor, setCommentAnchor] = useState<DocsCommentAnchor | null>(null)
+  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null)
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null)
   const [references, setReferences] = useState<DocsReferenceItem[]>([])
   const [referencesLoading, setReferencesLoading] = useState(false)
@@ -603,18 +610,16 @@ export function DocsDocumentDetail({
   const handleCreateCommentAnchor = useCallback((anchor: DocsCommentAnchor) => {
     setCommentAnchor(anchor)
     setActiveCommentId(null)
-    setRailView('comments')
-  }, [setRailView])
+  }, [])
 
   const handleOpenComment = useCallback((commentId: string) => {
     setActiveCommentId(commentId)
-    setRailView('comments')
     window.setTimeout(() => {
       document
-        .querySelector(`[data-comment-thread-id="${CSS.escape(commentId)}"]`)
+        .querySelector(`[data-comment-card-id="${CSS.escape(commentId)}"]`)
         ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
     }, 0)
-  }, [setRailView])
+  }, [])
 
   const commentAnchors = useMemo<DocsCommentAnchorDecoration[]>(() => {
     return comments
@@ -628,6 +633,9 @@ export function DocsDocumentDetail({
         anchor_text: comment.anchor_text,
       }))
   }, [comments])
+
+  const showInlineComments = railView !== 'comments'
+  const hasVisibleInlineComments = showInlineComments && (comments.length > 0 || commentAnchor != null)
 
   const handleSave = useCallback(
     async (json: JSONContent) => {
@@ -728,29 +736,37 @@ export function DocsDocumentDetail({
     heading?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
-  // Outline open state: persisted in localStorage per workspace; defaults to open for docs with >= 6 headings
-  const [outlineOpen, setOutlineOpenState] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    return false
-  })
+  // When the URL has a `#block-<uuid>` fragment, scroll the matching block
+  // into view once content is rendered. Re-run on hashchange and on content
+  // load. Briefly highlights the target so the reader can locate it.
   useEffect(() => {
-    if (!wsId) return
-    const stored = getDocsOutlineOpen(wsId)
-    if (stored !== null) {
-      setOutlineOpenState(stored)
-    } else {
-      setOutlineOpenState(outlineItems.length >= 6)
+    if (contentLoading) return
+    const scrollToHash = () => {
+      const hash = window.location.hash
+      if (!hash.startsWith('#block-')) return
+      const blockId = hash.slice('#block-'.length)
+      if (!blockId) return
+      const tryScroll = (attempt: number) => {
+        const node = editorShellRef.current?.querySelector<HTMLElement>(
+          `[data-block-id="${CSS.escape(blockId)}"]`,
+        )
+        if (node) {
+          node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          node.classList.add('docs-block-anchor-highlight')
+          window.setTimeout(() => node.classList.remove('docs-block-anchor-highlight'), 1800)
+          return
+        }
+        // The editor may still be hydrating block IDs on first render; retry
+        // a few times with backoff.
+        if (attempt < 8) window.setTimeout(() => tryScroll(attempt + 1), 80 * (attempt + 1))
+      }
+      tryScroll(0)
     }
-    // Only re-evaluate when the workspace or doc changes (not on every outline content edit)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsId, docId])
-  const toggleOutline = useCallback(() => {
-    setOutlineOpenState((prev) => {
-      const next = !prev
-      if (wsId) setDocsOutlineOpen(wsId, next)
-      return next
-    })
-  }, [wsId])
+    scrollToHash()
+    window.addEventListener('hashchange', scrollToHash)
+    return () => window.removeEventListener('hashchange', scrollToHash)
+  }, [contentLoading, docId])
+
 
   const preparePublishedContent = useCallback(async (rawContent: JSONContent | null | undefined) => {
     if (!isExternalHelpCenter || !rawContent) return undefined
@@ -1082,7 +1098,7 @@ export function DocsDocumentDetail({
   return (
     <div className="flex h-full flex-col">
       {/* Top bar */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
+      <div className="relative z-30 flex items-center gap-2 border-b border-border/60 bg-background px-3 py-1.5">
         <Button
           variant="ghost"
           size="icon"
@@ -1405,28 +1421,34 @@ export function DocsDocumentDetail({
 
       {/* Main content area */}
       <div className="flex min-h-0 flex-1">
-        {/* Outline (left rail) */}
-        <DocsOutlineSidebar
-          items={outlineItems}
-          open={outlineOpen}
-          onSelect={handleOutlineSelect}
-        />
-
         {/* Editor */}
-        <div ref={editorShellRef} className="relative flex min-w-0 flex-1 flex-col">
-          {/* Floating outline toggle (top-left corner, hidden on small screens) */}
-          {outlineItems.length > 0 && (
-            <QuickTooltip label={outlineOpen ? 'Hide outline' : 'Show outline'}>
-              <button
-                type="button"
-                onClick={toggleOutline}
-                className="absolute left-3 top-3 z-10 hidden h-8 w-8 items-center justify-center rounded-md border border-border/60 bg-background/80 text-muted-foreground backdrop-blur transition-colors hover:bg-muted hover:text-foreground lg:flex"
-                aria-label={outlineOpen ? 'Hide outline' : 'Show outline'}
-              >
-                {outlineOpen ? <ArrowLeft02Icon className="h-4 w-4" /> : <Menu01Icon className="h-4 w-4" />}
-              </button>
-            </QuickTooltip>
+        <div ref={setEditorShellRef} className="relative flex min-w-0 flex-1 flex-col">
+          {/* Right-side scrollspy outline minimap */}
+          <DocsOutlineMinimap
+            items={outlineItems}
+            scrollContainer={editorShellEl}
+            onSelect={handleOutlineSelect}
+          />
+          {/* Inline side comments + per-block comment trigger */}
+          {showInlineComments && (
+            <CommentSideGutter
+              editor={editorInstance}
+              workspaceId={wsId}
+              docId={docId}
+              comments={comments}
+              currentUserId={currentUserId}
+              members={members}
+              teams={teams}
+              composingAnchor={commentAnchor}
+              onCommentsChange={setComments}
+              onComposingAnchorConsumed={() => setCommentAnchor(null)}
+              activeCommentId={activeCommentId}
+            />
           )}
+          <BlockCommentTrigger
+            editor={editorInstance}
+            onComment={(anchor) => handleCreateCommentAnchor(anchor)}
+          />
           {previewVersion ? (
             <DocsEditor
               key={`preview-${previewVersion.id}`}
@@ -1441,6 +1463,8 @@ export function DocsDocumentDetail({
               workspaceSlug={wsSlug}
               documentId={docId}
               onSaveStatusChange={handleEditorSaveStatusChange}
+              onEditorReady={setEditorInstance}
+              hasSideComments={hasVisibleInlineComments}
               commentAnchors={commentAnchors}
               onOpenComment={handleOpenComment}
             />
@@ -1506,6 +1530,8 @@ export function DocsDocumentDetail({
               workspaceSlug={wsSlug}
               documentId={docId}
               onSaveStatusChange={handleEditorSaveStatusChange}
+              onEditorReady={setEditorInstance}
+              hasSideComments={hasVisibleInlineComments}
             />
           )}
         </div>
