@@ -17,6 +17,10 @@ export const authService = {
     api.post<AuthResponse>('/auth/2fa/verify-signin', useRecoveryCode
       ? { two_fa_token: twoFaToken, recovery_code: code }
       : { two_fa_token: twoFaToken, totp_code: code }),
+  stepUp2FA: (code: string, useRecoveryCode = false) =>
+    api.post<AuthResponse>('/auth/2fa/step-up', useRecoveryCode
+      ? { recovery_code: code }
+      : { totp_code: code }),
   me: () => api.get<User>('/auth/me'),
   updateProfile: (data: { full_name?: string; avatar_url?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string; default_workspace_id?: string }) =>
     api.put<User>('/auth/me', data),
@@ -32,7 +36,7 @@ export const authService = {
   setup2FA: (password: string) =>
     api.post<TwoFASetupResponse>('/auth/2fa/setup', { password }),
   verify2FASetup: (totpCode: string) =>
-    api.post<{ message: string }>('/auth/2fa/verify', { totp_code: totpCode }),
+    api.post<AuthResponse>('/auth/2fa/verify', { totp_code: totpCode }),
   disable2FA: (password: string) =>
     api.del<{ message: string }>('/auth/2fa', { password }),
   regenerateRecoveryCodes: (password: string, totpCode: string) =>

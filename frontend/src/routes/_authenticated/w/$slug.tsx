@@ -1,5 +1,6 @@
 import { memo, useEffect, type CSSProperties } from 'react'
 import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { useWorkspaceBySlug } from '@/hooks/queries/useWorkspaces'
 import { useSession, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings'
@@ -16,6 +17,8 @@ import { PageContextProvider } from '@/components/command-bar/pageContext'
 import { AskAgentsDock } from '@/components/agents/AskAgentsDock'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
+import { MFARequiredGate } from '@/components/auth/MFARequiredGate'
+import { queryKeys } from '@/lib/queryKeys'
 
 export const Route = createFileRoute('/_authenticated/w/$slug')({
   component: WorkspaceLayout,
@@ -28,9 +31,13 @@ function WorkspaceLayout() {
   const { data: workspace, isLoading: wsLoading } = useWorkspaceBySlug(slug)
   const wsId = workspace?.id ?? ''
   const { data: orgs, isLoading: orgsLoading } = useOrganizations()
-  const { isLoading: sessionLoading } = useSession(wsId)
-  const { isLoading: accessLoading } = useWorkspaceAccess(wsId)
-  const { isLoading: settingsLoading } = useWorkspaceSettings(wsId)
+  const { data: access, isLoading: accessLoading } = useWorkspaceAccess(wsId)
+  const securityPolicy = access?.security_policy
+  const mfaBlocked = !!securityPolicy?.mfa_required
+  const canLoadWorkspaceData = !!access && !mfaBlocked
+  const { isLoading: sessionLoading } = useSession(wsId, { enabled: canLoadWorkspaceData })
+  const { isLoading: settingsLoading } = useWorkspaceSettings(wsId, { enabled: canLoadWorkspaceData })
+  const queryClient = useQueryClient()
 
   // Selection stores (Zustand) — sync from query data
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -86,6 +93,20 @@ function WorkspaceLayout() {
       <div className="flex items-center justify-center min-h-screen">
         <p className="text-muted-foreground">Workspace not found</p>
       </div>
+    )
+  }
+
+  if (mfaBlocked) {
+    return (
+      <MFARequiredGate
+        workspaceName={currentWorkspace.name}
+        mfaEnabled={!!securityPolicy?.mfa_enabled}
+        onComplete={() => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.access(wsId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.session(wsId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.settings(wsId) })
+        }}
+      />
     )
   }
 

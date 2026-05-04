@@ -1632,6 +1632,8 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			block_id TEXT,
 			block_range TEXT,
 			anchor_text TEXT,
+			resolved_at DATETIME,
+			resolved_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

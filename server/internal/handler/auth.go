@@ -252,12 +252,13 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.authService.Verify2FASetup(r.Context(), userID, req); err != nil {
+	resp, err := h.authService.Verify2FASetupWithSession(r.Context(), userID, req)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "two-factor authentication enabled"})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // Verify2FASignin handles POST /api/auth/2fa/verify-signin.
@@ -269,6 +270,25 @@ func (h *AuthHandler) Verify2FASignin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.authService.Verify2FASignin(r.Context(), req)
+	if err != nil {
+		writeAuthError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// StepUp2FA handles POST /api/auth/2fa/step-up.
+func (h *AuthHandler) StepUp2FA(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+
+	var req model.TwoFAStepUpRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	resp, err := h.authService.StepUp2FA(r.Context(), userID, req)
 	if err != nil {
 		writeAuthError(w, err)
 		return

@@ -28,7 +28,7 @@ export function getActiveEpicRoute(location: EpicOverlayLocationLike): EpicRoute
 
 export function openEpicRoute(
   navigate: EpicRouteNavigate,
-  location: EpicOverlayLocationLike,
+  _location: EpicOverlayLocationLike,
   slug: string,
   epicId: string,
 ) {
@@ -36,15 +36,10 @@ export function openEpicRoute(
     return undefined;
   }
 
-  if (matchEpicRoute(location.pathname)) {
-    return navigate({
-      to: '/w/$slug/pm/epics/$epicId',
-      params: { slug, epicId },
-    });
-  }
-
-  useEpicPanelStore.getState().openEpic(epicId);
-  return undefined;
+  return navigate({
+    to: '/w/$slug/pm/epics/$epicId',
+    params: { slug, epicId },
+  });
 }
 
 export function closeEpicRoute(

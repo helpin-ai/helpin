@@ -121,6 +121,13 @@ type TwoFASigninRequest struct {
 	RecoveryCode string `json:"recovery_code,omitempty"`
 }
 
+// TwoFAStepUpRequest verifies an existing signed-in user and returns tokens
+// marked as MFA-satisfied.
+type TwoFAStepUpRequest struct {
+	TOTPCode     string `json:"totp_code,omitempty"`
+	RecoveryCode string `json:"recovery_code,omitempty"`
+}
+
 // TwoFADisableRequest is the payload for DELETE /api/auth/2fa.
 type TwoFADisableRequest struct {
 	Password string `json:"password"`
