@@ -71,7 +71,7 @@ import { uploadEditorFile, uploadEditorImage, type EditorUploadConfig } from '@/
 import { docsService } from '@/lib/services/docsService'
 import { MentionHighlight } from '@/components/pm/mention-highlight'
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList'
-import { getMentionSuggestions, type MentionableAgent, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions'
+import { getMemberMentionHandle, getMentionSuggestions, normalizeMentionHandle, type MentionableAgent, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions'
 import {
   entityMentionHref,
   parseEntityMentionQuery,
@@ -1391,7 +1391,23 @@ export function DocsEditor({
       UnderlineExtension,
       Subscript,
       Superscript,
-      MentionHighlight,
+      MentionHighlight.configure({
+        validHandles: () => {
+          const handles = new Set<string>()
+          for (const m of membersRef.current) {
+            const handle = getMemberMentionHandle(m)
+            if (handle) handles.add(handle.toLowerCase())
+          }
+          for (const t of teamsRef.current) {
+            if (t.handle) handles.add(t.handle.toLowerCase())
+          }
+          for (const a of agentsRef.current) {
+            const handle = normalizeMentionHandle(a.name)
+            if (handle) handles.add(handle)
+          }
+          return handles
+        },
+      }),
       SearchReplaceExtension,
     ],
     content: initialContent ?? { type: 'doc', content: [{ type: 'paragraph' }] },

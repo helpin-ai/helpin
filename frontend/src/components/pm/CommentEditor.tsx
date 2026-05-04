@@ -9,6 +9,7 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { ImageLightbox } from '@/components/pm/ImageLightbox'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import {
+  getMemberMentionHandle,
   getMentionSuggestions,
   type MentionSuggestionItem,
 } from '@/components/pm/mentionSuggestions'
@@ -145,7 +146,19 @@ export function CommentEditor({
       },
     }),
     Placeholder.configure({ placeholder, showOnlyCurrent: false, emptyNodeClass: 'is-empty', emptyEditorClass: 'is-editor-empty' }),
-    MentionHighlight,
+    MentionHighlight.configure({
+      validHandles: () => {
+        const handles = new Set<string>()
+        for (const m of membersRef.current) {
+          const handle = getMemberMentionHandle(m)
+          if (handle) handles.add(handle.toLowerCase())
+        }
+        for (const t of teamsRef.current) {
+          if (t.handle) handles.add(t.handle.toLowerCase())
+        }
+        return handles
+      },
+    }),
   ], [placeholder])
 
   const editor = useEditor({
