@@ -8,6 +8,24 @@ import { OwnerAvatarStack } from '../OwnerAvatarStack'
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('OwnerAvatarStack', () => {
+  it('shows avatar and name inline for one owner', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const nameMap = new Map([['member-a', 'Alice Adams']])
+
+    act(() => {
+      root.render(<OwnerAvatarStack memberIds={['member-a']} nameMap={nameMap} />)
+    })
+
+    expect(container.querySelectorAll('[data-owner-avatar]').length).toBe(1)
+    expect(container.querySelector('[data-owner-single-name]')?.textContent).toBe('Alice Adams')
+    expect(container.querySelector('[data-owner-hover-list]')).toBeNull()
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
   it('renders three visible owners plus overflow with all names in the title', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -25,9 +43,12 @@ describe('OwnerAvatarStack', () => {
 
     expect(container.querySelectorAll('[data-owner-avatar]').length).toBe(3)
     expect(container.textContent).toContain('+1')
+    expect(container.querySelector('[data-owner-single-name]')).toBeNull()
     expect(container.querySelector('[data-owner-avatar-stack]')?.getAttribute('title')).toBe(
       'Alice Adams, Bina Brooks, Chen Carter, Dev Diaz',
     )
+    expect(container.querySelector('[data-owner-hover-list]')?.textContent).toContain('Alice Adams')
+    expect(container.querySelector('[data-owner-hover-list]')?.textContent).toContain('Dev Diaz')
 
     act(() => root.unmount())
     container.remove()

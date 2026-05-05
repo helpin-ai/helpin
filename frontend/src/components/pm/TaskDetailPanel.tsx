@@ -1470,8 +1470,9 @@ function TaskDetailPanelBody({
                           size="sm"
                           max={3}
                         />
-                      ) : null}
-                      <span>{currentOwnerName}</span>
+                      ) : (
+                        <span>{currentOwnerName}</span>
+                      )}
                     </>
                   );
                 }}

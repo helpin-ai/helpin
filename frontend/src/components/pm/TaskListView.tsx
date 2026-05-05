@@ -1720,9 +1720,6 @@ function InlineOwnerCell({
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const ownerMemberIds = task.owner_member_ids ?? [];
-  const ownerName = ownerMemberIds.length > 0
-    ? ownerMemberIds.map((ownerKey) => ownerNameMap.get(ownerKey) ?? 'Unknown').join(', ')
-    : null;
 
   return (
     <MultiMemberPickerPopover
@@ -1734,15 +1731,12 @@ function InlineOwnerCell({
       }}
       renderTrigger={() => {
         return ownerMemberIds.length > 0 ? (
-          <>
-            <OwnerAvatarStack
-              memberIds={ownerMemberIds}
-              nameMap={ownerNameMap}
-              size="sm"
-              max={3}
-            />
-            <span className="truncate">{ownerName}</span>
-          </>
+          <OwnerAvatarStack
+            memberIds={ownerMemberIds}
+            nameMap={ownerNameMap}
+            size="sm"
+            max={3}
+          />
         ) : (
           <>
             <TaskListUserAddIcon className="h-3.5 w-3.5 text-muted-foreground" />
