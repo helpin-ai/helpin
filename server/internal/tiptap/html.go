@@ -42,6 +42,12 @@ func RenderHTML(jsonContent json.RawMessage) (string, error) {
 	return b.String(), nil
 }
 
+const sandboxedHTMLBlockBaseStyle = `body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }`
+
+func sandboxedHTMLBlockSrcDoc(rawHTML string) string {
+	return `<!doctype html><html><head><style>` + sandboxedHTMLBlockBaseStyle + `</style></head><body>` + rawHTML + `</body></html>`
+}
+
 func renderNode(b *strings.Builder, n *Node) {
 	switch n.Type {
 	case "doc":
@@ -64,7 +70,18 @@ func renderNode(b *strings.Builder, n *Node) {
 		if level > 6 {
 			level = 6
 		}
-		id := headingID(n)
+		id := strAttr(n.Attrs, "id")
+		if id == "" {
+			id = headingID(n)
+		}
+		for _, alias := range stringSliceAttr(n.Attrs, "anchorAliases") {
+			if alias == "" || alias == id {
+				continue
+			}
+			b.WriteString(`<span id="`)
+			b.WriteString(html.EscapeString(alias))
+			b.WriteString(`" class="docs-heading-anchor-alias" aria-hidden="true"></span>`)
+		}
 		fmt.Fprintf(b, `<h%d id="%s">`, level, html.EscapeString(id))
 		renderChildren(b, n)
 		fmt.Fprintf(b, "</h%d>\n", level)
@@ -167,16 +184,53 @@ func renderNode(b *strings.Builder, n *Node) {
 		if title == "" {
 			title = "Details"
 		}
+		icon := strAttr(n.Attrs, "icon")
+		badge := strAttr(n.Attrs, "badgeText")
+		sourceStyle := strAttr(n.Attrs, "sourceStyle")
 		b.WriteString(`<details class="docs-toggle-section" data-toggle-section`)
 		if boolAttr(n.Attrs, "open") {
 			b.WriteString(` open`)
 		}
 		b.WriteString(` data-toggle-title="`)
 		b.WriteString(html.EscapeString(title))
-		b.WriteString(`">`)
-		b.WriteString(`<summary>`)
-		b.WriteString(html.EscapeString(title))
-		b.WriteString(`</summary>`)
+		b.WriteByte('"')
+		if icon != "" {
+			b.WriteString(` data-toggle-icon="`)
+			b.WriteString(html.EscapeString(icon))
+			b.WriteByte('"')
+		}
+		if badge != "" {
+			b.WriteString(` data-toggle-badge="`)
+			b.WriteString(html.EscapeString(badge))
+			b.WriteByte('"')
+		}
+		if sourceStyle != "" {
+			b.WriteString(` data-toggle-style="`)
+			b.WriteString(html.EscapeString(sourceStyle))
+			b.WriteByte('"')
+		}
+		b.WriteString(`>`)
+		if icon != "" || badge != "" || sourceStyle != "" {
+			b.WriteString(`<summary>`)
+			if icon != "" {
+				b.WriteString(`<span class="docs-toggle-icon">`)
+				b.WriteString(html.EscapeString(icon))
+				b.WriteString(`</span>`)
+			}
+			b.WriteString(`<span class="docs-toggle-title">`)
+			b.WriteString(html.EscapeString(title))
+			b.WriteString(`</span>`)
+			if badge != "" {
+				b.WriteString(`<span class="docs-toggle-badge">`)
+				b.WriteString(html.EscapeString(badge))
+				b.WriteString(`</span>`)
+			}
+			b.WriteString(`</summary>`)
+		} else {
+			b.WriteString(`<summary>`)
+			b.WriteString(html.EscapeString(title))
+			b.WriteString(`</summary>`)
+		}
 		b.WriteString("\n")
 		renderChildren(b, n)
 		b.WriteString("</details>\n")
@@ -261,6 +315,15 @@ func renderNode(b *strings.Builder, n *Node) {
 	case "htmlBlock":
 		rawHTML := strAttr(n.Attrs, "html")
 		if rawHTML != "" {
+			if strAttr(n.Attrs, "renderMode") == "sandboxed" {
+				b.WriteString(`<div class="docs-html-block docs-html-block--sandboxed">`)
+				b.WriteString("\n")
+				b.WriteString(`<iframe class="docs-html-block-frame" sandbox="allow-scripts allow-forms allow-popups allow-presentation" referrerpolicy="no-referrer" loading="lazy" srcdoc="`)
+				b.WriteString(html.EscapeString(sandboxedHTMLBlockSrcDoc(rawHTML)))
+				b.WriteString(`"></iframe>`)
+				b.WriteString("\n</div>\n")
+				break
+			}
 			sanitized := SanitizeHTMLBlock(rawHTML)
 			if sanitized != "" {
 				b.WriteString("<div class=\"docs-html-block\">\n")
@@ -733,6 +796,30 @@ func strAttr(attrs map[string]any, key string) string {
 		return ""
 	}
 	return s
+}
+
+func stringSliceAttr(attrs map[string]any, key string) []string {
+	if attrs == nil {
+		return nil
+	}
+	v, ok := attrs[key]
+	if !ok {
+		return nil
+	}
+	switch vv := v.(type) {
+	case []string:
+		return vv
+	case []any:
+		out := make([]string, 0, len(vv))
+		for _, item := range vv {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func normalizeCalloutVariant(value string) string {

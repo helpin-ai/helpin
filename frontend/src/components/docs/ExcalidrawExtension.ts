@@ -1,6 +1,7 @@
 import { Node, mergeAttributes, type JSONContent } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { ExcalidrawNodeView } from './ExcalidrawNodeView';
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs';
 import { normalizeExcalidrawScene } from '@/lib/excalidrawRenderer';
 
 export type ExcalidrawOptions = {
@@ -79,7 +80,7 @@ export const ExcalidrawExtension = Node.create<ExcalidrawOptions>({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ExcalidrawNodeView);
+    return ReactNodeViewRenderer(ExcalidrawNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) });
   },
 
   addStorage() {

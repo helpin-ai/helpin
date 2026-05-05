@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +92,36 @@ func setupSupportConversationMessageTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("create support_conversations: %v", err)
 	}
 	return db
+}
+
+func TestSupportConversationRepositoryMailboxHelpersRespectAlias(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{DryRun: true})
+	if err != nil {
+		t.Fatalf("open dry-run sqlite db: %v", err)
+	}
+	repo := NewSupportConversationRepository(db)
+	shared := ""
+
+	scopeQuery := repo.applyMailboxScope(
+		db.Table("support_conversations AS sc"),
+		"sc",
+		&shared,
+	).Find(&[]model.SupportConversation{})
+	scopeSQL := scopeQuery.Statement.SQL.String()
+	if !strings.Contains(scopeSQL, "sc.mailbox_id IS NULL") || strings.Contains(scopeSQL, "support_conversations.mailbox_id") {
+		t.Fatalf("mailbox scope SQL should use alias sc, got %s", scopeSQL)
+	}
+
+	accessQuery := repo.applyMailboxAccess(
+		db.Table("support_conversations AS sc"),
+		"sc",
+		"workspace-member-1",
+		model.RoleMember,
+	).Find(&[]model.SupportConversation{})
+	accessSQL := accessQuery.Statement.SQL.String()
+	if !strings.Contains(accessSQL, "sc.mailbox_id IS NULL") || !strings.Contains(accessSQL, "OR sc.mailbox_id IN") {
+		t.Fatalf("mailbox access SQL should use alias sc, got %s", accessSQL)
+	}
 }
 
 // insertMessage is a small helper for the tests below — it inserts a row

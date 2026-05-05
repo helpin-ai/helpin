@@ -14,8 +14,8 @@ import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useMarkConversationRead, useSupportTags } from '@/hooks/queries/useSupport';
-import { useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
+import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useMarkConversationRead, useSupportInboxViews, useSupportTags, useUpdateSupportBuiltinInboxView, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
+import { supportInboxBuiltinViewKey, useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { ConversationRow } from './ConversationRow';
 import { EmptyState } from './EmptyState';
@@ -23,15 +23,15 @@ import {
   buildConversationListRequestFilters,
   buildSupportInboxViewFilters,
   defaultAIStatesForNav,
-  defaultAssignmentForNav,
+  defaultConversationListFiltersForNav,
   defaultStatesForNav,
+  filterChangeCountFromBaseline,
   filterSupportConversations,
-  hasConversationListChanges,
+  parseSupportInboxViewFilters,
   statesEqual,
   stringArraysEqual,
   type ConversationAIStateFilter,
   type ConversationAssignmentFilter,
-  type ConversationListFilters,
   type ConversationSortOrder,
   type ConversationStateFilter,
 } from '@/lib/supportInboxFilters';
@@ -118,18 +118,6 @@ function titleForView(navFilter: NavFilter): string {
     case 'resolved_by_ai':
       return 'AI Resolved';
   }
-}
-
-function filterCount(filters: ConversationListFilters, navFilter: NavFilter, searchQuery: string): number {
-  let count = 0;
-  if (searchQuery.trim()) count += 1;
-  if (!statesEqual(filters.states, defaultStatesForNav(navFilter))) count += 1;
-  if (!stringArraysEqual(filters.assignment, defaultAssignmentForNav(navFilter))) count += 1;
-  if (filters.mailboxIds.length > 0) count += 1;
-  if (filters.tagIds.length > 0) count += 1;
-  if (!stringArraysEqual(filters.aiStates, defaultAIStatesForNav(navFilter))) count += 1;
-  if (filters.sort !== 'newest') count += 1;
-  return count;
 }
 
 function FilterPill({
@@ -252,12 +240,17 @@ export function ConversationList({
   const searchQuery = useSupportInboxStore((s) => s.searchQuery);
   const setSearchQuery = useSupportInboxStore((s) => s.setSearchQuery);
   const navFilter = useSupportInboxStore((s) => s.navFilter);
+  const activeCustomViewId = useSupportInboxStore((s) => s.activeCustomViewId);
+  const customViewDirty = useSupportInboxStore((s) => s.customViewDirty);
   const selectedMailboxId = useSupportInboxStore((s) => s.selectedMailboxId);
-  const setMailboxFilter = useSupportInboxStore((s) => s.setMailboxFilter);
   const conversationListFilters = useSupportInboxStore((s) => s.conversationListFilters);
   const setConversationListFilter = useSupportInboxStore((s) => s.setConversationListFilter);
   const setConversationMailboxFilters = useSupportInboxStore((s) => s.setConversationMailboxFilters);
-  const resetConversationListFilters = useSupportInboxStore((s) => s.resetConversationListFilters);
+  const markCustomViewClean = useSupportInboxStore((s) => s.markCustomViewClean);
+  const applyCustomView = useSupportInboxStore((s) => s.applyCustomView);
+  const builtinViewFilters = useSupportInboxStore((s) => s.builtinViewFilters);
+  const setBuiltinViewFilter = useSupportInboxStore((s) => s.setBuiltinViewFilter);
+  const syncRouteState = useSupportInboxStore((s) => s.syncRouteState);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
   const [searchExpanded, setSearchExpanded] = useState(false);
@@ -268,7 +261,10 @@ export function ConversationList({
   const wsConnected = useSupportPresenceStore((s) => s.wsConnected);
   const markConversationRead = useMarkConversationRead(workspaceId);
   const createInboxView = useCreateSupportInboxView(workspaceId);
+  const updateInboxView = useUpdateSupportInboxView(workspaceId);
+  const updateBuiltinInboxView = useUpdateSupportBuiltinInboxView(workspaceId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
+  const { data: customViews = [] } = useSupportInboxViews(workspaceId, !!activeCustomViewId);
   const { data: supportTags = [] } = useSupportTags(workspaceId);
 
   const handleSelect = useCallback((id: string, unreadCount?: number) => {
@@ -327,17 +323,54 @@ export function ConversationList({
     return inboxScopes?.mailboxes?.find((mailbox) => mailbox.id === selectedMailboxId)?.name ?? null;
   }, [inboxScopes, selectedMailboxId]);
   const viewTitle = titleForView(navFilter);
-  const listTitle = selectedMailboxName
+  const activeCustomViewName = activeCustomViewId
+    ? customViews.find((view) => view.id === activeCustomViewId)?.name ?? null
+    : null;
+  const listTitle = activeCustomViewName ?? (selectedMailboxName
     ? navFilter === 'inbox'
       ? `${selectedMailboxName} inbox`
       : `${selectedMailboxName}: ${viewTitle}`
-    : viewTitle;
-  const activeFilterCount = filterCount(conversationListFilters, navFilter, searchQuery);
-  const canSaveCurrentView = hasConversationListChanges({
+    : viewTitle);
+  const currentViewFilters = useMemo(() => buildSupportInboxViewFilters({
     navFilter,
+    selectedMailboxId,
     searchQuery,
     listFilters: conversationListFilters,
+  }), [conversationListFilters, navFilter, searchQuery, selectedMailboxId]);
+  const currentBuiltinViewKey = activeCustomViewId ? null : supportInboxBuiltinViewKey(navFilter, selectedMailboxId);
+  const builtinBaseline = useMemo(() => {
+    const savedFilters = currentBuiltinViewKey ? builtinViewFilters[currentBuiltinViewKey] : undefined;
+    if (savedFilters) {
+      const parsed = parseSupportInboxViewFilters(savedFilters, navFilter);
+      return {
+        searchQuery: parsed.searchQuery,
+        filters: parsed.listFilters,
+      };
+    }
+    return {
+      searchQuery: '',
+      filters: defaultConversationListFiltersForNav(navFilter),
+    };
+  }, [builtinViewFilters, currentBuiltinViewKey, navFilter]);
+  const defaultBaseline = useMemo(() => ({
+    searchQuery: '',
+    filters: defaultConversationListFiltersForNav(navFilter),
+  }), [navFilter]);
+  const builtinFilterChangeCount = activeCustomViewId ? 0 : filterChangeCountFromBaseline({
+    searchQuery,
+    listFilters: conversationListFilters,
+    baselineSearchQuery: builtinBaseline.searchQuery,
+    baselineFilters: builtinBaseline.filters,
   });
+  const customFilterChangeCount = activeCustomViewId && customViewDirty ? filterChangeCountFromBaseline({
+    searchQuery,
+    listFilters: conversationListFilters,
+    baselineSearchQuery: defaultBaseline.searchQuery,
+    baselineFilters: defaultBaseline.filters,
+  }) : 0;
+  const activeFilterCount = activeCustomViewId ? (customViewDirty ? Math.max(1, customFilterChangeCount) : 0) : builtinFilterChangeCount;
+  const canSaveCurrentView = activeCustomViewId ? customViewDirty : builtinFilterChangeCount > 0;
+  const canUpdateCurrentView = activeCustomViewId ? customViewDirty : builtinFilterChangeCount > 0;
   const shouldShowEmptyState = !isLoading && filteredConversations.length === 0 && !error && !hasNextPage;
   const shouldShowOnboardingEmptyState =
     shouldShowEmptyState &&
@@ -461,6 +494,72 @@ export function ConversationList({
     selectedMailboxId,
   ]);
 
+  const handleUpdateView = useCallback(() => {
+    if (!activeCustomViewId) {
+      if (!currentBuiltinViewKey) return;
+      updateBuiltinInboxView.mutate({
+        view_key: currentBuiltinViewKey,
+        filters: currentViewFilters,
+      }, {
+        onSuccess: (view) => {
+          if (view.view_key) {
+            setBuiltinViewFilter(view.view_key, view.filters);
+          }
+        },
+      });
+      return;
+    }
+    updateInboxView.mutate({
+      id: activeCustomViewId,
+      filters: currentViewFilters,
+    }, {
+      onSuccess: (view) => {
+        if (view) {
+          applyCustomView(view);
+        } else {
+          markCustomViewClean();
+        }
+      },
+    });
+  }, [
+    activeCustomViewId,
+    applyCustomView,
+    currentBuiltinViewKey,
+    currentViewFilters,
+    markCustomViewClean,
+    setBuiltinViewFilter,
+    updateBuiltinInboxView,
+    updateInboxView,
+  ]);
+
+  const handleResetFilters = useCallback(() => {
+    if (activeCustomViewId) {
+      const activeView = customViews.find((view) => view.id === activeCustomViewId);
+      if (activeView) {
+        applyCustomView(activeView);
+        return;
+      }
+    }
+
+    syncRouteState({
+      navFilter,
+      selectedMailboxId,
+      statusFilter: 'all',
+      searchQuery: builtinBaseline.searchQuery,
+      activeCustomViewId: null,
+      conversationListFilters: builtinBaseline.filters,
+    });
+  }, [
+    activeCustomViewId,
+    applyCustomView,
+    builtinBaseline.filters,
+    builtinBaseline.searchQuery,
+    customViews,
+    navFilter,
+    selectedMailboxId,
+    syncRouteState,
+  ]);
+
   return (
     <div className="flex h-full w-[300px] flex-col border-r bg-background dark:border-sidebar-border dark:bg-sidebar">
       {/* Filter toolbar */}
@@ -517,18 +616,16 @@ export function ConversationList({
                   <div className="min-w-0 text-sm font-semibold">
                     <span className="block truncate">{listTitle} filters</span>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => {
-                      resetConversationListFilters();
-                      setMailboxFilter('all');
-                      setSearchQuery('');
-                    }}
-                  >
-                    Reset
-                  </Button>
+                  {activeFilterCount > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={handleResetFilters}
+                    >
+                      Reset
+                    </Button>
+                  )}
                 </div>
                 <div className="space-y-4">
                   <FilterSection title="State">
@@ -634,15 +731,31 @@ export function ConversationList({
                       </FilterPill>
                     ))}
                   </FilterSection>
-                  {canSaveCurrentView && (
-                    <div className="border-t pt-3">
+                  {(canSaveCurrentView || canUpdateCurrentView) && (
+                    <div className="space-y-2 border-t pt-3">
+                      {canUpdateCurrentView && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="w-full justify-center"
+                          disabled={activeCustomViewId ? updateInboxView.isPending : updateBuiltinInboxView.isPending}
+                          onClick={handleUpdateView}
+                        >
+                          Update view
+                        </Button>
+                      )}
+                      {!activeCustomViewId && canUpdateCurrentView && (
+                        <p className="text-center text-[11px] leading-4 text-muted-foreground">
+                          Updates this view for you only.
+                        </p>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
                         className="w-full justify-center"
                         onClick={() => setSaveViewOpen(true)}
                       >
-                        Save as view
+                        Save as new view
                       </Button>
                     </div>
                   )}
@@ -663,7 +776,7 @@ export function ConversationList({
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
         <DialogContent aria-describedby={undefined}>
           <DialogHeader>
-            <DialogTitle>Save view</DialogTitle>
+            <DialogTitle>Save new view</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">

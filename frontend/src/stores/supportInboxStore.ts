@@ -1,12 +1,6 @@
 import { create } from 'zustand';
-import type {
-  ConversationAssignmentFilter,
-  ConversationAIStateFilter,
-  ConversationListFilters,
-  ConversationSortOrder,
-  ConversationStateFilter,
-} from '@/lib/supportInboxFilters';
-import { defaultAssignmentForNav, defaultConversationListFiltersForNav } from '@/lib/supportInboxFilters';
+import type { ConversationListFilters } from '@/lib/supportInboxFilters';
+import { defaultConversationListFiltersForNav, parseSupportInboxViewFilters } from '@/lib/supportInboxFilters';
 
 export type NavFilter = 'inbox' | 'mine' | 'waiting' | 'resolved' | 'spam' | 'ai_active' | 'resolved_by_ai';
 export type ReplyMode = 'reply' | 'note';
@@ -14,13 +8,19 @@ export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';
 
 const STORAGE_KEY = 'support_inbox_ui';
 const DRAFTS_STORAGE_KEY = 'support_inbox_drafts';
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 
 interface PersistedState {
   navCollapsed: boolean;
   detailSidebarCollapsed: boolean;
   selectedMailboxId: string;
   version: number;
+}
+
+export function supportInboxBuiltinViewKey(navFilter: NavFilter, selectedMailboxId = 'all'): string {
+  return navFilter === 'inbox' && selectedMailboxId !== 'all'
+    ? `team:${selectedMailboxId}`
+    : `nav:${navFilter}`;
 }
 
 function loadPersisted(): PersistedState {
@@ -40,14 +40,38 @@ function loadPersisted(): PersistedState {
         version: STORE_VERSION,
       };
     }
-  } catch {}
-  return { navCollapsed: false, detailSidebarCollapsed: false, selectedMailboxId: 'all', version: STORE_VERSION };
+  } catch {
+    // Ignore unavailable or corrupt local storage.
+  }
+  return {
+    navCollapsed: false,
+    detailSidebarCollapsed: false,
+    selectedMailboxId: 'all',
+    version: STORE_VERSION,
+  };
 }
 
 function savePersisted(state: PersistedState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {}
+  } catch {
+    // Ignore local storage write failures.
+  }
+}
+
+function recordStringMapEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  return aKeys.length === bKeys.length && aKeys.every((key) => a[key] === b[key]);
+}
+
+function builtinViewFilterMapsEqual(
+  a: Record<string, Record<string, string>>,
+  b: Record<string, Record<string, string>>,
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  return aKeys.length === bKeys.length && aKeys.every((key) => b[key] && recordStringMapEqual(a[key], b[key]));
 }
 
 function loadDrafts(): Record<string, string> {
@@ -57,7 +81,9 @@ function loadDrafts(): Record<string, string> {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') return parsed as Record<string, string>;
     }
-  } catch {}
+  } catch {
+    // Ignore unavailable or corrupt draft storage.
+  }
   return {};
 }
 
@@ -75,7 +101,9 @@ function saveDraftsDebounced(drafts: Record<string, string>) {
       } else {
         localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(filtered));
       }
-    } catch {}
+    } catch {
+      // Ignore local storage write failures.
+    }
   }, 500);
 }
 
@@ -92,7 +120,9 @@ function removeDraftFromStorage(conversationId: string) {
         localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
       }
     }
-  } catch {}
+  } catch {
+    // Ignore unavailable or corrupt draft storage.
+  }
 }
 
 function parseNavFilter(value: unknown): NavFilter {
@@ -106,67 +136,6 @@ function parseNavFilter(value: unknown): NavFilter {
     : 'inbox';
 }
 
-function parseAssignmentFilters(value: unknown): ConversationAssignmentFilter[] {
-  if (value === 'none') return [];
-  return parseStringList(value).filter((entry): entry is ConversationAssignmentFilter =>
-    entry === 'me' ||
-    entry === 'mentioned_me' ||
-    entry === 'opened_by_me' ||
-    entry === 'unassigned' ||
-    entry === 'others'
-  );
-}
-
-function parseAssignmentFiltersForNav(value: unknown, navFilter: NavFilter): ConversationAssignmentFilter[] {
-  if (typeof value !== 'string') return defaultAssignmentForNav(navFilter);
-  return parseAssignmentFilters(value);
-}
-
-function parseSortOrder(value: unknown): ConversationSortOrder {
-  return value === 'oldest' ? 'oldest' : 'newest';
-}
-
-function parseStringList(value: unknown): string[] {
-  if (typeof value !== 'string') return [];
-  return value.split(',').map((entry) => entry.trim()).filter(Boolean);
-}
-
-function parseAIStateFilters(value: unknown, legacySystemTags?: unknown): ConversationAIStateFilter[] {
-  const filters = parseStringList(value);
-  filters.push(...parseStringList(legacySystemTags));
-  const normalized: ConversationAIStateFilter[] = [];
-  for (const filter of filters) {
-    const mapped =
-      filter === 'ai_handoff' || filter === 'needs_human'
-        ? 'handoff'
-        : filter === 'ai_resolved' || filter === 'resolved_by_ai'
-          ? 'resolved'
-          : filter === 'ai_handling' || filter === 'ai-active' || filter === 'ai_active'
-            ? 'handling'
-            : filter;
-    if (
-      (mapped === 'handling' || mapped === 'handoff' || mapped === 'resolved') &&
-      !normalized.includes(mapped)
-    ) {
-      normalized.push(mapped);
-    }
-  }
-  return normalized;
-}
-
-function parseStates(value: unknown, navFilter: NavFilter): ConversationStateFilter[] {
-  if (typeof value !== 'string') {
-    return defaultConversationListFiltersForNav(navFilter).states;
-  }
-  const states = value.split(',').filter((state): state is ConversationStateFilter =>
-    state === 'open' ||
-    state === 'waiting_on_customer' ||
-    state === 'resolved' ||
-    state === 'spam'
-  );
-  return states.length > 0 ? states : defaultConversationListFiltersForNav(navFilter).states;
-}
-
 interface SupportInboxState {
   // Navigation
   navFilter: NavFilter;
@@ -177,6 +146,8 @@ interface SupportInboxState {
   searchQuery: string;
   conversationListFilters: ConversationListFilters;
   activeCustomViewId: string | null;
+  customViewDirty: boolean;
+  builtinViewFilters: Record<string, Record<string, string>>;
   // Selection
   selectedConversationId: string | null;
   // Reply
@@ -211,6 +182,9 @@ interface SupportInboxState {
   setConversationMailboxFilters: (mailboxIds: string[]) => void;
   resetConversationListFilters: () => void;
   applyCustomView: (view: { id: string; filters: Record<string, string> }) => void;
+  markCustomViewClean: () => void;
+  setBuiltinViewFilters: (filters: Record<string, Record<string, string>>) => void;
+  setBuiltinViewFilter: (key: string, filters: Record<string, string>) => void;
   selectConversation: (id: string | null) => void;
   setReplyMode: (mode: ReplyMode) => void;
   toggleDetailSidebar: () => void;
@@ -234,6 +208,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     searchQuery: '',
     conversationListFilters: defaultConversationListFiltersForNav('inbox'),
     activeCustomViewId: null,
+    customViewDirty: false,
+    builtinViewFilters: {},
     selectedConversationId: null,
     replyMode: 'reply',
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
@@ -244,11 +220,15 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     drafts: persistedDrafts,
 
     setNavFilter: (filter) => {
+      const savedFilters = get().builtinViewFilters[supportInboxBuiltinViewKey(filter)];
+      const savedState = savedFilters ? parseSupportInboxViewFilters(savedFilters, filter) : null;
       set({
         navFilter: filter,
         statusFilter: 'all',
         activeCustomViewId: null,
-        conversationListFilters: defaultConversationListFiltersForNav(filter),
+        customViewDirty: false,
+        searchQuery: savedState?.searchQuery ?? '',
+        conversationListFilters: savedState?.listFilters ?? defaultConversationListFiltersForNav(filter),
         selectedMailboxId: 'all',
         selectedConversationId: null,
         activePanel: 'list',
@@ -261,11 +241,15 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       });
     },
     setSelectedMailboxId: (mailboxId) => {
+      const savedFilters = get().builtinViewFilters[supportInboxBuiltinViewKey('inbox', mailboxId)];
+      const savedState = savedFilters ? parseSupportInboxViewFilters(savedFilters, 'inbox') : null;
       set({
         navFilter: 'inbox',
         statusFilter: 'all',
         activeCustomViewId: null,
-        conversationListFilters: defaultConversationListFiltersForNav('inbox'),
+        customViewDirty: false,
+        searchQuery: savedState?.searchQuery ?? '',
+        conversationListFilters: savedState?.listFilters ?? defaultConversationListFiltersForNav('inbox'),
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
         activePanel: 'list',
@@ -280,6 +264,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     setMailboxFilter: (mailboxId) => {
       set({
         activeCustomViewId: null,
+        customViewDirty: false,
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
         activePanel: 'list',
@@ -298,6 +283,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         statusFilter,
         searchQuery,
         activeCustomViewId: activeCustomViewId ?? null,
+        customViewDirty: false,
         conversationListFilters: conversationListFilters ?? defaultConversationListFiltersForNav(navFilter),
       });
       savePersisted({
@@ -317,11 +303,19 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         version: STORE_VERSION,
       });
     },
-    setStatusFilter: (status) => set({ statusFilter: status, activeCustomViewId: null }),
-    setSearchQuery: (query) => set({ searchQuery: query, activeCustomViewId: null }),
+    setStatusFilter: (status) =>
+      set((state) => ({
+        statusFilter: status,
+        customViewDirty: state.activeCustomViewId ? true : state.customViewDirty,
+      })),
+    setSearchQuery: (query) =>
+      set((state) => ({
+        searchQuery: query,
+        customViewDirty: state.activeCustomViewId ? true : state.customViewDirty,
+      })),
     setConversationListFilter: (key, value) =>
       set((state) => ({
-        activeCustomViewId: null,
+        customViewDirty: state.activeCustomViewId ? true : state.customViewDirty,
         conversationListFilters: {
           ...state.conversationListFilters,
           [key]: value,
@@ -330,7 +324,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       })),
     setConversationMailboxFilters: (mailboxIds) =>
       set((state) => ({
-        activeCustomViewId: null,
+        customViewDirty: state.activeCustomViewId ? true : state.customViewDirty,
         selectedMailboxId: 'all',
         conversationListFilters: {
           ...state.conversationListFilters,
@@ -341,36 +335,44 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     resetConversationListFilters: () =>
       set({
         activeCustomViewId: null,
+        customViewDirty: false,
         conversationListFilters: defaultConversationListFiltersForNav(get().navFilter),
         selectedConversationId: null,
       }),
     applyCustomView: (view) => {
       const filters = view.filters ?? {};
       const navFilter = parseNavFilter(filters.nav_filter);
+      const parsed = parseSupportInboxViewFilters(filters, navFilter);
       set({
         activeCustomViewId: view.id,
+        customViewDirty: false,
         navFilter,
-        selectedMailboxId: filters.mailbox_id || 'all',
+        selectedMailboxId: parsed.selectedMailboxId,
         statusFilter: 'all',
-        searchQuery: filters.search || '',
-        conversationListFilters: {
-          states: parseStates(filters.states, navFilter),
-          assignment: parseAssignmentFiltersForNav(filters.assignment, navFilter),
-          mailboxIds: parseStringList(filters.mailbox_ids),
-          tagIds: parseStringList(filters.tag_ids),
-          aiStates: parseAIStateFilters(filters.ai, filters.system_tags),
-          sort: parseSortOrder(filters.sort),
-        },
+        searchQuery: parsed.searchQuery,
+        conversationListFilters: parsed.listFilters,
         selectedConversationId: null,
         activePanel: 'list',
       });
       savePersisted({
         navCollapsed: get().navCollapsed,
         detailSidebarCollapsed: get().detailSidebarCollapsed,
-        selectedMailboxId: filters.mailbox_id || 'all',
+        selectedMailboxId: parsed.selectedMailboxId,
         version: STORE_VERSION,
       });
     },
+    markCustomViewClean: () => set({ customViewDirty: false }),
+    setBuiltinViewFilters: (filters) =>
+      set((state) => (builtinViewFilterMapsEqual(state.builtinViewFilters, filters) ? state : { builtinViewFilters: filters })),
+    setBuiltinViewFilter: (key, filters) =>
+      set((state) => ({
+        activeCustomViewId: null,
+        customViewDirty: false,
+        builtinViewFilters: {
+          ...state.builtinViewFilters,
+          [key]: filters,
+        },
+      })),
     selectConversation: (id) => set({ selectedConversationId: id, activePanel: id ? 'thread' : 'list' }),
     setReplyMode: (mode) => set({ replyMode: mode }),
     toggleDetailSidebar: () => {
@@ -390,7 +392,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     setDraft: (conversationId, content) =>
       set((state) => {
         if (!content) {
-          const { [conversationId]: _, ...rest } = state.drafts;
+          const rest = { ...state.drafts };
+          delete rest[conversationId];
           saveDraftsDebounced(rest);
           return { drafts: rest };
         }
@@ -401,7 +404,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     clearDraft: (conversationId) =>
       set((state) => {
         if (!(conversationId in state.drafts)) return state;
-        const { [conversationId]: _, ...rest } = state.drafts;
+        const rest = { ...state.drafts };
+        delete rest[conversationId];
         removeDraftFromStorage(conversationId);
         return { drafts: rest };
       }),

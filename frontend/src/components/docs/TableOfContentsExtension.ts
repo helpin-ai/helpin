@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { TableOfContentsNodeView } from './TableOfContentsNodeView'
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -25,7 +26,7 @@ export const TableOfContentsExtension = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(TableOfContentsNodeView)
+    return ReactNodeViewRenderer(TableOfContentsNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) })
   },
 
   addCommands() {

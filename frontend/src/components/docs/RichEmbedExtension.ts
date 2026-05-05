@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { RichEmbedNodeView } from './RichEmbedNodeView'
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 export interface RichEmbedAttrs {
   url: string
@@ -43,7 +44,7 @@ export const RichEmbedExtension = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(RichEmbedNodeView)
+    return ReactNodeViewRenderer(RichEmbedNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) })
   },
 
   addCommands() {

@@ -114,9 +114,17 @@ export interface SupportInboxView {
   name: string;
   filters: SupportInboxViewFilters;
   is_shared: boolean;
+  view_type: 'custom' | 'default' | 'team';
+  view_key?: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportInboxViewCount {
+  view_id: string;
+  total_count: number;
+  unread_count: number;
 }
 
 export interface CreateSupportInboxViewRequest {
@@ -129,6 +137,11 @@ export interface UpdateSupportInboxViewRequest {
   name?: string;
   filters?: SupportInboxViewFilters;
   is_shared?: boolean;
+}
+
+export interface UpdateSupportInboxBuiltinViewRequest {
+  view_key: string;
+  filters: SupportInboxViewFilters;
 }
 
 export interface SupportInboxScopeListResponse {

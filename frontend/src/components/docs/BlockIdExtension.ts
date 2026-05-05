@@ -101,6 +101,24 @@ export const BlockIdExtension = Extension.create({
           },
         },
       },
+      {
+        types: ['heading'],
+        attributes: {
+          id: {
+            default: null,
+            parseHTML: (element) => element.getAttribute('id'),
+            renderHTML: (attributes) => {
+              if (!attributes.id) return {}
+              return { id: attributes.id }
+            },
+          },
+          anchorAliases: {
+            default: null,
+            parseHTML: () => null,
+            renderHTML: () => ({}),
+          },
+        },
+      },
     ]
   },
 

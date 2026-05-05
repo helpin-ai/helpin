@@ -628,7 +628,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// New /inbox/conversations routes
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/unread-stats", h.SupportInbox.GetUnreadStats)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/views", h.SupportInboxView.List)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/views/builtin", h.SupportInboxView.ListBuiltin)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/views/counts", h.SupportInboxView.ListCounts)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/views", h.SupportInboxView.Create)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/views/builtin/{viewKey}", h.SupportInboxView.UpdateBuiltin)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/views/{viewId}", h.SupportInboxView.Update)
 				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/views/{viewId}", h.SupportInboxView.Delete)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/tags", h.SupportTag.List)

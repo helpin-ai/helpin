@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { ResizableImageComponent } from './resizable-image-component';
+import { pickBlockNodeViewAttrs } from '@/components/docs/nodeViewAttrs';
 
 export interface ResizableImageOptions {
   HTMLAttributes: Record<string, unknown>;
@@ -86,7 +87,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ResizableImageComponent);
+    return ReactNodeViewRenderer(ResizableImageComponent, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) });
   },
 
   addCommands() {
