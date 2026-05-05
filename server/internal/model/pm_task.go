@@ -38,6 +38,7 @@ type PMTask struct {
 	TeamID                    *string              `json:"team_id" gorm:"type:uuid;index"`
 	OwnerID                   *string              `json:"owner_id" gorm:"type:uuid;index"`
 	OwnerMemberID             *string              `json:"owner_member_id" gorm:"type:uuid;index"`
+	OwnerMemberIDs            []string             `json:"owner_member_ids" gorm:"-"`
 	RequesterID               *string              `json:"requester_id" gorm:"type:uuid"`
 	RequesterMemberID         *string              `json:"requester_member_id" gorm:"type:uuid;index"`
 	Estimate                  *int                 `json:"estimate"`
@@ -130,6 +131,7 @@ type PMTaskFilters struct {
 	TaskType              *string
 	OwnerID               *string
 	OwnerMemberID         *string
+	OwnerMemberIDs        []string
 	RequesterID           *string
 	RequesterMemberID     *string
 	LabelID               *string
@@ -164,6 +166,7 @@ type CreateTaskRequest struct {
 	TeamID            *string                      `json:"team_id"`
 	OwnerID           *string                      `json:"owner_id"`
 	OwnerMemberID     *string                      `json:"owner_member_id"`
+	OwnerMemberIDs    []string                     `json:"owner_member_ids"`
 	RequesterID       *string                      `json:"requester_id"`
 	RequesterMemberID *string                      `json:"requester_member_id"`
 	Estimate          *int                         `json:"estimate"`
@@ -206,6 +209,7 @@ type UpdateTaskRequest struct {
 	TeamID            *string    `json:"team_id"`
 	OwnerID           *string    `json:"owner_id"`
 	OwnerMemberID     *string    `json:"owner_member_id"`
+	OwnerMemberIDs    []string   `json:"owner_member_ids"`
 	RequesterID       *string    `json:"requester_id"`
 	RequesterMemberID *string    `json:"requester_member_id"`
 	Estimate          *int       `json:"estimate"`
@@ -278,6 +282,7 @@ type BoardTask struct {
 	EpicName             *string                    `json:"epic_name,omitempty"`
 	SprintName           *string                    `json:"sprint_name,omitempty"`
 	OwnerName            *string                    `json:"owner_name,omitempty"`
+	OwnerMemberIDs       []string                   `json:"owner_member_ids"`
 	StateName            *string                    `json:"state_name,omitempty"`
 	StateType            *string                    `json:"state_type,omitempty"`
 	StateColor           *string                    `json:"state_color,omitempty"`
