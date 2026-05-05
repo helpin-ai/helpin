@@ -69,4 +69,36 @@ describe('HtmlBlockNodeView', () => {
     })
     container.remove()
   })
+
+  it('does not show a safety warning for sanitized inline HTML blocks', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <HtmlBlockNodeView
+          node={{
+            attrs: {
+              html: '<div><p>Visible content</p><script>window.__removed = true</script></div>',
+              renderMode: 'inline',
+            },
+            nodeSize: 1,
+          } as never}
+          editor={createEditorMock() as never}
+          updateAttributes={vi.fn()}
+          deleteNode={vi.fn()}
+          getPos={() => 1}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Visible content')
+    expect(container.textContent).not.toContain('Some HTML was removed for safety')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
 })

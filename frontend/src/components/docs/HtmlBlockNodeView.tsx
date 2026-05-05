@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { SourceCodeIcon, ViewIcon, PencilEdit01Icon, Delete01Icon, Alert01Icon } from '@/lib/icons';
+import { SourceCodeIcon, ViewIcon, PencilEdit01Icon, Delete01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { sanitizeHtml } from './htmlSanitizer';
 
@@ -17,7 +17,6 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
 
   // Sanitize for preview
   const sanitized = useMemo(() => hasContent && !sandboxed ? sanitizeHtml(html) : '', [html, hasContent, sandboxed]);
-  const wasStripped = hasContent && !sandboxed && sanitized.trim().length < html.trim().length;
 
   // Sync draft when node attrs change externally (undo/redo)
   useEffect(() => { setDraft(html ?? ''); }, [html]);
@@ -188,14 +187,6 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
             </div>
           )}
         </div>
-
-        {/* Sanitization warning */}
-        {wasStripped && !editing && (
-          <div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400">
-            <Alert01Icon className="h-3 w-3 shrink-0" />
-            Some HTML was removed for safety. The preview shows the sanitized version.
-          </div>
-        )}
       </div>
     </NodeViewWrapper>
   );
