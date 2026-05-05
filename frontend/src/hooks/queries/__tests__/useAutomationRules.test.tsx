@@ -66,7 +66,9 @@ describe('useAutomationRulesByWorkflow', () => {
 
     expect(automationRuleService.listByWorkflow).toHaveBeenCalledWith('ws-1', 'wf-1')
 
-    root.unmount()
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
   })
 })

@@ -66,7 +66,9 @@ describe('useAgents', () => {
 
     expect(agentService.list).toHaveBeenCalledWith('ws-1')
 
-    root.unmount()
+    await act(async () => {
+      root.unmount()
+    })
     container.remove()
   })
 })
