@@ -19,6 +19,8 @@ export const pmAttachmentService = {
     ),
 
   /** Delete an attachment. */
-  remove: (workspaceId: string, id: string) =>
-    api.del(`/pm/attachments/${id}?${qs(workspaceId)}`),
+  remove: (workspaceId: string, id: string, options?: { pendingOnly?: boolean }) => {
+    const pendingOnly = options?.pendingOnly ? '&pending_only=true' : '';
+    return api.del(`/pm/attachments/${id}?${qs(workspaceId)}${pendingOnly}`);
+  },
 };

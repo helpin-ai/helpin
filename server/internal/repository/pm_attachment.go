@@ -115,3 +115,14 @@ func (r *PMAttachmentRepository) Delete(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// DeleteEditorUpload removes an attachment only if it is still a pending editor upload.
+func (r *PMAttachmentRepository) DeleteEditorUpload(ctx context.Context, id string) (bool, error) {
+	result := r.db.WithContext(ctx).
+		Where("id = ? AND entity_type = ?", id, "editor_upload").
+		Delete(&model.PMAttachment{})
+	if result.Error != nil {
+		return false, fmt.Errorf("delete attachment: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
