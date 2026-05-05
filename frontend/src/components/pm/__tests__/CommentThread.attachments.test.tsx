@@ -48,6 +48,24 @@ vi.mock('@/components/ui/popover', () => ({
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
 
+vi.mock('@/components/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuItem: ({
+    children,
+    onSelect,
+  }: {
+    children: React.ReactNode
+    onSelect?: () => void
+  }) => (
+    <button type="button" onClick={() => onSelect?.()}>
+      {children}
+    </button>
+  ),
+  DropdownMenuSeparator: () => null,
+}))
+
 vi.mock('@/lib/api', () => ({
   uploadToS3: vi.fn(),
 }))
@@ -66,7 +84,13 @@ const { pmAttachmentService } = await import('@/lib/services/pmAttachmentService
 
 const workspaceId = 'ws-1'
 
-function renderThread(commentService = createCommentService()) {
+function renderThread({
+  comments = [],
+  commentService = createCommentService(),
+}: {
+  comments?: CommentWithAuthor[]
+  commentService?: ReturnType<typeof createCommentService>
+} = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -77,7 +101,7 @@ function renderThread(commentService = createCommentService()) {
         workspaceId={workspaceId}
         entityType="task"
         entityId="task-1"
-        comments={[]}
+        comments={comments}
         currentUserId="user-1"
         commentService={commentService}
         onCommentsChange={vi.fn()}
@@ -139,6 +163,49 @@ async function pasteImage(container: HTMLElement) {
   })
 }
 
+async function pasteImageInto(scope: HTMLElement) {
+  const button = scope.querySelector<HTMLButtonElement>('[data-testid="paste-image"]')
+  if (!button) throw new Error('paste button not found in scope')
+  await act(async () => {
+    button.click()
+  })
+}
+
+async function clickEdit(container: HTMLElement) {
+  const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+    (b) => b.textContent?.trim() === 'Edit',
+  )
+  if (!editButton) throw new Error('Edit menu item not found')
+  await act(async () => {
+    editButton.click()
+  })
+}
+
+function existingCommentByCurrentUser(id: string): CommentWithAuthor {
+  return {
+    comment: {
+      id,
+      entity_type: 'task',
+      entity_id: 'task-1',
+      author_id: 'user-1',
+      body: '<p>existing</p>',
+      parent_id: null,
+      created_at: '2026-05-03T00:00:00Z',
+      updated_at: '2026-05-03T00:00:00Z',
+    },
+    author: {
+      id: 'user-1',
+      email: 'user@example.com',
+      full_name: 'Test User',
+      created_at: '2026-05-03T00:00:00Z',
+      updated_at: '2026-05-03T00:00:00Z',
+    },
+    reply_count: 0,
+    attachments: [],
+    reactions: [],
+  }
+}
+
 async function submitComment(container: HTMLElement) {
   const button = container.querySelector<HTMLButtonElement>('[data-testid="submit-comment"]')
   if (!button) throw new Error('submit button not found')
@@ -187,7 +254,8 @@ describe('CommentThread attachment uploads', () => {
     await pasteImage(container)
     await pasteImage(container)
 
-    expect(container.querySelector('[data-testid="uploaded-files"]')?.textContent).toBe('att-1,att-2')
+    const composer = container.querySelector<HTMLElement>('[data-testid="comment-editor"]')!
+    expect(composer.querySelector('[data-testid="uploaded-files"]')?.textContent).toBe('att-1,att-2')
     expect(pmAttachmentService.remove).not.toHaveBeenCalled()
 
     await submitComment(container)
@@ -234,5 +302,52 @@ describe('CommentThread attachment uploads', () => {
     })
 
     expect(pmAttachmentService.remove).toHaveBeenCalledWith(workspaceId, 'att-pending', { pendingOnly: true })
+  })
+
+  it('cleans up edit-mode pending attachments on unmount', async () => {
+    vi.mocked(pmAttachmentService.initiateUpload).mockResolvedValue({
+      data: {
+        attachment: {
+          id: 'att-edit-pending',
+          workspace_id: workspaceId,
+          entity_type: 'editor_upload',
+          entity_id: workspaceId,
+          file_name: 'clipboard-1.png',
+          file_size: 11,
+          content_type: 'image/png',
+          storage_key: 'attachments/att-edit-pending',
+          is_uploaded: false,
+          uploaded_by_id: 'user-1',
+          created_at: '2026-05-03T00:00:00Z',
+        },
+        url: 'https://upload.example.com/att-edit-pending',
+        public_url: 'https://cdn.example.com/att-edit-pending.png',
+      },
+      error: null,
+      status: 200,
+    })
+    vi.mocked(uploadToS3).mockResolvedValue({ ok: true, error: null })
+    vi.mocked(pmAttachmentService.confirmUpload).mockResolvedValue({ data: null, error: null, status: 200 })
+
+    const { container, root } = renderThread({
+      comments: [existingCommentByCurrentUser('comment-1')],
+    })
+
+    await clickEdit(container)
+
+    // After entering edit mode, the edit form is rendered before the bottom composer.
+    const editors = container.querySelectorAll<HTMLElement>('[data-testid="comment-editor"]')
+    expect(editors.length).toBeGreaterThanOrEqual(2)
+    await pasteImageInto(editors[0])
+
+    expect(pmAttachmentService.remove).not.toHaveBeenCalled()
+
+    act(() => {
+      root.unmount()
+    })
+
+    expect(pmAttachmentService.remove).toHaveBeenCalledWith(workspaceId, 'att-edit-pending', {
+      pendingOnly: true,
+    })
   })
 })
