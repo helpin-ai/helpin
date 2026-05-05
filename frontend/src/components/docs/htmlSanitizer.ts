@@ -33,11 +33,15 @@ const ALLOWED_ATTR = [
 
 const ALLOWED_STYLE_PROPS = new Set([
   'background', 'background-color', 'border', 'border-color', 'border-radius', 'border-style', 'border-width',
-  'align-items', 'color', 'column-gap', 'display', 'flex-basis', 'flex-grow', 'flex-shrink',
-  'font-size', 'font-weight', 'gap', 'height', 'justify-content', 'line-height',
+  'align-content', 'align-items', 'align-self', 'box-sizing', 'color', 'column-gap', 'display', 'flex-basis',
+  'flex-direction', 'flex-grow', 'flex-shrink', 'flex-wrap',
+  'font-size', 'font-style', 'font-weight', 'gap', 'grid-template-columns', 'grid-template-rows', 'height',
+  'justify-content', 'justify-items', 'justify-self', 'letter-spacing', 'line-height',
+  'list-style', 'list-style-position', 'list-style-type',
   'margin', 'margin-bottom', 'margin-left', 'margin-right', 'margin-top',
+  'max-height', 'max-width', 'min-height', 'min-width', 'object-fit', 'overflow', 'overflow-x', 'overflow-y',
   'padding', 'padding-bottom', 'padding-left', 'padding-right', 'padding-top',
-  'text-align', 'vertical-align', 'width',
+  'row-gap', 'text-align', 'text-decoration', 'text-transform', 'vertical-align', 'white-space', 'width',
 ]);
 
 export function sanitizeHtml(html: string): string {

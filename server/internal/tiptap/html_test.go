@@ -239,12 +239,12 @@ func TestRenderHTML_HtmlBlockAllowsSafeDataImage(t *testing.T) {
 }
 
 func TestRenderHTML_HtmlBlockAllowsSafePresentationStyles(t *testing.T) {
-	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<div style=\"border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom:16px; display:flex; align-items:flex-start; position:absolute\"><p><span style=\"background: #007BFF;color:#fff;width:24px;height:24px;line-height:24px;text-align:center;display: inline-block;border-radius:50%;font-weight:bold; flex-shrink:0; background-image:url(javascript:alert(1))\">2</span> Click on <strong>Generate API Key</strong>.</p><script>alert(1)</script></div>"}}]}`
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<div style=\"border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom:16px; display:flex; align-items:flex-start; position:absolute\"><ol style=\"list-style:none; padding:0; margin:0\"><li style=\"margin-bottom:12px\"><span style=\"background: #007BFF;color:#fff;width:24px;height:24px;line-height:24px;text-align:center;display: inline-block;border-radius:50%;font-weight:bold; flex-shrink:0; background-image:url(javascript:alert(1))\">2</span> Click on <strong>Generate API Key</strong>.</li></ol><script>alert(1)</script></div>"}}]}`
 	got, err := RenderHTML(json.RawMessage(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`border: 1px solid #e5e7eb`, `border-radius: 10px`, `padding: 16px`, `background: #007BFF`, `display: flex`, `align-items: flex-start`, `display: inline-block`, `flex-shrink: 0`, `Generate API Key`} {
+	for _, want := range []string{`border: 1px solid #e5e7eb`, `border-radius: 10px`, `padding: 16px`, `list-style: none`, `background: #007BFF`, `display: flex`, `align-items: flex-start`, `display: inline-block`, `flex-shrink: 0`, `Generate API Key`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected %q in rendered HTML block, got: %s", want, got)
 		}
