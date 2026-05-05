@@ -36,8 +36,8 @@ type PMTask struct {
 	EpicID                    *string              `json:"epic_id" gorm:"type:uuid;index"`
 	SprintID                  *string              `json:"sprint_id" gorm:"type:uuid;index"`
 	TeamID                    *string              `json:"team_id" gorm:"type:uuid;index"`
-	OwnerID                   *string              `json:"owner_id" gorm:"type:uuid;index"`
-	OwnerMemberID             *string              `json:"owner_member_id" gorm:"type:uuid;index"`
+	OwnerID                   *string              `json:"owner_id,omitempty" gorm:"-"`
+	OwnerMemberID             *string              `json:"owner_member_id,omitempty" gorm:"-"`
 	OwnerMemberIDs            []string             `json:"owner_member_ids" gorm:"-"`
 	RequesterID               *string              `json:"requester_id" gorm:"type:uuid"`
 	RequesterMemberID         *string              `json:"requester_member_id" gorm:"type:uuid;index"`
@@ -129,8 +129,6 @@ type PMTaskFilters struct {
 	WorkflowID            *string
 	WorkflowStateID       *string
 	TaskType              *string
-	OwnerID               *string
-	OwnerMemberID         *string
 	OwnerMemberIDs        []string
 	RequesterID           *string
 	RequesterMemberID     *string
@@ -164,8 +162,6 @@ type CreateTaskRequest struct {
 	EpicID            *string                      `json:"epic_id"`
 	SprintID          *string                      `json:"sprint_id"`
 	TeamID            *string                      `json:"team_id"`
-	OwnerID           *string                      `json:"owner_id"`
-	OwnerMemberID     *string                      `json:"owner_member_id"`
 	OwnerMemberIDs    []string                     `json:"owner_member_ids"`
 	RequesterID       *string                      `json:"requester_id"`
 	RequesterMemberID *string                      `json:"requester_member_id"`
@@ -207,8 +203,6 @@ type UpdateTaskRequest struct {
 	EpicID            *string    `json:"epic_id"`
 	SprintID          *string    `json:"sprint_id"`
 	TeamID            *string    `json:"team_id"`
-	OwnerID           *string    `json:"owner_id"`
-	OwnerMemberID     *string    `json:"owner_member_id"`
 	OwnerMemberIDs    []string   `json:"owner_member_ids"`
 	RequesterID       *string    `json:"requester_id"`
 	RequesterMemberID *string    `json:"requester_member_id"`

@@ -1743,7 +1743,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		EpicID:            trimOptionalPtr(req.EpicID),
 		SprintID:          trimOptionalPtr(req.SprintID),
 		TeamID:            trimOptionalPtr(req.TeamID),
-		OwnerMemberID:     trimOptionalPtr(req.OwnerMemberID),
+		OwnerMemberIDs:    optionalTrimmedStringSlice(req.OwnerMemberID),
 		RequesterID:       nil,
 		RequesterMemberID: requesterMemberID,
 		Estimate:          req.Estimate,
@@ -2484,6 +2484,17 @@ func trimOptionalPtr(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func optionalTrimmedStringSlice(value *string) []string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return []string{trimmed}
 }
 
 func trimPtrValue(value *string) string {
