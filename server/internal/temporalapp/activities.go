@@ -117,6 +117,7 @@ type AgentRunActivities struct {
 	docsContentRepo            *repository.DocsContentRepository
 	docsBlockRepo              *repository.DocsBlockRepository
 	docsAISectionCandidateRepo *repository.DocsAISectionCandidateRepository
+	docsChangeProposalRepo     *repository.DocsChangeProposalRepository
 	docsVersionRepo            *repository.DocsVersionRepository
 	docsLinkRepo               *repository.DocsLinkRepository
 	docsSearchRepo             *repository.DocsSearchRepository
@@ -165,6 +166,7 @@ func NewAgentRunActivities(
 	docsContentRepo *repository.DocsContentRepository,
 	docsBlockRepo *repository.DocsBlockRepository,
 	docsAISectionCandidateRepo *repository.DocsAISectionCandidateRepository,
+	docsChangeProposalRepo *repository.DocsChangeProposalRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsSearchRepo *repository.DocsSearchRepository,
@@ -211,6 +213,7 @@ func NewAgentRunActivities(
 		docsContentRepo:            docsContentRepo,
 		docsBlockRepo:              docsBlockRepo,
 		docsAISectionCandidateRepo: docsAISectionCandidateRepo,
+		docsChangeProposalRepo:     docsChangeProposalRepo,
 		docsVersionRepo:            docsVersionRepo,
 		docsLinkRepo:               docsLinkRepo,
 		docsSearchRepo:             docsSearchRepo,
@@ -2567,6 +2570,38 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return a.docsAISectionCandidateRepo.Create(ctx, candidate)
 		},
+		PublishDocumentChangeProposal: func(ctx context.Context, workspaceID string, req model.CreateDocsChangeProposalRequest) (*model.DocsChangeProposal, error) {
+			if a.docsChangeProposalRepo == nil {
+				return nil, fmt.Errorf("docs change proposal repository is not available")
+			}
+			doc, err := a.docsDocRepo.GetByID(ctx, strings.TrimSpace(req.DocumentID))
+			if err != nil {
+				return nil, err
+			}
+			if doc == nil || doc.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("document not found")
+			}
+			sources := req.Sources
+			if len(sources) == 0 || strings.TrimSpace(string(sources)) == "" || strings.TrimSpace(string(sources)) == "null" {
+				sources = json.RawMessage(`[]`)
+			}
+			proposal := &model.DocsChangeProposal{
+				WorkspaceID:     workspaceID,
+				DocumentID:      strings.TrimSpace(req.DocumentID),
+				BlockID:         trimStringPtr(req.BlockID),
+				AgentID:         trimStringPtr(req.AgentID),
+				AgentRunID:      trimStringPtr(req.AgentRunID),
+				Scope:           strings.TrimSpace(req.Scope),
+				Status:          model.DocsChangeProposalStatusPending,
+				Revision:        req.Revision,
+				Summary:         strings.TrimSpace(req.Summary),
+				ContentMarkdown: strings.TrimSpace(req.ContentMarkdown),
+				Content:         append(json.RawMessage(nil), req.Content...),
+				Sources:         append(json.RawMessage(nil), sources...),
+				CreatedBy:       strings.TrimSpace(req.CreatedBy),
+			}
+			return a.docsChangeProposalRepo.Create(ctx, proposal)
+		},
 		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
 			if a.commandExecutor == nil {
 				return fmt.Errorf("document commands are not available")
@@ -2649,6 +2684,17 @@ func (a *AgentRunActivities) pushVisitorConversationRefresh(ctx context.Context,
 		WorkspaceID: workspaceID,
 		Data:        listJSON,
 	})
+}
+
+func trimStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunState, errMsg string) error {

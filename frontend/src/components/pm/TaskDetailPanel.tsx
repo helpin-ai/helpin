@@ -735,25 +735,73 @@ function TaskDetailPanelBody({
     [form.team_id, sprints],
   );
 
-  useEffect(() => {
-    if (!form.epic_id) return;
-    const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
-    if (!selectedEpic) return;
-    if (isEpicSelectableForTaskTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) {
-      return;
+  // Group epics by lifecycle: not started → in progress → completed.
+  // Order within each group matches `availableEpics` (server-supplied order).
+  const epicGroups = useMemo(() => {
+    const notStarted: typeof availableEpics = [];
+    const inProgress: typeof availableEpics = [];
+    const completed: typeof availableEpics = [];
+    for (const entry of availableEpics) {
+      if (entry.epic.completed) completed.push(entry);
+      else if (entry.epic.started) inProgress.push(entry);
+      else notStarted.push(entry);
     }
-    updateField('epic_id', '', { epic_id: '' });
-  }, [epics, form.epic_id, form.team_id]);
+    return [
+      { label: undefined as string | undefined, options: [{ value: '__none__', label: 'None' }] },
+      { label: 'Not started', options: notStarted.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: 'In progress', options: inProgress.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: 'Completed', options: completed.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+    ];
+  }, [availableEpics]);
+
+  // Group sprints by lifecycle status: unstarted → started → done.
+  const sprintGroups = useMemo(() => {
+    const unstarted: typeof availableSprints = [];
+    const started: typeof availableSprints = [];
+    const done: typeof availableSprints = [];
+    for (const entry of availableSprints) {
+      if (entry.sprint.status === 'done') done.push(entry);
+      else if (entry.sprint.status === 'started') started.push(entry);
+      else unstarted.push(entry);
+    }
+    return [
+      { label: undefined as string | undefined, options: [{ value: '__none__', label: 'None' }] },
+      { label: 'Not started', options: unstarted.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+      { label: 'In progress', options: started.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+      { label: 'Completed', options: done.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+    ];
+  }, [availableSprints]);
+
+  // Track the team_id we've already validated against so the planning-link
+  // cleanup only fires when the user actually changes the team — not on initial
+  // mount or when the epics/sprints lists finish loading. Without this, a task
+  // imported with a sprint/epic whose team scope doesn't match the task's team
+  // (e.g. workspace-level sprint on a team task, or vice versa) would silently
+  // unset its sprint/epic the first time the panel renders.
+  const validatedTeamIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!form.sprint_id) return;
-    const selectedSprint = sprints.find((entry) => entry.sprint.id === form.sprint_id);
-    if (!selectedSprint) return;
-    if (isSprintSelectableForTaskTeam(selectedSprint.sprint.team_id ?? null, form.team_id || null)) {
+    if (validatedTeamIdRef.current === null) {
+      validatedTeamIdRef.current = form.team_id;
       return;
     }
-    updateField('sprint_id', '', { sprint_id: '' });
-  }, [form.sprint_id, form.team_id, sprints]);
+    if (validatedTeamIdRef.current === form.team_id) return;
+    validatedTeamIdRef.current = form.team_id;
+
+    if (form.epic_id) {
+      const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
+      if (selectedEpic && !isEpicSelectableForTaskTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) {
+        updateField('epic_id', '', { epic_id: '' });
+      }
+    }
+
+    if (form.sprint_id) {
+      const selectedSprint = sprints.find((entry) => entry.sprint.id === form.sprint_id);
+      if (selectedSprint && !isSprintSelectableForTaskTeam(selectedSprint.sprint.team_id ?? null, form.team_id || null)) {
+        updateField('sprint_id', '', { sprint_id: '' });
+      }
+    }
+  }, [form.team_id, form.epic_id, form.sprint_id, epics, sprints]);
 
   // ── Auto-show checklist / external links if items exist ────────
   useEffect(() => {
@@ -1645,10 +1693,7 @@ function TaskDetailPanelBody({
             <MetadataRow icon={Layers01Icon} label="Epic">
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'None' },
-                  ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
-                ]}
+                groups={epicGroups}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_id', val, { epic_id: val });
@@ -1663,10 +1708,7 @@ function TaskDetailPanelBody({
             <MetadataRow icon={SprintIcon} label="Sprint">
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'None' },
-                  ...availableSprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
-                ]}
+                groups={sprintGroups}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('sprint_id', val, { sprint_id: val });

@@ -72,6 +72,10 @@ import {
   useToggleDocShare,
   useToggleDocLock,
   useRevertDocsVersion,
+  useDocsBlocks,
+  useDocsChangeProposals,
+  useApplyDocsChangeProposal,
+  useDiscardDocsChangeProposal,
 } from '@/hooks/queries'
 import { timeAgo } from '@/lib/utils'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
@@ -119,14 +123,14 @@ import { docsService } from '@/lib/services/docsService'
 import { docsCommentService } from '@/lib/services/docsCommentService'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import { queryKeys } from '@/lib/queryKeys'
-import type { DocsReferenceItem, DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
-import type { CommentWithAuthor } from '@/lib/pmTypes'
+import type { DocsBlock, DocsChangeProposal, DocsDocument, DocsReferenceItem, DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import type { CommandBarPageContext, CommentWithAuthor } from '@/lib/pmTypes'
 import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
-import { useRegisterPageContext } from '@/components/command-bar/pageContext'
+import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext'
 
 function docStatusColor(status: string): string {
   switch (status) {
@@ -172,6 +176,136 @@ function collectDocumentOutline(content: JSONContent | null | undefined): Docume
 function collectJSONText(node: JSONContent): string {
   if (typeof node.text === 'string') return node.text
   return node.content?.map(collectJSONText).join('') ?? ''
+}
+
+function getFocusedEditorBlockId(editor: TiptapEditor | null): string | null {
+  if (!editor) return null
+  const { from } = editor.state.selection
+  const $from = editor.state.doc.resolve(from)
+  for (let depth = $from.depth; depth >= 0; depth -= 1) {
+    const node = $from.node(depth)
+    const blockId = typeof node.attrs?.blockId === 'string' ? node.attrs.blockId.trim() : ''
+    if (blockId) return blockId
+  }
+  return null
+}
+
+function useFocusedDocsBlockId(editor: TiptapEditor | null) {
+  const [blockId, setBlockId] = useState<string | null>(() => getFocusedEditorBlockId(editor))
+
+  useEffect(() => {
+    if (!editor) {
+      setBlockId(null)
+      return
+    }
+    const update = () => setBlockId(getFocusedEditorBlockId(editor))
+    update()
+    editor.on('selectionUpdate', update)
+    editor.on('transaction', update)
+    return () => {
+      editor.off('selectionUpdate', update)
+      editor.off('transaction', update)
+    }
+  }, [editor])
+
+  return blockId
+}
+
+function buildDocsDocumentCommandContext(doc: DocsDocument | undefined): CommandBarPageContext | null {
+  if (!doc) return null
+  return {
+    entity_type: 'document',
+    entity_id: doc.id,
+    display_title: doc.title,
+  }
+}
+
+function buildDocsBlockCommandContext(doc: DocsDocument | undefined, block: DocsBlock | null): CommandBarPageContext | null {
+  if (!doc || !block) return null
+  return {
+    entity_type: 'document',
+    entity_id: doc.id,
+    display_title: doc.title,
+    metadata: {
+      context_scope: 'block',
+      block_id: block.id,
+      block_revision: block.revision,
+      block_type: block.type,
+      block_excerpt: (block.content_text ?? '').trim().slice(0, 500),
+    },
+  }
+}
+
+function DocsChangeProposalBanner({
+  proposal,
+  count,
+  canEdit,
+  applying,
+  discarding,
+  onApply,
+  onDiscard,
+}: {
+  proposal: DocsChangeProposal
+  count: number
+  canEdit: boolean
+  applying: boolean
+  discarding: boolean
+  onApply: () => void
+  onDiscard: () => void
+}) {
+  const scopeLabel = proposal.scope === 'block' ? 'Block change' : 'Document change'
+  const preview = proposal.content_markdown.trim()
+  return (
+    <div className="border-b border-amber-500/25 bg-amber-50/80 px-4 py-3 text-amber-950 dark:border-amber-400/20 dark:bg-amber-950/20 dark:text-amber-100">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+        <div className="flex min-w-0 flex-1 gap-3">
+          <MagicWand01Icon className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{scopeLabel} ready</span>
+              {count > 1 && (
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
+                  {count} pending
+                </span>
+              )}
+              <span className="text-[11px] text-amber-800/70 dark:text-amber-200/70">
+                {timeAgo(proposal.created_at)}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-amber-900/85 dark:text-amber-100/85">{proposal.summary}</p>
+            {preview && (
+              <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded border border-amber-500/20 bg-background/80 p-2 text-xs leading-relaxed text-foreground">
+                {preview}
+              </pre>
+            )}
+          </div>
+        </div>
+        {canEdit && (
+          <div className="flex shrink-0 items-center gap-2 lg:justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 border-amber-500/30 bg-background/80 text-xs"
+              onClick={onDiscard}
+              disabled={applying || discarding}
+            >
+              {discarding ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <Cancel01Icon className="h-3 w-3" />}
+              Discard
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={onApply}
+              disabled={applying || discarding}
+            >
+              {applying ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <Tick01Icon className="h-3 w-3" />}
+              Apply
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 interface ArticleTranslationDraftState {
@@ -261,6 +395,7 @@ export function DocsDocumentDetail({
   const wsSlug = workspace?.slug ?? ''
   const coverageGapClosedRef = useRef(false)
   const editorShellRef = useRef<HTMLDivElement | null>(null)
+  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null)
   const [editorShellEl, setEditorShellEl] = useState<HTMLDivElement | null>(null)
   const setEditorShellRef = useCallback((el: HTMLDivElement | null) => {
     editorShellRef.current = el
@@ -275,16 +410,15 @@ export function DocsDocumentDetail({
   const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
-  useRegisterPageContext(doc ? {
-    entity_type: 'document',
-    entity_id: doc.id,
-    display_title: doc.title,
-  } : null, 20)
+  const { data: blocks = [] } = useDocsBlocks(wsId, docId)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
+  const { data: changeProposals = [] } = useDocsChangeProposals(wsId, docId)
   const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
 
   const saveContent = useSaveDocsContent(wsId)
+  const applyChangeProposal = useApplyDocsChangeProposal(wsId)
+  const discardChangeProposal = useDiscardDocsChangeProposal(wsId)
   const updateDoc = useUpdateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
   const unpublishDoc = useUnpublishDocsDocument(wsId)
@@ -300,6 +434,46 @@ export function DocsDocumentDetail({
     () => workspaceAgents.filter((agent) => agent.allowed_targets?.includes('document')),
     [workspaceAgents],
   )
+  const focusedBlockId = useFocusedDocsBlockId(editorInstance)
+  const focusedBlock = useMemo(
+    () => blocks.find((block) => block.id === focusedBlockId) ?? null,
+    [blocks, focusedBlockId],
+  )
+  const visibleChangeProposal = useMemo(
+    () => changeProposals.find((proposal) => proposal.block_id === focusedBlockId) ?? changeProposals[0] ?? null,
+    [changeProposals, focusedBlockId],
+  )
+  const documentCommandContext = useMemo(
+    () => buildDocsDocumentCommandContext(doc),
+    [doc],
+  )
+  const blockCommandContext = useMemo(
+    () => buildDocsBlockCommandContext(doc, focusedBlock),
+    [doc, focusedBlock],
+  )
+  const commandBarContext = blockCommandContext ?? documentCommandContext
+  const commandBarContextOptions = useMemo<PageContextScopeOption[]>(() => {
+    if (!documentCommandContext) return []
+    const options: PageContextScopeOption[] = [{
+      key: 'document',
+      label: 'Document',
+      description: 'Use the whole document as the edit target.',
+      context: documentCommandContext,
+    }]
+    if (blockCommandContext) {
+      options.push({
+        key: 'block',
+        label: 'Block',
+        description: 'Use the selected block as the edit target.',
+        context: blockCommandContext,
+      })
+    }
+    return options
+  }, [blockCommandContext, documentCommandContext])
+  useRegisterPageContext(commandBarContext, 20, {
+    scopeOptions: commandBarContextOptions,
+    defaultScopeKey: blockCommandContext ? 'block' : 'document',
+  })
   const remoteViewers = useDocsPresenceStore((s) => s.viewingUsers[docId] ?? EMPTY_DOC_VIEWERS)
   const remoteEditors = useDocsPresenceStore((s) => s.editingUsers[docId] ?? EMPTY_DOC_EDITORS)
   const wsSendRaw = useWSStore((s) => s.send)
@@ -434,7 +608,6 @@ export function DocsDocumentDetail({
   const [comments, setComments] = useState<CommentWithAuthor[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentAnchor, setCommentAnchor] = useState<DocsCommentAnchor | null>(null)
-  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null)
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null)
   const [references, setReferences] = useState<DocsReferenceItem[]>([])
   const [referencesLoading, setReferencesLoading] = useState(false)
@@ -484,6 +657,26 @@ export function DocsDocumentDetail({
       toast.error(err instanceof Error ? err.message : 'Failed to revert')
     }
   }, [previewVersion, revertVersion, docId])
+
+  const handleApplyChangeProposal = useCallback(async () => {
+    if (!visibleChangeProposal) return
+    try {
+      await applyChangeProposal.mutateAsync({ docId, proposalId: visibleChangeProposal.id })
+      toast.success('Proposal applied')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to apply proposal')
+    }
+  }, [applyChangeProposal, docId, visibleChangeProposal])
+
+  const handleDiscardChangeProposal = useCallback(async () => {
+    if (!visibleChangeProposal) return
+    try {
+      await discardChangeProposal.mutateAsync({ docId, proposalId: visibleChangeProposal.id })
+      toast.success('Proposal discarded')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to discard proposal')
+    }
+  }, [discardChangeProposal, docId, visibleChangeProposal])
 
   // Title state — keep a local draft only for the active document.
   const [titleDraftState, setTitleDraftState] = useState<{ docId: string; value: string } | null>(null)
@@ -1417,6 +1610,18 @@ export function DocsDocumentDetail({
             Exit preview
           </Button>
         </div>
+      )}
+
+      {!previewVersion && visibleChangeProposal && (
+        <DocsChangeProposalBanner
+          proposal={visibleChangeProposal}
+          count={changeProposals.length}
+          canEdit={canEditDocs && !effectiveReadOnly}
+          applying={applyChangeProposal.isPending}
+          discarding={discardChangeProposal.isPending}
+          onApply={handleApplyChangeProposal}
+          onDiscard={handleDiscardChangeProposal}
+        />
       )}
 
       {/* Main content area */}

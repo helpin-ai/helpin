@@ -72,13 +72,14 @@ var toolCategory = map[string]string{
 	"list_buyer_signals": "CRM",
 
 	// Docs
-	"list_documents":               "Docs",
-	"list_collections":             "Docs",
-	"read_document":                "Docs",
-	"get_document_blocks":          "Docs",
-	"publish_ai_section_candidate": "Docs",
-	"search_documents":             "Docs",
-	"create_document":              "Docs",
+	"list_documents":                   "Docs",
+	"list_collections":                 "Docs",
+	"read_document":                    "Docs",
+	"get_document_blocks":              "Docs",
+	"publish_ai_section_candidate":     "Docs",
+	"publish_document_change_proposal": "Docs",
+	"search_documents":                 "Docs",
+	"create_document":                  "Docs",
 }
 
 var categoryOrder = []string{

@@ -6,6 +6,8 @@ import type {
   DocsContent,
   DocsBlock,
   AISectionCandidateResponse,
+  DocsChangeProposal,
+  DocsChangeProposalApplyResponse,
   DocsReferencesResponse,
   DocsVersion,
   DocsLink,
@@ -136,6 +138,12 @@ export const docsService = {
     api.post<AISectionCandidateResponse>(`/docs/documents/${docId}/blocks/${blockId}/ai-section/approve${qs(wsId)}`, {}),
   rejectAISection: (wsId: string, docId: string, blockId: string) =>
     api.post<AISectionCandidateResponse>(`/docs/documents/${docId}/blocks/${blockId}/ai-section/reject${qs(wsId)}`, {}),
+  listChangeProposals: (wsId: string, docId: string) =>
+    api.get<DocsChangeProposal[]>(`/docs/documents/${docId}/change-proposals${qs(wsId)}`),
+  applyChangeProposal: (wsId: string, docId: string, proposalId: string) =>
+    api.post<DocsChangeProposalApplyResponse>(`/docs/documents/${docId}/change-proposals/${proposalId}/apply${qs(wsId)}`, {}),
+  discardChangeProposal: (wsId: string, docId: string, proposalId: string) =>
+    api.post<DocsChangeProposal>(`/docs/documents/${docId}/change-proposals/${proposalId}/discard${qs(wsId)}`, {}),
   listReferences: (wsId: string, docId: string) =>
     api.get<DocsReferencesResponse>(`/docs/documents/${docId}/references${qs(wsId)}`),
 
