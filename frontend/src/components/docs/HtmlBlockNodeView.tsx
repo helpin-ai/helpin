@@ -4,6 +4,12 @@ import { SourceCodeIcon, ViewIcon, PencilEdit01Icon, Delete01Icon, Alert01Icon }
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { sanitizeHtml } from './htmlSanitizer';
 
+const sandboxedHtmlBlockBaseStyle = `body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }`;
+
+export function buildSandboxedHtmlBlockSrcDoc(html: string) {
+  return `<!doctype html><html><head><style>${sandboxedHtmlBlockBaseStyle}</style></head><body>${html}</body></html>`;
+}
+
 export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, getPos }: NodeViewProps) {
   const { html, renderMode } = node.attrs;
   const editable = editor.isEditable;
@@ -178,7 +184,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
               sandbox="allow-scripts allow-forms allow-popups allow-presentation"
               referrerPolicy="no-referrer"
               loading="lazy"
-              srcDoc={html}
+              srcDoc={buildSandboxedHtmlBlockSrcDoc(html)}
               onDoubleClick={editable ? switchToEdit : undefined}
             />
           ) : hasContent ? (

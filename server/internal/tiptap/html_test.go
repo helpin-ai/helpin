@@ -274,6 +274,19 @@ func TestRenderHTML_SandboxedHtmlBlockRendersEscapedSrcdocIframe(t *testing.T) {
 	}
 }
 
+func TestRenderHTML_SandboxedHtmlBlockAddsDocsFontFallback(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"renderMode":"sandboxed","html":"<div style=\"font-family: Georgia, serif\">Keep source font</div><p>Fallback text</p>"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`font-family: ui-sans-serif`, `Keep source font`, `font-family: Georgia, serif`, `Fallback text`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected sandboxed srcdoc to contain %q, got: %s", want, got)
+		}
+	}
+}
+
 func TestRenderHTML_HeadingUsesSourceIDWhenPresent(t *testing.T) {
 	input := `{"type":"doc","content":[{"type":"heading","attrs":{"level":3,"id":"Video-Model-Cost--Plan-Comparison-u_9kX"},"content":[{"type":"text","text":"Video Models & Plan Comparison"}]}]}`
 	got, err := RenderHTML(json.RawMessage(input))

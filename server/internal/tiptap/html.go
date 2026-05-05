@@ -42,6 +42,12 @@ func RenderHTML(jsonContent json.RawMessage) (string, error) {
 	return b.String(), nil
 }
 
+const sandboxedHTMLBlockBaseStyle = `body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }`
+
+func sandboxedHTMLBlockSrcDoc(rawHTML string) string {
+	return `<!doctype html><html><head><style>` + sandboxedHTMLBlockBaseStyle + `</style></head><body>` + rawHTML + `</body></html>`
+}
+
 func renderNode(b *strings.Builder, n *Node) {
 	switch n.Type {
 	case "doc":
@@ -313,7 +319,7 @@ func renderNode(b *strings.Builder, n *Node) {
 				b.WriteString(`<div class="docs-html-block docs-html-block--sandboxed">`)
 				b.WriteString("\n")
 				b.WriteString(`<iframe class="docs-html-block-frame" sandbox="allow-scripts allow-forms allow-popups allow-presentation" referrerpolicy="no-referrer" loading="lazy" srcdoc="`)
-				b.WriteString(html.EscapeString(rawHTML))
+				b.WriteString(html.EscapeString(sandboxedHTMLBlockSrcDoc(rawHTML)))
 				b.WriteString(`"></iframe>`)
 				b.WriteString("\n</div>\n")
 				break
