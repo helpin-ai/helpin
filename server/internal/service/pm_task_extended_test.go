@@ -237,7 +237,7 @@ func TestPMTaskService_Create(t *testing.T) {
 			Name:            "Bug Report",
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
-			TaskType:       model.PMTaskTypeBug,
+			TaskType:        model.PMTaskTypeBug,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Create bug: %v", err)
@@ -450,7 +450,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 			Name:            "Bad Type",
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
-			TaskType:       "invalid_type",
+			TaskType:        "invalid_type",
 		}, env.userID)
 		if err == nil {
 			t.Fatal("expected error for invalid story_type")
@@ -970,12 +970,12 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 	t.Run("owner assignment logs activity", func(t *testing.T) {
 		story := createTestTask(t, env, "Owner Activity Story")
 		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
-			OwnerMemberID: stringPtr(ownerMemberID),
+			OwnerMemberIDs: []string{ownerMemberID},
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update owner: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "assigned owner Alice Owner" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "owner_added" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
@@ -1500,6 +1500,52 @@ func TestPMTaskService_Owners(t *testing.T) {
 		err := env.svc.AddOwner(ctx, story.Task.ID, "", env.userID)
 		if err == nil {
 			t.Fatal("expected error for empty user_id")
+		}
+	})
+
+	t.Run("update owner member ids diffs owners and logs activity", func(t *testing.T) {
+		const (
+			nextUserID   = "user-owner-update-next"
+			nextMemberID = "member-owner-update-next"
+		)
+		seedUser(t, env.db, nextUserID, "owner-update-next@test.com", "Owner Update Next", "hash")
+		seedWorkspaceMember(t, env.db, nextMemberID, env.wsID, nextUserID, "owner-update-next@test.com", "Owner Update Next", model.RoleMember)
+
+		story := createTestTask(t, env, "Update Owners")
+		if err := env.svc.AddOwner(ctx, story.Task.ID, env.userID, env.userID); err != nil {
+			t.Fatalf("AddOwner initial: %v", err)
+		}
+
+		updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
+			OwnerMemberIDs: []string{nextMemberID},
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if got := updated.Task.OwnerMemberIDs; len(got) != 1 || got[0] != nextMemberID {
+			t.Fatalf("owner_member_ids = %v, want [%s]", got, nextMemberID)
+		}
+
+		var oldOwnerCount int64
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Task.ID, env.userID).Count(&oldOwnerCount)
+		if oldOwnerCount != 0 {
+			t.Fatalf("old owner count = %d, want 0", oldOwnerCount)
+		}
+		var nextOwnerCount int64
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Task.ID, nextUserID).Count(&nextOwnerCount)
+		if nextOwnerCount != 1 {
+			t.Fatalf("next owner count = %d, want 1", nextOwnerCount)
+		}
+
+		var addedActivityCount int64
+		env.db.Table("pm_activity_log").Where("entity_id = ? AND action = ?", story.Task.ID, "owner_added").Count(&addedActivityCount)
+		if addedActivityCount < 2 {
+			t.Fatalf("owner_added activities = %d, want at least 2", addedActivityCount)
+		}
+		var removedActivityCount int64
+		env.db.Table("pm_activity_log").Where("entity_id = ? AND action = ?", story.Task.ID, "owner_removed").Count(&removedActivityCount)
+		if removedActivityCount != 1 {
+			t.Fatalf("owner_removed activities = %d, want 1", removedActivityCount)
 		}
 	})
 }
