@@ -1467,8 +1467,11 @@ function TaskDetailPanelBody({
                         <OwnerAvatarStack
                           memberIds={form.owner_member_ids}
                           nameMap={memberNameMap}
+                          members={assignableMembers}
                           size="sm"
                           max={3}
+                          singleAvatarClassName="h-4 w-4"
+                          singleFallbackClassName="text-[7px]"
                         />
                       ) : (
                         <span>{currentOwnerName}</span>

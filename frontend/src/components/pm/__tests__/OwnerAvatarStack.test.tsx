@@ -26,6 +26,24 @@ describe('OwnerAvatarStack', () => {
     container.remove()
   })
 
+  it('can render one owner as avatar-only for compact cards', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const nameMap = new Map([['member-a', 'Alice Adams']])
+
+    act(() => {
+      root.render(<OwnerAvatarStack memberIds={['member-a']} nameMap={nameMap} showSingleName={false} />)
+    })
+
+    expect(container.querySelectorAll('[data-owner-avatar]').length).toBe(1)
+    expect(container.querySelector('[data-owner-single-name]')).toBeNull()
+    expect(container.querySelector('[data-owner-hover-list]')?.textContent).toContain('Alice Adams')
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
   it('renders three visible owners plus overflow with all names in the title', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -42,7 +60,8 @@ describe('OwnerAvatarStack', () => {
     })
 
     expect(container.querySelectorAll('[data-owner-avatar]').length).toBe(3)
-    expect(container.textContent).toContain('+1')
+    expect(container.querySelector('[data-owner-overflow]')?.textContent).toBe('+1')
+    expect(container.querySelector('[data-owner-overflow]')?.className).toContain('ring-2')
     expect(container.querySelector('[data-owner-single-name]')).toBeNull()
     expect(container.querySelector('[data-owner-avatar-stack]')?.getAttribute('title')).toBe(
       'Alice Adams, Bina Brooks, Chen Carter, Dev Diaz',

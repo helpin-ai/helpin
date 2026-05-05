@@ -1734,6 +1734,7 @@ function InlineOwnerCell({
           <OwnerAvatarStack
             memberIds={ownerMemberIds}
             nameMap={ownerNameMap}
+            members={assignableMembers}
             size="sm"
             max={3}
           />

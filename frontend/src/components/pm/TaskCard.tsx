@@ -676,8 +676,10 @@ function TaskCardComponent({
                   <OwnerAvatarStack
                     memberIds={ownerMemberIds}
                     nameMap={ownerNameMap}
+                    members={assignableMembers}
                     size="sm"
                     max={3}
+                    showSingleName={false}
                   />
                 ) : (
                   <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
