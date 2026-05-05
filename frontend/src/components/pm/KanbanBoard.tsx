@@ -675,12 +675,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       const updated = (e as CustomEvent)?.detail?.task;
       if (!updated) return;
       const task = { ...updated.task };
-      const ownerKey = task.owner_member_id;
-      if (ownerKey && !task.owner_name) {
-        task.owner_name = updated.owner_member
-          ? ownerNameMap.get(updated.owner_member.id) ?? updated.owner_member.display_name ?? updated.owner_member.email
-          : ownerNameMap.get(ownerKey);
-      }
       if (groupBy === 'members') {
         const stateCol = columns.find((c) => c.state.id === task.workflow_state_id);
         if (stateCol) {
@@ -722,7 +716,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       window.removeEventListener('task-panel-updated', onUpdated);
       window.removeEventListener('task-panel-archived', onArchived);
     };
-  }, [groupBy, columns, ownerNameMap, patchTask, refreshBoard]);
+  }, [groupBy, columns, patchTask, refreshBoard]);
 
   const findStateIdByItemId = useCallback(
     (id: string) => {
@@ -1098,12 +1092,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   }, [workspaceId, isSeeding, loadBoard, groupBy, loadMemberBoard, showEmptyColumns, activeMemberIds]);
 
   const handleTaskPatched = useCallback((task: Task) => {
-    // Enrich with owner_name for board display (update API doesn't include it)
-    const ownerKey = task.owner_member_id;
-    if (ownerKey && !task.owner_name) {
-      const ownerName = ownerNameMap.get(ownerKey);
-      if (ownerName) task = { ...task, owner_name: ownerName };
-    }
     if (groupBy === 'members') {
       // Enrich with state info from workflow columns (read from store directly to avoid dep)
       const stateColumns = usePMBoardStore.getState().columns;
@@ -1127,7 +1115,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         refreshBoard();
       }
     }
-  }, [patchTask, refreshBoard, ownerNameMap, groupBy]);
+  }, [patchTask, refreshBoard, groupBy]);
 
   // Memoize context values to avoid re-rendering all consumers
   const boardData = useMemo<import('./KanbanBoard.contexts').BoardDataContextValue>(() => ({

@@ -76,7 +76,7 @@ export function TaskItemMetadataToolbar({ editor }: { editor: Editor }) {
     const { data, error } = await pmTaskService.create({
       workspace_id: workspace.id,
       name,
-      owner_member_id: metadata.assigneeId || undefined,
+      owner_member_ids: metadata.assigneeId ? [metadata.assigneeId] : undefined,
       deadline: metadata.dueDate || undefined,
     })
     setCreating(false)

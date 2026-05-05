@@ -247,7 +247,7 @@ export interface SprintPlanningTaskPreview {
   workflow_state_id: string;
   state_name?: string;
   state_type?: StateType;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   estimate?: number;
   priority: Priority;
   sprint_id?: string;
@@ -287,7 +287,7 @@ export interface Task {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority: Priority;
@@ -326,7 +326,6 @@ export interface Task {
   epic_name?: string;
   sprint_name?: string;
   team_name?: string;
-  owner_name?: string;
   state_name?: string;
   state_type?: StateType;
   state_color?: string;
@@ -440,7 +439,6 @@ export interface TaskDetail {
     created_at: string;
     updated_at: string;
   }>;
-  owner_member?: AssignableMember;
   requester_member?: AssignableMember;
   labels: Label[];
   epic_name?: string;
@@ -905,7 +903,7 @@ export interface CreateTaskRequest {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority?: Priority;
@@ -942,7 +940,7 @@ export interface UpdateTaskRequest {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority?: Priority;

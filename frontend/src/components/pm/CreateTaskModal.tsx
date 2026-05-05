@@ -63,7 +63,8 @@ import { useAssignableWorkspaceMembers } from "@/hooks/useAssignableWorkspaceMem
 import { useTeamFieldVisibilityForTeam } from "@/hooks/queries/useSettings";
 import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
-import { MemberPickerPopover } from "@/components/pm/MemberPickerPopover";
+import { MemberPickerPopover, MultiMemberPickerPopover } from "@/components/pm/MemberPickerPopover";
+import { OwnerAvatarStack } from "@/components/pm/OwnerAvatarStack";
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import { UserAvatar } from "@/components/pm/UserAvatar";
@@ -129,7 +130,7 @@ const defaultState = {
   epic_id: "",
   sprint_id: "",
   team_id: "",
-  owner_member_id: "",
+  owner_member_ids: [] as string[],
   requester_member_id: "",
   deadline: "",
   label_ids: [] as string[],
@@ -332,7 +333,7 @@ export function CreateTaskModal({
         epic_id: editingTemplate.epic_id || '',
         sprint_id: editingTemplate.sprint_id || '',
         team_id: editingTemplate.team_id || initialTeamId || '',
-        owner_member_id: editingTemplate.owner_member_id || '',
+        owner_member_ids: editingTemplate.owner_member_id ? [editingTemplate.owner_member_id] : [],
         requester_member_id: '',
         deadline: editingTemplate.deadline || '',
         label_ids: editingTemplate.label_ids ? (() => { try { return JSON.parse(editingTemplate.label_ids!); } catch { return []; } })() : [],
@@ -353,7 +354,7 @@ export function CreateTaskModal({
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
         epic_id: initialEpicId ?? '',
-        owner_member_id: initialOwnerMemberId ?? '',
+        owner_member_ids: initialOwnerMemberId ? [initialOwnerMemberId] : [],
         sprint_id: initialSprintId ?? '',
       });
       setTaskTypeDirty(false);
@@ -487,9 +488,11 @@ export function CreateTaskModal({
   }, [form.team_id, teams]);
 
   const currentOwnerName = useMemo(() => {
-    if (!form.owner_member_id) return "No owner";
-    return memberNameMap.get(form.owner_member_id) ?? "No owner";
-  }, [form.owner_member_id, memberNameMap]);
+    if (form.owner_member_ids.length === 0) return "No owner";
+    return form.owner_member_ids
+      .map((ownerId) => memberNameMap.get(ownerId) ?? "Unknown")
+      .join(", ");
+  }, [form.owner_member_ids, memberNameMap]);
 
   const currentRequesterName = useMemo(() => {
     if (!form.requester_member_id) return "No requester";
@@ -580,7 +583,7 @@ export function CreateTaskModal({
           estimate: form.estimate ? Number(form.estimate) : undefined,
           team_id: form.team_id || undefined,
           label_ids: labelIds,
-          owner_member_id: form.owner_member_id || undefined,
+          owner_member_id: form.owner_member_ids[0] || undefined,
           epic_id: form.epic_id || undefined,
           sprint_id: form.sprint_id || undefined,
           deadline: form.deadline || undefined,
@@ -614,7 +617,7 @@ export function CreateTaskModal({
           epic_id: form.epic_id || undefined,
           sprint_id: form.sprint_id || undefined,
           team_id: form.team_id || undefined,
-          owner_member_id: form.owner_member_id || undefined,
+          owner_member_ids: form.owner_member_ids.length > 0 ? form.owner_member_ids : undefined,
           requester_member_id: form.requester_member_id || undefined,
           deadline: form.deadline || undefined,
           label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
@@ -692,7 +695,7 @@ export function CreateTaskModal({
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
             epic_id: initialEpicId ?? '',
-            owner_member_id: initialOwnerMemberId ?? '',
+            owner_member_ids: initialOwnerMemberId ? [initialOwnerMemberId] : [],
             sprint_id: initialSprintId ?? '',
           });
           setTaskTypeDirty(false);
@@ -1152,7 +1155,7 @@ export function CreateTaskModal({
                         severity: (tmpl.severity as Severity) || prev.severity,
                         estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
                         label_ids: tmpl.label_ids ? (() => { try { return JSON.parse(tmpl.label_ids!); } catch { return prev.label_ids; } })() : prev.label_ids,
-                        owner_member_id: tmpl.owner_member_id || prev.owner_member_id,
+                        owner_member_ids: tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids,
                         epic_id: tmpl.epic_id || prev.epic_id,
                         sprint_id: tmpl.sprint_id || prev.sprint_id,
                         deadline: tmpl.deadline || prev.deadline,
@@ -1228,38 +1231,61 @@ export function CreateTaskModal({
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
                 {/* Owner */}
-                <MetadataRow icon={UserIcon} label="Owner">
-                  <MemberPickerPopover
-                    value={form.owner_member_id || "__none__"}
-                    members={assignableMembers}
-                    noneLabel="No owner"
-                    onChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        owner_member_id: value === "__none__" ? "" : value,
-                      }))
-                    }
-                    renderTrigger={() => {
-                      const selectedMember = findAssignableMember(assignableMembers, form.owner_member_id);
-                      return (
+                <MetadataRow icon={UserIcon} label={isTemplateMode ? "Owner" : "Owners"}>
+                  {isTemplateMode ? (
+                    <MemberPickerPopover
+                      value={form.owner_member_ids[0] || "__none__"}
+                      members={assignableMembers}
+                      noneLabel="No owner"
+                      onChange={(value) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          owner_member_ids: value === "__none__" ? [] : [value],
+                        }))
+                      }
+                      renderTrigger={() => {
+                        const selectedMember = findAssignableMember(assignableMembers, form.owner_member_ids[0]);
+                        return (
+                          <>
+                            {selectedMember ? (
+                              <UserAvatar
+                                name={selectedMember.display_name || selectedMember.email}
+                                avatarUrl={selectedMember.avatar_url}
+                                avatarStyle={selectedMember.avatar_style}
+                                avatarSeed={selectedMember.avatar_seed}
+                                avatarBackgroundMode={selectedMember.avatar_background_mode}
+                                avatarBackgroundColor={selectedMember.avatar_background_color}
+                                className="h-4 w-4"
+                                fallbackClassName="text-[7px]"
+                              />
+                            ) : null}
+                            <span>{currentOwnerName}</span>
+                          </>
+                        );
+                      }}
+                    />
+                  ) : (
+                    <MultiMemberPickerPopover
+                      values={form.owner_member_ids}
+                      members={assignableMembers}
+                      onChange={(nextOwnerIds) =>
+                        setForm((prev) => ({ ...prev, owner_member_ids: nextOwnerIds }))
+                      }
+                      renderTrigger={() => (
                         <>
-                          {selectedMember ? (
-                            <UserAvatar
-                              name={selectedMember.display_name || selectedMember.email}
-                              avatarUrl={selectedMember.avatar_url}
-                              avatarStyle={selectedMember.avatar_style}
-                              avatarSeed={selectedMember.avatar_seed}
-                              avatarBackgroundMode={selectedMember.avatar_background_mode}
-                              avatarBackgroundColor={selectedMember.avatar_background_color}
-                              className="h-4 w-4"
-                              fallbackClassName="text-[7px]"
+                          {form.owner_member_ids.length > 0 ? (
+                            <OwnerAvatarStack
+                              memberIds={form.owner_member_ids}
+                              nameMap={memberNameMap}
+                              size="sm"
+                              max={3}
                             />
                           ) : null}
                           <span>{currentOwnerName}</span>
                         </>
-                      );
-                    }}
-                  />
+                      )}
+                    />
+                  )}
                 </MetadataRow>
 
                 {/* Requester */}

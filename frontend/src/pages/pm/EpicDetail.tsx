@@ -421,7 +421,7 @@ export function EpicDetailPage() {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
     for (const task of tasks) {
-      const ownerKey = task.owner_member_id;
+      const ownerKey = task.owner_member_ids?.[0];
       if (ownerKey) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {

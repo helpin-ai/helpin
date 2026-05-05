@@ -213,7 +213,7 @@ export function SprintPlanningWorkspace({
           <div className="w-[300px] rotate-[1deg] shadow-xl">
             <SprintPlanningTaskCard
               task={activeTask}
-              owner={activeTask.owner_member_id ? ownerByMemberId.get(activeTask.owner_member_id) : undefined}
+              owner={activeTask.owner_member_ids?.[0] ? ownerByMemberId.get(activeTask.owner_member_ids[0]) : undefined}
               compact
               onOpenTask={onOpenTask}
             />

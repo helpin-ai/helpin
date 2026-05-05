@@ -25,8 +25,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
-import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import { cn, getInitials } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import {
   PRIORITY_CONFIG,
   PriorityIcon as TaskListPriorityIcon,
@@ -76,7 +75,8 @@ import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDis
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import {
   TABLE_CONTAINER,
   TABLE_RESIZE_HANDLE,
@@ -167,20 +167,6 @@ function TaskListLatestRunAgentBadge({
   );
 }
 
-const TASK_LIST_AVATAR_COLORS = [
-  { bg: 'bg-rose-100 dark:bg-rose-900/40', text: 'text-rose-700 dark:text-rose-300' },
-  { bg: 'bg-pink-100 dark:bg-pink-900/40', text: 'text-pink-700 dark:text-pink-300' },
-  { bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/40', text: 'text-fuchsia-700 dark:text-fuchsia-300' },
-  { bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-700 dark:text-purple-300' },
-  { bg: 'bg-indigo-100 dark:bg-indigo-900/40', text: 'text-indigo-700 dark:text-indigo-300' },
-  { bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-300' },
-  { bg: 'bg-teal-100 dark:bg-teal-900/40', text: 'text-teal-700 dark:text-teal-300' },
-  { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-300' },
-  { bg: 'bg-lime-100 dark:bg-lime-900/40', text: 'text-lime-700 dark:text-lime-300' },
-  { bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-700 dark:text-amber-300' },
-  { bg: 'bg-orange-100 dark:bg-orange-900/40', text: 'text-orange-700 dark:text-orange-300' },
-  { bg: 'bg-red-100 dark:bg-red-900/40', text: 'text-red-700 dark:text-red-300' },
-] as const;
 const TASK_LIST_HEADER = 'sticky top-0 z-10 bg-card';
 const TASK_LIST_HEADER_CELL =
   'relative shrink-0 border-r border-b border-border/60 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:border-r-0';
@@ -191,86 +177,6 @@ const TASK_LIST_CELL =
   'flex shrink-0 items-center self-stretch border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
 const TASK_LIST_GROUP_ROW =
   'flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
-
-function hashTaskListAvatarName(name: string): number {
-  let hash = 0;
-  for (let index = 0; index < name.length; index += 1) {
-    hash = ((hash << 5) - hash + name.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-function getTaskListAvatarColor(name?: string | null) {
-  if (!name) return TASK_LIST_AVATAR_COLORS[0];
-  return TASK_LIST_AVATAR_COLORS[hashTaskListAvatarName(name) % TASK_LIST_AVATAR_COLORS.length];
-}
-
-// Task list avatars stay off the shared Radix avatar path to keep the virtualized row hot path lightweight.
-function TaskListOwnerAvatar({
-  name,
-  avatarUrl,
-  avatarStyle,
-  avatarSeed,
-  avatarBackgroundMode,
-  avatarBackgroundColor,
-  className,
-  fallbackClassName,
-}: {
-  name?: string | null;
-  avatarUrl?: string | null;
-  avatarStyle?: string | null;
-  avatarSeed?: string | null;
-  avatarBackgroundMode?: string | null;
-  avatarBackgroundColor?: string | null;
-  className?: string;
-  fallbackClassName?: string;
-}) {
-  const color = getTaskListAvatarColor(name);
-  const avatarSrc = resolveTeamMemberAvatarSrc({
-    avatarUrl,
-    avatarStyle,
-    avatarSeed,
-    avatarBackgroundMode,
-    avatarBackgroundColor,
-    fallbackSeed: name,
-  });
-
-  if (!avatarSrc) {
-    return (
-      <span
-        className={cn(
-          'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/80 bg-background text-[9px] font-semibold',
-          color.bg,
-          color.text,
-          className,
-          fallbackClassName,
-        )}
-        aria-hidden
-      >
-        {getInitials(name)}
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className={cn(
-        'inline-flex shrink-0 overflow-hidden rounded-full border border-border/80 bg-background',
-        className,
-      )}
-      aria-hidden
-    >
-      <img
-        src={avatarSrc}
-        alt=""
-        className="size-full object-cover"
-        loading="lazy"
-        decoding="async"
-        draggable={false}
-      />
-    </span>
-  );
-}
 
 interface TaskListViewProps {
   workspaceId: string;
@@ -429,10 +335,6 @@ export function TaskListView({
     [assignableMembers],
   );
   const ownerNameMap = assignableMemberMap;
-  const assignableMemberById = useMemo(
-    () => new Map(assignableMembers.map((member) => [member.id, member])),
-    [assignableMembers],
-  );
   const agentById = useMemo(
     () => new Map(agents.map((agent) => [agent.id, agent])),
     [agents],
@@ -601,19 +503,12 @@ export function TaskListView({
   // Optimistic inline update with rollback on failure
   const updateTaskField = useCallback(
     async (taskId: string, patch: Partial<Task>) => {
-      const optimisticPatch: Partial<Task> = { ...patch };
-      if (Object.prototype.hasOwnProperty.call(patch, 'owner_member_id')) {
-        const ownerMemberId = patch.owner_member_id;
-        optimisticPatch.owner_name = ownerMemberId ? ownerNameMap.get(ownerMemberId) : undefined;
-      }
-
       let snapshot: Task[] = [];
       setTasks((current) => {
         snapshot = current;
-        return current.map((s) => (s.id === taskId ? { ...s, ...optimisticPatch } : s));
+        return current.map((s) => (s.id === taskId ? { ...s, ...patch } : s));
       });
       const apiPatch = { ...patch };
-      delete apiPatch.owner_name;
       delete apiPatch.epic_name;
       delete apiPatch.labels;
       const { error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
@@ -652,9 +547,6 @@ export function TaskListView({
         labels: taskDetail.labels,
         epic_name: taskDetail.epic_name ?? taskDetail.task.epic_name,
         sprint_name: taskDetail.sprint_name ?? taskDetail.task.sprint_name,
-        owner_name: taskDetail.owner_member
-          ? (taskDetail.owner_member.display_name ?? taskDetail.owner_member.email)
-          : taskDetail.task.owner_name,
       };
       setTasks((current) =>
         current.map((s) => (
@@ -789,8 +681,10 @@ export function TaskListView({
       }),
       columnHelper.accessor(
         (row) => {
-          const ownerKey = row.owner_member_id;
-          return ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : 'Unassigned';
+          const ownerKeys = row.owner_member_ids ?? [];
+          return ownerKeys.length > 0
+            ? ownerKeys.map((ownerKey) => ownerNameMap.get(ownerKey) ?? 'Unknown').join(', ')
+            : 'Unassigned';
         },
         {
           id: 'ownerName',
@@ -800,7 +694,6 @@ export function TaskListView({
             <InlineOwnerCell
               task={info.row.original}
               assignableMembers={assignableMembers}
-              assignableMemberById={assignableMemberById}
               ownerNameMap={ownerNameMap}
               onUpdate={updateTaskField}
             />
@@ -980,7 +873,7 @@ export function TaskListView({
           ),
         }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, assignableMemberById, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -1818,41 +1711,35 @@ function InlineStateCell({
 function InlineOwnerCell({
   task,
   assignableMembers,
-  assignableMemberById,
   ownerNameMap,
   onUpdate,
 }: {
   task: Task;
   assignableMembers: AssignableMember[];
-  assignableMemberById: Map<string, AssignableMember>;
   ownerNameMap: Map<string, string>;
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
-  const ownerKey = task.owner_member_id;
-  const ownerName = ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : null;
-  const selectedMember = ownerKey ? assignableMemberById.get(ownerKey) ?? null : null;
+  const ownerMemberIds = task.owner_member_ids ?? [];
+  const ownerName = ownerMemberIds.length > 0
+    ? ownerMemberIds.map((ownerKey) => ownerNameMap.get(ownerKey) ?? 'Unknown').join(', ')
+    : null;
 
   return (
-    <MemberPickerPopover
-      value={task.owner_member_id || '__none__'}
+    <MultiMemberPickerPopover
+      values={ownerMemberIds}
       members={assignableMembers}
-      noneLabel="Unassigned"
       lazyMount
-      onChange={(value) => {
-        void onUpdate(task.id, { owner_member_id: value === '__none__' ? '' : value });
+      onChange={(nextOwnerIds) => {
+        void onUpdate(task.id, { owner_member_ids: nextOwnerIds });
       }}
       renderTrigger={() => {
-        return selectedMember ? (
+        return ownerMemberIds.length > 0 ? (
           <>
-            <TaskListOwnerAvatar
-              name={selectedMember.display_name || selectedMember.email}
-              avatarUrl={selectedMember.avatar_url}
-              avatarStyle={selectedMember.avatar_style}
-              avatarSeed={selectedMember.avatar_seed}
-              avatarBackgroundMode={selectedMember.avatar_background_mode}
-              avatarBackgroundColor={selectedMember.avatar_background_color}
-              className="h-5 w-5"
-              fallbackClassName="text-[8px]"
+            <OwnerAvatarStack
+              memberIds={ownerMemberIds}
+              nameMap={ownerNameMap}
+              size="sm"
+              max={3}
             />
             <span className="truncate">{ownerName}</span>
           </>

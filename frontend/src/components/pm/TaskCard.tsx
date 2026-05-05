@@ -15,7 +15,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from '@/lib/utils';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from '@/lib/pmConstants';
 import { pmTaskService } from '@/lib/services/pmTaskService';
-import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
 import { getSortableTaskCardStyle, animateCardLayoutChanges } from './TaskCard.sortable';
@@ -25,7 +26,6 @@ import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimateP
 import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
-import { findAssignableMember } from '@/lib/assignableMembers';
 import { BoardDataContext, BoardCallbacksContext } from './KanbanBoard.contexts';
 import { ACTIVE_RUN_STATUSES } from './agentRunConstants';
 
@@ -237,17 +237,18 @@ function TaskCardComponent({
 
   const priorityCfg = PRIORITY_CONFIG[task.priority];
   const taskTypeCfg = TASK_TYPE_CONFIG[task.task_type];
+  const ownerMemberIds = task.owner_member_ids ?? [];
   const currentOwnerName = useMemo(() => {
-    const ownerKey = task.owner_member_id;
-    if (!ownerKey) return null;
-    return ownerNameMap?.get(ownerKey) ?? task.owner_name ?? null;
-  }, [task.owner_member_id, task.owner_name, ownerNameMap]);
+    if (ownerMemberIds.length === 0) return null;
+    return ownerMemberIds
+      .map((ownerId) => ownerNameMap?.get(ownerId) ?? ownerId)
+      .join(', ');
+  }, [ownerMemberIds, ownerNameMap]);
   const handleAssignOwner = useCallback(
-    async (value: string) => {
+    async (ownerIds: string[]) => {
       if (!workspaceId) return;
-      const newOwnerId = value === '__none__' ? '' : value;
       try {
-        const result = await pmTaskService.update(workspaceId, task.id, { owner_member_id: newOwnerId });
+        const result = await pmTaskService.update(workspaceId, task.id, { owner_member_ids: ownerIds });
         if (result.data?.task) {
           (onTaskPatched ?? onOwnerChanged)?.(result.data.task);
         }
@@ -661,27 +662,22 @@ function TaskCardComponent({
           })()}
           {/* Assignee avatar / assign button */}
           {vis.assignee && (assignableMembers && workspaceId ? (
-            <MemberPickerPopover
-              value={task.owner_member_id || '__none__'}
+            <MultiMemberPickerPopover
+              values={ownerMemberIds}
               members={assignableMembers}
-              noneLabel="Unassigned"
-              onChange={(value) => {
-                void handleAssignOwner(value);
+              onChange={(nextOwnerIds) => {
+                void handleAssignOwner(nextOwnerIds);
               }}
               align="end"
               triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"
               contentClassName="w-[220px]"
               renderTrigger={() => {
-                const selectedMember = findAssignableMember(assignableMembers, task.owner_member_id);
-                return selectedMember ? (
-                  <UserAvatar
-                    name={selectedMember.display_name || selectedMember.email}
-                    avatarUrl={selectedMember.avatar_url}
-                    avatarStyle={selectedMember.avatar_style}
-                    avatarSeed={selectedMember.avatar_seed}
-                    avatarBackgroundMode={selectedMember.avatar_background_mode}
-                    avatarBackgroundColor={selectedMember.avatar_background_color}
-                    className="h-7 w-7"
+                return ownerMemberIds.length > 0 ? (
+                  <OwnerAvatarStack
+                    memberIds={ownerMemberIds}
+                    nameMap={ownerNameMap}
+                    size="sm"
+                    max={3}
                   />
                 ) : (
                   <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
