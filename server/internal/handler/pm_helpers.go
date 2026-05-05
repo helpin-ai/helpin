@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -27,6 +28,24 @@ func queryStringPtr(r *http.Request, key string) *string {
 		return nil
 	}
 	return &value
+}
+
+func queryStringValues(r *http.Request, key string) []string {
+	rawValues := r.URL.Query()[key]
+	if len(rawValues) == 0 {
+		return nil
+	}
+	values := make([]string, 0, len(rawValues))
+	for _, raw := range rawValues {
+		for _, part := range strings.Split(raw, ",") {
+			value := strings.TrimSpace(part)
+			if value == "" {
+				continue
+			}
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 // queryStringPtrWithFallback returns the first non-empty query param from the given keys.
