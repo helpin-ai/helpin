@@ -118,6 +118,11 @@ import {
   isSprintSelectableForTaskTeam,
 } from '@/components/pm/task-detail/taskPlanningScope';
 import { syncTaskLabelsWithFeedback } from '@/components/pm/task-detail/taskLabelSync';
+import {
+  getAgentAutoRunStateChangeMessage,
+  getAgentAutoRunStateChangeToastId,
+  shouldNotifyAgentAutoRunStateChange,
+} from '@/components/pm/agentAutoRunNotification';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -564,6 +569,7 @@ function TaskDetailPanelBody({
   // Re-sync form when taskDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(taskDetail.task.updated_at);
   const savedDescriptionRef = useRef(taskDetail.task.description ?? '');
+  const savedWorkflowStateIdRef = useRef(taskDetail.task.workflow_state_id);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
@@ -625,6 +631,7 @@ function TaskDetailPanelBody({
     if (taskDetail.task.updated_at !== lastSyncedAt.current) {
       lastSyncedAt.current = taskDetail.task.updated_at;
       savedDescriptionRef.current = taskDetail.task.description ?? '';
+      savedWorkflowStateIdRef.current = taskDetail.task.workflow_state_id;
       void reloadActivity();
       // Only reset form if no unsaved edits
       if (Object.keys(pendingPatchRef.current).length === 0) {
@@ -679,6 +686,33 @@ function TaskDetailPanelBody({
       return next;
     });
   };
+
+  // ── Pipeline automation rules ──────────────────────────────────
+  const workflowId = states[0]?.workflow_id;
+  const { data: pipelineRules } = useAutomationRulesByWorkflow(workspaceId, workflowId);
+  const automatedStateIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!pipelineRules) return ids;
+    for (const rule of pipelineRules) {
+      if (
+        rule.enabled &&
+        rule.trigger_type === 'task.state_entered' &&
+        rule.action_type === 'start_agent_run'
+      ) {
+        const stateId = rule.trigger_config?.state_id;
+        if (stateId) ids.add(stateId);
+      }
+    }
+    return ids;
+  }, [pipelineRules]);
+  const hasPipeline = automatedStateIds.size > 0;
+
+  const notifyAgentAutoRunStateChange = useCallback((fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
+    if (!shouldNotifyAgentAutoRunStateChange({ fromStateId, toStateId, automatedStateIds })) return;
+    if (!toStateId) return;
+    const stateName = states.find((state) => state.id === toStateId)?.name ?? 'this state';
+    toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(toStateId) });
+  }, [automatedStateIds, states]);
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateTaskRequest) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -755,6 +789,10 @@ function TaskDetailPanelBody({
         blockedAutosavePatchSignatureRef.current = null;
         setSaveError(null);
         onTaskUpdated(data);
+        if (patch.workflow_state_id !== undefined) {
+          notifyAgentAutoRunStateChange(savedWorkflowStateIdRef.current, data.task.workflow_state_id);
+          savedWorkflowStateIdRef.current = data.task.workflow_state_id;
+        }
         void reloadActivity();
         // Invalidate sprint planning if sprint/state/estimate changed
         if (patch.sprint_id !== undefined || patch.workflow_state_id !== undefined || patch.estimate !== undefined) {
@@ -778,6 +816,7 @@ function TaskDetailPanelBody({
   }, [
     descriptionPendingUploads,
     onTaskUpdated,
+    notifyAgentAutoRunStateChange,
     pendingPatch,
     queryClient,
     reloadActivity,
@@ -805,6 +844,10 @@ function TaskDetailPanelBody({
         }
 
         onTaskUpdated(data);
+        if (patch.workflow_state_id !== undefined) {
+          notifyAgentAutoRunStateChange(savedWorkflowStateIdRef.current, data.task.workflow_state_id);
+          savedWorkflowStateIdRef.current = data.task.workflow_state_id;
+        }
         if (
           patch.sprint_id !== undefined ||
           patch.workflow_state_id !== undefined ||
@@ -814,7 +857,7 @@ function TaskDetailPanelBody({
         }
       });
     };
-  }, [onTaskUpdated, queryClient, taskId, workspaceId]);
+  }, [notifyAgentAutoRunStateChange, onTaskUpdated, queryClient, taskId, workspaceId]);
 
   const handleDescriptionAttachmentDelete = useCallback(
     async (entry: AttachmentResponse) => {
@@ -884,26 +927,6 @@ function TaskDetailPanelBody({
         taskId: taskDetail.task.id,
       }),
     );
-
-  // ── Pipeline automation rules ──────────────────────────────────
-  const workflowId = states[0]?.workflow_id;
-  const { data: pipelineRules } = useAutomationRulesByWorkflow(workspaceId, workflowId);
-  const automatedStateIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (!pipelineRules) return ids;
-    for (const rule of pipelineRules) {
-      if (
-        rule.enabled &&
-        rule.trigger_type === 'task.state_entered' &&
-        rule.action_type === 'start_agent_run'
-      ) {
-        const stateId = rule.trigger_config?.state_id;
-        if (stateId) ids.add(stateId);
-      }
-    }
-    return ids;
-  }, [pipelineRules]);
-  const hasPipeline = automatedStateIds.size > 0;
 
   // ── Derived data ───────────────────────────────────────────────
   const currentState = useMemo(

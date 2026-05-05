@@ -70,7 +70,7 @@ import { LabelPicker } from '@/components/pm/LabelPicker';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildTaskCopyUrl } from '@/lib/pmTaskLinks';
-import { useAgents, useTeamEstimateSettings, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
+import { useAgents, useAutomationRulesByWorkflow, useTeamEstimateSettings, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
@@ -98,6 +98,12 @@ import {
 } from '@/components/pm/task-detail/taskListGrouping';
 import { getVisibleSprintsForTaskScope } from '@/components/pm/task-detail/taskPlanningScope';
 import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
+import { toast } from 'sonner';
+import {
+  getAgentAutoRunStateChangeMessage,
+  getAgentAutoRunStateChangeToastId,
+  shouldNotifyAgentAutoRunStateChange,
+} from '@/components/pm/agentAutoRunNotification';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
@@ -243,6 +249,22 @@ export function TaskListView({
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '');
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
+  const { data: automationRules } = useAutomationRulesByWorkflow(workspaceId, workflow.workflow.id);
+  const automatedStateIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!automationRules) return ids;
+    for (const rule of automationRules) {
+      if (
+        rule.enabled &&
+        rule.trigger_type === 'task.state_entered' &&
+        rule.action_type === 'start_agent_run'
+      ) {
+        const stateId = rule.trigger_config?.state_id;
+        if (stateId) ids.add(stateId);
+      }
+    }
+    return ids;
+  }, [automationRules]);
   const teamEstimateSettings = useTeamEstimateSettings(currentWorkspaceId);
   const displayInit = useBoardDisplayStore((s) => s.init);
   const displayProps = useBoardDisplayStore((s) => s.properties);
@@ -513,8 +535,19 @@ export function TaskListView({
       delete apiPatch.labels;
       const { error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
       if (error) setTasks(snapshot);
+      if (!error && patch.workflow_state_id !== undefined) {
+        const previousStateId = snapshot.find((task) => task.id === taskId)?.workflow_state_id;
+        if (shouldNotifyAgentAutoRunStateChange({
+          fromStateId: previousStateId,
+          toStateId: patch.workflow_state_id,
+          automatedStateIds,
+        })) {
+          const stateName = workflow.states.find((state) => state.id === patch.workflow_state_id)?.name ?? 'this state';
+          toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(patch.workflow_state_id) });
+        }
+      }
     },
-    [workspaceId, ownerNameMap],
+    [workspaceId, ownerNameMap, automatedStateIds, workflow.states],
   );
 
   // Listen for task events (only for self-fetching mode)
