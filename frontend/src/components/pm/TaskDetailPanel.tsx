@@ -111,6 +111,7 @@ import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-detail/taskOverlayDismiss';
 import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
+import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
   isEpicSelectableForTaskTeam,
@@ -476,6 +477,7 @@ function TaskDetailPanelBody({
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const pendingPatchRef = useRef<UpdateTaskRequest>({});
   const descriptionPendingUploadsRef = useRef(0);
+  const blockedAutosavePatchSignatureRef = useRef<string | null>(null);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
@@ -669,7 +671,13 @@ function TaskDetailPanelBody({
   }, [workspaceId]);
 
   const queuePatch = (patch: UpdateTaskRequest) => {
-    setPendingPatch((current) => ({ ...current, ...patch }));
+    setPendingPatch((current) => {
+      const next = { ...current, ...patch };
+      if (!isBlockedTaskPatch(next, blockedAutosavePatchSignatureRef.current)) {
+        blockedAutosavePatchSignatureRef.current = null;
+      }
+      return next;
+    });
   };
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateTaskRequest) => {
@@ -727,20 +735,24 @@ function TaskDetailPanelBody({
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
+    const flushablePatch = getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads);
     if (
       saving ||
-      !getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads)
+      !flushablePatch ||
+      isBlockedTaskPatch(flushablePatch, blockedAutosavePatchSignatureRef.current)
     ) return;
     const timer = window.setTimeout(async () => {
-      const patch = pendingPatch;
+      const patch = flushablePatch;
       const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       setSaving(true);
       const { data, error } = await pmTaskService.update(workspaceId, taskId, patch);
       if (error || !data) {
         setSaveError(error ?? 'Failed to save changes');
+        blockedAutosavePatchSignatureRef.current = getTaskPatchSignature(patch);
         setPendingPatch((current) => ({ ...patch, ...current }));
       } else {
+        blockedAutosavePatchSignatureRef.current = null;
         setSaveError(null);
         onTaskUpdated(data);
         void reloadActivity();
