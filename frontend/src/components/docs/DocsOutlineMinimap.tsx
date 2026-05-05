@@ -153,7 +153,7 @@ export function DocsOutlineMinimap({ items, scrollContainer, onSelect }: DocsOut
                 className={`inline-block h-0.5 rounded-full transition-colors ${
                   isActive
                     ? 'bg-foreground'
-                    : 'bg-border group-hover/dash:bg-muted-foreground'
+                    : 'bg-muted-foreground/55 group-hover/dash:bg-muted-foreground'
                 }`}
                 style={{ width: dashWidth(item.level) }}
               />

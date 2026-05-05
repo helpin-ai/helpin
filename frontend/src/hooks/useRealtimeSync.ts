@@ -213,10 +213,6 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         pmTaskService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
             const task = { ...res.data.task }
-            // Enrich with owner_name from task detail owners for board display.
-            if (task.owner_member_id && !task.owner_name && res.data.owner_member) {
-              task.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
-            }
             const patched = store.patchTask(event.action as 'created' | 'updated', event.entity_id, task)
             if (!patched) scheduleRefresh()
           } else {
@@ -469,6 +465,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // Invalidate unread stats on any non-presence conversation update (includes reason=read)
         queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) })
       }
     } else if (event.entity === 'support_visitor') {
       const store = useSupportPresenceStore.getState()
@@ -516,6 +513,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // New messages change unread counts
         queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) })
       }
     }
 

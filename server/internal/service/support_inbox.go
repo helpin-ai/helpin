@@ -1743,7 +1743,7 @@ func (s *SupportInboxService) CreateTaskFromConversation(
 		EpicID:            trimOptionalPtr(req.EpicID),
 		SprintID:          trimOptionalPtr(req.SprintID),
 		TeamID:            trimOptionalPtr(req.TeamID),
-		OwnerMemberID:     trimOptionalPtr(req.OwnerMemberID),
+		OwnerMemberIDs:    optionalTrimmedStringSlice(req.OwnerMemberID),
 		RequesterID:       nil,
 		RequesterMemberID: requesterMemberID,
 		Estimate:          req.Estimate,
@@ -2486,6 +2486,17 @@ func trimOptionalPtr(value *string) *string {
 	return &trimmed
 }
 
+func optionalTrimmedStringSlice(value *string) []string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return []string{trimmed}
+}
+
 func trimPtrValue(value *string) string {
 	if value == nil {
 		return ""
@@ -2540,7 +2551,7 @@ func (s *SupportInboxService) UpdateConversationCRMContact(ctx context.Context, 
 
 // ListContactConversations returns support conversations linked to a CRM contact.
 func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
-	conversations, _, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
+	conversations, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -2558,7 +2569,7 @@ func (s *SupportInboxService) ListContactConversations(ctx context.Context, work
 			slog.ErrorContext(ctx, "hydrate support contact conversation triage", "error", err, "workspace_id", workspaceID)
 		}
 	}
-	return filtered, int64(len(filtered)), nil
+	return filtered, total, nil
 }
 
 // matchOrCreateCRMContact looks up a CRM contact by email; if not found,

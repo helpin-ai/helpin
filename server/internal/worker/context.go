@@ -314,18 +314,18 @@ type TeamWorkflowSummary struct {
 }
 
 type CreateTaskToolRequest struct {
-	Name          string     `json:"name"`
-	Description   *string    `json:"description,omitempty"`
-	TaskType      string     `json:"task_type,omitempty"`
-	Estimate      *int       `json:"estimate,omitempty"`
-	Priority      *string    `json:"priority,omitempty"`
-	EpicID        *string    `json:"epic_id,omitempty"`
-	TeamID        string     `json:"team_id"`
-	WorkflowID    *string    `json:"workflow_id,omitempty"`
-	StateID       *string    `json:"state_id,omitempty"`
-	OwnerMemberID *string    `json:"owner_member_id,omitempty"`
-	LabelIDs      []string   `json:"label_ids,omitempty"`
-	Deadline      *time.Time `json:"deadline,omitempty"`
+	Name           string     `json:"name"`
+	Description    *string    `json:"description,omitempty"`
+	TaskType       string     `json:"task_type,omitempty"`
+	Estimate       *int       `json:"estimate,omitempty"`
+	Priority       *string    `json:"priority,omitempty"`
+	EpicID         *string    `json:"epic_id,omitempty"`
+	TeamID         string     `json:"team_id"`
+	WorkflowID     *string    `json:"workflow_id,omitempty"`
+	StateID        *string    `json:"state_id,omitempty"`
+	OwnerMemberIDs []string   `json:"owner_member_ids,omitempty"`
+	LabelIDs       []string   `json:"label_ids,omitempty"`
+	Deadline       *time.Time `json:"deadline,omitempty"`
 }
 
 type CreateTaskToolResult struct {

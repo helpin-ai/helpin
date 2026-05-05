@@ -536,7 +536,16 @@ func (s *PMImportService) shortcutImportStoredOptions(job model.PMImportJob) (*m
 }
 
 func shortcutImportDiagnostics(result *model.ShortcutImportResult) model.ShortcutImportDiagnostics {
-	diag := model.ShortcutImportDiagnostics{}
+	diag := model.ShortcutImportDiagnostics{
+		Counts:               []model.ShortcutImportCount{},
+		WarningGroups:        []model.ShortcutImportWarningGroup{},
+		FailedMedia:          []model.ShortcutImportDiagnosticItem{},
+		UnmappedMembers:      []model.ShortcutImportDiagnosticItem{},
+		UnmappedStates:       []model.ShortcutImportDiagnosticItem{},
+		UnmappedTeams:        []model.ShortcutImportDiagnosticItem{},
+		RetryableFailures:    []model.ShortcutImportDiagnosticItem{},
+		NonRetryableFailures: []model.ShortcutImportDiagnosticItem{},
+	}
 	if result == nil {
 		return diag
 	}
@@ -1517,17 +1526,11 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 		}
 
 		ownerIDs := make([]string, 0)
-		var ownerMemberID *string
 		for _, email := range shortcutOwnerEmails(row.Owners) {
 			norm := normalizeShortcutName(email)
 			if id, ok := userByEmail[norm]; ok && id != "" {
 				if !containsString(ownerIDs, id) {
 					ownerIDs = append(ownerIDs, id)
-				}
-			}
-			if mid, ok := memberByEmail[norm]; ok && mid != "" {
-				if ownerMemberID == nil {
-					ownerMemberID = &mid
 				}
 			}
 			if _, hasUser := userByEmail[norm]; !hasUser {
@@ -1536,11 +1539,6 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 				}
 			}
 		}
-		var ownerID *string
-		if len(ownerIDs) > 0 {
-			ownerID = &ownerIDs[0]
-		}
-
 		priority := mapShortcutPriority(row.Priority)
 		severity := mapShortcutSeverity(row.Severity)
 		startedAt := parseShortcutTimestamp(row.StartedAt, row.UTCOffset)
@@ -1560,8 +1558,6 @@ func (s *PMImportService) createStories(ctx context.Context, tx *gorm.DB, worksp
 			EpicID:            epicID,
 			SprintID:          sprintID,
 			TeamID:            teamID,
-			OwnerID:           ownerID,
-			OwnerMemberID:     ownerMemberID,
 			RequesterID:       requesterID,
 			RequesterMemberID: requesterMemberID,
 			Estimate:          parseShortcutInt(row.Estimate),

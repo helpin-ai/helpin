@@ -111,6 +111,7 @@ vi.mock('@/components/pm/EstimatePicker', () => ({
 
 vi.mock('@/components/pm/MemberPickerPopover', () => ({
   MemberPickerPopover: ({ renderTrigger }: { renderTrigger: () => React.ReactNode }) => <div>{renderTrigger()}</div>,
+  MultiMemberPickerPopover: ({ renderTrigger }: { renderTrigger: () => React.ReactNode }) => <div>{renderTrigger()}</div>,
 }))
 
 vi.mock('@/components/pm/UserAvatar', () => ({

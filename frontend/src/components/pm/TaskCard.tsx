@@ -6,7 +6,6 @@ import {
   Layers01Icon,
 } from '@/lib/icons';
 import { Calendar03Icon, Tick01Icon, UserAdd01Icon } from '@/lib/pmIcons';
-import { AlertCircleIcon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { differenceInDays, format, formatDistanceToNow, isBefore, parseISO, startOfDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -15,7 +14,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from '@/lib/utils';
 import { PRIORITY_BORDER_COLOR, PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, StateTypeIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from '@/lib/pmConstants';
 import { pmTaskService } from '@/lib/services/pmTaskService';
-import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
 import { getSortableTaskCardStyle, animateCardLayoutChanges } from './TaskCard.sortable';
@@ -25,7 +25,6 @@ import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimateP
 import { LabelBadge } from '@/components/pm/LabelPicker';
 import { useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore } from '@/stores/boardDisplayStore';
-import { findAssignableMember } from '@/lib/assignableMembers';
 import { BoardDataContext, BoardCallbacksContext } from './KanbanBoard.contexts';
 import { ACTIVE_RUN_STATUSES } from './agentRunConstants';
 
@@ -237,17 +236,56 @@ function TaskCardComponent({
 
   const priorityCfg = PRIORITY_CONFIG[task.priority];
   const taskTypeCfg = TASK_TYPE_CONFIG[task.task_type];
+  const ownerMemberIds = task.owner_member_ids ?? [];
   const currentOwnerName = useMemo(() => {
-    const ownerKey = task.owner_member_id;
-    if (!ownerKey) return null;
-    return ownerNameMap?.get(ownerKey) ?? task.owner_name ?? null;
-  }, [task.owner_member_id, task.owner_name, ownerNameMap]);
+    if (ownerMemberIds.length === 0) return null;
+    return ownerMemberIds
+      .map((ownerId) => ownerNameMap?.get(ownerId) ?? ownerId)
+      .join(', ');
+  }, [ownerMemberIds, ownerNameMap]);
+  const shouldShowAgentRow = vis.agent && !!task.latest_run_agent_id;
+  const hasActiveRun =
+    shouldShowAgentRow
+    && !isOverlay
+    && !!task.latest_run_id
+    && !!task.latest_run_status
+    && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
+  const awaitingLabel = task.latest_run_status === 'paused'
+    ? getAwaitingLabel(task.latest_run_pause_reason)
+    : null;
+  const runTimeLabel = task.latest_run_at
+    ? `Last run ${formatDistanceToNow(new Date(task.latest_run_at), { addSuffix: true })}`
+    : 'Last run';
+  const agentStatusLabel = awaitingLabel
+    ?? (task.latest_run_status === 'running'
+      ? 'Running'
+      : task.latest_run_status === 'queued'
+        ? 'Queued'
+        : task.latest_run_status === 'paused'
+          ? 'Paused'
+          : task.latest_run_status === 'failed'
+            ? 'Failed'
+            : task.latest_run_status === 'completed'
+              ? 'Completed'
+              : 'Last run');
+  const agentTooltipLabel = awaitingLabel
+    ? `${awaitingLabel}${latestRunAgent?.name ? ` · ${latestRunAgent.name}` : ''} · Open run`
+    : hasActiveRun
+      ? `${runTimeLabel}${latestRunAgent?.name ? `: ${latestRunAgent.name}` : ''} · Open run`
+      : `${runTimeLabel}${latestRunAgent?.name ? `: ${latestRunAgent.name}` : ''}`;
+  const handleAgentClick = useCallback(
+    (e: React.MouseEvent | React.KeyboardEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      onOpenAgentRun?.(task);
+    },
+    [onOpenAgentRun, task],
+  );
   const handleAssignOwner = useCallback(
-    async (value: string) => {
+    async (ownerIds: string[]) => {
       if (!workspaceId) return;
-      const newOwnerId = value === '__none__' ? '' : value;
       try {
-        const result = await pmTaskService.update(workspaceId, task.id, { owner_member_id: newOwnerId });
+        const result = await pmTaskService.update(workspaceId, task.id, { owner_member_ids: ownerIds });
         if (result.data?.task) {
           (onTaskPatched ?? onOwnerChanged)?.(result.data.task);
         }
@@ -485,206 +523,136 @@ function TaskCardComponent({
       </div>
 
       {/* Row 4: Footer - priority, due date, estimate + assignee */}
-      <div className="mt-2 flex items-center gap-1.5">
-        {/* Priority pill — clickable dropdown (hidden when 'none') */}
-        {vis.priority && task.priority !== 'none' && (workspaceId ? (
-          <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
-            <Tooltip open={priorityOpen ? false : undefined}>
+      <div data-task-card-footer="true" className="mt-2 flex items-center gap-1.5">
+        <div data-task-card-footer-metadata="true" className="flex min-w-0 items-center gap-1.5">
+          {/* Priority pill — clickable dropdown (hidden when 'none') */}
+          {vis.priority && task.priority !== 'none' && (workspaceId ? (
+            <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
+              <Tooltip open={priorityOpen ? false : undefined}>
+                <TooltipTrigger asChild>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex h-6 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
+                        PRIORITY_BORDER_COLOR[task.priority],
+                      )}
+                      onClick={(e) => { e.stopPropagation(); setPriorityOpen(true); }}
+                    >
+                      <PriorityIcon priority={task.priority} className="h-4 w-4" />
+                    </button>
+                  </PopoverTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
+              </Tooltip>
+              {priorityOpen && (
+                <PopoverContent
+                  className="w-[180px] p-0"
+                  align="start"
+                  side="bottom"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <Command>
+                    <CommandInput placeholder="Search..." className="h-8 text-xs" />
+                    <CommandList>
+                      <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
+                      <CommandGroup>
+                        {ALL_PRIORITIES.map((p) => {
+                          const cfg = PRIORITY_CONFIG[p];
+                          return (
+                            <CommandItem
+                              key={p}
+                              value={cfg.label}
+                              onSelect={() => handleChangePriority(p)}
+                              className="flex items-center gap-2 text-xs"
+                            >
+                              <PriorityIcon priority={p} className="h-3.5 w-3.5" />
+                              <span>{cfg.label}</span>
+                              {task.priority === p && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              )}
+            </Popover>
+          ) : (
+            <Tooltip>
               <TooltipTrigger asChild>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex h-6 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1 transition-colors hover:bg-muted',
-                      PRIORITY_BORDER_COLOR[task.priority],
-                    )}
-                    onClick={(e) => { e.stopPropagation(); setPriorityOpen(true); }}
-                  >
-                    <PriorityIcon priority={task.priority} className="h-4 w-4" />
-                  </button>
-                </PopoverTrigger>
+                <span className={cn(
+                  'flex h-6 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
+                  PRIORITY_BORDER_COLOR[task.priority],
+                )}>
+                  <PriorityIcon priority={task.priority} className="h-4 w-4" />
+                </span>
               </TooltipTrigger>
               <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
             </Tooltip>
-            {priorityOpen && (
-              <PopoverContent
-                className="w-[180px] p-0"
-                align="start"
-                side="bottom"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
-              >
-                <Command>
-                  <CommandInput placeholder="Search..." className="h-8 text-xs" />
-                  <CommandList>
-                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No match</CommandEmpty>
-                    <CommandGroup>
-                      {ALL_PRIORITIES.map((p) => {
-                        const cfg = PRIORITY_CONFIG[p];
-                        return (
-                          <CommandItem
-                            key={p}
-                            value={cfg.label}
-                            onSelect={() => handleChangePriority(p)}
-                            className="flex items-center gap-2 text-xs"
-                          >
-                            <PriorityIcon priority={p} className="h-3.5 w-3.5" />
-                            <span>{cfg.label}</span>
-                            {task.priority === p && <Tick01Icon className="ml-auto h-3.5 w-3.5 text-primary" />}
-                          </CommandItem>
-                        );
-                      })}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            )}
-          </Popover>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={cn(
-                'flex h-6 shrink-0 items-center rounded-sm border-[0.5px] bg-muted/50 px-1',
-                PRIORITY_BORDER_COLOR[task.priority],
-              )}>
-                <PriorityIcon priority={task.priority} className="h-4 w-4" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">Priority: {priorityCfg.label}</TooltipContent>
-          </Tooltip>
-        ))}
-        {vis.due_date && due && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className={cn(
-                pillBase,
-                due.overdue
-                  ? 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400'
-                  : due.approaching
-                    ? 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400'
-                    : 'border-border bg-muted/50 text-muted-foreground',
-              )}>
-                <Calendar03Icon className="h-3 w-3 shrink-0" />
-                {due.label}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              {due.overdue ? 'Overdue' : due.approaching ? 'Due soon' : 'Due date'}: {due.label}
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {vis.estimate && task.estimate != null && (workspaceId ? (
-          <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-            <EstimatePicker
-              value={task.estimate != null ? String(task.estimate) : ''}
-              teamId={task.team_id}
-              onChange={handleChangeEstimate}
-              className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground hover:bg-muted cursor-pointer')}
-            />
-          </span>
-        ) : task.estimate != null ? (
-          <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
-            {formatEstimateDisplay(task.estimate, task.team_id)}
-          </span>
-        ) : null)}
+          ))}
+          {vis.due_date && due && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className={cn(
+                  pillBase,
+                  due.overdue
+                    ? 'border-red-300 bg-red-50 text-red-600 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400'
+                    : due.approaching
+                      ? 'border-amber-300 bg-amber-50 text-amber-600 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400'
+                      : 'border-border bg-muted/50 text-muted-foreground',
+                )}>
+                  <Calendar03Icon className="h-3 w-3 shrink-0" />
+                  {due.label}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {due.overdue ? 'Overdue' : due.approaching ? 'Due soon' : 'Due date'}: {due.label}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {vis.estimate && task.estimate != null && (workspaceId ? (
+            <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+              <EstimatePicker
+                value={task.estimate != null ? String(task.estimate) : ''}
+                teamId={task.team_id}
+                onChange={handleChangeEstimate}
+                className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground hover:bg-muted cursor-pointer')}
+              />
+            </span>
+          ) : task.estimate != null ? (
+            <span className={cn(pillBase, 'border-border bg-muted/50 text-muted-foreground')}>
+              {formatEstimateDisplay(task.estimate, task.team_id)}
+            </span>
+          ) : null)}
+        </div>
         <span className="flex-1" />
-        <div className="flex items-center gap-1.5">
-          {vis.agent && task.latest_run_agent_id && (() => {
-            const hasActiveRun =
-              !isOverlay
-              && !!task.latest_run_id
-              && !!task.latest_run_status
-              && ACTIVE_RUN_STATUSES.has(task.latest_run_status);
-            const awaitingLabel = task.latest_run_status === 'paused'
-              ? getAwaitingLabel(task.latest_run_pause_reason)
-              : null;
-            const runTimeLabel = task.latest_run_at
-              ? `Last run ${formatDistanceToNow(new Date(task.latest_run_at), { addSuffix: true })}`
-              : 'Last run';
-            const baseLabel = latestRunAgent?.name ? `${runTimeLabel}: ${latestRunAgent.name}` : runTimeLabel;
-            const tooltipLabel = awaitingLabel
-              ? `${awaitingLabel}${latestRunAgent?.name ? ` · ${latestRunAgent.name}` : ''} · Open run`
-              : hasActiveRun ? `${baseLabel} · Open run` : baseLabel;
-            const handleAgentClick = (e: React.MouseEvent | React.KeyboardEvent) => {
-              e.stopPropagation();
-              e.preventDefault();
-              onOpenAgentRun?.(task);
-            };
-            const awaitingPill = awaitingLabel ? (
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-medium',
-                  'border-amber-300 bg-amber-100 text-amber-900',
-                  'dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200',
-                )}
-              >
-                <AlertCircleIcon className="h-3 w-3" aria-hidden="true" />
-                {awaitingLabel}
-              </span>
-            ) : null;
-            const badgeContent = (
-              <span className="inline-flex items-center gap-1.5">
-                {awaitingPill}
-                <TaskCardAgentBadge
-                  agent={latestRunAgent}
-                  isWorking={hasActiveRun}
-                  latestRunStatus={task.latest_run_status}
-                />
-              </span>
-            );
-            return (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  {isOverlay ? (
-                    <span className="shrink-0">{badgeContent}</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleAgentClick}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          handleAgentClick(e);
-                        }
-                      }}
-                      className="shrink-0 rounded transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                      aria-label={tooltipLabel}
-                    >
-                      {badgeContent}
-                    </button>
-                  )}
-                </TooltipTrigger>
-                <TooltipContent side="top">{tooltipLabel}</TooltipContent>
-              </Tooltip>
-            );
-          })()}
+        <div data-task-card-footer-owners="true" className="flex min-w-0 items-center gap-1.5">
           {/* Assignee avatar / assign button */}
           {vis.assignee && (assignableMembers && workspaceId ? (
-            <MemberPickerPopover
-              value={task.owner_member_id || '__none__'}
+            <MultiMemberPickerPopover
+              values={ownerMemberIds}
               members={assignableMembers}
-              noneLabel="Unassigned"
-              onChange={(value) => {
-                void handleAssignOwner(value);
+              onChange={(nextOwnerIds) => {
+                void handleAssignOwner(nextOwnerIds);
               }}
               align="end"
-              triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"
+              triggerClassName="group shrink-0 overflow-visible rounded-full px-0 py-0 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-primary/40"
+              triggerLabel={ownerMemberIds.length > 0 ? undefined : 'Assign owner'}
               contentClassName="w-[220px]"
               renderTrigger={() => {
-                const selectedMember = findAssignableMember(assignableMembers, task.owner_member_id);
-                return selectedMember ? (
-                  <UserAvatar
-                    name={selectedMember.display_name || selectedMember.email}
-                    avatarUrl={selectedMember.avatar_url}
-                    avatarStyle={selectedMember.avatar_style}
-                    avatarSeed={selectedMember.avatar_seed}
-                    avatarBackgroundMode={selectedMember.avatar_background_mode}
-                    avatarBackgroundColor={selectedMember.avatar_background_color}
-                    className="h-7 w-7"
+                return ownerMemberIds.length > 0 ? (
+                  <OwnerAvatarStack
+                    memberIds={ownerMemberIds}
+                    nameMap={ownerNameMap}
+                    members={assignableMembers}
+                    size="sm"
+                    max={3}
+                    showSingleName={false}
                   />
                 ) : (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors group-hover:border-solid group-hover:bg-accent group-hover:text-foreground">
                     <UserAdd01Icon className="h-3.5 w-3.5" />
                   </span>
                 );
@@ -708,6 +676,77 @@ function TaskCardComponent({
           ))}
         </div>
       </div>
+      {/* Agent row: fixed placement for latest/relevant agent run state */}
+      {shouldShowAgentRow && (
+        <div
+          data-task-card-agent-row="true"
+          className="mt-2 flex min-w-0 items-center"
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              {isOverlay ? (
+                <span
+                  className={cn(
+                    'flex h-7 min-w-0 flex-1 items-center gap-2 rounded-sm text-xs',
+                    awaitingLabel
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : task.latest_run_status === 'failed'
+                        ? 'text-red-600 dark:text-red-400'
+                        : task.latest_run_status === 'running'
+                          ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-muted-foreground',
+                  )}
+                  aria-label={agentTooltipLabel}
+                >
+                  <TaskCardAgentBadge
+                    agent={latestRunAgent}
+                    isWorking={hasActiveRun}
+                    latestRunStatus={task.latest_run_status}
+                  />
+                  <span data-task-card-agent-label="true" className="min-w-0 flex-1 truncate font-medium">
+                    {agentStatusLabel}
+                    {latestRunAgent?.name ? ` · ${latestRunAgent.name}` : ''}
+                  </span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleAgentClick}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      handleAgentClick(e);
+                    }
+                  }}
+                  className={cn(
+                    'flex h-7 min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-xs transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                    awaitingLabel
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : task.latest_run_status === 'failed'
+                        ? 'text-red-600 dark:text-red-400'
+                        : task.latest_run_status === 'running'
+                          ? 'text-emerald-700 dark:text-emerald-400'
+                        : 'text-muted-foreground',
+                  )}
+                  aria-label={agentTooltipLabel}
+                >
+                  <TaskCardAgentBadge
+                    agent={latestRunAgent}
+                    isWorking={hasActiveRun}
+                    latestRunStatus={task.latest_run_status}
+                  />
+                  <span data-task-card-agent-label="true" className="min-w-0 flex-1 truncate font-medium">
+                    {agentStatusLabel}
+                    {latestRunAgent?.name ? ` · ${latestRunAgent.name}` : ''}
+                  </span>
+                </button>
+              )}
+            </TooltipTrigger>
+            <TooltipContent side="top">{agentTooltipLabel}</TooltipContent>
+          </Tooltip>
+        </div>
+      )}
       </div>
     </article>
   );
@@ -725,6 +764,7 @@ export const TaskCard = memo(TaskCardComponent, (prev, next) => {
       || prev.task.latest_run_id !== next.task.latest_run_id
       || prev.task.latest_run_agent_id !== next.task.latest_run_agent_id
       || prev.task.latest_run_status !== next.task.latest_run_status
+      || prev.task.latest_run_pause_reason !== next.task.latest_run_pause_reason
       || prev.task.latest_run_at !== next.task.latest_run_at
     ) return false;
   }

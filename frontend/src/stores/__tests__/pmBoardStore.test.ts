@@ -78,7 +78,7 @@ describe('usePMBoardStore.moveMemberTask', () => {
             {
               id: 'task-1',
               name: 'Task 1',
-              owner_member_id: 'member-1',
+              owner_member_ids: ['member-1'],
               workflow_state_id: 'state-todo',
               position: 0,
               updated_at: '2026-03-22T00:00:00Z',
@@ -86,7 +86,7 @@ describe('usePMBoardStore.moveMemberTask', () => {
             {
               id: 'task-2',
               name: 'Task 2',
-              owner_member_id: 'member-1',
+              owner_member_ids: ['member-1'],
               workflow_state_id: 'state-todo',
               position: 1,
               updated_at: '2026-03-22T00:00:01Z',
@@ -132,7 +132,7 @@ describe('usePMBoardStore.moveMemberTask', () => {
 
   it('persists cross-member moves as reassignment only', async () => {
     mockedTaskService.update.mockResolvedValue({
-      data: { task: { id: 'task-1', owner_member_id: 'member-2' } },
+      data: { task: { id: 'task-1', owner_member_ids: ['member-2'] } },
       error: null,
       status: 200,
     } as never)
@@ -146,11 +146,55 @@ describe('usePMBoardStore.moveMemberTask', () => {
     })
 
     expect(mockedTaskService.update).toHaveBeenCalledWith('ws-1', 'task-1', {
-      owner_member_id: 'member-2',
+      owner_member_ids: ['member-2'],
     })
     expect(mockedTaskService.reorder).not.toHaveBeenCalled()
     expect(usePMBoardStore.getState().memberColumns[0]?.tasks.map((task) => task.id)).toEqual(['task-2'])
     expect(usePMBoardStore.getState().memberColumns[1]?.tasks.map((task) => task.id)).toEqual(['task-1'])
+    expect(usePMBoardStore.getState().memberColumns[1]?.tasks[0]?.owner_member_ids).toEqual(['member-2'])
+  })
+})
+
+describe('usePMBoardStore.patchTask owner filters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    usePMBoardStore.setState({
+      workflow: null,
+      teamId: null,
+      filters: { owner_member_ids: 'member-2,member-3' },
+      columns: [
+        makeStateColumn({
+          state: { id: 'state-todo' },
+          tasks: [
+            makeStory({
+              id: 'task-1',
+              owner_member_ids: ['member-1'],
+              workflow_state_id: 'state-todo',
+            }),
+          ],
+          task_count: 1,
+        }),
+      ] as never,
+    })
+  })
+
+  afterEach(() => {
+    usePMBoardStore.setState({
+      filters: {},
+      columns: [],
+      teamId: null,
+    })
+  })
+
+  it('keeps tasks whose owners overlap the selected owner ids', () => {
+    const reconciled = usePMBoardStore.getState().patchTask('updated', 'task-1', makeStory({
+      id: 'task-1',
+      owner_member_ids: ['member-1', 'member-3'],
+      workflow_state_id: 'state-todo',
+    }) as never)
+
+    expect(reconciled).toBe(true)
+    expect(usePMBoardStore.getState().columns[0]?.tasks.map((task) => task.id)).toEqual(['task-1'])
   })
 })
 

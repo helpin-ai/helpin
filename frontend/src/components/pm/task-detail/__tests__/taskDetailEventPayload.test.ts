@@ -26,12 +26,6 @@ describe('buildPatchedTaskFromDetail', () => {
       },
       owners: [],
       followers: [],
-      owner_member: {
-        id: 'member-1',
-        email: 'owner@example.com',
-        display_name: 'Owner Person',
-        assigned_team_ids: [],
-      },
       requester_member: undefined,
       labels: [{ id: 'label-1', workspace_id: 'ws-1', name: 'Bug', color: '#f00', created_at: '', updated_at: '' }],
       epic_name: 'Q2 Reliability',
@@ -50,7 +44,6 @@ describe('buildPatchedTaskFromDetail', () => {
 
     expect(buildPatchedTaskFromDetail(detail)).toMatchObject({
       id: 'task-1',
-      owner_name: 'Owner Person',
       epic_name: 'Q2 Reliability',
       sprint_name: 'Sprint 18',
       labels: [{ id: 'label-1', name: 'Bug' }],

@@ -219,7 +219,7 @@ func (s *PMAttachmentService) List(ctx context.Context, entityType, entityID str
 }
 
 // Delete deletes an attachment (S3 object + DB record).
-func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string) error {
+func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string, pendingOnly ...bool) error {
 	attachment, err := s.attachmentRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -229,6 +229,24 @@ func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string) err
 	}
 	if attachment.UploadedByID != userID {
 		return fmt.Errorf("only the uploader can delete this attachment")
+	}
+
+	onlyPending := len(pendingOnly) > 0 && pendingOnly[0]
+	if onlyPending {
+		deleted, err := s.attachmentRepo.DeleteEditorUpload(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !deleted {
+			return nil
+		}
+		if s.s3Client != nil && attachment.StorageKey != "" && attachment.IsUploaded {
+			_ = s.s3Client.DeleteObject(ctx, attachment.StorageKey)
+		}
+		if s.wsPublisher != nil {
+			s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ActorID: userID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
+		}
+		return nil
 	}
 
 	// Delete from S3 if uploaded

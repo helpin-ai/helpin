@@ -13,6 +13,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(slug)
   const [saving, setSaving] = useState(false)
+  const [showHelperText, setShowHelperText] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const canEdit = !!onSlugChange && !readOnly
@@ -33,6 +34,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
     setSaving(true)
     try {
       await onSlugChange!(cleaned)
+      setShowHelperText(!!helperText)
       setEditing(false)
     } catch {
       // error handled by caller
@@ -90,7 +92,7 @@ export function SlugDisplay({ slug, onSlugChange, readOnly, helperText }: SlugDi
         <Link01Icon className="h-3.5 w-3.5" />
         /{slug}
       </button>
-      {helperText ? (
+      {helperText && showHelperText ? (
         <span className="text-[11px] text-muted-foreground/70">{helperText}</span>
       ) : null}
     </div>

@@ -1,10 +1,14 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { ToggleSectionNodeView } from './ToggleSectionNodeView'
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 export interface ToggleSectionAttrs {
   title?: string | null
   open?: boolean
+  icon?: string | null
+  badgeText?: string | null
+  sourceStyle?: string | null
 }
 
 declare module '@tiptap/core' {
@@ -33,6 +37,21 @@ export const ToggleSectionExtension = Node.create({
         parseHTML: (el) => (el as HTMLElement).hasAttribute('open'),
         renderHTML: (attrs) => (attrs.open ? { open: '' } : {}),
       },
+      icon: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute('data-toggle-icon'),
+        renderHTML: (attrs) => (attrs.icon ? { 'data-toggle-icon': attrs.icon } : {}),
+      },
+      badgeText: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute('data-toggle-badge'),
+        renderHTML: (attrs) => (attrs.badgeText ? { 'data-toggle-badge': attrs.badgeText } : {}),
+      },
+      sourceStyle: {
+        default: null,
+        parseHTML: (el) => (el as HTMLElement).getAttribute('data-toggle-style'),
+        renderHTML: (attrs) => (attrs.sourceStyle ? { 'data-toggle-style': attrs.sourceStyle } : {}),
+      },
     }
   },
 
@@ -42,16 +61,26 @@ export const ToggleSectionExtension = Node.create({
 
   renderHTML({ HTMLAttributes }) {
     const title = HTMLAttributes.title || HTMLAttributes['data-toggle-title'] || 'Details'
+    const icon = HTMLAttributes.icon || HTMLAttributes['data-toggle-icon']
+    const badgeText = HTMLAttributes.badgeText || HTMLAttributes['data-toggle-badge']
+    const summary = icon || badgeText || HTMLAttributes.sourceStyle
+      ? [
+          'summary',
+          ...(icon ? [['span', { class: 'docs-toggle-icon' }, icon]] : []),
+          ['span', { class: 'docs-toggle-title' }, title],
+          ...(badgeText ? [['span', { class: 'docs-toggle-badge' }, badgeText]] : []),
+        ]
+      : ['summary', title]
     return [
       'details',
       mergeAttributes(HTMLAttributes, { 'data-toggle-section': '' }),
-      ['summary', title],
+      summary,
       ['div', { 'data-toggle-content': '' }, 0],
     ]
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ToggleSectionNodeView)
+    return ReactNodeViewRenderer(ToggleSectionNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) })
   },
 
   addCommands() {

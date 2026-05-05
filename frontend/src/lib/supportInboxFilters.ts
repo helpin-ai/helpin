@@ -99,6 +99,17 @@ export function stringArraysEqual(a: string[], b: string[]): boolean {
   return a.every((value, index) => value === b[index]);
 }
 
+export function conversationListFiltersEqual(a: ConversationListFilters, b: ConversationListFilters): boolean {
+  return (
+    statesEqual(a.states, b.states) &&
+    stringArraysEqual(a.assignment, b.assignment) &&
+    stringArraysEqual(a.mailboxIds, b.mailboxIds) &&
+    stringArraysEqual(a.tagIds, b.tagIds) &&
+    stringArraysEqual(a.aiStates, b.aiStates) &&
+    a.sort === b.sort
+  );
+}
+
 function normalizeAssignmentFilters(value: unknown): ConversationAssignmentFilter[] {
   const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
   const normalized: ConversationAssignmentFilter[] = [];
@@ -175,6 +186,93 @@ export function hasConversationListChanges({
     !stringArraysEqual(normalized.aiStates, defaultAIStatesForNav(navFilter)) ||
     normalized.sort !== 'newest'
   );
+}
+
+export function filterChangeCountFromBaseline({
+  searchQuery,
+  listFilters,
+  baselineSearchQuery,
+  baselineFilters,
+}: {
+  searchQuery: string;
+  listFilters: ConversationListFilters;
+  baselineSearchQuery: string;
+  baselineFilters: ConversationListFilters;
+}): number {
+  let count = 0;
+  if (searchQuery.trim() !== baselineSearchQuery.trim()) count += 1;
+  if (!statesEqual(listFilters.states, baselineFilters.states)) count += 1;
+  if (!stringArraysEqual(listFilters.assignment, baselineFilters.assignment)) count += 1;
+  if (!stringArraysEqual(listFilters.mailboxIds, baselineFilters.mailboxIds)) count += 1;
+  if (!stringArraysEqual(listFilters.tagIds, baselineFilters.tagIds)) count += 1;
+  if (!stringArraysEqual(listFilters.aiStates, baselineFilters.aiStates)) count += 1;
+  if (listFilters.sort !== baselineFilters.sort) count += 1;
+  return count;
+}
+
+function parseNavFilterValue(value: unknown): NavFilter {
+  return value === 'mine' ||
+    value === 'waiting' ||
+    value === 'resolved' ||
+    value === 'spam' ||
+    value === 'ai_active' ||
+    value === 'resolved_by_ai'
+    ? value
+    : 'inbox';
+}
+
+function parseViewStringList(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return value.split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function parseViewAssignmentFilters(value: unknown, navFilter: NavFilter): ConversationAssignmentFilter[] {
+  if (typeof value !== 'string') return defaultAssignmentForNav(navFilter);
+  return normalizeAssignmentFilters(value);
+}
+
+function parseViewStates(value: unknown, navFilter: NavFilter): ConversationStateFilter[] {
+  if (typeof value !== 'string') return defaultStatesForNav(navFilter);
+  const states = parseViewStringList(value).filter((state): state is ConversationStateFilter =>
+    state === 'open' ||
+    state === 'waiting_on_customer' ||
+    state === 'resolved' ||
+    state === 'spam'
+  );
+  return states.length > 0 ? states : defaultStatesForNav(navFilter);
+}
+
+function parseViewSortOrder(value: unknown): ConversationSortOrder {
+  return value === 'oldest' ? 'oldest' : 'newest';
+}
+
+export function parseSupportInboxViewFilters(
+  filters: Record<string, string> | undefined,
+  fallbackNavFilter: NavFilter,
+): {
+  navFilter: NavFilter;
+  selectedMailboxId: string;
+  searchQuery: string;
+  listFilters: ConversationListFilters;
+} {
+  const rawFilters = filters ?? {};
+  const navFilter = rawFilters.nav_filter ? parseNavFilterValue(rawFilters.nav_filter) : fallbackNavFilter;
+  return {
+    navFilter,
+    selectedMailboxId: rawFilters.mailbox_id || 'all',
+    searchQuery: rawFilters.search || '',
+    listFilters: {
+      states: parseViewStates(rawFilters.states, navFilter),
+      assignment: parseViewAssignmentFilters(rawFilters.assignment, navFilter),
+      mailboxIds: parseViewStringList(rawFilters.mailbox_ids),
+      tagIds: parseViewStringList(rawFilters.tag_ids),
+      aiStates: normalizeAIStateFilters([
+        ...parseViewStringList(rawFilters.ai),
+        ...parseViewStringList(rawFilters.system_tags),
+      ]),
+      sort: parseViewSortOrder(rawFilters.sort),
+    },
+  };
 }
 
 export function buildSupportInboxViewFilters({

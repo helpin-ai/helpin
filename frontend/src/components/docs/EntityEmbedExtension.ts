@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { EntityEmbedNodeView } from './EntityEmbedNodeView'
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 export type DocsEntityEmbedType = 'reference' | 'task' | 'story' | 'epic' | 'support_conversation' | 'deal' | 'contact' | 'company'
 
@@ -87,7 +88,7 @@ export const EntityEmbedExtension = Node.create<EntityEmbedOptions>({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(EntityEmbedNodeView)
+    return ReactNodeViewRenderer(EntityEmbedNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) })
   },
 
   addStorage() {

@@ -500,4 +500,44 @@ describe('useRealtimeSync task ordering events', () => {
     act(() => root.unmount())
     container.remove()
   })
+
+  it('invalidates custom support view counts for conversation and message updates', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(client, 'invalidateQueries')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'updated',
+        entity: 'support_conversation',
+        entity_id: 'conv-1',
+        workspace_id: 'ws-1',
+        actor_id: 'user-2',
+      })
+      captured.onEvent?.({
+        action: 'created',
+        entity: 'support_conversation_message',
+        entity_id: 'msg-1',
+        workspace_id: 'ws-1',
+        actor_id: 'widget:visitor',
+        parent_id: 'conv-1',
+      })
+      await Promise.resolve()
+    })
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxViewCounts('ws-1') })
+
+    act(() => root.unmount())
+    container.remove()
+  })
 })

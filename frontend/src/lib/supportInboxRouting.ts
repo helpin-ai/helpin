@@ -5,6 +5,7 @@ import type { ConversationListFilters } from '@/lib/supportInboxFilters';
 export type SupportInboxRouteSearch = {
   view?: string;
   inbox?: string;
+  team_inbox?: string;
   status?: string;
   q?: string;
   conversation?: string;
@@ -36,6 +37,8 @@ const FILTER_BY_VIEW: Record<string, NavFilter> = {
   my: 'mine',
   my_inbox: 'mine',
   unassigned: 'inbox',
+  team: 'inbox',
+  custom: 'inbox',
   mentions: 'mine',
   waiting: 'waiting',
   resolved: 'resolved',
@@ -52,6 +55,7 @@ export function normalizeSupportInboxRouteSearch(search: Record<string, unknown>
   return {
     view: typeof search.view === 'string' ? search.view : undefined,
     inbox: typeof search.inbox === 'string' ? search.inbox : undefined,
+    team_inbox: typeof search.team_inbox === 'string' ? search.team_inbox : undefined,
     status: typeof search.status === 'string' ? search.status : undefined,
     q: typeof search.q === 'string' ? search.q : undefined,
     conversation: typeof search.conversation === 'string' ? search.conversation : undefined,
@@ -82,6 +86,7 @@ export function buildSupportInboxSearch({
   searchQuery,
   activeCustomViewId,
   listFilters,
+  includeFilterParams = true,
 }: {
   navFilter: NavFilter;
   selectedMailboxId: string;
@@ -89,22 +94,26 @@ export function buildSupportInboxSearch({
   searchQuery: string;
   activeCustomViewId?: string | null;
   listFilters?: ConversationListFilters;
+  includeFilterParams?: boolean;
 }): SupportInboxRouteSearch {
   const search: SupportInboxRouteSearch = {};
-  if (navFilter !== 'inbox' || (selectedMailboxId && selectedMailboxId !== 'all')) {
+  if (activeCustomViewId) {
+    search.view = 'custom';
+    search.custom_view = activeCustomViewId;
+  } else if (navFilter === 'inbox' && selectedMailboxId && selectedMailboxId !== 'all') {
+    search.view = 'team';
+    search.team_inbox = selectedMailboxId;
+  } else if (navFilter !== 'inbox') {
     search.view = viewFromNavFilter(navFilter);
   }
-  if (selectedMailboxId && selectedMailboxId !== 'all') {
-    search.inbox = selectedMailboxId;
+  if (!includeFilterParams) {
+    return search;
   }
   if (statusFilter && statusFilter !== 'all') {
     search.status = statusFilter;
   }
   if (searchQuery.trim()) {
     search.q = searchQuery.trim();
-  }
-  if (activeCustomViewId) {
-    search.custom_view = activeCustomViewId;
   }
   if (listFilters?.assignment && !stringArraysEqual(listFilters.assignment, defaultAssignmentForNav(navFilter))) {
     if (listFilters.assignment.length > 0) search.assigned_to = listFilters.assignment.join(',');

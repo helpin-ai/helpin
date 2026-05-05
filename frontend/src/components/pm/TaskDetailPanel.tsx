@@ -87,7 +87,8 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
-import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -110,6 +111,7 @@ import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-detail/taskOverlayDismiss';
 import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
+import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
   isEpicSelectableForTaskTeam,
@@ -161,7 +163,7 @@ interface FormState {
   epic_id: string;
   sprint_id: string;
   team_id: string;
-  owner_member_id: string;
+  owner_member_ids: string[];
   requester_member_id: string;
   blocker: string;
 }
@@ -187,7 +189,7 @@ const buildFormState = (detail: TaskDetail): FormState => ({
   epic_id: detail.task.epic_id ?? '',
   sprint_id: detail.task.sprint_id ?? '',
   team_id: detail.task.team_id ?? '',
-  owner_member_id: detail.task.owner_member_id ?? '',
+  owner_member_ids: detail.task.owner_member_ids ?? [],
   requester_member_id: detail.task.requester_member_id ?? '',
   blocker: detail.task.blocker ?? '',
 });
@@ -232,6 +234,7 @@ type TimelineItem =
 const ACTIVITY_ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
   workflow_state_id: { icon: HashtagIcon, color: 'text-blue-500' },
   owner_member_id: { icon: UserIcon, color: 'text-violet-500' },
+  owner_member_ids: { icon: UserIcon, color: 'text-violet-500' },
   team_id: { icon: UserGroupIcon, color: 'text-teal-500' },
   priority: { icon: DashboardSpeed01Icon, color: 'text-orange-500' },
   sprint_id: { icon: HexagonIcon, color: 'text-green-500' },
@@ -474,6 +477,7 @@ function TaskDetailPanelBody({
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const pendingPatchRef = useRef<UpdateTaskRequest>({});
   const descriptionPendingUploadsRef = useRef(0);
+  const blockedAutosavePatchSignatureRef = useRef<string | null>(null);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
@@ -667,7 +671,13 @@ function TaskDetailPanelBody({
   }, [workspaceId]);
 
   const queuePatch = (patch: UpdateTaskRequest) => {
-    setPendingPatch((current) => ({ ...current, ...patch }));
+    setPendingPatch((current) => {
+      const next = { ...current, ...patch };
+      if (!isBlockedTaskPatch(next, blockedAutosavePatchSignatureRef.current)) {
+        blockedAutosavePatchSignatureRef.current = null;
+      }
+      return next;
+    });
   };
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateTaskRequest) => {
@@ -725,20 +735,24 @@ function TaskDetailPanelBody({
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
+    const flushablePatch = getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads);
     if (
       saving ||
-      !getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads)
+      !flushablePatch ||
+      isBlockedTaskPatch(flushablePatch, blockedAutosavePatchSignatureRef.current)
     ) return;
     const timer = window.setTimeout(async () => {
-      const patch = pendingPatch;
+      const patch = flushablePatch;
       const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       setSaving(true);
       const { data, error } = await pmTaskService.update(workspaceId, taskId, patch);
       if (error || !data) {
         setSaveError(error ?? 'Failed to save changes');
+        blockedAutosavePatchSignatureRef.current = getTaskPatchSignature(patch);
         setPendingPatch((current) => ({ ...patch, ...current }));
       } else {
+        blockedAutosavePatchSignatureRef.current = null;
         setSaveError(null);
         onTaskUpdated(data);
         void reloadActivity();
@@ -779,6 +793,9 @@ function TaskDetailPanelBody({
         descriptionPendingUploadsRef.current,
       );
       if (!patch) {
+        return;
+      }
+      if (isBlockedTaskPatch(patch, blockedAutosavePatchSignatureRef.current)) {
         return;
       }
 
@@ -910,9 +927,11 @@ function TaskDetailPanelBody({
   }, [form.team_id, teams]);
 
   const currentOwnerName = useMemo(() => {
-    if (!form.owner_member_id) return 'No owner';
-    return memberNameMap.get(form.owner_member_id) ?? 'No owner';
-  }, [form.owner_member_id, memberNameMap]);
+    if (form.owner_member_ids.length === 0) return 'No owner';
+    return form.owner_member_ids
+      .map((ownerId) => memberNameMap.get(ownerId) ?? 'Unknown')
+      .join(', ');
+  }, [form.owner_member_ids, memberNameMap]);
 
   const currentRequesterName = useMemo(() => {
     if (!form.requester_member_id) return 'No requester';
@@ -1449,32 +1468,29 @@ function TaskDetailPanelBody({
             <div className="col-span-3 h-px bg-border/40 my-1" />
 
             {/* Owner */}
-            <MetadataRow icon={UserIcon} label="Owner">
-              <MemberPickerPopover
-                value={form.owner_member_id || '__none__'}
+            <MetadataRow icon={UserIcon} label="Owners">
+              <MultiMemberPickerPopover
+                values={form.owner_member_ids}
                 members={assignableMembers}
-                noneLabel="No owner"
-                onChange={(v) => {
-                  const val = v === '__none__' ? '' : v;
-                  updateField('owner_member_id', val, { owner_member_id: val });
+                onChange={(nextOwnerIds) => {
+                  updateField('owner_member_ids', nextOwnerIds, { owner_member_ids: nextOwnerIds });
                 }}
                 renderTrigger={() => {
-                  const selectedMember = findAssignableMember(assignableMembers, form.owner_member_id);
                   return (
                     <>
-                      {selectedMember ? (
-                        <UserAvatar
-                          name={selectedMember.display_name || selectedMember.email}
-                          avatarUrl={selectedMember.avatar_url}
-                          avatarStyle={selectedMember.avatar_style}
-                          avatarSeed={selectedMember.avatar_seed}
-                          avatarBackgroundMode={selectedMember.avatar_background_mode}
-                          avatarBackgroundColor={selectedMember.avatar_background_color}
-                          className="h-4 w-4"
-                          fallbackClassName="text-[7px]"
+                      {form.owner_member_ids.length > 0 ? (
+                        <OwnerAvatarStack
+                          memberIds={form.owner_member_ids}
+                          nameMap={memberNameMap}
+                          members={assignableMembers}
+                          size="sm"
+                          max={3}
+                          singleAvatarClassName="h-4 w-4"
+                          singleFallbackClassName="text-[7px]"
                         />
-                      ) : null}
-                      <span>{currentOwnerName}</span>
+                      ) : (
+                        <span>{currentOwnerName}</span>
+                      )}
                     </>
                   );
                 }}

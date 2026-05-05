@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { VideoEmbedNodeView } from './VideoEmbedNodeView';
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -106,7 +107,7 @@ export const VideoEmbedExtension = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(VideoEmbedNodeView);
+    return ReactNodeViewRenderer(VideoEmbedNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) });
   },
 
   // Markdown serialization — serialize as HTML div so it round-trips via parseHTML.

@@ -5,11 +5,11 @@ import "encoding/json"
 
 // Node represents a Tiptap/ProseMirror JSON node.
 type Node struct {
-	Type    string            `json:"type"`
-	Attrs   map[string]any    `json:"attrs,omitempty"`
-	Content []Node            `json:"content,omitempty"`
-	Marks   []Mark            `json:"marks,omitempty"`
-	Text    string            `json:"text,omitempty"`
+	Type    string         `json:"type"`
+	Attrs   map[string]any `json:"attrs,omitempty"`
+	Content []Node         `json:"content,omitempty"`
+	Marks   []Mark         `json:"marks,omitempty"`
+	Text    string         `json:"text,omitempty"`
 }
 
 // Mark represents a text mark (bold, italic, link, etc).
@@ -31,6 +31,15 @@ func Paragraph(content ...Node) Node {
 // Heading creates a heading node with the given level.
 func Heading(level int, content ...Node) Node {
 	return Node{Type: "heading", Attrs: map[string]any{"level": level}, Content: content}
+}
+
+// HeadingWithAttrs creates a heading node with additional attributes.
+func HeadingWithAttrs(level int, attrs map[string]any, content ...Node) Node {
+	if attrs == nil {
+		attrs = map[string]any{}
+	}
+	attrs["level"] = level
+	return Node{Type: "heading", Attrs: attrs, Content: content}
 }
 
 // Text creates a text node with optional marks.
@@ -150,11 +159,52 @@ func VideoEmbed(provider, sourceUrl, embedUrl string) Node {
 	}
 }
 
-// HTMLBlock creates an htmlBlock node with sanitized HTML content.
+// ToggleSection creates a collapsible details section.
+func ToggleSection(title string, open bool, content ...Node) Node {
+	attrs := map[string]any{"title": title}
+	if open {
+		attrs["open"] = true
+	}
+	return Node{
+		Type:    "toggleSection",
+		Attrs:   attrs,
+		Content: content,
+	}
+}
+
+// ToggleSectionWithAttrs creates a collapsible details section with source
+// metadata used to preserve imported summary styling.
+func ToggleSectionWithAttrs(attrs map[string]any, content ...Node) Node {
+	if attrs == nil {
+		attrs = map[string]any{"title": "Details"}
+	}
+	if _, ok := attrs["title"]; !ok {
+		attrs["title"] = "Details"
+	}
+	return Node{
+		Type:    "toggleSection",
+		Attrs:   attrs,
+		Content: content,
+	}
+}
+
+// HTMLBlock creates an htmlBlock node with HTML content.
 func HTMLBlock(html string) Node {
 	return Node{
 		Type:  "htmlBlock",
 		Attrs: map[string]any{"html": html},
+	}
+}
+
+// SandboxedHTMLBlock creates an htmlBlock node that must render in an isolated
+// iframe because it contains interactive raw HTML.
+func SandboxedHTMLBlock(html string) Node {
+	return Node{
+		Type: "htmlBlock",
+		Attrs: map[string]any{
+			"html":       html,
+			"renderMode": "sandboxed",
+		},
 	}
 }
 

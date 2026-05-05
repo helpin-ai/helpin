@@ -47,7 +47,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
-import { getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
+import { getMemberMentionHandle, getMentionSuggestions, type MentionSuggestionItem } from '@/components/pm/mentionSuggestions';
 import { useCannedResponses, useConversation, useCreateCannedResponse, useDeleteCannedResponse, useRewriteSupportDraft, useSendMessage, useUpdateCannedResponse, useUploadSupportAttachment } from '@/hooks/queries/useSupport';
 import { queryKeys } from '@/lib/queryKeys';
 import { workspacesService } from '@/lib/services/workspacesService';
@@ -1075,7 +1075,16 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     Placeholder.configure({
       placeholder: () => isNoteRef.current ? 'Add an internal note... (@ to mention)' : 'Write a reply... (@ to mention)',
     }),
-    MentionHighlight,
+    MentionHighlight.configure({
+      validHandles: () => {
+        const handles = new Set<string>();
+        for (const m of membersRef.current) {
+          const handle = getMemberMentionHandle(m);
+          if (handle) handles.add(handle.toLowerCase());
+        }
+        return handles;
+      },
+    }),
   ], []);
 
   const editor = useEditor({

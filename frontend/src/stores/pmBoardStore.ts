@@ -135,6 +135,12 @@ const taskMatchesFilters = (task: Task, teamId: string | null, filters: BoardFil
     if (!value) return true;
     return value.split(',').includes(actual ?? '');
   };
+  const overlapsCsv = (actual: string[] | undefined, value: string | undefined) => {
+    if (!value) return true;
+    const selected = new Set(value.split(',').filter(Boolean));
+    if (selected.size === 0) return true;
+    return (actual ?? []).some((id) => selected.has(id));
+  };
 
   if (teamId && task.team_id !== teamId) return false;
   if (!matchesCsv(task.priority, filters.priority)) return false;
@@ -142,7 +148,7 @@ const taskMatchesFilters = (task: Task, teamId: string | null, filters: BoardFil
   if (!matchesCsv(task.task_type, filters.task_type)) return false;
   if (!matchesCsv(task.epic_id, filters.epic_id)) return false;
   if (!matchesCsv(task.sprint_id, filters.sprint_id)) return false;
-  if (!matchesCsv(task.owner_member_id, filters.owner_member_id)) return false;
+  if (!overlapsCsv(task.owner_member_ids, filters.owner_member_ids)) return false;
   if (!matchesCsv(task.requester_member_id, filters.requester_member_id)) return false;
   if (filters.blocked && String(task.blocked) !== filters.blocked) return false;
   if (filters.blocking && String(task.is_blocking_other_task ?? false) !== filters.blocking) return false;
@@ -217,14 +223,9 @@ const mergeTaskGroups = (existing: TaskGroup[] | undefined, incoming: TaskGroup[
   return merged;
 };
 
-/** Preserve board-enriched display fields (owner_name, epic_name) from existing task when IDs match. */
+/** Preserve board-enriched display fields from existing task when IDs match. */
 const mergeEnrichedFields = (incoming: Task, existing: Task): Task => ({
   ...incoming,
-  owner_name: incoming.owner_name ?? (
-    incoming.owner_member_id === existing.owner_member_id
-      ? existing.owner_name
-      : undefined
-  ),
   epic_name: incoming.epic_name ?? (incoming.epic_id === existing.epic_id ? existing.epic_name : undefined),
 });
 
@@ -976,7 +977,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         return { memberColumns: cols };
       }
 
-      moving.owner_member_id = toMemberId ?? undefined;
+      moving.owner_member_ids = toMemberId ? [toMemberId] : [];
       fromCol.task_count = Math.max(0, fromCol.task_count - 1);
       fromCol.point_total = Math.max(0, fromCol.point_total - (moving.estimate ?? 0));
       fromCol.has_more = fromCol.tasks.length < fromCol.task_count;
@@ -992,7 +993,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     // Reassign owner only. Member-board ordering is derived from workflow state and task position,
     // not a separate per-member manual ranking.
     const updateRes = await pmTaskService.update(workspaceId, taskId, {
-      owner_member_id: toMemberId ?? '',
+      owner_member_ids: toMemberId ? [toMemberId] : [],
     });
     if (updateRes.error && !contextChanged()) {
       set({ memberColumns: snapshot, error: updateRes.error ?? 'Failed to reassign task' });
