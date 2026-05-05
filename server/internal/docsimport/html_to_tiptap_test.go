@@ -479,6 +479,32 @@ func TestConvert_HelpScoutDataHTMLBlockPreservesUnknownStyledHTML(t *testing.T) 
 	}
 }
 
+func TestConvert_HelpScoutStyledDivPreservesCustomStepHTML(t *testing.T) {
+	r := convert(t, `<div style="border:1px solid #e5e7eb; border-radius:12px; padding:16px; margin-bottom:14px; display:flex; gap:12px;">
+  <span style="background:#0d6efd; color:#fff; width:28px; height:28px; display:flex; justify-content:center; align-items:center; border-radius:50%; font-weight:bold;">1</span>
+  <div>
+    <strong>Go to WordPress Admin → Plugins → Add New</strong><br/>
+    Log into your WordPress dashboard and click <strong>Add New</strong> under Plugins.
+  </div>
+</div>`)
+	j := toJSON(t, r)
+	for _, want := range []string{
+		`"type":"htmlBlock"`,
+		`border: 1px solid #e5e7eb`,
+		`display: flex`,
+		`Go to WordPress Admin`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected styled custom step HTML to be preserved %q, got: %s", want, j)
+		}
+	}
+	for _, notWant := range []string{`"type":"paragraph"`, `"text":"1"`} {
+		if strings.Contains(j, notWant) {
+			t.Fatalf("expected styled custom step HTML not to split badge into native paragraphs %q, got: %s", notWant, j)
+		}
+	}
+}
+
 func TestConvert_HelpScoutDataHTMLBlockWithInteractiveHTMLUsesSandbox(t *testing.T) {
 	r := convert(t, `<div data-html-block=""><div><table><tbody id="models-body"></tbody></table><script>document.getElementById("models-body").innerHTML = "<tr><td>Kling</td></tr>";</script></div></div>`)
 	j := toJSON(t, r)

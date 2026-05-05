@@ -150,6 +150,22 @@ func (c *converter) convertElement(n *html.Node) []Node {
 		c.warn(warnCalloutGuess(getAttr(n, "class"), variant))
 		return []Node{Callout(variant, content...)}
 	}
+	if isStyledCustomHTMLContainer(n) {
+		raw := renderNode(n)
+		if requiresSandboxedHTMLBlock(n) {
+			if strings.TrimSpace(raw) != "" {
+				c.warn(warnHTMLBlockFallback())
+				return []Node{SandboxedHTMLBlock(raw)}
+			}
+			return nil
+		}
+		sanitized := tiptap.SanitizeHTMLBlock(raw)
+		if strings.TrimSpace(sanitized) != "" {
+			c.warn(warnHTMLBlockFallback())
+			return []Node{HTMLBlock(sanitized)}
+		}
+		return nil
+	}
 
 	switch n.DataAtom {
 	// Block elements
@@ -930,6 +946,30 @@ func requiresSandboxedHTMLBlock(n *html.Node) bool {
 	}
 	for child := n.FirstChild; child != nil; child = child.NextSibling {
 		if requiresSandboxedHTMLBlock(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func isStyledCustomHTMLContainer(n *html.Node) bool {
+	if n == nil || n.Type != html.ElementNode {
+		return false
+	}
+	switch n.DataAtom {
+	case atom.Div, atom.Section, atom.Article, atom.Aside, atom.Header, atom.Footer, atom.Nav, atom.Main:
+	default:
+		return false
+	}
+	style := strings.ToLower(getAttr(n, "style"))
+	if strings.TrimSpace(style) == "" {
+		return false
+	}
+	for _, token := range []string{
+		"border", "border-radius", "background", "padding", "display:flex", "display: flex", "gap:",
+		"box-shadow", "align-items", "justify-content",
+	} {
+		if strings.Contains(style, token) {
 			return true
 		}
 	}
