@@ -669,7 +669,8 @@ function TaskCardComponent({
                 void handleAssignOwner(nextOwnerIds);
               }}
               align="end"
-              triggerClassName="shrink-0 rounded-full transition-opacity hover:opacity-80"
+              triggerClassName="group shrink-0 overflow-visible rounded-full px-0 py-0 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-primary/40"
+              triggerLabel={ownerMemberIds.length > 0 ? undefined : 'Assign owner'}
               contentClassName="w-[220px]"
               renderTrigger={() => {
                 return ownerMemberIds.length > 0 ? (
@@ -682,7 +683,7 @@ function TaskCardComponent({
                     showSingleName={false}
                   />
                 ) : (
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-border bg-muted/40 text-muted-foreground transition-colors group-hover:border-solid group-hover:bg-accent group-hover:text-foreground">
                     <UserAdd01Icon className="h-3.5 w-3.5" />
                   </span>
                 );

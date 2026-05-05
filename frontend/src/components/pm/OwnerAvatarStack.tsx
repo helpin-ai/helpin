@@ -1,4 +1,5 @@
 import { UserAvatar } from './UserAvatar'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { AssignableMember } from '@/lib/types'
 
@@ -12,10 +13,37 @@ interface OwnerAvatarStackProps {
   singleAvatarClassName?: string
   singleFallbackClassName?: string
   showSingleName?: boolean
+  showHoverList?: boolean
 }
 
 function memberName(member: AssignableMember | undefined, fallback: string) {
   return member?.display_name || member?.email || fallback
+}
+
+function ownerTooltipContent(ids: string[], memberById: Map<string, AssignableMember>, nameMap?: Map<string, string>) {
+  return (
+    <div data-owner-hover-list className="flex flex-col gap-1">
+      {ids.map((id) => {
+        const member = memberById.get(id)
+        const name = memberName(member, nameMap?.get(id) ?? 'Unknown owner')
+        return (
+          <div key={id} className="flex min-w-0 items-center gap-2">
+            <UserAvatar
+              name={name}
+              avatarUrl={member?.avatar_url}
+              avatarStyle={member?.avatar_style}
+              avatarSeed={member?.avatar_seed}
+              avatarBackgroundMode={member?.avatar_background_mode}
+              avatarBackgroundColor={member?.avatar_background_color}
+              className="h-5 w-5"
+              fallbackClassName="text-[8px]"
+            />
+            <span className="truncate text-xs">{name}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 export function OwnerAvatarStack({
@@ -28,6 +56,7 @@ export function OwnerAvatarStack({
   singleAvatarClassName,
   singleFallbackClassName,
   showSingleName = true,
+  showHoverList = true,
 }: OwnerAvatarStackProps) {
   const ids = memberIds.filter(Boolean)
   const memberById = new Map((members ?? []).map((member) => [member.id, member]))
@@ -46,7 +75,6 @@ export function OwnerAvatarStack({
     return (
       <div
         data-owner-avatar-stack
-        title={singleName}
         className={cn('inline-flex min-w-0 items-center gap-1.5', className)}
         aria-label={singleName}
       >
@@ -69,15 +97,14 @@ export function OwnerAvatarStack({
     )
   }
 
-  return (
+  const stack = (
     <div
       data-owner-avatar-stack
-      title={names.join(', ')}
-      className={cn('group/owners relative inline-flex items-center pl-2', className)}
+      className={cn('inline-flex items-center', className)}
       aria-label={names.join(', ')}
     >
       {visibleIds.map((id, index) => (
-        <span key={id} data-owner-avatar className={cn('inline-flex', index > 0 && '-ml-2')}>
+        <span key={id} data-owner-avatar className={cn('inline-flex', index > 0 && '-ml-1.5')}>
           <UserAvatar
             name={memberName(memberById.get(id), nameMap?.get(id) ?? 'Unknown owner')}
             avatarUrl={memberById.get(id)?.avatar_url}
@@ -85,7 +112,7 @@ export function OwnerAvatarStack({
             avatarSeed={memberById.get(id)?.avatar_seed}
             avatarBackgroundMode={memberById.get(id)?.avatar_background_mode}
             avatarBackgroundColor={memberById.get(id)?.avatar_background_color}
-            className={avatarSize}
+            className={cn(avatarSize, 'border-border/30')}
           />
         </span>
       ))}
@@ -93,38 +120,26 @@ export function OwnerAvatarStack({
         <span
           data-owner-overflow
           className={cn(
-            '-ml-2 inline-flex items-center justify-center rounded-full border border-background bg-background text-[10px] font-semibold text-foreground shadow-sm ring-2 ring-background',
+            '-ml-1.5 inline-flex items-center justify-center rounded-full border border-border/30 bg-muted text-[10px] font-semibold text-muted-foreground shadow-sm ring-1 ring-background/80',
             avatarSize,
           )}
         >
           +{overflow}
         </span>
       ) : null}
-      <div
-        data-owner-hover-list
-        className="pointer-events-none absolute right-0 top-full z-50 mt-1 hidden min-w-44 rounded-md border border-border bg-popover p-1.5 text-popover-foreground shadow-md group-hover/owners:block group-focus-within/owners:block"
-      >
-        <div className="flex flex-col gap-1">
-          {ids.map((id) => {
-            const member = memberById.get(id)
-            const name = memberName(member, nameMap?.get(id) ?? 'Unknown owner')
-            return (
-              <div key={id} className="flex min-w-0 items-center gap-2">
-                <UserAvatar
-                  name={name}
-                  avatarUrl={member?.avatar_url}
-                  avatarStyle={member?.avatar_style}
-                  avatarSeed={member?.avatar_seed}
-                  avatarBackgroundMode={member?.avatar_background_mode}
-                  avatarBackgroundColor={member?.avatar_background_color}
-                  className="h-5 w-5"
-                />
-                <span className="truncate text-xs">{name}</span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
     </div>
+  )
+
+  if (!showHoverList) {
+    return stack
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{stack}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-56 items-stretch">
+        {ownerTooltipContent(ids, memberById, nameMap)}
+      </TooltipContent>
+    </Tooltip>
   )
 }
