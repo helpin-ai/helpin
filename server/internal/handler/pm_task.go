@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -321,10 +322,18 @@ func (h *PMTaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err := h.taskService.Update(r.Context(), id, req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, pmTaskUpdateErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
+}
+
+func pmTaskUpdateErrorStatus(err error) int {
+	var forbidden *model.ErrForbidden
+	if errors.As(err, &forbidden) {
+		return http.StatusForbidden
+	}
+	return http.StatusBadRequest
 }
 
 // Delete handles DELETE /api/pm/tasks/{id}.

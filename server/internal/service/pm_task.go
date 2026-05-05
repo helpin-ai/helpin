@@ -785,12 +785,14 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		stateChanged = true
 	}
 
-	ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, stateID, workflowID)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
+	if req.WorkflowID != nil || req.WorkflowStateID != nil {
+		ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, stateID, workflowID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
+		}
 	}
 	current.WorkflowID = workflowID
 	current.WorkflowStateID = stateID
