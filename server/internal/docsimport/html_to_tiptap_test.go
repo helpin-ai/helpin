@@ -454,25 +454,28 @@ func TestConvert_HelpScoutFacebookBackgroundGridBecomesHtmlGrid(t *testing.T) {
 }
 
 func TestConvert_HelpScoutDataHTMLBlockPreservesUnknownStyledHTML(t *testing.T) {
-	r := convert(t, `<div data-html-block=""><div style="border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom:16px;">
+	r := convert(t, `<div data-html-block=""><div style="border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom:16px;" onclick="alert(1)">
   <p>
     <span style="background: #007BFF;color:#fff;width:24px;height:24px;line-height:24px;text-align:center;display: inline-block;border-radius:50%;font-weight:bold;">2</span>
     Click on <strong>Generate API Key</strong> and copy your unique API key.
-  </p>
+  </p><script>window.helpScoutCustomHTML = true;</script>
 </div></div>`)
 	j := toJSON(t, r)
 	for _, want := range []string{
 		`"type":"htmlBlock"`,
+		`"renderMode":"sandboxed"`,
 		`border: 1px solid #e5e7eb`,
 		`border-radius: 10px`,
 		`background: #007BFF`,
 		`Generate API Key`,
+		`onclick`,
+		`script`,
 	} {
 		if !strings.Contains(j, want) {
 			t.Fatalf("expected Help Scout data-html-block to preserve styled HTML %q, got: %s", want, j)
 		}
 	}
-	for _, notWant := range []string{`"type":"paragraph"`, `onclick`, `<script`} {
+	for _, notWant := range []string{`"type":"paragraph"`} {
 		if strings.Contains(j, notWant) {
 			t.Fatalf("expected preserved data-html-block to avoid %q, got: %s", notWant, j)
 		}
@@ -490,8 +493,9 @@ func TestConvert_HelpScoutStyledDivPreservesCustomStepHTML(t *testing.T) {
 	j := toJSON(t, r)
 	for _, want := range []string{
 		`"type":"htmlBlock"`,
-		`border: 1px solid #e5e7eb`,
-		`display: flex`,
+		`"renderMode":"sandboxed"`,
+		`border:1px solid #e5e7eb`,
+		`display:flex`,
 		`Go to WordPress Admin`,
 	} {
 		if !strings.Contains(j, want) {

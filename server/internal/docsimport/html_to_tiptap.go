@@ -130,15 +130,8 @@ func (c *converter) convertElement(n *html.Node) []Node {
 			return c.convertChildren(n)
 		}
 		raw := renderChildren(n)
-		if requiresSandboxedHTMLBlock(n) {
-			if strings.TrimSpace(raw) != "" {
-				return []Node{SandboxedHTMLBlock(raw)}
-			}
-			return nil
-		}
-		sanitized := tiptap.SanitizeHTMLBlock(raw)
-		if strings.TrimSpace(sanitized) != "" {
-			return []Node{HTMLBlock(sanitized)}
+		if strings.TrimSpace(raw) != "" {
+			return []Node{SandboxedHTMLBlock(raw)}
 		}
 		return nil
 	}
@@ -152,17 +145,9 @@ func (c *converter) convertElement(n *html.Node) []Node {
 	}
 	if isStyledCustomHTMLContainer(n) {
 		raw := renderNode(n)
-		if requiresSandboxedHTMLBlock(n) {
-			if strings.TrimSpace(raw) != "" {
-				c.warn(warnHTMLBlockFallback())
-				return []Node{SandboxedHTMLBlock(raw)}
-			}
-			return nil
-		}
-		sanitized := tiptap.SanitizeHTMLBlock(raw)
-		if strings.TrimSpace(sanitized) != "" {
+		if strings.TrimSpace(raw) != "" {
 			c.warn(warnHTMLBlockFallback())
-			return []Node{HTMLBlock(sanitized)}
+			return []Node{SandboxedHTMLBlock(raw)}
 		}
 		return nil
 	}
