@@ -42,13 +42,7 @@ export const HtmlBlockExtension = Node.create({
       return [
         'div',
         mergeAttributes({ 'data-html-block': '', 'data-render-mode': 'sandboxed' }),
-        ['iframe', {
-          class: 'docs-html-block-frame',
-          sandbox: 'allow-scripts allow-forms allow-popups allow-presentation',
-          referrerpolicy: 'no-referrer',
-          loading: 'lazy',
-          srcdoc: HTMLAttributes.html || '',
-        }],
+        HTMLAttributes.html || '',
       ];
     }
     // Sanitize for export — same policy as server and editor preview

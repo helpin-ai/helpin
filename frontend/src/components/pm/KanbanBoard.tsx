@@ -51,6 +51,11 @@ import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/co
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { toast } from 'sonner';
+import {
+  getAgentAutoRunStateChangeMessage,
+  getAgentAutoRunStateChangeToastId,
+  shouldNotifyAgentAutoRunStateChange,
+} from '@/components/pm/agentAutoRunNotification';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -71,6 +76,37 @@ interface ColumnProps {
   column: TaskStateColumn;
   collapsed: boolean;
   isLoadingMore: boolean;
+}
+
+function AutomatedStateIndicator({ compact = false }: { compact?: boolean }) {
+  const label = 'Tasks moved here automatically start an agent run';
+
+  if (compact) {
+    return (
+      <QuickTooltip label={label}>
+        <span
+          aria-label={label}
+          className="mb-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-emerald-300/70 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-700/70 dark:bg-emerald-950/50 dark:text-emerald-300"
+          tabIndex={0}
+        >
+          <BotIcon className="h-3.5 w-3.5" />
+        </span>
+      </QuickTooltip>
+    );
+  }
+
+  return (
+    <QuickTooltip label={label}>
+      <span
+        aria-label={label}
+        className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-emerald-300/70 bg-emerald-50 px-1.5 text-[10px] font-semibold leading-none text-emerald-700 shadow-sm dark:border-emerald-700/70 dark:bg-emerald-950/50 dark:text-emerald-300"
+        tabIndex={0}
+      >
+        <BotIcon className="h-3 w-3" />
+        Auto-run
+      </span>
+    </QuickTooltip>
+  );
 }
 
 const Column = memo(function Column({ column, collapsed, isLoadingMore }: ColumnProps) {
@@ -125,7 +161,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         <ArrowExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
         {automatedStateIds?.has(column.state.id) && (
-          <BotIcon className="mb-1 h-3.5 w-3.5 shrink-0 text-violet-500" />
+          <AutomatedStateIndicator compact />
         )}
         <span className="text-xs font-medium text-muted-foreground">{column.task_count}</span>
         <div className="mt-3 flex flex-1 items-start">
@@ -149,27 +185,19 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         )}
         <div className="min-w-0">
           {column.state.description ? (
-            <QuickTooltip label={column.state.description}>
-              <p className="flex items-center gap-1.5 truncate text-sm font-semibold cursor-default">
-                <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
-                {column.state.name}
-                {automatedStateIds?.has(column.state.id) && (
-                  <QuickTooltip label="Agent runs automatically on entry">
-                    <BotIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-                  </QuickTooltip>
-                )}
-              </p>
-            </QuickTooltip>
-          ) : (
-            <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+            <div className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
               <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
-              {column.state.name}
-              {automatedStateIds?.has(column.state.id) && (
-                <QuickTooltip label="Agent runs automatically on entry">
-                  <BotIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-                </QuickTooltip>
-              )}
-            </p>
+              <QuickTooltip label={column.state.description}>
+                <span className="min-w-0 truncate cursor-default">{column.state.name}</span>
+              </QuickTooltip>
+              {automatedStateIds?.has(column.state.id) && <AutomatedStateIndicator />}
+            </div>
+          ) : (
+            <div className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+              <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 truncate">{column.state.name}</span>
+              {automatedStateIds?.has(column.state.id) && <AutomatedStateIndicator />}
+            </div>
           )}
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <QuickTooltip label={`${column.task_count} ${column.task_count === 1 ? 'task' : 'tasks'}`}>
@@ -191,7 +219,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity"
+              className="h-7 w-7 opacity-0 transition-opacity group-hover/header:opacity-100"
               onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}
             >
               <ArrowShrinkIcon className="h-3.5 w-3.5" />
@@ -258,7 +286,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
 
           <Button
             variant="ghost"
-            className="w-full justify-start text-xs text-muted-foreground"
+            className="w-full justify-center text-xs text-muted-foreground"
             onClick={() => callbacksRef.current.onCreate(column.state.id)}
           >
             <PlusSignIcon className="h-3.5 w-3.5" />
@@ -410,7 +438,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
 
           <Button
             variant="ghost"
-            className="w-full justify-start text-xs text-muted-foreground"
+            className="w-full justify-center text-xs text-muted-foreground"
             onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}
           >
             <PlusSignIcon className="h-3.5 w-3.5" />
@@ -505,6 +533,13 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     }
     return ids;
   }, [automationRules]);
+
+  const notifyAgentAutoRunStateChange = useCallback((fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
+    if (!shouldNotifyAgentAutoRunStateChange({ fromStateId, toStateId, automatedStateIds })) return;
+    if (!toStateId) return;
+    const stateName = columns.find((column) => column.state.id === toStateId)?.state.name ?? 'this state';
+    toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(toStateId) });
+  }, [automatedStateIds, columns]);
 
   // Load member board when groupBy switches to 'members'
   const activeMemberIds = useMemo(() => assignableMembers.filter((m) => m.status === 'active').map((m) => m.id), [assignableMembers]);
@@ -675,12 +710,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       const updated = (e as CustomEvent)?.detail?.task;
       if (!updated) return;
       const task = { ...updated.task };
-      const ownerKey = task.owner_member_id;
-      if (ownerKey && !task.owner_name) {
-        task.owner_name = updated.owner_member
-          ? ownerNameMap.get(updated.owner_member.id) ?? updated.owner_member.display_name ?? updated.owner_member.email
-          : ownerNameMap.get(ownerKey);
-      }
       if (groupBy === 'members') {
         const stateCol = columns.find((c) => c.state.id === task.workflow_state_id);
         if (stateCol) {
@@ -722,7 +751,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       window.removeEventListener('task-panel-updated', onUpdated);
       window.removeEventListener('task-panel-archived', onArchived);
     };
-  }, [groupBy, columns, ownerNameMap, patchTask, refreshBoard]);
+  }, [groupBy, columns, patchTask, refreshBoard]);
 
   const findStateIdByItemId = useCallback(
     (id: string) => {
@@ -1016,14 +1045,17 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
           to_index: crossIdx,
         });
         await commitDropBeforeClearingPreview({
-          commit: () => moveTask({
-            workspaceId,
-            taskId: activeId,
-            fromStateId,
-            toStateId: crossStateId,
-            toIndex: crossIdx,
-            debugTraceID,
-          }),
+          commit: async () => {
+            const moved = await moveTask({
+              workspaceId,
+              taskId: activeId,
+              fromStateId,
+              toStateId: crossStateId,
+              toIndex: crossIdx,
+              debugTraceID,
+            });
+            if (moved) notifyAgentAutoRunStateChange(fromStateId, crossStateId);
+          },
           clearPreview: clearDragPreview,
         });
       } else {
@@ -1046,12 +1078,15 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         if (fromIndex < 0 || overIndex < 0 || fromIndex === toIndex) { clearDragPreview(); return; }
         logPMDnD('drag_end_same_state', { trace_id: debugTraceID, task_id: activeId, over_id: overId, state_id: toStateId, state_type: fromColumn.state.state_type, from_index: fromIndex, over_index: overIndex, to_index: toIndex });
         await commitDropBeforeClearingPreview({
-          commit: () => moveTask({ workspaceId, taskId: activeId, fromStateId, toStateId, toIndex, debugTraceID }),
+          commit: async () => {
+            const moved = await moveTask({ workspaceId, taskId: activeId, fromStateId, toStateId, toIndex, debugTraceID });
+            if (moved) notifyAgentAutoRunStateChange(fromStateId, toStateId);
+          },
           clearPreview: clearDragPreview,
         });
       }
     },
-    [columns, memberColumns, groupBy, findStateIdByItemId, moveTask, moveMemberTask, workspaceId, clearDragPreview, dragManager]
+    [columns, memberColumns, groupBy, findStateIdByItemId, moveTask, moveMemberTask, workspaceId, clearDragPreview, dragManager, notifyAgentAutoRunStateChange]
   );
 
   const handleCreate = useCallback(
@@ -1098,12 +1133,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   }, [workspaceId, isSeeding, loadBoard, groupBy, loadMemberBoard, showEmptyColumns, activeMemberIds]);
 
   const handleTaskPatched = useCallback((task: Task) => {
-    // Enrich with owner_name for board display (update API doesn't include it)
-    const ownerKey = task.owner_member_id;
-    if (ownerKey && !task.owner_name) {
-      const ownerName = ownerNameMap.get(ownerKey);
-      if (ownerName) task = { ...task, owner_name: ownerName };
-    }
     if (groupBy === 'members') {
       // Enrich with state info from workflow columns (read from store directly to avoid dep)
       const stateColumns = usePMBoardStore.getState().columns;
@@ -1113,21 +1142,30 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       }
       // Optimistically patch the task in member columns
       const cols = usePMBoardStore.getState().memberColumns;
+      let previousStateId: string | undefined;
       const updated = cols.map((col) => {
         const idx = col.tasks.findIndex((s) => s.id === task.id);
         if (idx < 0) return col;
+        previousStateId = col.tasks[idx]?.workflow_state_id;
         const tasks = [...col.tasks];
         tasks[idx] = { ...tasks[idx], ...task };
         return { ...col, tasks };
       });
       usePMBoardStore.setState({ memberColumns: updated });
+      notifyAgentAutoRunStateChange(previousStateId, task.workflow_state_id);
     } else {
+      const previousStateId = usePMBoardStore
+        .getState()
+        .columns
+        .flatMap((column) => column.tasks)
+        .find((candidate) => candidate.id === task.id)?.workflow_state_id;
       const patched = patchTask('updated', task.id, task);
       if (!patched) {
         refreshBoard();
       }
+      notifyAgentAutoRunStateChange(previousStateId, task.workflow_state_id);
     }
-  }, [patchTask, refreshBoard, ownerNameMap, groupBy]);
+  }, [patchTask, refreshBoard, groupBy, notifyAgentAutoRunStateChange]);
 
   // Memoize context values to avoid re-rendering all consumers
   const boardData = useMemo<import('./KanbanBoard.contexts').BoardDataContextValue>(() => ({

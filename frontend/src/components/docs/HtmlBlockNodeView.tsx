@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { SourceCodeIcon, ViewIcon, PencilEdit01Icon, Delete01Icon, Alert01Icon } from '@/lib/icons';
+import { SourceCodeIcon, ViewIcon, PencilEdit01Icon, Delete01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { sanitizeHtml } from './htmlSanitizer';
-
-const sandboxedHtmlBlockBaseStyle = `body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }`;
-
-export function buildSandboxedHtmlBlockSrcDoc(html: string) {
-  return `<!doctype html><html><head><style>${sandboxedHtmlBlockBaseStyle}</style></head><body>${html}</body></html>`;
-}
 
 export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, getPos }: NodeViewProps) {
   const { html, renderMode } = node.attrs;
@@ -23,7 +17,6 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
 
   // Sanitize for preview
   const sanitized = useMemo(() => hasContent && !sandboxed ? sanitizeHtml(html) : '', [html, hasContent, sandboxed]);
-  const wasStripped = hasContent && !sandboxed && sanitized.trim().length < html.trim().length;
 
   // Sync draft when node attrs change externally (undo/redo)
   useEffect(() => { setDraft(html ?? ''); }, [html]);
@@ -178,19 +171,10 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
                 placeholder="<div>&#10;  <p>Your HTML here...</p>&#10;</div>"
               />
             </div>
-          ) : hasContent && sandboxed ? (
-            <iframe
-              className="docs-html-block-frame w-full rounded-md border bg-background"
-              sandbox="allow-scripts allow-forms allow-popups allow-presentation"
-              referrerPolicy="no-referrer"
-              loading="lazy"
-              srcDoc={buildSandboxedHtmlBlockSrcDoc(html)}
-              onDoubleClick={editable ? switchToEdit : undefined}
-            />
           ) : hasContent ? (
             <div
-              className="prose prose-sm dark:prose-invert max-w-none text-sm"
-              dangerouslySetInnerHTML={{ __html: sanitized }}
+              className={sandboxed ? 'docs-html-block-raw max-w-none text-sm' : 'prose prose-sm dark:prose-invert max-w-none text-sm'}
+              dangerouslySetInnerHTML={{ __html: sandboxed ? html : sanitized }}
               onDoubleClick={editable ? switchToEdit : undefined}
             />
           ) : (
@@ -203,14 +187,6 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
             </div>
           )}
         </div>
-
-        {/* Sanitization warning */}
-        {wasStripped && !editing && (
-          <div className="flex items-center gap-1.5 border-t px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400">
-            <Alert01Icon className="h-3 w-3 shrink-0" />
-            Some HTML was removed for safety. The preview shows the sanitized version.
-          </div>
-        )}
       </div>
     </NodeViewWrapper>
   );

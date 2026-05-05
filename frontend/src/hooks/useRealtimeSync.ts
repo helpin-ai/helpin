@@ -213,10 +213,6 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         pmTaskService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
             const task = { ...res.data.task }
-            // Enrich with owner_name from task detail owners for board display.
-            if (task.owner_member_id && !task.owner_name && res.data.owner_member) {
-              task.owner_name = res.data.owner_member.display_name || res.data.owner_member.email
-            }
             const patched = store.patchTask(event.action as 'created' | 'updated', event.entity_id, task)
             if (!patched) scheduleRefresh()
           } else {
@@ -277,6 +273,16 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.allCollections(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterConfig(workspaceId) })
+    } else if (event.entity === 'docs_change_proposal') {
+      const docId = event.parent_id || (typeof event.data?.document_id === 'string' ? event.data.document_id : '')
+      if (docId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.changeProposals(workspaceId, docId) })
+        if (event.data?.status === 'applied') {
+          queryClient.invalidateQueries({ queryKey: queryKeys.docs.content(workspaceId, docId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.docs.blocks(workspaceId, docId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(workspaceId, docId), exact: true })
+        }
+      }
     } else if (event.entity === 'docs_version') {
       const docId = event.parent_id ?? ''
       if (docId) {

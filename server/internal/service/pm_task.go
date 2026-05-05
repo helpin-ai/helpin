@@ -326,11 +326,6 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		return nil, fmt.Errorf("invalid severity")
 	}
 
-	ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, req.OwnerMemberID, req.OwnerID)
-	if err != nil {
-		return nil, err
-	}
-
 	requesterMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, req.RequesterMemberID, req.RequesterID)
 	if err != nil {
 		return nil, err
@@ -360,8 +355,6 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		EpicID:            req.EpicID,
 		SprintID:          req.SprintID,
 		TeamID:            req.TeamID,
-		OwnerID:           memberUserIDPtr(ownerMember),
-		OwnerMemberID:     memberIDPtr(ownerMember),
 		RequesterID:       memberUserIDPtr(requesterMember),
 		RequesterMemberID: memberIDPtr(requesterMember),
 		Estimate:          req.Estimate,
@@ -398,10 +391,9 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		}
 	}
 
-	ownerIDs := dedupeIDs(req.OwnerIDs)
-	if newTask.OwnerID != nil {
-		ownerIDs = append(ownerIDs, *newTask.OwnerID)
-		ownerIDs = dedupeIDs(ownerIDs)
+	ownerIDs, err := s.resolveOwnerUserIDs(ctx, req.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
+	if err != nil {
+		return nil, err
 	}
 	for _, ownerID := range ownerIDs {
 		if err := s.taskRepo.AddOwner(ctx, newTask.ID, ownerID); err != nil {
@@ -684,7 +676,6 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 			blocker = &blockerValue
 		}
 
-		ownerMember := seededTaskMember(activeMembers, i)
 		requesterMember := seededTaskMember(activeMembers, i+1)
 
 		tasks = append(tasks, model.PMTask{
@@ -695,8 +686,6 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 			TaskType:          taskType,
 			WorkflowID:        workflow.Workflow.ID,
 			WorkflowStateID:   state.ID,
-			OwnerID:           seededAssignableMemberUserIDPtr(ownerMember),
-			OwnerMemberID:     seededAssignableMemberIDPtr(ownerMember),
 			RequesterID:       seededAssignableMemberUserIDPtr(requesterMember),
 			RequesterMemberID: seededAssignableMemberIDPtr(requesterMember),
 			Estimate:          &estimate,
@@ -719,6 +708,16 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 
 	if err := s.taskRepo.CreateInBatches(ctx, tasks, 100); err != nil {
 		return nil, err
+	}
+
+	for i := range tasks {
+		ownerMember := seededTaskMember(activeMembers, i)
+		if ownerMember == nil || ownerMember.UserID == nil || *ownerMember.UserID == "" {
+			continue
+		}
+		if err := s.taskRepo.AddOwner(ctx, tasks[i].ID, *ownerMember.UserID); err != nil {
+			return nil, err
+		}
 	}
 
 	return &model.SeedPMTasksResponse{Created: len(tasks)}, nil
@@ -786,12 +785,14 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		stateChanged = true
 	}
 
-	ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, stateID, workflowID)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
+	if req.WorkflowID != nil || req.WorkflowStateID != nil {
+		ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, stateID, workflowID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
+		}
 	}
 	current.WorkflowID = workflowID
 	current.WorkflowStateID = stateID
@@ -805,14 +806,16 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	if req.TeamID != nil {
 		current.TeamID = nullableString(req.TeamID)
 	}
-	if err := validateEpicScope(ctx, s.epicRepo, current.WorkspaceID, current.EpicID, current.TeamID); err != nil {
-		return nil, err
+	teamChanged := req.TeamID != nil
+	if req.EpicID != nil || teamChanged {
+		if err := validateEpicScope(ctx, s.epicRepo, current.WorkspaceID, current.EpicID, current.TeamID); err != nil {
+			return nil, err
+		}
 	}
-	if err := validateSprintScope(ctx, s.sprintRepo, current.WorkspaceID, current.SprintID, current.TeamID); err != nil {
-		return nil, err
-	}
-	if req.OwnerID != nil {
-		// Handled below via workspace member resolution.
+	if req.SprintID != nil || teamChanged {
+		if err := validateSprintScope(ctx, s.sprintRepo, current.WorkspaceID, current.SprintID, current.TeamID); err != nil {
+			return nil, err
+		}
 	}
 	if req.RequesterID != nil {
 		// Handled below via workspace member resolution.
@@ -859,14 +862,6 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		current.ExternalID = req.ExternalID
 	}
 
-	if req.OwnerID != nil || req.OwnerMemberID != nil {
-		ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.WorkspaceID, req.OwnerMemberID, req.OwnerID)
-		if err != nil {
-			return nil, err
-		}
-		current.OwnerMemberID = memberIDPtr(ownerMember)
-		current.OwnerID = memberUserIDPtr(ownerMember)
-	}
 	if req.RequesterID != nil || req.RequesterMemberID != nil {
 		requesterMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.WorkspaceID, req.RequesterMemberID, req.RequesterID)
 		if err != nil {
@@ -885,19 +880,27 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		return nil, err
 	}
 
-	if req.OwnerIDs != nil {
-		owners := dedupeIDs(req.OwnerIDs)
-		if current.OwnerID != nil {
-			owners = append(owners, *current.OwnerID)
-			owners = dedupeIDs(owners)
-		}
-		if err := s.taskRepo.ReplaceOwners(ctx, current.ID, owners); err != nil {
+	if req.OwnerMemberIDs != nil || req.OwnerIDs != nil {
+		nextOwnerIDs, err := s.resolveOwnerUserIDs(ctx, current.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
+		if err != nil {
 			return nil, err
 		}
-		if req.FollowerIDs == nil {
-			// Auto-follow owners if explicit follower list was not provided.
-			for _, ownerID := range owners {
-				if err := s.taskRepo.AddFollower(ctx, current.ID, ownerID); err != nil {
+		currentOwnerIDs, err := s.taskRepo.ListOwnerUserIDs(ctx, current.ID)
+		if err != nil {
+			return nil, err
+		}
+		currentOwnerSet := stringSet(currentOwnerIDs)
+		nextOwnerSet := stringSet(nextOwnerIDs)
+		for _, ownerID := range nextOwnerIDs {
+			if _, exists := currentOwnerSet[ownerID]; !exists {
+				if err := s.AddOwner(ctx, current.ID, ownerID, actorID); err != nil {
+					return nil, err
+				}
+			}
+		}
+		for _, ownerID := range currentOwnerIDs {
+			if _, exists := nextOwnerSet[ownerID]; !exists {
+				if err := s.RemoveOwner(ctx, current.ID, ownerID, actorID); err != nil {
 					return nil, err
 				}
 			}
@@ -905,9 +908,6 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	}
 	if req.FollowerIDs != nil {
 		followers := dedupeIDs(req.FollowerIDs)
-		if current.OwnerID != nil {
-			followers = append(followers, *current.OwnerID)
-		}
 		if current.RequesterID != nil {
 			followers = append(followers, *current.RequesterID)
 		}
@@ -1707,6 +1707,36 @@ func isIgnorableAutoRequesterResolutionError(err error) bool {
 	default:
 		return false
 	}
+}
+
+func (s *PMTaskService) resolveOwnerUserIDs(ctx context.Context, workspaceID string, ownerMemberIDs, ownerIDs []string) ([]string, error) {
+	members, err := resolveWorkspaceMemberReferences(ctx, s.workspaceRepo, workspaceID, ownerMemberIDs, ownerIDs)
+	if err != nil {
+		return nil, err
+	}
+	userIDs := make([]string, 0, len(members))
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if member.UserID == nil || strings.TrimSpace(*member.UserID) == "" {
+			return nil, fmt.Errorf("workspace member %s does not have an active user", member.ID)
+		}
+		userIDs = append(userIDs, *member.UserID)
+	}
+	return dedupeIDs(userIDs), nil
+}
+
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		set[value] = struct{}{}
+	}
+	return set
 }
 
 func dedupeIDs(ids []string) []string {

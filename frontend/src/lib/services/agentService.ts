@@ -1,11 +1,13 @@
 import { api } from '../api';
 import { automationService } from './automationService';
 import type {
+  Agent,
   AgentRun,
   CodingSession,
   CodingSessionEventListResponse,
   CodingSessionInteraction,
   CreateAgentRequest,
+  AgentTriggerUsageSummary,
   AgentPresetDefinition,
   UpdateAgentRequest,
   AgentModelProviderOption,
@@ -28,17 +30,17 @@ const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspac
 
 export const agentService = {
   list: (workspaceId: string) =>
-    automationService.listAgents(workspaceId) as ReturnType<typeof automationService.listAgents>,
+    api.get<Agent[]>(`/pm/agents${qs(workspaceId)}`),
   get: (workspaceId: string, id: string) =>
-    automationService.getAgent(workspaceId, id) as ReturnType<typeof automationService.getAgent>,
+    api.get<Agent>(`/pm/agents/${id}${qs(workspaceId)}`),
   getUsage: (workspaceId: string, id: string) =>
-    automationService.getAgentUsage(workspaceId, id) as ReturnType<typeof automationService.getAgentUsage>,
+    api.get<AgentTriggerUsageSummary>(`/pm/agents/${id}/usage${qs(workspaceId)}`),
   create: (workspaceId: string, payload: CreateAgentRequest) =>
-    automationService.createAgent(workspaceId, payload) as ReturnType<typeof automationService.createAgent>,
+    api.post<Agent>(`/pm/agents${qs(workspaceId)}`, payload),
   update: (workspaceId: string, id: string, payload: UpdateAgentRequest) =>
-    automationService.updateAgent(workspaceId, id, payload) as ReturnType<typeof automationService.updateAgent>,
+    api.put<Agent>(`/pm/agents/${id}${qs(workspaceId)}`, payload),
   delete: (workspaceId: string, id: string) =>
-    automationService.deleteAgent(workspaceId, id) as ReturnType<typeof automationService.deleteAgent>,
+    api.del(`/pm/agents/${id}${qs(workspaceId)}`),
   listPresets: (workspaceId: string) =>
     api.get<AgentPresetDefinition[]>(`/pm/agent-presets${qs(workspaceId)}`),
   createPresetVersion: (workspaceId: string, payload: CreateWorkspaceAgentPresetVersionRequest) =>

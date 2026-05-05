@@ -115,7 +115,7 @@ export function MyWorkPage() {
     setLoading(true);
     const filters =
       mode === 'assigned'
-        ? { owner_member_id: memberId, archived: false as const }
+        ? { owner_member_ids: memberId, archived: false as const }
         : { requester_member_id: memberId, archived: false as const };
 
     pmTaskService

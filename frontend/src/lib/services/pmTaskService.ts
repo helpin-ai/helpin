@@ -53,7 +53,7 @@ export const pmTaskService = {
       workflow_id?: string;
       state_id?: string;
       task_type?: string;
-      owner_member_id?: string;
+      owner_member_ids?: string;
       requester_member_id?: string;
       label_id?: string;
       priority?: string;

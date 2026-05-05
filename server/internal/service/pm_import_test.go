@@ -938,8 +938,12 @@ func TestPMImportServiceExecuteShortcutUsesManualUserMappingsForTeamMemberships(
 	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "4002").First(&story).Error; err != nil {
 		t.Fatalf("load imported story: %v", err)
 	}
-	if story.OwnerMemberID == nil || *story.OwnerMemberID != workspaceMember.ID {
-		t.Fatalf("expected owner_member_id to use mapped workspace member, got %v want %s", story.OwnerMemberID, workspaceMember.ID)
+	var ownerLinks int64
+	if err := db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.ID, "user-owner-one").Count(&ownerLinks).Error; err != nil {
+		t.Fatalf("count imported story owners: %v", err)
+	}
+	if ownerLinks != 1 {
+		t.Fatalf("expected imported story owner link, got %d", ownerLinks)
 	}
 }
 

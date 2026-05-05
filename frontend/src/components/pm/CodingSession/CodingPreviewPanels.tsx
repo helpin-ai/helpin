@@ -31,6 +31,20 @@ interface TaskPlanPreviewModel {
   openQuestions: string[];
 }
 
+interface DocsChangeSource {
+  title?: string;
+  url?: string;
+}
+
+interface DocsChangePreviewModel {
+  scope: 'document' | 'block';
+  summary?: string;
+  contentMarkdown: string;
+  blockId?: string;
+  revision?: number;
+  sources: DocsChangeSource[];
+}
+
 interface AttachedApprovalRequest {
   interaction: CodingSessionInteraction;
   title?: string;
@@ -115,6 +129,35 @@ function parseTaskPlanPreviewModel(preview: PublishedPreview | undefined): TaskP
   };
 }
 
+function parseDocsChangePreviewModel(preview: PublishedPreview | undefined): DocsChangePreviewModel | null {
+  if (!preview || preview.panelKey !== 'docs_change' || preview.format !== 'json') return null;
+  const record = asRecord(preview.content);
+  if (!record) return null;
+  const scope = asString(record.scope).trim().toLowerCase();
+  if (scope !== 'document' && scope !== 'block') return null;
+  const contentMarkdown = asString(record.content_markdown).trim();
+  if (!contentMarkdown) return null;
+  const sources = Array.isArray(record.sources)
+    ? record.sources.flatMap((entry) => {
+      const source = asRecord(entry);
+      if (!source) return [];
+      const title = asString(source.title).trim() || asString(source.name).trim() || undefined;
+      const url = asString(source.url).trim() || asString(source.href).trim() || undefined;
+      if (!title && !url) return [];
+      return [{ title, url } satisfies DocsChangeSource];
+    })
+    : [];
+
+  return {
+    scope,
+    summary: asString(record.summary).trim() || undefined,
+    contentMarkdown,
+    blockId: asString(record.block_id).trim() || undefined,
+    revision: typeof record.revision === 'number' && Number.isFinite(record.revision) ? record.revision : undefined,
+    sources,
+  };
+}
+
 function parseAttachedApprovalRequest(interaction: CodingSessionInteraction | null | undefined): AttachedApprovalRequest | null {
   if (!interaction || interaction.interaction_kind !== 'approval_request') return null;
   const payload = asRecord(interaction.request_payload);
@@ -130,6 +173,90 @@ function parseAttachedApprovalRequest(interaction: CodingSessionInteraction | nu
     phase,
     previewPanelKey,
   };
+}
+
+function DocsChangePanel({
+  title,
+  preview,
+  attachedApproval,
+  acting,
+  onResolveInteraction,
+}: {
+  title: string;
+  preview: DocsChangePreviewModel;
+  attachedApproval?: AttachedApprovalRequest | null;
+  acting?: string | null;
+  onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+}) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const scopeLabel = preview.scope === 'block' ? 'Block change' : 'Document change';
+
+  const proposalContent = (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline" className="border-orange-500/25 bg-orange-500/10 text-[10px] uppercase tracking-wide text-orange-700 dark:text-orange-300">
+          {scopeLabel}
+        </Badge>
+        {preview.revision ? (
+          <span className="text-[11px] text-muted-foreground">Revision {preview.revision}</span>
+        ) : null}
+      </div>
+      {preview.summary ? (
+        <p className="text-sm leading-6 text-muted-foreground">{preview.summary}</p>
+      ) : null}
+      <div className="max-h-[320px] overflow-auto rounded-md bg-muted/40 p-3">
+        <MarkdownContent content={preview.contentMarkdown} className="text-[12px] leading-5" />
+      </div>
+      {preview.sources.length ? (
+        <div className="rounded-lg border border-border/60 bg-background/60 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Sources</p>
+          <ul className="mt-2 space-y-1 text-xs leading-5">
+            {preview.sources.map((source, index) => (
+              <li key={`${source.url ?? source.title}-${index}`} className="truncate text-muted-foreground">
+                {source.url ? (
+                  <a href={source.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                    {source.title || source.url}
+                  </a>
+                ) : (
+                  source.title
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {attachedApproval && onResolveInteraction ? (
+        <PreviewApprovalFooter
+          approval={attachedApproval}
+          acting={acting ?? null}
+          onResolve={onResolveInteraction}
+        />
+      ) : null}
+    </div>
+  );
+
+  return (
+    <>
+      <div
+        data-preview-panel-key="docs_change"
+        className="rounded-md border border-orange-500/20 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-orange-500/40"
+      >
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <File01Icon className="h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
+            <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {title || 'Docs Change Proposal'}
+            </p>
+          </div>
+          <ExpandPreviewIconButton label={`Open ${title || 'Docs Change Proposal'}`} onClick={() => setDialogOpen(true)} />
+        </div>
+        {proposalContent}
+      </div>
+      <PreviewExpandDialog open={dialogOpen} onOpenChange={setDialogOpen} title={title || 'Docs Change Proposal'}>
+        {proposalContent}
+      </PreviewExpandDialog>
+    </>
+  );
 }
 
 function PreviewExpandDialog({
@@ -515,19 +642,22 @@ export function CodingPreviewPanels({
   })();
 
   const latestTaskPlanPreview = parseTaskPlanPreviewModel(previewsByKey.get('task_plan'));
+  const latestDocsChangePreview = parseDocsChangePreviewModel(previewsByKey.get('docs_change'));
   const otherPreviewPanels = Array.from(previewsByKey.values()).filter((preview) => {
     if (preview.panelKey === 'prd_draft' && latestSpecDraftPreview) return false;
     if (preview.panelKey === 'task_plan' && latestTaskPlanPreview) return false;
+    if (preview.panelKey === 'docs_change' && latestDocsChangePreview) return false;
     return true;
   });
   const [prdDialogOpen, setPrdDialogOpen] = useState(false);
 
   const panelCount = (latestSpecDraftPreview ? 1 : 0)
     + (latestTaskPlanPreview ? 1 : 0)
+    + (latestDocsChangePreview ? 1 : 0)
     + otherPreviewPanels.length;
   const isSolo = panelCount === 1;
 
-  if (!latestSpecDraftPreview && !latestTaskPlanPreview && otherPreviewPanels.length === 0) {
+  if (!latestSpecDraftPreview && !latestTaskPlanPreview && !latestDocsChangePreview && otherPreviewPanels.length === 0) {
     return null;
   }
 
@@ -580,6 +710,16 @@ export function CodingPreviewPanels({
           title={previewsByKey.get('task_plan')?.title || 'Task Plan'}
           preview={latestTaskPlanPreview}
           attachedApproval={attachedApproval?.previewPanelKey === 'task_plan' ? attachedApproval : null}
+          acting={acting}
+          onResolveInteraction={onResolveInteraction}
+        />
+      ) : null}
+
+      {latestDocsChangePreview ? (
+        <DocsChangePanel
+          title={previewsByKey.get('docs_change')?.title || 'Docs Change Proposal'}
+          preview={latestDocsChangePreview}
+          attachedApproval={attachedApproval?.previewPanelKey === 'docs_change' ? attachedApproval : null}
           acting={acting}
           onResolveInteraction={onResolveInteraction}
         />

@@ -256,33 +256,54 @@ func TestRenderHTML_HtmlBlockAllowsSafePresentationStyles(t *testing.T) {
 	}
 }
 
-func TestRenderHTML_SandboxedHtmlBlockRendersEscapedSrcdocIframe(t *testing.T) {
+func TestRenderHTML_RawHtmlBlockRendersInlineWithoutIframe(t *testing.T) {
 	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"renderMode":"sandboxed","html":"<div><table><tbody id=\"models-body\"></tbody></table><script>document.getElementById('models-body').innerHTML='<tr><td>Kling</td></tr>';</script></div>"}}]}`
 	got, err := RenderHTML(json.RawMessage(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`<iframe`, `class="docs-html-block-frame"`, `sandbox="allow-scripts allow-forms allow-popups allow-presentation"`, `srcdoc="`, `&lt;script&gt;`, `models-body`, `Kling`} {
+	for _, want := range []string{`<div class="docs-html-block docs-html-block--raw">`, `<script>document`, `models-body`, `Kling`} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("expected sandboxed iframe output %q, got: %s", want, got)
+			t.Fatalf("expected raw inline HTML block output %q, got: %s", want, got)
 		}
 	}
-	for _, notWant := range []string{`allow-same-origin`, `<script>document`} {
+	for _, notWant := range []string{`<iframe`, `srcdoc=`, `&lt;script&gt;`} {
 		if strings.Contains(got, notWant) {
-			t.Fatalf("expected sandboxed HTML to avoid %q outside srcdoc, got: %s", notWant, got)
+			t.Fatalf("expected raw inline HTML block to avoid iframe artifact %q, got: %s", notWant, got)
 		}
 	}
 }
 
-func TestRenderHTML_SandboxedHtmlBlockAddsDocsFontFallback(t *testing.T) {
+func TestRenderHTML_RawHtmlBlockDoesNotInjectFontWrapper(t *testing.T) {
 	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"renderMode":"sandboxed","html":"<div style=\"font-family: Georgia, serif\">Keep source font</div><p>Fallback text</p>"}}]}`
 	got, err := RenderHTML(json.RawMessage(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`font-family: ui-sans-serif`, `Keep source font`, `font-family: Georgia, serif`, `Fallback text`} {
+	for _, want := range []string{`Keep source font`, `font-family: Georgia, serif`, `Fallback text`} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("expected sandboxed srcdoc to contain %q, got: %s", want, got)
+			t.Fatalf("expected raw inline HTML block to contain %q, got: %s", want, got)
+		}
+	}
+	if strings.Contains(got, `font-family: ui-sans-serif`) {
+		t.Fatalf("expected raw inline HTML block not to inject an iframe font wrapper, got: %s", got)
+	}
+}
+
+func TestRenderHTML_RawHtmlBlockKeepsSourceIframe(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"renderMode":"sandboxed","html":"<iframe src=\"https://www.youtube.com/embed/abc123\" width=\"560\" height=\"315\"></iframe>"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`<div class="docs-html-block docs-html-block--raw">`, `<iframe src="https://www.youtube.com/embed/abc123" width="560" height="315"></iframe>`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected raw inline HTML block to keep source iframe %q, got: %s", want, got)
+		}
+	}
+	for _, notWant := range []string{`docs-html-block-frame`, `srcdoc=`} {
+		if strings.Contains(got, notWant) {
+			t.Fatalf("expected no generated iframe wrapper artifact %q, got: %s", notWant, got)
 		}
 	}
 }

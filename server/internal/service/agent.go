@@ -133,6 +133,7 @@ func validateRunAllowedTools(requested []string, agent *model.Agent) error {
 	// Output-bound review tools are safe to grant per run. They validate the
 	// run output context before doing anything, so older document agents can use
 	// new review-candidate flows without requiring an agent row migration first.
+	allowedSet["publish_document_change_proposal"] = true
 	allowedSet["publish_ai_section_candidate"] = true
 	for _, tool := range requested {
 		if !allowedSet[tool] {

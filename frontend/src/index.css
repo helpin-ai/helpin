@@ -660,12 +660,6 @@
 .docs-editor-prose .docs-html-block > *:last-child {
   margin-bottom: 0;
 }
-.docs-html-block-frame {
-  width: 100%;
-  min-height: 520px;
-  border: 0;
-  display: block;
-}
 .docs-fb-background-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

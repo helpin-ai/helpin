@@ -272,18 +272,22 @@ func TestConvert_HelpScoutCalloutDanger(t *testing.T) {
 }
 
 func TestConvert_YouTubeIframe(t *testing.T) {
-	r := convert(t, `<iframe src="https://www.youtube.com/embed/abc123"></iframe>`)
+	r := convert(t, `<iframe src="https://www.youtube.com/embed/abc123" width="560" height="315"></iframe>`)
 	j := toJSON(t, r)
-	if !strings.Contains(j, `"type":"videoEmbed"`) || !strings.Contains(j, `"provider":"youtube"`) {
-		t.Errorf("expected video embed, got: %s", j)
+	for _, want := range []string{`"type":"htmlBlock"`, `"renderMode":"sandboxed"`, `iframe src=\"https://www.youtube.com/embed/abc123\" width=\"560\" height=\"315\"`, `\u003c/iframe\u003e`} {
+		if !strings.Contains(j, want) {
+			t.Errorf("expected source iframe to be preserved as raw html block %q, got: %s", want, j)
+		}
 	}
 }
 
 func TestConvert_VimeoIframe(t *testing.T) {
 	r := convert(t, `<iframe src="https://player.vimeo.com/video/123456"></iframe>`)
 	j := toJSON(t, r)
-	if !strings.Contains(j, `"provider":"vimeo"`) {
-		t.Errorf("expected vimeo provider, got: %s", j)
+	for _, want := range []string{`"type":"htmlBlock"`, `"renderMode":"sandboxed"`, `iframe src=\"https://player.vimeo.com/video/123456\"`, `\u003c/iframe\u003e`} {
+		if !strings.Contains(j, want) {
+			t.Errorf("expected source iframe to be preserved as raw html block %q, got: %s", want, j)
+		}
 	}
 }
 
@@ -311,11 +315,13 @@ func TestConvert_UnsupportedIframe(t *testing.T) {
 	if strings.Contains(j, `"type":"videoEmbed"`) {
 		t.Errorf("expected no video embed for unknown iframe, got: %s", j)
 	}
-	if !strings.Contains(j, `"type":"link"`) {
-		t.Errorf("expected link fallback, got: %s", j)
+	for _, want := range []string{`"type":"htmlBlock"`, `"renderMode":"sandboxed"`, `iframe src=\"https://unknown.example.com/embed\"`, `\u003c/iframe\u003e`} {
+		if !strings.Contains(j, want) {
+			t.Errorf("expected unsupported source iframe to be preserved as raw html block %q, got: %s", want, j)
+		}
 	}
-	if len(r.Warnings) == 0 {
-		t.Error("expected warning for unsupported iframe")
+	if len(r.Warnings) != 0 {
+		t.Errorf("expected no iframe warning when preserving source iframe, got: %#v", r.Warnings)
 	}
 }
 

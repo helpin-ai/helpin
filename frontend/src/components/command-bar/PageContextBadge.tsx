@@ -48,11 +48,17 @@ function iconFor(type: CommandBarPageContext['entity_type']) {
   }
 }
 
+function isBlockScopedDocument(context: CommandBarPageContext) {
+  return context.entity_type === 'document' && context.metadata?.context_scope === 'block';
+}
+
 export function PageContextBadge({ context, onClear, onNavigate }: PageContextBadgeProps) {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const Icon = iconFor(context.entity_type);
   const isFallback = context.entity_type === 'workspace';
+  const blockScoped = isBlockScopedDocument(context);
+  const typeLabel = blockScoped ? 'Document block' : (TYPE_LABEL[context.entity_type] ?? context.entity_type);
 
   const handleClick = () => {
     if (!workspace?.slug) return;
@@ -102,14 +108,14 @@ export function PageContextBadge({ context, onClear, onNavigate }: PageContextBa
             ? 'border-border/70 bg-muted/40 text-muted-foreground cursor-default'
             : 'border-primary/20 bg-primary/5 text-foreground hover:bg-primary/10 cursor-pointer',
         )}
-        title={isFallback ? 'Bound to current workspace' : `Open ${TYPE_LABEL[context.entity_type]}`}
+        title={blockScoped ? 'Selected document block is the active agent context' : isFallback ? 'Bound to current workspace' : `Open ${TYPE_LABEL[context.entity_type]}`}
       >
         <Icon className="h-3 w-3 shrink-0" />
         <Badge
           variant="outline"
           className="h-4 border-transparent bg-transparent px-1 py-0 text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
         >
-          {TYPE_LABEL[context.entity_type] ?? context.entity_type}
+          {typeLabel}
         </Badge>
         <span className="truncate font-medium">{context.display_title || (isFallback ? workspace?.name : context.entity_id)}</span>
       </button>

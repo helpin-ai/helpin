@@ -158,6 +158,7 @@ func main() {
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsBlockRepo := repository.NewDocsBlockRepository(db)
 	docsAISectionCandidateRepo := repository.NewDocsAISectionCandidateRepository(db)
+	docsChangeProposalRepo := repository.NewDocsChangeProposalRepository(db)
 	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
@@ -550,6 +551,7 @@ func main() {
 		docsContentRepo,
 		docsBlockRepo,
 		docsAISectionCandidateRepo,
+		docsChangeProposalRepo,
 		docsVersionRepo,
 		docsLinkRepo,
 		docsSearchRepo,

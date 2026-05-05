@@ -1555,6 +1555,60 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 	_ = ownerMember
 }
 
+func TestSupportInboxServiceListContactConversationsReturnsUnpagedTotal(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-contact-conversation-total"
+	contactID := "contact-conversation-total"
+	userID := "owner-contact-total"
+	seedWorkspace(t, db, workspaceID, "Contact Conversation Total", "contact-conversation-total", userID)
+	seedWorkspaceMember(t, db, "member-contact-total", workspaceID, userID, "owner-contact-total@example.com", "Owner Contact Total", model.RoleOwner)
+
+	repo := repository.NewSupportConversationRepository(db)
+	svc := NewSupportInboxService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	ctx = authorization.WithActor(ctx, &authorization.Actor{
+		UserID:            userID,
+		WorkspaceID:       workspaceID,
+		WorkspaceMemberID: "member-contact-total",
+		Role:              model.RoleOwner,
+	})
+	now := time.Now().UTC()
+
+	for i := 0; i < 3; i++ {
+		conversation := &model.SupportConversation{
+			WorkspaceID:   workspaceID,
+			Subject:       fmt.Sprintf("Linked conversation %d", i+1),
+			Status:        model.SupportConversationStatusOpen,
+			Priority:      "medium",
+			Channel:       "widget",
+			CRMContactID:  strPtr(contactID),
+			CustomerEmail: strPtr(fmt.Sprintf("customer-%d@example.com", i+1)),
+		}
+		if err := repo.Create(ctx, conversation); err != nil {
+			t.Fatalf("create linked conversation %d: %v", i+1, err)
+		}
+		if err := db.Model(&model.SupportConversation{}).
+			Where("id = ?", conversation.ID).
+			Updates(map[string]any{
+				"created_at": now.Add(-time.Duration(i) * time.Minute),
+				"updated_at": now.Add(-time.Duration(i) * time.Minute),
+			}).Error; err != nil {
+			t.Fatalf("timestamp linked conversation %d: %v", i+1, err)
+		}
+	}
+
+	conversations, total, err := svc.ListContactConversations(ctx, workspaceID, contactID, model.PMPagination{Page: 1, PerPage: 2})
+	if err != nil {
+		t.Fatalf("list contact conversations: %v", err)
+	}
+	if len(conversations) != 2 {
+		t.Fatalf("len(conversations) = %d, want 2", len(conversations))
+	}
+	if total != 3 {
+		t.Fatalf("total = %d, want 3", total)
+	}
+}
+
 func TestSupportInboxServiceUpdateConversationStatus_KeepsResolvedEventsInternal(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

@@ -70,7 +70,7 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
     return (tasks ?? []).filter((task) => {
       if (priority !== '__all__' && task.priority !== priority) return false;
       if (stateType !== '__all__' && task.state_type !== stateType) return false;
-      if (ownerMemberId !== '__all__' && task.owner_member_id !== ownerMemberId) return false;
+      if (ownerMemberId !== '__all__' && !(task.owner_member_ids ?? []).includes(ownerMemberId)) return false;
       return true;
     });
   }, [ownerMemberId, priority, stateType,  tasks]);
@@ -193,7 +193,7 @@ export const SprintPlanningBacklogPanel = memo(function SprintPlanningBacklogPan
                   <SprintPlanningTaskCard
                     key={task.id}
                     task={task}
-                    owner={task.owner_member_id ? ownerByMemberId.get(task.owner_member_id) : undefined}
+                    owner={task.owner_member_ids?.[0] ? ownerByMemberId.get(task.owner_member_ids[0]) : undefined}
                     compact
                     showBacklogAction={canEdit}
                     canDrag={canEdit}

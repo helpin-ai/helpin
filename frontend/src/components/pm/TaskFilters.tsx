@@ -28,7 +28,7 @@ type FilterKey =
   | 'priority'
   | 'severity'
   | 'task_type'
-  | 'owner_member_id'
+  | 'owner_member_ids'
   | 'requester_member_id'
   | 'label_id'
   | 'epic_id'
@@ -306,7 +306,7 @@ export function TaskFilterProvider({
       { key: 'priority' as FilterKey, label: 'Priority', options: priorityOptions },
       { key: 'severity' as FilterKey, label: 'Severity', options: severityOptions },
       { key: 'task_type' as FilterKey, label: 'Type', options: typeOptions },
-      { key: 'owner_member_id' as FilterKey, label: 'Owner', options: memberOptions },
+      { key: 'owner_member_ids' as FilterKey, label: 'Owner', options: memberOptions },
       { key: 'requester_member_id' as FilterKey, label: 'Requester', options: memberOptions },
       { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions },
       { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions },
@@ -503,7 +503,7 @@ export function TaskFilterBar() {
 export function TaskOwnerAvatarFilterRow() {
   const { workspaceId, assignableMembers, activeTeamId, userMemberships, filterState, handleToggle } = useFilterContext();
   const { data: memberPresenceByUserId } = useWorkspaceMemberPresenceMap(workspaceId);
-  const ownerFilters = filterState.owner_member_id ?? [];
+  const ownerFilters = filterState.owner_member_ids ?? [];
   const members = useMemo(
     () => filterAssignableMembersForTeam(assignableMembers, activeTeamId, userMemberships),
     [assignableMembers, activeTeamId, userMemberships],
@@ -521,7 +521,7 @@ export function TaskOwnerAvatarFilterRow() {
           <QuickTooltip key={member.id} label={label}>
             <button
               type="button"
-              onClick={() => handleToggle('owner_member_id', member.id)}
+              onClick={() => handleToggle('owner_member_ids', member.id)}
               className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-offset-1 ring-offset-background transition-all hover:z-10 ${
                 isSelected
                   ? 'z-10 ring-[1.5px] ring-ring'

@@ -118,9 +118,17 @@ func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
 	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
 		t.Fatalf("expected one-shot step kind, got %q", step.PlanKind)
 	}
-	for _, required := range []string{"web_search_exa", "read_document", "get_document_blocks", "write_document_content", "update_document_block"} {
+	for _, required := range []string{"web_search_exa", "read_document", "get_document_blocks", "publish_document_change_proposal"} {
 		if !slices.Contains(step.AllowedTools, required) {
 			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+	if slices.Contains(step.AllowedTools, "search_documents") {
+		t.Fatalf("did not expect search_documents for a known current document in %#v", step.AllowedTools)
+	}
+	for _, directWrite := range []string{"write_document_content", "update_document_block"} {
+		if slices.Contains(step.AllowedTools, directWrite) {
+			t.Fatalf("did not expect direct document write tool %q in %#v", directWrite, step.AllowedTools)
 		}
 	}
 	if !strings.Contains(step.Instructions, "Do not create or save a reusable agent") {
@@ -131,6 +139,12 @@ func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
 	}
 	if !strings.Contains(step.Instructions, "Read the current document") {
 		t.Fatalf("expected document-specific execution plan, got %q", step.Instructions)
+	}
+	if !strings.Contains(step.Instructions, "publish_document_change_proposal") || !strings.Contains(step.Instructions, "Do not call request_approval for Docs proposals") {
+		t.Fatalf("expected Docs proposal submission instructions, got %q", step.Instructions)
+	}
+	if !strings.Contains(step.Instructions, "Do not use search_documents to rediscover or inspect a known current document") {
+		t.Fatalf("expected current-doc search guardrail, got %q", step.Instructions)
 	}
 }
 
