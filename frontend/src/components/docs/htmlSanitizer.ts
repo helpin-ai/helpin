@@ -27,14 +27,64 @@ const ALLOWED_ATTR = [
   'href', 'target', 'rel', 'title',
   'src', 'alt', 'width', 'height', 'loading',
   'class', 'id',
+  'style',
   'colspan', 'rowspan',
 ];
 
+const ALLOWED_STYLE_PROPS = new Set([
+  'background', 'background-color', 'border', 'border-color', 'border-radius', 'border-style', 'border-width',
+  'align-items', 'color', 'column-gap', 'display', 'flex-basis', 'flex-grow', 'flex-shrink',
+  'font-size', 'font-weight', 'gap', 'height', 'justify-content', 'line-height',
+  'margin', 'margin-bottom', 'margin-left', 'margin-right', 'margin-top',
+  'padding', 'padding-bottom', 'padding-left', 'padding-right', 'padding-top',
+  'text-align', 'vertical-align', 'width',
+]);
+
 export function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
+  const safe = DOMPurify.sanitize(html, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: true,
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|data:image\/(?:gif|jpe?g|png|webp);base64,[a-z0-9+/=]+$|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
   });
+  return sanitizeInlineStyles(safe);
+}
+
+function sanitizeInlineStyles(html: string): string {
+  if (typeof document === 'undefined' || !html.includes('style=')) {
+    return html;
+  }
+
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  template.content.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
+    const style = filterStyleAttribute(el.getAttribute('style') ?? '');
+    if (style) {
+      el.setAttribute('style', style);
+    } else {
+      el.removeAttribute('style');
+    }
+  });
+  return template.innerHTML;
+}
+
+function filterStyleAttribute(style: string): string {
+  const rules: string[] = [];
+  for (const declaration of style.split(';')) {
+    const index = declaration.indexOf(':');
+    if (index <= 0) continue;
+    const prop = declaration.slice(0, index).trim().toLowerCase();
+    const value = declaration.slice(index + 1).trim();
+    if (!ALLOWED_STYLE_PROPS.has(prop) || !isSafeStyleValue(value)) continue;
+    rules.push(`${prop}: ${value}`);
+  }
+  return rules.join('; ');
+}
+
+function isSafeStyleValue(value: string): boolean {
+  const lower = value.trim().toLowerCase();
+  if (!lower || lower.includes('url(') || lower.includes('expression') || lower.includes('@import')) {
+    return false;
+  }
+  return /^[a-z0-9\s#.,%()/_-]+$/i.test(value);
 }

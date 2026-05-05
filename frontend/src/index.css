@@ -660,6 +660,46 @@
 .docs-editor-prose .docs-html-block > *:last-child {
   margin-bottom: 0;
 }
+.docs-html-block-frame {
+  width: 100%;
+  min-height: 520px;
+  border: 0;
+  display: block;
+}
+.docs-fb-background-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.875rem;
+  background: #eeeeff;
+}
+.docs-fb-background-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.5rem;
+  border: 1px solid #d4d4f5;
+  border-radius: 0.625rem;
+  background: #f8f8ff;
+}
+.docs-fb-background-card img {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  margin: 0;
+  border-radius: 0.4375rem;
+}
+.docs-fb-background-card code {
+  min-width: 0;
+  overflow-x: auto;
+  color: #1e1b4b;
+  font-size: 0.65625rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .docs-editor-prose [data-docs-stale="true"] {
   position: relative;
   border-left: 3px solid oklch(0.68 0.16 55);

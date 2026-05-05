@@ -5,9 +5,10 @@ import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { sanitizeHtml } from './htmlSanitizer';
 
 export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, getPos }: NodeViewProps) {
-  const { html } = node.attrs;
+  const { html, renderMode } = node.attrs;
   const editable = editor.isEditable;
   const hasContent = !!(html && html.trim());
+  const sandboxed = renderMode === 'sandboxed';
   const [focused, setFocused] = useState(false);
   const [editing, setEditing] = useState(!hasContent && editable);
   const [draft, setDraft] = useState(html ?? '');
@@ -15,8 +16,8 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Sanitize for preview
-  const sanitized = useMemo(() => hasContent ? sanitizeHtml(html) : '', [html, hasContent]);
-  const wasStripped = hasContent && sanitized.trim().length < html.trim().length;
+  const sanitized = useMemo(() => hasContent && !sandboxed ? sanitizeHtml(html) : '', [html, hasContent, sandboxed]);
+  const wasStripped = hasContent && !sandboxed && sanitized.trim().length < html.trim().length;
 
   // Sync draft when node attrs change externally (undo/redo)
   useEffect(() => { setDraft(html ?? ''); }, [html]);
@@ -171,6 +172,15 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
                 placeholder="<div>&#10;  <p>Your HTML here...</p>&#10;</div>"
               />
             </div>
+          ) : hasContent && sandboxed ? (
+            <iframe
+              className="docs-html-block-frame w-full rounded-md border bg-background"
+              sandbox="allow-scripts allow-forms allow-popups allow-presentation"
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              srcDoc={html}
+              onDoubleClick={editable ? switchToEdit : undefined}
+            />
           ) : hasContent ? (
             <div
               className="prose prose-sm dark:prose-invert max-w-none text-sm"

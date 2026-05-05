@@ -57,6 +57,8 @@ func (s *DocsContentService) Save(ctx context.Context, documentID string, conten
 		}
 	}
 
+	content = s.restoreImportedToggleAttrs(ctx, documentID, content)
+
 	saved, err := s.contentRepo.UpsertWithActor(ctx, documentID, content, actorID)
 	if err != nil {
 		return nil, err

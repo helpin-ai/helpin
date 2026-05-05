@@ -206,6 +206,104 @@ func TestRenderHTML_ToggleSection(t *testing.T) {
 	}
 }
 
+func TestRenderHTML_ToggleSectionWithHelpScoutMetadata(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"toggleSection","attrs":{"title":"Authentication & Setup","icon":"🔑","badgeText":"3 topics","sourceStyle":"helpScoutCard","open":true},"content":[{"type":"paragraph","content":[{"type":"text","text":"How to Get Your API Key"}]}]}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`data-toggle-icon="🔑"`,
+		`data-toggle-badge="3 topics"`,
+		`data-toggle-style="helpScoutCard"`,
+		`<span class="docs-toggle-icon">🔑</span>`,
+		`<span class="docs-toggle-badge">3 topics</span>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in rendered Help Scout toggle, got: %s", want, got)
+		}
+	}
+}
+
+func TestRenderHTML_HtmlBlockAllowsSafeDataImage(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<div class=\"docs-fb-background-grid\"><div class=\"docs-fb-background-card\"><img src=\"data:image/png;base64,iVBORw0KGgo=\" width=\"36\" height=\"36\"><code>106018623298955</code></div></div>"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`docs-fb-background-grid`, `src="data:image/png;base64,iVBORw0KGgo="`, `106018623298955`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in rendered HTML block, got: %s", want, got)
+		}
+	}
+}
+
+func TestRenderHTML_HtmlBlockAllowsSafePresentationStyles(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<div style=\"border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom:16px; display:flex; align-items:flex-start; position:absolute\"><p><span style=\"background: #007BFF;color:#fff;width:24px;height:24px;line-height:24px;text-align:center;display: inline-block;border-radius:50%;font-weight:bold; flex-shrink:0; background-image:url(javascript:alert(1))\">2</span> Click on <strong>Generate API Key</strong>.</p><script>alert(1)</script></div>"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`border: 1px solid #e5e7eb`, `border-radius: 10px`, `padding: 16px`, `background: #007BFF`, `display: flex`, `align-items: flex-start`, `display: inline-block`, `flex-shrink: 0`, `Generate API Key`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in rendered HTML block, got: %s", want, got)
+		}
+	}
+	for _, notWant := range []string{`position:absolute`, `background-image`, `javascript`, `<script`} {
+		if strings.Contains(got, notWant) {
+			t.Fatalf("expected unsafe style/content %q to be stripped, got: %s", notWant, got)
+		}
+	}
+}
+
+func TestRenderHTML_SandboxedHtmlBlockRendersEscapedSrcdocIframe(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"renderMode":"sandboxed","html":"<div><table><tbody id=\"models-body\"></tbody></table><script>document.getElementById('models-body').innerHTML='<tr><td>Kling</td></tr>';</script></div>"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`<iframe`, `class="docs-html-block-frame"`, `sandbox="allow-scripts allow-forms allow-popups allow-presentation"`, `srcdoc="`, `&lt;script&gt;`, `models-body`, `Kling`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected sandboxed iframe output %q, got: %s", want, got)
+		}
+	}
+	for _, notWant := range []string{`allow-same-origin`, `<script>document`} {
+		if strings.Contains(got, notWant) {
+			t.Fatalf("expected sandboxed HTML to avoid %q outside srcdoc, got: %s", notWant, got)
+		}
+	}
+}
+
+func TestRenderHTML_HeadingUsesSourceIDWhenPresent(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"heading","attrs":{"level":3,"id":"Video-Model-Cost--Plan-Comparison-u_9kX"},"content":[{"type":"text","text":"Video Models & Plan Comparison"}]}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `<h3 id="Video-Model-Cost--Plan-Comparison-u_9kX">`) {
+		t.Fatalf("expected rendered heading to use source ID, got: %s", got)
+	}
+	if strings.Contains(got, `id="video-models-plan-comparison"`) {
+		t.Fatalf("expected rendered heading not to regenerate ID when source ID exists, got: %s", got)
+	}
+}
+
+func TestRenderHTML_HeadingRendersAnchorAliases(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"heading","attrs":{"level":3,"id":"Video-Model-Generation--Plan-Comparison-m-vqd","anchorAliases":["Video-Model-Cost--Plan-Comparison-u_9kX"]},"content":[{"type":"text","text":"Video Models & Plan Comparison"}]}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`<span id="Video-Model-Cost--Plan-Comparison-u_9kX" class="docs-heading-anchor-alias" aria-hidden="true"></span>`,
+		`<h3 id="Video-Model-Generation--Plan-Comparison-m-vqd">`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected heading alias output %q, got: %s", want, got)
+		}
+	}
+}
+
 func TestRenderHTML_FileAttachment(t *testing.T) {
 	input := `{"type":"doc","content":[{"type":"fileAttachment","attrs":{"fileName":"report.pdf","contentType":"application/pdf","url":"https://example.com/report.pdf"}}]}`
 	got, err := RenderHTML(json.RawMessage(input))
