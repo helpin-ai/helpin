@@ -795,6 +795,9 @@ function TaskDetailPanelBody({
       if (!patch) {
         return;
       }
+      if (isBlockedTaskPatch(patch, blockedAutosavePatchSignatureRef.current)) {
+        return;
+      }
 
       void pmTaskService.update(workspaceId, taskId, patch).then(({ data }) => {
         if (!data) {

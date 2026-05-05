@@ -1,5 +1,18 @@
 import type { UpdateTaskRequest } from '@/lib/pmTypes';
 
+export function taskPatchSignature(patch: UpdateTaskRequest): string {
+  return JSON.stringify(
+    Object.entries(patch).sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+export function isBlockedFailedTaskPatch(
+  pendingPatch: UpdateTaskRequest,
+  failedPatchSignature: string | null,
+): boolean {
+  return failedPatchSignature === taskPatchSignature(pendingPatch);
+}
+
 export function getFlushablePendingTaskPatch(
   pendingPatch: UpdateTaskRequest,
   descriptionPendingUploads: number,

@@ -806,11 +806,16 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	if req.TeamID != nil {
 		current.TeamID = nullableString(req.TeamID)
 	}
-	if err := validateEpicScope(ctx, s.epicRepo, current.WorkspaceID, current.EpicID, current.TeamID); err != nil {
-		return nil, err
+	teamChanged := req.TeamID != nil
+	if req.EpicID != nil || teamChanged {
+		if err := validateEpicScope(ctx, s.epicRepo, current.WorkspaceID, current.EpicID, current.TeamID); err != nil {
+			return nil, err
+		}
 	}
-	if err := validateSprintScope(ctx, s.sprintRepo, current.WorkspaceID, current.SprintID, current.TeamID); err != nil {
-		return nil, err
+	if req.SprintID != nil || teamChanged {
+		if err := validateSprintScope(ctx, s.sprintRepo, current.WorkspaceID, current.SprintID, current.TeamID); err != nil {
+			return nil, err
+		}
 	}
 	if req.RequesterID != nil {
 		// Handled below via workspace member resolution.

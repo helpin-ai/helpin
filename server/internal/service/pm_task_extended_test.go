@@ -1719,6 +1719,29 @@ func TestPMTaskService_Estimate(t *testing.T) {
 	if updated.Task.Estimate == nil || *updated.Task.Estimate != 13 {
 		t.Errorf("updated estimate mismatch, got %v", updated.Task.Estimate)
 	}
+
+	t.Run("estimate-only update ignores pre-existing sprint team mismatch", func(t *testing.T) {
+		teamA := "team-estimate-a"
+		teamB := "team-estimate-b"
+		sprintB := "sprint-estimate-b"
+		seedTaskTeam(t, env, teamA, "Estimate Team A")
+		seedTaskTeam(t, env, teamB, "Estimate Team B")
+		seedStorySprint(t, env, sprintB, teamB, "Estimate Sprint B")
+
+		story := createTestTask(t, env, "Mismatched Planning Estimate")
+		mustExec(t, env.db, `UPDATE pm_tasks SET team_id = ?, sprint_id = ? WHERE id = ?`, teamA, sprintB, story.Task.ID)
+
+		newEst := 2
+		updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
+			Estimate: &newEst,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update estimate with existing planning mismatch: %v", err)
+		}
+		if updated.Task.Estimate == nil || *updated.Task.Estimate != newEst {
+			t.Fatalf("estimate = %v, want %d", updated.Task.Estimate, newEst)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
