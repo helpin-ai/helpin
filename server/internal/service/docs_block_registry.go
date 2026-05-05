@@ -39,14 +39,10 @@ type docsBlockDefinition struct {
 var docsBlockRegistry = map[docsBlockKind]docsBlockDefinition{
 	docsBlockKindAISection: {
 		Kind:              docsBlockKindAISection,
-		Label:             "AI section",
-		AgentReadableKind: "ai_section",
+		Label:             "Legacy AI section",
+		AgentReadableKind: "section",
 		Attrs:             []string{"status", "ownerAgentId", "lastGeneratedAt", "sourceCount"},
-		AuditBehavior:     "ai_section_lifecycle",
-		Actions: []model.DocsBlockAgentAction{
-			{Type: "regenerate", Label: "Regenerate section"},
-			{Type: "approve_candidate", Label: "Approve generated candidate"},
-		},
+		AuditBehavior:     "legacy_section",
 	},
 	docsBlockKindCitation: {
 		Kind:               docsBlockKindCitation,

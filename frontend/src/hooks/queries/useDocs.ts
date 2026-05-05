@@ -429,6 +429,46 @@ export function useDocsBlocks(wsId: string, docId: string) {
   })
 }
 
+export function useDocsChangeProposals(wsId: string, docId: string) {
+  return useQuery({
+    queryKey: queryKeys.docs.changeProposals(wsId, docId),
+    queryFn: async () => unwrap(await docsService.listChangeProposals(wsId, docId)),
+    enabled: !!wsId && !!docId,
+  })
+}
+
+export function useApplyDocsChangeProposal(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, proposalId }: { docId: string; proposalId: string }) =>
+      unwrap(await docsService.applyChangeProposal(wsId, docId, proposalId)),
+    onSuccess: (response, { docId }) => {
+      qc.setQueryData(queryKeys.docs.content(wsId, docId), response.content)
+      qc.invalidateQueries({ queryKey: queryKeys.docs.blocks(wsId, docId) })
+      qc.invalidateQueries({ queryKey: queryKeys.docs.changeProposals(wsId, docId) })
+      qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId), exact: true })
+      qc.invalidateQueries({
+        predicate: (query) => {
+          const k = query.queryKey
+          return k[0] === 'docs' && k[1] === wsId && k[2] === 'documents'
+            && (k.length === 3 || (k.length === 4 && typeof k[3] !== 'string'))
+        },
+      })
+    },
+  })
+}
+
+export function useDiscardDocsChangeProposal(wsId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ docId, proposalId }: { docId: string; proposalId: string }) =>
+      unwrap(await docsService.discardChangeProposal(wsId, docId, proposalId)),
+    onSuccess: (_, { docId }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.docs.changeProposals(wsId, docId) })
+    },
+  })
+}
+
 export function useSaveDocsContent(wsId: string) {
   const qc = useQueryClient()
   return useMutation({

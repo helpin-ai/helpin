@@ -755,12 +755,15 @@ func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessag
 	}
 	response.Message = strings.TrimSpace(response.Message)
 	if strings.TrimSpace(intent) == model.AgentRunResumeIntentApprove {
-		if response.Message != "" {
-			return response.Message
-		}
 		var request model.ApprovalRequest
 		if err := json.Unmarshal(requestPayload, &request); err != nil {
+			if response.Message != "" {
+				return response.Message
+			}
 			return "Approved. Continue."
+		}
+		if response.Message != "" {
+			return response.Message
 		}
 		switch strings.ToLower(strings.TrimSpace(request.Phase)) {
 		case "prd":

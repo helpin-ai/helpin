@@ -160,6 +160,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			notifications_enabled BOOLEAN NOT NULL DEFAULT 1,
 			auto_calculate_bonuses BOOLEAN NOT NULL DEFAULT 0,
 			team_weight INTEGER NOT NULL DEFAULT 50,
+			enforce_two_factor BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

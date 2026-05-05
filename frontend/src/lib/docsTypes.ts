@@ -168,6 +168,32 @@ export interface AISectionCandidateResponse {
   content?: DocsContent;
 }
 
+export interface DocsChangeProposal {
+  id: string;
+  workspace_id: string;
+  document_id: string;
+  block_id?: string | null;
+  agent_id?: string | null;
+  agent_run_id?: string | null;
+  scope: 'document' | 'block';
+  status: 'pending' | 'applied' | 'discarded' | string;
+  revision?: number;
+  summary: string;
+  content_markdown: string;
+  content: unknown;
+  sources?: unknown;
+  created_by: string;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocsChangeProposalApplyResponse {
+  proposal: DocsChangeProposal;
+  content: DocsContent;
+}
+
 export interface DocsReferenceItem {
   id: string;
   kind: 'doc_link' | 'entity_embed' | 'citation' | 'comment' | 'agent_run' | string;
