@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
@@ -26,6 +27,11 @@ type shortcutAPIImportDataset struct {
 	Docs       []shortcutAPIDocSlim
 	Enrichment *shortcutAPIEnrichment
 	Warnings   []string
+}
+
+type shortcutAPIPreviewScanSnapshot struct {
+	Request model.ShortcutAPIImportPreviewRequest `json:"request"`
+	Dataset *shortcutAPIImportDataset             `json:"dataset,omitempty"`
 }
 
 func (s *PMImportService) PreviewShortcutAPI(ctx context.Context, workspaceID, actorID string, req model.ShortcutAPIImportPreviewRequest) (*model.ShortcutImportPreviewResponse, error) {
@@ -60,12 +66,199 @@ func (s *PMImportService) PreviewShortcutAPI(ctx context.Context, workspaceID, a
 	return resp, nil
 }
 
-func (s *PMImportService) ExecuteShortcutAPI(ctx context.Context, workspaceID, actorID string, req model.ShortcutAPIImportExecuteRequest) (*model.ShortcutImportExecuteResponse, error) {
+func (s *PMImportService) StartShortcutAPIPreviewScan(ctx context.Context, workspaceID, actorID string, req model.ShortcutAPIImportPreviewRequest) (*model.ShortcutAPIPreviewStartResponse, error) {
 	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(req.APIToken) == "" {
 		return nil, fmt.Errorf("Shortcut API token is required")
+	}
+	scanID := strings.TrimSpace(req.ScanID)
+	if _, err := uuid.Parse(scanID); err != nil {
+		scanID = uuid.NewString()
+	}
+	now := time.Now().UTC()
+	job := &model.PMImportJob{
+		ID:               scanID,
+		WorkspaceID:      workspaceID,
+		Source:           model.PMImportSourceShortcutAPIPreview,
+		Status:           model.PMImportStatusPending,
+		FileName:         "shortcut-api-preview",
+		CurrentStep:      "queued",
+		StepsTotal:       1,
+		StartedBy:        actorID,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		PayloadEncrypted: nil,
+	}
+	if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
+		return nil, fmt.Errorf("create Shortcut preview scan: %w", err)
+	}
+	req.ScanID = scanID
+	go s.runShortcutAPIPreviewScan(scanID, workspaceID, actorID, req)
+	return &model.ShortcutAPIPreviewStartResponse{ScanID: scanID, Status: model.PMImportStatusPending}, nil
+}
+
+func (s *PMImportService) GetShortcutAPIPreviewScan(ctx context.Context, workspaceID, actorID, scanID string) (*model.ShortcutAPIPreviewScanResponse, error) {
+	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	if err := s.reconcileStaleShortcutPreviewScans(ctx, workspaceID); err != nil {
+		return nil, err
+	}
+	var job model.PMImportJob
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND workspace_id = ? AND source = ?", scanID, workspaceID, model.PMImportSourceShortcutAPIPreview).
+		First(&job).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("Shortcut preview scan not found")
+		}
+		return nil, fmt.Errorf("get Shortcut preview scan: %w", err)
+	}
+	resp := &model.ShortcutAPIPreviewScanResponse{
+		ScanID: job.ID,
+		Status: job.Status,
+		Progress: model.ShortcutImportStatusProgress{
+			CurrentStep:       job.CurrentStep,
+			StepsCompleted:    job.StepsCompleted,
+			StepsTotal:        job.StepsTotal,
+			EntitiesProcessed: job.EntitiesProcessed,
+			EntitiesTotal:     job.EntitiesTotal,
+		},
+		Error:     job.Error,
+		CreatedAt: &job.CreatedAt,
+		UpdatedAt: &job.UpdatedAt,
+	}
+	if job.Result != nil && strings.TrimSpace(*job.Result) != "" {
+		var preview model.ShortcutImportPreviewResponse
+		if err := json.Unmarshal([]byte(*job.Result), &preview); err == nil {
+			resp.Preview = &preview
+		}
+	}
+	return resp, nil
+}
+
+func (s *PMImportService) reconcileStaleShortcutPreviewScans(ctx context.Context, workspaceID string) error {
+	cutoff := time.Now().UTC().Add(-shortcutImportStaleAfter)
+	msg := fmt.Sprintf("Shortcut preview scan did not report progress for %s. Start a new preview scan.", shortcutImportStaleAfter)
+	now := time.Now().UTC()
+	if err := s.db.WithContext(ctx).Model(&model.PMImportJob{}).
+		Where("workspace_id = ? AND source = ? AND status IN ? AND updated_at < ?", workspaceID, model.PMImportSourceShortcutAPIPreview, []string{
+			model.PMImportStatusPending,
+			model.PMImportStatusScanning,
+		}, cutoff).
+		Updates(map[string]interface{}{
+			"status":       model.PMImportStatusFailed,
+			"current_step": "failed",
+			"error":        &msg,
+			"completed_at": &now,
+			"updated_at":   now,
+		}).Error; err != nil {
+		return fmt.Errorf("reconcile stale Shortcut preview scans: %w", err)
+	}
+	return nil
+}
+
+func (s *PMImportService) runShortcutAPIPreviewScan(scanID, workspaceID, actorID string, req model.ShortcutAPIImportPreviewRequest) {
+	ctx := context.Background()
+	if err := s.updatePreviewScan(ctx, scanID, map[string]interface{}{
+		"status":       model.PMImportStatusScanning,
+		"current_step": "validating_token",
+		"updated_at":   time.Now().UTC(),
+	}); err != nil {
+		return
+	}
+	client := NewShortcutAPIClient(req.APIToken)
+	s.publishShortcutAPIScanProgress(workspaceID, actorID, scanID, "validating_token", "Validating Shortcut token", 0, 0)
+	if _, err := client.GetCurrentMember(ctx); err != nil {
+		s.failShortcutAPIPreviewScan(ctx, workspaceID, actorID, scanID, "Shortcut token validation failed", err)
+		return
+	}
+	reporter := shortcutAPIScanReporter{
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		ScanID:      scanID,
+		JobID:       scanID,
+		Service:     s,
+	}
+	dataset, err := s.fetchShortcutAPIImportDataset(ctx, client, req.Options, reporter)
+	if err != nil {
+		s.failShortcutAPIPreviewScan(ctx, workspaceID, actorID, scanID, "Shortcut scan failed", err)
+		return
+	}
+	_ = s.updatePreviewScan(ctx, scanID, map[string]interface{}{
+		"current_step":       "building_preview",
+		"entities_processed": len(dataset.Rows),
+		"entities_total":     len(dataset.Rows),
+		"updated_at":         time.Now().UTC(),
+	})
+	resp, err := s.buildShortcutPreviewFromRows(ctx, workspaceID, filterShortcutRows(dataset.Rows, req.Options), dataset.Enrichment, dataset.Docs, dataset.Warnings)
+	if err != nil {
+		s.failShortcutAPIPreviewScan(ctx, workspaceID, actorID, scanID, "Shortcut preview build failed", err)
+		return
+	}
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		s.failShortcutAPIPreviewScan(ctx, workspaceID, actorID, scanID, "Shortcut preview encoding failed", err)
+		return
+	}
+	updates := map[string]interface{}{
+		"status":             model.PMImportStatusReady,
+		"current_step":       "ready",
+		"steps_completed":    1,
+		"steps_total":        1,
+		"entities_processed": len(dataset.Rows),
+		"entities_total":     len(dataset.Rows),
+		"total_rows":         len(dataset.Rows),
+		"progress":           100,
+		"result":             string(raw),
+		"updated_at":         time.Now().UTC(),
+	}
+	if encrypted, ok := s.encryptedShortcutAPIPreviewSnapshot(req, dataset); ok {
+		updates["payload_encrypted"] = encrypted
+	}
+	if err := s.updatePreviewScan(ctx, scanID, updates); err != nil {
+		return
+	}
+	s.publishShortcutAPIScanProgress(workspaceID, actorID, scanID, "ready", "Shortcut preview is ready", len(dataset.Rows), len(dataset.Rows))
+}
+
+func (s *PMImportService) failShortcutAPIPreviewScan(ctx context.Context, workspaceID, actorID, scanID, message string, err error) {
+	errText := err.Error()
+	now := time.Now().UTC()
+	_ = s.updatePreviewScan(ctx, scanID, map[string]interface{}{
+		"status":       model.PMImportStatusFailed,
+		"current_step": "failed",
+		"error":        &errText,
+		"completed_at": &now,
+		"updated_at":   now,
+	})
+	s.publishShortcutAPIScanProgress(workspaceID, actorID, scanID, "failed", message, 0, 0)
+}
+
+func (s *PMImportService) encryptedShortcutAPIPreviewSnapshot(req model.ShortcutAPIImportPreviewRequest, dataset *shortcutAPIImportDataset) (string, bool) {
+	if len(s.encryptionKey) != 32 || dataset == nil {
+		return "", false
+	}
+	snapshotDataset := *dataset
+	snapshotDataset.Stories = nil
+	raw, err := json.Marshal(shortcutAPIPreviewScanSnapshot{Request: req, Dataset: &snapshotDataset})
+	if err != nil {
+		return "", false
+	}
+	encrypted, err := appcrypto.EncryptString(string(raw), s.encryptionKey)
+	if err != nil {
+		return "", false
+	}
+	return encrypted, true
+}
+
+func (s *PMImportService) ExecuteShortcutAPI(ctx context.Context, workspaceID, actorID string, req model.ShortcutAPIImportExecuteRequest) (*model.ShortcutImportExecuteResponse, error) {
+	if err := s.requireWorkspaceAdmin(ctx, workspaceID, actorID); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.APIToken) == "" && strings.TrimSpace(req.PreviewScanID) == "" {
+		return nil, fmt.Errorf("Shortcut API token or preview scan is required")
 	}
 	if req.UserMappings == nil {
 		req.UserMappings = map[string]string{}
@@ -174,14 +367,33 @@ func (s *PMImportService) startShortcutAPIImportWorkflow(ctx context.Context, jo
 }
 
 func (s *PMImportService) executeShortcutAPIImport(ctx context.Context, workspaceID, actorID string, req model.ShortcutAPIImportExecuteRequest, jobID string) (*model.ShortcutImportResult, int, error) {
+	var dataset *shortcutAPIImportDataset
+	if strings.TrimSpace(req.PreviewScanID) != "" {
+		snapshot, err := s.shortcutAPIPreviewSnapshot(ctx, workspaceID, req.PreviewScanID)
+		if err != nil && strings.TrimSpace(req.APIToken) == "" {
+			return nil, 0, err
+		}
+		if err == nil && snapshot != nil {
+			if strings.TrimSpace(req.APIToken) == "" {
+				req.APIToken = snapshot.Request.APIToken
+			}
+			dataset = snapshot.Dataset
+		}
+	}
+	if strings.TrimSpace(req.APIToken) == "" {
+		return nil, 0, fmt.Errorf("Shortcut API token is required")
+	}
 	client := NewShortcutAPIClient(req.APIToken)
 	if _, err := client.GetCurrentMember(ctx); err != nil {
 		return nil, 0, err
 	}
 	_ = s.markStep(ctx, jobID, "api_scan", 1, 0, s.shortcutImportTotalSteps(req.APIToken, req.Options))
-	dataset, err := s.fetchShortcutAPIImportDataset(ctx, client, req.Options, shortcutAPIScanReporter{})
-	if err != nil {
-		return nil, 0, err
+	if dataset == nil {
+		var err error
+		dataset, err = s.fetchShortcutAPIImportDataset(ctx, client, req.Options, shortcutAPIScanReporter{})
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 	result, totalRows, err := s.executeShortcutRows(ctx, workspaceID, actorID, dataset.Rows, dataset.Warnings, req, jobID, req.APIToken, client, dataset.Enrichment, false)
 	if err != nil {
@@ -201,6 +413,7 @@ type shortcutAPIScanReporter struct {
 	WorkspaceID string
 	ActorID     string
 	ScanID      string
+	JobID       string
 	Service     *PMImportService
 }
 
@@ -208,7 +421,56 @@ func (r shortcutAPIScanReporter) publish(phase, message string, processed, total
 	if r.Service == nil {
 		return
 	}
+	if strings.TrimSpace(r.JobID) != "" {
+		_ = r.Service.updatePreviewScan(context.Background(), r.JobID, map[string]interface{}{
+			"status":             model.PMImportStatusScanning,
+			"current_step":       phase,
+			"entities_processed": processed,
+			"entities_total":     total,
+			"updated_at":         time.Now().UTC(),
+		})
+	}
 	r.Service.publishShortcutAPIScanProgress(r.WorkspaceID, r.ActorID, r.ScanID, phase, message, processed, total)
+}
+
+func (s *PMImportService) updatePreviewScan(ctx context.Context, scanID string, updates map[string]interface{}) error {
+	if strings.TrimSpace(scanID) == "" {
+		return nil
+	}
+	return s.db.WithContext(ctx).
+		Model(&model.PMImportJob{}).
+		Where("id = ? AND source = ?", scanID, model.PMImportSourceShortcutAPIPreview).
+		Updates(updates).Error
+}
+
+func (s *PMImportService) shortcutAPIPreviewSnapshot(ctx context.Context, workspaceID, scanID string) (*shortcutAPIPreviewScanSnapshot, error) {
+	if len(s.encryptionKey) != 32 {
+		return nil, fmt.Errorf("Shortcut preview snapshot is unavailable because import encryption is not configured")
+	}
+	var job model.PMImportJob
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND workspace_id = ? AND source = ? AND status = ?", scanID, workspaceID, model.PMImportSourceShortcutAPIPreview, model.PMImportStatusReady).
+		First(&job).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("Shortcut preview scan is not ready")
+		}
+		return nil, fmt.Errorf("get Shortcut preview scan: %w", err)
+	}
+	if job.PayloadEncrypted == nil || strings.TrimSpace(*job.PayloadEncrypted) == "" {
+		return nil, fmt.Errorf("Shortcut preview snapshot is unavailable")
+	}
+	raw, err := appcrypto.DecryptString(*job.PayloadEncrypted, s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("Shortcut preview snapshot could not be decrypted")
+	}
+	var snapshot shortcutAPIPreviewScanSnapshot
+	if err := json.Unmarshal([]byte(raw), &snapshot); err != nil {
+		return nil, fmt.Errorf("Shortcut preview snapshot is invalid")
+	}
+	if snapshot.Dataset == nil {
+		return nil, fmt.Errorf("Shortcut preview snapshot is empty")
+	}
+	return &snapshot, nil
 }
 
 func (s *PMImportService) fetchShortcutAPIImportDataset(ctx context.Context, client *ShortcutAPIClient, options model.ShortcutImportOptions, reporter shortcutAPIScanReporter) (*shortcutAPIImportDataset, error) {
