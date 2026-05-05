@@ -1,11 +1,5 @@
 import type { Workspace } from '@/lib/types';
-
-export function isEditableShortcutTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-
-  const tagName = target.tagName.toLowerCase();
-  return tagName === 'input' || tagName === 'textarea' || target.isContentEditable;
-}
+export { isEditableShortcutTarget } from '@/lib/keyboardShortcuts';
 
 export function isMacPlatform(): boolean {
   if (typeof navigator === 'undefined') return false;

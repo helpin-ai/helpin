@@ -297,6 +297,12 @@ const (
 	DocsAISectionCandidateStatusFailed   = "failed"
 )
 
+const (
+	DocsChangeProposalStatusPending   = "pending"
+	DocsChangeProposalStatusApplied   = "applied"
+	DocsChangeProposalStatusDiscarded = "discarded"
+)
+
 // DocsAISectionCandidate stores a proposed replacement for one AI-section
 // block. The approved document aggregate is not changed until approval.
 type DocsAISectionCandidate struct {
@@ -320,6 +326,45 @@ type DocsAISectionCandidate struct {
 }
 
 func (DocsAISectionCandidate) TableName() string { return "docs_ai_section_candidates" }
+
+// DocsChangeProposal stores an agent-authored document or block replacement
+// for review inside Docs. The document aggregate is unchanged until applied.
+type DocsChangeProposal struct {
+	ID              string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	DocumentID      string          `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_change_proposals_doc_status_created,priority:1"`
+	BlockID         *string         `json:"block_id,omitempty" gorm:"type:uuid;index"`
+	AgentID         *string         `json:"agent_id,omitempty" gorm:"type:uuid;index"`
+	AgentRunID      *string         `json:"agent_run_id,omitempty" gorm:"type:uuid;index"`
+	Scope           string          `json:"scope" gorm:"not null"`
+	Status          string          `json:"status" gorm:"not null;default:'pending';index:idx_docs_change_proposals_doc_status_created,priority:2"`
+	Revision        int             `json:"revision,omitempty" gorm:"not null;default:0"`
+	Summary         string          `json:"summary" gorm:"type:text;not null"`
+	ContentMarkdown string          `json:"content_markdown" gorm:"type:text;not null"`
+	Content         json.RawMessage `json:"content" gorm:"type:jsonb;not null"`
+	Sources         json.RawMessage `json:"sources,omitempty" gorm:"type:jsonb;not null;default:'[]'"`
+	CreatedBy       string          `json:"created_by" gorm:"not null"`
+	ResolvedBy      *string         `json:"resolved_by,omitempty" gorm:"type:uuid"`
+	ResolvedAt      *time.Time      `json:"resolved_at,omitempty"`
+	CreatedAt       time.Time       `json:"created_at" gorm:"autoCreateTime;index:idx_docs_change_proposals_doc_status_created,priority:3,sort:desc"`
+	UpdatedAt       time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (DocsChangeProposal) TableName() string { return "docs_change_proposals" }
+
+type CreateDocsChangeProposalRequest struct {
+	Scope           string          `json:"scope"`
+	DocumentID      string          `json:"document_id"`
+	BlockID         *string         `json:"block_id,omitempty"`
+	AgentID         *string         `json:"agent_id,omitempty"`
+	AgentRunID      *string         `json:"agent_run_id,omitempty"`
+	Revision        int             `json:"revision,omitempty"`
+	Summary         string          `json:"summary"`
+	ContentMarkdown string          `json:"content_markdown"`
+	Content         json.RawMessage `json:"content"`
+	Sources         json.RawMessage `json:"sources,omitempty"`
+	CreatedBy       string          `json:"created_by"`
+}
 
 // DocsVersion stores saved snapshots.
 type DocsVersion struct {

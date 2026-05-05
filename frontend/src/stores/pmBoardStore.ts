@@ -72,7 +72,7 @@ interface PMBoardState {
   setFilters: (filters: BoardFilters) => Promise<void>;
   refreshBoard: () => Promise<void>;
   createTask: (payload: CreateTaskRequest) => Promise<Task | null>;
-  moveTask: (payload: MovePayload) => Promise<void>;
+  moveTask: (payload: MovePayload) => Promise<boolean>;
   loadMoreColumn: (stateId: string) => Promise<void>;
 
   /** Incremental patch: add, update, remove, or move a single task in the board state. Returns true when reconciled locally. */
@@ -779,7 +779,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
     if (fromStateId === toStateId) {
       if (targetStateType === 'done') {
-        return;
+        return true;
       }
       const reorderPayload = { position: toIndex, debug_trace_id: traceID };
       logPMDnD('store.move.reorder_request', {
@@ -795,13 +795,14 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
           error: reorderRes.error,
         });
         set({ columns: snapshot, error: reorderRes.error ?? 'Failed to reorder task' });
+        return false;
       } else {
         logPMDnD('store.move.reorder_success', {
           trace_id: traceID,
           task_id: taskId,
         });
       }
-      return;
+      return true;
     }
 
     const movePayload = targetStateType === 'done'
@@ -826,11 +827,11 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         });
         set({ columns: snapshot, error: moveRes.error ?? 'Failed to move task' });
       }
-      return;
+      return false;
     }
 
     // Skip patching if user switched board context mid-flight
-    if (contextChanged()) return;
+    if (contextChanged()) return false;
 
     const updatedTask = moveRes.data?.task;
     if (updatedTask) {
@@ -873,6 +874,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       });
       get().refreshBoard();
     }
+    return true;
   },
 
   // ── Member board actions ─────────────────────────────────────────

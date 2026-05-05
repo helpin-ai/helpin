@@ -2013,7 +2013,7 @@ func parsePreferredOneShotCommandIntent(text string, pageContext model.CommandBa
 
 func shouldPreferOneShotCommandIntent(text string, pageContext model.CommandBarPageContext) bool {
 	lower := strings.ToLower(strings.TrimSpace(text))
-	targetType := normalizeCommandBarTargetType(pageContext.EntityType)
+	targetType := commandBarEffectiveTargetType(pageContext)
 	if shouldPreferOneShotPMTaskAnalysis(lower, targetType) {
 		return true
 	}
@@ -2037,10 +2037,10 @@ func shouldPreferOneShotCommandIntent(text string, pageContext model.CommandBarP
 }
 
 func shouldPreferOneShotPMTaskAnalysis(lower, targetType string) bool {
-	if targetType != "workspace" && targetType != "task" && targetType != "epic" {
+	if targetType != "workspace" && targetType != "task" && targetType != "epic" && targetType != "all_tasks" {
 		return false
 	}
-	if !containsAny(lower, "task", "tasks", "story", "stories") {
+	if targetType != "all_tasks" && !containsAny(lower, "task", "tasks", "story", "stories") {
 		return false
 	}
 	if containsAny(lower,
@@ -2433,10 +2433,15 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 	tools := []string{"update_plan", "request_user_input"}
 	recognized := false
 	targetType := normalizeCommandBarTargetType(pageContext.EntityType)
+	effectiveTargetType := commandBarEffectiveTargetType(pageContext)
+	hasConcreteDocument := targetType == "document" && strings.TrimSpace(pageContext.EntityID) != ""
 
 	if targetType == "document" || containsAny(lower, "doc", "document", "article", "knowledge base", "stale") {
 		recognized = true
-		tools = append(tools, "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents")
+		tools = append(tools, "read_document", "get_document_blocks")
+		if !hasConcreteDocument || commandBarPromptRequestsDocumentSearch(lower) {
+			tools = append(tools, "list_documents", "list_collections", "search_documents")
+		}
 	}
 	if containsAny(lower, "web", "website", "url", "internet", "research", "source", "sources", "stale", "latest", "fetch", "crawl", "find info", "find information", "enrich") {
 		recognized = true
@@ -2444,11 +2449,11 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 	}
 	if containsAny(lower, "update doc", "update document", "refresh doc", "refresh document", "rewrite", "edit doc", "edit document", "write doc", "write document", "stale") {
 		recognized = true
-		tools = append(tools, "request_approval", "write_document_content")
+		tools = append(tools, "publish_document_change_proposal")
 	}
 	if targetType == "document" && containsAny(lower, "block", "section", "sections", "paragraph", "paragraphs", "precise edit", "targeted edit") {
 		recognized = true
-		tools = append(tools, "request_approval", "update_document_block")
+		tools = append(tools, "publish_document_change_proposal")
 	}
 	if targetType == "document" && containsAny(lower, "link", "attach", "associate", "reference") && containsAny(lower, "task", "story", "epic", "deal", "contact", "company", "crm", "support") {
 		recognized = true
@@ -2458,10 +2463,13 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 		recognized = true
 		tools = append(tools, "create_document")
 	}
-	if targetType == "task" || containsAny(lower, "task", "story", "comment") {
+	if effectiveTargetType == "all_tasks" {
+		recognized = true
+		tools = append(tools, "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks")
+	} else if targetType == "task" || containsAny(lower, "task", "story", "comment") {
 		tools = append(tools, "get_task_context")
 	}
-	if shouldPreferOneShotPMTaskAnalysis(lower, targetType) {
+	if shouldPreferOneShotPMTaskAnalysis(lower, effectiveTargetType) {
 		recognized = true
 		tools = append(tools, "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks")
 	}
@@ -2505,6 +2513,7 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 	for _, tool := range agentTools {
 		allowedSet[strings.TrimSpace(tool)] = true
 	}
+	allowedSet["publish_document_change_proposal"] = true
 	filtered := make([]string, 0, len(tools))
 	seen := map[string]bool{}
 	for _, tool := range tools {
@@ -2550,7 +2559,10 @@ func safeOneShotCommandToolsForTarget(pageContext model.CommandBarPageContext, a
 	case "task":
 		tools = append(tools, "get_task_context", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks")
 	case "document":
-		tools = append(tools, "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "list_deals", "list_contacts", "list_buyer_signals")
+		tools = append(tools, "read_document", "get_document_blocks", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "request_approval", "publish_document_change_proposal", "list_deals", "list_contacts", "list_buyer_signals")
+		if strings.TrimSpace(pageContext.EntityID) == "" {
+			tools = append(tools, "list_documents", "list_collections", "search_documents")
+		}
 	case "crm_contact", "crm_deal":
 		tools = append(tools, "list_deals", "list_contacts", "list_buyer_signals")
 	default:
@@ -2564,6 +2576,7 @@ func commandBarFilterAllowedTools(tools, agentTools []string) []string {
 	for _, tool := range agentTools {
 		allowedSet[strings.TrimSpace(tool)] = true
 	}
+	allowedSet["publish_document_change_proposal"] = true
 	filtered := make([]string, 0, len(tools))
 	seen := map[string]bool{}
 	for _, tool := range tools {
@@ -2578,6 +2591,23 @@ func commandBarFilterAllowedTools(tools, agentTools []string) []string {
 		filtered = append(filtered, tool)
 	}
 	return filtered
+}
+
+func commandBarPromptRequestsDocumentSearch(lower string) bool {
+	return containsAny(lower,
+		"search docs",
+		"search documents",
+		"search the docs",
+		"find document",
+		"find documents",
+		"find a doc",
+		"find docs",
+		"other docs",
+		"other documents",
+		"across docs",
+		"across documents",
+		"knowledge base",
+	)
 }
 
 func commandBarHasUsefulOneShotContextTool(tools []string) bool {
@@ -2663,6 +2693,7 @@ func commandBarToolIsMutation(tool string) bool {
 		"enrich_crm_contact",
 		"ensure_crm_contact_company",
 		"ensure_task_label",
+		"publish_document_change_proposal",
 		"update_deal_stage",
 		"update_task_state",
 		"update_document_block",
@@ -2690,8 +2721,14 @@ func commandBarOneShotInstructions(text string, pageContext model.CommandBarPage
 		"Do not create or save a reusable agent.",
 		"Use only the enabled tools for this run.",
 	}, constraints...)
-	if hasAnyTool(tools, "write_document_content", "create_document", "create_task", "add_task_comment", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company") {
+	if hasAnyTool(tools, "publish_document_change_proposal", "write_document_content", "create_document", "create_task", "add_task_comment", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company") {
 		constraints = append(constraints, "The user confirmed this command-bar plan; keep mutations limited to the requested action and target.")
+	}
+	if hasAnyTool(tools, "publish_document_change_proposal") {
+		constraints = append(constraints, "For Docs edits, call publish_document_change_proposal once with the proposed replacement, then finish. Do not call request_approval for Docs proposals, and do not call direct document write tools for proposed edits.")
+		if commandBarPageContextMetadataString(pageContext, "context_scope") == "block" {
+			constraints = append(constraints, "For focused Docs block context, submit a block-scoped proposal with the supplied block_id and block_revision unless the user explicitly asks for a whole-document replacement.")
+		}
 	}
 	if len(constraints) > 0 {
 		lines := make([]string, 0, len(constraints))
@@ -2702,6 +2739,9 @@ func commandBarOneShotInstructions(text string, pageContext model.CommandBarPage
 	}
 	if pageContext.EntityType != "" || pageContext.EntityID != "" {
 		parts = append(parts, fmt.Sprintf("Target: %s %s (%s).", pageContext.EntityType, pageContext.EntityID, pageContext.DisplayTitle))
+		if scopeInstruction := commandBarScopeInstruction(pageContext); scopeInstruction != "" {
+			parts = append(parts, scopeInstruction)
+		}
 	}
 	parts = append(parts, "User request:\n"+strings.TrimSpace(text))
 	return strings.Join(parts, "\n\n")
@@ -2710,7 +2750,7 @@ func commandBarOneShotInstructions(text string, pageContext model.CommandBarPage
 func oneShotExecutionBrief(text string, pageContext model.CommandBarPageContext, tools []string) (string, []string, []string) {
 	_ = tools
 	lower := strings.ToLower(strings.TrimSpace(text))
-	targetType := normalizeCommandBarTargetType(pageContext.EntityType)
+	targetType := commandBarEffectiveTargetType(pageContext)
 	switch {
 	case targetType == "crm_contact" || targetType == "crm_deal":
 		goal := "Research the CRM target and produce high-confidence CRM updates for the requested contact, company, or deal context."
@@ -2744,8 +2784,8 @@ func oneShotExecutionBrief(text string, pageContext model.CommandBarPageContext,
 	case targetType == "document" || containsAny(lower, "doc", "document", "article", "stale"):
 		goal := "Research and update the document only where the requested change is supported by the current document context and sources."
 		plan := []string{
-			"Read the current document and identify the sections relevant to the request.",
-			"Use web or document search tools only where more evidence is needed.",
+			"Read the current document by its provided document_id and identify the sections relevant to the request.",
+			"Use web search only where outside evidence is needed; use document search only if the user asks to find other documents.",
 			"Fetch source pages before treating web results as facts.",
 			"Draft the smallest safe content change that satisfies the request.",
 			"Write the document only if the enabled tools support it; otherwise return the proposed patch.",
@@ -2753,6 +2793,7 @@ func oneShotExecutionBrief(text string, pageContext model.CommandBarPageContext,
 		constraints := []string{
 			"Preserve the document's existing structure and tone unless the user requested a rewrite.",
 			"Do not replace sourced content with weaker evidence.",
+			"Do not use search_documents to rediscover or inspect a known current document.",
 			"Ask for approval before broad rewrites or uncertain factual changes.",
 		}
 		return goal, plan, constraints
@@ -3004,6 +3045,9 @@ func normalizeCommandBarPlanSteps(steps []model.CommandBarPlanStep, fallbackTarg
 		if target.DisplayTitle == "" {
 			target.DisplayTitle = fallbackTarget.DisplayTitle
 		}
+		if target.Metadata == nil && target.EntityType == fallbackTarget.EntityType && target.EntityID == fallbackTarget.EntityID {
+			target.Metadata = fallbackTarget.Metadata
+		}
 		step.AgentID = strings.TrimSpace(step.AgentID)
 		step.AgentKey = normalizePresetKey(step.AgentKey)
 		step.AgentName = strings.TrimSpace(step.AgentName)
@@ -3044,6 +3088,15 @@ func normalizeCommandBarTargetType(targetType string) string {
 	default:
 		return targetType
 	}
+}
+
+func commandBarEffectiveTargetType(pageContext model.CommandBarPageContext) string {
+	if pageContext.Metadata != nil {
+		if scope, _ := pageContext.Metadata["context_scope"].(string); strings.TrimSpace(scope) == "all_tasks" {
+			return "all_tasks"
+		}
+	}
+	return normalizeCommandBarTargetType(pageContext.EntityType)
 }
 
 func validateCommandBarSupportedTarget(targetType string) error {
@@ -3090,8 +3143,71 @@ func commandBarAdditionalContext(instructions string, pageContext model.CommandB
 	}
 	if pageContext.EntityType != "" || pageContext.EntityID != "" {
 		parts = append(parts, fmt.Sprintf("Command bar page context: %s %s (%s).", pageContext.EntityType, pageContext.EntityID, pageContext.DisplayTitle))
+		if scopeInstruction := commandBarScopeInstruction(pageContext); scopeInstruction != "" {
+			parts = append(parts, scopeInstruction)
+		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func commandBarScopeInstruction(pageContext model.CommandBarPageContext) string {
+	if pageContext.Metadata == nil {
+		return ""
+	}
+	switch commandBarPageContextMetadataString(pageContext, "context_scope") {
+	case "block":
+		return commandBarBlockContextInstruction(pageContext)
+	case "all_tasks":
+		return "PM task collection context:\n- Treat all workspace tasks as the active context.\n- Do not limit the answer to a selected task unless the user explicitly asks for one."
+	default:
+		return ""
+	}
+}
+
+func commandBarPageContextMetadataString(pageContext model.CommandBarPageContext, key string) string {
+	if pageContext.Metadata == nil {
+		return ""
+	}
+	value, _ := pageContext.Metadata[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func commandBarBlockContextInstruction(pageContext model.CommandBarPageContext) string {
+	if pageContext.Metadata == nil {
+		return ""
+	}
+	blockID, _ := pageContext.Metadata["block_id"].(string)
+	blockType, _ := pageContext.Metadata["block_type"].(string)
+	excerpt, _ := pageContext.Metadata["block_excerpt"].(string)
+	revisionValue := pageContext.Metadata["block_revision"]
+	revision := ""
+	switch value := revisionValue.(type) {
+	case float64:
+		revision = fmt.Sprintf("%.0f", value)
+	case int:
+		revision = fmt.Sprintf("%d", value)
+	case string:
+		revision = strings.TrimSpace(value)
+	}
+	lines := []string{
+		"Focused Docs block context:",
+		"- Treat the full document as reference context.",
+		"- The focused block is the primary edit target unless the user explicitly asks for the whole document.",
+		"- Use the supplied block_id and block_revision directly for block-scoped proposals; do not rediscover them through document search.",
+	}
+	if strings.TrimSpace(blockID) != "" {
+		lines = append(lines, "- block_id: "+strings.TrimSpace(blockID))
+	}
+	if strings.TrimSpace(revision) != "" {
+		lines = append(lines, "- block_revision: "+strings.TrimSpace(revision))
+	}
+	if strings.TrimSpace(blockType) != "" {
+		lines = append(lines, "- block_type: "+strings.TrimSpace(blockType))
+	}
+	if strings.TrimSpace(excerpt) != "" {
+		lines = append(lines, "- block_excerpt: "+strings.TrimSpace(excerpt))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func findCommandBarCandidateByID(candidates []model.CommandBarAgent, id string) (model.CommandBarAgent, bool) {

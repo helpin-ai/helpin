@@ -469,6 +469,24 @@ export function CreateTaskModal({
     [epics, form.team_id],
   );
 
+  // Group epics by lifecycle: not started → in progress → completed.
+  const epicGroups = useMemo(() => {
+    const notStarted: typeof availableEpics = [];
+    const inProgress: typeof availableEpics = [];
+    const completed: typeof availableEpics = [];
+    for (const entry of availableEpics) {
+      if (entry.epic.completed) completed.push(entry);
+      else if (entry.epic.started) inProgress.push(entry);
+      else notStarted.push(entry);
+    }
+    return [
+      { label: undefined as string | undefined, options: [{ value: "__none__", label: "No epic" }] },
+      { label: "Not started", options: notStarted.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: "In progress", options: inProgress.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: "Completed", options: completed.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+    ];
+  }, [availableEpics]);
+
   const currentSprintName = useMemo(() => {
     if (!form.sprint_id) return "None";
     return (
@@ -1415,10 +1433,7 @@ export function CreateTaskModal({
                 <MetadataRow icon={Layers01Icon} label="Epic">
                   <SidebarPopoverSelect
                     value={form.epic_id || "__none__"}
-                    options={[
-                      { value: "__none__", label: "No epic" },
-                      ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
-                    ]}
+                    groups={epicGroups}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,

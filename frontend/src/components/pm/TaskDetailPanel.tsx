@@ -111,12 +111,18 @@ import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-detail/taskOverlayDismiss';
 import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
+import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
   isEpicSelectableForTaskTeam,
   isSprintSelectableForTaskTeam,
 } from '@/components/pm/task-detail/taskPlanningScope';
 import { syncTaskLabelsWithFeedback } from '@/components/pm/task-detail/taskLabelSync';
+import {
+  getAgentAutoRunStateChangeMessage,
+  getAgentAutoRunStateChangeToastId,
+  shouldNotifyAgentAutoRunStateChange,
+} from '@/components/pm/agentAutoRunNotification';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -476,6 +482,7 @@ function TaskDetailPanelBody({
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const pendingPatchRef = useRef<UpdateTaskRequest>({});
   const descriptionPendingUploadsRef = useRef(0);
+  const blockedAutosavePatchSignatureRef = useRef<string | null>(null);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
@@ -562,6 +569,7 @@ function TaskDetailPanelBody({
   // Re-sync form when taskDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(taskDetail.task.updated_at);
   const savedDescriptionRef = useRef(taskDetail.task.description ?? '');
+  const savedWorkflowStateIdRef = useRef(taskDetail.task.workflow_state_id);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
@@ -623,6 +631,7 @@ function TaskDetailPanelBody({
     if (taskDetail.task.updated_at !== lastSyncedAt.current) {
       lastSyncedAt.current = taskDetail.task.updated_at;
       savedDescriptionRef.current = taskDetail.task.description ?? '';
+      savedWorkflowStateIdRef.current = taskDetail.task.workflow_state_id;
       void reloadActivity();
       // Only reset form if no unsaved edits
       if (Object.keys(pendingPatchRef.current).length === 0) {
@@ -669,8 +678,41 @@ function TaskDetailPanelBody({
   }, [workspaceId]);
 
   const queuePatch = (patch: UpdateTaskRequest) => {
-    setPendingPatch((current) => ({ ...current, ...patch }));
+    setPendingPatch((current) => {
+      const next = { ...current, ...patch };
+      if (!isBlockedTaskPatch(next, blockedAutosavePatchSignatureRef.current)) {
+        blockedAutosavePatchSignatureRef.current = null;
+      }
+      return next;
+    });
   };
+
+  // ── Pipeline automation rules ──────────────────────────────────
+  const workflowId = states[0]?.workflow_id;
+  const { data: pipelineRules } = useAutomationRulesByWorkflow(workspaceId, workflowId);
+  const automatedStateIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!pipelineRules) return ids;
+    for (const rule of pipelineRules) {
+      if (
+        rule.enabled &&
+        rule.trigger_type === 'task.state_entered' &&
+        rule.action_type === 'start_agent_run'
+      ) {
+        const stateId = rule.trigger_config?.state_id;
+        if (stateId) ids.add(stateId);
+      }
+    }
+    return ids;
+  }, [pipelineRules]);
+  const hasPipeline = automatedStateIds.size > 0;
+
+  const notifyAgentAutoRunStateChange = useCallback((fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
+    if (!shouldNotifyAgentAutoRunStateChange({ fromStateId, toStateId, automatedStateIds })) return;
+    if (!toStateId) return;
+    const stateName = states.find((state) => state.id === toStateId)?.name ?? 'this state';
+    toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(toStateId) });
+  }, [automatedStateIds, states]);
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateTaskRequest) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -693,25 +735,73 @@ function TaskDetailPanelBody({
     [form.team_id, sprints],
   );
 
-  useEffect(() => {
-    if (!form.epic_id) return;
-    const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
-    if (!selectedEpic) return;
-    if (isEpicSelectableForTaskTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) {
-      return;
+  // Group epics by lifecycle: not started → in progress → completed.
+  // Order within each group matches `availableEpics` (server-supplied order).
+  const epicGroups = useMemo(() => {
+    const notStarted: typeof availableEpics = [];
+    const inProgress: typeof availableEpics = [];
+    const completed: typeof availableEpics = [];
+    for (const entry of availableEpics) {
+      if (entry.epic.completed) completed.push(entry);
+      else if (entry.epic.started) inProgress.push(entry);
+      else notStarted.push(entry);
     }
-    updateField('epic_id', '', { epic_id: '' });
-  }, [epics, form.epic_id, form.team_id]);
+    return [
+      { label: undefined as string | undefined, options: [{ value: '__none__', label: 'None' }] },
+      { label: 'Not started', options: notStarted.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: 'In progress', options: inProgress.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: 'Completed', options: completed.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+    ];
+  }, [availableEpics]);
+
+  // Group sprints by lifecycle status: unstarted → started → done.
+  const sprintGroups = useMemo(() => {
+    const unstarted: typeof availableSprints = [];
+    const started: typeof availableSprints = [];
+    const done: typeof availableSprints = [];
+    for (const entry of availableSprints) {
+      if (entry.sprint.status === 'done') done.push(entry);
+      else if (entry.sprint.status === 'started') started.push(entry);
+      else unstarted.push(entry);
+    }
+    return [
+      { label: undefined as string | undefined, options: [{ value: '__none__', label: 'None' }] },
+      { label: 'Not started', options: unstarted.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+      { label: 'In progress', options: started.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+      { label: 'Completed', options: done.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+    ];
+  }, [availableSprints]);
+
+  // Track the team_id we've already validated against so the planning-link
+  // cleanup only fires when the user actually changes the team — not on initial
+  // mount or when the epics/sprints lists finish loading. Without this, a task
+  // imported with a sprint/epic whose team scope doesn't match the task's team
+  // (e.g. workspace-level sprint on a team task, or vice versa) would silently
+  // unset its sprint/epic the first time the panel renders.
+  const validatedTeamIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!form.sprint_id) return;
-    const selectedSprint = sprints.find((entry) => entry.sprint.id === form.sprint_id);
-    if (!selectedSprint) return;
-    if (isSprintSelectableForTaskTeam(selectedSprint.sprint.team_id ?? null, form.team_id || null)) {
+    if (validatedTeamIdRef.current === null) {
+      validatedTeamIdRef.current = form.team_id;
       return;
     }
-    updateField('sprint_id', '', { sprint_id: '' });
-  }, [form.sprint_id, form.team_id, sprints]);
+    if (validatedTeamIdRef.current === form.team_id) return;
+    validatedTeamIdRef.current = form.team_id;
+
+    if (form.epic_id) {
+      const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
+      if (selectedEpic && !isEpicSelectableForTaskTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) {
+        updateField('epic_id', '', { epic_id: '' });
+      }
+    }
+
+    if (form.sprint_id) {
+      const selectedSprint = sprints.find((entry) => entry.sprint.id === form.sprint_id);
+      if (selectedSprint && !isSprintSelectableForTaskTeam(selectedSprint.sprint.team_id ?? null, form.team_id || null)) {
+        updateField('sprint_id', '', { sprint_id: '' });
+      }
+    }
+  }, [form.team_id, form.epic_id, form.sprint_id, epics, sprints]);
 
   // ── Auto-show checklist / external links if items exist ────────
   useEffect(() => {
@@ -727,22 +817,30 @@ function TaskDetailPanelBody({
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
+    const flushablePatch = getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads);
     if (
       saving ||
-      !getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads)
+      !flushablePatch ||
+      isBlockedTaskPatch(flushablePatch, blockedAutosavePatchSignatureRef.current)
     ) return;
     const timer = window.setTimeout(async () => {
-      const patch = pendingPatch;
+      const patch = flushablePatch;
       const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       setSaving(true);
       const { data, error } = await pmTaskService.update(workspaceId, taskId, patch);
       if (error || !data) {
         setSaveError(error ?? 'Failed to save changes');
+        blockedAutosavePatchSignatureRef.current = getTaskPatchSignature(patch);
         setPendingPatch((current) => ({ ...patch, ...current }));
       } else {
+        blockedAutosavePatchSignatureRef.current = null;
         setSaveError(null);
         onTaskUpdated(data);
+        if (patch.workflow_state_id !== undefined) {
+          notifyAgentAutoRunStateChange(savedWorkflowStateIdRef.current, data.task.workflow_state_id);
+          savedWorkflowStateIdRef.current = data.task.workflow_state_id;
+        }
         void reloadActivity();
         // Invalidate sprint planning if sprint/state/estimate changed
         if (patch.sprint_id !== undefined || patch.workflow_state_id !== undefined || patch.estimate !== undefined) {
@@ -766,6 +864,7 @@ function TaskDetailPanelBody({
   }, [
     descriptionPendingUploads,
     onTaskUpdated,
+    notifyAgentAutoRunStateChange,
     pendingPatch,
     queryClient,
     reloadActivity,
@@ -783,6 +882,9 @@ function TaskDetailPanelBody({
       if (!patch) {
         return;
       }
+      if (isBlockedTaskPatch(patch, blockedAutosavePatchSignatureRef.current)) {
+        return;
+      }
 
       void pmTaskService.update(workspaceId, taskId, patch).then(({ data }) => {
         if (!data) {
@@ -790,6 +892,10 @@ function TaskDetailPanelBody({
         }
 
         onTaskUpdated(data);
+        if (patch.workflow_state_id !== undefined) {
+          notifyAgentAutoRunStateChange(savedWorkflowStateIdRef.current, data.task.workflow_state_id);
+          savedWorkflowStateIdRef.current = data.task.workflow_state_id;
+        }
         if (
           patch.sprint_id !== undefined ||
           patch.workflow_state_id !== undefined ||
@@ -799,7 +905,7 @@ function TaskDetailPanelBody({
         }
       });
     };
-  }, [onTaskUpdated, queryClient, taskId, workspaceId]);
+  }, [notifyAgentAutoRunStateChange, onTaskUpdated, queryClient, taskId, workspaceId]);
 
   const handleDescriptionAttachmentDelete = useCallback(
     async (entry: AttachmentResponse) => {
@@ -869,26 +975,6 @@ function TaskDetailPanelBody({
         taskId: taskDetail.task.id,
       }),
     );
-
-  // ── Pipeline automation rules ──────────────────────────────────
-  const workflowId = states[0]?.workflow_id;
-  const { data: pipelineRules } = useAutomationRulesByWorkflow(workspaceId, workflowId);
-  const automatedStateIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (!pipelineRules) return ids;
-    for (const rule of pipelineRules) {
-      if (
-        rule.enabled &&
-        rule.trigger_type === 'task.state_entered' &&
-        rule.action_type === 'start_agent_run'
-      ) {
-        const stateId = rule.trigger_config?.state_id;
-        if (stateId) ids.add(stateId);
-      }
-    }
-    return ids;
-  }, [pipelineRules]);
-  const hasPipeline = automatedStateIds.size > 0;
 
   // ── Derived data ───────────────────────────────────────────────
   const currentState = useMemo(
@@ -1607,10 +1693,7 @@ function TaskDetailPanelBody({
             <MetadataRow icon={Layers01Icon} label="Epic">
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'None' },
-                  ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
-                ]}
+                groups={epicGroups}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_id', val, { epic_id: val });
@@ -1625,10 +1708,7 @@ function TaskDetailPanelBody({
             <MetadataRow icon={SprintIcon} label="Sprint">
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'None' },
-                  ...availableSprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
-                ]}
+                groups={sprintGroups}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('sprint_id', val, { sprint_id: val });

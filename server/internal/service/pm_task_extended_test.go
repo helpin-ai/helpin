@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -932,6 +933,38 @@ func TestPMTaskService_Update(t *testing.T) {
 	})
 }
 
+func TestPMTaskService_UpdateAllowsUnrelatedEditWithExistingWorkflowStateMismatch(t *testing.T) {
+	t.Parallel()
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+	created := createTestTask(t, env, "Mismatched State Story")
+
+	now := time.Now()
+	otherWorkflowID := "wf-story-other"
+	otherStateID := "state-story-other"
+	mustExec(t, env.db, `INSERT INTO pm_workflows (id, workspace_id, name, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		otherWorkflowID, env.wsID, "Other Workflow", otherStateID, now, now)
+	mustExec(t, env.db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		otherStateID, otherWorkflowID, "Other", "unstarted", 0, true, now, now)
+	mustExec(t, env.db, `UPDATE pm_tasks SET workflow_state_id = ? WHERE id = ?`, otherStateID, created.Task.ID)
+
+	estimate := 5
+	updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{Estimate: &estimate}, env.userID)
+	if err != nil {
+		t.Fatalf("update unrelated estimate: %v", err)
+	}
+	if updated.Task.Estimate == nil || *updated.Task.Estimate != estimate {
+		t.Fatalf("estimate = %v, want %d", updated.Task.Estimate, estimate)
+	}
+
+	_, err = env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
+		WorkflowStateID: &otherStateID,
+	}, env.userID)
+	if err == nil || !strings.Contains(err.Error(), "workflow_state_id must belong to workflow_id") {
+		t.Fatalf("expected workflow/state validation error, got %v", err)
+	}
+}
+
 func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 	t.Parallel()
 	env := newTaskTestEnv(t)
@@ -1686,6 +1719,29 @@ func TestPMTaskService_Estimate(t *testing.T) {
 	if updated.Task.Estimate == nil || *updated.Task.Estimate != 13 {
 		t.Errorf("updated estimate mismatch, got %v", updated.Task.Estimate)
 	}
+
+	t.Run("estimate-only update ignores pre-existing sprint team mismatch", func(t *testing.T) {
+		teamA := "team-estimate-a"
+		teamB := "team-estimate-b"
+		sprintB := "sprint-estimate-b"
+		seedTaskTeam(t, env, teamA, "Estimate Team A")
+		seedTaskTeam(t, env, teamB, "Estimate Team B")
+		seedStorySprint(t, env, sprintB, teamB, "Estimate Sprint B")
+
+		story := createTestTask(t, env, "Mismatched Planning Estimate")
+		mustExec(t, env.db, `UPDATE pm_tasks SET team_id = ?, sprint_id = ? WHERE id = ?`, teamA, sprintB, story.Task.ID)
+
+		newEst := 2
+		updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
+			Estimate: &newEst,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update estimate with existing planning mismatch: %v", err)
+		}
+		if updated.Task.Estimate == nil || *updated.Task.Estimate != newEst {
+			t.Fatalf("estimate = %v, want %d", updated.Task.Estimate, newEst)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
