@@ -460,7 +460,11 @@ function FilterValueSelect({
           type="button"
           className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
         >
-          {selectedLabels.length === 1 ? selectedLabels[0] : `${selectedLabels.length} selected`}
+          {selectedLabels.length === 1
+            ? selectedLabels[0]
+            : selectedLabels.length > 1
+              ? `${selectedLabels.length} selected`
+              : <span className="text-muted-foreground">Select</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent className={FILTER_POPOVER_WIDTH} align="start">
@@ -522,12 +526,12 @@ function EpicFilterPill({
 
 function EpicFilterTrigger({
   definitions,
-  activeKeys,
+  visibleKeys,
   onAdd,
   activeCount,
 }: {
   definitions: EpicFilterDefinition[];
-  activeKeys: Set<EpicFilterKey>;
+  visibleKeys: Set<EpicFilterKey>;
   onAdd: (key: EpicFilterKey) => void;
   activeCount: number;
 }) {
@@ -552,7 +556,7 @@ function EpicFilterTrigger({
                 <CommandItem
                   key={definition.key}
                   value={definition.label}
-                  disabled={activeKeys.has(definition.key)}
+                  disabled={visibleKeys.has(definition.key)}
                   className="text-xs"
                   onSelect={() => {
                     onAdd(definition.key);
@@ -1374,6 +1378,10 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     () => new Set(Object.entries(filters).filter(([, value]) => value && value.length > 0).map(([key]) => key as EpicFilterKey)),
     [filters],
   );
+  const visibleFilterKeys = useMemo(
+    () => new Set(Object.keys(filters).map((key) => key as EpicFilterKey)),
+    [filters],
+  );
 
   const updateEpicField = useCallback(
     async (epicId: string, patch: UpdateEpicRequest) => {
@@ -1803,9 +1811,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
   const handleAddFilter = useCallback((key: EpicFilterKey) => {
     const definition = filterDefinitions.find((item) => item.key === key);
-    const firstValue = definition?.options[0]?.value;
-    if (!firstValue) return;
-    setFilters((current) => ({ ...current, [key]: [firstValue] }));
+    if (!definition || definition.options.length === 0) return;
+    setFilters((current) => ({ ...current, [key]: current[key] ?? [] }));
   }, [filterDefinitions]);
 
   const handleToggleFilterValue = useCallback((key: EpicFilterKey, value: string) => {
@@ -1813,17 +1820,14 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       const nextValues = current[key]?.includes(value)
         ? current[key]!.filter((item) => item !== value)
         : [...(current[key] ?? []), value];
-      if (nextValues.length === 0) {
-        const { [key]: _removed, ...rest } = current;
-        return rest;
-      }
       return { ...current, [key]: nextValues };
     });
   }, []);
 
   const handleRemoveFilter = useCallback((key: EpicFilterKey) => {
     setFilters((current) => {
-      const { [key]: _removed, ...rest } = current;
+      const rest = { ...current };
+      delete rest[key];
       return rest;
     });
   }, []);
@@ -1936,14 +1940,14 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         >
           <EpicFilterTrigger
             definitions={filterDefinitions}
-            activeKeys={activeFilterKeys}
+            visibleKeys={visibleFilterKeys}
             activeCount={activeFilterKeys.size}
             onAdd={handleAddFilter}
           />
-          {activeFilterKeys.size > 0 ? (
+          {visibleFilterKeys.size > 0 ? (
             <>
               {filterDefinitions
-                .filter((definition) => activeFilterKeys.has(definition.key))
+                .filter((definition) => visibleFilterKeys.has(definition.key))
                 .map((definition) => (
                   <EpicFilterPill
                     key={definition.key}

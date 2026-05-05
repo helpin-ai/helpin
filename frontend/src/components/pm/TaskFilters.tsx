@@ -78,7 +78,9 @@ interface FilterContextValue {
   activeTeamId?: string | null;
   userMemberships: TeamUserMembership[];
   activeKeys: Set<FilterKey>;
+  visibleKeys: Set<FilterKey>;
   activeCount: number;
+  visibleCount: number;
   handleAdd: (key: FilterKey) => void;
   handleToggle: (key: FilterKey, value: string) => void;
   handleRemove: (key: FilterKey) => void;
@@ -115,7 +117,9 @@ function FilterValueSelect({
         <button className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs hover:bg-accent transition-colors">
           {selectedLabels.length === 1
             ? selectedLabels[0]
-            : `${selectedLabels.length} selected`}
+            : selectedLabels.length > 1
+              ? `${selectedLabels.length} selected`
+              : <span className="text-muted-foreground">Select</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-52 p-0" align="start">
@@ -329,6 +333,11 @@ export function TaskFilterProvider({
     return keys;
   }, [filterState]);
 
+  const visibleKeys = useMemo(
+    () => new Set(Object.keys(filterState).map((key) => key as FilterKey)),
+    [filterState],
+  );
+
   const emitChange = useCallback(
     (next: FilterState) => {
       internalChangeRef.current = true;
@@ -340,12 +349,10 @@ export function TaskFilterProvider({
   const handleAdd = useCallback(
     (key: FilterKey) => {
       const def = definitions.find((d) => d.key === key);
-      if (!def || !def.options[0]) return;
-      const next = { ...filterState, [key]: [def.options[0].value] };
-      setFilterState(next);
-      emitChange(next);
+      if (!def || def.options.length === 0) return;
+      setFilterState((current) => ({ ...current, [key]: current[key] ?? [] }));
     },
-    [filterState, definitions, emitChange]
+    [definitions]
   );
 
   const handleToggle = useCallback(
@@ -360,22 +367,17 @@ export function TaskFilterProvider({
           ? current.filter((v) => v !== value)
           : [...current, value];
       }
-      if (next.length === 0) {
-        const { [key]: _, ...rest } = filterState;
-        setFilterState(rest);
-        emitChange(rest);
-      } else {
-        const updated = { ...filterState, [key]: next };
-        setFilterState(updated);
-        emitChange(updated);
-      }
+      const updated = { ...filterState, [key]: next };
+      setFilterState(updated);
+      emitChange(updated);
     },
     [filterState, definitions, emitChange]
   );
 
   const handleRemove = useCallback(
     (key: FilterKey) => {
-      const { [key]: _, ...rest } = filterState;
+      const rest = { ...filterState };
+      delete rest[key];
       setFilterState(rest);
       emitChange(rest);
     },
@@ -395,12 +397,14 @@ export function TaskFilterProvider({
     activeTeamId,
     userMemberships,
     activeKeys,
+    visibleKeys,
     activeCount: activeKeys.size,
+    visibleCount: visibleKeys.size,
     handleAdd,
     handleToggle,
     handleRemove,
     handleClearAll,
-  }), [workspaceId, filterState, definitions, assignableMembers, activeTeamId, userMemberships, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
+  }), [workspaceId, filterState, definitions, assignableMembers, activeTeamId, userMemberships, activeKeys, visibleKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
 
   return <FilterContext.Provider value={value}>{children}</FilterContext.Provider>;
 }
@@ -408,9 +412,9 @@ export function TaskFilterProvider({
 // ── Trigger button (goes in the header row) ────────────────────────
 
 export function TaskFilterTrigger() {
-  const { definitions, activeKeys, activeCount, handleAdd } = useFilterContext();
+  const { definitions, visibleKeys, activeCount, handleAdd } = useFilterContext();
   const [open, setOpen] = useState(false);
-  const available = definitions.filter((d) => !activeKeys.has(d.key) && d.options.length > 0);
+  const available = definitions.filter((d) => !visibleKeys.has(d.key) && d.options.length > 0);
 
   return (
     <>
@@ -471,14 +475,14 @@ export function TaskFilterTrigger() {
 // ── Filter bar (renders on its own row below the header) ───────────
 
 export function TaskFilterBar() {
-  const { filterState, definitions, activeKeys, activeCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
+  const { filterState, definitions, visibleKeys, visibleCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
 
-  if (activeCount === 0) return null;
+  if (visibleCount === 0) return null;
 
   return (
     <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-1.5 px-3 py-1.5">
       {definitions
-        .filter((def) => activeKeys.has(def.key))
+        .filter((def) => visibleKeys.has(def.key))
         .map((def) => (
           <FilterPill
             key={def.key}
