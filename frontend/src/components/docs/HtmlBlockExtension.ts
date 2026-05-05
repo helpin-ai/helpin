@@ -2,6 +2,7 @@ import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { HtmlBlockNodeView } from './HtmlBlockNodeView';
 import { sanitizeHtml } from './htmlSanitizer';
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -56,7 +57,7 @@ export const HtmlBlockExtension = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(HtmlBlockNodeView);
+    return ReactNodeViewRenderer(HtmlBlockNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) });
   },
 
   addCommands() {

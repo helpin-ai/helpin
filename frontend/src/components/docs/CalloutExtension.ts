@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { CalloutNodeView } from './CalloutNodeView';
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs';
 
 export type CalloutVariant = 'info' | 'warning' | 'tip' | 'danger' | 'success' | 'blue' | 'green' | 'grey' | 'red' | 'yellow';
 export type SemanticCalloutVariant = 'info' | 'warning' | 'tip' | 'danger' | 'success';
@@ -64,7 +65,7 @@ export const CalloutExtension = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(CalloutNodeView);
+    return ReactNodeViewRenderer(CalloutNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) });
   },
 
   addKeyboardShortcuts() {

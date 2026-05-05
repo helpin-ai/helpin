@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { ToggleSectionNodeView } from './ToggleSectionNodeView'
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 export interface ToggleSectionAttrs {
   title?: string | null
@@ -79,7 +80,7 @@ export const ToggleSectionExtension = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ToggleSectionNodeView)
+    return ReactNodeViewRenderer(ToggleSectionNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) })
   },
 
   addCommands() {

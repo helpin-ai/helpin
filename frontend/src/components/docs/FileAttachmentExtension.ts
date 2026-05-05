@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { FileAttachmentNodeView } from './FileAttachmentNodeView'
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 export interface FileAttachmentAttrs {
   fileName?: string | null
@@ -43,7 +44,7 @@ export const FileAttachmentExtension = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(FileAttachmentNodeView)
+    return ReactNodeViewRenderer(FileAttachmentNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) })
   },
 
   addCommands() {
