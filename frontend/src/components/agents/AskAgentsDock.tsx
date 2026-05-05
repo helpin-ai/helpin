@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { AiMagicIcon, BotIcon, Loading01Icon, PauseIcon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
-import { usePageContext } from '@/components/command-bar/pageContext';
+import { usePageContextState } from '@/components/command-bar/pageContext';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { commandBarService } from '@/lib/services/commandBarService';
 import { agentService } from '@/lib/services/agentService';
@@ -36,7 +36,7 @@ type AskAgentsEventDetail = {
 
 export function AskAgentsDock() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
-  const pageContext = usePageContext();
+  const { pageContext, scopeOptions, activeScopeKey, setActiveScopeKey } = usePageContextState();
 
   const addPlan = useCommandBarRunStore((s) => s.addPlan);
   const addRuns = useCommandBarRunStore((s) => s.addRuns);
@@ -887,6 +887,9 @@ export function AskAgentsDock() {
             }}
             onFocusChange={setIsFocused}
             pageContext={pageContext ?? null}
+            contextOptions={scopeOptions}
+            activeContextKey={activeScopeKey}
+            onContextKeyChange={setActiveScopeKey}
             busy={parsing || dispatching}
             textareaRef={textareaRef}
           />

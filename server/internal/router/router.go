@@ -1071,6 +1071,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/regenerate", h.Docs.RegenerateAISection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/approve", h.Docs.ApproveAISection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/reject", h.Docs.RejectAISection)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/change-proposals", h.Docs.ListChangeProposals)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/change-proposals/{proposalId}/apply", h.Docs.ApplyChangeProposal)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/change-proposals/{proposalId}/discard", h.Docs.DiscardChangeProposal)
 
 				// Comments — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/comments", h.Docs.ListComments)

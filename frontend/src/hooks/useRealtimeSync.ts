@@ -277,6 +277,16 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.allCollections(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(workspaceId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterConfig(workspaceId) })
+    } else if (event.entity === 'docs_change_proposal') {
+      const docId = event.parent_id || (typeof event.data?.document_id === 'string' ? event.data.document_id : '')
+      if (docId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.changeProposals(workspaceId, docId) })
+        if (event.data?.status === 'applied') {
+          queryClient.invalidateQueries({ queryKey: queryKeys.docs.content(workspaceId, docId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.docs.blocks(workspaceId, docId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(workspaceId, docId), exact: true })
+        }
+      }
     } else if (event.entity === 'docs_version') {
       const docId = event.parent_id ?? ''
       if (docId) {

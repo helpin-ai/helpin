@@ -258,6 +258,7 @@ func main() {
 			&model.DocsContent{},
 			&model.DocsBlock{},
 			&model.DocsAISectionCandidate{},
+			&model.DocsChangeProposal{},
 			&model.DocsVersion{},
 			&model.DocsLink{},
 			&model.DocsHelpcenterConfig{},
@@ -589,6 +590,7 @@ func main() {
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsBlockRepo := repository.NewDocsBlockRepository(db)
 	docsAISectionCandidateRepo := repository.NewDocsAISectionCandidateRepository(db)
+	docsChangeProposalRepo := repository.NewDocsChangeProposalRepository(db)
 	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
@@ -913,6 +915,7 @@ func main() {
 	docsAISectionService := service.NewDocsAISectionService(docsAISectionCandidateRepo, docsBlockRepo, docsBlockService, docsDocumentRepo, docsSearchService, supportConversationRepo, agentService, llmProvider, cfg.CrawlerProxyURLs)
 	docsAISectionService.SetRuleEngine(ruleEngine)
 	docsAISectionService.SetActivityService(pmActivityService)
+	docsChangeProposalService := service.NewDocsChangeProposalService(docsChangeProposalRepo, docsDocumentRepo, docsContentService, docsBlockService, wsPublisher)
 	docsReferencesService := service.NewDocsReferencesService(docsLinkRepo, docsBlockRepo, docsDocumentRepo, pmCommentService, agentService)
 	var docsEntityReferenceResolverService *service.DocsEntityReferenceResolverService
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
@@ -1239,6 +1242,7 @@ func main() {
 			docsContentService,
 			docsBlockService,
 			docsAISectionService,
+			docsChangeProposalService,
 			docsReferencesService,
 			docsVersionService,
 			docsLinkService,

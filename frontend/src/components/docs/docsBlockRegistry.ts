@@ -23,10 +23,10 @@ export interface DocsBlockDefinition<Attrs extends Record<string, unknown> = Rec
 export const docsBlockRegistry = {
   aiSection: {
     kind: 'aiSection',
-    label: 'AI Section',
-    description: 'Agent-owned section',
+    label: 'Legacy AI Section',
+    description: 'Legacy generated section',
     attrs: ['status', 'ownerAgentId', 'lastGeneratedAt', 'sourceCount'],
-    agentReadableKind: 'ai_section',
+    agentReadableKind: 'section',
   },
   citationBlock: {
     kind: 'citationBlock',
