@@ -588,23 +588,11 @@ func (c *converter) convertDetails(n *html.Node) []Node {
 
 // convertIframe handles iframe elements.
 func (c *converter) convertIframe(n *html.Node) []Node {
-	src := getAttr(n, "src")
-	if src == "" {
+	raw := renderNode(n)
+	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
-
-	// Check if it's a supported video provider
-	provider, sourceUrl, embedUrl, ok := parseVideoIframe(src)
-	if ok {
-		return []Node{VideoEmbed(provider, sourceUrl, embedUrl)}
-	}
-
-	// Unsupported iframe — convert to link if safe
-	c.warn(warnUnsupportedIframe(src))
-	if isSafeURL(src) {
-		return []Node{Paragraph(Text(src, LinkMark(src)))}
-	}
-	return []Node{Paragraph(Text(src))}
+	return []Node{SandboxedHTMLBlock(raw)}
 }
 
 // convertFigure handles <figure> elements (image + caption).

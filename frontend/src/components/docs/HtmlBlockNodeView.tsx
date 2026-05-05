@@ -4,12 +4,6 @@ import { SourceCodeIcon, ViewIcon, PencilEdit01Icon, Delete01Icon, Alert01Icon }
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { sanitizeHtml } from './htmlSanitizer';
 
-const sandboxedHtmlBlockBaseStyle = `body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }`;
-
-export function buildSandboxedHtmlBlockSrcDoc(html: string) {
-  return `<!doctype html><html><head><style>${sandboxedHtmlBlockBaseStyle}</style></head><body>${html}</body></html>`;
-}
-
 export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, getPos }: NodeViewProps) {
   const { html, renderMode } = node.attrs;
   const editable = editor.isEditable;
@@ -178,19 +172,10 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
                 placeholder="<div>&#10;  <p>Your HTML here...</p>&#10;</div>"
               />
             </div>
-          ) : hasContent && sandboxed ? (
-            <iframe
-              className="docs-html-block-frame w-full rounded-md border bg-background"
-              sandbox="allow-scripts allow-forms allow-popups allow-presentation"
-              referrerPolicy="no-referrer"
-              loading="lazy"
-              srcDoc={buildSandboxedHtmlBlockSrcDoc(html)}
-              onDoubleClick={editable ? switchToEdit : undefined}
-            />
           ) : hasContent ? (
             <div
-              className="prose prose-sm dark:prose-invert max-w-none text-sm"
-              dangerouslySetInnerHTML={{ __html: sanitized }}
+              className={sandboxed ? 'docs-html-block-raw max-w-none text-sm' : 'prose prose-sm dark:prose-invert max-w-none text-sm'}
+              dangerouslySetInnerHTML={{ __html: sandboxed ? html : sanitized }}
               onDoubleClick={editable ? switchToEdit : undefined}
             />
           ) : (
