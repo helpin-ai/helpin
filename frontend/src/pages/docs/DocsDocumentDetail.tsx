@@ -1474,11 +1474,6 @@ export function DocsDocumentDetail({
               title={isSourceLocaleActive ? titleDraft : activeTranslationDraft.title}
               onTitleChange={!effectiveReadOnly ? (isSourceLocaleActive ? handleTitleChange : handleTranslationTitleChange) : undefined}
               slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug}
-              slugHelperText={
-                isPublished && hasUnpublishedChanges
-                  ? 'Slug changes take effect when you publish an update.'
-                  : undefined
-              }
               onSlugChange={
                 isSourceLocaleActive
                   ? doc?.hc_slug && !effectiveReadOnly
