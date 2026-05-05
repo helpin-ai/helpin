@@ -323,6 +323,7 @@ export function CommentThread({
   const [editPendingAttachments, setEditPendingAttachments] = useState<PendingFile[]>([]);
   const [replyPendingAttachments, setReplyPendingAttachments] = useState<Map<string, PendingFile[]>>(new Map());
   const pendingAttachmentsRef = useRef(pendingAttachments);
+  const editPendingAttachmentsRef = useRef(editPendingAttachments);
   const replyPendingAttachmentsRef = useRef(replyPendingAttachments);
 
   // Member name map for reaction tooltips
@@ -337,6 +338,10 @@ export function CommentThread({
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments;
   }, [pendingAttachments]);
+
+  useEffect(() => {
+    editPendingAttachmentsRef.current = editPendingAttachments;
+  }, [editPendingAttachments]);
 
   useEffect(() => {
     replyPendingAttachmentsRef.current = replyPendingAttachments;
@@ -366,6 +371,7 @@ export function CommentThread({
     () => () => {
       const attachmentIds = [
         ...pendingAttachmentsRef.current.map((attachment) => attachment.id),
+        ...editPendingAttachmentsRef.current.map((attachment) => attachment.id),
         ...Array.from(replyPendingAttachmentsRef.current.values()).flatMap((attachments) =>
           attachments.map((attachment) => attachment.id),
         ),
