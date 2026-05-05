@@ -268,7 +268,7 @@ function ContextChip({
       >
         {body}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent align="start" className="z-[80] w-64">
         {options.map((option) => {
           const OptionIcon = chipIcon(option.context.entity_type);
           const checked = option.key === activeKey;
