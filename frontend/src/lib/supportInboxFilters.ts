@@ -77,7 +77,14 @@ export function defaultAIStatesForNav(navFilter: NavFilter): ConversationAIState
 }
 
 export function defaultAssignmentForNav(navFilter: NavFilter): ConversationAssignmentFilter[] {
-  return navFilter === 'mine' ? ['me', 'mentioned_me', 'opened_by_me'] : [];
+  switch (navFilter) {
+    case 'inbox':
+      return ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'];
+    case 'mine':
+      return ['me', 'mentioned_me', 'opened_by_me'];
+    default:
+      return [];
+  }
 }
 
 export function defaultConversationListFiltersForNav(navFilter: NavFilter): ConversationListFilters {
@@ -389,7 +396,14 @@ export function buildConversationListRequestFilters({
     if (normalizedFilters.assignment.length > 0) f.assigned_to = normalizedFilters.assignment.join(',');
   }
   if (normalizedFilters.tagIds.length > 0) f.tag_ids = normalizedFilters.tagIds.join(',');
-  if (navFilter !== 'inbox') {
+  if (navFilter === 'inbox') {
+    if (
+      normalizedFilters.aiStates.length === 0 &&
+      !stringArraysEqual(normalizedFilters.aiStates, defaultAIStatesForNav(navFilter))
+    ) {
+      f.ai = 'none';
+    }
+  } else {
     if (normalizedFilters.aiStates.length > 0) f.ai = normalizedFilters.aiStates.join(',');
   }
   if (normalizedFilters.sort !== 'newest') f.sort = normalizedFilters.sort;

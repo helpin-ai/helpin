@@ -182,6 +182,7 @@ describe('filterSupportConversations', () => {
 describe('buildConversationListRequestFilters', () => {
   it('keeps sidebar filters as the default request shape', () => {
     expect(defaultAIStatesForNav('inbox')).toEqual(['handoff']);
+    expect(defaultAssignmentForNav('inbox')).toEqual(['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others']);
     expect(buildConversationListRequestFilters({
       navFilter: 'inbox',
       selectedMailboxId: 'all',
@@ -190,7 +191,7 @@ describe('buildConversationListRequestFilters', () => {
     })).toEqual({ filter: 'inbox', mailbox_id: 'shared' });
   });
 
-  it('adds assignment and sort refinements without changing the sidebar view', () => {
+  it('adds reduced assignment selections without changing the sidebar view', () => {
     expect(buildConversationListRequestFilters({
       navFilter: 'inbox',
       selectedMailboxId: 'mailbox-billing',
@@ -205,7 +206,7 @@ describe('buildConversationListRequestFilters', () => {
     });
   });
 
-  it('sends multi-select assignment and team inbox filters as CSV lists', () => {
+  it('sends reduced multi-select assignment and team inbox filters as CSV lists', () => {
     expect(buildConversationListRequestFilters({
       navFilter: 'inbox',
       selectedMailboxId: 'all',
@@ -236,6 +237,19 @@ describe('buildConversationListRequestFilters', () => {
       mailbox_id: 'shared',
       statuses: 'open,waiting_on_customer',
       tag_ids: 'tag-billing,tag-vip',
+    });
+  });
+
+  it('sends ai=none when the Inbox AI state selection is cleared', () => {
+    expect(buildConversationListRequestFilters({
+      navFilter: 'inbox',
+      selectedMailboxId: 'all',
+      searchQuery: '',
+      listFilters: { ...defaultConversationListFiltersForNav('inbox'), aiStates: [] },
+    })).toEqual({
+      filter: 'inbox',
+      mailbox_id: 'shared',
+      ai: 'none',
     });
   });
 
@@ -345,7 +359,7 @@ describe('hasConversationListChanges', () => {
 });
 
 describe('buildSupportInboxViewFilters', () => {
-  it('round-trips the default Inbox AI handoff baseline without persisting it', () => {
+  it('round-trips the default Inbox assignment and AI baselines without persisting them', () => {
     const filters = buildSupportInboxViewFilters({
       navFilter: 'inbox',
       selectedMailboxId: 'all',
@@ -357,6 +371,13 @@ describe('buildSupportInboxViewFilters', () => {
       nav_filter: 'inbox',
       states: 'open,waiting_on_customer',
     });
+    expect(parseSupportInboxViewFilters(filters, 'inbox').listFilters.assignment).toEqual([
+      'me',
+      'mentioned_me',
+      'opened_by_me',
+      'unassigned',
+      'others',
+    ]);
     expect(parseSupportInboxViewFilters(filters, 'inbox').listFilters.aiStates).toEqual(['handoff']);
   });
 

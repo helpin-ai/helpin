@@ -298,7 +298,7 @@ export function ConversationList({
   const filteredConversations = useMemo(() => {
     const hasExplicitStateFilters = !statesEqual(conversationListFilters.states, defaultStatesForNav(navFilter));
     const hasExplicitAIStateFilters = !stringArraysEqual(conversationListFilters.aiStates, defaultAIStatesForNav(navFilter));
-    const shouldSkipSidebarViewFilter = hasExplicitStateFilters || ((navFilter === 'ai_active' || navFilter === 'resolved_by_ai') && hasExplicitAIStateFilters);
+    const shouldSkipSidebarViewFilter = navFilter === 'mine' || hasExplicitStateFilters || ((navFilter === 'ai_active' || navFilter === 'resolved_by_ai') && hasExplicitAIStateFilters);
     return filterSupportConversations(conversations, {
       navFilter,
       mailboxScope: selectedMailboxId === 'all' && conversationListFilters.mailboxIds.length === 0 && navFilter === 'inbox' ? 'shared' : selectedMailboxId,

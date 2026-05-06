@@ -790,6 +790,12 @@ func applyConversationAIFilters(query *gorm.DB, alias string, aiFilters []string
 			conditions = append(conditions, conversationAIHandoffCondition(alias))
 		case model.SupportAIFilterResolved, model.SupportSystemTagAIResolved, "resolved_by_ai":
 			conditions = append(conditions, conversationResolvedByAICondition(alias))
+		case "none":
+			conditions = append(conditions, fmt.Sprintf("NOT (%s) AND NOT (%s) AND NOT (%s)",
+				conversationAIActiveCondition(alias),
+				conversationAIHandoffCondition(alias),
+				conversationResolvedByAICondition(alias),
+			))
 		}
 	}
 	if len(conditions) == 0 {
@@ -1358,7 +1364,6 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, workspaceID, userID, workspaceMemberID, role string, mailboxID *string) (model.UnreadStats, error) {
 	var stats model.UnreadStats
 	humanInboxCondition := conversationHumanInboxCondition("sc")
-	humanOpenInboxCondition := fmt.Sprintf("(%s AND sc.status = '%s')", humanInboxCondition, model.SupportConversationStatusOpen)
 	aiActiveCondition := conversationAIActiveCondition("sc")
 	mentionCondition, mentionArgs := r.mentionExistsCondition("sc", userID)
 	mineCondition := `(` + conversationHumanInboxCondition("sc") + ` OR sc.status = 'waiting_on_customer') AND (
@@ -1423,7 +1428,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ?
 		  AND sc.status NOT IN ('resolved', 'spam')
-	`, unreadCondition, humanOpenInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanOpenInboxCondition, unreadCondition, mineCondition, unreadCondition, humanOpenInboxCondition, humanOpenInboxCondition, mineCondition, aiActiveCondition)
+	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition)
 
 	args := []any{}
 	args = append(args, userID, userID)

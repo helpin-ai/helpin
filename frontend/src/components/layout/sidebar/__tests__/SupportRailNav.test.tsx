@@ -147,11 +147,12 @@ describe('SupportRailNav', () => {
     rendered.cleanup()
   })
 
-  it('uses the separately scoped Inbox count without changing Mine', () => {
+  it('uses the separately scoped Inbox count and global Mine count', () => {
     const rendered = renderSupportRail()
 
     expect(buttonByText(rendered.container, 'Inbox')?.textContent).toContain('9')
-    expect(buttonByText(rendered.container, 'Mine')?.textContent).toContain('8')
+    expect(buttonByText(rendered.container, 'Mine')?.textContent).toContain('2')
+    expect(buttonByText(rendered.container, 'Mine')?.textContent).not.toContain('8')
 
     rendered.cleanup()
   })

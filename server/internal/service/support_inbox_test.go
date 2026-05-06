@@ -613,8 +613,8 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("get unread stats: %v", err)
 		}
 
-		if got := stats.Inbox - baseStats.Inbox; got != 2 {
-			t.Fatalf("expected inbox unread count delta 2, got %d", got)
+		if got := stats.Inbox - baseStats.Inbox; got != 3 {
+			t.Fatalf("expected inbox unread count delta 3, got %d", got)
 		}
 		if got := stats.Mine - baseStats.Mine; got != 1 {
 			t.Fatalf("expected mine unread count delta 1, got %d", got)
@@ -622,20 +622,20 @@ func TestSupportConversationRepository(t *testing.T) {
 		if got := stats.Waiting - baseStats.Waiting; got != 1 {
 			t.Fatalf("expected waiting unread count delta 1, got %d", got)
 		}
-		if got := stats.Total - baseStats.Total; got != 2 {
-			t.Fatalf("expected total unread human inbox count delta 2, got %d", got)
+		if got := stats.Total - baseStats.Total; got != 3 {
+			t.Fatalf("expected total unread human inbox count delta 3, got %d", got)
 		}
 		if got := stats.MyInbox - baseStats.MyInbox; got != 1 {
 			t.Fatalf("expected my inbox count delta 1, got %d", got)
 		}
-		if got := stats.Unassigned - baseStats.Unassigned; got != 1 {
-			t.Fatalf("expected unassigned count delta 1, got %d", got)
+		if got := stats.Unassigned - baseStats.Unassigned; got != 2 {
+			t.Fatalf("expected unassigned count delta 2, got %d", got)
 		}
 		if got := stats.AIActive - baseStats.AIActive; got != 1 {
 			t.Fatalf("expected AI active unread count delta 1, got %d", got)
 		}
-		if got := stats.InboxTotal - baseStats.InboxTotal; got != 2 {
-			t.Fatalf("expected inbox workload count delta 2, got %d", got)
+		if got := stats.InboxTotal - baseStats.InboxTotal; got != 3 {
+			t.Fatalf("expected inbox workload count delta 3, got %d", got)
 		}
 		if got := stats.MineTotal - baseStats.MineTotal; got != 1 {
 			t.Fatalf("expected mine workload count delta 1, got %d", got)
@@ -648,7 +648,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 	})
 
-	t.Run("Mailbox unread counts include active AI conversations but exclude AI-resolved ones", func(t *testing.T) {
+	t.Run("Mailbox workload counts match human inbox list scope", func(t *testing.T) {
 		ctx := context.Background()
 		now := time.Now()
 		customerMessageAt := now.Add(-time.Minute)
@@ -770,8 +770,16 @@ func TestSupportConversationRepository(t *testing.T) {
 		if err != nil {
 			t.Fatalf("count billing mailbox unread: %v", err)
 		}
-		if count != 3 {
-			t.Fatalf("expected billing mailbox unread count 3, got %d", count)
+		if count != 2 {
+			t.Fatalf("expected billing mailbox unread count 2, got %d", count)
+		}
+
+		workloadCount, err := mailboxRepo.CountWorkload(ctx, workspaceID, &billingMailbox.ID)
+		if err != nil {
+			t.Fatalf("count billing mailbox workload: %v", err)
+		}
+		if workloadCount != 2 {
+			t.Fatalf("expected billing mailbox workload count 2, got %d", workloadCount)
 		}
 	})
 }

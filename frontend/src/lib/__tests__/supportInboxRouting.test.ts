@@ -119,7 +119,7 @@ describe('supportInboxRouting', () => {
       searchQuery: '',
       listFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: [],
+        assignment: ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'],
         mailboxIds: [],
         tagIds: [],
         aiStates: ['handoff'],
@@ -129,6 +129,21 @@ describe('supportInboxRouting', () => {
   });
 
   it('stores Assignment filters only when they differ from the sidebar default', () => {
+    expect(buildSupportInboxSearch({
+      navFilter: 'inbox',
+      selectedMailboxId: 'all',
+      statusFilter: 'all',
+      searchQuery: '',
+      listFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'],
+        mailboxIds: [],
+        tagIds: [],
+        aiStates: ['handoff'],
+        sort: 'newest',
+      },
+    })).toEqual({});
+
     expect(buildSupportInboxSearch({
       navFilter: 'mine',
       selectedMailboxId: 'all',

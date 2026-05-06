@@ -76,12 +76,10 @@ export function Sidebar() {
   const { data: customViews = [] } = useSupportInboxViews(workspaceId ?? '', hasSupportModule);
   const { data: customViewCounts = [] } = useSupportInboxViewCounts(workspaceId ?? '', hasSupportModule);
   const { data: builtinViews } = useSupportBuiltinInboxViews(workspaceId ?? '', hasSupportModule);
-  const unreadMailboxScope = selectedMailboxId === 'all' ? undefined : selectedMailboxId;
-  const inboxUnreadMailboxScope = supportInboxCountMailboxScope(selectedMailboxId);
-  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', unreadMailboxScope, hasSupportModule);
+  const inboxUnreadMailboxScope = supportInboxCountMailboxScope('all');
+  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', undefined, hasSupportModule);
   const { data: inboxUnreadStats } = useUnreadStats(workspaceId ?? '', inboxUnreadMailboxScope, hasSupportModule);
-  const { data: workspaceUnreadStats } = useUnreadStats(workspaceId ?? '', undefined, hasSupportModule && !!unreadMailboxScope);
-  const globalUnreadStats = unreadMailboxScope ? workspaceUnreadStats : unreadStats;
+  const globalUnreadStats = unreadStats;
   const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
   const updateSupportInboxView = useUpdateSupportInboxView(workspaceId ?? '');
   const deleteSupportInboxView = useDeleteSupportInboxView(workspaceId ?? '');

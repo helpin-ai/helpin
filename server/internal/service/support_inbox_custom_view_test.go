@@ -361,6 +361,79 @@ func TestSupportInboxViewServiceCountsTreatsReorderedDefaultStatesAsDefault(t *t
 	}
 }
 
+func TestSupportInboxViewServiceCountsSupportsNoAIStateFilter(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-support-custom-view-ai-none"
+	userID := "user-support-custom-view-ai-none"
+	seedWorkspace(t, db, workspaceID, "Support Custom View AI None", "support-custom-view-ai-none", userID)
+	seedWorkspaceMember(t, db, "wm-support-custom-view-ai-none", workspaceID, userID, "ai-none@example.com", "AI None User", model.RoleOwner)
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	viewService := NewSupportInboxViewService(repository.NewSupportInboxViewRepository(db), conversationRepo, nil)
+
+	if err := conversationRepo.Create(ctx, &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Normal human work",
+		Status:      model.SupportConversationStatusOpen,
+	}); err != nil {
+		t.Fatalf("create normal conversation: %v", err)
+	}
+
+	flowState := model.SupportConversationFlowStateAIHandling
+	if err := conversationRepo.Create(ctx, &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "AI active work",
+		Status:      model.SupportConversationStatusOpen,
+		FlowState:   &flowState,
+	}); err != nil {
+		t.Fatalf("create ai active conversation: %v", err)
+	}
+
+	escalated := "escalated"
+	if err := conversationRepo.Create(ctx, &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "AI handoff work",
+		Status:      model.SupportConversationStatusOpen,
+		AIState:     &escalated,
+	}); err != nil {
+		t.Fatalf("create ai handoff conversation: %v", err)
+	}
+
+	resolvedFlowState := model.SupportConversationFlowStateResolvedByAI
+	if err := conversationRepo.Create(ctx, &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "AI resolved work",
+		Status:      model.SupportConversationStatusResolved,
+		FlowState:   &resolvedFlowState,
+	}); err != nil {
+		t.Fatalf("create ai resolved conversation: %v", err)
+	}
+
+	view, err := viewService.Create(ctx, workspaceID, userID, model.RoleOwner, model.CreateSupportInboxViewRequest{
+		Name: "No AI state",
+		Filters: model.SupportInboxViewFilters{
+			"nav_filter":  "inbox",
+			"states":      "open,waiting_on_customer",
+			"mailbox_ids": "all",
+			"ai":          "none",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create ai none custom view: %v", err)
+	}
+
+	counts, err := viewService.ListCounts(ctx, workspaceID, userID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("list custom view counts: %v", err)
+	}
+	if len(counts) != 1 {
+		t.Fatalf("expected one custom view count, got %#v", counts)
+	}
+	if counts[0].ViewID != view.ID || counts[0].TotalCount != 1 {
+		t.Fatalf("expected ai=none count to include only normal conversation, got %#v", counts[0])
+	}
+}
+
 func idsFromSupportViews(views []model.SupportInboxView) []string {
 	ids := make([]string, 0, len(views))
 	for _, view := range views {

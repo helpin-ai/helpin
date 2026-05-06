@@ -130,17 +130,17 @@ export function SupportRailNav({
               item.key === 'inbox'
                 ? inboxUnreadStats?.inbox
                 : item.key === 'mine'
-                  ? unreadStats?.mine
+                  ? (globalUnreadStats ?? unreadStats)?.mine
                   : item.key === 'waiting'
-                    ? unreadStats?.waiting
+                    ? (globalUnreadStats ?? unreadStats)?.waiting
                     : undefined;
             const total =
               item.key === 'inbox'
                 ? inboxUnreadStats?.inbox_total
                 : item.key === 'mine'
-                  ? unreadStats?.mine_total
+                  ? (globalUnreadStats ?? unreadStats)?.mine_total
                   : item.key === 'waiting'
-                    ? unreadStats?.waiting_total
+                    ? (globalUnreadStats ?? unreadStats)?.waiting_total
                     : undefined;
 
             return (
