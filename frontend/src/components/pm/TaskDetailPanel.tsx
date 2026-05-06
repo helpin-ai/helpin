@@ -6,7 +6,9 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   ArchiveIcon,
   ArrowLeftRightIcon,
+  ArrowUpRight01Icon,
   BotIcon,
+  Copy01Icon,
   DashboardSpeed01Icon,
   File01Icon,
   HashtagIcon,
@@ -156,6 +158,7 @@ interface TaskDetailPanelProps {
   states: WorkflowState[];
   initialRecurringSummary?: TaskRecurringSummary | null;
   onTaskUpdated: (task: TaskDetail) => void;
+  onTaskOpened: (task: TaskDetail) => void;
   onTaskArchived: (taskId: string) => void;
 }
 
@@ -174,6 +177,10 @@ interface FormState {
   owner_member_ids: string[];
   requester_member_id: string;
   blocker: string;
+}
+
+interface DuplicateNoticeState {
+  taskDetail: TaskDetail;
 }
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -201,6 +208,10 @@ const buildFormState = (detail: TaskDetail): FormState => ({
   requester_member_id: detail.task.requester_member_id ?? '',
   blocker: detail.task.blocker ?? '',
 });
+
+const isInsideSonnerToast = (target: EventTarget | null) => (
+  target instanceof HTMLElement && Boolean(target.closest('[data-sonner-toast], [data-sonner-toaster]'))
+);
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -463,6 +474,7 @@ function TaskDetailPanelBody({
   initialRecurringSummary,
   onOpenChange,
   onTaskUpdated,
+  onTaskOpened,
   onTaskArchived,
 }: {
   workspaceId: string;
@@ -471,6 +483,7 @@ function TaskDetailPanelBody({
   initialRecurringSummary: TaskRecurringSummary | null;
   onOpenChange: (open: boolean) => void;
   onTaskUpdated: (task: TaskDetail) => void;
+  onTaskOpened: (task: TaskDetail) => void;
   onTaskArchived: (taskId: string) => void;
 }) {
   const confirm = useConfirm();
@@ -487,7 +500,11 @@ function TaskDetailPanelBody({
   const descriptionPendingUploadsRef = useRef(0);
   const blockedAutosavePatchSignatureRef = useRef<string | null>(null);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
+  const { copied: duplicateKeyCopied, copy: copyDuplicateKey } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
+  const [duplicateNotice, setDuplicateNotice] = useState<DuplicateNoticeState | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
   const [recurringSummary, setRecurringSummary] = useState<TaskRecurringSummary | null>(initialRecurringSummary);
@@ -991,6 +1008,28 @@ function TaskDetailPanelBody({
     onOpenChange(false);
   };
 
+  const duplicateTask = async () => {
+    if (duplicating) return;
+    setDuplicateConfirmOpen(false);
+    setDuplicating(true);
+    const { data, error } = await pmTaskService.duplicate(workspaceId, taskId);
+    setDuplicating(false);
+    if (error || !data) {
+      toast.error(error ?? 'Failed to duplicate task');
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('task-created', { detail: { task: data.task } }));
+    setDuplicateNotice({ taskDetail: data });
+  };
+
+  const requestDuplicateTask = () => {
+    if (automatedStateIds.has(taskDetail.task.workflow_state_id)) {
+      setDuplicateConfirmOpen(true);
+      return;
+    }
+    void duplicateTask();
+  };
+
   // ── Copy link ──────────────────────────────────────────────────
   const copyLink = () =>
     copyText(
@@ -1147,6 +1186,10 @@ function TaskDetailPanelBody({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={requestDuplicateTask} disabled={duplicating}>
+                <Copy01Icon className="mr-2 h-4 w-4" />
+                Duplicate
+              </DropdownMenuItem>
               {canSaveAsTemplate && (
                 <DropdownMenuItem onSelect={openSaveTemplateDialog}>
                   <File01Icon className="mr-2 h-4 w-4" />
@@ -1186,6 +1229,59 @@ function TaskDetailPanelBody({
           </Button>
         </div>
       </div>
+
+      {duplicateNotice ? (
+        <div className="border-b border-border/70 bg-primary/5 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Task duplicated
+              </p>
+              <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+                {[duplicateNotice.taskDetail.task.task_key, duplicateNotice.taskDetail.task.name].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {duplicateNotice.taskDetail.task.task_key ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-full px-3 text-xs"
+                  onClick={() => copyDuplicateKey(duplicateNotice.taskDetail.task.task_key!)}
+                >
+                  {duplicateKeyCopied ? <Tick01Icon className="mr-1.5 h-3.5 w-3.5" /> : <Copy01Icon className="mr-1.5 h-3.5 w-3.5" />}
+                  {duplicateKeyCopied ? 'Story ID copied' : 'Copy Story ID'}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 rounded-full px-3 text-xs"
+                onClick={() => {
+                  if (!workspace?.slug) return;
+                  const duplicatedTask = duplicateNotice.taskDetail;
+                  setDuplicateNotice(null);
+                  onTaskOpened(duplicatedTask);
+                }}
+              >
+                <ArrowUpRight01Icon className="mr-1.5 h-3.5 w-3.5" />
+                Open duplicate
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full"
+                onClick={() => setDuplicateNotice(null)}
+              >
+                <Cancel01Icon className="h-4 w-4" />
+                <span className="sr-only">Dismiss duplicate notification</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* ── Two-column grid ─────────────────────────────────────── */}
       <div
@@ -1948,6 +2044,16 @@ function TaskDetailPanelBody({
         variant="default"
         onConfirm={archiveTask}
       />
+
+      <ConfirmDialog
+        open={duplicateConfirmOpen}
+        onOpenChange={setDuplicateConfirmOpen}
+        title="Duplicate task and start agent?"
+        description="This task is in an auto-run state. Duplicating it will create a copy in the same state and start the assigned agent automatically."
+        confirmLabel="Duplicate and start agent"
+        variant="default"
+        onConfirm={duplicateTask}
+      />
     </div>
   );
 }
@@ -1963,6 +2069,7 @@ export function TaskDetailPanel({
   states,
   initialRecurringSummary,
   onTaskUpdated,
+  onTaskOpened,
   onTaskArchived,
 }: TaskDetailPanelProps) {
   const openedAtRef = useRef<number | null>(null);
@@ -1987,6 +2094,10 @@ export function TaskDetailPanel({
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {
+          if (isInsideSonnerToast(event.target)) {
+            event.preventDefault();
+            return;
+          }
           if (isInsideAskAgentsDock(event.target)) {
             event.preventDefault();
             return;
@@ -1996,6 +2107,10 @@ export function TaskDetailPanel({
           }
         }}
         onInteractOutside={(event) => {
+          if (isInsideSonnerToast(event.target)) {
+            event.preventDefault();
+            return;
+          }
           if (isInsideAskAgentsDock(event.target)) {
             event.preventDefault();
             return;
@@ -2015,6 +2130,7 @@ export function TaskDetailPanel({
             initialRecurringSummary={initialRecurringSummary ?? null}
             onOpenChange={onOpenChange}
             onTaskUpdated={onTaskUpdated}
+            onTaskOpened={onTaskOpened}
             onTaskArchived={onTaskArchived}
           />
         ) : loading ? (

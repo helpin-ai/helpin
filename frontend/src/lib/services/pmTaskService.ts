@@ -191,6 +191,8 @@ export const pmTaskService = {
   remove: (workspaceId: string, id: string) => api.del(`/pm/tasks/${id}?${qs(workspaceId)}`),
   saveAsTemplate: (workspaceId: string, id: string, payload: SaveTaskAsTemplateRequest) =>
     api.post<TaskTemplate>(`/pm/tasks/${id}/save-as-template?${qs(workspaceId)}`, payload),
+  duplicate: (workspaceId: string, id: string) =>
+    api.post<TaskDetail>(`/pm/tasks/${id}/duplicate?${qs(workspaceId)}`, {}),
   move: (workspaceId: string, id: string, payload: MoveTaskRequest) =>
     api.put<TaskDetail>(`/pm/tasks/${id}/move?${qs(workspaceId)}`, payload),
   reorder: (workspaceId: string, id: string, payload: ReorderTaskRequest) =>

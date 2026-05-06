@@ -1004,6 +1004,132 @@ func parseTaskTemplateExternalLinks(value *string) ([]model.CreateExternalLinkRe
 	return links, nil
 }
 
+// Duplicate creates a fresh task from reusable content on an existing task.
+func (s *PMTaskService) Duplicate(ctx context.Context, taskID, actorID string) (*model.TaskDetail, error) {
+	detail, err := s.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil {
+		return nil, fmt.Errorf("task not found")
+	}
+	source := detail.Task
+	if err := s.requireCanEdit(ctx, source.WorkspaceID, actorID); err != nil {
+		return nil, err
+	}
+
+	labelIDs := make([]string, 0, len(detail.Labels))
+	for _, label := range detail.Labels {
+		labelIDs = append(labelIDs, label.ID)
+	}
+
+	var checklistItems []model.PMChecklistItem
+	if s.checklistRepo != nil {
+		checklistItems, err = s.checklistRepo.List(ctx, source.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	externalLinks := []model.CreateExternalLinkRequest{}
+	if s.externalLinkRepo != nil {
+		links, err := s.externalLinkRepo.List(ctx, source.ID)
+		if err != nil {
+			return nil, err
+		}
+		externalLinks = make([]model.CreateExternalLinkRequest, 0, len(links))
+		for _, link := range links {
+			linkURL := strings.TrimSpace(link.URL)
+			if linkURL == "" {
+				continue
+			}
+			externalLinks = append(externalLinks, model.CreateExternalLinkRequest{
+				URL:   linkURL,
+				Title: strings.TrimSpace(link.Title),
+			})
+		}
+	}
+
+	duplicateName := strings.TrimSpace(source.Name) + " (copy)"
+	if strings.TrimSpace(source.Name) == "" {
+		duplicateName = "Untitled task (copy)"
+	}
+	duplicate, err := s.Create(ctx, model.CreateTaskRequest{
+		WorkspaceID:       source.WorkspaceID,
+		Name:              duplicateName,
+		Description:       source.Description,
+		TaskType:          source.TaskType,
+		WorkflowID:        source.WorkflowID,
+		WorkflowStateID:   source.WorkflowStateID,
+		EpicID:            source.EpicID,
+		SprintID:          source.SprintID,
+		TeamID:            source.TeamID,
+		OwnerMemberIDs:    dedupeIDs(source.OwnerMemberIDs),
+		RequesterID:       source.RequesterID,
+		RequesterMemberID: source.RequesterMemberID,
+		Estimate:          source.Estimate,
+		Priority:          &source.Priority,
+		Severity:          &source.Severity,
+		Deadline:          source.Deadline,
+		Blocked:           &source.Blocked,
+		Blocker:           source.Blocker,
+		LabelIDs:          labelIDs,
+		ExternalLinks:     externalLinks,
+	}, actorID)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.checklistRepo != nil && len(checklistItems) > 0 {
+		for _, sourceItem := range checklistItems {
+			text := strings.TrimSpace(sourceItem.Text)
+			if text == "" {
+				continue
+			}
+			item := &model.PMChecklistItem{
+				TaskID:     duplicate.Task.ID,
+				Text:       text,
+				Completed:  sourceItem.Completed,
+				Position:   sourceItem.Position,
+				AssigneeID: sourceItem.AssigneeID,
+			}
+			if err := s.checklistRepo.Create(ctx, item); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if s.attachmentRepo != nil {
+		attachmentClones, err := s.attachmentRepo.CloneUploadedFromEntityToEntityWithSources(ctx, "task", source.ID, "task", duplicate.Task.ID)
+		if err != nil {
+			return nil, err
+		}
+		if missingInlineIDs := missingInlineAttachmentIDs(duplicate.Task.Description, attachmentIDRewriteMap(attachmentClones)); len(missingInlineIDs) > 0 {
+			inlineClones, err := s.attachmentRepo.CloneUploadedByIDToEntity(ctx, missingInlineIDs, "task", duplicate.Task.ID)
+			if err != nil {
+				return nil, err
+			}
+			attachmentClones = append(attachmentClones, inlineClones...)
+		}
+		if rewrittenDescription := rewriteAttachmentIDs(duplicate.Task.Description, attachmentIDRewriteMap(attachmentClones)); !stringPtrEqual(rewrittenDescription, duplicate.Task.Description) {
+			duplicate.Task.Description = rewrittenDescription
+			if err := s.taskRepo.UpdateFields(ctx, duplicate.Task.ID, map[string]interface{}{"description": rewrittenDescription}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	created, err := s.taskRepo.GetByID(ctx, duplicate.Task.ID)
+	if err != nil {
+		return nil, err
+	}
+	if created == nil {
+		return nil, fmt.Errorf("task not found")
+	}
+	s.populateTaskDetail(ctx, created)
+	return created, nil
+}
+
 // Seed creates a batch of synthetic tasks for board and list testing.
 func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) (*model.SeedPMTasksResponse, error) {
 	if req.WorkspaceID == "" {

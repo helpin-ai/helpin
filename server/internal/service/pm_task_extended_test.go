@@ -354,6 +354,194 @@ func TestPMTaskService_SaveAsTemplate(t *testing.T) {
 	}
 }
 
+func TestPMTaskService_DuplicateCopiesReusableTaskContent(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	teamID := "team-duplicate-source"
+	epicID := "epic-duplicate-source"
+	sprintID := "sprint-duplicate-source"
+	labelID := "label-duplicate-source"
+	ownerMemberID2 := "member-duplicate-owner-2"
+	ownerUserID2 := "user-duplicate-owner-2"
+	estimate := 8
+	priority := model.PMTaskPriorityUrgent
+	severity := model.PMTaskSeverityCritical
+	deadline := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
+	blocked := true
+	blocker := "Waiting on API contract"
+	description := `<p>Duplicate me <img data-attachment-id="task-duplicate-source-attachment" src="https://cdn.test/source.png"><img data-attachment-id="task-duplicate-orphan-inline" src="https://cdn.test/orphan.png"></p>`
+
+	seedTaskTeam(t, env, teamID, "Duplicate Team")
+	seedUser(t, env.db, ownerUserID2, "duplicate-owner-2@test.com", "Duplicate Owner 2", "hash")
+	seedWorkspaceMember(t, env.db, ownerMemberID2, env.wsID, ownerUserID2, "duplicate-owner-2@test.com", "Duplicate Owner 2", model.RoleMember)
+	seedTaskEpic(t, env, epicID, teamID, "Duplicate Epic")
+	seedStorySprint(t, env, sprintID, teamID, "Duplicate Sprint")
+	mustExec(t, env.db, `INSERT INTO pm_labels (id, workspace_id, team_id, name, color, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		labelID, env.wsID, teamID, "Duplicate Label", "#22c55e", false, time.Now(), time.Now())
+
+	source, err := env.svc.Create(ctx, model.CreateTaskRequest{
+		WorkspaceID:     env.wsID,
+		Name:            "Task to duplicate",
+		Description:     &description,
+		TaskType:        model.PMTaskTypeBug,
+		WorkflowID:      env.wfID,
+		WorkflowStateID: env.stInProgress,
+		TeamID:          &teamID,
+		EpicID:          &epicID,
+		SprintID:        &sprintID,
+		Estimate:        &estimate,
+		Priority:        &priority,
+		Severity:        &severity,
+		Deadline:        &deadline,
+		OwnerMemberIDs:  []string{"member-story-001", ownerMemberID2},
+		LabelIDs:        []string{labelID},
+		Blocked:         &blocked,
+		Blocker:         &blocker,
+		ChecklistItems: []model.CreateChecklistItemRequest{
+			{Text: "Open item", Position: intPtr(0)},
+			{Text: "Done item", Position: intPtr(1), AssigneeID: &ownerUserID2},
+		},
+		ExternalLinks: []model.CreateExternalLinkRequest{
+			{Title: "Spec", URL: "https://example.com/duplicate-spec"},
+		},
+	}, env.userID)
+	if err != nil {
+		t.Fatalf("Create source: %v", err)
+	}
+	mustExec(t, env.db, `UPDATE pm_checklist_items SET completed = true WHERE task_id = ? AND text = ?`, source.Task.ID, "Done item")
+
+	now := time.Now().UTC()
+	mustExec(t, env.db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-duplicate-source-attachment",
+		env.wsID,
+		"task",
+		source.Task.ID,
+		"source.pdf",
+		int64(256),
+		"application/pdf",
+		env.wsID+"/duplicate-source.pdf",
+		true,
+		env.userID,
+		now,
+		now,
+	)
+	mustExec(t, env.db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-duplicate-orphan-inline",
+		env.wsID,
+		"editor_upload",
+		env.wsID,
+		"inline.png",
+		int64(512),
+		"image/png",
+		env.wsID+"/duplicate-inline.png",
+		true,
+		env.userID,
+		now,
+		now,
+	)
+
+	duplicate, err := env.svc.Duplicate(ctx, source.Task.ID, env.userID)
+	if err != nil {
+		t.Fatalf("Duplicate: %v", err)
+	}
+
+	if duplicate.Task.ID == source.Task.ID {
+		t.Fatal("duplicate reused source ID")
+	}
+	if duplicate.Task.DisplayID == source.Task.DisplayID {
+		t.Fatal("duplicate reused source display ID")
+	}
+	if duplicate.Task.Name != "Task to duplicate (copy)" {
+		t.Fatalf("duplicate name = %q", duplicate.Task.Name)
+	}
+	if duplicate.Task.Description == nil {
+		t.Fatal("duplicate description is nil")
+	}
+	if duplicate.Task.WorkflowID != env.wfID || duplicate.Task.WorkflowStateID != env.stInProgress {
+		t.Fatalf("duplicate workflow/state = %s/%s", duplicate.Task.WorkflowID, duplicate.Task.WorkflowStateID)
+	}
+	if duplicate.Task.TeamID == nil || *duplicate.Task.TeamID != teamID {
+		t.Fatalf("duplicate team_id = %#v, want %q", duplicate.Task.TeamID, teamID)
+	}
+	if duplicate.Task.EpicID == nil || *duplicate.Task.EpicID != epicID {
+		t.Fatalf("duplicate epic_id = %#v, want %q", duplicate.Task.EpicID, epicID)
+	}
+	if duplicate.Task.SprintID == nil || *duplicate.Task.SprintID != sprintID {
+		t.Fatalf("duplicate sprint_id = %#v, want %q", duplicate.Task.SprintID, sprintID)
+	}
+	if duplicate.Task.Estimate == nil || *duplicate.Task.Estimate != estimate {
+		t.Fatalf("duplicate estimate = %#v, want %d", duplicate.Task.Estimate, estimate)
+	}
+	if duplicate.Task.Priority != priority || duplicate.Task.Severity != severity {
+		t.Fatalf("duplicate priority/severity = %s/%s", duplicate.Task.Priority, duplicate.Task.Severity)
+	}
+	if duplicate.Task.Deadline == nil || !duplicate.Task.Deadline.Equal(deadline) {
+		t.Fatalf("duplicate deadline = %#v, want %s", duplicate.Task.Deadline, deadline)
+	}
+	if !duplicate.Task.Blocked || duplicate.Task.Blocker == nil || *duplicate.Task.Blocker != blocker {
+		t.Fatalf("duplicate blocker = blocked:%v blocker:%#v", duplicate.Task.Blocked, duplicate.Task.Blocker)
+	}
+	if duplicate.Task.Completed || duplicate.Task.CompletedAt != nil {
+		t.Fatalf("duplicate should not copy completed state: %+v", duplicate.Task)
+	}
+
+	ownerSet := stringSet(duplicate.Task.OwnerMemberIDs)
+	_, hasPrimaryOwner := ownerSet["member-story-001"]
+	_, hasSecondOwner := ownerSet[ownerMemberID2]
+	if len(ownerSet) != 2 || !hasPrimaryOwner || !hasSecondOwner {
+		t.Fatalf("duplicate owner_member_ids = %#v", duplicate.Task.OwnerMemberIDs)
+	}
+	if len(duplicate.Labels) != 1 || duplicate.Labels[0].ID != labelID {
+		t.Fatalf("duplicate labels = %#v, want %s", duplicate.Labels, labelID)
+	}
+
+	checklistRows, err := repository.NewPMChecklistItemRepository(env.db).List(ctx, duplicate.Task.ID)
+	if err != nil {
+		t.Fatalf("List duplicate checklist: %v", err)
+	}
+	if len(checklistRows) != 2 {
+		t.Fatalf("duplicate checklist len = %d, want 2", len(checklistRows))
+	}
+	if checklistRows[0].Text != "Open item" || checklistRows[0].Completed {
+		t.Fatalf("duplicate checklist first item = %+v, want incomplete Open item", checklistRows[0])
+	}
+	if checklistRows[1].Text != "Done item" || !checklistRows[1].Completed || checklistRows[1].AssigneeID == nil || *checklistRows[1].AssigneeID != ownerUserID2 {
+		t.Fatalf("duplicate checklist second item = %+v", checklistRows[1])
+	}
+
+	linkRows, err := repository.NewPMExternalLinkRepository(env.db).List(ctx, duplicate.Task.ID)
+	if err != nil {
+		t.Fatalf("List duplicate external links: %v", err)
+	}
+	if len(linkRows) != 1 || linkRows[0].URL != "https://example.com/duplicate-spec" || linkRows[0].Title != "Spec" || linkRows[0].TaskID == nil || *linkRows[0].TaskID != duplicate.Task.ID {
+		t.Fatalf("duplicate external links = %#v", linkRows)
+	}
+
+	attachments, err := repository.NewPMAttachmentRepository(env.db).List(ctx, "task", duplicate.Task.ID)
+	if err != nil {
+		t.Fatalf("List duplicate attachments: %v", err)
+	}
+	if len(attachments) != 2 {
+		t.Fatalf("duplicate attachments len = %d, want 2", len(attachments))
+	}
+	attachmentStorageKeys := make(map[string]bool, len(attachments))
+	for _, attachment := range attachments {
+		attachmentStorageKeys[attachment.StorageKey] = true
+		if !strings.Contains(*duplicate.Task.Description, attachment.ID) {
+			t.Fatalf("duplicate description = %q, want cloned attachment id %q", *duplicate.Task.Description, attachment.ID)
+		}
+	}
+	if !attachmentStorageKeys[env.wsID+"/duplicate-source.pdf"] || !attachmentStorageKeys[env.wsID+"/duplicate-inline.png"] {
+		t.Fatalf("duplicate attachment storage keys = %#v", attachmentStorageKeys)
+	}
+	if strings.Contains(*duplicate.Task.Description, "task-duplicate-source-attachment") || strings.Contains(*duplicate.Task.Description, "task-duplicate-orphan-inline") {
+		t.Fatalf("duplicate description still references source attachment: %q", *duplicate.Task.Description)
+	}
+}
+
 // createTestTask is a helper that creates a story with minimal fields.
 func createTestTask(t *testing.T, env taskTestEnv, name string) *model.TaskDetail {
 	t.Helper()
