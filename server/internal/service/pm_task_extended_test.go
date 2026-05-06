@@ -342,6 +342,59 @@ func TestPMTaskService_Create(t *testing.T) {
 		}
 	})
 
+	t.Run("create clones template attachments", func(t *testing.T) {
+		now := time.Now().UTC()
+		mustExec(
+			t,
+			env.db,
+			`INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"template-attachment-story-1",
+			env.wsID,
+			"task_template",
+			"template-story-1",
+			"brief.pdf",
+			int64(128),
+			"application/pdf",
+			env.wsID+"/template-brief.pdf",
+			true,
+			env.userID,
+			now,
+			now,
+		)
+		templateID := "template-story-1"
+
+		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "Story From Template",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+			TemplateID:      &templateID,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		attachmentRepo := repository.NewPMAttachmentRepository(env.db)
+		taskAttachments, err := attachmentRepo.List(ctx, "task", story.Task.ID)
+		if err != nil {
+			t.Fatalf("List task attachments: %v", err)
+		}
+		if len(taskAttachments) != 1 {
+			t.Fatalf("task attachments len = %d, want 1", len(taskAttachments))
+		}
+		if taskAttachments[0].StorageKey != env.wsID+"/template-brief.pdf" {
+			t.Fatalf("storage_key = %q, want template shared key", taskAttachments[0].StorageKey)
+		}
+		templateAttachments, err := attachmentRepo.List(ctx, "task_template", templateID)
+		if err != nil {
+			t.Fatalf("List template attachments: %v", err)
+		}
+		if len(templateAttachments) != 1 {
+			t.Fatalf("template attachments len = %d, want 1", len(templateAttachments))
+		}
+	})
+
 	t.Run("display_id increments per workspace", func(t *testing.T) {
 		s1 := createTestTask(t, env, "First")
 		s2 := createTestTask(t, env, "Second")

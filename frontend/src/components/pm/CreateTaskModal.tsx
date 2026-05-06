@@ -40,6 +40,7 @@ import {
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from "@/lib/pmConstants";
 import type {
+  AttachmentResponse,
   CreateTaskRequest,
   Label,
   SprintWithStats,
@@ -65,7 +66,7 @@ import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover, MultiMemberPickerPopover } from "@/components/pm/MemberPickerPopover";
 import { OwnerAvatarStack } from "@/components/pm/OwnerAvatarStack";
-import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
+import { SidebarPopoverSelect, type SidebarPopoverSelectGroup } from '@/components/pm/SidebarPopoverSelect';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import { UserAvatar } from "@/components/pm/UserAvatar";
 import { filterMentionTeams } from "@/components/pm/mentionSuggestions";
@@ -84,6 +85,7 @@ import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUti
 import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
 import { showEntityCreatedToast } from "@/components/ui/entity-created-toast";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import type { WorkspaceTeam } from "@/lib/types";
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -118,6 +120,45 @@ interface ChecklistTemplateItem {
 interface ExternalLinkItem {
   url: string;
   title?: string;
+}
+
+export function buildTaskTemplateSelectGroups(
+  templates: TaskTemplate[],
+  teams: Pick<WorkspaceTeam, 'id' | 'name'>[],
+): SidebarPopoverSelectGroup[] {
+  const templatesByTeamId = new Map<string, TaskTemplate[]>();
+  const sharedTemplates: TaskTemplate[] = [];
+
+  templates.forEach((template) => {
+    if (!template.team_id) {
+      sharedTemplates.push(template);
+      return;
+    }
+    const groupTemplates = templatesByTeamId.get(template.team_id) ?? [];
+    groupTemplates.push(template);
+    templatesByTeamId.set(template.team_id, groupTemplates);
+  });
+
+  const groups: SidebarPopoverSelectGroup[] = [{ options: [{ value: '', label: 'None' }] }];
+
+  if (sharedTemplates.length > 0) {
+    groups.push({
+      label: 'Shared',
+      options: sharedTemplates.map((template) => ({ value: template.id, label: template.name })),
+    });
+  }
+
+  teams.forEach((team) => {
+    const groupTemplates = templatesByTeamId.get(team.id);
+    if (!groupTemplates || groupTemplates.length === 0) return;
+    groups.push({
+      label: team.name,
+      options: groupTemplates.map((template) => ({ value: template.id, label: template.name })),
+    });
+    templatesByTeamId.delete(team.id);
+  });
+
+  return groups;
 }
 
 const defaultState = {
@@ -289,6 +330,10 @@ export function CreateTaskModal({
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [templateWorkflow, setTemplateWorkflow] = useState<WorkflowWithStates | null>(null);
+  const [taskWorkflowOverride, setTaskWorkflowOverride] = useState<WorkflowWithStates | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateAttachments, setTemplateAttachments] = useState<AttachmentResponse[]>([]);
   const descriptionEditorRef = useRef<Editor | null>(null);
   const { teams } = useAccessibleTeams(workspaceId);
   const teamsRef = useRef(teams);
@@ -303,6 +348,7 @@ export function CreateTaskModal({
   );
   const selectedTeam = useMemo(() => teams.find((team) => team.id === form.team_id), [teams, form.team_id]);
   const teamSprintsEnabled = selectedTeam?.sprints_enabled !== false;
+  const activeWorkflow = isTemplateMode ? templateWorkflow : (taskWorkflowOverride ?? workflow);
   const selectedTeamDefaultTaskType = useMemo(
     () => (selectedTeam?.default_task_type as TaskType | undefined) ?? 'feature',
     [selectedTeam],
@@ -345,6 +391,7 @@ export function CreateTaskModal({
       // Auto-open sections that have data
       if (editingTemplate.checklist_items) { try { if (JSON.parse(editingTemplate.checklist_items).length > 0) setShowChecklist(true); } catch {} }
       if (editingTemplate.external_links) { try { if (JSON.parse(editingTemplate.external_links).length > 0) setShowExternalLinks(true); } catch {} }
+      setStateId(editingTemplate.workflow_state_id || initialStateId || '');
     } else {
       const effectiveTeamId = initialTeamId ?? teamsRef.current[0]?.id ?? '';
       const initialTeam = teamsRef.current.find((team) => team.id === effectiveTeamId);
@@ -359,10 +406,13 @@ export function CreateTaskModal({
       });
       setTaskTypeDirty(false);
       initialDescRef.current = '';
+      setStateId(initialStateId ?? '');
     }
-    setStateId(initialStateId ?? '');
     setError(null);
     setPendingFiles([]);
+    setTemplateAttachments([]);
+    setTaskWorkflowOverride(null);
+    setSelectedTemplateId('');
     setDescriptionMode('rich');
     setSourceMarkdown('');
     setShowChecklist(isTemplateMode);
@@ -372,6 +422,85 @@ export function CreateTaskModal({
     setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial task type; including it causes form reset on background refetch
   }, [open, initialStateId, initialTeamId, initialEpicId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
+
+  useEffect(() => {
+    if (!open || !isTemplateMode) return;
+    if (!form.team_id) {
+      setTemplateWorkflow(null);
+      setStateId('');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, form.team_id);
+      if (cancelled) return;
+      if (resolved.error || !resolved.data) {
+        setTemplateWorkflow(null);
+        setStateId('');
+        return;
+      }
+      const nextWorkflow = resolved.data;
+      setTemplateWorkflow(nextWorkflow);
+      setStateId((current) => {
+        if (current && nextWorkflow.states.some((state) => state.id === current)) return current;
+        return nextWorkflow.workflow.default_state_id ?? nextWorkflow.states.find((state) => state.is_default)?.id ?? nextWorkflow.states[0]?.id ?? '';
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isTemplateMode, workspaceId, form.team_id]);
+
+  useEffect(() => {
+    if (!open || isTemplateMode) return;
+    if (!workflow || !form.team_id || workflow.workflow.team_id === form.team_id) {
+      setTaskWorkflowOverride(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, form.team_id);
+      if (cancelled) return;
+      if (resolved.error || !resolved.data) {
+        setTaskWorkflowOverride(null);
+        return;
+      }
+
+      const nextWorkflow = resolved.data;
+      setTaskWorkflowOverride(nextWorkflow);
+      setStateId((current) => {
+        if (current && nextWorkflow.states.some((state) => state.id === current)) return current;
+        const currentState = workflow.states.find((state) => state.id === current);
+        return (
+          (currentState
+            ? nextWorkflow.states.find((state) => state.state_type === currentState.state_type)?.id ??
+              nextWorkflow.states.find((state) => state.name === currentState.name)?.id
+            : undefined) ??
+          nextWorkflow.workflow.default_state_id ??
+          nextWorkflow.states.find((state) => state.is_default)?.id ??
+          nextWorkflow.states[0]?.id ??
+          ''
+        );
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isTemplateMode, workspaceId, workflow, form.team_id]);
+
+  useEffect(() => {
+    if (!open || !isTemplateMode || !editingTemplate?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await pmAttachmentService.list(workspaceId, 'task_template', editingTemplate.id);
+      if (!cancelled) setTemplateAttachments(data ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isTemplateMode, editingTemplate?.id, workspaceId]);
 
   useEffect(() => {
     if (taskTypeDirty || (isTemplateMode && editingTemplate)) return;
@@ -447,13 +576,13 @@ export function CreateTaskModal({
       descriptionPendingUploads === 0 &&
       form.name.trim().length > 0 &&
       form.team_id.trim().length > 0 &&
-      (isTemplateMode || stateId.trim().length > 0),
-    [descriptionPendingUploads, form.name, form.team_id, stateId, isTemplateMode]
+      stateId.trim().length > 0,
+    [descriptionPendingUploads, form.name, form.team_id, stateId]
   );
 
   const currentStateName = useMemo(
-    () => workflow?.states.find((s) => s.id === stateId)?.name ?? "State",
-    [workflow?.states, stateId]
+    () => activeWorkflow?.states.find((s) => s.id === stateId)?.name ?? "State",
+    [activeWorkflow?.states, stateId]
   );
 
   const currentEpicName = useMemo(() => {
@@ -522,6 +651,43 @@ export function CreateTaskModal({
     return formatRecurringRuleSummary(recurringDraft.config);
   }, [recurringDraft]);
 
+  const selectedTemplateName = useMemo(
+    () => templates.find((template) => template.id === selectedTemplateId)?.name,
+    [templates, selectedTemplateId],
+  );
+  const templateGroups = useMemo(() => buildTaskTemplateSelectGroups(templates, teams), [teams, templates]);
+
+  const applyTemplate = useCallback((templateId: string) => {
+    if (!templateId) {
+      setSelectedTemplateId('');
+      return;
+    }
+    const tmpl = templates.find((t) => t.id === templateId);
+    if (!tmpl) return;
+    setSelectedTemplateId(tmpl.id);
+    setTaskTypeDirty(Boolean(tmpl.task_type));
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name.trim() ? prev.name : tmpl.name,
+      team_id: tmpl.team_id || prev.team_id,
+      description: tmpl.description || prev.description,
+      task_type: (tmpl.task_type as TaskType) || prev.task_type,
+      priority: (tmpl.priority as Priority) || prev.priority,
+      severity: (tmpl.severity as Severity) || prev.severity,
+      estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
+      label_ids: tmpl.label_ids ? (() => { try { return JSON.parse(tmpl.label_ids!); } catch { return prev.label_ids; } })() : prev.label_ids,
+      owner_member_ids: tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids,
+      epic_id: tmpl.epic_id || prev.epic_id,
+      sprint_id: tmpl.sprint_id || prev.sprint_id,
+      deadline: tmpl.deadline || prev.deadline,
+      checklist_items: tmpl.checklist_items ? (() => { try { return JSON.parse(tmpl.checklist_items!); } catch { return prev.checklist_items; } })() : prev.checklist_items,
+      external_links: tmpl.external_links ? (() => { try { return JSON.parse(tmpl.external_links!); } catch { return prev.external_links; } })() : prev.external_links,
+    }));
+    if (tmpl.workflow_state_id) setStateId(tmpl.workflow_state_id);
+    if (tmpl.checklist_items) { try { if (JSON.parse(tmpl.checklist_items).length > 0) setShowChecklist(true); } catch {} }
+    if (tmpl.external_links) { try { if (JSON.parse(tmpl.external_links).length > 0) setShowExternalLinks(true); } catch {} }
+  }, [templates]);
+
   const openMarkdownMode = useCallback(() => {
     const editor = descriptionEditorRef.current;
     const markdown =
@@ -540,6 +706,28 @@ export function CreateTaskModal({
     setSourceMarkdown(htmlToMarkdown(form.description));
     setDescriptionMode('rich');
   }, [form.description]);
+
+  const uploadPendingFilesForEntity = useCallback(async (entityType: 'task' | 'task_template', entityId: string) => {
+    if (!entityId || pendingFiles.length === 0) return;
+    for (const file of pendingFiles) {
+      try {
+        const { data: initData } = await pmAttachmentService.initiateUpload(workspaceId, {
+          entity_type: entityType,
+          entity_id: entityId,
+          file_name: file.name,
+          file_size: file.size,
+          content_type: file.type || 'application/octet-stream',
+        });
+        if (!initData) continue;
+        const uploadResult = await uploadToS3(initData.url, file, undefined, { 'x-amz-acl': 'public-read' });
+        if (uploadResult.ok) {
+          await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
+        }
+      } catch {
+        // Non-blocking: the owning task/template was already saved.
+      }
+    }
+  }, [pendingFiles, workspaceId]);
 
   const resolveSubmitWorkflow = useCallback(async () => {
     if (!workflow) {
@@ -604,6 +792,7 @@ export function CreateTaskModal({
           owner_member_id: form.owner_member_ids[0] || undefined,
           epic_id: form.epic_id || undefined,
           sprint_id: form.sprint_id || undefined,
+          workflow_state_id: stateId || undefined,
           deadline: form.deadline || undefined,
           checklist_items: checklistJson,
           external_links: externalLinksJson,
@@ -611,11 +800,13 @@ export function CreateTaskModal({
         if (editingTemplate) {
           const { data, error: err } = await pmTaskTemplateService.update(workspaceId, editingTemplate.id, templatePayload);
           if (err) throw new Error(err);
+          if (data?.id) await uploadPendingFilesForEntity('task_template', data.id);
           if (data && onSaveTemplate) onSaveTemplate(data);
           toast.success('Template updated');
         } else {
           const { data, error: err } = await pmTaskTemplateService.create({ workspace_id: workspaceId, ...templatePayload });
           if (err) throw new Error(err);
+          if (data?.id) await uploadPendingFilesForEntity('task_template', data.id);
           if (data && onSaveTemplate) onSaveTemplate(data);
           toast.success('Template created');
         }
@@ -629,6 +820,7 @@ export function CreateTaskModal({
           task_type: form.task_type,
           workflow_id: workflowId,
           workflow_state_id: workflowStateId,
+          template_id: selectedTemplateId || undefined,
           priority: form.priority,
           severity: form.severity !== "none" ? form.severity : undefined,
           estimate: form.estimate ? Number(form.estimate) : undefined,
@@ -643,27 +835,7 @@ export function CreateTaskModal({
           external_links: (() => { const f = form.external_links.filter((l) => l.url.trim()); return f.length > 0 ? f : undefined; })(),
         });
 
-        // Upload pending files after task creation.
-        if (result?.id && pendingFiles.length > 0) {
-          for (const file of pendingFiles) {
-            try {
-              const { data: initData } = await pmAttachmentService.initiateUpload(workspaceId, {
-                entity_type: 'task',
-                entity_id: result.id,
-                file_name: file.name,
-                file_size: file.size,
-                content_type: file.type || 'application/octet-stream',
-              });
-              if (!initData) continue;
-              const uploadResult = await uploadToS3(initData.url, file, undefined, { 'x-amz-acl': 'public-read' });
-              if (uploadResult.ok) {
-                await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
-              }
-            } catch {
-              // Non-blocking — task already created
-            }
-          }
-        }
+        if (result?.id) await uploadPendingFilesForEntity('task', result.id);
 
         let recurringSetupError: string | null = null;
         if (result?.id && recurringDraft) {
@@ -738,6 +910,8 @@ export function CreateTaskModal({
     createMore,
     workspaceId,
     workflow,
+    selectedTemplateId,
+    uploadPendingFilesForEntity,
     resolveSubmitWorkflow,
     initialStateId,
     currentMemberId,
@@ -787,9 +961,26 @@ export function CreateTaskModal({
         <div className="flex h-[85vh] max-h-[960px] flex-col">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
-            <span className="text-lg font-semibold">
-              {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
-            </span>
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="text-lg font-semibold">
+                {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
+              </span>
+              {!isTemplateMode && templates.length > 0 && (
+                <SidebarPopoverSelect
+                  value={selectedTemplateId}
+                  groups={templateGroups}
+                  onChange={applyTemplate}
+                  renderTrigger={() => (
+                    <>
+                      <File01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{selectedTemplateName || 'Apply template'}</span>
+                    </>
+                  )}
+                  showChevron
+                  triggerClassName="border border-border/60 bg-muted/20 px-2.5 py-1 text-xs"
+                />
+              )}
+            </div>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleOpenChange(false)}>
               <Cancel01Icon className="h-4 w-4" />
             </Button>
@@ -804,7 +995,7 @@ export function CreateTaskModal({
               <Input
                 id="task-title"
                 autoFocus
-                placeholder={isTemplateMode ? "Template name" : "Title"}
+                placeholder="Title..."
                 className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 value={form.name}
                 onChange={(event) =>
@@ -910,23 +1101,21 @@ export function CreateTaskModal({
                       <span className="text-[10px] opacity-70">({form.external_links.length})</span>
                     )}
                   </button>
-                  {!isTemplateMode && (
-                    <button
-                      type="button"
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                        showAttachments
-                          ? 'border-primary/30 bg-primary/10 text-primary'
-                          : 'border-border/60 text-muted-foreground hover:bg-accent'
-                      }`}
-                      onClick={() => setShowAttachments((v) => !v)}
-                    >
-                      <AttachmentIcon className="h-3 w-3" />
-                      Attach Files
-                      {pendingFiles.length > 0 && (
-                        <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
-                      )}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      showAttachments
+                        ? 'border-primary/30 bg-primary/10 text-primary'
+                        : 'border-border/60 text-muted-foreground hover:bg-accent'
+                    }`}
+                    onClick={() => setShowAttachments((v) => !v)}
+                  >
+                    <AttachmentIcon className="h-3 w-3" />
+                    Attach Files
+                    {(pendingFiles.length + templateAttachments.length) > 0 && (
+                      <span className="text-[10px] opacity-70">({pendingFiles.length + templateAttachments.length})</span>
+                    )}
+                  </button>
                 </div>
                 <div className="ml-auto inline-flex rounded-md border border-border/60 bg-muted/20 p-0.5">
                   <button
@@ -1074,21 +1263,53 @@ export function CreateTaskModal({
                 </div>
               )}
 
-              {/* Attachments (task mode only) */}
-              {!isTemplateMode && showAttachments && (
+              {showAttachments && (
                 <div className="shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       Attachments
-                      {pendingFiles.length > 0 && (
-                        <span className="text-xs text-muted-foreground font-normal">({pendingFiles.length})</span>
+                      {(pendingFiles.length + templateAttachments.length) > 0 && (
+                        <span className="text-xs text-muted-foreground font-normal">({pendingFiles.length + templateAttachments.length})</span>
                       )}
                     </div>
                   </div>
                   <div className="px-4 py-2 space-y-2">
-                    {pendingFiles.length > 0 && (
+                    {(pendingFiles.length > 0 || templateAttachments.length > 0) && (
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                        {templateAttachments.map((attachmentResponse) => {
+                          const attachment = attachmentResponse.attachment;
+                          const isImage = attachment.content_type.startsWith('image/');
+                          const imageURL = attachmentResponse.public_url || attachmentResponse.url;
+                          const ext = attachment.file_name.split('.').pop()?.toUpperCase() || 'FILE';
+                          return (
+                            <div key={attachment.id} className="group relative">
+                              <div className="overflow-hidden rounded-lg border border-border/60">
+                                {isImage && imageURL ? (
+                                  <img src={imageURL} alt={attachment.file_name} className="h-20 w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
+                                    <AttachmentIcon className="h-6 w-6 text-muted-foreground/50" />
+                                    <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">{ext}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  className="flex h-6 w-6 items-center justify-center rounded bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-destructive"
+                                  onClick={async () => {
+                                    await pmAttachmentService.remove(workspaceId, attachment.id);
+                                    setTemplateAttachments((prev) => prev.filter((entry) => entry.attachment.id !== attachment.id));
+                                  }}
+                                >
+                                  <Delete01Icon className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <p className="mt-1 truncate text-[10px] text-muted-foreground" title={attachment.file_name}>{attachment.file_name}</p>
+                            </div>
+                          );
+                        })}
                         {pendingFiles.map((file, idx) => {
                           const isImage = file.type.startsWith('image/');
                           const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
@@ -1149,51 +1370,6 @@ export function CreateTaskModal({
             {/* Right sidebar — metadata */}
             <aside className="min-h-0 overflow-y-auto border-l border-border/50 px-5 py-4">
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-3 gap-y-3">
-                {/* Template */}
-                {!isTemplateMode && templates.length > 0 && (
-                <MetadataRow icon={File01Icon} label="Template">
-                  <SidebarPopoverSelect
-                    value=""
-                    options={[
-                      { value: '', label: 'None' },
-                      ...templates
-                        .filter((t) => !t.team_id || t.team_id === form.team_id || !form.team_id)
-                        .map((t) => ({ value: t.id, label: t.name })),
-                    ]}
-                    onChange={(templateId) => {
-                      const tmpl = templates.find((t) => t.id === templateId);
-                      if (!tmpl) return;
-                      setTaskTypeDirty(false);
-                      setForm((prev) => ({
-                        ...prev,
-                        team_id: tmpl.team_id || prev.team_id,
-                        description: tmpl.description || prev.description,
-                        task_type: (tmpl.task_type as TaskType) || prev.task_type,
-                        priority: (tmpl.priority as Priority) || prev.priority,
-                        severity: (tmpl.severity as Severity) || prev.severity,
-                        estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
-                        label_ids: tmpl.label_ids ? (() => { try { return JSON.parse(tmpl.label_ids!); } catch { return prev.label_ids; } })() : prev.label_ids,
-                        owner_member_ids: tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids,
-                        epic_id: tmpl.epic_id || prev.epic_id,
-                        sprint_id: tmpl.sprint_id || prev.sprint_id,
-                        deadline: tmpl.deadline || prev.deadline,
-                        checklist_items: tmpl.checklist_items ? (() => { try { return JSON.parse(tmpl.checklist_items!); } catch { return prev.checklist_items; } })() : prev.checklist_items,
-                        external_links: tmpl.external_links ? (() => { try { return JSON.parse(tmpl.external_links!); } catch { return prev.external_links; } })() : prev.external_links,
-                      }));
-                      // Auto-open sections with template data
-                      if (tmpl.checklist_items) { try { if (JSON.parse(tmpl.checklist_items).length > 0) setShowChecklist(true); } catch {} }
-                      if (tmpl.external_links) { try { if (JSON.parse(tmpl.external_links).length > 0) setShowExternalLinks(true); } catch {} }
-                    }}
-                    renderTrigger={() => (
-                      <>
-                        <File01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>Apply template</span>
-                      </>
-                    )}
-                  />
-                </MetadataRow>
-                )}
-
                 {/* Team */}
                 {teams.length > 0 && (
                   <MetadataRow icon={UserGroupIcon} label="Team *">
@@ -1218,14 +1394,14 @@ export function CreateTaskModal({
                 )}
 
                 {/* State */}
-                {!isTemplateMode && workflow && (
+                {activeWorkflow && (
                 <MetadataRow icon={HashtagIcon} label="State">
                   <SidebarPopoverSelect
                     value={stateId}
-                    options={workflow.states.map((s) => ({ value: s.id, label: s.name }))}
+                    options={activeWorkflow.states.map((s) => ({ value: s.id, label: s.name }))}
                     onChange={setStateId}
                     renderTrigger={() => {
-                      const st = workflow.states.find((s) => s.id === stateId);
+                      const st = activeWorkflow.states.find((s) => s.id === stateId);
                       return st ? (
                         <TaskStateSelectContent stateType={st.state_type} label={st.name} color={st.color} />
                       ) : (
@@ -1233,7 +1409,7 @@ export function CreateTaskModal({
                       );
                     }}
                     renderOption={(v) => {
-                      const s = workflow.states.find((st) => st.id === v);
+                      const s = activeWorkflow.states.find((st) => st.id === v);
                       return s ? (
                         <span className="inline-flex items-center gap-1.5">
                           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color || '#a1a1aa' }} />

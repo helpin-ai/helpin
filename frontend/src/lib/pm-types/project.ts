@@ -650,6 +650,7 @@ export interface TaskTemplate {
   owner_member_id?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
   checklist_items?: string;
   external_links?: string;
@@ -801,6 +802,7 @@ export interface CreateTaskTemplateRequest {
   owner_member_id?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
   checklist_items?: string;
   external_links?: string;
@@ -819,6 +821,7 @@ export interface UpdateTaskTemplateRequest {
   owner_member_id?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
   checklist_items?: string;
   external_links?: string;
@@ -1054,7 +1057,7 @@ export interface AttachmentResponse {
 }
 
 export interface CreateAttachmentRequest {
-  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'task_template' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;

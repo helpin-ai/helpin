@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -106,6 +107,52 @@ func (r *PMAttachmentRepository) ReassignToEntity(ctx context.Context, attachmen
 		return fmt.Errorf("reassign attachments: %w", err)
 	}
 	return nil
+}
+
+// CloneUploadedFromEntityToEntity creates new attachment records for a target entity
+// while reusing the already-uploaded storage objects from the source entity.
+func (r *PMAttachmentRepository) CloneUploadedFromEntityToEntity(ctx context.Context, sourceEntityType, sourceEntityID, targetEntityType, targetEntityID string) ([]model.PMAttachment, error) {
+	sourceAttachments, err := r.List(ctx, sourceEntityType, sourceEntityID)
+	if err != nil {
+		return nil, err
+	}
+	if len(sourceAttachments) == 0 {
+		return []model.PMAttachment{}, nil
+	}
+
+	cloned := make([]model.PMAttachment, 0, len(sourceAttachments))
+	now := time.Now().UTC()
+	for _, source := range sourceAttachments {
+		attachment := model.PMAttachment{
+			WorkspaceID:  source.WorkspaceID,
+			EntityType:   targetEntityType,
+			EntityID:     targetEntityID,
+			FileName:     source.FileName,
+			FileSize:     source.FileSize,
+			ContentType:  source.ContentType,
+			StorageKey:   source.StorageKey,
+			IsUploaded:   source.IsUploaded,
+			UploadedByID: source.UploadedByID,
+			CreatedAt:    now,
+		}
+		if err := r.db.WithContext(ctx).Create(&attachment).Error; err != nil {
+			return nil, fmt.Errorf("clone attachment: %w", err)
+		}
+		cloned = append(cloned, attachment)
+	}
+	return cloned, nil
+}
+
+// CountByStorageKey returns the number of attachment rows referencing a storage object.
+func (r *PMAttachmentRepository) CountByStorageKey(ctx context.Context, storageKey string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMAttachment{}).
+		Where("storage_key = ?", storageKey).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count attachments by storage key: %w", err)
+	}
+	return count, nil
 }
 
 // Delete removes an attachment record.

@@ -36,7 +36,7 @@ var allowedMIMETypes = map[string]bool{
 }
 
 var allowedEntityTypes = map[string]bool{
-	"task": true, "story": true, "epic": true, "objective": true, "sprint": true, "comment": true, "editor_upload": true,
+	"task": true, "story": true, "task_template": true, "epic": true, "objective": true, "sprint": true, "comment": true, "editor_upload": true,
 }
 
 // PMAttachmentService contains attachment business logic.
@@ -123,7 +123,7 @@ func (s *PMAttachmentService) prepareAttachment(ctx context.Context, req model.C
 		return nil, fmt.Errorf("entity_type and entity_id are required")
 	}
 	if !allowedEntityTypes[req.EntityType] {
-		return nil, fmt.Errorf("invalid entity_type: must be story, epic, objective, sprint, comment, or editor_upload")
+		return nil, fmt.Errorf("invalid entity_type: must be task, story, task_template, epic, objective, sprint, comment, or editor_upload")
 	}
 	if strings.TrimSpace(req.FileName) == "" {
 		return nil, fmt.Errorf("file_name is required")
@@ -240,7 +240,7 @@ func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string, pen
 		if !deleted {
 			return nil
 		}
-		if s.s3Client != nil && attachment.StorageKey != "" && attachment.IsUploaded {
+		if s.shouldDeleteStorageObject(ctx, attachment) {
 			_ = s.s3Client.DeleteObject(ctx, attachment.StorageKey)
 		}
 		if s.wsPublisher != nil {
@@ -250,7 +250,7 @@ func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string, pen
 	}
 
 	// Delete from S3 if uploaded
-	if s.s3Client != nil && attachment.StorageKey != "" && attachment.IsUploaded {
+	if s.shouldDeleteStorageObject(ctx, attachment) {
 		_ = s.s3Client.DeleteObject(ctx, attachment.StorageKey)
 	}
 
@@ -261,4 +261,18 @@ func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string, pen
 		s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ActorID: userID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
 	}
 	return nil
+}
+
+func (s *PMAttachmentService) shouldDeleteStorageObject(ctx context.Context, attachment *model.PMAttachment) bool {
+	if s.s3Client == nil || attachment == nil || attachment.StorageKey == "" || !attachment.IsUploaded {
+		return false
+	}
+	if s.attachmentRepo == nil {
+		return true
+	}
+	count, err := s.attachmentRepo.CountByStorageKey(ctx, attachment.StorageKey)
+	if err != nil {
+		return false
+	}
+	return count <= 1
 }

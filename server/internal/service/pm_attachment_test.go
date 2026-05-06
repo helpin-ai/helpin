@@ -77,6 +77,27 @@ func TestPMAttachmentService_PrepareAttachment_AllowsObjectiveAndSprintEntities(
 	}
 }
 
+func TestPMAttachmentService_PrepareAttachment_AllowsTaskTemplateEntity(t *testing.T) {
+	t.Parallel()
+
+	svc, _, _, workspaceID, userID := newAttachmentTestEnv(t)
+	ctx := context.Background()
+
+	attachment, err := svc.prepareAttachment(ctx, model.CreateAttachmentRequest{
+		EntityType:  "task_template",
+		EntityID:    "template-1",
+		FileName:    "template.pdf",
+		FileSize:    256,
+		ContentType: "application/pdf",
+	}, workspaceID, userID)
+	if err != nil {
+		t.Fatalf("prepareAttachment(task_template): %v", err)
+	}
+	if attachment.EntityType != "task_template" {
+		t.Fatalf("entity_type = %q, want task_template", attachment.EntityType)
+	}
+}
+
 func TestPMAttachmentService_PrepareAttachment_AllowsVideoUpTo50MB(t *testing.T) {
 	t.Parallel()
 
@@ -136,6 +157,57 @@ func TestPMAttachmentRepository_ReassignToEntity(t *testing.T) {
 	}
 	if attachment.EntityID != "objective-1" {
 		t.Fatalf("entity_id = %q, want %q", attachment.EntityID, "objective-1")
+	}
+}
+
+func TestPMAttachmentRepository_CloneUploadedFromEntityToEntity(t *testing.T) {
+	t.Parallel()
+
+	_, repo, db, workspaceID, userID := newAttachmentTestEnv(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	mustExec(
+		t,
+		db,
+		`INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"template-attachment-1",
+		workspaceID,
+		"task_template",
+		"template-1",
+		"brief.pdf",
+		int64(128),
+		"application/pdf",
+		workspaceID+"/shared-brief.pdf",
+		true,
+		userID,
+		now,
+		now,
+	)
+
+	cloned, err := repo.CloneUploadedFromEntityToEntity(ctx, "task_template", "template-1", "task", "task-1")
+	if err != nil {
+		t.Fatalf("CloneUploadedFromEntityToEntity: %v", err)
+	}
+	if len(cloned) != 1 {
+		t.Fatalf("cloned len = %d, want 1", len(cloned))
+	}
+	if cloned[0].ID == "template-attachment-1" {
+		t.Fatal("expected cloned attachment to have a new id")
+	}
+	if cloned[0].EntityType != "task" || cloned[0].EntityID != "task-1" {
+		t.Fatalf("cloned entity = %s/%s, want task/task-1", cloned[0].EntityType, cloned[0].EntityID)
+	}
+	if cloned[0].StorageKey != workspaceID+"/shared-brief.pdf" {
+		t.Fatalf("storage_key = %q, want shared key", cloned[0].StorageKey)
+	}
+
+	templateAttachments, err := repo.List(ctx, "task_template", "template-1")
+	if err != nil {
+		t.Fatalf("List template: %v", err)
+	}
+	if len(templateAttachments) != 1 {
+		t.Fatalf("template attachments len = %d, want 1", len(templateAttachments))
 	}
 }
 

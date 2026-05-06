@@ -390,6 +390,11 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 			s.logger.ErrorContext(ctx, "failed to reassign attachments to task", "error", err, "task_id", newTask.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
+	if req.TemplateID != nil && strings.TrimSpace(*req.TemplateID) != "" && s.attachmentRepo != nil {
+		if _, err := s.attachmentRepo.CloneUploadedFromEntityToEntity(ctx, "task_template", strings.TrimSpace(*req.TemplateID), "task", newTask.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to clone template attachments to task", "error", err, "task_id", newTask.ID, "template_id", *req.TemplateID)
+		}
+	}
 
 	ownerIDs, err := s.resolveOwnerUserIDs(ctx, req.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
 	if err != nil {
