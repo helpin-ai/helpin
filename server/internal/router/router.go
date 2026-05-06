@@ -831,6 +831,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/counts", h.PMTask.CountByState)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/save-as-template", h.PMTask.SaveAsTemplate)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/duplicate", h.PMTask.Duplicate)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}", h.PMTask.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}", h.PMTask.Delete)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/move", h.PMTask.Move)

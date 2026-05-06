@@ -29,7 +29,7 @@ func (r *PMTaskTemplateRepository) ListByWorkspace(ctx context.Context, workspac
 	var templates []model.PMTaskTemplate
 	query := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID)
 	query = ApplyScopeFilter(query, opts)
-	if err := query.Order("COALESCE(team_id::text, ''), name ASC").Find(&templates).Error; err != nil {
+	if err := query.Order("team_id IS NOT NULL ASC, team_id ASC, name ASC").Find(&templates).Error; err != nil {
 		return nil, fmt.Errorf("list story templates: %w", err)
 	}
 	return templates, nil
@@ -89,4 +89,3 @@ func (r *PMTaskTemplateRepository) Delete(ctx context.Context, id string) error 
 	}
 	return nil
 }
-
