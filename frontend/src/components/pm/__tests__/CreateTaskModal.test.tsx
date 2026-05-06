@@ -7,6 +7,7 @@ import type { WorkflowWithStates } from '@/lib/pmTypes'
 import { uploadToS3 } from '@/lib/api'
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService'
 import { pmLabelService } from '@/lib/services/pmLabelService'
+import { pmTaskService } from '@/lib/services/pmTaskService'
 import { pmTaskTemplateService } from '@/lib/services/pmTaskTemplateService'
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService'
 
@@ -73,6 +74,13 @@ vi.mock('@/components/ui/popover', () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}))
+
+vi.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))
 
 vi.mock('@/components/ui/command', () => ({
@@ -185,6 +193,12 @@ vi.mock('@/lib/services/pmTaskTemplateService', () => ({
     list: vi.fn(async () => ({ data: [] })),
     create: vi.fn(async () => ({ data: { id: 'template-1' }, error: null })),
     update: vi.fn(async () => ({ data: { id: 'template-1' }, error: null })),
+  },
+}))
+
+vi.mock('@/lib/services/pmTaskService', () => ({
+  pmTaskService: {
+    saveAsTemplate: vi.fn(async () => ({ data: { id: 'template-1' }, error: null })),
   },
 }))
 
@@ -310,15 +324,45 @@ function setChecked(input: HTMLInputElement, checked: boolean) {
   input.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+function findCheckboxByText(container: HTMLElement, text: string) {
+  const label = Array.from(container.querySelectorAll('span')).find((node) => node.textContent === text)
+  return label?.parentElement?.querySelector('input[type="checkbox"]') as HTMLInputElement | null | undefined
+}
+
+async function openTemplateMenu(container: HTMLElement) {
+  const applyTemplateButton = Array.from(container.querySelectorAll('button')).find(
+    (button) => button.textContent?.includes('Apply template'),
+  ) as HTMLButtonElement | undefined
+  expect(applyTemplateButton).toBeTruthy()
+  await act(async () => {
+    applyTemplateButton?.click()
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 describe('CreateTaskModal', () => {
   beforeEach(() => {
     toastSuccess.mockReset()
     toastError.mockReset()
     navigate.mockReset()
     showEntityCreatedToast.mockReset()
+    vi.mocked(pmTaskTemplateService.list).mockReset()
     vi.mocked(pmTaskTemplateService.list).mockResolvedValue({ data: [] } as any)
     vi.mocked(pmTaskTemplateService.create).mockResolvedValue({ data: { id: 'template-1' }, error: null } as any)
     vi.mocked(pmTaskTemplateService.update).mockResolvedValue({ data: { id: 'template-1' }, error: null } as any)
+    vi.mocked(pmTaskService.saveAsTemplate).mockReset()
+    vi.mocked(pmTaskService.saveAsTemplate).mockResolvedValue({ data: { id: 'template-1' }, error: null } as any)
     vi.mocked(pmWorkflowService.resolveTeamWorkflow).mockResolvedValue({ data: null, error: null } as any)
     vi.mocked(pmLabelService.list).mockResolvedValue({ data: [] } as any)
     vi.mocked(pmAttachmentService.initiateUpload).mockResolvedValue({
@@ -400,7 +444,201 @@ describe('CreateTaskModal', () => {
     ])
   })
 
-  it('shows a success toast for plain task creation before resetting the form when create more is enabled', async () => {
+  it('shows the template entry point and loads the empty state when opened with no task templates', async () => {
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const onOpenChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <CreateTaskModal
+          open
+          onOpenChange={onOpenChange}
+          workspaceId="ws-1"
+          workflow={workflow}
+          initialStateId="state-1"
+          initialTeamId="team-1"
+          onCreate={onCreate}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const applyTemplateButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Apply template'),
+    ) as HTMLButtonElement | undefined
+    expect(applyTemplateButton).toBeTruthy()
+    expect(pmTaskTemplateService.list).not.toHaveBeenCalled()
+
+    await act(async () => {
+      applyTemplateButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('No task templates yet')
+    expect(container.textContent).toContain('Create one with this task by enabling Save as template before saving.')
+    expect(findCheckboxByText(container, 'Save as template')).toBeTruthy()
+
+    act(() => {
+      root.unmount()
+    })
+  })
+
+  it('explains the save-as-template footer toggle with a question mark tooltip', async () => {
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const onOpenChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <CreateTaskModal
+          open
+          onOpenChange={onOpenChange}
+          workspaceId="ws-1"
+          workflow={workflow}
+          initialStateId="state-1"
+          initialTeamId="team-1"
+          onCreate={onCreate}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Also save this task as a reusable template after it is created.')
+    expect(container.querySelectorAll('[aria-label="Explain Save as template"]').length).toBe(1)
+    expect(container.textContent).toContain('Save & create another')
+    expect(container.textContent).not.toContain('Discard')
+
+    act(() => {
+      root.unmount()
+    })
+  })
+
+  it('loads task templates only after opening the template entry point', async () => {
+    const templatesRequest = deferred<{ data: [] }>()
+    vi.mocked(pmTaskTemplateService.list).mockReturnValue(templatesRequest.promise as any)
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const onOpenChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <CreateTaskModal
+          open
+          onOpenChange={onOpenChange}
+          workspaceId="ws-1"
+          workflow={workflow}
+          initialStateId="state-1"
+          initialTeamId="team-1"
+          onCreate={onCreate}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Apply template')
+    expect(pmTaskTemplateService.list).not.toHaveBeenCalled()
+
+    const applyTemplateButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Apply template'),
+    ) as HTMLButtonElement | undefined
+
+    await act(async () => {
+      applyTemplateButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(pmTaskTemplateService.list).toHaveBeenCalledWith('ws-1', { archived: false })
+    expect(container.textContent).toContain('Loading task templates')
+    expect(container.textContent).not.toContain('No task templates yet')
+
+    await act(async () => {
+      templatesRequest.resolve({ data: [] })
+      await Promise.resolve()
+    })
+
+    act(() => {
+      root.unmount()
+    })
+  })
+
+  it('creates a task and saves it as a template when requested', async () => {
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const onOpenChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <CreateTaskModal
+          open
+          onOpenChange={onOpenChange}
+          workspaceId="ws-1"
+          workflow={workflow}
+          initialStateId="state-1"
+          initialTeamId="team-1"
+          onCreate={onCreate}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await openTemplateMenu(container)
+
+    const titleInput = container.querySelector('#task-title') as HTMLInputElement | null
+    const saveAsTemplateToggle = findCheckboxByText(container, 'Save as template')
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Save',
+    ) as HTMLButtonElement | undefined
+
+    expect(titleInput).toBeTruthy()
+    expect(saveAsTemplateToggle).toBeTruthy()
+    expect(saveButton).toBeTruthy()
+
+    await act(async () => {
+      setInputValue(titleInput!, 'New task')
+      saveAsTemplateToggle!.click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      saveButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'New task',
+        workspace_id: 'ws-1',
+      }),
+    )
+    expect(pmTaskService.saveAsTemplate).toHaveBeenCalledWith('ws-1', 'task-1', { name: 'New task' })
+    expect(showEntityCreatedToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityLabel: 'Task',
+        title: 'New task',
+        subtitle: 'Template saved.',
+      }),
+    )
+
+    act(() => {
+      root.unmount()
+    })
+  })
+
+  it('shows a minimal success toast before resetting the form when saving and creating another task', async () => {
     const onCreate = vi.fn(async () => ({ id: 'task-1' }))
     const onOpenChange = vi.fn()
     const container = document.createElement('div')
@@ -424,25 +662,20 @@ describe('CreateTaskModal', () => {
     })
 
     const titleInput = container.querySelector('#task-title') as HTMLInputElement | null
-    const createMoreToggle = Array.from(container.querySelectorAll('input')).find(
-      (input) => (input as HTMLInputElement).type === 'checkbox',
-    ) as HTMLInputElement | undefined
-    const saveButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Save',
+    const saveAndCreateAnotherButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Save & create another',
     ) as HTMLButtonElement | undefined
 
     expect(titleInput).toBeTruthy()
-    expect(createMoreToggle).toBeTruthy()
-    expect(saveButton).toBeTruthy()
+    expect(saveAndCreateAnotherButton).toBeTruthy()
 
     await act(async () => {
       setInputValue(titleInput!, 'New task')
-      setChecked(createMoreToggle!, true)
       await Promise.resolve()
     })
 
     await act(async () => {
-      saveButton?.click()
+      saveAndCreateAnotherButton?.click()
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -455,13 +688,9 @@ describe('CreateTaskModal', () => {
         workflow_state_id: 'state-1',
       }),
     )
-    expect(showEntityCreatedToast).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entityLabel: 'Task',
-        title: 'New task',
-        onOpen: expect.any(Function),
-      }),
-    )
+    expect(showEntityCreatedToast).not.toHaveBeenCalled()
+    expect(toastSuccess).toHaveBeenCalledWith('Task created. Ready for the next one.')
+    expect(pmTaskService.saveAsTemplate).not.toHaveBeenCalled()
 
     act(() => {
       root.unmount()
@@ -717,6 +946,8 @@ describe('CreateTaskModal', () => {
     })
 
     const titleInput = container.querySelector('#task-title') as HTMLInputElement | null
+    await openTemplateMenu(container)
+
     const templateButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.includes('Bug intake'),
     ) as HTMLButtonElement | undefined
@@ -789,6 +1020,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+
+    await openTemplateMenu(container)
 
     const templateButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.includes('Bug intake'),
@@ -881,6 +1114,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
+    await openTemplateMenu(container)
+
     const templateButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.includes('Support intake'),
     ) as HTMLButtonElement | undefined
@@ -970,6 +1205,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
     })
 
+    await openTemplateMenu(container)
+
     const templateButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.includes('Support intake'),
     ) as HTMLButtonElement | undefined
@@ -1031,6 +1268,8 @@ describe('CreateTaskModal', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+
+    await openTemplateMenu(container)
 
     const templateButton = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent?.includes('Support chore'),
