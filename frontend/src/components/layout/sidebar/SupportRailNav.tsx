@@ -37,6 +37,7 @@ type InboxScopes = {
 type SupportRailNavProps = {
   navFilter: SupportNavFilter;
   unreadStats?: UnreadStats | null;
+  inboxUnreadStats?: UnreadStats | null;
   globalUnreadStats?: UnreadStats | null;
   inboxScopes?: InboxScopes | null;
   selectedMailboxId: string;
@@ -61,6 +62,7 @@ type SupportRailNavProps = {
 export function SupportRailNav({
   navFilter,
   unreadStats,
+  inboxUnreadStats,
   globalUnreadStats,
   inboxScopes,
   selectedMailboxId,
@@ -126,7 +128,7 @@ export function SupportRailNav({
           {supportFilterItems.map((item) => {
             const unread =
               item.key === 'inbox'
-                ? unreadStats?.inbox
+                ? inboxUnreadStats?.inbox
                 : item.key === 'mine'
                   ? unreadStats?.mine
                   : item.key === 'waiting'
@@ -134,7 +136,7 @@ export function SupportRailNav({
                     : undefined;
             const total =
               item.key === 'inbox'
-                ? unreadStats?.inbox_total
+                ? inboxUnreadStats?.inbox_total
                 : item.key === 'mine'
                   ? unreadStats?.mine_total
                   : item.key === 'waiting'

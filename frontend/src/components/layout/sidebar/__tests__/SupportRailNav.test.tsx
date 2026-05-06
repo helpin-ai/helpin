@@ -45,14 +45,27 @@ function renderSupportRail({
             activeCustomViewId={null}
             unreadStats={{
               inbox: 1,
-              mine: 0,
+              mine: 4,
               waiting: 0,
               ai_active: 0,
               inbox_total: 2,
-              mine_total: 0,
+              mine_total: 8,
               waiting_total: 0,
               ai_active_total: 0,
               total: 1,
+              my_inbox: 0,
+              unassigned: 0,
+            }}
+            inboxUnreadStats={{
+              inbox: 2,
+              mine: 0,
+              waiting: 0,
+              ai_active: 0,
+              inbox_total: 9,
+              mine_total: 0,
+              waiting_total: 0,
+              ai_active_total: 0,
+              total: 2,
               my_inbox: 0,
               unassigned: 0,
             }}
@@ -130,6 +143,15 @@ describe('SupportRailNav', () => {
     expect(aiHandling?.textContent).not.toContain('1')
     expect(aiHandling?.querySelector('[data-slot="support-unread-dot"]')).toBeTruthy()
     expect(aiHandling?.querySelector('[data-slot="support-total-count"]')?.textContent).toBe('4')
+
+    rendered.cleanup()
+  })
+
+  it('uses the separately scoped Inbox count without changing Mine', () => {
+    const rendered = renderSupportRail()
+
+    expect(buttonByText(rendered.container, 'Inbox')?.textContent).toContain('9')
+    expect(buttonByText(rendered.container, 'Mine')?.textContent).toContain('8')
 
     rendered.cleanup()
   })

@@ -13,6 +13,7 @@ import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
 import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
+import { supportInboxCountMailboxScope } from '@/lib/supportInboxFilters';
 import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
@@ -76,7 +77,9 @@ export function Sidebar() {
   const { data: customViewCounts = [] } = useSupportInboxViewCounts(workspaceId ?? '', hasSupportModule);
   const { data: builtinViews } = useSupportBuiltinInboxViews(workspaceId ?? '', hasSupportModule);
   const unreadMailboxScope = selectedMailboxId === 'all' ? undefined : selectedMailboxId;
+  const inboxUnreadMailboxScope = supportInboxCountMailboxScope(selectedMailboxId);
   const { data: unreadStats } = useUnreadStats(workspaceId ?? '', unreadMailboxScope, hasSupportModule);
+  const { data: inboxUnreadStats } = useUnreadStats(workspaceId ?? '', inboxUnreadMailboxScope, hasSupportModule);
   const { data: workspaceUnreadStats } = useUnreadStats(workspaceId ?? '', undefined, hasSupportModule && !!unreadMailboxScope);
   const globalUnreadStats = unreadMailboxScope ? workspaceUnreadStats : unreadStats;
   const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
@@ -384,6 +387,7 @@ export function Sidebar() {
               <SupportRailNav
                 navFilter={navFilter}
                 unreadStats={unreadStats}
+                inboxUnreadStats={inboxUnreadStats}
                 globalUnreadStats={globalUnreadStats}
                 inboxScopes={inboxScopes}
                 selectedMailboxId={selectedMailboxId}
