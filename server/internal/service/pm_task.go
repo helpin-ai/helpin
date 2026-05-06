@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,9 +15,12 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
+var attachmentIDAttrPattern = regexp.MustCompile(`data-attachment-id=["']([^"']+)["']`)
+
 // PMTaskService contains task business logic.
 type PMTaskService struct {
 	taskRepo            *repository.PMTaskRepository
+	templateRepo        *repository.PMTaskTemplateRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
 	epicRepo            *repository.PMEpicRepository
@@ -71,6 +75,11 @@ func (s *PMTaskService) SetAgentService(svc *AgentService) {
 // SetRecurringService sets the recurring template service (breaks circular dependency).
 func (s *PMTaskService) SetRecurringService(svc *PMRecurringTemplateService) {
 	s.recurringService = svc
+}
+
+// SetTaskTemplateRepository sets the template repository used by task-to-template actions.
+func (s *PMTaskService) SetTaskTemplateRepository(repo *repository.PMTaskTemplateRepository) {
+	s.templateRepo = repo
 }
 
 func pmDnDWebsocketData(traceID string) json.RawMessage {
@@ -263,12 +272,24 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
 		return nil, err
 	}
+	if err := s.applyTemplateDefaultsToCreateRequest(ctx, &req); err != nil {
+		return nil, err
+	}
 	if err := requireTeamMembershipForCreate(ctx, req.TeamID); err != nil {
 		return nil, err
 	}
 
 	workflowID := req.WorkflowID
 	stateID := req.WorkflowStateID
+	if workflowID == "" && stateID != "" {
+		state, err := s.workflowRepo.GetStateByID(ctx, stateID)
+		if err != nil {
+			return nil, err
+		}
+		if state != nil {
+			workflowID = state.WorkflowID
+		}
+	}
 	if workflowID == "" {
 		defaultWorkflow, err := s.workflowRepo.GetDefaultWorkflow(ctx, req.WorkspaceID)
 		if err != nil {
@@ -391,8 +412,24 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		}
 	}
 	if req.TemplateID != nil && strings.TrimSpace(*req.TemplateID) != "" && s.attachmentRepo != nil {
-		if _, err := s.attachmentRepo.CloneUploadedFromEntityToEntity(ctx, "task_template", strings.TrimSpace(*req.TemplateID), "task", newTask.ID); err != nil {
+		attachmentClones, err := s.attachmentRepo.CloneUploadedFromEntityToEntityWithSources(ctx, "task_template", strings.TrimSpace(*req.TemplateID), "task", newTask.ID)
+		if err != nil {
 			s.logger.ErrorContext(ctx, "failed to clone template attachments to task", "error", err, "task_id", newTask.ID, "template_id", *req.TemplateID)
+		} else {
+			if missingInlineIDs := missingInlineAttachmentIDs(newTask.Description, attachmentIDRewriteMap(attachmentClones)); len(missingInlineIDs) > 0 {
+				inlineClones, err := s.attachmentRepo.CloneUploadedByIDToEntity(ctx, missingInlineIDs, "task", newTask.ID)
+				if err != nil {
+					s.logger.ErrorContext(ctx, "failed to clone inline template attachments to task", "error", err, "task_id", newTask.ID, "template_id", *req.TemplateID)
+				} else {
+					attachmentClones = append(attachmentClones, inlineClones...)
+				}
+			}
+			if rewrittenDescription := rewriteAttachmentIDs(newTask.Description, attachmentIDRewriteMap(attachmentClones)); !stringPtrEqual(rewrittenDescription, newTask.Description) {
+				newTask.Description = rewrittenDescription
+				if err := s.taskRepo.UpdateFields(ctx, newTask.ID, map[string]interface{}{"description": rewrittenDescription}); err != nil {
+					s.logger.ErrorContext(ctx, "failed to rewrite template attachment ids in task description", "error", err, "task_id", newTask.ID, "template_id", *req.TemplateID)
+				}
+			}
 		}
 	}
 
@@ -569,6 +606,402 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	}
 	s.populateTaskDetail(ctx, detail)
 	return detail, nil
+}
+
+type taskTemplateChecklistItem struct {
+	Text     string `json:"text"`
+	Position int    `json:"position,omitempty"`
+}
+
+type taskTemplateExternalLink struct {
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
+}
+
+// SaveAsTemplate creates a reusable template from an existing task.
+func (s *PMTaskService) SaveAsTemplate(ctx context.Context, taskID string, req model.SaveTaskAsTemplateRequest) (*model.PMTaskTemplate, error) {
+	if s.templateRepo == nil {
+		return nil, fmt.Errorf("task template repository is not configured")
+	}
+	detail, err := s.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	task := detail.Task
+	if err := requireCanManage(ctx, task.TeamID); err != nil {
+		return nil, err
+	}
+
+	name := strings.TrimSpace(task.Name)
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		name = strings.TrimSpace(*req.Name)
+	}
+	if name == "" {
+		return nil, fmt.Errorf("template name is required")
+	}
+	existing, err := s.templateRepo.GetByName(ctx, task.WorkspaceID, task.TeamID, name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, fmt.Errorf("template name already exists in this scope")
+	}
+
+	labelIDs := make([]string, 0, len(detail.Labels))
+	for _, label := range detail.Labels {
+		labelIDs = append(labelIDs, label.ID)
+	}
+	labelIDsJSON, err := optionalTaskTemplateJSON(labelIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	var checklistItems []taskTemplateChecklistItem
+	if s.checklistRepo != nil {
+		items, err := s.checklistRepo.List(ctx, task.ID)
+		if err != nil {
+			return nil, err
+		}
+		checklistItems = make([]taskTemplateChecklistItem, 0, len(items))
+		for _, item := range items {
+			text := strings.TrimSpace(item.Text)
+			if text == "" {
+				continue
+			}
+			checklistItems = append(checklistItems, taskTemplateChecklistItem{
+				Text:     text,
+				Position: item.Position,
+			})
+		}
+	}
+	checklistJSON, err := optionalTaskTemplateJSON(checklistItems)
+	if err != nil {
+		return nil, err
+	}
+
+	var externalLinks []taskTemplateExternalLink
+	if s.externalLinkRepo != nil {
+		links, err := s.externalLinkRepo.List(ctx, task.ID)
+		if err != nil {
+			return nil, err
+		}
+		externalLinks = make([]taskTemplateExternalLink, 0, len(links))
+		for _, link := range links {
+			linkURL := strings.TrimSpace(link.URL)
+			if linkURL == "" {
+				continue
+			}
+			externalLinks = append(externalLinks, taskTemplateExternalLink{
+				URL:   linkURL,
+				Title: strings.TrimSpace(link.Title),
+			})
+		}
+	}
+	externalLinksJSON, err := optionalTaskTemplateJSON(externalLinks)
+	if err != nil {
+		return nil, err
+	}
+
+	taskType := task.TaskType
+	priority := task.Priority
+	severity := task.Severity
+	deadline := optionalTaskTemplateDate(task.Deadline)
+	var ownerMemberID *string
+	if len(task.OwnerMemberIDs) > 0 && strings.TrimSpace(task.OwnerMemberIDs[0]) != "" {
+		ownerMemberID = &task.OwnerMemberIDs[0]
+	}
+	ownerMemberIDsJSON, err := optionalTaskTemplateJSON(dedupeIDs(task.OwnerMemberIDs))
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl := &model.PMTaskTemplate{
+		WorkspaceID:     task.WorkspaceID,
+		TeamID:          task.TeamID,
+		Name:            name,
+		Description:     task.Description,
+		TaskType:        &taskType,
+		Priority:        &priority,
+		Severity:        &severity,
+		Estimate:        task.Estimate,
+		LabelIDs:        labelIDsJSON,
+		OwnerMemberID:   ownerMemberID,
+		OwnerMemberIDs:  ownerMemberIDsJSON,
+		EpicID:          task.EpicID,
+		SprintID:        task.SprintID,
+		WorkflowStateID: &task.WorkflowStateID,
+		Deadline:        deadline,
+		ChecklistItems:  checklistJSON,
+		ExternalLinks:   externalLinksJSON,
+	}
+	if err := s.templateRepo.Create(ctx, tmpl); err != nil {
+		return nil, err
+	}
+	if s.attachmentRepo != nil {
+		attachmentClones, err := s.attachmentRepo.CloneUploadedFromEntityToEntityWithSources(ctx, "task", task.ID, "task_template", tmpl.ID)
+		if err != nil {
+			return nil, err
+		}
+		if missingInlineIDs := missingInlineAttachmentIDs(tmpl.Description, attachmentIDRewriteMap(attachmentClones)); len(missingInlineIDs) > 0 {
+			inlineClones, err := s.attachmentRepo.CloneUploadedByIDToEntity(ctx, missingInlineIDs, "task_template", tmpl.ID)
+			if err != nil {
+				return nil, err
+			}
+			attachmentClones = append(attachmentClones, inlineClones...)
+		}
+		if rewrittenDescription := rewriteAttachmentIDs(tmpl.Description, attachmentIDRewriteMap(attachmentClones)); !stringPtrEqual(rewrittenDescription, tmpl.Description) {
+			tmpl.Description = rewrittenDescription
+			if err := s.templateRepo.Update(ctx, tmpl); err != nil {
+				return nil, err
+			}
+		}
+	}
+	publishWorkspaceEvent(s.wsPublisher, "created", "story_template", tmpl.ID, task.WorkspaceID, "")
+	return tmpl, nil
+}
+
+func attachmentIDRewriteMap(clones []repository.PMAttachmentClone) map[string]string {
+	if len(clones) == 0 {
+		return nil
+	}
+	replacements := make(map[string]string, len(clones))
+	for _, clone := range clones {
+		replacements[clone.Source.ID] = clone.Clone.ID
+	}
+	return replacements
+}
+
+func missingInlineAttachmentIDs(description *string, replacements map[string]string) []string {
+	ids := extractInlineAttachmentIDs(description)
+	if len(ids) == 0 {
+		return nil
+	}
+	missing := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := replacements[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	return missing
+}
+
+func extractInlineAttachmentIDs(description *string) []string {
+	if description == nil || *description == "" {
+		return nil
+	}
+	matches := attachmentIDAttrPattern.FindAllStringSubmatch(*description, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(matches))
+	seen := make(map[string]bool, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		id := strings.TrimSpace(match[1])
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func rewriteAttachmentIDs(description *string, replacements map[string]string) *string {
+	if description == nil || len(replacements) == 0 {
+		return description
+	}
+	rewritten := *description
+	for sourceID, targetID := range replacements {
+		if sourceID == "" || targetID == "" || sourceID == targetID {
+			continue
+		}
+		rewritten = strings.ReplaceAll(rewritten, `data-attachment-id="`+sourceID+`"`, `data-attachment-id="`+targetID+`"`)
+		rewritten = strings.ReplaceAll(rewritten, `data-attachment-id='`+sourceID+`'`, `data-attachment-id='`+targetID+`'`)
+	}
+	if rewritten == *description {
+		return description
+	}
+	return &rewritten
+}
+
+func stringPtrEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+func optionalTaskTemplateJSON[T any](items []T) (*string, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(items)
+	if err != nil {
+		return nil, err
+	}
+	value := string(payload)
+	return &value, nil
+}
+
+func optionalTaskTemplateDate(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.UTC().Format("2006-01-02")
+	return &formatted
+}
+
+func (s *PMTaskService) applyTemplateDefaultsToCreateRequest(ctx context.Context, req *model.CreateTaskRequest) error {
+	if req == nil || req.TemplateID == nil || strings.TrimSpace(*req.TemplateID) == "" {
+		return nil
+	}
+	if s.templateRepo == nil {
+		return nil
+	}
+	tmpl, err := s.templateRepo.GetByID(ctx, strings.TrimSpace(*req.TemplateID))
+	if err != nil {
+		return err
+	}
+	if tmpl == nil {
+		return fmt.Errorf("task template not found")
+	}
+	if tmpl.WorkspaceID != req.WorkspaceID {
+		return fmt.Errorf("task template not found")
+	}
+	if !canViewTaskTemplate(ctx, tmpl.TeamID) {
+		return &model.ErrForbidden{Message: "you do not have access to this template"}
+	}
+
+	if req.TeamID == nil {
+		req.TeamID = tmpl.TeamID
+	}
+	if req.Description == nil {
+		req.Description = tmpl.Description
+	}
+	if strings.TrimSpace(req.TaskType) == "" && tmpl.TaskType != nil {
+		req.TaskType = *tmpl.TaskType
+	}
+	if req.Priority == nil {
+		req.Priority = tmpl.Priority
+	}
+	if req.Severity == nil {
+		req.Severity = tmpl.Severity
+	}
+	if req.Estimate == nil {
+		req.Estimate = tmpl.Estimate
+	}
+	if req.EpicID == nil {
+		req.EpicID = tmpl.EpicID
+	}
+	if req.SprintID == nil {
+		req.SprintID = tmpl.SprintID
+	}
+	if strings.TrimSpace(req.WorkflowStateID) == "" && tmpl.WorkflowStateID != nil {
+		req.WorkflowStateID = *tmpl.WorkflowStateID
+	}
+	if req.Deadline == nil && tmpl.Deadline != nil && strings.TrimSpace(*tmpl.Deadline) != "" {
+		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*tmpl.Deadline))
+		if err != nil {
+			return fmt.Errorf("invalid task template deadline: %w", err)
+		}
+		req.Deadline = &parsed
+	}
+	if len(req.LabelIDs) == 0 {
+		labelIDs, err := parseTaskTemplateStringSlice(tmpl.LabelIDs)
+		if err != nil {
+			return err
+		}
+		req.LabelIDs = labelIDs
+	}
+	if len(req.OwnerMemberIDs) == 0 {
+		ownerMemberIDs, err := parseTaskTemplateOwnerMemberIDs(tmpl)
+		if err != nil {
+			return err
+		}
+		req.OwnerMemberIDs = ownerMemberIDs
+	}
+	if len(req.ChecklistItems) == 0 {
+		checklistItems, err := parseTaskTemplateChecklistItems(tmpl.ChecklistItems)
+		if err != nil {
+			return err
+		}
+		req.ChecklistItems = checklistItems
+	}
+	if len(req.ExternalLinks) == 0 {
+		externalLinks, err := parseTaskTemplateExternalLinks(tmpl.ExternalLinks)
+		if err != nil {
+			return err
+		}
+		req.ExternalLinks = externalLinks
+	}
+	return nil
+}
+
+func parseTaskTemplateStringSlice(value *string) ([]string, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	var result []string
+	if err := json.Unmarshal([]byte(*value), &result); err != nil {
+		return nil, err
+	}
+	return dedupeIDs(result), nil
+}
+
+func parseTaskTemplateOwnerMemberIDs(tmpl *model.PMTaskTemplate) ([]string, error) {
+	if tmpl == nil {
+		return nil, nil
+	}
+	ownerMemberIDs, err := parseTaskTemplateStringSlice(tmpl.OwnerMemberIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(ownerMemberIDs) == 0 && tmpl.OwnerMemberID != nil {
+		ownerMemberIDs = append(ownerMemberIDs, *tmpl.OwnerMemberID)
+	}
+	return dedupeIDs(ownerMemberIDs), nil
+}
+
+func parseTaskTemplateChecklistItems(value *string) ([]model.CreateChecklistItemRequest, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	var raw []taskTemplateChecklistItem
+	if err := json.Unmarshal([]byte(*value), &raw); err != nil {
+		return nil, err
+	}
+	items := make([]model.CreateChecklistItemRequest, 0, len(raw))
+	for _, item := range raw {
+		text := strings.TrimSpace(item.Text)
+		if text == "" {
+			continue
+		}
+		position := item.Position
+		items = append(items, model.CreateChecklistItemRequest{Text: text, Position: &position})
+	}
+	return items, nil
+}
+
+func parseTaskTemplateExternalLinks(value *string) ([]model.CreateExternalLinkRequest, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	var raw []taskTemplateExternalLink
+	if err := json.Unmarshal([]byte(*value), &raw); err != nil {
+		return nil, err
+	}
+	links := make([]model.CreateExternalLinkRequest, 0, len(raw))
+	for _, link := range raw {
+		linkURL := strings.TrimSpace(link.URL)
+		if linkURL == "" {
+			continue
+		}
+		links = append(links, model.CreateExternalLinkRequest{URL: linkURL, Title: strings.TrimSpace(link.Title)})
+	}
+	return links, nil
 }
 
 // Seed creates a batch of synthetic tasks for board and list testing.

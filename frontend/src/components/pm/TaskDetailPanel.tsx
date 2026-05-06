@@ -8,6 +8,7 @@ import {
   ArrowLeftRightIcon,
   BotIcon,
   DashboardSpeed01Icon,
+  File01Icon,
   HashtagIcon,
   HexagonIcon,
   Layers01Icon,
@@ -46,6 +47,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -112,6 +114,7 @@ import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-de
 import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
 import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
+import { queryKeys } from '@/lib/queryKeys';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
   isEpicSelectableForTaskTeam,
@@ -497,8 +500,13 @@ function TaskDetailPanelBody({
   const dragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
   const { data: workspaceAccess } = useWorkspaceAccess(workspaceId);
-  const { canEdit } = usePermissions(workspaceAccess);
+  const permissions = usePermissions(workspaceAccess);
+  const { canEdit } = permissions;
   const taskId = taskDetail.task.id;
+  const canSaveAsTemplate = permissions.isAdmin || (!!taskDetail.task.team_id && permissions.isTeamManager(taskDetail.task.team_id));
+  const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState(taskDetail.task.name);
+  const [saveTemplateSaving, setSaveTemplateSaving] = useState(false);
 
   useEffect(() => {
     pendingPatchRef.current = pendingPatch;
@@ -533,6 +541,26 @@ function TaskDetailPanelBody({
     }
     setRecurringDialogOpen(true);
   }, [workspaceId, recurringSummary?.template_id]);
+
+  const openSaveTemplateDialog = useCallback(() => {
+    setSaveTemplateName(taskDetail.task.name);
+    setSaveTemplateDialogOpen(true);
+  }, [taskDetail.task.name]);
+
+  const handleSaveAsTemplate = useCallback(async () => {
+    const name = saveTemplateName.trim();
+    if (!name || saveTemplateSaving) return;
+    setSaveTemplateSaving(true);
+    const { error } = await pmTaskService.saveAsTemplate(workspaceId, taskDetail.task.id, { name });
+    setSaveTemplateSaving(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setSaveTemplateDialogOpen(false);
+    toast.success('Template created');
+    queryClient.invalidateQueries({ queryKey: queryKeys.pm.templates(workspaceId) });
+  }, [queryClient, saveTemplateName, saveTemplateSaving, taskDetail.task.id, workspaceId]);
 
   const handleRecurringSubmit = useCallback(async (value: RecurringTemplateFormValue) => {
     setRecurringSaving(true);
@@ -1119,6 +1147,12 @@ function TaskDetailPanelBody({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {canSaveAsTemplate && (
+                <DropdownMenuItem onSelect={openSaveTemplateDialog}>
+                  <File01Icon className="mr-2 h-4 w-4" />
+                  Save as template
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={() => { void openRecurringDialog(); }}>
                 <ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />
                 {recurringSummary ? 'Edit recurring' : 'Make recurring'}
@@ -1846,6 +1880,33 @@ function TaskDetailPanelBody({
           />
         </aside>
       </div>
+
+      <Dialog open={saveTemplateDialogOpen} onOpenChange={setSaveTemplateDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save as template</DialogTitle>
+            <DialogDescription>
+              Create a reusable task template from the current task.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              value={saveTemplateName}
+              onChange={(event) => setSaveTemplateName(event.target.value)}
+              placeholder="Template title"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setSaveTemplateDialogOpen(false)} disabled={saveTemplateSaving}>
+                Cancel
+              </Button>
+              <Button onClick={() => void handleSaveAsTemplate()} disabled={!saveTemplateName.trim() || saveTemplateSaving}>
+                {saveTemplateSaving ? 'Saving...' : 'Save template'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
         <DialogContent className="max-w-2xl">

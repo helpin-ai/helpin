@@ -648,6 +648,7 @@ export interface TaskTemplate {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
   workflow_state_id?: string;
@@ -800,14 +801,19 @@ export interface CreateTaskTemplateRequest {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
   workflow_state_id?: string;
   deadline?: string;
+  attachment_ids?: string[];
   checklist_items?: string;
   external_links?: string;
 }
 
+export interface SaveTaskAsTemplateRequest {
+  name?: string;
+}
 
 export interface UpdateTaskTemplateRequest {
   team_id?: string;
@@ -819,10 +825,12 @@ export interface UpdateTaskTemplateRequest {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
   workflow_state_id?: string;
   deadline?: string;
+  attachment_ids?: string[];
   checklist_items?: string;
   external_links?: string;
   archived?: boolean;
@@ -1039,7 +1047,7 @@ export interface UpdateExternalLinkRequest {
 export interface Attachment {
   id: string;
   workspace_id: string;
-  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'task_template' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;

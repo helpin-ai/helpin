@@ -328,6 +328,22 @@ func (h *PMTaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, task)
 }
 
+// SaveAsTemplate handles POST /api/pm/tasks/{id}/save-as-template.
+func (h *PMTaskHandler) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req model.SaveTaskAsTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	tmpl, err := h.taskService.SaveAsTemplate(r.Context(), id, req)
+	if err != nil {
+		writeError(w, pmTaskUpdateErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, tmpl)
+}
+
 func pmTaskUpdateErrorStatus(err error) int {
 	var forbidden *model.ErrForbidden
 	if errors.As(err, &forbidden) {

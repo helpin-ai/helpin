@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -12,13 +13,20 @@ import (
 
 // PMTaskTemplateService contains story template business logic.
 type PMTaskTemplateService struct {
-	templateRepo *repository.PMTaskTemplateRepository
-	wsPublisher  *websocket.Publisher
+	templateRepo   *repository.PMTaskTemplateRepository
+	attachmentRepo *repository.PMAttachmentRepository
+	wsPublisher    *websocket.Publisher
+	logger         *slog.Logger
 }
 
 // NewPMTaskTemplateService creates a new PMTaskTemplateService.
 func NewPMTaskTemplateService(templateRepo *repository.PMTaskTemplateRepository, wsPublisher *websocket.Publisher) *PMTaskTemplateService {
-	return &PMTaskTemplateService{templateRepo: templateRepo, wsPublisher: wsPublisher}
+	return &PMTaskTemplateService{templateRepo: templateRepo, wsPublisher: wsPublisher, logger: slog.Default().With("service", "pm_task_template")}
+}
+
+// SetAttachmentRepository sets the attachment repository used by template inline uploads.
+func (s *PMTaskTemplateService) SetAttachmentRepository(repo *repository.PMAttachmentRepository) {
+	s.attachmentRepo = repo
 }
 
 // ListByWorkspace lists story templates by workspace.
@@ -81,6 +89,7 @@ func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateTask
 		Estimate:        req.Estimate,
 		LabelIDs:        req.LabelIDs,
 		OwnerMemberID:   normalizeOptionalID(req.OwnerMemberID),
+		OwnerMemberIDs:  req.OwnerMemberIDs,
 		EpicID:          normalizeOptionalID(req.EpicID),
 		SprintID:        normalizeOptionalID(req.SprintID),
 		WorkflowStateID: normalizeOptionalID(req.WorkflowStateID),
@@ -90,6 +99,11 @@ func (s *PMTaskTemplateService) Create(ctx context.Context, req model.CreateTask
 	}
 	if err := s.templateRepo.Create(ctx, tmpl); err != nil {
 		return nil, err
+	}
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "task_template", tmpl.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to task template", "error", err, "template_id", tmpl.ID, "attachment_ids", req.AttachmentIDs)
+		}
 	}
 	publishWorkspaceEvent(s.wsPublisher, "created", "story_template", tmpl.ID, req.WorkspaceID, "")
 	return tmpl, nil
@@ -153,6 +167,9 @@ func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model
 	if req.OwnerMemberID != nil {
 		tmpl.OwnerMemberID = normalizeOptionalID(req.OwnerMemberID)
 	}
+	if req.OwnerMemberIDs != nil {
+		tmpl.OwnerMemberIDs = req.OwnerMemberIDs
+	}
 	if req.EpicID != nil {
 		tmpl.EpicID = normalizeOptionalID(req.EpicID)
 	}
@@ -177,6 +194,11 @@ func (s *PMTaskTemplateService) Update(ctx context.Context, id string, req model
 
 	if err := s.templateRepo.Update(ctx, tmpl); err != nil {
 		return nil, err
+	}
+	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
+		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "task_template", tmpl.ID); err != nil {
+			s.logger.ErrorContext(ctx, "failed to reassign attachments to task template", "error", err, "template_id", tmpl.ID, "attachment_ids", req.AttachmentIDs)
+		}
 	}
 	publishWorkspaceEvent(s.wsPublisher, "updated", "story_template", tmpl.ID, tmpl.WorkspaceID, "")
 	return tmpl, nil

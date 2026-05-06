@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { CheckListIcon, Copy01Icon, File01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon, Delete01Icon, SparklesIcon, UserGroupIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -102,9 +102,22 @@ function TemplateCard({
 }) {
   const desc = template.description?.replace(/<[^>]*>/g, '').trim();
   const defaultStateLabel = stateName ?? (template.workflow_state_id ? 'State unavailable' : 'No default state');
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!canManage) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onEdit();
+    }
+  };
 
   return (
-    <div className="group flex flex-col gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 transition-colors hover:border-border hover:bg-muted/20 sm:flex-row sm:items-center sm:justify-between">
+    <div
+      role={canManage ? 'button' : undefined}
+      tabIndex={canManage ? 0 : undefined}
+      onClick={canManage ? onEdit : undefined}
+      onKeyDown={handleKeyDown}
+      className={`group flex flex-col gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 transition-colors hover:border-border hover:bg-muted/20 sm:flex-row sm:items-center sm:justify-between ${canManage ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2' : ''}`}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium text-foreground">{template.name}</span>
@@ -125,7 +138,15 @@ function TemplateCard({
         <div className="flex items-center gap-0.5 sm:ml-1">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground" onClick={onEdit}>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onEdit();
+                }}
+              >
                 <PencilEdit01Icon className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
@@ -133,7 +154,15 @@ function TemplateCard({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground" onClick={onDuplicate}>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDuplicate();
+                }}
+              >
                 <Copy01Icon className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
@@ -141,7 +170,15 @@ function TemplateCard({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive" onClick={onDelete}>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete();
+                }}
+              >
                 <Delete01Icon className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
@@ -342,6 +379,7 @@ export function TaskTemplatesSettings({
       estimate: tmpl.estimate,
       label_ids: tmpl.label_ids,
       owner_member_id: tmpl.owner_member_id,
+      owner_member_ids: tmpl.owner_member_ids,
       epic_id: tmpl.epic_id,
       sprint_id: tmpl.sprint_id,
       workflow_state_id: tmpl.workflow_state_id,

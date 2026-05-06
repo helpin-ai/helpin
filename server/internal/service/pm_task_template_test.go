@@ -39,6 +39,7 @@ func newTaskTemplateTestEnv(t *testing.T) taskTemplateTestEnv {
 		estimate INTEGER,
 		label_ids TEXT,
 		owner_member_id TEXT,
+		owner_member_ids TEXT,
 		epic_id TEXT,
 		sprint_id TEXT,
 		workflow_state_id TEXT,

@@ -179,6 +179,64 @@ const defaultState = {
   external_links: [] as ExternalLinkItem[],
 };
 
+type CreateTaskFormState = typeof defaultState;
+
+function stripHtmlForCompare(html: string) {
+  return html.replace(/<[^>]*>/g, '').trim();
+}
+
+function normalizeStringArrayForCompare(values: string[]) {
+  return [...values].filter(Boolean).sort();
+}
+
+function normalizeFormForCompare(form: CreateTaskFormState, description: string) {
+  return {
+    ...form,
+    name: form.name.trim(),
+    description: stripHtmlForCompare(description),
+    owner_member_ids: normalizeStringArrayForCompare(form.owner_member_ids),
+    label_ids: normalizeStringArrayForCompare(form.label_ids),
+    checklist_items: form.checklist_items
+      .map((item, index) => ({ text: item.text.trim(), position: item.position ?? index }))
+      .filter((item) => item.text !== ''),
+    external_links: form.external_links
+      .map((link) => ({ url: link.url.trim(), title: link.title?.trim() || undefined }))
+      .filter((link) => link.url !== ''),
+  };
+}
+
+export function isCreateTaskModalDirty({
+  mode,
+  editingTemplate,
+  form,
+  baselineForm,
+  currentDescription,
+  baselineDescription,
+  stateId,
+  baselineStateId,
+}: {
+  mode: 'task' | 'template';
+  editingTemplate: boolean;
+  form: CreateTaskFormState;
+  baselineForm: CreateTaskFormState | null;
+  currentDescription: string;
+  baselineDescription: string;
+  stateId: string;
+  baselineStateId: string;
+}) {
+  if (mode === 'template' && editingTemplate && baselineForm) {
+    return JSON.stringify({
+      form: normalizeFormForCompare(form, currentDescription),
+      stateId,
+    }) !== JSON.stringify({
+      form: normalizeFormForCompare(baselineForm, baselineDescription),
+      stateId: baselineStateId,
+    });
+  }
+
+  return form.name.trim() !== '' || stripHtmlForCompare(currentDescription) !== stripHtmlForCompare(baselineDescription);
+}
+
 // ── Metadata Row ───────────────────────────────────────────────────
 
 function MetadataRow({
@@ -335,6 +393,8 @@ export function CreateTaskModal({
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [templateAttachments, setTemplateAttachments] = useState<AttachmentResponse[]>([]);
   const descriptionEditorRef = useRef<Editor | null>(null);
+  const initialFormRef = useRef<CreateTaskFormState | null>(null);
+  const initialStateIdRef = useRef('');
   const { teams } = useAccessibleTeams(workspaceId);
   const teamsRef = useRef(teams);
   teamsRef.current = teams;
@@ -369,7 +429,7 @@ export function CreateTaskModal({
     if (!open) return;
     setDescriptionEditorKey((current) => current + 1);
     if (isTemplateMode && editingTemplate) {
-      setForm({
+      const nextForm: CreateTaskFormState = {
         name: editingTemplate.name,
         description: editingTemplate.description || '',
         task_type: (editingTemplate.task_type as TaskType) || 'feature',
@@ -379,23 +439,29 @@ export function CreateTaskModal({
         epic_id: editingTemplate.epic_id || '',
         sprint_id: editingTemplate.sprint_id || '',
         team_id: editingTemplate.team_id || initialTeamId || '',
-        owner_member_ids: editingTemplate.owner_member_id ? [editingTemplate.owner_member_id] : [],
+        owner_member_ids: editingTemplate.owner_member_ids
+          ? (() => { try { return JSON.parse(editingTemplate.owner_member_ids!); } catch { return editingTemplate.owner_member_id ? [editingTemplate.owner_member_id] : []; } })()
+          : editingTemplate.owner_member_id ? [editingTemplate.owner_member_id] : [],
         requester_member_id: '',
         deadline: editingTemplate.deadline || '',
         label_ids: editingTemplate.label_ids ? (() => { try { return JSON.parse(editingTemplate.label_ids!); } catch { return []; } })() : [],
         checklist_items: editingTemplate.checklist_items ? (() => { try { return JSON.parse(editingTemplate.checklist_items!); } catch { return []; } })() : [],
         external_links: editingTemplate.external_links ? (() => { try { return JSON.parse(editingTemplate.external_links!); } catch { return []; } })() : [],
-      });
+      };
+      const nextStateId = editingTemplate.workflow_state_id || initialStateId || '';
+      setForm(nextForm);
+      initialFormRef.current = nextForm;
+      initialStateIdRef.current = nextStateId;
       setTaskTypeDirty(true);
       initialDescRef.current = editingTemplate.description || '';
       // Auto-open sections that have data
       if (editingTemplate.checklist_items) { try { if (JSON.parse(editingTemplate.checklist_items).length > 0) setShowChecklist(true); } catch {} }
       if (editingTemplate.external_links) { try { if (JSON.parse(editingTemplate.external_links).length > 0) setShowExternalLinks(true); } catch {} }
-      setStateId(editingTemplate.workflow_state_id || initialStateId || '');
+      setStateId(nextStateId);
     } else {
       const effectiveTeamId = initialTeamId ?? teamsRef.current[0]?.id ?? '';
       const initialTeam = teamsRef.current.find((team) => team.id === effectiveTeamId);
-      setForm({
+      const nextForm: CreateTaskFormState = {
         ...defaultState,
         task_type: (initialTeam?.default_task_type as TaskType | undefined) ?? 'feature',
         requester_member_id: isTemplateMode ? '' : currentMemberId,
@@ -403,7 +469,10 @@ export function CreateTaskModal({
         epic_id: initialEpicId ?? '',
         owner_member_ids: initialOwnerMemberId ? [initialOwnerMemberId] : [],
         sprint_id: initialSprintId ?? '',
-      });
+      };
+      setForm(nextForm);
+      initialFormRef.current = null;
+      initialStateIdRef.current = initialStateId ?? '';
       setTaskTypeDirty(false);
       initialDescRef.current = '';
       setStateId(initialStateId ?? '');
@@ -443,13 +512,17 @@ export function CreateTaskModal({
       setTemplateWorkflow(nextWorkflow);
       setStateId((current) => {
         if (current && nextWorkflow.states.some((state) => state.id === current)) return current;
-        return nextWorkflow.workflow.default_state_id ?? nextWorkflow.states.find((state) => state.is_default)?.id ?? nextWorkflow.states[0]?.id ?? '';
+        const nextStateId = nextWorkflow.workflow.default_state_id ?? nextWorkflow.states.find((state) => state.is_default)?.id ?? nextWorkflow.states[0]?.id ?? '';
+        if (editingTemplate && initialStateIdRef.current === '' && current === '') {
+          initialStateIdRef.current = nextStateId;
+        }
+        return nextStateId;
       });
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, isTemplateMode, workspaceId, form.team_id]);
+  }, [open, isTemplateMode, workspaceId, form.team_id, editingTemplate]);
 
   useEffect(() => {
     if (!open || isTemplateMode) return;
@@ -676,7 +749,9 @@ export function CreateTaskModal({
       severity: (tmpl.severity as Severity) || prev.severity,
       estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
       label_ids: tmpl.label_ids ? (() => { try { return JSON.parse(tmpl.label_ids!); } catch { return prev.label_ids; } })() : prev.label_ids,
-      owner_member_ids: tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids,
+      owner_member_ids: tmpl.owner_member_ids
+        ? (() => { try { return JSON.parse(tmpl.owner_member_ids!); } catch { return tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids; } })()
+        : tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids,
       epic_id: tmpl.epic_id || prev.epic_id,
       sprint_id: tmpl.sprint_id || prev.sprint_id,
       deadline: tmpl.deadline || prev.deadline,
@@ -773,6 +848,7 @@ export function CreateTaskModal({
     try {
       const descriptionForSubmit =
         descriptionMode === 'markdown' ? markdownToHtml(sourceMarkdown) : form.description;
+      const inlineAttachmentIds = extractInlineAttachmentIds(descriptionForSubmit);
 
       if (isTemplateMode) {
         const labelIds = form.label_ids.length > 0 ? JSON.stringify(form.label_ids) : undefined;
@@ -790,10 +866,12 @@ export function CreateTaskModal({
           team_id: form.team_id || undefined,
           label_ids: labelIds,
           owner_member_id: form.owner_member_ids[0] || undefined,
+          owner_member_ids: form.owner_member_ids.length > 0 ? JSON.stringify(form.owner_member_ids) : undefined,
           epic_id: form.epic_id || undefined,
           sprint_id: form.sprint_id || undefined,
           workflow_state_id: stateId || undefined,
           deadline: form.deadline || undefined,
+          attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
           checklist_items: checklistJson,
           external_links: externalLinksJson,
         };
@@ -830,6 +908,7 @@ export function CreateTaskModal({
           owner_member_ids: form.owner_member_ids.length > 0 ? form.owner_member_ids : undefined,
           requester_member_id: form.requester_member_id || undefined,
           deadline: form.deadline || undefined,
+          attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
           label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
           checklist_items: (() => { const f = form.checklist_items.filter((i) => i.text.trim()); return f.length > 0 ? f : undefined; })(),
           external_links: (() => { const f = form.external_links.filter((l) => l.url.trim()); return f.length > 0 ? f : undefined; })(),
@@ -930,11 +1009,18 @@ export function CreateTaskModal({
     teams,
   ]);
 
-  const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
   const currentDescriptionForCompare =
     descriptionMode === 'markdown' ? markdownToHtml(sourceMarkdown) : form.description;
-  const hasUnsavedChanges =
-    form.name.trim() !== '' || stripHtml(currentDescriptionForCompare) !== stripHtml(initialDescRef.current);
+  const hasUnsavedChanges = isCreateTaskModalDirty({
+    mode,
+    editingTemplate: Boolean(editingTemplate),
+    form,
+    baselineForm: initialFormRef.current,
+    currentDescription: currentDescriptionForCompare,
+    baselineDescription: initialDescRef.current,
+    stateId,
+    baselineStateId: initialStateIdRef.current,
+  });
 
   const handleOpenChange = async (nextOpen: boolean) => {
     if (!nextOpen && hasUnsavedChanges) {
@@ -1425,65 +1511,31 @@ export function CreateTaskModal({
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
                 {/* Owner */}
-                <MetadataRow icon={UserIcon} label={isTemplateMode ? "Owner" : "Owners"}>
-                  {isTemplateMode ? (
-                    <MemberPickerPopover
-                      value={form.owner_member_ids[0] || "__none__"}
-                      members={assignableMembers}
-                      noneLabel="No owner"
-                      onChange={(value) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          owner_member_ids: value === "__none__" ? [] : [value],
-                        }))
-                      }
-                      renderTrigger={() => {
-                        const selectedMember = findAssignableMember(assignableMembers, form.owner_member_ids[0]);
-                        return (
-                          <>
-                            {selectedMember ? (
-                              <UserAvatar
-                                name={selectedMember.display_name || selectedMember.email}
-                                avatarUrl={selectedMember.avatar_url}
-                                avatarStyle={selectedMember.avatar_style}
-                                avatarSeed={selectedMember.avatar_seed}
-                                avatarBackgroundMode={selectedMember.avatar_background_mode}
-                                avatarBackgroundColor={selectedMember.avatar_background_color}
-                                className="h-4 w-4"
-                                fallbackClassName="text-[7px]"
-                              />
-                            ) : null}
-                            <span>{currentOwnerName}</span>
-                          </>
-                        );
-                      }}
-                    />
-                  ) : (
-                    <MultiMemberPickerPopover
-                      values={form.owner_member_ids}
-                      members={assignableMembers}
-                      onChange={(nextOwnerIds) =>
-                        setForm((prev) => ({ ...prev, owner_member_ids: nextOwnerIds }))
-                      }
-                      renderTrigger={() => (
-                        <>
-                          {form.owner_member_ids.length > 0 ? (
-                            <OwnerAvatarStack
-                              memberIds={form.owner_member_ids}
-                              nameMap={memberNameMap}
-                              members={assignableMembers}
-                              size="sm"
-                              max={3}
-                              singleAvatarClassName="h-4 w-4"
-                              singleFallbackClassName="text-[7px]"
-                            />
-                          ) : (
-                            <span>{currentOwnerName}</span>
-                          )}
-                        </>
-                      )}
-                    />
-                  )}
+                <MetadataRow icon={UserIcon} label="Owners">
+                  <MultiMemberPickerPopover
+                    values={form.owner_member_ids}
+                    members={assignableMembers}
+                    onChange={(nextOwnerIds) =>
+                      setForm((prev) => ({ ...prev, owner_member_ids: nextOwnerIds }))
+                    }
+                    renderTrigger={() => (
+                      <>
+                        {form.owner_member_ids.length > 0 ? (
+                          <OwnerAvatarStack
+                            memberIds={form.owner_member_ids}
+                            nameMap={memberNameMap}
+                            members={assignableMembers}
+                            size="sm"
+                            max={3}
+                            singleAvatarClassName="h-4 w-4"
+                            singleFallbackClassName="text-[7px]"
+                          />
+                        ) : (
+                          <span>{currentOwnerName}</span>
+                        )}
+                      </>
+                    )}
+                  />
                 </MetadataRow>
 
                 {/* Requester */}
@@ -1588,7 +1640,7 @@ export function CreateTaskModal({
                 )}
 
                 {/* Labels */}
-                {fieldVis.labels && (
+                {(fieldVis.labels || (isTemplateMode && form.label_ids.length > 0)) && (
                 <MetadataRow icon={Tag01Icon} label="Labels">
                   <LabelPicker
                     workspaceId={workspaceId}
