@@ -26,6 +26,7 @@ import {
   UserIcon,
   UserGroupIcon,
   Cancel01Icon,
+  HelpCircleIcon,
 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -54,6 +55,7 @@ import type {
 import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmSprintService } from "@/lib/services/pmSprintService";
 import { pmLabelService } from "@/lib/services/pmLabelService";
+import { pmTaskService } from "@/lib/services/pmTaskService";
 import { pmTaskTemplateService } from "@/lib/services/pmTaskTemplateService";
 import { pmWorkflowService } from "@/lib/services/pmWorkflowService";
 import type { TaskTemplate } from "@/lib/pmTypes";
@@ -86,6 +88,7 @@ import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
 import { showEntityCreatedToast } from "@/components/ui/entity-created-toast";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { WorkspaceTeam } from "@/lib/types";
+import { QuickTooltip } from "@/components/ui/quick-tooltip";
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -106,6 +109,23 @@ interface CreateTaskModalProps {
 interface CreatedTaskResult {
   id: string;
   task?: Pick<Task, 'id' | 'name' | 'display_id' | 'task_key'>;
+}
+
+function FooterToggleHelp({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <>
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <QuickTooltip label={tooltip}>
+        <button
+          type="button"
+          aria-label={`Explain ${label}`}
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <HelpCircleIcon className="h-3.5 w-3.5" />
+        </button>
+      </QuickTooltip>
+    </>
+  );
 }
 
 const priorityOptions: Priority[] = ["none", "low", "medium", "high", "urgent"];
@@ -369,7 +389,7 @@ export function CreateTaskModal({
   const [form, setForm] = useState(defaultState);
   const initialDescRef = useRef('');
   const [stateId, setStateId] = useState(initialStateId ?? '');
-  const [createMore, setCreateMore] = useState(false);
+  const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const confirm = useConfirm();
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
@@ -388,6 +408,8 @@ export function CreateTaskModal({
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
   const [templateWorkflow, setTemplateWorkflow] = useState<WorkflowWithStates | null>(null);
   const [taskWorkflowOverride, setTaskWorkflowOverride] = useState<WorkflowWithStates | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -585,6 +607,7 @@ export function CreateTaskModal({
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     (async () => {
       if (isTemplateMode) {
         const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
@@ -592,23 +615,41 @@ export function CreateTaskModal({
           pmSprintService.list(workspaceId, { archived: false }),
           pmLabelService.list(workspaceId),
         ]);
+        if (cancelled) return;
         setEpics(epicsRes.data ?? []);
         setSprints(sprintsRes.data ?? []);
         setLabels(labelsRes.data ?? []);
       } else {
-        const [epicsRes, sprintsRes, labelsRes, templatesRes] = await Promise.all([
+        setTemplates([]);
+        setTemplatesLoading(false);
+        setTemplatesLoaded(false);
+        const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
           pmEpicService.list(workspaceId, { archived: false }),
           pmSprintService.list(workspaceId, { archived: false }),
           pmLabelService.list(workspaceId),
-          pmTaskTemplateService.list(workspaceId, { archived: false }),
         ]);
+        if (cancelled) return;
         setEpics(epicsRes.data ?? []);
         setSprints(sprintsRes.data ?? []);
         setLabels(labelsRes.data ?? []);
-        setTemplates(templatesRes.data ?? []);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [open, workspaceId, isTemplateMode]);
+
+  const loadTemplates = useCallback(async () => {
+    if (isTemplateMode || templatesLoaded || templatesLoading) return;
+    setTemplatesLoading(true);
+    try {
+      const { data } = await pmTaskTemplateService.list(workspaceId, { archived: false });
+      setTemplates(data ?? []);
+      setTemplatesLoaded(true);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, [isTemplateMode, templatesLoaded, templatesLoading, workspaceId]);
 
   useEffect(() => {
     if (descriptionMode !== 'markdown') return;
@@ -841,7 +882,7 @@ export function CreateTaskModal({
     };
   }, [form.team_id, workflow, stateId, workspaceId]);
 
-  const submit = useCallback(async () => {
+  const submit = useCallback(async (createAnother = false) => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
     setError(null);
@@ -916,6 +957,16 @@ export function CreateTaskModal({
 
         if (result?.id) await uploadPendingFilesForEntity('task', result.id);
 
+        let templateSaveError: string | null = null;
+        if (result?.id && saveTaskAsTemplate) {
+          const { error: saveError } = await pmTaskService.saveAsTemplate(workspaceId, result.id, {
+            name: form.name.trim(),
+          });
+          if (saveError) {
+            templateSaveError = saveError;
+          }
+        }
+
         let recurringSetupError: string | null = null;
         if (result?.id && recurringDraft) {
           const { error: recurringError } = await pmRecurringTemplateService.create({
@@ -930,17 +981,28 @@ export function CreateTaskModal({
           }
         }
 
-        if (recurringSetupError) {
-          toast.error(`Task created, but recurring setup failed: ${recurringSetupError}`);
+        const postCreateErrors = [
+          templateSaveError ? `template save failed: ${templateSaveError}` : null,
+          recurringSetupError ? `recurring setup failed: ${recurringSetupError}` : null,
+        ].filter(Boolean);
+
+        if (postCreateErrors.length > 0) {
+          toast.error(`Task created, but ${postCreateErrors.join('; ')}`);
         } else {
-          if (result?.id) {
+          if (createAnother) {
+            toast.success('Task created. Ready for the next one.');
+          } else if (result?.id) {
             const createdTitle = result.task?.name || form.name.trim();
             const taskKey = result.task?.task_key
               || (result.task?.display_id !== undefined ? `#${result.task.display_id}` : undefined);
+            const successSubtitle = [
+              saveTaskAsTemplate ? 'Template saved.' : null,
+              recurringDraft ? 'Recurring schedule added.' : null,
+            ].filter(Boolean).join(' ');
             showEntityCreatedToast({
               entityLabel: 'Task',
               title: createdTitle,
-              subtitle: recurringDraft ? 'Recurring schedule added.' : undefined,
+              subtitle: successSubtitle || undefined,
               identifier: taskKey ? { label: 'Story ID', value: taskKey } : undefined,
               tone: 'pm',
               icon: TASK_TYPE_CONFIG[form.task_type].icon,
@@ -953,7 +1015,7 @@ export function CreateTaskModal({
           }
         }
 
-        if (createMore) {
+        if (createAnother) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
           setDescriptionMode('rich');
@@ -971,6 +1033,7 @@ export function CreateTaskModal({
           setStateId(initialStateId ?? '');
           setPendingFiles([]);
           setRecurringDraft(null);
+          setSaveTaskAsTemplate(false);
         } else {
           onOpenChange(false);
         }
@@ -986,7 +1049,7 @@ export function CreateTaskModal({
     form,
     stateId,
     descriptionMode,
-    createMore,
+    saveTaskAsTemplate,
     workspaceId,
     workflow,
     selectedTemplateId,
@@ -1051,17 +1114,35 @@ export function CreateTaskModal({
               <span className="text-lg font-semibold">
                 {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
               </span>
-              {!isTemplateMode && templates.length > 0 && (
+              {!isTemplateMode && (
                 <SidebarPopoverSelect
                   value={selectedTemplateId}
-                  groups={templateGroups}
+                  groups={templatesLoaded && !templatesLoading && templates.length > 0 ? templateGroups : []}
                   onChange={applyTemplate}
+                  onOpenChange={(nextOpen) => {
+                    if (nextOpen) void loadTemplates();
+                  }}
                   renderTrigger={() => (
                     <>
                       <File01Icon className="h-3.5 w-3.5 text-muted-foreground" />
                       <span>{selectedTemplateName || 'Apply template'}</span>
                     </>
                   )}
+                  emptyContent={
+                    templatesLoading ? (
+                      <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+                        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                        <span>Loading task templates</span>
+                      </div>
+                    ) : templatesLoaded ? (
+                      <div className="space-y-1 px-2 py-2">
+                        <p className="text-sm font-medium text-foreground">No task templates yet</p>
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Create one with this task by enabling Save as template before saving.
+                        </p>
+                      </div>
+                    ) : null
+                  }
                   showChevron
                   triggerClassName="border border-border/60 bg-muted/20 px-2.5 py-1 text-xs"
                 />
@@ -1748,23 +1829,30 @@ export function CreateTaskModal({
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
             {!isTemplateMode && (
-            <div className="mr-auto flex items-center gap-2">
-              <Switch checked={createMore} onCheckedChange={setCreateMore} />
-              <span className="text-sm text-muted-foreground">Create more</span>
-            </div>
+              <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2">
+                <div className="flex items-center gap-2">
+                  <Switch checked={saveTaskAsTemplate} onCheckedChange={setSaveTaskAsTemplate} />
+                  <FooterToggleHelp
+                    label="Save as template"
+                    tooltip="Also save this task as a reusable template after it is created."
+                  />
+                </div>
+              </div>
             )}
 
+            {!isTemplateMode && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => submit(true)}
+                disabled={!canSubmit || submitting}
+              >
+                Save & create another
+              </Button>
+            )}
             <Button
               type="button"
-              variant="outline"
-              onClick={() => handleOpenChange(false)}
-              disabled={submitting}
-            >
-              Discard
-            </Button>
-            <Button
-              type="button"
-              onClick={submit}
+              onClick={() => submit(false)}
               disabled={!canSubmit || submitting}
             >
               {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
