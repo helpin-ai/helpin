@@ -48,10 +48,10 @@ type PMSprintListFilters struct {
 
 // PMSprintPlanningFilters applies filters when building the sprint planning workspace.
 type PMSprintPlanningFilters struct {
-	TeamID            *string
-	IncludeCompleted  bool
+	TeamID           *string
+	IncludeCompleted bool
 	PreviewTaskLimit int
-	BacklogLimit      int
+	BacklogLimit     int
 	// AccessibleTeamIDs enforces team-based access boundaries.
 	// nil = no filtering (admin/owner), [] = no access, [ids] = filter to these teams.
 	AccessibleTeamIDs []string
@@ -59,14 +59,14 @@ type PMSprintPlanningFilters struct {
 
 // CreateSprintRequest is the payload for creating a sprint.
 type CreateSprintRequest struct {
-	WorkspaceID string    `json:"workspace_id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	StartDate   time.Time `json:"start_date"`
-	EndDate     time.Time `json:"end_date"`
-	TeamID      *string   `json:"team_id"`
-	LabelIDs    []string  `json:"label_ids"`
-	AttachmentIDs []string `json:"attachment_ids,omitempty"`
+	WorkspaceID   string    `json:"workspace_id"`
+	Name          string    `json:"name"`
+	Description   *string   `json:"description"`
+	StartDate     time.Time `json:"start_date"`
+	EndDate       time.Time `json:"end_date"`
+	TeamID        *string   `json:"team_id"`
+	LabelIDs      []string  `json:"label_ids"`
+	AttachmentIDs []string  `json:"attachment_ids,omitempty"`
 }
 
 // UpdateSprintRequest is the payload for updating a sprint.
@@ -97,25 +97,26 @@ type SprintWithStats struct {
 
 // SprintPlanningTaskPreview is the lightweight task payload used by the sprint planning page.
 type SprintPlanningTaskPreview struct {
-	ID              string  `json:"id"`
-	DisplayID       int     `json:"display_id"`
-	Name            string  `json:"name"`
-	WorkflowStateID string  `json:"workflow_state_id"`
-	StateName       *string `json:"state_name,omitempty"`
-	StateType       *string `json:"state_type,omitempty"`
-	OwnerMemberID   *string `json:"owner_member_id,omitempty"`
-	Estimate        *int    `json:"estimate,omitempty"`
-	Priority        string  `json:"priority"`
-	SprintID        *string `json:"sprint_id,omitempty"`
-	TeamID          *string `json:"team_id,omitempty"`
+	ID              string   `json:"id"`
+	DisplayID       int      `json:"display_id"`
+	Name            string   `json:"name"`
+	WorkflowStateID string   `json:"workflow_state_id"`
+	StateName       *string  `json:"state_name,omitempty"`
+	StateType       *string  `json:"state_type,omitempty"`
+	OwnerMemberID   *string  `json:"owner_member_id,omitempty"`
+	OwnerMemberIDs  []string `json:"owner_member_ids,omitempty"`
+	Estimate        *int     `json:"estimate,omitempty"`
+	Priority        string   `json:"priority"`
+	SprintID        *string  `json:"sprint_id,omitempty"`
+	TeamID          *string  `json:"team_id,omitempty"`
 }
 
 // SprintPlanningCard is the sprint card payload for the planning page.
 type SprintPlanningCard struct {
-	Sprint               PMSprint                     `json:"sprint"`
-	Stats                PMSprintStats                `json:"stats"`
-	PreviewTasks         []SprintPlanningTaskPreview `json:"preview_tasks"`
-	TaskPreviewOverflow  int                         `json:"task_preview_overflow"`
+	Sprint              PMSprint                    `json:"sprint"`
+	Stats               PMSprintStats               `json:"stats"`
+	PreviewTasks        []SprintPlanningTaskPreview `json:"preview_tasks"`
+	TaskPreviewOverflow int                         `json:"task_preview_overflow"`
 }
 
 // SprintPlanningBucket groups planning cards by temporal bucket.
@@ -127,7 +128,7 @@ type SprintPlanningBucket struct {
 
 // SprintPlanningWorkspace is the top-level response for the sprint planning page.
 type SprintPlanningWorkspace struct {
-	Buckets        []SprintPlanningBucket       `json:"buckets"`
-	BacklogTasks   []SprintPlanningTaskPreview  `json:"backlog_tasks"`
-	BacklogTotal   int                          `json:"backlog_total"`
+	Buckets      []SprintPlanningBucket      `json:"buckets"`
+	BacklogTasks []SprintPlanningTaskPreview `json:"backlog_tasks"`
+	BacklogTotal int                         `json:"backlog_total"`
 }
