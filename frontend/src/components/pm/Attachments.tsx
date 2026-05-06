@@ -99,6 +99,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
   const [dragging, setDragging] = useState(false);
   const [previewEntry, setPreviewEntry] = useState<AttachmentResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounterRef = useRef(0);
 
   // Load attachments
   const reload = useCallback(async () => {
@@ -204,13 +205,31 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
     setAttachments((prev) => prev.filter((a) => a.attachment.id !== entry.attachment.id));
   };
 
-  const onDragOver = (e: React.DragEvent) => {
+  const isFileDrag = (e: React.DragEvent) => e.dataTransfer.types.includes('Files');
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
     setDragging(true);
   };
-  const onDragLeave = () => setDragging(false);
-  const onDrop = (e: React.DragEvent) => {
+  const onDragOver = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
     e.preventDefault();
+    e.stopPropagation();
+  };
+  const onDragLeave = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setDragging(false);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
     setDragging(false);
     if (e.dataTransfer.files.length > 0) handleUpload(e.dataTransfer.files);
   };
@@ -221,7 +240,13 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
   const hasAttachments = attachments.length > 0;
 
   return (
-    <div className="space-y-3">
+    <div
+      className="space-y-3"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       {hasAttachments && (
         <div className="flex items-center gap-1.5">
           <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />

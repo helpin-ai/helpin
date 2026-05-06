@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowReloadHorizontalIcon, ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon } from '@/lib/icons';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { ArrowReloadHorizontalIcon, ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -72,6 +72,10 @@ function getFileTypeIcon(ext: string): string {
 function isVideoAttachment(contentType: string, fileName: string): boolean {
   if (contentType.startsWith('video/')) return true;
   return ['mp4', 'mov', 'webm', 'mkv', 'wmv', 'avi', 'mpeg', 'mpg'].includes(getFileExtension(fileName));
+}
+
+function hasDraggedFiles(event: DragEvent) {
+  return event.dataTransfer.types.includes('Files');
 }
 
 // ── Reaction picker (shared between popover & inline) ──
@@ -160,7 +164,7 @@ function CommentAttachments({
   editable?: boolean;
   onDelete?: (attachmentId: string) => void;
 }) {
-  const [lightbox, setLightbox] = useState<{ src: string; name: string; kind: 'image' | 'video' } | null>(null);
+  const [lightboxAttachmentId, setLightboxAttachmentId] = useState<string | null>(null);
 
   if (!attachments || attachments.length === 0) return null;
 
@@ -174,6 +178,17 @@ function CommentAttachments({
   if (visibleAttachments.length === 0) return null;
 
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
+  const previewAttachments = visibleAttachments.filter((entry) => {
+    const { attachment } = entry;
+    return Boolean(resolveUrl(entry)) && (
+      (attachment.content_type.startsWith('image/') && !attachment.content_type.includes('svg')) ||
+      isVideoAttachment(attachment.content_type, attachment.file_name)
+    );
+  });
+  const activePreviewIndex = lightboxAttachmentId
+    ? previewAttachments.findIndex((entry) => entry.attachment.id === lightboxAttachmentId)
+    : -1;
+  const activePreview = activePreviewIndex >= 0 ? previewAttachments[activePreviewIndex] : null;
 
   return (
     <>
@@ -219,7 +234,7 @@ function CommentAttachments({
           const tile = (isImage || isVideo) && url ? (
             <button
               type="button"
-              onClick={() => setLightbox({ src: url, name: entry.attachment.file_name, kind: isVideo ? 'video' : 'image' })}
+              onClick={() => setLightboxAttachmentId(entry.attachment.id)}
               className="group block w-full overflow-hidden rounded-lg border border-border/60 transition-colors hover:border-border cursor-pointer text-left"
             >
               {inner}
@@ -259,8 +274,26 @@ function CommentAttachments({
           );
         })}
       </div>
-      {lightbox && (
-        <ImageLightbox src={lightbox.src} alt={lightbox.name} kind={lightbox.kind} onClose={() => setLightbox(null)} />
+      {activePreview && (
+        <ImageLightbox
+          src={resolveUrl(activePreview)}
+          alt={activePreview.attachment.file_name}
+          kind={isVideoAttachment(activePreview.attachment.content_type, activePreview.attachment.file_name) ? 'video' : 'image'}
+          onClose={() => setLightboxAttachmentId(null)}
+          hasPrevious={activePreviewIndex > 0}
+          hasNext={activePreviewIndex < previewAttachments.length - 1}
+          onPrevious={() => {
+            if (activePreviewIndex > 0) {
+              setLightboxAttachmentId(previewAttachments[activePreviewIndex - 1].attachment.id);
+            }
+          }}
+          onNext={() => {
+            if (activePreviewIndex < previewAttachments.length - 1) {
+              setLightboxAttachmentId(previewAttachments[activePreviewIndex + 1].attachment.id);
+            }
+          }}
+          positionLabel={previewAttachments.length > 1 ? `${activePreviewIndex + 1} / ${previewAttachments.length}` : undefined}
+        />
       )}
     </>
   );
@@ -325,6 +358,8 @@ export function CommentThread({
   const pendingAttachmentsRef = useRef(pendingAttachments);
   const editPendingAttachmentsRef = useRef(editPendingAttachments);
   const replyPendingAttachmentsRef = useRef(replyPendingAttachments);
+  const composerDragCounterRef = useRef(0);
+  const [composerDragging, setComposerDragging] = useState(false);
 
   // Member name map for reaction tooltips
   const memberNameMap = useMemo(() => {
@@ -388,32 +423,8 @@ export function CommentThread({
     [workspaceId],
   );
 
-  const handleFileUpload = useCallback(async (parentId?: string) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.onchange = async () => {
-      const files = input.files;
-      if (!files?.length) return;
-      for (const file of Array.from(files)) {
-        const result = await uploadFileImmediately(file);
-        if (!result) continue;
-        if (parentId) {
-          setReplyPendingAttachments((prev) => {
-            const next = new Map(prev);
-            next.set(parentId, [...(prev.get(parentId) ?? []), result]);
-            return next;
-          });
-        } else {
-          setPendingAttachments((prev) => [...prev, result]);
-        }
-      }
-    };
-    input.click();
-  }, [uploadFileImmediately]);
-
-  const handleImageUpload = useCallback(async (files: File[], parentId?: string) => {
-    for (const file of files) {
+  const uploadFilesToDraft = useCallback(async (files: FileList | File[], parentId?: string) => {
+    for (const file of Array.from(files)) {
       const result = await uploadFileImmediately(file);
       if (!result) continue;
       if (parentId) {
@@ -427,6 +438,22 @@ export function CommentThread({
       }
     }
   }, [uploadFileImmediately]);
+
+  const handleFileUpload = useCallback(async (parentId?: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.onchange = async () => {
+      const files = input.files;
+      if (!files?.length) return;
+      await uploadFilesToDraft(files, parentId);
+    };
+    input.click();
+  }, [uploadFilesToDraft]);
+
+  const handleImageUpload = useCallback(async (files: File[], parentId?: string) => {
+    await uploadFilesToDraft(files, parentId);
+  }, [uploadFilesToDraft]);
 
   const removePendingAttachment = useCallback(async (attachmentId: string, parentId?: string) => {
     // Delete from S3/DB
@@ -685,6 +712,47 @@ export function CommentThread({
       return next;
     });
   };
+
+  const resetComposerDrag = useCallback(() => {
+    composerDragCounterRef.current = 0;
+    setComposerDragging(false);
+  }, []);
+
+  const handleComposerDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    composerDragCounterRef.current++;
+    setComposerDragging(true);
+  }, [attachmentsEnabled]);
+
+  const handleComposerDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, [attachmentsEnabled]);
+
+  const handleComposerDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    composerDragCounterRef.current = Math.max(0, composerDragCounterRef.current - 1);
+    if (composerDragCounterRef.current === 0) {
+      setComposerDragging(false);
+    }
+  }, [attachmentsEnabled]);
+
+  const handleComposerDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
+    const alreadyHandled = event.defaultPrevented;
+    event.preventDefault();
+    event.stopPropagation();
+    resetComposerDrag();
+    if (alreadyHandled) return;
+    if (event.dataTransfer.files.length > 0) {
+      void uploadFilesToDraft(event.dataTransfer.files);
+    }
+  }, [attachmentsEnabled, resetComposerDrag, uploadFilesToDraft]);
 
   const renderEditForm = (indent: string) => (
     <div className={`mt-1.5 ${indent}`}>
@@ -946,7 +1014,13 @@ export function CommentThread({
 
       {/* Top-level composer (creates a new doc/entity-scoped comment) */}
       {!hideTopLevelComposer && (
-      <div>
+      <div
+        className={`relative rounded-lg ${composerDragging ? 'ring-1 ring-primary/50' : ''}`}
+        onDragEnter={handleComposerDragEnter}
+        onDragOver={handleComposerDragOver}
+        onDragLeave={handleComposerDragLeave}
+        onDrop={handleComposerDrop}
+      >
         {commentAnchor && (
           <div className="mb-1.5 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
             <span className="flex-1 truncate">
@@ -960,6 +1034,14 @@ export function CommentThread({
             >
               <Cancel01Icon className="h-3 w-3" />
             </button>
+          </div>
+        )}
+        {composerDragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border border-dashed border-primary bg-background/80">
+            <div className="flex items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
+              <AttachmentIcon className="h-3.5 w-3.5 text-primary" />
+              Drop files to add to comment
+            </div>
           </div>
         )}
         <CommentEditor

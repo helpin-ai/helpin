@@ -99,7 +99,7 @@ export function CommentEditor({
   const onImageSelectRef = useRef(onImageSelect)
   onImageSelectRef.current = onImageSelect
   const [hasContent, setHasContent] = useState(false)
-  const [lightboxSrc, setLightboxSrc] = useState<{ src: string; name: string } | null>(null)
+  const [lightboxFileId, setLightboxFileId] = useState<string | null>(null)
   const currentHtmlRef = useRef('')
   const skipNextCleanupRef = useRef(false)
 
@@ -292,6 +292,14 @@ export function CommentEditor({
   if (!editor) return null
 
   const canSubmit = !loading && (hasContent || uploadedFiles.length > 0)
+  const previewFiles = uploadedFiles.filter((file) => {
+    const ext = getFileExtension(file.name)
+    return Boolean(file.url) && /^(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(ext)
+  })
+  const activePreviewIndex = lightboxFileId
+    ? previewFiles.findIndex((file) => file.id === lightboxFileId)
+    : -1
+  const activePreviewFile = activePreviewIndex >= 0 ? previewFiles[activePreviewIndex] : null
 
   const wrapperClass =
     variant === 'primary'
@@ -345,7 +353,7 @@ export function CommentEditor({
                 {f.url && isImage ? (
                   <button
                     type="button"
-                    onClick={() => setLightboxSrc({ src: f.url!, name: f.name })}
+                    onClick={() => setLightboxFileId(f.id)}
                     className="flex items-center gap-1.5 min-w-0 hover:text-foreground cursor-pointer"
                   >
                     <img src={f.url} alt={f.name} className="h-6 w-6 rounded object-cover" />
@@ -443,11 +451,24 @@ export function CommentEditor({
           </QuickTooltip>
         </div>
       </div>
-      {lightboxSrc && (
+      {activePreviewFile?.url && (
         <ImageLightbox
-          src={lightboxSrc.src}
-          alt={lightboxSrc.name}
-          onClose={() => setLightboxSrc(null)}
+          src={activePreviewFile.url}
+          alt={activePreviewFile.name}
+          onClose={() => setLightboxFileId(null)}
+          hasPrevious={activePreviewIndex > 0}
+          hasNext={activePreviewIndex < previewFiles.length - 1}
+          onPrevious={() => {
+            if (activePreviewIndex > 0) {
+              setLightboxFileId(previewFiles[activePreviewIndex - 1].id)
+            }
+          }}
+          onNext={() => {
+            if (activePreviewIndex < previewFiles.length - 1) {
+              setLightboxFileId(previewFiles[activePreviewIndex + 1].id)
+            }
+          }}
+          positionLabel={previewFiles.length > 1 ? `${activePreviewIndex + 1} / ${previewFiles.length}` : undefined}
         />
       )}
     </div>

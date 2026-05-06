@@ -4,7 +4,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { CommentWithAuthor, CreateCommentRequest } from '@/lib/pmTypes'
+import type { AttachmentResponse, CommentWithAuthor, CreateCommentRequest } from '@/lib/pmTypes'
 
 vi.mock('@/components/pm/CommentEditor', () => ({
   CommentEditor: ({
@@ -34,6 +34,39 @@ vi.mock('@/components/pm/CommentEditor', () => ({
         Submit
       </button>
       <div data-testid="uploaded-files">{uploadedFiles.map((file) => file.id).join(',')}</div>
+    </div>
+  ),
+}))
+
+vi.mock('@/components/pm/ImageLightbox', () => ({
+  ImageLightbox: ({
+    src,
+    alt,
+    hasPrevious,
+    hasNext,
+    onPrevious,
+    onNext,
+    positionLabel,
+  }: {
+    src: string
+    alt?: string
+    hasPrevious?: boolean
+    hasNext?: boolean
+    onPrevious?: () => void
+    onNext?: () => void
+    positionLabel?: string
+  }) => (
+    <div data-testid="image-lightbox" data-src={src} data-alt={alt} data-position={positionLabel}>
+      {hasPrevious ? (
+        <button type="button" data-testid="lightbox-previous" onClick={onPrevious}>
+          Previous
+        </button>
+      ) : null}
+      {hasNext ? (
+        <button type="button" data-testid="lightbox-next" onClick={onNext}>
+          Next
+        </button>
+      ) : null}
     </div>
   ),
 }))
@@ -206,6 +239,26 @@ function existingCommentByCurrentUser(id: string): CommentWithAuthor {
   }
 }
 
+function createAttachment(id: string, fileName: string, contentType = 'image/png'): AttachmentResponse {
+  return {
+    attachment: {
+      id,
+      workspace_id: workspaceId,
+      entity_type: 'comment',
+      entity_id: 'comment-1',
+      file_name: fileName,
+      file_size: 1024,
+      content_type: contentType,
+      storage_key: `attachments/${id}`,
+      is_uploaded: true,
+      uploaded_by_id: 'user-1',
+      created_at: '2026-05-03T00:00:00Z',
+    },
+    url: `https://cdn.example.com/${fileName}`,
+    public_url: `https://cdn.example.com/${fileName}`,
+  }
+}
+
 async function submitComment(container: HTMLElement) {
   const button = container.querySelector<HTMLButtonElement>('[data-testid="submit-comment"]')
   if (!button) throw new Error('submit button not found')
@@ -265,6 +318,39 @@ describe('CommentThread attachment uploads', () => {
       expect.objectContaining({ attachment_ids: ['att-1', 'att-2'] }),
     )
     expect(pmAttachmentService.remove).not.toHaveBeenCalled()
+  })
+
+  it('navigates between multiple image attachments in a comment preview', async () => {
+    const comment = existingCommentByCurrentUser('comment-1')
+    comment.attachments = [
+      createAttachment('att-1', 'image-1.png'),
+      createAttachment('att-2', 'image-2.png'),
+      createAttachment('att-3', 'image-3.png'),
+      createAttachment('att-4', 'image-4.png'),
+    ]
+    const { container } = renderThread({ comments: [comment] })
+
+    const secondImage = container.querySelector<HTMLImageElement>('img[alt="image-2.png"]')
+    const trigger = secondImage?.closest('button')
+    expect(trigger).toBeTruthy()
+
+    await act(async () => {
+      trigger?.click()
+    })
+
+    let lightbox = container.querySelector<HTMLElement>('[data-testid="image-lightbox"]')
+    expect(lightbox?.dataset.src).toBe('https://cdn.example.com/image-2.png')
+    expect(lightbox?.dataset.position).toBe('2 / 4')
+    expect(container.querySelector('[data-testid="lightbox-previous"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="lightbox-next"]')).toBeTruthy()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="lightbox-next"]')?.click()
+    })
+
+    lightbox = container.querySelector<HTMLElement>('[data-testid="image-lightbox"]')
+    expect(lightbox?.dataset.src).toBe('https://cdn.example.com/image-3.png')
+    expect(lightbox?.dataset.position).toBe('3 / 4')
   })
 
   it('cleans up only the still-pending pasted images on unmount', async () => {
