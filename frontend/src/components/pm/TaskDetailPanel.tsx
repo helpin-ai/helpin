@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -29,7 +29,6 @@ import {
   Shield02Icon,
   Tag01Icon,
   Target01Icon,
-  Upload01Icon,
   UserIcon,
   UserGroupIcon,
   Cancel01Icon,
@@ -221,6 +220,10 @@ function formatRelativeTime(iso: string) {
   } catch {
     return iso;
   }
+}
+
+function hasDraggedFiles(event: DragEvent) {
+  return event.dataTransfer.types.includes('Files');
 }
 
 // ── Metadata Row ───────────────────────────────────────────────────
@@ -506,15 +509,16 @@ function TaskDetailPanelBody({
   const [duplicateNotice, setDuplicateNotice] = useState<DuplicateNoticeState | null>(null);
   const [duplicating, setDuplicating] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDragging, setDescriptionDragging] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
   const [recurringSummary, setRecurringSummary] = useState<TaskRecurringSummary | null>(initialRecurringSummary);
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
-  const [panelDragging, setPanelDragging] = useState(false);
   const openFilePickerRef = useRef<(() => void) | null>(null);
-  const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
-  const dragCounterRef = useRef(0);
+  const descriptionUploadRef = useRef<((files: FileList | File[], insertPos?: number) => Promise<void>) | null>(null);
+  const queuedDescriptionDropRef = useRef<File[] | null>(null);
+  const descriptionDragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
   const { data: workspaceAccess } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(workspaceAccess);
@@ -763,6 +767,62 @@ function TaskDetailPanelBody({
     setForm((current) => ({ ...current, [key]: value }));
     queuePatch(patch);
   };
+
+  const resetDescriptionDrag = useCallback(() => {
+    descriptionDragCounterRef.current = 0;
+    setDescriptionDragging(false);
+  }, []);
+
+  const handleDescriptionUploadReady = useCallback((upload: ((files: FileList | File[], insertPos?: number) => Promise<void>) | null) => {
+    descriptionUploadRef.current = upload;
+    const queuedFiles = queuedDescriptionDropRef.current;
+    if (!upload || !queuedFiles?.length) return;
+    queuedDescriptionDropRef.current = null;
+    void upload(queuedFiles);
+  }, []);
+
+  const handleDescriptionDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    descriptionDragCounterRef.current++;
+    setDescriptionDragging(true);
+  }, []);
+
+  const handleDescriptionDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
+  const handleDescriptionDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    descriptionDragCounterRef.current = Math.max(0, descriptionDragCounterRef.current - 1);
+    if (descriptionDragCounterRef.current === 0) {
+      setDescriptionDragging(false);
+    }
+  }, []);
+
+  const handleDescriptionDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    const alreadyHandled = event.defaultPrevented;
+    event.preventDefault();
+    event.stopPropagation();
+    resetDescriptionDrag();
+    if (alreadyHandled) return;
+
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length === 0) return;
+    if (descriptionUploadRef.current) {
+      void descriptionUploadRef.current(files);
+      return;
+    }
+
+    queuedDescriptionDropRef.current = files;
+    setEditingDescription(true);
+  }, [resetDescriptionDrag]);
 
   const availableEpics = useMemo(
     () =>
@@ -1284,36 +1344,7 @@ function TaskDetailPanelBody({
       ) : null}
 
       {/* ── Two-column grid ─────────────────────────────────────── */}
-      <div
-        className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden"
-        onDragEnter={(e) => {
-          e.preventDefault();
-          dragCounterRef.current++;
-          if (e.dataTransfer.types.includes('Files')) setPanelDragging(true);
-        }}
-        onDragOver={(e) => e.preventDefault()}
-        onDragLeave={() => {
-          dragCounterRef.current--;
-          if (dragCounterRef.current === 0) setPanelDragging(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          dragCounterRef.current = 0;
-          setPanelDragging(false);
-          if (e.dataTransfer.files.length > 0) {
-            uploadFilesRef.current?.(e.dataTransfer.files);
-          }
-        }}
-      >
-        {panelDragging && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
-              <Upload01Icon className="h-8 w-8 text-primary" />
-              <p className="text-sm font-medium text-foreground">Drop files to attach</p>
-              <p className="text-xs text-muted-foreground">Max 50MB per file</p>
-            </div>
-          </div>
-        )}
+      <div className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
         <div className="min-h-0 overflow-y-auto px-10 py-5 pb-40">
           {/* Pipeline step indicator */}
@@ -1363,7 +1394,24 @@ function TaskDetailPanelBody({
           />
 
           {/* Description */}
-          <div className="mt-4">
+          <div
+            className={cn(
+              'relative mt-4 rounded-lg transition-[box-shadow,background-color]',
+              descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
+            )}
+            onDragEnter={handleDescriptionDragEnter}
+            onDragOver={handleDescriptionDragOver}
+            onDragLeave={handleDescriptionDragLeave}
+            onDrop={handleDescriptionDrop}
+          >
+            {descriptionDragging && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border border-dashed border-primary bg-background/80">
+                <div className="flex items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
+                  <AttachmentIcon className="h-3.5 w-3.5 text-primary" />
+                  Drop to insert here
+                </div>
+              </div>
+            )}
             {editingDescription ? (
               <div>
                 <TiptapEditor
@@ -1373,6 +1421,7 @@ function TaskDetailPanelBody({
                   className="border-transparent shadow-none [&_.ProseMirror]:text-sm"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
+                  onUploadReady={handleDescriptionUploadReady}
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
@@ -1527,7 +1576,6 @@ function TaskDetailPanelBody({
               memberNameMap={memberNameMap}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
               onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
-              onUploadReady={(fn) => { uploadFilesRef.current = fn; }}
             />
           </div>
 

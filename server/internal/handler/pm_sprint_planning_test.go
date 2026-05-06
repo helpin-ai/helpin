@@ -117,7 +117,6 @@ func newPMSprintPlanningHandlerTestDB(t *testing.T) *gorm.DB {
 			sprint_id TEXT,
 			team_id TEXT,
 			owner_id TEXT,
-			owner_member_id TEXT,
 			requester_id TEXT,
 			requester_member_id TEXT,
 			estimate INTEGER,
@@ -144,6 +143,23 @@ func newPMSprintPlanningHandlerTestDB(t *testing.T) *gorm.DB {
 			implementation_brief TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE workspace_members (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			display_name TEXT,
+			email TEXT,
+			role TEXT,
+			status TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_task_owners (
+			task_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at DATETIME,
+			PRIMARY KEY (task_id, user_id)
 		)`,
 		`CREATE TABLE pm_workflow_states (
 			id TEXT PRIMARY KEY,
