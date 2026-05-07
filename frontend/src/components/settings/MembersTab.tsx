@@ -19,17 +19,19 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
+import { Cancel01Icon, Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 
-export function MembersTab({ workspaceId, organizationId, editable, teams, userMemberships }: {
+export function MembersTab({ workspaceId, organizationId, editable, canManageTeams = false, teams, userMemberships, onRefresh }: {
   workspaceId: string;
   organizationId?: string;
   editable: boolean;
+  canManageTeams?: boolean;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
+  onRefresh?: () => void | Promise<void>;
 }) {
   const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -45,6 +47,8 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [removeMemberConfirm, setRemoveMemberConfirm] = useState<MemberWithUser | null>(null);
+  const [teamMutation, setTeamMutation] = useState<{ userId: string; teamId: string } | null>(null);
+  const [openTeamPickerUserId, setOpenTeamPickerUserId] = useState<string | null>(null);
   const { user } = useAuthStore();
 
   const { data: orgMembers } = useOrganizationMembers(organizationId);
@@ -62,20 +66,20 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     );
   }, [orgMembers, members, invitations]);
 
-  const teamNamesByUserId = useMemo(() => {
-    const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
-    const memberships = new Map<string, string[]>();
+  const teamsByUserId = useMemo(() => {
+    const teamById = new Map(teams.map((team) => [team.id, team]));
+    const memberships = new Map<string, { id: string; name: string }[]>();
 
     userMemberships.forEach((membership) => {
-      const teamName = teamNameById.get(membership.team_id);
-      if (!teamName) return;
+      const team = teamById.get(membership.team_id);
+      if (!team) return;
       const current = memberships.get(membership.user_id) ?? [];
-      current.push(teamName);
+      current.push({ id: team.id, name: team.name });
       memberships.set(membership.user_id, current);
     });
 
-    memberships.forEach((names, userId) => {
-      memberships.set(userId, [...names].sort((a, b) => a.localeCompare(b)));
+    memberships.forEach((teamList, userId) => {
+      memberships.set(userId, [...teamList].sort((a, b) => a.name.localeCompare(b.name)));
     });
 
     return memberships;
@@ -221,6 +225,65 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     }
   };
 
+  const undoAddMemberToTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
+    const { error } = await settingsService.removeTeamMember(workspaceId, team.id, member.user_id);
+    if (error) {
+      toast.error(`Couldn't undo`, { description: error });
+      return;
+    }
+    await onRefresh?.();
+  };
+
+  const undoRemoveMemberFromTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
+    const { error } = await settingsService.addTeamMember(workspaceId, team.id, {
+      user_id: member.user_id,
+      role: 'member',
+    });
+    if (error) {
+      toast.error(`Couldn't undo`, { description: error });
+      return;
+    }
+    await onRefresh?.();
+  };
+
+  const handleAddMemberToTeam = async (member: MemberWithUser, team: WorkspaceTeam) => {
+    setTeamMutation({ userId: member.user_id, teamId: team.id });
+    const { error } = await settingsService.addTeamMember(workspaceId, team.id, {
+      user_id: member.user_id,
+      role: 'member',
+    });
+    setTeamMutation(null);
+    if (error) {
+      toast.error(`Couldn't add to ${team.name}`, { description: error });
+      return;
+    }
+    toast.success(`Added to ${team.name}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => void undoAddMemberToTeam(member, { id: team.id, name: team.name }),
+      },
+    });
+    setOpenTeamPickerUserId(null);
+    await onRefresh?.();
+  };
+
+  const handleRemoveMemberFromTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
+    setTeamMutation({ userId: member.user_id, teamId: team.id });
+    const { error } = await settingsService.removeTeamMember(workspaceId, team.id, member.user_id);
+    setTeamMutation(null);
+    if (error) {
+      toast.error(`Couldn't remove from ${team.name}`, { description: error });
+      return;
+    }
+    toast.success(`Removed from ${team.name}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => void undoRemoveMemberFromTeam(member, team),
+      },
+    });
+    await onRefresh?.();
+  };
+
   const canEditMemberRole = (member: MemberWithUser) => {
     if (!editable || !user) return false;
     if (member.user_id === user.id) return false;
@@ -335,9 +398,11 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
               </TableHeader>
               <TableBody>
                 {filteredMembers.map((m) => {
-                  const teamNames = teamNamesByUserId.get(m.user_id) ?? [];
+                  const memberTeams = teamsByUserId.get(m.user_id) ?? [];
                   const hasWorkspaceWideTeamAccess = m.role === 'owner' || m.role === 'admin';
-                  const hasAllTeams = hasWorkspaceWideTeamAccess || (teams.length > 0 && teamNames.length === teams.length);
+                  const memberTeamIds = new Set(memberTeams.map((t) => t.id));
+                  const availableTeams = teams.filter((t) => !memberTeamIds.has(t.id));
+                  const canEditTeams = editable && canManageTeams && !hasWorkspaceWideTeamAccess;
                   const presenceStatus = memberPresenceByUserId?.get(m.user_id)?.status ?? null;
 
                   return (
@@ -365,20 +430,88 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                       </TableCell>
                       <TableCell className="text-muted-foreground">{m.email}</TableCell>
                       <TableCell>
-                        {hasAllTeams ? (
+                        {hasWorkspaceWideTeamAccess ? (
                           <Badge variant="outline" className="text-xs font-normal">
                             All teams
                           </Badge>
-                        ) : teamNames.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {teamNames.map((teamName) => (
-                              <Badge key={`${m.user_id}-${teamName}`} variant="outline" className="text-xs font-normal">
-                                {teamName}
-                              </Badge>
-                            ))}
-                          </div>
                         ) : (
-                          <span className="text-sm text-muted-foreground">-</span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {memberTeams.map((team) => {
+                              const isRemoving =
+                                teamMutation?.userId === m.user_id && teamMutation?.teamId === team.id;
+                              return (
+                                <Badge
+                                  key={`${m.user_id}-${team.id}`}
+                                  variant="outline"
+                                  className={cn(
+                                    'text-xs font-normal',
+                                    canEditTeams && 'pr-1 gap-1',
+                                  )}
+                                >
+                                  <span>{team.name}</span>
+                                  {canEditTeams && (
+                                    <QuickTooltip label="Remove from team">
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleRemoveMemberFromTeam(m, team)}
+                                        disabled={isRemoving}
+                                        aria-label={`Remove from ${team.name}`}
+                                        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                                      >
+                                        <Cancel01Icon className="h-3 w-3" />
+                                      </button>
+                                    </QuickTooltip>
+                                  )}
+                                </Badge>
+                              );
+                            })}
+                            {memberTeams.length === 0 && !canEditTeams && (
+                              <span className="text-sm text-muted-foreground">-</span>
+                            )}
+                            {canEditTeams && availableTeams.length > 0 && (
+                              <Popover
+                                open={openTeamPickerUserId === m.user_id}
+                                onOpenChange={(open) =>
+                                  setOpenTeamPickerUserId(open ? m.user_id : null)
+                                }
+                              >
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+                                  >
+                                    <PlusSignIcon className="h-3 w-3" />
+                                    Add team
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="w-56 p-0">
+                                  <Command>
+                                    <CommandInput placeholder="Search teams..." />
+                                    <CommandList>
+                                      <CommandEmpty>No teams found.</CommandEmpty>
+                                      <CommandGroup>
+                                        {availableTeams.map((team) => {
+                                          const isAdding =
+                                            teamMutation?.userId === m.user_id &&
+                                            teamMutation?.teamId === team.id;
+                                          return (
+                                            <CommandItem
+                                              key={team.id}
+                                              value={team.name}
+                                              onSelect={() => void handleAddMemberToTeam(m, team)}
+                                              disabled={isAdding}
+                                            >
+                                              {team.name}
+                                            </CommandItem>
+                                          );
+                                        })}
+                                      </CommandGroup>
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell className="text-center">
@@ -421,15 +554,18 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                       {editable && (
                         <TableCell className="text-right">
                           {canRemoveMember(m) ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                              disabled={removingMemberId === m.id}
-                              onClick={() => setRemoveMemberConfirm(m)}
-                            >
-                              <Delete01Icon className="h-3.5 w-3.5" />
-                            </Button>
+                            <QuickTooltip label="Remove from workspace">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                                disabled={removingMemberId === m.id}
+                                onClick={() => setRemoveMemberConfirm(m)}
+                                aria-label="Remove from workspace"
+                              >
+                                <Delete01Icon className="h-3.5 w-3.5" />
+                              </Button>
+                            </QuickTooltip>
                           ) : null}
                         </TableCell>
                       )}
