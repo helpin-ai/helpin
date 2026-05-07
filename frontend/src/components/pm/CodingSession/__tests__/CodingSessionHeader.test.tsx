@@ -91,6 +91,9 @@ describe('CodingSessionHeader', () => {
     expect(container.textContent).toContain('Completed');
     expect(container.textContent).not.toContain('Tokens');
     expect(container.textContent).not.toContain('Progress');
+    const titleRow = container.querySelector('[data-coding-session-title-row]');
+    expect(titleRow?.querySelector('span[aria-hidden="true"]')).toBeTruthy();
+    expect(titleRow?.querySelector('h1')?.textContent).toBe('Forge');
 
     const backAction = Array.from(container.querySelectorAll('[data-slot="tooltip-trigger"]')).find((node) => (
       node.textContent?.trim() === 'Back to activity'

@@ -193,11 +193,10 @@ export function CodingSessionHeader({
       }}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <AgentAvatar name={agentName} className="mt-0.5 h-9 w-9 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
-
+        <div className="flex min-w-0 flex-1">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2" data-coding-session-title-row>
+              <AgentAvatar name={agentName} className="h-6 w-6 rounded-none border-0 bg-transparent shadow-none" genericBare />
               <h1 className="text-base font-semibold leading-tight">{agentName}</h1>
               <Badge
                 variant="outline"
