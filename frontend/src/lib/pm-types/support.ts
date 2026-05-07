@@ -65,6 +65,7 @@ export interface SupportConversation {
   human_takeover?: boolean | null;
   last_message?: string;
   unread_count?: number;
+  awaiting_reply?: boolean;
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;

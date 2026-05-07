@@ -986,6 +986,16 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 			  AND sm.message_type = 'reply'
 			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
 		) AS unread_count,
+		COALESCE((
+			SELECT m.sender_type = 'customer'
+			FROM support_messages m
+			WHERE m.conversation_id = support_conversations.id
+			  AND m.deleted_at IS NULL
+			  AND m.is_internal = false
+			  AND m.message_type = 'reply'
+			ORDER BY m.created_at DESC
+			LIMIT 1
+		), false) AS awaiting_reply,
 		%s AS country_code,
 		%s AS country_name,
 		sm.name AS mailbox_name,
