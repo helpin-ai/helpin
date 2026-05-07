@@ -1132,6 +1132,18 @@ func (r *SettingsRepository) RemoveInvitationTeamPreassignment(ctx context.Conte
 	return nil
 }
 
+// RemoveAllInvitationTeamPreassignmentsByInvitation deletes every preassignment for a given invitation.
+// Called when an invitation reaches a terminal state (accepted, revoked) so stale rows do not linger.
+func (r *SettingsRepository) RemoveAllInvitationTeamPreassignmentsByInvitation(ctx context.Context, invitationID string) error {
+	result := r.db.WithContext(ctx).
+		Where("invitation_id = ?", invitationID).
+		Delete(&model.InvitationTeamPreassignment{})
+	if result.Error != nil {
+		return fmt.Errorf("remove invitation team preassignments by invitation: %w", result.Error)
+	}
+	return nil
+}
+
 // GetTeamEstimateSettings returns estimate settings for a team.
 func (r *SettingsRepository) GetTeamEstimateSettings(ctx context.Context, teamID string) (*model.PMTeamEstimateSettings, error) {
 	s := &model.PMTeamEstimateSettings{}
