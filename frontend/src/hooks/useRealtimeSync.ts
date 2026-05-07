@@ -19,7 +19,7 @@ let notificationAudio: HTMLAudioElement | null = null
 function playNotificationSound() {
   try {
     if (!notificationAudio) {
-      notificationAudio = new Audio('/sounds/ping.mp3')
+      notificationAudio = new Audio('/sounds/ping-v2.mp3')
       notificationAudio.volume = 0.5
     }
     notificationAudio.currentTime = 0
