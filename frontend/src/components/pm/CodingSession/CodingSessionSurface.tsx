@@ -14,7 +14,10 @@ import {
   shouldShowCodingSessionPlanPanel,
   shouldShowCodingSessionSidePanel,
 } from '@/components/pm/CodingSession/codingSessionLayout';
-import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
+import {
+  buildCodingSessionStreamState,
+  mergeCodingSessionStreamSnapshotSeed,
+} from '@/components/pm/CodingSession/codingSessionStream';
 import { normalizeCodingSessionPreviewPanelKey } from '@/components/pm/CodingSession/previewPanelKeys';
 import {
   isPersistedCodingSessionEvent,
@@ -63,7 +66,6 @@ export function CodingSessionSurface({
   const [handoffRuns, setHandoffRuns] = useState<AgentRun[] | null>(null);
   const [handoffRunsTargetId, setHandoffRunsTargetId] = useState<string | null>(null);
   const sequenceRef = useRef(0);
-  const seededSnapshotSessionRef = useRef<string | null>(null);
   const [streamSnapshotSeed, setStreamSnapshotSeed] = useState<CodingSessionStreamSnapshot | null>(null);
 
   useEffect(() => {
@@ -75,10 +77,7 @@ export function CodingSessionSurface({
     const sessionRes = await codingSessionService.get(workspaceId, activeSessionId);
     if (sessionRes.error) throw new Error(sessionRes.error);
     const nextSession = sessionRes.data as CodingSession;
-    if (seededSnapshotSessionRef.current !== activeSessionId) {
-      seededSnapshotSessionRef.current = activeSessionId;
-      setStreamSnapshotSeed(nextSession.stream_state_snapshot ?? null);
-    }
+    setStreamSnapshotSeed((current) => mergeCodingSessionStreamSnapshotSeed(current, nextSession.stream_state_snapshot ?? null));
     setSession(nextSession);
   }, [workspaceId, activeSessionId]);
 
@@ -120,7 +119,6 @@ export function CodingSessionSurface({
   }, [workspaceId, activeSessionId, loadSession, loadEvents, loadArtifacts]);
 
   useEffect(() => {
-    seededSnapshotSessionRef.current = null;
     setStreamSnapshotSeed(null);
     sequenceRef.current = 0;
     setEvents([]);
