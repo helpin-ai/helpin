@@ -27,6 +27,16 @@ func NewPMAttachmentRepository(db *gorm.DB) *PMAttachmentRepository {
 	return &PMAttachmentRepository{db: db}
 }
 
+// DB returns the underlying database handle for transaction orchestration.
+func (r *PMAttachmentRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a repository bound to the provided transaction.
+func (r *PMAttachmentRepository) WithTx(tx *gorm.DB) *PMAttachmentRepository {
+	return NewPMAttachmentRepository(tx)
+}
+
 // Create inserts an attachment record.
 func (r *PMAttachmentRepository) Create(ctx context.Context, attachment *model.PMAttachment) error {
 	if err := r.db.WithContext(ctx).Create(attachment).Error; err != nil {
@@ -103,14 +113,37 @@ func (r *PMAttachmentRepository) ReassignToEntity(ctx context.Context, attachmen
 	if len(attachmentIDs) == 0 {
 		return nil
 	}
+	uniqueIDs := make([]string, 0, len(attachmentIDs))
+	seen := make(map[string]struct{}, len(attachmentIDs))
+	for _, id := range attachmentIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+	var matchedCount int64
 	if err := r.db.WithContext(ctx).
 		Model(&model.PMAttachment{}).
-		Where("id IN ?", attachmentIDs).
+		Where("id IN ?", uniqueIDs).
+		Count(&matchedCount).Error; err != nil {
+		return fmt.Errorf("reassign attachments: count attachments: %w", err)
+	}
+	if matchedCount != int64(len(uniqueIDs)) {
+		return fmt.Errorf("reassign attachments: matched %d of %d attachments", matchedCount, len(uniqueIDs))
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.PMAttachment{}).
+		Where("id IN ?", uniqueIDs).
 		Updates(map[string]interface{}{
 			"entity_type": entityType,
 			"entity_id":   entityID,
-		}).Error; err != nil {
-		return fmt.Errorf("reassign attachments: %w", err)
+		})
+	if result.Error != nil {
+		return fmt.Errorf("reassign attachments: %w", result.Error)
+	}
+	if result.RowsAffected != int64(len(uniqueIDs)) {
+		return fmt.Errorf("reassign attachments: updated %d of %d attachments", result.RowsAffected, len(uniqueIDs))
 	}
 	return nil
 }

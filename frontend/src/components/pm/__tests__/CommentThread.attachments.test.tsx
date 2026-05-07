@@ -390,6 +390,77 @@ describe('CommentThread attachment uploads', () => {
     expect(pmAttachmentService.remove).toHaveBeenCalledWith(workspaceId, 'att-pending', { pendingOnly: true })
   })
 
+  it('does not pending-delete submitted attachments when unmounted before comment create resolves', async () => {
+    let uploadIndex = 0
+    vi.mocked(pmAttachmentService.initiateUpload).mockImplementation((_ws, payload) => {
+      uploadIndex += 1
+      return Promise.resolve({
+        data: {
+          attachment: {
+            id: `att-submit-${uploadIndex}`,
+            workspace_id: workspaceId,
+            entity_type: payload.entity_type,
+            entity_id: payload.entity_id,
+            file_name: payload.file_name,
+            file_size: payload.file_size,
+            content_type: payload.content_type,
+            storage_key: `attachments/att-submit-${uploadIndex}`,
+            is_uploaded: false,
+            uploaded_by_id: 'user-1',
+            created_at: '2026-05-03T00:00:00Z',
+          },
+          url: `https://upload.example.com/att-submit-${uploadIndex}`,
+          public_url: `https://cdn.example.com/att-submit-${uploadIndex}.png`,
+        },
+        error: null,
+        status: 200,
+      })
+    })
+    vi.mocked(uploadToS3).mockResolvedValue({ ok: true, error: null })
+    vi.mocked(pmAttachmentService.confirmUpload).mockResolvedValue({ data: null, error: null, status: 200 })
+
+    let resolveCreate: (value: Awaited<ReturnType<ReturnType<typeof createCommentService>['create']>>) => void
+    const commentService = createCommentService()
+    commentService.create.mockImplementation((_workspaceId: string, payload: CreateCommentRequest) =>
+      new Promise((resolve) => {
+        resolveCreate = resolve
+      }).then(() => ({
+        data: createComment('comment-submit', payload),
+        error: null,
+        status: 200,
+      })),
+    )
+
+    const { container, root } = renderThread({ commentService })
+
+    await pasteImage(container)
+    await pasteImage(container)
+    await submitComment(container)
+
+    act(() => {
+      root.unmount()
+    })
+
+    expect(commentService.create).toHaveBeenCalledWith(
+      workspaceId,
+      expect.objectContaining({ attachment_ids: ['att-submit-1', 'att-submit-2'] }),
+    )
+    expect(pmAttachmentService.remove).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveCreate!({
+        data: createComment('comment-submit', {
+          entity_type: 'task',
+          entity_id: 'task-1',
+          body: '<p>comment</p>',
+          attachment_ids: ['att-submit-1', 'att-submit-2'],
+        }),
+        error: null,
+        status: 200,
+      })
+    })
+  })
+
   it('cleans up edit-mode pending attachments on unmount', async () => {
     vi.mocked(pmAttachmentService.initiateUpload).mockResolvedValue({
       data: {

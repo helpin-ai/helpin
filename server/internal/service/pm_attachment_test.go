@@ -160,6 +160,30 @@ func TestPMAttachmentRepository_ReassignToEntity(t *testing.T) {
 	}
 }
 
+func TestPMAttachmentRepository_ReassignToEntityErrorsWhenAnyIDIsMissing(t *testing.T) {
+	t.Parallel()
+
+	_, repo, db, workspaceID, userID := newAttachmentTestEnv(t)
+	ctx := context.Background()
+
+	seedEditorUploadAttachment(t, db, "attachment-present", workspaceID, workspaceID, userID)
+
+	if err := repo.ReassignToEntity(ctx, []string{"attachment-present", "attachment-missing"}, "comment", "comment-1"); err == nil {
+		t.Fatal("expected missing attachment to fail reassignment")
+	}
+
+	attachment, err := repo.GetByID(ctx, "attachment-present")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if attachment == nil {
+		t.Fatal("expected attachment")
+	}
+	if attachment.EntityType != "editor_upload" {
+		t.Fatalf("entity_type = %q, want editor_upload", attachment.EntityType)
+	}
+}
+
 func TestPMAttachmentRepository_CloneUploadedFromEntityToEntity(t *testing.T) {
 	t.Parallel()
 

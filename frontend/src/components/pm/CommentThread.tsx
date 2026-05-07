@@ -358,6 +358,7 @@ export function CommentThread({
   const pendingAttachmentsRef = useRef(pendingAttachments);
   const editPendingAttachmentsRef = useRef(editPendingAttachments);
   const replyPendingAttachmentsRef = useRef(replyPendingAttachments);
+  const submittedAttachmentIdsRef = useRef<Set<string>>(new Set());
   const composerDragCounterRef = useRef(0);
   const [composerDragging, setComposerDragging] = useState(false);
 
@@ -410,7 +411,7 @@ export function CommentThread({
         ...Array.from(replyPendingAttachmentsRef.current.values()).flatMap((attachments) =>
           attachments.map((attachment) => attachment.id),
         ),
-      ];
+      ].filter((attachmentId) => !submittedAttachmentIdsRef.current.has(attachmentId));
       if (attachmentIds.length === 0) {
         return;
       }
@@ -522,6 +523,7 @@ export function CommentThread({
     setCommentLoading(true);
 
     const attachmentIds = pendingAttachments.map((a) => a.id);
+    attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.add(id));
     const { data, error } = await commentService.create(workspaceId, {
       entity_type: entityType,
       entity_id: entityId,
@@ -532,6 +534,7 @@ export function CommentThread({
       attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
     });
     if (error || !data) {
+      attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.delete(id));
       setCommentLoading(false);
       return;
     }
@@ -558,6 +561,7 @@ export function CommentThread({
     setReplyLoading(true);
 
     const attachmentIds = replyFiles.map((a) => a.id);
+    attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.add(id));
     const { data, error } = await commentService.create(workspaceId, {
       entity_type: entityType,
       entity_id: entityId,
@@ -566,6 +570,7 @@ export function CommentThread({
       attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
     });
     if (error || !data) {
+      attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.delete(id));
       setReplyLoading(false);
       return;
     }
@@ -621,11 +626,13 @@ export function CommentThread({
     if (!body && editPendingAttachments.length === 0) return;
     setEditSaving(true);
     const attachmentIds = editPendingAttachments.map((a) => a.id);
+    attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.add(id));
     const { error } = await commentService.update(workspaceId, editingCommentId, {
       body: body || '(attachment)',
       attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
     });
     if (error) {
+      attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.delete(id));
       setEditSaving(false);
       return;
     }
