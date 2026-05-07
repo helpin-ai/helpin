@@ -89,7 +89,7 @@ describe('CodingSessionHeader', () => {
     expect(branchChip?.getAttribute('title')).toBe(session.repo.branch);
     expect(container.textContent).toContain('Forge');
     expect(container.textContent).toContain('Completed');
-    expect(container.textContent).not.toContain('Tokens');
+    expect(container.textContent).toContain('Tokens');
     expect(container.textContent).not.toContain('Progress');
     const titleRow = container.querySelector('[data-coding-session-title-row]');
     expect(titleRow?.querySelector('span[aria-hidden="true"]')).toBeTruthy();
@@ -111,13 +111,9 @@ describe('CodingSessionHeader', () => {
     expect(refreshAction?.hasAttribute('disabled')).toBe(false);
   });
 
-  it('shows completed session details while the header is being inspected', () => {
+  it('shows completed session details without requiring inspection', () => {
     const session = buildSession();
     renderHeader(session);
-
-    act(() => {
-      container.firstElementChild?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-    });
 
     expect(container.textContent).toContain('Tokens');
     expect(container.textContent).not.toContain('Progress');
@@ -138,7 +134,7 @@ describe('CodingSessionHeader', () => {
     ).toBeTruthy();
   });
 
-  it('auto-collapses running session details after a short delay', () => {
+  it('keeps running session details visible after time passes', () => {
     vi.useFakeTimers();
     renderHeader(buildSession({
       status: 'running',
@@ -152,7 +148,7 @@ describe('CodingSessionHeader', () => {
       vi.advanceTimersByTime(5200);
     });
 
-    expect(container.textContent).not.toContain('Tokens');
+    expect(container.textContent).toContain('Tokens');
     expect(container.textContent).not.toContain('Details');
     expect(container.textContent).not.toContain('Hide details');
   });

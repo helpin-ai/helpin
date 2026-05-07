@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
@@ -1762,6 +1762,103 @@ function AgentCard({
 // AgentRow (list view)
 // ---------------------------------------------------------------------------
 
+const AGENTS_LIST_GRID_CLASS =
+  'lg:grid-cols-[minmax(12rem,1.6fr)_7.25rem_6rem_6.5rem_8.25rem_6.75rem_9rem] xl:grid-cols-[minmax(15rem,1.7fr)_8.5rem_6.75rem_7rem_9rem_8rem_9.5rem]';
+
+export function AgentsListTable({ children }: { children: ReactNode }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border/70 bg-card">
+      <div className="min-w-[64rem] xl:min-w-[72rem]">{children}</div>
+    </div>
+  );
+}
+
+export function AgentsListHeader() {
+  return (
+    <div
+      className={cn(
+        'hidden items-center gap-4 border-b border-border/70 bg-muted/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid',
+        AGENTS_LIST_GRID_CLASS,
+      )}
+    >
+      <div>Agent</div>
+      <div>Model</div>
+      <div>Mode</div>
+      <div>Runs · 7d</div>
+      <div>Last run</div>
+      <div>Used in flows</div>
+      <div className="text-right">Action</div>
+    </div>
+  );
+}
+
+export function AgentActions({
+  agent,
+  stats,
+  workspaceSlug,
+  onOpenRun,
+  onRunNow,
+  canEdit,
+}: {
+  agent: Agent;
+  stats?: AgentRunStats;
+  workspaceSlug?: string;
+  onOpenRun: (runId: string) => void;
+  onRunNow: (agent: Agent) => void;
+  canEdit: boolean;
+}) {
+  const canRunNow = !agent.is_system && canEdit;
+  const runsPath = buildAutomationActivityPath(workspaceSlug, { page: 1, agent_id: agent.id });
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      {canRunNow ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-2.5 text-xs"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRunNow(agent);
+          }}
+        >
+          <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
+          Run now
+        </Button>
+      ) : null}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            aria-label="More agent actions"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <MoreHorizontalIcon className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {stats?.lastRun ? (
+            <DropdownMenuItem onClick={() => onOpenRun(stats.lastRun!.id)}>
+              Open latest run
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem asChild>
+            <a href={runsPath}>View runs</a>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 function AgentRow({
   agent,
   stats,
@@ -1771,6 +1868,7 @@ function AgentRow({
   onOpenRun,
   onRunNow,
   canEdit,
+  workspaceSlug,
 }: {
   agent: Agent;
   stats?: AgentRunStats;
@@ -1780,6 +1878,7 @@ function AgentRow({
   onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
   canEdit: boolean;
+  workspaceSlug?: string;
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
@@ -1789,7 +1888,8 @@ function AgentRow({
   return (
     <div
       className={cn(
-        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3.5 transition-colors last:border-b-0 hover:bg-muted/25 lg:grid-cols-[minmax(14rem,1.55fr)_8.5rem_6.5rem_minmax(13rem,1fr)_8.75rem_5.5rem] xl:grid-cols-[minmax(18rem,1.7fr)_10rem_7.25rem_minmax(15rem,1fr)_9.5rem_5.5rem]',
+        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3.5 transition-colors last:border-b-0 hover:bg-muted/25',
+        AGENTS_LIST_GRID_CLASS,
         attention && 'bg-amber-500/[0.03]',
       )}
       onClick={() => onOpen(agent)}
@@ -1801,7 +1901,6 @@ function AgentRow({
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="truncate text-sm font-medium">{agent.name}</span>
-              <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
             </div>
             <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
               <span className="truncate text-xs text-muted-foreground">{role}</span>
@@ -1823,18 +1922,22 @@ function AgentRow({
       </div>
 
       <div className="min-w-0 space-y-1">
-        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Recent activity</p>
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Runs · 7d</p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
           <span className="text-sm">
             <span className="font-mono text-foreground">{stats?.recentRuns ?? 0}</span>
-            <span className="text-muted-foreground"> runs in 7d</span>
           </span>
         </div>
+      </div>
+
+      <div className="min-w-0 space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Last run</p>
+        <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
         {stats?.lastRun ? (
-          <p className="font-mono text-[11px] text-muted-foreground">Last run {formatLastRunTime(stats.lastRun)}</p>
+          <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
         ) : (
-          <p className="text-[11px] text-muted-foreground">No runs yet</p>
+          <p className="text-[11px] text-muted-foreground">Never</p>
         )}
       </div>
 
@@ -1843,25 +1946,14 @@ function AgentRow({
         <FlowRefs usage={usage} />
       </div>
 
-      <div className="flex items-start justify-end text-muted-foreground">
-        {!agent.is_system && canEdit ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 px-2.5 text-xs"
-            onClick={(event) => {
-              event.stopPropagation();
-              onRunNow(agent);
-            }}
-          >
-            <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
-            Run now
-          </Button>
-        ) : (
-          <ArrowRight01Icon className="mt-0.5 h-4 w-4" />
-        )}
-      </div>
+      <AgentActions
+        agent={agent}
+        stats={stats}
+        workspaceSlug={workspaceSlug}
+        onOpenRun={onOpenRun}
+        onRunNow={onRunNow}
+        canEdit={canEdit}
+      />
     </div>
   );
 }
@@ -3185,15 +3277,8 @@ export function AgentsPage() {
 
       {/* ---- Agent list / grid ---- */}
       {sortedAgents.length > 0 && viewMode === 'list' && (
-        <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
-          <div className="hidden items-center gap-4 border-b border-border/70 bg-muted/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid lg:grid-cols-[minmax(14rem,1.55fr)_8.5rem_6.5rem_minmax(13rem,1fr)_8.75rem_5.5rem] xl:grid-cols-[minmax(18rem,1.7fr)_10rem_7.25rem_minmax(15rem,1fr)_9.5rem_5.5rem]">
-            <div>Agent</div>
-            <div>Model</div>
-            <div>Mode</div>
-            <div>Recent activity</div>
-            <div>Used in flows</div>
-            <div className="text-right">Action</div>
-          </div>
+        <AgentsListTable>
+          <AgentsListHeader />
           {sortedAgents.map((agent) => (
             <AgentRow
               key={agent.id}
@@ -3205,9 +3290,10 @@ export function AgentsPage() {
               onOpenRun={openRunDetails}
               onRunNow={openRunNowDialog}
               canEdit={canEdit}
+              workspaceSlug={workspace?.slug}
             />
           ))}
-        </div>
+        </AgentsListTable>
       )}
 
       {sortedAgents.length > 0 && viewMode === 'cards' && (

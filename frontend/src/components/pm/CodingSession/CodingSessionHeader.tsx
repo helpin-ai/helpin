@@ -76,24 +76,6 @@ function lifecycleBadgeClassName(session: CodingSession | null) {
   return '';
 }
 
-function shouldForceHeaderDetailsOpen(session: CodingSession | null) {
-  if (!session) return false;
-  if (session.pause_reason && session.pause_reason !== 'none') return true;
-  return session.status === 'paused' || session.status === 'failed' || session.status === 'cancelled';
-}
-
-function shouldAutoCollapseHeaderDetails(session: CodingSession | null) {
-  if (!session) return false;
-  if (session.pause_reason && session.pause_reason !== 'none') return false;
-  return session.status === 'queued' || session.status === 'running';
-}
-
-function defaultHeaderDetailsOpen(session: CodingSession | null) {
-  if (!session) return false;
-  if (shouldForceHeaderDetailsOpen(session)) return true;
-  return session.status !== 'completed';
-}
-
 function normalizedLifecycleStage(session: CodingSession) {
   const stage = session.execution_stage?.trim() ?? '';
   if (session.status === 'queued') return 'queued';
@@ -184,10 +166,6 @@ export function CodingSessionHeader({
   const tickingElapsedMs = useElapsedSince(shouldTickElapsedForStatus(session?.status) ? elapsedOrigin : null);
   const elapsedMs = session?.status === 'paused' ? pausedElapsedMsForSession(session) : tickingElapsedMs;
   const showElapsed = shouldShowElapsedForStatus(session?.status);
-  const [detailsOpen, setDetailsOpen] = useState(() => defaultHeaderDetailsOpen(session));
-  const [headerInteracting, setHeaderInteracting] = useState(false);
-  const forceDetailsOpen = shouldForceHeaderDetailsOpen(session);
-  const detailsVisible = detailsOpen || forceDetailsOpen || headerInteracting;
   const elapsedLabel = session?.status === 'paused'
     ? `Ran ${formatCodingSessionElapsed(elapsedMs)}`
     : formatCodingSessionElapsed(elapsedMs);
@@ -196,41 +174,8 @@ export function CodingSessionHeader({
     ? `https://github.com/${session.repo.repo_name}/tree/${session.repo.branch}`
     : undefined;
 
-  useEffect(() => {
-    setDetailsOpen(defaultHeaderDetailsOpen(session));
-  }, [session?.id]);
-
-  useEffect(() => {
-    if (!session) return;
-    if (forceDetailsOpen) {
-      setDetailsOpen(true);
-      return;
-    }
-    if (session.status === 'completed') {
-      setDetailsOpen(false);
-      return;
-    }
-    if (!shouldAutoCollapseHeaderDetails(session)) {
-      setDetailsOpen(true);
-      return;
-    }
-    setDetailsOpen(true);
-    const timer = window.setTimeout(() => setDetailsOpen(false), 5_000);
-    return () => window.clearTimeout(timer);
-  }, [session?.id, session?.status, session?.pause_reason, session?.execution_stage, forceDetailsOpen]);
-
   return (
-    <div
-      className="space-y-2.5"
-      onMouseEnter={() => setHeaderInteracting(true)}
-      onMouseLeave={() => setHeaderInteracting(false)}
-      onFocusCapture={() => setHeaderInteracting(true)}
-      onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setHeaderInteracting(false);
-        }
-      }}
-    >
+    <div className="space-y-2.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1">
           <div className="min-w-0 flex-1">
@@ -347,7 +292,7 @@ export function CodingSessionHeader({
         </div>
       </div>
 
-      {detailsVisible ? (
+      {session ? (
         <div className="space-y-2 border-t border-border/60 pt-2.5">
           <div className="flex flex-wrap items-center justify-between gap-3" data-coding-session-detail-row>
             {session ? <CodingSessionLifecycleStrip session={session} /> : null}
