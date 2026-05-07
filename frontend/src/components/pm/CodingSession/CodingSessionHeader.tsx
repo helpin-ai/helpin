@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useSyncExternalStore, type ReactNode } from 'react';
-import { Folder01Icon, GitBranchIcon, Loading01Icon, CancelCircleIcon, ArrowReloadHorizontalIcon } from '@/lib/icons';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { ArrowDown02Icon, ArrowReloadHorizontalIcon, ArrowUp02Icon, CancelCircleIcon, Folder01Icon, GitBranchIcon, Loading01Icon } from '@/lib/icons';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +30,24 @@ function resolveSessionAgentName(session: CodingSession | null) {
 
 function isActiveSessionStatus(status?: string | null) {
   return status === 'queued' || status === 'running' || status === 'paused';
+}
+
+function shouldForceHeaderDetailsOpen(session: CodingSession | null) {
+  if (!session) return false;
+  if (session.pause_reason && session.pause_reason !== 'none') return true;
+  return session.status === 'paused' || session.status === 'failed' || session.status === 'cancelled';
+}
+
+function shouldAutoCollapseHeaderDetails(session: CodingSession | null) {
+  if (!session) return false;
+  if (session.pause_reason && session.pause_reason !== 'none') return false;
+  return session.status === 'queued' || session.status === 'running';
+}
+
+function defaultHeaderDetailsOpen(session: CodingSession | null) {
+  if (!session) return false;
+  if (shouldForceHeaderDetailsOpen(session)) return true;
+  return session.status !== 'completed';
 }
 
 function useElapsedSince(since?: string | null) {
@@ -76,15 +94,63 @@ export function CodingSessionHeader({
     executionStage: session?.execution_stage,
   });
   const activeElapsedMs = useElapsedSince(isActiveSessionStatus(session?.status) ? session?.started_at ?? session?.created_at : null);
+  const [detailsOpen, setDetailsOpen] = useState(() => defaultHeaderDetailsOpen(session));
+  const [detailsManuallySet, setDetailsManuallySet] = useState(false);
+  const [headerInteracting, setHeaderInteracting] = useState(false);
+  const forceDetailsOpen = shouldForceHeaderDetailsOpen(session);
+  const detailsVisible = detailsOpen || forceDetailsOpen || (headerInteracting && !detailsManuallySet);
+  const repoHref = session?.repo.repo_name ? `https://github.com/${session.repo.repo_name}` : undefined;
+  const branchHref = session?.repo.repo_name && session?.repo.branch
+    ? `https://github.com/${session.repo.repo_name}/tree/${session.repo.branch}`
+    : undefined;
+
+  useEffect(() => {
+    setDetailsManuallySet(false);
+    setDetailsOpen(defaultHeaderDetailsOpen(session));
+  }, [session?.id]);
+
+  useEffect(() => {
+    if (!session || detailsManuallySet) return;
+    if (forceDetailsOpen) {
+      setDetailsOpen(true);
+      return;
+    }
+    if (session.status === 'completed') {
+      setDetailsOpen(false);
+      return;
+    }
+    if (!shouldAutoCollapseHeaderDetails(session)) {
+      setDetailsOpen(true);
+      return;
+    }
+    setDetailsOpen(true);
+    const timer = window.setTimeout(() => setDetailsOpen(false), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [session?.id, session?.status, session?.pause_reason, session?.execution_stage, detailsManuallySet, forceDetailsOpen]);
+
+  const toggleDetails = () => {
+    setDetailsManuallySet(true);
+    setDetailsOpen((current) => !current);
+  };
 
   return (
-    <div className="space-y-3">
+    <div
+      className="space-y-3"
+      onMouseEnter={() => setHeaderInteracting(true)}
+      onMouseLeave={() => setHeaderInteracting(false)}
+      onFocusCapture={() => setHeaderInteracting(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setHeaderInteracting(false);
+        }
+      }}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <AgentAvatar name={agentName} className="h-10 w-10 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
 
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-base font-semibold leading-tight">{agentName}</h1>
               <Badge
                 variant="outline"
@@ -111,82 +177,46 @@ export function CodingSessionHeader({
               ) : null}
             </div>
 
-            <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1.5 text-[11px] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
+            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px]">
               {session?.repo.repo_name ? (
-                <>
-                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Repository</dt>
-                  <dd className="min-w-0">
-                    <a
-                      href={`https://github.com/${session.repo.repo_name}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-muted/80 hover:text-primary"
-                    >
-                      <Folder01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{session.repo.repo_name}</span>
-                    </a>
-                  </dd>
-                </>
+                <HeaderCodeChip
+                  dataAttribute="data-coding-session-repo-chip"
+                  href={repoHref}
+                  icon={<Folder01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                  label={session.repo.repo_name}
+                  maxClassName="max-w-[18rem]"
+                />
               ) : null}
 
               {session ? (
-                <>
-                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Runtime</dt>
-                  <dd className="font-medium text-foreground">
-                    {AGENT_RUNTIME_LABELS[session.runtime_kind] ?? capitalize(session.runtime_kind)}
-                  </dd>
-                </>
+                <span className="inline-flex h-6 items-center rounded-md border border-border/70 bg-background px-2 font-medium text-foreground">
+                  {AGENT_RUNTIME_LABELS[session.runtime_kind] ?? capitalize(session.runtime_kind)}
+                </span>
               ) : null}
 
               {session?.repo.branch ? (
-                <>
-                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Branch</dt>
-                  <dd className="min-w-0">
-                    {session.repo.repo_name ? (
-                      <a
-                        href={`https://github.com/${session.repo.repo_name}/tree/${session.repo.branch}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-muted/80 hover:text-primary"
-                      >
-                        <GitBranchIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="truncate font-mono text-[10.5px]">{session.repo.branch}</span>
-                      </a>
-                    ) : (
-                      <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-medium text-foreground">
-                        <GitBranchIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="truncate font-mono text-[10.5px]">{session.repo.branch}</span>
-                      </span>
-                    )}
-                  </dd>
-                </>
-              ) : null}
-
-              {session?.updated_at ? (
-                <>
-                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Updated</dt>
-                  <dd className="text-muted-foreground">{formatCodingSessionRelative(session.updated_at)}</dd>
-                </>
+                <HeaderCodeChip
+                  dataAttribute="data-coding-session-branch-chip"
+                  href={branchHref}
+                  icon={<GitBranchIcon className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                  label={session.repo.branch}
+                  maxClassName="max-w-[22rem]"
+                  mono
+                />
               ) : null}
 
               {session && isActiveSessionStatus(session.status) ? (
-                <>
-                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Elapsed</dt>
-                  <dd className="font-medium tabular-nums text-foreground">
-                    {formatCodingSessionElapsed(activeElapsedMs)}
-                  </dd>
-                </>
+                <span className="inline-flex h-6 items-center rounded-md border border-border/70 bg-background px-2 font-medium tabular-nums text-foreground">
+                  {formatCodingSessionElapsed(activeElapsedMs)}
+                </span>
               ) : null}
 
-              {session?.tokens_used ? (
-                <>
-                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Tokens</dt>
-                  <dd className="font-medium text-foreground">
-                    {formatSessionTokenUsage(session, { includeUnit: true })}
-                  </dd>
-                </>
+              {session?.updated_at ? (
+                <span className="inline-flex h-6 items-center rounded-md px-1.5 text-muted-foreground">
+                  Updated {formatCodingSessionRelative(session.updated_at)}
+                </span>
               ) : null}
-            </dl>
+            </div>
           </div>
         </div>
 
@@ -197,6 +227,19 @@ export function CodingSessionHeader({
               <a href={buildAutomationActivityPath(workspaceSlug)}>
                 Back to activity
               </a>
+            </Button>
+          ) : null}
+          {session ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 px-2.5"
+              onClick={toggleDetails}
+              aria-expanded={detailsVisible}
+            >
+              {detailsVisible ? <ArrowUp02Icon className="h-3.5 w-3.5" /> : <ArrowDown02Icon className="h-3.5 w-3.5" />}
+              {detailsVisible ? 'Hide details' : 'Details'}
             </Button>
           ) : null}
           {onCancelRun ? (
@@ -220,21 +263,121 @@ export function CodingSessionHeader({
         </div>
       </div>
 
-      {showDetailBlock ? (
-        <div className="min-w-0">
-          {sessionTitle && sessionTitle !== agentName ? (
-            <p className="text-sm font-medium text-foreground">{sessionTitle}</p>
+      {detailsVisible ? (
+        <>
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 border-t border-border/60 pt-3 text-[11px] sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
+            {session?.repo.repo_name ? (
+              <>
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Repository</dt>
+                <dd className="min-w-0 font-medium text-foreground">{session.repo.repo_name}</dd>
+              </>
+            ) : null}
+
+            {session ? (
+              <>
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Runtime</dt>
+                <dd className="font-medium text-foreground">
+                  {AGENT_RUNTIME_LABELS[session.runtime_kind] ?? capitalize(session.runtime_kind)}
+                </dd>
+              </>
+            ) : null}
+
+            {session?.repo.branch ? (
+              <>
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Branch</dt>
+                <dd className="min-w-0 font-mono text-[10.5px] font-medium text-foreground">{session.repo.branch}</dd>
+              </>
+            ) : null}
+
+            {session?.updated_at ? (
+              <>
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Updated</dt>
+                <dd className="text-muted-foreground">{formatCodingSessionRelative(session.updated_at)}</dd>
+              </>
+            ) : null}
+
+            {session && isActiveSessionStatus(session.status) ? (
+              <>
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Elapsed</dt>
+                <dd className="font-medium tabular-nums text-foreground">
+                  {formatCodingSessionElapsed(activeElapsedMs)}
+                </dd>
+              </>
+            ) : null}
+
+            {session?.tokens_used ? (
+              <>
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Tokens</dt>
+                <dd className="font-medium text-foreground">
+                  {formatSessionTokenUsage(session, { includeUnit: true })}
+                </dd>
+              </>
+            ) : null}
+          </dl>
+
+          {showDetailBlock ? (
+            <div className="min-w-0">
+              {sessionTitle && sessionTitle !== agentName ? (
+                <p className="text-sm font-medium text-foreground">{sessionTitle}</p>
+              ) : null}
+              {sessionSummary ? (
+                <p className={sessionTitle && sessionTitle !== agentName ? 'mt-0.5 text-xs text-muted-foreground' : 'text-xs text-muted-foreground'}>
+                  {sessionSummary}
+                </p>
+              ) : null}
+            </div>
           ) : null}
-          {sessionSummary ? (
-            <p className={sessionTitle && sessionTitle !== agentName ? 'mt-0.5 text-xs text-muted-foreground' : 'text-xs text-muted-foreground'}>
-              {sessionSummary}
-            </p>
-          ) : null}
-        </div>
+        </>
       ) : null}
 
-      {session ? <CodingSessionLifecycleStrip session={session} /> : null}
+      {session && detailsVisible ? <CodingSessionLifecycleStrip session={session} /> : null}
     </div>
+  );
+}
+
+function HeaderCodeChip({
+  dataAttribute,
+  href,
+  icon,
+  label,
+  maxClassName,
+  mono = false,
+}: {
+  dataAttribute: 'data-coding-session-repo-chip' | 'data-coding-session-branch-chip';
+  href?: string;
+  icon: ReactNode;
+  label: string;
+  maxClassName: string;
+  mono?: boolean;
+}) {
+  const className = cn(
+    'inline-flex h-6 min-w-0 items-center gap-1 rounded-md border border-border/70 bg-muted/50 px-2 font-medium text-foreground transition-colors hover:bg-muted hover:text-primary',
+    maxClassName,
+  );
+  const content = (
+    <>
+      {icon}
+      <span className={cn('truncate', mono && 'font-mono text-[10.5px]')}>{label}</span>
+    </>
+  );
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        title={label}
+        className={className}
+        {...{ [dataAttribute]: true }}
+      >
+        {content}
+      </a>
+    );
+  }
+  return (
+    <span title={label} className={className} {...{ [dataAttribute]: true }}>
+      {content}
+    </span>
   );
 }
 
