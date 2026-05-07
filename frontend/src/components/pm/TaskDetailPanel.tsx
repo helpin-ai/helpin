@@ -1621,6 +1621,7 @@ function TaskDetailPanelBody({
                 teams={mentionTeams}
                 members={assignableMembers}
                 onCommentsChange={setComments}
+                hideEmptyState
               />
             )}
 

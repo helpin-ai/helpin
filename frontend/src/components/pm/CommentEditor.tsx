@@ -303,7 +303,7 @@ export function CommentEditor({
 
   const wrapperClass =
     variant === 'primary'
-      ? 'relative rounded-lg border border-border/60 bg-background px-3 pt-2 pb-1.5 transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
+      ? 'relative rounded-lg border border-border bg-muted/70 px-3 pt-2 pb-1.5 transition-[color,box-shadow,background-color] focus-within:bg-background focus-within:ring-1 focus-within:ring-ring/40'
       : variant === 'reply'
         ? 'relative rounded-md border border-border/60 bg-background px-2.5 pt-1.5 pb-1 transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
         : 'relative bg-muted/50 px-3 pt-2 pb-1.5 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
@@ -431,24 +431,26 @@ export function CommentEditor({
               Cancel
             </button>
           )}
-          <QuickTooltip label="Send (⌘+Enter)">
-            <button
-              type="button"
-              className={
-                canSubmit
-                  ? 'inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-95 cursor-pointer'
-                  : 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background text-muted-foreground/60 transition-colors cursor-not-allowed'
-              }
-              disabled={!canSubmit}
-              onClick={handleSubmit}
-            >
-              {loading ? (
-                <Loading01Icon className="h-4 w-4 animate-spin" />
-              ) : (
-                <SentIcon className="h-4 w-4" />
-              )}
-            </button>
-          </QuickTooltip>
+          <kbd className="hidden items-center gap-1 font-mono text-[15px] leading-none text-muted-foreground sm:inline-flex">
+            <span>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</span>
+            <span>{'↵'}</span>
+          </kbd>
+          <button
+            type="button"
+            className={
+              canSubmit
+                ? 'inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-95 cursor-pointer'
+                : 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background/60 text-muted-foreground/50 transition-all duration-200 cursor-not-allowed'
+            }
+            disabled={!canSubmit}
+            onClick={handleSubmit}
+          >
+            {loading ? (
+              <Loading01Icon className="h-4 w-4 animate-spin" />
+            ) : (
+              <SentIcon className="h-4 w-4 rotate-45" />
+            )}
+          </button>
         </div>
       </div>
       {activePreviewFile?.url && (

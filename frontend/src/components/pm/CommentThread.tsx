@@ -28,8 +28,11 @@ import defaultIcon from '@/assets/attachment/default-icon.png';
 
 function formatRelativeTime(dateStr: string): string {
   try {
+    const date = parseISO(dateStr);
+    const diffMs = Date.now() - date.getTime();
+    if (diffMs < 5_000) return 'now';
     // Tight format suitable for narrow rails: "11m", "2h", "3d", "1mo"
-    const raw = formatDistanceToNowStrict(parseISO(dateStr), { addSuffix: false });
+    const raw = formatDistanceToNowStrict(date, { addSuffix: false });
     return raw
       .replace(/ seconds?/, 's')
       .replace(/ minutes?/, 'm')
