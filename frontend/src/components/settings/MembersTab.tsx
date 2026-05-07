@@ -368,6 +368,61 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
           </div>
         </div>
 
+        {editable && pendingInvitations.length > 0 && (
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-medium">Pending Invitations</h3>
+              <p className="text-sm text-muted-foreground">
+                Invitations that have been sent but not yet accepted.
+              </p>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead>Email</TableHead>
+                    <TableHead className="w-[120px]">Role</TableHead>
+                    <TableHead className="w-[140px]">Sent</TableHead>
+                    <TableHead className="w-[120px]">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingInvitations.map((inv) => (
+                    <TableRow key={inv.id}>
+                      <TableCell className="font-medium">{inv.email}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-xs">{inv.role}</Badge></TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(inv.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {inv.join_url && (
+                            <QuickTooltip label="Copy invite link">
+                              <Button size="icon" variant="ghost" onClick={() => handleCopyLink(inv.join_url!)}>
+                                <Copy01Icon className="h-3.5 w-3.5" />
+                              </Button>
+                            </QuickTooltip>
+                          )}
+                          <QuickTooltip label="Resend">
+                            <Button size="icon" variant="ghost" onClick={() => handleResend(inv.id)}>
+                              <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
+                            </Button>
+                          </QuickTooltip>
+                          <QuickTooltip label="Revoke">
+                            <Button size="icon" variant="ghost" onClick={() => handleRevoke(inv.id)}>
+                              <Delete01Icon className="h-3.5 w-3.5" />
+                            </Button>
+                          </QuickTooltip>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        )}
+
         {members.length === 0 ? (
           <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border text-center">
             <div className="space-y-1">
@@ -581,61 +636,6 @@ export function MembersTab({ workspaceId, organizationId, editable, canManageTea
                 )}
               </TableBody>
             </Table>
-          </div>
-        )}
-
-        {editable && pendingInvitations.length > 0 && (
-          <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-medium">Pending Invitations</h3>
-              <p className="text-sm text-muted-foreground">
-                Invitations that have been sent but not yet accepted.
-              </p>
-            </div>
-            <div className="overflow-hidden rounded-lg border border-border">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40 hover:bg-muted/40">
-                    <TableHead>Email</TableHead>
-                    <TableHead className="w-[120px]">Role</TableHead>
-                    <TableHead className="w-[140px]">Sent</TableHead>
-                    <TableHead className="w-[120px]">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pendingInvitations.map((inv) => (
-                    <TableRow key={inv.id}>
-                      <TableCell className="font-medium">{inv.email}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{inv.role}</Badge></TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(inv.created_at).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {inv.join_url && (
-                            <QuickTooltip label="Copy invite link">
-                              <Button size="icon" variant="ghost" onClick={() => handleCopyLink(inv.join_url!)}>
-                                <Copy01Icon className="h-3.5 w-3.5" />
-                              </Button>
-                            </QuickTooltip>
-                          )}
-                          <QuickTooltip label="Resend">
-                            <Button size="icon" variant="ghost" onClick={() => handleResend(inv.id)}>
-                              <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
-                            </Button>
-                          </QuickTooltip>
-                          <QuickTooltip label="Revoke">
-                            <Button size="icon" variant="ghost" onClick={() => handleRevoke(inv.id)}>
-                              <Delete01Icon className="h-3.5 w-3.5" />
-                            </Button>
-                          </QuickTooltip>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
           </div>
         )}
       </div>
