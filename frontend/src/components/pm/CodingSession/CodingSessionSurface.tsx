@@ -10,6 +10,10 @@ import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTransc
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
+import {
+  shouldShowCodingSessionPlanPanel,
+  shouldShowCodingSessionSidePanel,
+} from '@/components/pm/CodingSession/codingSessionLayout';
 import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
 import { normalizeCodingSessionPreviewPanelKey } from '@/components/pm/CodingSession/previewPanelKeys';
 import {
@@ -213,6 +217,8 @@ export function CodingSessionSurface({
     () => collectCodingSessionPreviews(events, streamState.live_turn_segments),
     [events, streamState.live_turn_segments],
   );
+  const showPlanPanel = shouldShowCodingSessionPlanPanel(streamState.current_plan);
+  const showSidePanel = shouldShowCodingSessionSidePanel(streamState.current_plan, previewsByKey.size);
   const approvalPreviewPanelKey = useMemo<string | null>(() => {
     if (!activeInteraction || activeInteraction.interaction_kind !== 'approval_request') return null;
     const previewPanelKey = normalizeCodingSessionPreviewPanelKey(
@@ -492,7 +498,12 @@ export function CodingSessionSurface({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 gap-4 xl:overflow-hidden xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]">
+      <div className={cn(
+        'grid min-h-0 flex-1 gap-4 xl:overflow-hidden',
+        showSidePanel
+          ? 'xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]'
+          : 'xl:grid-cols-1',
+      )}>
         <CodingTranscriptPane
           promptArtifact={promptArtifact}
           reviewArtifacts={reviewArtifacts}
@@ -514,14 +525,18 @@ export function CodingSessionSurface({
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
         />
 
-        <div className="min-h-0 space-y-4 overflow-y-auto">
-          <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
-          <CodingPreviewPanels
-            previewsByKey={previewsByKey}
-            acting={acting}
-            onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
-          />
-        </div>
+        {showSidePanel ? (
+          <div className="min-h-0 space-y-4 overflow-y-auto">
+            {showPlanPanel ? (
+              <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
+            ) : null}
+            <CodingPreviewPanels
+              previewsByKey={previewsByKey}
+              acting={acting}
+              onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
