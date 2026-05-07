@@ -7,11 +7,11 @@ import { ArrowExpandIcon, File01Icon, SparklesIcon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import type { CodingSessionInteraction } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { MarkdownContent } from './MarkdownContent';
+import { formatCodingSessionRelative, type CodingSessionPreviewApprovalState } from './codingSessionUtils';
 import { normalizeCodingSessionPreviewPanelKey } from './previewPanelKeys';
 
 interface TaskPlanTaskPreview {
@@ -175,21 +175,46 @@ function parseAttachedApprovalRequest(interaction: CodingSessionInteraction | nu
   };
 }
 
+function previewApprovalStateFromAttachedApproval(
+  approval: AttachedApprovalRequest | null,
+): CodingSessionPreviewApprovalState | null {
+  if (!approval) return null;
+  if (!approval.previewPanelKey) return null;
+  return {
+    interaction: approval.interaction,
+    status: 'pending',
+    title: approval.title,
+    summary: approval.summary,
+    phase: approval.phase,
+    previewPanelKey: approval.previewPanelKey,
+  };
+}
+
 function DocsChangePanel({
   title,
   preview,
   attachedApproval,
-  acting,
-  onResolveInteraction,
+  resolverNamesByUserId,
+  onReviewApproval,
+  openPreviewPanelKey,
+  openPreviewRequestId,
 }: {
   title: string;
   preview: DocsChangePreviewModel;
-  attachedApproval?: AttachedApprovalRequest | null;
-  acting?: string | null;
-  onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+  attachedApproval?: CodingSessionPreviewApprovalState | null;
+  resolverNamesByUserId?: Map<string, string>;
+  onReviewApproval?: (interactionId: string) => void;
+  openPreviewPanelKey?: string | null;
+  openPreviewRequestId?: number;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const scopeLabel = preview.scope === 'block' ? 'Block change' : 'Document change';
+
+  useEffect(() => {
+    if (openPreviewPanelKey === 'docs_change') {
+      setDialogOpen(true);
+    }
+  }, [openPreviewPanelKey, openPreviewRequestId]);
 
   const proposalContent = (
     <div className="space-y-3">
@@ -225,11 +250,12 @@ function DocsChangePanel({
           </ul>
         </div>
       ) : null}
-      {attachedApproval && onResolveInteraction ? (
-        <PreviewApprovalFooter
+      {attachedApproval ? (
+        <PreviewApprovalReference
           approval={attachedApproval}
-          acting={acting ?? null}
-          onResolve={onResolveInteraction}
+          resolverNamesByUserId={resolverNamesByUserId}
+          onReview={onReviewApproval}
+          onOpenDocument={() => setDialogOpen(true)}
         />
       ) : null}
     </div>
@@ -241,16 +267,27 @@ function DocsChangePanel({
         data-preview-panel-key="docs_change"
         className="rounded-md border border-orange-500/20 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-orange-500/40"
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <File01Icon className="h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
-            <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {title || 'Docs Change Proposal'}
-            </p>
-          </div>
-          <ExpandPreviewIconButton label={`Open ${title || 'Docs Change Proposal'}`} onClick={() => setDialogOpen(true)} />
-        </div>
-        {proposalContent}
+        {attachedApproval ? (
+          <PreviewApprovalReference
+            approval={attachedApproval}
+            resolverNamesByUserId={resolverNamesByUserId}
+            onReview={onReviewApproval}
+            onOpenDocument={() => setDialogOpen(true)}
+          />
+        ) : (
+          <>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <File01Icon className="h-4 w-4 shrink-0 text-orange-600 dark:text-orange-300" />
+                <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {title || 'Docs Change Proposal'}
+                </p>
+              </div>
+              <ExpandPreviewIconButton label={`Open ${title || 'Docs Change Proposal'}`} onClick={() => setDialogOpen(true)} />
+            </div>
+            {proposalContent}
+          </>
+        )}
       </div>
       <PreviewExpandDialog open={dialogOpen} onOpenChange={setDialogOpen} title={title || 'Docs Change Proposal'}>
         {proposalContent}
@@ -343,70 +380,83 @@ function ExpandPreviewIconButton({
   );
 }
 
-function PreviewApprovalFooter({
+function PreviewApprovalReference({
   approval,
-  acting,
-  onResolve,
+  resolverNamesByUserId,
+  onReview,
+  onOpenDocument,
 }: {
-  approval: AttachedApprovalRequest;
-  acting: string | null;
-  onResolve: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+  approval: CodingSessionPreviewApprovalState;
+  resolverNamesByUserId?: Map<string, string>;
+  onReview?: (interactionId: string) => void;
+  onOpenDocument?: () => void;
 }) {
-  const [followupMessage, setFollowupMessage] = useState('');
-
-  useEffect(() => {
-    setFollowupMessage('');
-  }, [approval.interaction.interaction_id]);
-
-  const isBusy = acting === 'resolve-interaction';
-  const noteIsPresent = followupMessage.trim().length > 0;
+  const isPending = approval.status === 'pending';
+  const isApproved = approval.status === 'approved';
+  const resolverName = approval.resolvedBy
+    ? resolverNamesByUserId?.get(approval.resolvedBy) ?? 'Someone'
+    : 'Someone';
+  const statusLabel = isPending
+    ? 'Waiting for approval'
+    : isApproved
+      ? 'Approved'
+      : 'Changes requested';
+  const resolutionVerb = isApproved ? 'approved' : 'requested changes';
+  const resolutionText = isPending
+    ? null
+    : `${resolverName} ${resolutionVerb}${approval.resolvedAt ? ` · ${formatCodingSessionRelative(approval.resolvedAt)}` : ''}`;
+  const badgeClassName = isPending
+    ? 'border-amber-500/25 bg-background text-amber-700 dark:text-amber-300'
+    : isApproved
+      ? 'border-emerald-500/25 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+      : 'border-blue-500/25 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300';
 
   return (
-    <div className="mt-3 rounded-lg border border-primary/15 bg-primary/[0.04] p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline" className="border-primary/20 bg-background text-[10px] uppercase tracking-wide text-primary">
-          {approval.phase ? `${approval.phase} approval` : 'Approval required'}
+    <div className={cn(
+      'mt-3 rounded-lg border p-3',
+      isPending
+        ? 'border-amber-500/25 bg-amber-500/[0.06]'
+        : 'border-border/70 bg-muted/25',
+    )}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="min-w-0 text-sm font-semibold text-foreground">{approval.title ?? 'Approval required'}</p>
+        <Badge variant="outline" className={cn('text-[10px] uppercase tracking-wide', badgeClassName)}>
+          {statusLabel}
         </Badge>
-        <p className="text-sm font-semibold text-foreground">{approval.title ?? 'Approval required'}</p>
       </div>
+      {resolutionText ? (
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{resolutionText}</p>
+      ) : null}
       {approval.summary ? (
         <p className="mt-1 text-sm leading-6 text-muted-foreground">{approval.summary}</p>
       ) : null}
-      <Textarea
-        value={followupMessage}
-        onChange={(event) => setFollowupMessage(event.target.value)}
-        placeholder="Optional note for the agent"
-        className="mt-3 min-h-[76px] bg-background"
-        disabled={isBusy}
-      />
-      <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
-        Sent with your decision. Approve accepts the document; request changes asks the agent to revise.
-      </p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          className="border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-          disabled={isBusy}
-          onClick={() => onResolve(
-            approval.interaction.interaction_id,
-            { decision: 'approve', ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}) },
-            followupMessage.trim() || undefined,
-          )}
-        >
-          {noteIsPresent ? 'Approve with note' : 'Approve'}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={isBusy}
-          onClick={() => onResolve(
-            approval.interaction.interaction_id,
-            { decision: 'request_changes', ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}) },
-            followupMessage.trim() || undefined,
-          )}
-        >
-          {noteIsPresent ? 'Request changes with note' : 'Request changes'}
-        </Button>
+      {approval.note ? (
+        <p className="mt-2 rounded-md bg-background/70 px-2.5 py-2 text-xs leading-5 text-muted-foreground">
+          {approval.note}
+        </p>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        {isPending && onReview ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 rounded-md bg-primary/10 px-2.5 text-xs font-medium text-primary hover:bg-primary/15 hover:text-primary"
+            onClick={() => onReview(approval.interaction.interaction_id)}
+          >
+            Review
+          </Button>
+        ) : null}
+        {onOpenDocument ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 rounded-md border border-border/70 bg-background/70 px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={onOpenDocument}
+          >
+            Open doc
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -415,18 +465,30 @@ function PreviewApprovalFooter({
 function GenericPreviewPanel({
   preview,
   attachedApproval,
-  acting,
+  resolverNamesByUserId,
   expanded = false,
-  onResolveInteraction,
+  approvalReferenceOnly = false,
+  onReviewApproval,
+  openPreviewPanelKey,
+  openPreviewRequestId,
 }: {
   preview: PublishedPreview;
-  attachedApproval?: AttachedApprovalRequest | null;
-  acting?: string | null;
+  attachedApproval?: CodingSessionPreviewApprovalState | null;
+  resolverNamesByUserId?: Map<string, string>;
   expanded?: boolean;
-  onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+  approvalReferenceOnly?: boolean;
+  onReviewApproval?: (interactionId: string) => void;
+  openPreviewPanelKey?: string | null;
+  openPreviewRequestId?: number;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const isMarkdown = preview.format === 'markdown' && typeof preview.content === 'string';
+
+  useEffect(() => {
+    if (openPreviewPanelKey === preview.panelKey) {
+      setDialogOpen(true);
+    }
+  }, [openPreviewPanelKey, openPreviewRequestId, preview.panelKey]);
 
   return (
     <>
@@ -434,43 +496,55 @@ function GenericPreviewPanel({
         data-preview-panel-key={preview.panelKey}
         className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
-          </div>
-          <ExpandPreviewIconButton label={`Open ${preview.title}`} onClick={() => setDialogOpen(true)} />
-        </div>
-        <div
-          className={cn(
-            'relative overflow-hidden rounded-md bg-muted/40 p-3',
-            expanded ? 'max-h-[55vh]' : 'max-h-[200px]',
-          )}
-        >
-          {isMarkdown ? (
-            <MarkdownContent content={preview.content as string} className="text-[12px] leading-5" />
-          ) : (
-            <pre className="whitespace-pre-wrap text-[12px] leading-5 text-foreground">
-              {JSON.stringify(preview.content, null, 2)}
-            </pre>
-          )}
-          <div
-            className={cn(
-              'pointer-events-none absolute inset-x-0 bottom-0 rounded-b-md bg-gradient-to-t from-muted via-muted/70 to-transparent',
-              expanded ? 'h-24' : 'h-12',
-            )}
-          />
-        </div>
-        {expanded ? null : (
-          <ExpandPreviewButton onClick={() => setDialogOpen(true)} />
-        )}
-        {attachedApproval && onResolveInteraction ? (
-          <PreviewApprovalFooter
+        {approvalReferenceOnly && attachedApproval ? (
+          <PreviewApprovalReference
             approval={attachedApproval}
-            acting={acting ?? null}
-            onResolve={onResolveInteraction}
+            resolverNamesByUserId={resolverNamesByUserId}
+            onReview={onReviewApproval}
+            onOpenDocument={() => setDialogOpen(true)}
           />
-        ) : null}
+        ) : (
+          <>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
+              </div>
+              <ExpandPreviewIconButton label={`Open ${preview.title}`} onClick={() => setDialogOpen(true)} />
+            </div>
+            <div
+              className={cn(
+                'relative overflow-hidden rounded-md bg-muted/40 p-3',
+                expanded ? 'max-h-[55vh]' : 'max-h-[200px]',
+              )}
+            >
+              {isMarkdown ? (
+                <MarkdownContent content={preview.content as string} className="text-[12px] leading-5" />
+              ) : (
+                <pre className="whitespace-pre-wrap text-[12px] leading-5 text-foreground">
+                  {JSON.stringify(preview.content, null, 2)}
+                </pre>
+              )}
+              <div
+                className={cn(
+                  'pointer-events-none absolute inset-x-0 bottom-0 rounded-b-md bg-gradient-to-t from-muted via-muted/70 to-transparent',
+                  expanded ? 'h-24' : 'h-12',
+                )}
+              />
+            </div>
+            {expanded ? null : (
+              <ExpandPreviewButton onClick={() => setDialogOpen(true)} />
+            )}
+            {attachedApproval ? (
+              <PreviewApprovalReference
+                approval={attachedApproval}
+                resolverNamesByUserId={resolverNamesByUserId}
+                onReview={onReviewApproval}
+                onOpenDocument={() => setDialogOpen(true)}
+              />
+            ) : null}
+          </>
+        )}
       </div>
 
       <PreviewExpandDialog open={dialogOpen} onOpenChange={setDialogOpen} title={preview.title}>
@@ -490,16 +564,26 @@ function TaskPlanPanel({
   title,
   preview,
   attachedApproval,
-  acting,
-  onResolveInteraction,
+  resolverNamesByUserId,
+  onReviewApproval,
+  openPreviewPanelKey,
+  openPreviewRequestId,
 }: {
   title: string;
   preview: TaskPlanPreviewModel;
-  attachedApproval?: AttachedApprovalRequest | null;
-  acting?: string | null;
-  onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+  attachedApproval?: CodingSessionPreviewApprovalState | null;
+  resolverNamesByUserId?: Map<string, string>;
+  onReviewApproval?: (interactionId: string) => void;
+  openPreviewPanelKey?: string | null;
+  openPreviewRequestId?: number;
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (openPreviewPanelKey === 'task_plan') {
+      setDialogOpen(true);
+    }
+  }, [openPreviewPanelKey, openPreviewRequestId]);
 
   const taskPlanContent = (
     <div className="space-y-3">
@@ -583,11 +667,12 @@ function TaskPlanPanel({
         </div>
       ) : null}
 
-      {attachedApproval && onResolveInteraction ? (
-        <PreviewApprovalFooter
+      {attachedApproval ? (
+        <PreviewApprovalReference
           approval={attachedApproval}
-          acting={acting ?? null}
-          onResolve={onResolveInteraction}
+          resolverNamesByUserId={resolverNamesByUserId}
+          onReview={onReviewApproval}
+          onOpenDocument={() => setDialogOpen(true)}
         />
       ) : null}
     </div>
@@ -599,14 +684,25 @@ function TaskPlanPanel({
         data-preview-panel-key="task_plan"
         className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <SparklesIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
-          </div>
-          <ExpandPreviewIconButton label={`Open ${title}`} onClick={() => setDialogOpen(true)} />
-        </div>
-        {taskPlanContent}
+        {attachedApproval ? (
+          <PreviewApprovalReference
+            approval={attachedApproval}
+            resolverNamesByUserId={resolverNamesByUserId}
+            onReview={onReviewApproval}
+            onOpenDocument={() => setDialogOpen(true)}
+          />
+        ) : (
+          <>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <SparklesIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+              </div>
+              <ExpandPreviewIconButton label={`Open ${title}`} onClick={() => setDialogOpen(true)} />
+            </div>
+            {taskPlanContent}
+          </>
+        )}
       </div>
       <PreviewExpandDialog open={dialogOpen} onOpenChange={setDialogOpen} title={title}>
         {taskPlanContent}
@@ -618,18 +714,34 @@ function TaskPlanPanel({
 export function CodingPreviewPanels({
   previewsByKey,
   attachedApprovalInteraction,
-  acting,
-  onResolveInteraction,
+  approvalStatesByPreviewKey,
+  resolverNamesByUserId,
+  onReviewApproval,
+  openPreviewPanelKey,
+  openPreviewRequestId = 0,
 }: {
   previewsByKey: Map<string, PublishedPreview>;
   attachedApprovalInteraction?: CodingSessionInteraction | null;
-  acting?: string | null;
-  onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
+  approvalStatesByPreviewKey?: Map<string, CodingSessionPreviewApprovalState>;
+  resolverNamesByUserId?: Map<string, string>;
+  onReviewApproval?: (interactionId: string) => void;
+  openPreviewPanelKey?: string | null;
+  openPreviewRequestId?: number;
 }) {
   const attachedApproval = useMemo(
     () => parseAttachedApprovalRequest(attachedApprovalInteraction),
     [attachedApprovalInteraction],
   );
+  const attachedApprovalState = useMemo(
+    () => previewApprovalStateFromAttachedApproval(attachedApproval),
+    [attachedApproval],
+  );
+  const approvalForPanel = (panelKey: string) => {
+    const normalizedPanelKey = normalizeCodingSessionPreviewPanelKey(panelKey) || panelKey;
+    const state = approvalStatesByPreviewKey?.get(normalizedPanelKey);
+    if (state) return state;
+    return attachedApprovalState?.previewPanelKey === normalizedPanelKey ? attachedApprovalState : null;
+  };
   const latestSpecDraftPreview = (() => {
     const preview = previewsByKey.get('prd_draft');
     if (preview?.format === 'markdown' && typeof preview.content === 'string') {
@@ -648,6 +760,12 @@ export function CodingPreviewPanels({
   });
   const [prdDialogOpen, setPrdDialogOpen] = useState(false);
 
+  useEffect(() => {
+    if (openPreviewPanelKey === 'prd_draft') {
+      setPrdDialogOpen(true);
+    }
+  }, [openPreviewPanelKey, openPreviewRequestId]);
+
   const panelCount = (latestSpecDraftPreview ? 1 : 0)
     + (latestTaskPlanPreview ? 1 : 0)
     + (latestDocsChangePreview ? 1 : 0)
@@ -657,6 +775,7 @@ export function CodingPreviewPanels({
   if (!latestSpecDraftPreview && !latestTaskPlanPreview && !latestDocsChangePreview && otherPreviewPanels.length === 0) {
     return null;
   }
+  const prdApproval = approvalForPanel('prd_draft');
 
   return (
     <>
@@ -666,28 +785,32 @@ export function CodingPreviewPanels({
             data-preview-panel-key="prd_draft"
             className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
           >
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {latestSpecDraftPreview.title || 'PRD Draft'}
-                </p>
-              </div>
-              <ExpandPreviewIconButton
-                label={`Open ${latestSpecDraftPreview.title || 'PRD Draft'}`}
-                onClick={() => setPrdDialogOpen(true)}
+            {prdApproval ? (
+              <PreviewApprovalReference
+                approval={prdApproval}
+                resolverNamesByUserId={resolverNamesByUserId}
+                onReview={onReviewApproval}
+                onOpenDocument={() => setPrdDialogOpen(true)}
               />
-            </div>
-            <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
-              <MarkdownContent content={latestSpecDraftPreview.content as string} className="text-[12px] leading-5" />
-            </div>
-            {attachedApproval?.previewPanelKey === 'prd_draft' && onResolveInteraction ? (
-              <PreviewApprovalFooter
-                approval={attachedApproval}
-                acting={acting ?? null}
-                onResolve={onResolveInteraction}
-              />
-            ) : null}
+            ) : (
+              <>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {latestSpecDraftPreview.title || 'PRD Draft'}
+                    </p>
+                  </div>
+                  <ExpandPreviewIconButton
+                    label={`Open ${latestSpecDraftPreview.title || 'PRD Draft'}`}
+                    onClick={() => setPrdDialogOpen(true)}
+                  />
+                </div>
+                <div className="max-h-[280px] overflow-auto rounded-md bg-muted/40 p-3">
+                  <MarkdownContent content={latestSpecDraftPreview.content as string} className="text-[12px] leading-5" />
+                </div>
+              </>
+            )}
           </div>
           <PreviewExpandDialog
             open={prdDialogOpen}
@@ -706,9 +829,11 @@ export function CodingPreviewPanels({
         <TaskPlanPanel
           title={previewsByKey.get('task_plan')?.title || 'Task Plan'}
           preview={latestTaskPlanPreview}
-          attachedApproval={attachedApproval?.previewPanelKey === 'task_plan' ? attachedApproval : null}
-          acting={acting}
-          onResolveInteraction={onResolveInteraction}
+          attachedApproval={approvalForPanel('task_plan')}
+          resolverNamesByUserId={resolverNamesByUserId}
+          onReviewApproval={onReviewApproval}
+          openPreviewPanelKey={openPreviewPanelKey}
+          openPreviewRequestId={openPreviewRequestId}
         />
       ) : null}
 
@@ -716,9 +841,11 @@ export function CodingPreviewPanels({
         <DocsChangePanel
           title={previewsByKey.get('docs_change')?.title || 'Docs Change Proposal'}
           preview={latestDocsChangePreview}
-          attachedApproval={attachedApproval?.previewPanelKey === 'docs_change' ? attachedApproval : null}
-          acting={acting}
-          onResolveInteraction={onResolveInteraction}
+          attachedApproval={approvalForPanel('docs_change')}
+          resolverNamesByUserId={resolverNamesByUserId}
+          onReviewApproval={onReviewApproval}
+          openPreviewPanelKey={openPreviewPanelKey}
+          openPreviewRequestId={openPreviewRequestId}
         />
       ) : null}
 
@@ -727,9 +854,12 @@ export function CodingPreviewPanels({
           key={preview.panelKey}
           preview={preview}
           expanded={isSolo}
-          attachedApproval={attachedApproval?.previewPanelKey === preview.panelKey ? attachedApproval : null}
-          acting={acting}
-          onResolveInteraction={onResolveInteraction}
+          attachedApproval={approvalForPanel(preview.panelKey)}
+          resolverNamesByUserId={resolverNamesByUserId}
+          approvalReferenceOnly={approvalForPanel(preview.panelKey) !== null}
+          onReviewApproval={onReviewApproval}
+          openPreviewPanelKey={openPreviewPanelKey}
+          openPreviewRequestId={openPreviewRequestId}
         />
       ))}
     </>

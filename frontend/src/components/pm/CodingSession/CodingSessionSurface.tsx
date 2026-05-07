@@ -20,11 +20,13 @@ import {
 } from '@/components/pm/CodingSession/codingSessionStream';
 import { normalizeCodingSessionPreviewPanelKey } from '@/components/pm/CodingSession/previewPanelKeys';
 import {
+  codingSessionApprovalStatesByPreviewKey,
   isPersistedCodingSessionEvent,
   latestPendingCodingSessionInteraction,
   maxPersistedCodingSessionSequence,
   upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
+import { useWorkspaceMembers } from '@/hooks/queries';
 import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { codingSessionService } from '@/lib/services/codingSessionService';
@@ -213,10 +215,23 @@ export function CodingSessionSurface({
     () => buildCodingSessionStreamState(events, streamSnapshotSeed),
     [events, streamSnapshotSeed],
   );
+  const { data: workspaceMembers } = useWorkspaceMembers(session?.workspace_id ?? workspaceId);
   const activeInteraction = useMemo(
     () => latestPendingCodingSessionInteraction(events),
     [events],
   );
+  const approvalStatesByPreviewKey = useMemo(
+    () => codingSessionApprovalStatesByPreviewKey(events),
+    [events],
+  );
+  const resolverNamesByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of workspaceMembers ?? []) {
+      if (!member.user_id) continue;
+      map.set(member.user_id, member.full_name || member.email || member.user_id);
+    }
+    return map;
+  }, [workspaceMembers]);
   const previewsByKey = useMemo(
     () => collectCodingSessionPreviews(events, streamState.live_turn_segments),
     [events, streamState.live_turn_segments],
@@ -234,13 +249,29 @@ export function CodingSessionSurface({
     return previewPanelKey;
   }, [activeInteraction, previewsByKey]);
   const approvalPreview = approvalPreviewPanelKey ? previewsByKey.get(approvalPreviewPanelKey) ?? null : null;
+  const [openPreviewRequest, setOpenPreviewRequest] = useState<{ panelKey: string | null; requestId: number }>({
+    panelKey: null,
+    requestId: 0,
+  });
   const handleViewPreview = useCallback((panelKey: string) => {
+    setOpenPreviewRequest((current) => ({
+      panelKey,
+      requestId: current.requestId + 1,
+    }));
     if (typeof document === 'undefined') return;
     const target = document.querySelector<HTMLElement>(`[data-preview-panel-key="${panelKey}"]`);
     if (!target) return;
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     target.setAttribute('data-preview-flash', 'true');
     window.setTimeout(() => target.removeAttribute('data-preview-flash'), 1400);
+  }, []);
+  const handleReviewApproval = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const target = document.querySelector<HTMLElement>('[data-coding-session-interruption-panel]');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    target.setAttribute('data-review-flash', 'true');
+    window.setTimeout(() => target.removeAttribute('data-review-flash'), 1400);
   }, []);
   const promptArtifact = useMemo(() => {
     for (let index = artifacts.length - 1; index >= 0; index -= 1) {
@@ -532,15 +563,21 @@ export function CodingSessionSurface({
         />
 
         {showSidePanel ? (
-          <div className="min-h-0 space-y-4 overflow-y-auto">
+          <div
+            className="min-h-0 space-y-4 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5rem)]"
+            data-coding-session-side-panel
+          >
             {showPlanPanel ? (
               <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
             ) : null}
             <CodingPreviewPanels
               previewsByKey={previewsByKey}
               attachedApprovalInteraction={activeInteraction}
-              acting={acting}
-              onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
+              approvalStatesByPreviewKey={approvalStatesByPreviewKey}
+              resolverNamesByUserId={resolverNamesByUserId}
+              onReviewApproval={handleReviewApproval}
+              openPreviewPanelKey={openPreviewRequest.panelKey}
+              openPreviewRequestId={openPreviewRequest.requestId}
             />
           </div>
         ) : null}

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
@@ -34,7 +34,6 @@ import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useWorkspaceMembers } from '@/hooks/queries';
 import { formatCodingSessionRelative } from './codingSessionUtils';
 import {
-  countVisibleTranscriptTurns,
   formatCodingSessionElapsed,
   isStatusTranscriptMessage,
 } from './codingSessionPresentation';
@@ -220,13 +219,6 @@ export function CodingTranscriptPane({
     return list;
   }, [promptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
 
-  const visibleTurnCount = useMemo(() => {
-    const liveAssistantTurn = visibleLiveSegments.some((segment) => (
-      segment.kind === 'assistant_message' && segment.assistant_message.content.trim().length > 0
-    )) || showLivePlaceholder;
-    return countVisibleTranscriptTurns(transcriptMessages) + (liveAssistantTurn ? 1 : 0);
-  }, [transcriptMessages, visibleLiveSegments, showLivePlaceholder]);
-
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollContainerRef.current,
@@ -259,6 +251,19 @@ export function CodingTranscriptPane({
       });
     });
   }, [items.length, virtualizer]);
+
+  const sessionScrollKey = session?.run_id ?? session?.id ?? 'unbound';
+  const initialTailSessionKeyRef = useRef<string | null>(null);
+
+  // When opening an existing run, land on the latest activity once. After that,
+  // only auto-follow if the user stays near the tail.
+  useEffect(() => {
+    if (loading || items.length === 0) return;
+    if (initialTailSessionKeyRef.current === sessionScrollKey) return;
+    initialTailSessionKeyRef.current = sessionScrollKey;
+    autoFollowRef.current = true;
+    scrollToTail();
+  }, [items.length, loading, scrollToTail, sessionScrollKey]);
 
   // Auto-scroll to bottom when new items arrive, but only if the user is already following the tail.
   const prevItemCountRef = useRef(items.length);
@@ -376,7 +381,7 @@ export function CodingTranscriptPane({
       case 'empty':
         return (
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
-            No transcript yet. Assistant and user-visible turns will appear here once the session starts talking.
+            No activity yet. Assistant and user-visible turns will appear here once the session starts talking.
           </div>
         );
     }
@@ -384,14 +389,10 @@ export function CodingTranscriptPane({
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <BotIcon className="h-3.5 w-3.5" />
-          Transcript
+      <div className="border-b border-border/60 px-4 py-2">
+        <div className="text-sm font-medium leading-5 text-muted-foreground">
+          Activity
         </div>
-        <Badge variant="outline" className="text-[10px]">
-          {visibleTurnCount} turns
-        </Badge>
       </div>
 
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
@@ -563,7 +564,11 @@ function InterruptionOverlay({
       {/* Colour fade on top of the blur layers */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-48 bg-gradient-to-t from-card to-transparent" />
 
-      <div className="max-h-[70vh] overflow-y-auto border-t border-border/80 bg-card/95 px-4 py-4 backdrop-blur-md">
+      <div
+        className="max-h-[70vh] overflow-y-auto border-t border-border/80 bg-card/95 px-4 py-4 backdrop-blur-md transition-shadow data-[review-flash=true]:ring-2 data-[review-flash=true]:ring-primary/35"
+        data-coding-session-interruption-panel
+      >
+        <div className="space-y-4">
       {session?.pause_reason === 'authentication' ? (
         <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/20">
           <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
@@ -617,6 +622,12 @@ function InterruptionOverlay({
           compact
         />
       ) : null}
+          <div
+            aria-hidden="true"
+            className="h-[calc(env(safe-area-inset-bottom)+5rem)]"
+            data-coding-session-interruption-spacer
+          />
+        </div>
       </div>
     </div>
   );
@@ -632,6 +643,18 @@ function MessageInput({
   placeholder: string;
 }) {
   const [value, setValue] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const resizeTextarea = useCallback((textarea = textareaRef.current) => {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(textarea.scrollHeight, 128);
+    textarea.style.height = nextHeight > 0 ? `${nextHeight}px` : '';
+    textarea.style.overflowY = textarea.scrollHeight > 128 ? 'auto' : 'hidden';
+  }, []);
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [resizeTextarea, value]);
 
   const handleSubmit = async () => {
     const trimmed = value.trim();
@@ -644,8 +667,12 @@ function MessageInput({
     <div className="border-t border-border bg-background px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3">
       <div className="flex items-center gap-2">
         <Textarea
+          ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            resizeTextarea(e.currentTarget);
+          }}
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
               e.preventDefault();
@@ -653,7 +680,7 @@ function MessageInput({
             }
           }}
           placeholder={placeholder}
-          className="min-h-[2.5rem] max-h-32 resize-none text-sm"
+          className="min-h-[2.5rem] max-h-32 resize-none overflow-hidden text-sm focus-visible:border-ring/70 focus-visible:ring-2 focus-visible:ring-ring/15"
           disabled={sending}
           rows={1}
         />
@@ -903,11 +930,17 @@ function ReviewDecisionTranscriptCard({
   actor: CodingSessionActor | null;
 }) {
   const reviewerName = actor?.full_name || actor?.email || 'Reviewer';
+  const normalizedContent = content.trim().toLowerCase();
+  const decisionLabel = normalizedContent.startsWith('requested changes')
+    ? 'requested changes'
+    : normalizedContent.startsWith('approved')
+      ? 'approved'
+      : 'reviewed';
   return (
     <div className="ml-auto w-full max-w-[90%]">
       <div className="mb-2 flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(timestamp)}</span>
-        <span className="font-medium">{reviewerName} reviewed</span>
+        <span className="font-medium">{reviewerName} {decisionLabel}</span>
         <UserAvatar
           name={reviewerName}
           avatarUrl={actor?.avatar_url}
@@ -1063,13 +1096,16 @@ function formatElapsed(ms: number): string {
 /** Subscribes to a 1-second tick so elapsed time stays live. */
 function useElapsedMs(since: string): number {
   const origin = useMemo(() => new Date(since).getTime(), [since]);
-  const subscribe = useCallback((cb: () => void) => {
-    const id = setInterval(cb, 1_000);
-    return () => clearInterval(id);
-  }, []);
-  const getSnapshot = useCallback(() => Math.floor((Date.now() - origin) / 1000), [origin]);
-  const tick = useSyncExternalStore(subscribe, getSnapshot);
-  return tick * 1000;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, [origin]);
+
+  if (!origin || Number.isNaN(origin)) return 0;
+  return Math.max(0, now - origin);
 }
 
 function RunningIndicator({ since }: { since: string }) {

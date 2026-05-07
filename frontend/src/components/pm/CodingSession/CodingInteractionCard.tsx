@@ -473,16 +473,13 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         onClick={() => onViewPreview!(availablePreviewPanelKey!)}
       >
         <ArrowExpandIcon className="h-3.5 w-3.5" />
-        Full preview
+        Open full preview
       </Button>
     ) : null;
 
     return (
       <InteractionShell compact={compact}
-        icon={<SecurityCheckIcon className="h-4 w-4" />}
-        eyebrow={approval?.phase ? `${approval.phase} approval` : 'Approval required'}
         title={interaction.title ?? approval?.title ?? 'Approval required'}
-        summary={interaction.summary ?? approval?.summary}
         action={fullPreviewAction}
       >
         <ApprovalInlinePreview
@@ -494,13 +491,16 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
           placeholder="Optional note sent with your decision"
-          className={cn('min-h-[76px]', attachedPreview && 'mt-3')}
+          className={cn(
+            'min-h-[76px] focus-visible:border-ring/70 focus-visible:ring-2 focus-visible:ring-ring/15',
+            attachedPreview && 'mt-3',
+          )}
           disabled={isBusy}
         />
-        <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
-          Sent with your decision. Approve accepts the document; request changes asks the agent to revise.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div
+          className="mt-5 flex flex-wrap gap-2 border-t border-border/60 pt-4"
+          data-coding-session-approval-actions
+        >
           <Button
             size="sm"
             className={approveButtonClassName}
@@ -540,12 +540,11 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         title={interaction.title ?? 'Approve additional permissions'}
         summary={interaction.summary}
       >
-        <div className={cn('space-y-2 rounded-lg border border-border bg-muted/25 p-3', compact ? 'text-xs' : 'text-sm')}>
-          <div><span className="font-medium text-foreground">Reason:</span> <span className="text-muted-foreground">{permissions?.reason ?? 'No reason provided.'}</span></div>
-          <pre className="overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-slate-950 px-3 py-2 text-[11px] leading-5 text-slate-100">
-            {JSON.stringify(requestedPermissions, null, 2)}
-          </pre>
-        </div>
+        <PermissionsApprovalDetails
+          reason={permissions?.reason ?? ''}
+          permissions={requestedPermissions}
+          compact={compact}
+        />
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -594,7 +593,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
           placeholder="Optional follow-up message if you want the agent to revise after denying"
-          className="mt-4 min-h-[76px]"
+          className="mt-4 min-h-[76px] focus-visible:border-ring/70 focus-visible:ring-2 focus-visible:ring-ring/15"
           disabled={isBusy}
         />
         <div className="mt-4 flex flex-wrap gap-2">
@@ -603,7 +602,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               key={decision}
               size="sm"
               variant={decision.startsWith('accept') ? 'default' : 'outline'}
-              className={cn(decision.startsWith('accept') && 'bg-emerald-600 hover:bg-emerald-700 text-white')}
+              className={runtimeDecisionButtonClassName(decision)}
               disabled={isBusy}
               onClick={() => onResolve(interaction.interaction_id, { decision }, followupMessage.trim() || undefined)}
             >
@@ -638,8 +637,8 @@ function InteractionShell({
   action,
   compact = false,
 }: {
-  icon: ReactNode;
-  eyebrow: string;
+  icon?: ReactNode;
+  eyebrow?: string;
   title: string;
   summary?: string;
   children: ReactNode;
@@ -651,14 +650,16 @@ function InteractionShell({
       className={cn(
         'rounded-xl border bg-card',
         compact
-          ? 'border-border border-l-2 border-l-amber-400/80 p-3 dark:border-l-amber-500/70'
+          ? 'border-amber-400/60 p-3 dark:border-amber-500/50'
           : 'border-border p-4',
       )}
     >
-      <div className={cn('mb-1.5 flex items-center gap-2 font-medium uppercase tracking-wide text-muted-foreground', compact ? 'text-[10px]' : 'text-[11px]')}>
-        {icon}
-        {eyebrow}
-      </div>
+      {eyebrow ? (
+        <div className={cn('mb-1.5 flex items-center gap-2 font-medium uppercase tracking-wide text-muted-foreground', compact ? 'text-[10px]' : 'text-[11px]')}>
+          {icon}
+          {eyebrow}
+        </div>
+      ) : null}
       <div className="flex items-start justify-between gap-3">
         <div className={cn('min-w-0 font-semibold', compact ? 'text-sm' : 'text-base')}>{title}</div>
         {action ? <div className="shrink-0">{action}</div> : null}
@@ -683,6 +684,44 @@ function ApprovalInlinePreview({
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
 }) {
+  const taskPlanPreview = parseApprovalTaskPlanPreview(preview);
+  if (taskPlanPreview) {
+    return (
+      <div className="mb-3 rounded-lg border border-border/70 bg-muted/25">
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Document preview
+            </span>
+          </div>
+        </div>
+        <div className="space-y-2 px-3 py-2">
+          {taskPlanPreview.summary ? (
+            <MarkdownContent content={taskPlanPreview.summary} className="text-[12px] leading-5 text-foreground" />
+          ) : null}
+          <div className="space-y-1">
+            {taskPlanPreview.tasks.map((task, index) => (
+              <div key={`${task.ref ?? task.title}-${index}`} className="rounded-md bg-background/70 px-2.5 py-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {task.ref ? (
+                    <Badge variant="outline" className="h-5 rounded-full px-1.5 text-[10px] text-muted-foreground">
+                      {task.ref}
+                    </Badge>
+                  ) : null}
+                  <span className="text-xs font-medium text-foreground">{task.title}</span>
+                </div>
+                {task.description ? (
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{task.description}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const previewContent = approvalPreviewContent(preview);
   if (!previewContent) return null;
 
@@ -702,29 +741,80 @@ function ApprovalInlinePreview({
         </div>
       </div>
       <div className="px-3 py-2">
-        <MarkdownContent content={visibleContent} className="text-[12px] leading-5 text-foreground" />
+        <div
+          className={cn(
+            'relative',
+            isTruncated && !expanded && 'overflow-hidden pb-4',
+          )}
+        >
+          <MarkdownContent content={visibleContent} className="text-[12px] leading-5 text-foreground" />
+          {isTruncated && !expanded ? (
+            <div
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-card/95 via-card/70 to-transparent"
+              data-coding-session-approval-preview-fade
+            />
+          ) : null}
+        </div>
         {isTruncated ? (
-          <button
-            type="button"
-            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            onClick={() => onExpandedChange(!expanded)}
-          >
-            {expanded ? (
-              <>
-                <ArrowUp02Icon className="h-3.5 w-3.5" />
-                Show less
-              </>
-            ) : (
-              <>
-                <ArrowDown02Icon className="h-3.5 w-3.5" />
-                Show more
-              </>
-            )}
-          </button>
+          <div className="mt-3 border-t border-border/60 pt-2">
+            <button
+              type="button"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              onClick={() => onExpandedChange(!expanded)}
+            >
+              {expanded ? (
+                <>
+                  <ArrowUp02Icon className="h-3.5 w-3.5" />
+                  Collapse preview
+                </>
+              ) : (
+                <>
+                  <ArrowDown02Icon className="h-3.5 w-3.5" />
+                  Show full preview
+                </>
+              )}
+            </button>
+          </div>
         ) : null}
       </div>
     </div>
   );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function parseApprovalTaskPlanPreview(preview?: PublishedPreview | null) {
+  if (!preview || preview.format !== 'json') return null;
+  const record = asRecord(preview.content);
+  if (!record) return null;
+  const proposedTasks = Array.isArray(record.proposed_tasks)
+    ? record.proposed_tasks
+    : Array.isArray(record.proposed_stories)
+      ? record.proposed_stories
+      : [];
+  const tasks = proposedTasks.flatMap((entry) => {
+    const task = asRecord(entry);
+    if (!task) return [];
+    const title = stringValue(task.title) || stringValue(task.name);
+    if (!title) return [];
+    return [{
+      ref: stringValue(task.ref) || undefined,
+      title,
+      description: stringValue(task.description) || undefined,
+    }];
+  });
+  if (tasks.length === 0) return null;
+  return {
+    summary: stringValue(record.summary) || undefined,
+    tasks,
+  };
 }
 
 function approvalPreviewContent(preview?: PublishedPreview | null): string | null {
@@ -996,6 +1086,57 @@ function parsePermissionsRequest(payload: Record<string, unknown>) {
   };
 }
 
+function formatPermissionValue(value: unknown): string {
+  if (value === true) return 'Allowed';
+  if (value === false) return 'Not allowed';
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (Array.isArray(value)) {
+    return value.map((entry) => formatPermissionValue(entry)).join(', ');
+  }
+  if (value && typeof value === 'object') return 'Custom';
+  return 'Not specified';
+}
+
+function PermissionsApprovalDetails({
+  reason,
+  permissions,
+  compact,
+}: {
+  reason: string;
+  permissions: Record<string, unknown>;
+  compact?: boolean;
+}) {
+  const entries = Object.entries(permissions);
+  return (
+    <div className={cn('space-y-3 rounded-lg border border-border bg-muted/25 p-3', compact ? 'text-xs' : 'text-sm')}>
+      {reason ? (
+        <p className="leading-5 text-muted-foreground">{reason}</p>
+      ) : null}
+      {entries.length ? (
+        <div className="space-y-1.5">
+          {entries.map(([name, value]) => (
+            <div key={name} className="flex items-center justify-between gap-3 rounded-md bg-background/70 px-2.5 py-2">
+              <span className="min-w-0 truncate font-medium text-foreground">{name.replaceAll('_', ' ')}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{formatPermissionValue(value)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground">No additional permissions were listed.</p>
+      )}
+      <details>
+        <summary className="cursor-pointer list-none text-xs font-medium text-muted-foreground hover:text-foreground">
+          Raw details
+        </summary>
+        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-background px-3 py-2 text-[11px] leading-5 text-muted-foreground">
+          {JSON.stringify(permissions, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 const COMMAND_COLLAPSED_LINES = 6;
 
 function extractFilePaths(command: string): string[] {
@@ -1096,4 +1237,14 @@ function labelForDecision(decision: string) {
     default:
       return decision;
   }
+}
+
+function runtimeDecisionButtonClassName(decision: string) {
+  if (decision.startsWith('accept')) {
+    return 'bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white';
+  }
+  if (decision === 'decline' || decision === 'cancel') {
+    return 'border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive';
+  }
+  return undefined;
 }

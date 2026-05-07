@@ -67,6 +67,7 @@ function renderCard(
     availablePreviewPanelKey?: string | null;
     attachedPreview?: PublishedPreview | null;
     onViewPreview?: (panelKey: string) => void;
+    compact?: boolean;
   } = {},
 ) {
   act(() => {
@@ -75,6 +76,7 @@ function renderCard(
         interaction={interaction ?? buildInteraction()}
         acting={null}
         onResolve={onResolve}
+        compact={options.compact}
         availablePreviewPanelKey={options.availablePreviewPanelKey}
         attachedPreview={options.attachedPreview}
         onViewPreview={options.onViewPreview}
@@ -260,20 +262,60 @@ describe('CodingInteractionCard', () => {
         surroundingText: '',
       },
       onViewPreview,
+      compact: true,
     });
 
+    expect(container.firstElementChild?.className).toContain('border-amber-400/60');
+    expect(container.firstElementChild?.className).not.toContain('border-l-2');
+    expect(container.textContent).not.toContain('task_doc approval');
+    expect(container.textContent).not.toContain('Review the proposed task document.');
     expect(container.textContent).toContain('Document preview');
     expect(container.textContent).toContain('Short proposed plan.');
     expect(container.textContent).not.toContain('Should the fix include a migration?');
-    expect(container.textContent).toContain('Full preview');
+    expect(container.textContent).toContain('Open full preview');
+    expect(container.querySelector('[data-coding-session-approval-preview-fade]')).toBeTruthy();
 
-    clickButton('Show more');
+    clickButton('Show full preview');
 
     expect(container.textContent).toContain('Should the fix include a migration?');
+    expect(container.textContent).toContain('Collapse preview');
+    expect(container.querySelector('[data-coding-session-approval-preview-fade]')).toBeNull();
 
-    clickButton('Full preview');
+    clickButton('Open full preview');
 
     expect(onViewPreview).toHaveBeenCalledWith('task_plan_doc');
+  });
+
+  it('renders structured approval JSON previews without dumping raw JSON first', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve task plan',
+      request_payload: {
+        phase: 'plan',
+        preview_panel_key: 'task_plan',
+        title: 'Approve task plan',
+      },
+    }), {
+      attachedPreview: {
+        panelKey: 'task_plan',
+        title: 'Task Plan',
+        format: 'json',
+        content: {
+          summary: 'Plan summary',
+          proposed_tasks: [
+            { ref: 'T1', title: 'Ship faster', description: 'Do the work' },
+          ],
+        },
+        replace: true,
+        surroundingText: '',
+      },
+      compact: true,
+    });
+
+    expect(container.textContent).toContain('Plan summary');
+    expect(container.textContent).toContain('Ship faster');
+    expect(container.textContent).not.toContain('"proposed_tasks"');
   });
 
   it('labels approve as approve with note and sends the note with an approval decision', () => {
@@ -289,6 +331,15 @@ describe('CodingInteractionCard', () => {
 
     typeTextarea('Looks good. Keep the scope narrow.');
 
+    const noteInput = container.querySelector('textarea');
+    expect(noteInput?.className).toContain('focus-visible:border-ring/70');
+    expect(noteInput?.className).toContain('focus-visible:ring-ring/15');
+
+    const approvalActions = container.querySelector('[data-coding-session-approval-actions]');
+    expect(approvalActions?.className).toContain('mt-5');
+    expect(approvalActions?.className).toContain('pt-4');
+    expect(approvalActions?.className).toContain('border-t');
+
     clickButton('Approve with note');
 
     expect(onResolve).toHaveBeenCalledWith(
@@ -299,5 +350,47 @@ describe('CodingInteractionCard', () => {
       },
       'Looks good. Keep the scope narrow.',
     );
+  });
+
+  it('shows permission approvals as readable permissions with raw details collapsed', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'permissions_approval',
+      title: 'Approve workspace access',
+      request_payload: {
+        reason: 'The agent needs to inspect project files.',
+        permissions: {
+          filesystem: 'workspace-write',
+          network: false,
+        },
+      },
+    }));
+
+    expect(container.textContent).toContain('filesystem');
+    expect(container.textContent).toContain('workspace-write');
+    expect(container.textContent).toContain('network');
+    expect(container.textContent).toContain('Not allowed');
+    expect(container.querySelector('details summary')?.textContent).toContain('Raw details');
+  });
+
+  it('uses destructive treatment for command denial actions', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'command_execution_approval',
+      title: 'Approve command execution',
+      request_payload: {
+        command: 'npm test -- CodingInteractionCard.test.tsx',
+        reason: 'Verify the card behavior.',
+        availableDecisions: ['accept', 'decline', 'cancel'],
+      },
+    }));
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea?.className).toContain('focus-visible:border-ring/70');
+
+    const declineButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Decline');
+    const cancelButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Cancel turn');
+    expect(declineButton?.className).toContain('hover:bg-destructive/10');
+    expect(cancelButton?.className).toContain('hover:bg-destructive/10');
   });
 });

@@ -76,14 +76,6 @@ function renderHeader(session: CodingSession) {
   });
 }
 
-function clickButton(label: string) {
-  const button = Array.from(container.querySelectorAll('button')).find((candidate) => candidate.textContent?.trim() === label);
-  expect(button).toBeTruthy();
-  act(() => {
-    button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  });
-}
-
 describe('CodingSessionHeader', () => {
   it('renders completed sessions in a compact header with full repo and branch titles', () => {
     const session = buildSession();
@@ -99,15 +91,42 @@ describe('CodingSessionHeader', () => {
     expect(container.textContent).toContain('Completed');
     expect(container.textContent).not.toContain('Tokens');
     expect(container.textContent).not.toContain('Progress');
+
+    const backAction = Array.from(container.querySelectorAll('[data-slot="tooltip-trigger"]')).find((node) => (
+      node.textContent?.trim() === 'Back to activity'
+    ));
+    expect(backAction).toBeTruthy();
+
+    const cancelAction = container.querySelector('button[aria-label="Cancel run"]');
+    const refreshAction = container.querySelector('button[aria-label="Refresh"]');
+    expect(cancelAction?.getAttribute('aria-disabled')).toBe('true');
+    expect(cancelAction?.hasAttribute('disabled')).toBe(false);
+    expect(cancelAction?.className).toContain('hover:bg-destructive/10');
+    expect(cancelAction?.className).toContain('hover:text-destructive');
+    expect(refreshAction?.getAttribute('aria-disabled')).toBe('false');
+    expect(refreshAction?.hasAttribute('disabled')).toBe(false);
   });
 
-  it('lets users expand completed session details manually', () => {
-    renderHeader(buildSession());
+  it('shows completed session details while the header is being inspected', () => {
+    const session = buildSession();
+    renderHeader(session);
 
-    clickButton('Details');
+    act(() => {
+      container.firstElementChild?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    });
 
     expect(container.textContent).toContain('Tokens');
-    expect(container.textContent).toContain('Progress');
+    expect(container.textContent).not.toContain('Progress');
+    expect(container.textContent).toContain('Queued');
+    expect(container.textContent).toContain('Preparing');
+    expect(container.textContent).toContain('Starting agent');
+    expect(container.textContent).toContain('Working');
+    expect(container.textContent?.match(/d4interactive\/contentstudio-website-v2/g)).toHaveLength(1);
+    expect(container.textContent?.match(/feature\/cont-139-create-a-new-page-for-hootsuite-alternative/g)).toHaveLength(1);
+
+    const tokenTrigger = container.querySelector('button[aria-label^="Token usage:"]');
+    expect(tokenTrigger?.getAttribute('aria-label')).toBe('Token usage: 120k input (119k cached) / 722 output');
+    expect(tokenTrigger?.hasAttribute('title')).toBe(false);
   });
 
   it('auto-collapses running session details after a short delay', () => {
@@ -125,6 +144,83 @@ describe('CodingSessionHeader', () => {
     });
 
     expect(container.textContent).not.toContain('Tokens');
-    expect(container.textContent).toContain('Details');
+    expect(container.textContent).not.toContain('Details');
+    expect(container.textContent).not.toContain('Hide details');
+  });
+
+  it('freezes elapsed time while waiting for approval', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-07T08:30:00Z'));
+
+    renderHeader(buildSession({
+      status: 'paused',
+      pause_reason: 'human_approval',
+      started_at: '2026-05-07T08:00:00Z',
+      updated_at: '2026-05-07T08:07:15Z',
+    }));
+
+    expect(container.textContent).toContain('7m 15s');
+    expect(container.textContent).toContain('Awaiting approval');
+    expect(container.textContent).not.toContain('Human Approval');
+
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(container.textContent).toContain('7m 15s');
+    expect(container.textContent).not.toContain('7m 25s');
+  });
+
+  it('uses lifecycle colors for running and approval status labels', () => {
+    renderHeader(buildSession({
+      status: 'running',
+      execution_stage: 'codex_running',
+      started_at: '2026-05-07T08:00:00Z',
+    }));
+
+    const runningBadge = Array.from(container.querySelectorAll('[data-slot="badge"]')).find((badge) => (
+      badge.textContent?.includes('Agent working')
+    ));
+    expect(runningBadge?.className).toContain('bg-primary/10');
+
+    act(() => {
+      root.render(
+        <TooltipProvider>
+          <CodingSessionHeader
+            session={buildSession({
+              id: 'run-approval',
+              status: 'paused',
+              pause_reason: 'human_approval',
+              started_at: '2026-05-07T08:00:00Z',
+              updated_at: '2026-05-07T08:07:15Z',
+            })}
+            statusIcon={<span />}
+            workspaceSlug="workspace"
+            onRefresh={() => {}}
+            onCancelRun={() => {}}
+          />
+        </TooltipProvider>,
+      );
+    });
+
+    const approvalBadge = Array.from(container.querySelectorAll('[data-slot="badge"]')).find((badge) => (
+      badge.textContent?.includes('Awaiting approval')
+    ));
+    expect(approvalBadge?.className).toContain('bg-amber-500/10');
+  });
+
+  it('uses user-facing lifecycle terms in the progress strip', () => {
+    renderHeader(buildSession({
+      status: 'paused',
+      pause_reason: 'human_approval',
+      started_at: '2026-05-07T08:00:00Z',
+      updated_at: '2026-05-07T08:07:15Z',
+    }));
+
+    expect(container.textContent).toContain('Preparing');
+    expect(container.textContent).toContain('Starting agent');
+    expect(container.textContent).toContain('Approval');
+    expect(container.textContent).not.toContain('Workspace');
+    expect(container.textContent).not.toContain('Runtime');
   });
 });
