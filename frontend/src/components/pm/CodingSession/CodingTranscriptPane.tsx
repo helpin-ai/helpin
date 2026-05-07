@@ -33,8 +33,14 @@ import type {
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { useWorkspaceMembers } from '@/hooks/queries';
 import { formatCodingSessionRelative } from './codingSessionUtils';
+import {
+  countVisibleTranscriptTurns,
+  formatCodingSessionElapsed,
+  isStatusTranscriptMessage,
+} from './codingSessionPresentation';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
 import { AgentRunArtifactView } from '@/components/pm/AgentRunArtifactView';
+import type { PublishedPreview } from '@/components/pm/runPreviews';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
@@ -97,6 +103,7 @@ export function CodingTranscriptPane({
   activeInteraction,
   acting,
   availablePreviewPanelKey,
+  attachedPreview,
   onViewPreview,
   onAuthStart,
   onAuthCancel,
@@ -119,6 +126,7 @@ export function CodingTranscriptPane({
   activeInteraction?: CodingSessionInteraction | null;
   acting?: string | null;
   availablePreviewPanelKey?: string | null;
+  attachedPreview?: PublishedPreview | null;
   onViewPreview?: (panelKey: string) => void;
   onAuthStart?: () => void;
   onAuthCancel?: () => void;
@@ -163,7 +171,9 @@ export function CodingTranscriptPane({
 
   // Build a flat list of all renderable items for the virtualizer.
   type VirtualItem =
+    | { kind: 'context'; message: CodingSessionTranscriptMessage }
     | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
+    | { kind: 'status'; message: CodingSessionTranscriptMessage }
     | { kind: 'review-artifact'; artifact: AgentRunArtifact; decisionArtifact?: AgentRunArtifact | null }
     | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
@@ -174,10 +184,14 @@ export function CodingTranscriptPane({
   const items = useMemo((): VirtualItem[] => {
     const list: VirtualItem[] = [];
     if (promptMessage) {
-      list.push({ kind: 'transcript', message: promptMessage });
+      list.push({ kind: 'context', message: promptMessage });
     }
     for (const message of transcriptMessages) {
-      list.push({ kind: 'transcript', message });
+      if (isStatusTranscriptMessage(message)) {
+        list.push({ kind: 'status', message });
+      } else {
+        list.push({ kind: 'transcript', message });
+      }
     }
     for (const reviewArtifact of reviewArtifacts) {
       list.push({
@@ -205,6 +219,13 @@ export function CodingTranscriptPane({
     }
     return list;
   }, [promptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+
+  const visibleTurnCount = useMemo(() => {
+    const liveAssistantTurn = visibleLiveSegments.some((segment) => (
+      segment.kind === 'assistant_message' && segment.assistant_message.content.trim().length > 0
+    )) || showLivePlaceholder;
+    return countVisibleTranscriptTurns(transcriptMessages) + (liveAssistantTurn ? 1 : 0);
+  }, [transcriptMessages, visibleLiveSegments, showLivePlaceholder]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -301,6 +322,10 @@ export function CodingTranscriptPane({
     switch (item.kind) {
       case 'transcript':
         return <TranscriptEntry message={item.message} actor={actorForMessage(item.message)} />;
+      case 'context':
+        return <RunContextDisclosure message={item.message} />;
+      case 'status':
+        return <StatusTimelineRow message={item.message} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
       case 'review-artifact':
@@ -365,7 +390,7 @@ export function CodingTranscriptPane({
           Transcript
         </div>
         <Badge variant="outline" className="text-[10px]">
-          {transcriptMessages.length + (promptMessage ? 1 : 0) + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
+          {visibleTurnCount} turns
         </Badge>
       </div>
 
@@ -409,6 +434,7 @@ export function CodingTranscriptPane({
           activeInteraction={activeInteraction ?? null}
           acting={acting ?? null}
           availablePreviewPanelKey={availablePreviewPanelKey ?? null}
+          attachedPreview={attachedPreview ?? null}
           onViewPreview={onViewPreview}
           onAuthStart={onAuthStart ?? (() => {})}
           onAuthCancel={onAuthCancel ?? (() => {})}
@@ -500,6 +526,7 @@ function InterruptionOverlay({
   activeInteraction,
   acting,
   availablePreviewPanelKey,
+  attachedPreview,
   onViewPreview,
   onAuthStart,
   onAuthCancel,
@@ -509,6 +536,7 @@ function InterruptionOverlay({
   activeInteraction: CodingSessionInteraction | null;
   acting: string | null;
   availablePreviewPanelKey?: string | null;
+  attachedPreview?: PublishedPreview | null;
   onViewPreview?: (panelKey: string) => void;
   onAuthStart: () => void;
   onAuthCancel: () => void;
@@ -584,6 +612,7 @@ function InterruptionOverlay({
           acting={acting}
           onResolve={onResolveInteraction}
           availablePreviewPanelKey={availablePreviewPanelKey}
+          attachedPreview={attachedPreview}
           onViewPreview={onViewPreview}
           compact
         />
@@ -612,7 +641,7 @@ function MessageInput({
   };
 
   return (
-    <div className="border-t border-border bg-background px-3 py-3">
+    <div className="border-t border-border bg-background px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3">
       <div className="flex items-center gap-2">
         <Textarea
           value={value}
@@ -636,6 +665,43 @@ function MessageInput({
         >
           {sending ? <Loading01Icon className="h-5 w-5 animate-spin" /> : <ArrowUp02Icon className="h-5 w-5" />}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function RunContextDisclosure({ message }: { message: CodingSessionTranscriptMessage }) {
+  const label = message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt';
+  return (
+    <details className="mb-3 rounded-lg border border-border/70 bg-muted/25 px-3 py-2">
+      <summary className="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Run context
+      </summary>
+      <div className="mt-2 border-t border-border/60 pt-2">
+        <div className="mb-1 text-[11px] font-medium text-muted-foreground">{label}</div>
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground/80">
+          {message.content}
+        </pre>
+      </div>
+    </details>
+  );
+}
+
+function StatusTimelineRow({ message }: { message: CodingSessionTranscriptMessage }) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted/60 text-muted-foreground">
+          <Loading01Icon className="h-3.5 w-3.5" />
+        </div>
+        <div className="mt-1 h-full min-h-[1rem] w-px bg-border/50" />
+      </div>
+      <div className="min-w-0 flex-1 pb-4">
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">Status</span>
+          <span className="text-[11px] text-muted-foreground">{formatCodingSessionRelative(message.timestamp)}</span>
+        </div>
+        <p className="text-[13px] leading-6 text-muted-foreground">{message.content}</p>
       </div>
     </div>
   );
@@ -922,7 +988,7 @@ function AssistantTimelineRow({
           <span className="text-xs font-medium text-foreground">Assistant</span>
           {live ? (
             <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-              {streaming ? 'Live' : 'Finishing'}
+              {streaming ? 'Live' : 'Update'}
             </Badge>
           ) : null}
         </div>
@@ -991,13 +1057,7 @@ function AssistantMessageBubble({
 // ─── Running indicator ──────────────────────────────────────────────────────
 
 function formatElapsed(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
-  return `${s}s`;
+  return formatCodingSessionElapsed(ms);
 }
 
 /** Subscribes to a 1-second tick so elapsed time stays live. */

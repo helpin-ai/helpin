@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { Folder01Icon, GitBranchIcon, Loading01Icon, CancelCircleIcon, ArrowReloadHorizontalIcon } from '@/lib/icons';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
@@ -11,6 +11,10 @@ import type { CodingSession } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatCodingSessionRelative } from './codingSessionUtils';
+import {
+  codingSessionStatusLabel,
+  formatCodingSessionElapsed,
+} from './codingSessionPresentation';
 
 function capitalize(text: string) {
   return text.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -22,6 +26,23 @@ function resolveSessionAgentName(session: CodingSession | null) {
     return 'Agent';
   }
   return title;
+}
+
+function isActiveSessionStatus(status?: string | null) {
+  return status === 'queued' || status === 'running' || status === 'paused';
+}
+
+function useElapsedSince(since?: string | null) {
+  const origin = useMemo(() => since ? new Date(since).getTime() : 0, [since]);
+  const subscribe = useCallback((cb: () => void) => {
+    const id = window.setInterval(cb, 1_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const getSnapshot = useCallback(() => {
+    if (!origin || Number.isNaN(origin)) return 0;
+    return Date.now() - origin;
+  }, [origin]);
+  return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 export function CodingSessionHeader({
@@ -49,6 +70,12 @@ export function CodingSessionHeader({
   const sessionTitle = session?.title?.trim() ?? '';
   const sessionSummary = session?.summary?.trim() ?? '';
   const showDetailBlock = (sessionTitle && sessionTitle !== agentName) || !!sessionSummary;
+  const statusLabel = codingSessionStatusLabel({
+    status: session?.status,
+    pauseReason: session?.pause_reason,
+    executionStage: session?.execution_stage,
+  });
+  const activeElapsedMs = useElapsedSince(isActiveSessionStatus(session?.status) ? session?.started_at ?? session?.created_at : null);
 
   return (
     <div className="space-y-3">
@@ -70,7 +97,7 @@ export function CodingSessionHeader({
                 )}
               >
                 {statusIcon}
-                {session?.status === 'running' ? 'Running' : capitalize(session?.status ?? 'Loading')}
+                {statusLabel}
               </Badge>
               {session?.pause_reason && session.pause_reason !== 'none' ? (
                 <Badge variant="outline" className="px-2 py-0.5 text-[11px] capitalize">
@@ -142,6 +169,15 @@ export function CodingSessionHeader({
                 </>
               ) : null}
 
+              {session && isActiveSessionStatus(session.status) ? (
+                <>
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Elapsed</dt>
+                  <dd className="font-medium tabular-nums text-foreground">
+                    {formatCodingSessionElapsed(activeElapsedMs)}
+                  </dd>
+                </>
+              ) : null}
+
               {session?.tokens_used ? (
                 <>
                   <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Tokens</dt>
@@ -196,6 +232,52 @@ export function CodingSessionHeader({
           ) : null}
         </div>
       ) : null}
+
+      {session ? <CodingSessionLifecycleStrip session={session} /> : null}
+    </div>
+  );
+}
+
+function CodingSessionLifecycleStrip({ session }: { session: CodingSession }) {
+  const items = [
+    { key: 'queued', label: 'Queued' },
+    { key: 'preparing', label: 'Workspace' },
+    { key: 'starting', label: 'Runtime' },
+    { key: 'working', label: 'Working' },
+    { key: 'terminal', label: session.status === 'completed' ? 'Completed' : session.status === 'failed' ? 'Failed' : 'Done' },
+  ];
+  const activeKey = (() => {
+    if (session.status === 'queued') return 'queued';
+    if (session.status === 'paused') return 'working';
+    if (session.status === 'completed' || session.status === 'failed' || session.status === 'cancelled') return 'terminal';
+    if (session.execution_stage === 'preparing') return 'preparing';
+    if (session.execution_stage === 'starting') return 'starting';
+    return 'working';
+  })();
+  const activeIndex = items.findIndex((item) => item.key === activeKey);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+      <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Progress
+      </span>
+      {items.map((item, index) => {
+        const complete = index < activeIndex;
+        const active = index === activeIndex;
+        return (
+          <div key={item.key} className="flex items-center gap-2">
+            {index > 0 ? <div className={cn('h-px w-5', complete || active ? 'bg-primary/50' : 'bg-border')} /> : null}
+            <span className={cn(
+              'inline-flex h-6 items-center rounded-full border px-2 text-[10px] font-medium',
+              complete && 'border-primary/20 bg-primary/5 text-primary',
+              active && 'border-primary/40 bg-primary/10 text-primary',
+              !complete && !active && 'border-border bg-muted/30 text-muted-foreground',
+            )}>
+              {item.label}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

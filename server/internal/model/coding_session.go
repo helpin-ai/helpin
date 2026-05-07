@@ -15,6 +15,9 @@ type CodingSession struct {
 	Status              string                       `json:"status"`
 	PauseReason         string                       `json:"pause_reason"`
 	ErrorMessage        *string                      `json:"error_message,omitempty"`
+	ExecutionStage      *string                      `json:"execution_stage,omitempty"`
+	LastHeartbeatAt     *time.Time                   `json:"last_heartbeat_at,omitempty"`
+	StartedAt           *time.Time                   `json:"started_at,omitempty"`
 	Title               string                       `json:"title"`
 	Summary             *string                      `json:"summary,omitempty"`
 	SystemPrompt        *string                      `json:"system_prompt,omitempty"`

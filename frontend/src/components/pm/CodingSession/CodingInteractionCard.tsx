@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CheckmarkCircle02Icon, File01Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
+import { ArrowDown02Icon, ArrowExpandIcon, ArrowUp02Icon, CheckmarkCircle02Icon, File01Icon, GitCommitIcon, SecurityCheckIcon } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import type { PublishedPreview } from '@/components/pm/runPreviews';
 import type {
   CodingSessionApprovalRequestPayload,
   CodingSessionApprovalResponsePayload,
@@ -23,6 +24,7 @@ interface Props {
   onResolve: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
   compact?: boolean;
   availablePreviewPanelKey?: string | null;
+  attachedPreview?: PublishedPreview | null;
   onViewPreview?: (panelKey: string) => void;
 }
 
@@ -31,17 +33,22 @@ interface QuestionAnswerState {
   freetext?: string;
 }
 
-export function CodingInteractionCard({ interaction, acting, onResolve, compact = false, availablePreviewPanelKey, onViewPreview }: Props) {
+const APPROVAL_PREVIEW_COLLAPSED_LENGTH = 480;
+const approveButtonClassName = 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500';
+
+export function CodingInteractionCard({ interaction, acting, onResolve, compact = false, availablePreviewPanelKey, attachedPreview, onViewPreview }: Props) {
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, QuestionAnswerState>>({});
   const [followupMessage, setFollowupMessage] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedFindingIDs, setSelectedFindingIDs] = useState<string[]>([]);
+  const [approvalPreviewExpanded, setApprovalPreviewExpanded] = useState(false);
 
   useEffect(() => {
     setQuestionAnswers({});
     setFollowupMessage('');
     setCurrentQuestionIndex(0);
     setSelectedFindingIDs([]);
+    setApprovalPreviewExpanded(false);
   }, [interaction.interaction_id]);
 
   const isBusy = acting !== null;
@@ -404,6 +411,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             size="sm"
+            className={approveButtonClassName}
             disabled={isBusy}
             onClick={() => onResolve(
               interaction.interaction_id,
@@ -416,6 +424,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
           {hasFindings ? (
             <Button
               variant="outline"
+              className={approveButtonClassName}
               size="sm"
               disabled={isBusy || selectedCount === 0}
               onClick={() => onResolve(
@@ -454,6 +463,19 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
     });
 
     const canViewPreview = Boolean(availablePreviewPanelKey && onViewPreview);
+    const noteIsPresent = followupMessage.trim().length > 0;
+    const fullPreviewAction = canViewPreview ? (
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="-mr-1 h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => onViewPreview!(availablePreviewPanelKey!)}
+      >
+        <ArrowExpandIcon className="h-3.5 w-3.5" />
+        Full preview
+      </Button>
+    ) : null;
 
     return (
       <InteractionShell compact={compact}
@@ -461,27 +483,27 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         eyebrow={approval?.phase ? `${approval.phase} approval` : 'Approval required'}
         title={interaction.title ?? approval?.title ?? 'Approval required'}
         summary={interaction.summary ?? approval?.summary}
+        action={fullPreviewAction}
       >
-        {canViewPreview ? (
-          <button
-            type="button"
-            className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-            onClick={() => onViewPreview!(availablePreviewPanelKey!)}
-          >
-            <File01Icon className="h-3.5 w-3.5" />
-            View document preview
-          </button>
-        ) : null}
+        <ApprovalInlinePreview
+          preview={attachedPreview}
+          expanded={approvalPreviewExpanded}
+          onExpandedChange={setApprovalPreviewExpanded}
+        />
         <Textarea
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
-          placeholder="Optional note for the agent"
-          className="min-h-[76px]"
+          placeholder="Optional note sent with your decision"
+          className={cn('min-h-[76px]', attachedPreview && 'mt-3')}
           disabled={isBusy}
         />
+        <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+          Sent with your decision. Approve accepts the document; request changes asks the agent to revise.
+        </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             size="sm"
+            className={approveButtonClassName}
             disabled={isBusy}
             onClick={() => onResolve(
               interaction.interaction_id,
@@ -489,7 +511,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               followupMessage.trim() || undefined,
             )}
           >
-            Approve
+            {noteIsPresent ? 'Approve with note' : 'Approve'}
           </Button>
           <Button
             variant="outline"
@@ -501,7 +523,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
               followupMessage.trim() || undefined,
             )}
           >
-            Request changes
+            {noteIsPresent ? 'Request changes with note' : 'Request changes'}
           </Button>
         </div>
       </InteractionShell>
@@ -613,6 +635,7 @@ function InteractionShell({
   title,
   summary,
   children,
+  action,
   compact = false,
 }: {
   icon: ReactNode;
@@ -620,6 +643,7 @@ function InteractionShell({
   title: string;
   summary?: string;
   children: ReactNode;
+  action?: ReactNode;
   compact?: boolean;
 }) {
   return (
@@ -635,7 +659,10 @@ function InteractionShell({
         {icon}
         {eyebrow}
       </div>
-      <div className={cn('font-semibold', compact ? 'text-sm' : 'text-base')}>{title}</div>
+      <div className="flex items-start justify-between gap-3">
+        <div className={cn('min-w-0 font-semibold', compact ? 'text-sm' : 'text-base')}>{title}</div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
       {summary ? (
         <MarkdownContent
           content={summary}
@@ -645,6 +672,74 @@ function InteractionShell({
       <div className={compact ? 'mt-3' : 'mt-4'}>{children}</div>
     </div>
   );
+}
+
+function ApprovalInlinePreview({
+  preview,
+  expanded,
+  onExpandedChange,
+}: {
+  preview?: PublishedPreview | null;
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+}) {
+  const previewContent = approvalPreviewContent(preview);
+  if (!previewContent) return null;
+
+  const isTruncated = previewContent.length > APPROVAL_PREVIEW_COLLAPSED_LENGTH;
+  const visibleContent = !expanded && isTruncated
+    ? `${previewContent.slice(0, APPROVAL_PREVIEW_COLLAPSED_LENGTH).trimEnd()}...`
+    : previewContent;
+
+  return (
+    <div className="mb-3 rounded-lg border border-border/70 bg-muted/25">
+      <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <File01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Document preview
+          </span>
+        </div>
+      </div>
+      <div className="px-3 py-2">
+        <MarkdownContent content={visibleContent} className="text-[12px] leading-5 text-foreground" />
+        {isTruncated ? (
+          <button
+            type="button"
+            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            onClick={() => onExpandedChange(!expanded)}
+          >
+            {expanded ? (
+              <>
+                <ArrowUp02Icon className="h-3.5 w-3.5" />
+                Show less
+              </>
+            ) : (
+              <>
+                <ArrowDown02Icon className="h-3.5 w-3.5" />
+                Show more
+              </>
+            )}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function approvalPreviewContent(preview?: PublishedPreview | null): string | null {
+  if (!preview) return null;
+  if (preview.format === 'markdown' && typeof preview.content === 'string') {
+    return preview.content.trim() || null;
+  }
+  if (preview.format === 'json') {
+    try {
+      return JSON.stringify(preview.content, null, 2);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function normalizePromptText(value: string) {

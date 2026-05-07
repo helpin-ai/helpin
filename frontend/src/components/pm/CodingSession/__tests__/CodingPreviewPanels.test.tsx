@@ -103,6 +103,45 @@ describe('CodingPreviewPanels', () => {
     );
   });
 
+  it('clarifies note behavior and uses note-aware approve labels in preview approval controls', () => {
+    const onResolveInteraction = vi.fn();
+    renderPanels({
+      interaction: {
+        interaction_id: 'interaction-note',
+        interaction_kind: 'approval_request',
+        status: 'pending',
+        request_schema_version: 'helpin.v1',
+        request_payload: {
+          phase: 'prd',
+          preview_panel_key: 'prd_draft',
+          title: 'Approve PRD',
+        },
+      } satisfies CodingSessionInteraction,
+      onResolveInteraction,
+    });
+
+    expect(container.textContent).toContain('Sent with your decision.');
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).toBeTruthy();
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+      valueSetter?.call(textarea, 'Approved, but keep the rollout staged.');
+      textarea!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    clickButton('Approve with note');
+
+    expect(onResolveInteraction).toHaveBeenCalledWith(
+      'interaction-note',
+      {
+        decision: 'approve',
+        message: 'Approved, but keep the rollout staged.',
+      },
+      'Approved, but keep the rollout staged.',
+    );
+  });
+
   it('renders request changes for task-plan-doc style generic previews', () => {
     const onResolveInteraction = vi.fn();
     renderPanels({

@@ -152,6 +152,12 @@ export function CodingSessionSurface({
           : current.parent_run_id,
         status: typeof detail.data?.status === 'string' ? detail.data.status as CodingSession['status'] : current.status,
         pause_reason: typeof detail.data?.pause_reason === 'string' ? detail.data.pause_reason as CodingSession['pause_reason'] : current.pause_reason,
+        execution_stage: typeof detail.data?.execution_stage === 'string'
+          ? detail.data.execution_stage || undefined
+          : current.execution_stage,
+        last_heartbeat_at: typeof detail.data?.last_heartbeat_at === 'string'
+          ? detail.data.last_heartbeat_at || undefined
+          : current.last_heartbeat_at,
         error_message: typeof detail.data?.error_message === 'string'
           ? detail.data.error_message || undefined
           : current.error_message,
@@ -229,6 +235,7 @@ export function CodingSessionSurface({
     if (!previewPanelKey || !previewsByKey.has(previewPanelKey)) return null;
     return previewPanelKey;
   }, [activeInteraction, previewsByKey]);
+  const approvalPreview = approvalPreviewPanelKey ? previewsByKey.get(approvalPreviewPanelKey) ?? null : null;
   const handleViewPreview = useCallback((panelKey: string) => {
     if (typeof document === 'undefined') return;
     const target = document.querySelector<HTMLElement>(`[data-preview-panel-key="${panelKey}"]`);
@@ -519,6 +526,7 @@ export function CodingSessionSurface({
           acting={acting}
           messagePlaceholder={messagePlaceholder}
           availablePreviewPanelKey={approvalPreviewPanelKey}
+          attachedPreview={approvalPreview}
           onViewPreview={handleViewPreview}
           onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
           onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
@@ -532,6 +540,7 @@ export function CodingSessionSurface({
             ) : null}
             <CodingPreviewPanels
               previewsByKey={previewsByKey}
+              attachedApprovalInteraction={activeInteraction}
               acting={acting}
               onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
             />

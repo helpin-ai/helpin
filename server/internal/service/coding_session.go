@@ -387,12 +387,6 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		title = "Coding Session"
 	}
 
-	var summary *string
-	if strings.TrimSpace(derefString(run.ExecutionStage)) != "" {
-		stage := strings.TrimSpace(derefString(run.ExecutionStage))
-		summary = &stage
-	}
-
 	artifacts, err := s.ListRunArtifacts(ctx, run.WorkspaceID, run.ID)
 	if err != nil {
 		return nil, err
@@ -441,8 +435,10 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		Status:              run.Status,
 		PauseReason:         run.PauseReason,
 		ErrorMessage:        run.ErrorMessage,
+		ExecutionStage:      trimPtr(run.ExecutionStage),
+		LastHeartbeatAt:     run.LastHeartbeatAt,
+		StartedAt:           run.StartedAt,
 		Title:               title,
-		Summary:             summary,
 		SystemPrompt:        systemPrompt,
 		Capabilities:        codingSessionCapabilitiesForRun(run),
 		Repo:                repoState,

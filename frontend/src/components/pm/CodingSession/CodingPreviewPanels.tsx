@@ -359,6 +359,7 @@ function PreviewApprovalFooter({
   }, [approval.interaction.interaction_id]);
 
   const isBusy = acting === 'resolve-interaction';
+  const noteIsPresent = followupMessage.trim().length > 0;
 
   return (
     <div className="mt-3 rounded-lg border border-primary/15 bg-primary/[0.04] p-3">
@@ -378,9 +379,13 @@ function PreviewApprovalFooter({
         className="mt-3 min-h-[76px] bg-background"
         disabled={isBusy}
       />
+      <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">
+        Sent with your decision. Approve accepts the document; request changes asks the agent to revise.
+      </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
           size="sm"
+          className="border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white dark:border-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500"
           disabled={isBusy}
           onClick={() => onResolve(
             approval.interaction.interaction_id,
@@ -388,7 +393,7 @@ function PreviewApprovalFooter({
             followupMessage.trim() || undefined,
           )}
         >
-          Approve
+          {noteIsPresent ? 'Approve with note' : 'Approve'}
         </Button>
         <Button
           variant="outline"
@@ -400,7 +405,7 @@ function PreviewApprovalFooter({
             followupMessage.trim() || undefined,
           )}
         >
-          Request changes
+          {noteIsPresent ? 'Request changes with note' : 'Request changes'}
         </Button>
       </div>
     </div>
@@ -429,14 +434,13 @@ function GenericPreviewPanel({
         data-preview-panel-key={preview.panelKey}
         className="rounded-md border border-border/60 bg-card/80 p-3 transition-shadow data-[preview-flash=true]:ring-2 data-[preview-flash=true]:ring-primary/40"
       >
-        <button
-          type="button"
-          className="mb-2 flex w-full items-center gap-2 text-left transition-colors hover:text-primary"
-          onClick={() => setDialogOpen(true)}
-        >
-          <File01Icon className="h-4 w-4 text-muted-foreground" />
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
-        </button>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <p className="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">{preview.title}</p>
+          </div>
+          <ExpandPreviewIconButton label={`Open ${preview.title}`} onClick={() => setDialogOpen(true)} />
+        </div>
         <div
           className={cn(
             'relative overflow-hidden rounded-md bg-muted/40 p-3',
@@ -457,14 +461,7 @@ function GenericPreviewPanel({
             )}
           />
         </div>
-        {expanded ? (
-          <div className="mt-3 flex justify-center">
-            <Button type="button" variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-              <ArrowExpandIcon className="mr-1.5 h-3.5 w-3.5" />
-              View preview
-            </Button>
-          </div>
-        ) : (
+        {expanded ? null : (
           <ExpandPreviewButton onClick={() => setDialogOpen(true)} />
         )}
         {attachedApproval && onResolveInteraction ? (
