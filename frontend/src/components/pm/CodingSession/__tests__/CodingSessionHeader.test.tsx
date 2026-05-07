@@ -94,6 +94,7 @@ describe('CodingSessionHeader', () => {
     const titleRow = container.querySelector('[data-coding-session-title-row]');
     expect(titleRow?.querySelector('span[aria-hidden="true"]')).toBeTruthy();
     expect(titleRow?.querySelector('h1')?.textContent).toBe('Forge');
+    expect(titleRow?.textContent).not.toContain('Codex');
 
     const backAction = Array.from(container.querySelectorAll('[data-slot="tooltip-trigger"]')).find((node) => (
       node.textContent?.trim() === 'Back to activity'
@@ -120,16 +121,21 @@ describe('CodingSessionHeader', () => {
 
     expect(container.textContent).toContain('Tokens');
     expect(container.textContent).not.toContain('Progress');
-    expect(container.textContent).toContain('Queued');
-    expect(container.textContent).toContain('Preparing');
-    expect(container.textContent).toContain('Starting agent');
-    expect(container.textContent).toContain('Working');
+    const currentStage = container.querySelector('[data-coding-session-lifecycle-stage]');
+    expect(currentStage?.textContent).toContain('Completed');
+    expect(container.querySelectorAll('[data-coding-session-lifecycle-stage]')).toHaveLength(1);
     expect(container.textContent?.match(/d4interactive\/contentstudio-website-v2/g)).toHaveLength(1);
     expect(container.textContent?.match(/feature\/cont-139-create-a-new-page-for-hootsuite-alternative/g)).toHaveLength(1);
 
     const tokenTrigger = container.querySelector('button[aria-label^="Token usage:"]');
+    const runtimePill = container.querySelector('[data-coding-session-runtime-pill]');
     expect(tokenTrigger?.getAttribute('aria-label')).toBe('Token usage: 120k input (119k cached) / 722 output');
     expect(tokenTrigger?.hasAttribute('title')).toBe(false);
+    expect(runtimePill?.textContent).toBe('Codex');
+    expect(runtimePill?.closest('[data-coding-session-detail-row]')).toBeTruthy();
+    expect(
+      (tokenTrigger?.compareDocumentPosition(runtimePill as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('auto-collapses running session details after a short delay', () => {
@@ -212,7 +218,7 @@ describe('CodingSessionHeader', () => {
     expect(approvalBadge?.className).toContain('bg-amber-500/10');
   });
 
-  it('uses user-facing lifecycle terms in the progress strip', () => {
+  it('shows only the current user-facing lifecycle stage', () => {
     renderHeader(buildSession({
       status: 'paused',
       pause_reason: 'human_approval',
@@ -220,10 +226,69 @@ describe('CodingSessionHeader', () => {
       updated_at: '2026-05-07T08:07:15Z',
     }));
 
-    expect(container.textContent).toContain('Preparing');
-    expect(container.textContent).toContain('Starting agent');
-    expect(container.textContent).toContain('Approval');
-    expect(container.textContent).not.toContain('Workspace');
-    expect(container.textContent).not.toContain('Runtime');
+    const stage = container.querySelector('[data-coding-session-lifecycle-stage]');
+    expect(stage?.textContent).toContain('Approval');
+    expect(stage?.textContent).toContain('Waiting for your decision');
+    expect(stage?.textContent).not.toContain('Stage');
+    expect(container.querySelectorAll('[data-coding-session-lifecycle-stage]')).toHaveLength(1);
+    expect(stage?.textContent).not.toContain('Preparing');
+    expect(stage?.textContent).not.toContain('Starting agent');
+    expect(container.querySelector('.animate-pulse')).toBeNull();
+  });
+
+  it('marks the active working lifecycle step with a calm pulse', () => {
+    renderHeader(buildSession({
+      status: 'running',
+      execution_stage: 'codex_running',
+      started_at: '2026-05-07T08:00:00Z',
+    }));
+
+    const pulse = container.querySelector('.animate-pulse');
+    const stage = container.querySelector('[data-coding-session-lifecycle-stage]');
+    expect(pulse).toBeTruthy();
+    expect(pulse?.getAttribute('aria-hidden')).toBe('true');
+    expect(stage?.textContent).toContain('Working');
+    expect(stage?.textContent).toContain('Agent is working');
+    expect(stage?.textContent).not.toContain('Stage');
+  });
+
+  it('keeps runtime-specific starting stages on the Starting agent step', () => {
+    renderHeader(buildSession({
+      status: 'running',
+      execution_stage: 'codex_starting',
+      started_at: '2026-05-07T08:00:00Z',
+    }));
+
+    const stage = container.querySelector('[data-coding-session-lifecycle-stage]');
+    expect(stage?.textContent).toContain('Starting agent');
+  });
+
+  it('shows a resuming step after approval or feedback is received', () => {
+    renderHeader(buildSession({
+      status: 'running',
+      execution_stage: 'feedback_received',
+      started_at: '2026-05-07T08:00:00Z',
+    }));
+
+    const stage = container.querySelector('[data-coding-session-lifecycle-stage]');
+    expect(stage?.textContent).toContain('Resuming');
+  });
+
+  it('uses review and cancelled labels for those lifecycle states', () => {
+    renderHeader(buildSession({
+      status: 'paused',
+      pause_reason: 'human_approval',
+      execution_stage: 'awaiting_review',
+      started_at: '2026-05-07T08:00:00Z',
+    }));
+    expect(container.textContent).toContain('Review');
+
+    renderHeader(buildSession({
+      status: 'cancelled',
+      execution_stage: 'cancelled',
+      completed_at: '2026-05-07T08:08:00Z',
+    }));
+    expect(container.textContent).toContain('Cancelled');
+    expect(container.textContent).not.toContain('Done');
   });
 });

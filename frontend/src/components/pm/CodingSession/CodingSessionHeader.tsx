@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowReloadHorizontalIcon, ArrowRight02Icon, CancelCircleIcon, Folder01Icon, GitBranchIcon, InformationCircleIcon, Loading01Icon } from '@/lib/icons';
+import { ArrowReloadHorizontalIcon, CancelCircleIcon, Folder01Icon, GitBranchIcon, InformationCircleIcon, Loading01Icon } from '@/lib/icons';
 
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { Badge } from '@/components/ui/badge';
@@ -92,6 +92,45 @@ function defaultHeaderDetailsOpen(session: CodingSession | null) {
   if (!session) return false;
   if (shouldForceHeaderDetailsOpen(session)) return true;
   return session.status !== 'completed';
+}
+
+function normalizedLifecycleStage(session: CodingSession) {
+  const stage = session.execution_stage?.trim() ?? '';
+  if (session.status === 'queued') return 'queued';
+  if (session.status === 'paused') return 'waiting';
+  if (session.status === 'completed' || session.status === 'failed' || session.status === 'cancelled') return 'terminal';
+  if (stage === 'preparing' || stage === 'continuing') return 'preparing';
+  if (stage === 'starting' || stage.endsWith('_starting')) return 'starting';
+  if (
+    stage === 'resuming'
+    || stage === 'approved'
+    || stage === 'feedback_received'
+    || stage === 'input_received'
+    || stage === 'auth_completed'
+  ) {
+    return 'resuming';
+  }
+  return 'working';
+}
+
+function currentLifecycleStagePresentation(session: CodingSession) {
+  const activeKey = normalizedLifecycleStage(session);
+  if (activeKey === 'queued') return { label: 'Queued', detail: 'Waiting to start', tone: 'working' };
+  if (activeKey === 'preparing') return { label: 'Preparing', detail: 'Loading run context', tone: 'working' };
+  if (activeKey === 'starting') return { label: 'Starting agent', detail: 'Connecting runtime', tone: 'working' };
+  if (activeKey === 'resuming') return { label: 'Resuming', detail: 'Continuing after your response', tone: 'working' };
+  if (activeKey === 'working') return { label: 'Working', detail: 'Agent is working', tone: 'working' };
+  if (activeKey === 'waiting') {
+    if (session.execution_stage === 'awaiting_review') return { label: 'Review', detail: 'Waiting for your review', tone: 'waiting' };
+    if (session.pause_reason === 'human_approval') return { label: 'Approval', detail: 'Waiting for your decision', tone: 'waiting' };
+    if (session.pause_reason === 'human_input') return { label: 'Input', detail: 'Waiting for your reply', tone: 'waiting' };
+    if (session.pause_reason === 'authentication') return { label: 'Sign-in', detail: 'Waiting for sign-in', tone: 'waiting' };
+    return { label: 'Waiting', detail: 'Waiting for you', tone: 'waiting' };
+  }
+  if (session.status === 'completed') return { label: 'Completed', detail: 'Run finished', tone: 'success' };
+  if (session.status === 'failed') return { label: 'Failed', detail: 'Stopped with an error', tone: 'failed' };
+  if (session.status === 'cancelled') return { label: 'Cancelled', detail: 'Run stopped', tone: 'cancelled' };
+  return { label: 'Done', detail: 'Run ended', tone: 'terminal' };
 }
 
 function useElapsedSince(since?: string | null) {
@@ -226,12 +265,6 @@ export function CodingSessionHeader({
                 />
               ) : null}
 
-              {session ? (
-                <span className="inline-flex h-6 items-center rounded-md border border-border/60 bg-muted/30 px-2 font-medium text-foreground">
-                  {AGENT_RUNTIME_LABELS[session.runtime_kind] ?? capitalize(session.runtime_kind)}
-                </span>
-              ) : null}
-
               {session?.repo.branch ? (
                 <HeaderCodeChip
                   dataAttribute="data-coding-session-branch-chip"
@@ -318,9 +351,22 @@ export function CodingSessionHeader({
         <div className="space-y-2 border-t border-border/60 pt-2.5">
           <div className="flex flex-wrap items-center justify-between gap-3" data-coding-session-detail-row>
             {session ? <CodingSessionLifecycleStrip session={session} /> : null}
-            {session?.tokens_used ? (
-              <CodingSessionTokenSummary session={session} />
-            ) : null}
+            <div className="flex min-w-0 items-center gap-1.5">
+              {session?.tokens_used ? (
+                <CodingSessionTokenSummary session={session} />
+              ) : null}
+              {session?.tokens_used && session ? (
+                <span className="h-3 w-px bg-muted-foreground/25" aria-hidden="true" />
+              ) : null}
+              {session ? (
+                <span
+                  className="inline-flex h-5 items-center rounded-md px-1.5 text-[11px] font-medium text-muted-foreground"
+                  data-coding-session-runtime-pill
+                >
+                  {AGENT_RUNTIME_LABELS[session.runtime_kind] ?? capitalize(session.runtime_kind)}
+                </span>
+              ) : null}
+            </div>
           </div>
           {showDetailBlock ? (
             <div className="min-w-0">
@@ -412,54 +458,33 @@ function HeaderCodeChip({
 }
 
 function CodingSessionLifecycleStrip({ session }: { session: CodingSession }) {
-  const waitingLabel = (() => {
-    if (session.pause_reason === 'human_approval') return 'Approval';
-    if (session.pause_reason === 'human_input') return 'Input';
-    if (session.pause_reason === 'authentication') return 'Sign-in';
-    return 'Waiting';
-  })();
-  const items = [
-    { key: 'queued', label: 'Queued' },
-    { key: 'preparing', label: 'Preparing' },
-    { key: 'starting', label: 'Starting agent' },
-    { key: 'working', label: 'Working' },
-    ...(session.status === 'paused' ? [{ key: 'waiting', label: waitingLabel }] : []),
-    { key: 'terminal', label: session.status === 'completed' ? 'Completed' : session.status === 'failed' ? 'Failed' : 'Done' },
-  ];
-  const activeKey = (() => {
-    if (session.status === 'queued') return 'queued';
-    if (session.status === 'paused') return 'waiting';
-    if (session.status === 'completed' || session.status === 'failed' || session.status === 'cancelled') return 'terminal';
-    if (session.execution_stage === 'preparing') return 'preparing';
-    if (session.execution_stage === 'starting') return 'starting';
-    return 'working';
-  })();
-  const activeIndex = items.findIndex((item) => item.key === activeKey);
+  const stage = currentLifecycleStagePresentation(session);
+  const activeWorkingStep = session.status === 'queued' || session.status === 'running';
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2">
-      {items.map((item, index) => {
-        const complete = index < activeIndex;
-        const active = index === activeIndex;
-        return (
-          <div key={item.key} className="flex items-center gap-2">
-            {index > 0 ? (
-              <ArrowRight02Icon
-                aria-hidden="true"
-                className={cn('h-3 w-3', complete || active ? 'text-muted-foreground' : 'text-muted-foreground/40')}
-              />
-            ) : null}
-            <span className={cn(
-              'inline-flex h-5 items-center rounded-md px-1.5 text-[11px] font-medium',
-              complete && 'text-muted-foreground',
-              active && 'bg-muted text-foreground',
-              !complete && !active && 'text-muted-foreground/70',
-            )}>
-              {item.label}
-            </span>
-          </div>
-        );
-      })}
+    <div className="flex min-w-0 items-center">
+      <span
+        className={cn(
+          'inline-flex min-h-5 max-w-full items-center rounded-md px-1.5 py-0 text-[11px] text-muted-foreground',
+          stage.tone === 'working' && 'text-muted-foreground',
+          stage.tone === 'waiting' && 'text-amber-700/80 dark:text-amber-400/80',
+          stage.tone === 'success' && 'text-emerald-700/80 dark:text-emerald-400/80',
+          stage.tone === 'failed' && 'text-destructive/85',
+          stage.tone === 'cancelled' && 'text-muted-foreground',
+          stage.tone === 'terminal' && 'text-muted-foreground',
+        )}
+        data-coding-session-lifecycle-stage
+      >
+        {activeWorkingStep ? (
+          <span
+            aria-hidden="true"
+            className="mr-1.5 h-1.5 w-1.5 rounded-full bg-primary/70 animate-pulse"
+          />
+        ) : null}
+        <span className="font-medium text-foreground/80">{stage.label}</span>
+        <span className="mx-1.5 h-3 w-px bg-current opacity-20" />
+        <span className="truncate opacity-70">{stage.detail}</span>
+      </span>
     </div>
   );
 }

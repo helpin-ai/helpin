@@ -8,15 +8,27 @@ export const EXECUTION_STAGE_LABELS: Record<string, string> = {
   queued: 'Queued',
   preparing: 'Preparing workspace',
   starting: 'Starting runtime',
+  codex_starting: 'Starting runtime',
+  opencode_starting: 'Starting runtime',
+  native_sdk_starting: 'Starting runtime',
   continuing: 'Continuing run',
+  resuming: 'Resuming',
+  approved: 'Resuming',
+  feedback_received: 'Resuming',
+  input_received: 'Resuming',
+  auth_completed: 'Resuming',
   codex_running: 'Agent working',
   opencode_running: 'Agent working',
   native_sdk_running: 'Agent working',
   awaiting_approval: 'Awaiting approval',
+  awaiting_review: 'Awaiting review',
   awaiting_input: 'Awaiting input',
   awaiting_auth: 'Awaiting sign-in',
   finishing: 'Wrapping up',
   completed: 'Completed',
+  failed: 'Failed',
+  failed_to_start: 'Failed to start',
+  cancelled: 'Cancelled',
 };
 
 export function codingSessionStageLabel(stage?: string | null): string {
@@ -36,7 +48,10 @@ export function codingSessionStatusLabel({
 }): string {
   if (status === 'queued') return 'Queued';
   if (status === 'paused') {
-    if (pauseReason === 'human_approval') return 'Awaiting approval';
+    if (pauseReason === 'human_approval') {
+      if (executionStage === 'awaiting_review') return 'Awaiting review';
+      return 'Awaiting approval';
+    }
     if (pauseReason === 'authentication') return 'Awaiting sign-in';
     return 'Awaiting input';
   }
