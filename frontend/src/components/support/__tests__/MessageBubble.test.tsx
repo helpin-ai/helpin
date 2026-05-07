@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useAuthStore } from '@/stores/authStore'
 import type { SupportMessage } from '@/lib/pmTypes'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { MessageBubble } from '../MessageBubble'
+import { MessageBubble, sanitizeSupportShortcutSeed } from '../MessageBubble'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -55,6 +55,12 @@ describe('MessageBubble', () => {
       loading: false,
       serverUnreachable: false,
     })
+  })
+
+  it('removes markdown hard-break escapes when seeding shortcut content', () => {
+    expect(sanitizeSupportShortcutSeed('Hi Caleb,\\\n\\\nThank you for reaching out.')).toBe(
+      'Hi Caleb,\n\nThank you for reaching out.',
+    )
   })
 
   afterEach(() => {
