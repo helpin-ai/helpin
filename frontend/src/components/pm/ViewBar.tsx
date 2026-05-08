@@ -4,8 +4,6 @@ import {
   PinIcon,
   UndoIcon,
   ViewIcon,
-  GlobeIcon,
-  LockIcon,
   PencilEdit01Icon,
   FloppyDiskIcon,
   Delete01Icon,
