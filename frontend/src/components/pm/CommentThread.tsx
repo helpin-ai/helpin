@@ -866,7 +866,6 @@ export function CommentThread({
     const hasReactions = (entry.reactions?.length ?? 0) > 0;
     const avatarSize = isReply ? 'h-6 w-6 text-[9px]' : 'h-7 w-7 text-[10px]';
     const groupClass = isReply ? 'group/reply' : 'group';
-    const hoverClass = isReply ? 'group-hover/reply:opacity-100' : 'group-hover:opacity-100';
     const isResolved = Boolean(entry.comment.resolved_at);
     const authorName = entry.author.full_name || entry.author.email;
 
