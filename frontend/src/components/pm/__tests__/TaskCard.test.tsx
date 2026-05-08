@@ -140,7 +140,7 @@ function renderTaskCard(task: Task, props: { isOverlay?: boolean } = {}) {
     } satisfies BoardCallbacksContextValue,
   }
 
-  act(() => {
+  const render = (nextTask: Task, nextProps: { isOverlay?: boolean } = props) => {
     root.render(
       <TooltipProvider>
         <BoardDataContext.Provider
@@ -154,14 +154,18 @@ function renderTaskCard(task: Task, props: { isOverlay?: boolean } = {}) {
           }}
         >
           <BoardCallbacksContext.Provider value={callbacks}>
-            <TaskCard task={task} {...props} />
+            <TaskCard task={nextTask} {...nextProps} />
           </BoardCallbacksContext.Provider>
         </BoardDataContext.Provider>
       </TooltipProvider>,
     )
+  }
+
+  act(() => {
+    render(task)
   })
 
-  return { container, root }
+  return { container, root, rerender: (nextTask: Task, nextProps?: { isOverlay?: boolean }) => act(() => render(nextTask, nextProps)) }
 }
 
 describe('TaskCard', () => {
@@ -251,6 +255,31 @@ describe('TaskCard', () => {
     expect(metadata?.compareDocumentPosition(owners as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(footer?.compareDocumentPosition(agentRow as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(agentAvatar?.compareDocumentPosition(agentLabel as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('rerenders when enriched card labels change without an updated_at change', () => {
+    const { container, root, rerender } = renderTaskCard(buildTask({ labels: [] }))
+
+    expect(container.textContent).not.toContain('Frontend')
+
+    rerender(buildTask({
+      labels: [{
+        id: 'label-1',
+        workspace_id: 'workspace-1',
+        name: 'Frontend',
+        color: '#3b82f6',
+        archived: false,
+        created_at: '2026-05-05T00:00:00Z',
+        updated_at: '2026-05-05T00:00:00Z',
+      }],
+    }))
+
+    expect(container.textContent).toContain('Frontend')
 
     act(() => {
       root.unmount()

@@ -52,4 +52,33 @@ describe('buildPatchedTaskFromDetail', () => {
       state_color: '#123456',
     });
   });
+
+  it('uses an empty detail labels array to clear board labels', () => {
+    const detail = {
+      task: {
+        id: 'task-1',
+        display_id: 12,
+        workspace_id: 'ws-1',
+        workflow_id: 'wf-1',
+        workflow_state_id: 'state-1',
+        name: 'Refine onboarding',
+        task_type: 'feature',
+        priority: 'medium',
+        severity: 'none',
+        position: 0,
+        started: false,
+        completed: false,
+        blocked: false,
+        archived: false,
+        created_at: '2026-03-31T00:00:00Z',
+        updated_at: '2026-03-31T00:00:00Z',
+        labels: [{ id: 'stale-label', workspace_id: 'ws-1', name: 'Stale', color: '#f00', archived: false, created_at: '', updated_at: '' }],
+      },
+      owners: [],
+      followers: [],
+      labels: [],
+    } satisfies TaskDetail;
+
+    expect(buildPatchedTaskFromDetail(detail).labels).toEqual([]);
+  });
 });

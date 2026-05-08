@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
+import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload'
 import type { Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
 const BOARD_ENTITIES = new Set(['task'])
@@ -197,7 +198,7 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // For created/updated, fetch the updated task and patch it in
         pmTaskService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
-            const task = { ...res.data.task }
+            const task = buildPatchedTaskFromDetail(res.data)
             const patched = store.patchTask(event.action as 'created' | 'updated', event.entity_id, task)
             if (!patched) scheduleRefresh()
           } else {

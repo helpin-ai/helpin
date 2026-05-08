@@ -343,6 +343,90 @@ describe('usePMBoardStore.moveTask', () => {
     expect(doneColumn?.task_groups).toEqual([])
   })
 
+  it('preserves board-enriched labels and associations when a move response only returns the base task', async () => {
+    mockedTaskService.move.mockResolvedValue({
+      data: {
+        task: makeStory({
+          id: 'task-1',
+          workflow_state_id: 'state-review',
+          position: 0,
+          updated_at: '2026-03-24T10:00:00Z',
+        }),
+      },
+      error: null,
+      status: 200,
+    } as never)
+    const label = { id: 'label-1', workspace_id: 'ws-1', name: 'Bug', color: '#ef4444', created_at: '', updated_at: '' }
+    const contact = { id: 'contact-1', object_type: 'contact', display_name: 'Ada Lovelace' }
+
+    usePMBoardStore.setState({
+      workflow: null,
+      teamId: null,
+      error: null,
+      columns: [
+        makeStateColumn({
+          state: { id: 'state-todo', name: 'To Do', state_type: 'started', position: 0 },
+          task_count: 1,
+          tasks: [
+            makeStory({
+              id: 'task-1',
+              workflow_state_id: 'state-todo',
+              position: 0,
+              updated_at: '2026-03-24T09:00:00Z',
+              labels: [label],
+              contacts: [contact],
+              sprint_id: 'sprint-1',
+              sprint_name: 'Sprint 1',
+              team_id: 'team-1',
+              team_name: 'Platform',
+              latest_run_id: 'run-1',
+              latest_run_agent_id: 'agent-1',
+              latest_run_status: 'paused',
+              latest_run_pause_reason: 'human_approval',
+              latest_run_at: '2026-03-24T08:00:00Z',
+              blocked: true,
+              blocked_by_count: 1,
+              blocked_by_tasks: [{
+                id: 'task-blocker',
+                display_id: 99,
+                task_key: 'HLP-99',
+                name: 'Blocking task',
+                workflow_state_id: 'state-todo',
+                completed: false,
+              }],
+            }),
+          ],
+        }),
+        makeStateColumn({
+          state: { id: 'state-review', name: 'Review', state_type: 'started', position: 1 },
+          task_count: 0,
+          tasks: [],
+        }),
+      ] as never,
+    })
+
+    await usePMBoardStore.getState().moveTask({
+      workspaceId: 'ws-1',
+      taskId: 'task-1',
+      fromStateId: 'state-todo',
+      toStateId: 'state-review',
+      toIndex: 0,
+    })
+
+    const movedTask = usePMBoardStore.getState().columns.find((column) => column.state.id === 'state-review')?.tasks[0]
+    expect(movedTask?.labels).toEqual([label])
+    expect(movedTask?.contacts).toEqual([contact])
+    expect(movedTask?.sprint_name).toBe('Sprint 1')
+    expect(movedTask?.team_name).toBe('Platform')
+    expect(movedTask?.latest_run_id).toBe('run-1')
+    expect(movedTask?.latest_run_agent_id).toBe('agent-1')
+    expect(movedTask?.latest_run_status).toBe('paused')
+    expect(movedTask?.latest_run_pause_reason).toBe('human_approval')
+    expect(movedTask?.latest_run_at).toBe('2026-03-24T08:00:00Z')
+    expect(movedTask?.blocked_by_count).toBe(1)
+    expect(movedTask?.blocked_by_tasks?.[0]?.task_key).toBe('HLP-99')
+  })
+
   it('rolls back failed cross-state moves without mutating the restored task', async () => {
     mockedTaskService.move.mockResolvedValue({
       data: null,

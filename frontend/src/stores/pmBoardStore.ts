@@ -225,11 +225,45 @@ const mergeTaskGroups = (existing: TaskGroup[] | undefined, incoming: TaskGroup[
   return merged;
 };
 
-/** Preserve board-enriched display fields from existing task when IDs match. */
-const mergeEnrichedFields = (incoming: Task, existing: Task): Task => ({
-  ...incoming,
-  epic_name: incoming.epic_name ?? (incoming.epic_id === existing.epic_id ? existing.epic_name : undefined),
-});
+const keepWhenMissing = <T,>(incoming: T | undefined, existing: T | undefined) => (
+  incoming === undefined ? existing : incoming
+);
+
+/** Preserve board-enriched display fields when a mutation response only returns the base task. */
+const mergeEnrichedFields = (incoming: Task, existing: Task): Task => {
+  const epicId = keepWhenMissing(incoming.epic_id, existing.epic_id);
+  const sprintId = keepWhenMissing(incoming.sprint_id, existing.sprint_id);
+  const teamId = keepWhenMissing(incoming.team_id, existing.team_id);
+
+  return {
+    ...incoming,
+    epic_id: epicId,
+    sprint_id: sprintId,
+    team_id: teamId,
+    epic_name: incoming.epic_name ?? (epicId === existing.epic_id ? existing.epic_name : undefined),
+    sprint_name: incoming.sprint_name ?? (sprintId === existing.sprint_id ? existing.sprint_name : undefined),
+    team_name: incoming.team_name ?? (teamId === existing.team_id ? existing.team_name : undefined),
+    state_name: incoming.state_name ?? (incoming.workflow_state_id === existing.workflow_state_id ? existing.state_name : undefined),
+    state_type: incoming.state_type ?? (incoming.workflow_state_id === existing.workflow_state_id ? existing.state_type : undefined),
+    state_color: incoming.state_color ?? (incoming.workflow_state_id === existing.workflow_state_id ? existing.state_color : undefined),
+    labels: keepWhenMissing(incoming.labels, existing.labels),
+    contacts: keepWhenMissing(incoming.contacts, existing.contacts),
+    companies: keepWhenMissing(incoming.companies, existing.companies),
+    deals: keepWhenMissing(incoming.deals, existing.deals),
+    support_conversations: keepWhenMissing(incoming.support_conversations, existing.support_conversations),
+    is_blocked_by_task: keepWhenMissing(incoming.is_blocked_by_task, existing.is_blocked_by_task),
+    blocked_by_count: keepWhenMissing(incoming.blocked_by_count, existing.blocked_by_count),
+    blocked_by_tasks: keepWhenMissing(incoming.blocked_by_tasks, existing.blocked_by_tasks),
+    is_blocking_other_task: keepWhenMissing(incoming.is_blocking_other_task, existing.is_blocking_other_task),
+    blocking_count: keepWhenMissing(incoming.blocking_count, existing.blocking_count),
+    blocking_tasks: keepWhenMissing(incoming.blocking_tasks, existing.blocking_tasks),
+    latest_run_id: keepWhenMissing(incoming.latest_run_id, existing.latest_run_id),
+    latest_run_agent_id: keepWhenMissing(incoming.latest_run_agent_id, existing.latest_run_agent_id),
+    latest_run_status: keepWhenMissing(incoming.latest_run_status, existing.latest_run_status),
+    latest_run_pause_reason: keepWhenMissing(incoming.latest_run_pause_reason, existing.latest_run_pause_reason),
+    latest_run_at: keepWhenMissing(incoming.latest_run_at, existing.latest_run_at),
+  };
+};
 
 const upsertLoadedTask = (column: TaskStateColumn, task: Task) => {
   const nextTasks = sortTasks([
@@ -719,6 +753,9 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       if (!moving) return state;
 
       moving.workflow_state_id = toStateId;
+      moving.state_name = toCol.state.name;
+      moving.state_type = toCol.state.state_type;
+      moving.state_color = toCol.state.color;
       if (fromStateId === toStateId) {
         fromCol.tasks.splice(toIndex, 0, moving);
         reindexLoadedTasks(fromCol);

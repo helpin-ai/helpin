@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AttachmentResponse, CommentWithAuthor, CreateCommentRequest } from '@/lib/pmTypes'
 
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
 vi.mock('@/components/pm/CommentEditor', () => ({
   CommentEditor: ({
     onImageSelect,
@@ -492,9 +494,10 @@ describe('CommentThread attachment uploads', () => {
 
     await clickEdit(container)
 
-    // After entering edit mode, the edit form is rendered before the bottom composer.
+    // With existing comments, the top-level composer stays collapsed; the visible
+    // editor is the edit form for the selected comment.
     const editors = container.querySelectorAll<HTMLElement>('[data-testid="comment-editor"]')
-    expect(editors.length).toBeGreaterThanOrEqual(2)
+    expect(editors.length).toBe(1)
     await pasteImageInto(editors[0])
 
     expect(pmAttachmentService.remove).not.toHaveBeenCalled()

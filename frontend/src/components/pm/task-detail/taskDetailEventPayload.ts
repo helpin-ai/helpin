@@ -3,7 +3,7 @@ import type { Task, TaskDetail } from '@/lib/pmTypes';
 export function buildPatchedTaskFromDetail(detail: TaskDetail): Task {
   return {
     ...detail.task,
-    labels: detail.labels.length > 0 ? detail.labels : detail.task.labels,
+    labels: detail.labels,
     epic_name: detail.epic_name ?? detail.task.epic_name,
     sprint_name: detail.sprint_name ?? detail.task.sprint_name,
     state_name: detail.state?.name ?? detail.task.state_name,
