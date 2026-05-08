@@ -128,7 +128,7 @@ function buildTranscriptMessage(overrides: Partial<CodingSessionTranscriptMessag
 }
 
 describe('CodingTranscriptPane', () => {
-  it('opens an existing run at the latest transcript item', () => {
+  it('opens an existing run with breathing room after the latest activity', () => {
     act(() => {
       root.render(
         <CodingTranscriptPane
@@ -145,10 +145,12 @@ describe('CodingTranscriptPane', () => {
       );
     });
 
-    expect(scrollToIndexMock).toHaveBeenCalledWith(1, expect.objectContaining({
+    expect(scrollToIndexMock).toHaveBeenCalledWith(2, expect.objectContaining({
       align: 'end',
       behavior: 'auto',
     }));
+    const activitySpacer = container.querySelector('[data-coding-session-activity-spacer]');
+    expect(activitySpacer?.className).toContain('h-[calc(env(safe-area-inset-bottom)+4rem)]');
     expect(container.textContent).toContain('Activity');
   });
 

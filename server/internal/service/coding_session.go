@@ -56,39 +56,12 @@ func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID,
 
 	pending := make([]pendingEvent, 0, len(messages)+len(artifacts)+len(interactions)+1)
 	for _, message := range messages {
-		eventType := "user.message.completed"
-		switch strings.TrimSpace(message.Role) {
-		case "assistant":
-			eventType = "assistant.message.completed"
-		case "tool":
-			eventType = "tool.call.completed"
-		}
-		payload := map[string]any{
-			"message_id":       message.ID,
-			"role":             message.Role,
-			"message_type":     message.MessageType,
-			"content":          message.Content,
-			"sequence_no":      message.SequenceNo,
-			"content_blocks":   json.RawMessage(message.ContentBlocks),
-			"turn_segments":    json.RawMessage(message.TurnSegments),
-			"tool_invocations": json.RawMessage(message.ToolInvocations),
-		}
+		event := model.CodingSessionEventFromAgentRunMessage(run, &message)
 		pending = append(pending, pendingEvent{
-			at:      message.CreatedAt.UTC(),
+			at:      event.Timestamp,
 			weight:  10,
-			eventID: "msg:" + message.ID,
-			event: model.CodingSessionEvent{
-				ID:          "msg:" + message.ID,
-				SessionID:   run.ID,
-				RunID:       run.ID,
-				Timestamp:   message.CreatedAt.UTC(),
-				Type:        eventType,
-				RuntimeKind: run.RuntimeKind,
-				Payload:     payload,
-				RuntimeMetadata: map[string]any{
-					"source": "agent_run_message",
-				},
-			},
+			eventID: event.ID,
+			event:   event,
 		})
 	}
 
@@ -1196,6 +1169,24 @@ func (s *AgentService) publishCodingSessionEvent(run *model.AgentRun, eventType 
 		RuntimeKind: run.RuntimeKind,
 		Payload:     payload,
 	}
+	data, _ := json.Marshal(event)
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "coding_session_event",
+		EntityID:    event.ID,
+		WorkspaceID: run.WorkspaceID,
+		ActorID:     actorID,
+		ParentType:  "coding_session",
+		ParentID:    run.ID,
+		Data:        data,
+	})
+}
+
+func (s *AgentService) publishCodingSessionMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
+	if s.wsPublisher == nil || run == nil || message == nil {
+		return
+	}
+	event := model.CodingSessionEventFromAgentRunMessage(run, message)
 	data, _ := json.Marshal(event)
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",

@@ -4071,23 +4071,7 @@ func (s *AgentService) publishRunMessageEvent(run *model.AgentRun, message *mode
 		ParentID:    run.ID,
 		Data:        data,
 	})
-	eventType := "user.message.completed"
-	switch strings.TrimSpace(message.Role) {
-	case "assistant":
-		eventType = "assistant.message.completed"
-	case "tool":
-		eventType = "tool.call.completed"
-	}
-	s.publishCodingSessionEvent(run, eventType, map[string]any{
-		"message_id":       message.ID,
-		"role":             message.Role,
-		"message_type":     message.MessageType,
-		"content":          message.Content,
-		"sequence_no":      message.SequenceNo,
-		"content_blocks":   json.RawMessage(message.ContentBlocks),
-		"turn_segments":    json.RawMessage(message.TurnSegments),
-		"tool_invocations": json.RawMessage(message.ToolInvocations),
-	}, actorID)
+	s.publishCodingSessionMessageEvent(run, message, actorID)
 }
 
 func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string) (*model.AgentRunMessage, error) {

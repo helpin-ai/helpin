@@ -101,7 +101,7 @@ function currentLifecycleStagePresentation(session: CodingSession) {
   if (activeKey === 'preparing') return { label: 'Preparing', detail: 'Loading run context', tone: 'working' };
   if (activeKey === 'starting') return { label: 'Starting agent', detail: 'Connecting runtime', tone: 'working' };
   if (activeKey === 'resuming') return { label: 'Resuming', detail: 'Continuing after your response', tone: 'working' };
-  if (activeKey === 'working') return { label: 'Working', detail: 'Agent is working', tone: 'working' };
+  if (activeKey === 'working') return { label: 'Agent working', detail: 'Runtime is active', tone: 'working' };
   if (activeKey === 'waiting') {
     if (session.execution_stage === 'awaiting_review') return { label: 'Review', detail: 'Waiting for your review', tone: 'waiting' };
     if (session.pause_reason === 'human_approval') return { label: 'Approval', detail: 'Waiting for your decision', tone: 'waiting' };

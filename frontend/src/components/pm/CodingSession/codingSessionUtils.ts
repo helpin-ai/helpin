@@ -24,7 +24,11 @@ export function codingSessionEventContent(payload: Record<string, unknown>) {
 }
 
 export function sortCodingSessionEvents(events: CodingSessionEvent[]) {
-  return [...events].sort((a, b) => a.sequence_no - b.sequence_no);
+  return [...events].sort((a, b) => {
+    const sequenceDelta = codingSessionEventSortSequence(a) - codingSessionEventSortSequence(b);
+    if (sequenceDelta !== 0) return sequenceDelta;
+    return a.sequence_no - b.sequence_no;
+  });
 }
 
 export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
@@ -35,6 +39,23 @@ export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
     || event.id.startsWith('artifact:')
     || event.id.startsWith('interaction:')
     || event.id.startsWith('run:')
+  );
+}
+
+function codingSessionEventSortSequence(event: CodingSessionEvent) {
+  const payloadSequence = event.payload?.sequence_no;
+  if (isRunMessageShapedEvent(event) && typeof payloadSequence === 'number' && Number.isFinite(payloadSequence)) {
+    return payloadSequence;
+  }
+  return event.sequence_no;
+}
+
+function isRunMessageShapedEvent(event: CodingSessionEvent) {
+  const payload = event.payload;
+  return (
+    typeof payload?.message_id === 'string'
+    && typeof payload?.role === 'string'
+    && typeof payload?.sequence_no === 'number'
   );
 }
 

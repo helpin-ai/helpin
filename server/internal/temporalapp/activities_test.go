@@ -5619,6 +5619,68 @@ func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testin
 	}
 }
 
+func TestCreateRunMessagePublishesStableCodingSessionMessageEvent(t *testing.T) {
+	dbName := fmt.Sprintf("file:run-message-event-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_messages (
+		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		content_blocks BLOB,
+		turn_segments BLOB,
+		tool_invocations BLOB,
+		token_usage BLOB,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`).Error; err != nil {
+		t.Fatalf("create message table: %v", err)
+	}
+
+	wsPublisher := &capturedEventPublisher{}
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, wsPublisher: wsPublisher}
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", RuntimeKind: "codex"}
+
+	message, err := activities.createRunMessage(context.Background(), run, "assistant", "status", "Preparing workspace and loading run context.", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	var codingEvent *model.CodingSessionEvent
+	for _, event := range wsPublisher.events {
+		if event.Entity != "coding_session_event" {
+			continue
+		}
+		var decoded model.CodingSessionEvent
+		if err := json.Unmarshal(event.Data, &decoded); err != nil {
+			t.Fatalf("unmarshal coding event: %v", err)
+		}
+		codingEvent = &decoded
+		break
+	}
+	if codingEvent == nil {
+		t.Fatalf("expected coding session event, got %#v", wsPublisher.events)
+	}
+	if codingEvent.ID != "msg:"+message.ID {
+		t.Fatalf("coding event id = %q, want msg:%s", codingEvent.ID, message.ID)
+	}
+	if codingEvent.SequenceNo != message.SequenceNo {
+		t.Fatalf("coding event sequence = %d, want %d", codingEvent.SequenceNo, message.SequenceNo)
+	}
+	if got, _ := codingEvent.RuntimeMetadata["source"].(string); got != "agent_run_message" {
+		t.Fatalf("coding event source = %q, want agent_run_message", got)
+	}
+	if got, _ := codingEvent.Payload["message_type"].(string); got != "status" {
+		t.Fatalf("coding event message_type = %q, want status", got)
+	}
+}
+
 func TestEnsureRunConversationCreatesFallbackPromptWhenNoTargetContext(t *testing.T) {
 	dbName := fmt.Sprintf("file:run-conversation-fallback-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})

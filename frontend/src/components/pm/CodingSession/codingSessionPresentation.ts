@@ -33,8 +33,8 @@ export const EXECUTION_STAGE_LABELS: Record<string, string> = {
 
 export function codingSessionStageLabel(stage?: string | null): string {
   const key = stage?.trim();
-  if (!key) return 'Working';
-  return EXECUTION_STAGE_LABELS[key] ?? 'Working';
+  if (!key) return 'Agent working';
+  return EXECUTION_STAGE_LABELS[key] ?? 'Agent working';
 }
 
 export function codingSessionStatusLabel({

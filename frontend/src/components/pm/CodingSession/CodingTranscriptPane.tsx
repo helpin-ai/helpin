@@ -178,7 +178,8 @@ export function CodingTranscriptPane({
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
     | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
     | { kind: 'placeholder' }
-    | { kind: 'empty' };
+    | { kind: 'empty' }
+    | { kind: 'bottom-spacer' };
 
   const items = useMemo((): VirtualItem[] => {
     const list: VirtualItem[] = [];
@@ -215,6 +216,9 @@ export function CodingTranscriptPane({
     }
     if (!loading && list.length === 0) {
       list.push({ kind: 'empty' });
+    }
+    if (list.length > 0) {
+      list.push({ kind: 'bottom-spacer' });
     }
     return list;
   }, [promptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
@@ -383,6 +387,14 @@ export function CodingTranscriptPane({
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
             No activity yet. Assistant and user-visible turns will appear here once the session starts talking.
           </div>
+        );
+      case 'bottom-spacer':
+        return (
+          <div
+            aria-hidden="true"
+            className="h-[calc(env(safe-area-inset-bottom)+4rem)]"
+            data-coding-session-activity-spacer
+          />
         );
     }
   }, [liveAssistantMessage, actorForMessage]);

@@ -243,8 +243,8 @@ describe('CodingSessionHeader', () => {
     const stage = container.querySelector('[data-coding-session-lifecycle-stage]');
     expect(pulse).toBeTruthy();
     expect(pulse?.getAttribute('aria-hidden')).toBe('true');
-    expect(stage?.textContent).toContain('Working');
-    expect(stage?.textContent).toContain('Agent is working');
+    expect(stage?.textContent).toContain('Agent working');
+    expect(stage?.textContent).toContain('Runtime is active');
     expect(stage?.textContent).not.toContain('Stage');
   });
 

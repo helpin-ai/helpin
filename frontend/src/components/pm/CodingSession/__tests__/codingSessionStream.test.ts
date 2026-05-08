@@ -21,6 +21,43 @@ function buildEvent(overrides: Partial<CodingSessionEvent> & Pick<CodingSessionE
 }
 
 describe('buildCodingSessionStreamState', () => {
+  it('keeps live run status messages in persisted transcript order', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'msg-user',
+        type: 'user.message.completed',
+        sequence_no: 2,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'persisted-user-1',
+          content: 'Please start.',
+          role: 'user',
+          sequence_no: 2,
+        },
+      }),
+      buildEvent({
+        id: 'live-status',
+        type: 'assistant.message.completed',
+        sequence_no: 1_700_000_001,
+        payload: {
+          message_id: 'status-1',
+          content: 'Preparing workspace and loading run context.',
+          role: 'assistant',
+          message_type: 'status',
+          sequence_no: 1,
+        },
+      }),
+    ]);
+
+    expect(state.live_assistant_message).toBeNull();
+    expect(state.live_turn_segments).toHaveLength(0);
+    expect(state.transcript_messages.map((message) => message.content)).toEqual([
+      'Preparing workspace and loading run context.',
+      'Please start.',
+    ]);
+    expect(state.transcript_messages[0]?.message_type).toBe('status');
+  });
+
   it('builds a live assistant turn with attached tool execution and sidecar activity', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({

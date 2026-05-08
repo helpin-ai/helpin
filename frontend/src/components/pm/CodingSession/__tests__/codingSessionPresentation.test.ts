@@ -26,7 +26,7 @@ describe('coding session presentation helpers', () => {
     expect(codingSessionStageLabel('starting')).toBe('Starting runtime');
     expect(codingSessionStageLabel('codex_running')).toBe('Agent working');
     expect(codingSessionStageLabel('preparing')).toBe('Preparing workspace');
-    expect(codingSessionStageLabel('unknown_stage')).toBe('Working');
+    expect(codingSessionStageLabel('unknown_stage')).toBe('Agent working');
   });
 
   it('layers status and execution stage into a stable status label', () => {

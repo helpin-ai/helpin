@@ -25,7 +25,13 @@ function asNumber(value: unknown) {
 }
 
 function isPersistedRunMessageEvent(event: CodingSessionEvent) {
-  return event.runtime_metadata?.source === 'agent_run_message';
+  if (event.runtime_metadata?.source === 'agent_run_message') return true;
+  const payload = asRecord(event.payload);
+  return (
+    typeof payload?.message_id === 'string'
+    && typeof payload?.role === 'string'
+    && typeof payload?.sequence_no === 'number'
+  );
 }
 
 function isTranscriptMessageEvent(event: CodingSessionEvent) {
@@ -530,7 +536,7 @@ function transcriptMessageFromEvent(event: CodingSessionEvent): CodingSessionTra
       content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
       message_type: asString(payload.message_type),
       timestamp: event.timestamp,
-      sequence_no: event.sequence_no,
+      sequence_no: asNumber(payload.sequence_no) ?? event.sequence_no,
       tool_calls: role === 'assistant'
         ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
         : undefined,

@@ -39,6 +39,15 @@ function buildEvent(overrides: Partial<CodingSessionEvent> & Pick<CodingSessionE
 }
 
 describe('CodingActivityRail', () => {
+  it('keeps bottom breathing room in the scrollable activity rail', () => {
+    act(() => {
+      root.render(<CodingActivityRail events={[]} completedToolCalls={[]} />);
+    });
+
+    const scrollRegion = container.querySelector('[data-coding-session-activity-rail-scroll]');
+    expect(scrollRegion?.className).toContain('pb-[calc(env(safe-area-inset-bottom)+4rem)]');
+  });
+
   it('renders persisted review findings artifacts as readable history cards', () => {
     const event = buildEvent({
       id: 'artifact:review-findings-1',

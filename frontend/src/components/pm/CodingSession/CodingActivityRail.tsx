@@ -60,7 +60,10 @@ export function CodingActivityRail({
         </Badge>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-4">
+      <div
+        className="min-h-0 flex-1 overflow-auto px-4 pb-[calc(env(safe-area-inset-bottom)+4rem)] pt-4"
+        data-coding-session-activity-rail-scroll
+      >
         <div className="space-y-0">
           {items.map((item, index) => (
             item.kind === 'event'
