@@ -20,7 +20,6 @@ import {
   GitBranchIcon,
   Link01Icon,
   Loading01Icon,
-  Maximize01Icon,
   Message01Icon,
   MoreVerticalIcon,
   AttachmentIcon,
@@ -1280,7 +1279,7 @@ function TaskDetailPanelBody({
                   );
                 }}
               >
-                <Maximize01Icon className="h-3.5 w-3.5" />
+                <ArrowUpRight01Icon className="h-3.5 w-3.5" />
               </Button>
             </QuickTooltip>
           )}
