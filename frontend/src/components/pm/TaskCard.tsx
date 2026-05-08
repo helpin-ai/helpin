@@ -18,7 +18,7 @@ import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
-import { getSortableTaskCardStyle, animateCardLayoutChanges } from './TaskCard.sortable';
+import { getSortableTaskCardStyle, animateCardLayoutChanges, shouldIgnoreTaskCardDrag } from './TaskCard.sortable';
 import type { Agent, Priority, Severity, Task } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimatePicker';
@@ -174,16 +174,39 @@ function TaskCardComponent({
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id, animateLayoutChanges: animateCardLayoutChanges });
+  } = useSortable({ id: task.id, disabled: isOverlay, animateLayoutChanges: animateCardLayoutChanges });
 
   const style = getSortableTaskCardStyle({
     transform,
     transition,
     isDragging,
   });
+  const setCardNodeRef = useCallback(
+    (node: HTMLElement | null) => {
+      setNodeRef(node);
+      if (!isOverlay) {
+        setActivatorNodeRef(node);
+      }
+    },
+    [isOverlay, setActivatorNodeRef, setNodeRef],
+  );
+  const cardDragListeners = useMemo(() => {
+    if (isOverlay || !listeners) return undefined;
+    const pointerDown = listeners.onPointerDown as ((event: React.PointerEvent<HTMLElement>) => void) | undefined;
+    return {
+      ...listeners,
+      onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+        if (shouldIgnoreTaskCardDrag(event.target, event.currentTarget)) {
+          return;
+        }
+        pointerDown?.(event);
+      },
+    };
+  }, [isOverlay, listeners]);
 
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
@@ -353,24 +376,28 @@ function TaskCardComponent({
 
   return (
     <article
-      ref={setNodeRef}
+      ref={setCardNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
+      data-pm-task-card="true"
+      data-pm-task-card-id={task.id}
+      {...(!isOverlay ? attributes : {})}
+      {...(cardDragListeners ?? {})}
       role="button"
       tabIndex={0}
       onClick={() => onOpen?.(task)}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onOpen?.(task);
         }
       }}
       className={cn(
-        'group/card relative shrink-0 cursor-pointer rounded-lg border border-border/60 bg-card shadow-sm transition-all overflow-hidden',
+        'group/card relative shrink-0 rounded-lg border border-border/60 bg-card shadow-sm transition-all overflow-hidden',
+        !isOverlay && 'cursor-grab touch-none select-none active:cursor-grabbing',
         'hover:border-border hover:shadow-md',
         isDragging && 'opacity-50',
-        isOverlay && 'ring-1 ring-primary/30 shadow-lg',
+        isOverlay && 'opacity-80 ring-1 ring-primary/30 shadow-2xl',
         showStateBadge && task.state_color && 'flex flex-row',
       )}
     >
@@ -613,7 +640,7 @@ function TaskCardComponent({
             </Tooltip>
           )}
           {vis.estimate && task.estimate != null && (workspaceId ? (
-            <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            <span data-no-task-card-drag="true" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
               <EstimatePicker
                 value={task.estimate != null ? String(task.estimate) : ''}
                 teamId={task.team_id}
@@ -628,7 +655,7 @@ function TaskCardComponent({
           ) : null)}
         </div>
         <span className="flex-1" />
-        <div data-task-card-footer-owners="true" className="flex min-w-0 items-center gap-1.5">
+        <div data-task-card-footer-owners="true" data-no-task-card-drag="true" className="flex min-w-0 items-center gap-1.5">
           {/* Assignee avatar / assign button */}
           {vis.assignee && (assignableMembers && workspaceId ? (
             <MultiMemberPickerPopover

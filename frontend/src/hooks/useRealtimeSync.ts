@@ -9,7 +9,6 @@ import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
-import { logPMDnD } from '@/lib/pmDnDDebug'
 import type { Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
 const BOARD_ENTITIES = new Set(['task'])
@@ -186,15 +185,6 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     // Task-level events → incremental patch when possible, debounced full refresh as fallback
     if (BOARD_ENTITIES.has(event.entity)) {
       const store = usePMBoardStore.getState()
-      const traceID = typeof event.data?.debug_trace_id === 'string' ? event.data.debug_trace_id : null
-      logPMDnD('ws.task_event', {
-        trace_id: traceID,
-        action: event.action,
-        entity: event.entity,
-        task_id: event.entity_id,
-        workspace_id: event.workspace_id,
-        actor_id: event.actor_id,
-      })
 
       if (event.action === 'deleted') {
         // Delete can be patched locally without re-fetching
@@ -202,11 +192,6 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         if (!patched) scheduleRefresh()
       } else if (event.action === 'moved' || event.action === 'reordered') {
         // Position changes renumber siblings; patching only the moved task leaves stale ordering.
-        logPMDnD('ws.task_event_refresh', {
-          trace_id: traceID,
-          action: event.action,
-          task_id: event.entity_id,
-        })
         scheduleRefresh()
       } else {
         // For created/updated, fetch the updated task and patch it in

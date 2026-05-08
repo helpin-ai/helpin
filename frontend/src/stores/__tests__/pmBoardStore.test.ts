@@ -271,7 +271,7 @@ describe('usePMBoardStore.moveTask', () => {
     expect(tasks.map((task) => task.position)).toEqual([0, 1, 2])
   })
 
-  it('omits manual position when moving into done', async () => {
+  it('passes top position and shifts loaded done tasks when moving into done', async () => {
     usePMBoardStore.setState({
       workflow: null,
       teamId: null,
@@ -287,6 +287,23 @@ describe('usePMBoardStore.moveTask', () => {
         makeStateColumn({
           state: { id: 'state-done', name: 'Done', state_type: 'done', position: 1 },
           task_count: 1,
+          task_groups: [
+            {
+              key: 'today',
+              label: 'Today',
+              tasks: [
+                makeStory({
+                  id: 'task-done-old',
+                  workflow_state_id: 'state-done',
+                  position: 0,
+                  completed: true,
+                  completed_at: '2026-03-24T09:00:00Z',
+                  moved_at: '2026-03-24T09:00:00Z',
+                  updated_at: '2026-03-24T09:00:00Z',
+                }),
+              ],
+            },
+          ],
           tasks: [
             makeStory({
               id: 'task-done-old',
@@ -307,7 +324,7 @@ describe('usePMBoardStore.moveTask', () => {
       taskId: 'task-1',
       fromStateId: 'state-todo',
       toStateId: 'state-done',
-      toIndex: 1,
+      toIndex: 0,
     })
 
     expect(mockedTaskService.move).toHaveBeenCalledWith(
@@ -315,8 +332,66 @@ describe('usePMBoardStore.moveTask', () => {
       'task-1',
       expect.objectContaining({
         state_id: 'state-done',
+        position: 0,
         debug_trace_id: expect.any(String),
       }),
     )
+
+    const doneColumn = usePMBoardStore.getState().columns.find((column) => column.state.id === 'state-done')
+    expect(doneColumn?.tasks.map((task) => task.id)).toEqual(['task-1', 'task-done-old'])
+    expect(doneColumn?.tasks.map((task) => task.position)).toEqual([0, 1])
+    expect(doneColumn?.task_groups).toEqual([])
+  })
+
+  it('rolls back failed cross-state moves without mutating the restored task', async () => {
+    mockedTaskService.move.mockResolvedValue({
+      data: null,
+      error: 'Move failed',
+      status: 400,
+    } as never)
+    usePMBoardStore.setState({
+      workflow: null,
+      teamId: null,
+      error: null,
+      columns: [
+        makeStateColumn({
+          state: { id: 'state-todo', name: 'To Do', state_type: 'started', position: 0 },
+          task_count: 1,
+          tasks: [
+            makeStory({
+              id: 'task-1',
+              workflow_state_id: 'state-todo',
+              position: 0,
+              completed: false,
+              completed_at: undefined,
+              moved_at: undefined,
+              updated_at: '2026-03-24T10:00:00Z',
+            }),
+          ],
+        }),
+        makeStateColumn({
+          state: { id: 'state-done', name: 'Done', state_type: 'done', position: 1 },
+          task_count: 0,
+          tasks: [],
+        }),
+      ] as never,
+    })
+
+    await usePMBoardStore.getState().moveTask({
+      workspaceId: 'ws-1',
+      taskId: 'task-1',
+      fromStateId: 'state-todo',
+      toStateId: 'state-done',
+      toIndex: 0,
+    })
+
+    const [todoColumn, doneColumn] = usePMBoardStore.getState().columns
+    const restoredTask = todoColumn?.tasks[0]
+    expect(todoColumn?.tasks.map((task) => task.id)).toEqual(['task-1'])
+    expect(doneColumn?.tasks).toEqual([])
+    expect(restoredTask?.workflow_state_id).toBe('state-todo')
+    expect(restoredTask?.completed).toBe(false)
+    expect(restoredTask?.completed_at).toBeUndefined()
+    expect(usePMBoardStore.getState().error).toBe('Move failed')
   })
 })

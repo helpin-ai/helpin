@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { TaskCard } from '../TaskCard'
 import { BoardDataContext, BoardCallbacksContext, type BoardCallbacksContextValue } from '../KanbanBoard.contexts'
+import { getDragStartTaskRect } from '../KanbanBoard.dnd'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { Agent, Task } from '@/lib/pmTypes'
 import type { AssignableMember } from '@/lib/types'
@@ -13,9 +14,10 @@ import type { AssignableMember } from '@/lib/types'
 
 vi.mock('@dnd-kit/sortable', () => ({
   useSortable: () => ({
-    attributes: {},
+    attributes: { 'data-sortable-activator': 'true' },
     listeners: {},
     setNodeRef: vi.fn(),
+    setActivatorNodeRef: vi.fn(),
     transform: null,
     transition: undefined,
     isDragging: false,
@@ -121,7 +123,7 @@ function buildTask(patch: Partial<Task> = {}): Task {
   }
 }
 
-function renderTaskCard(task: Task) {
+function renderTaskCard(task: Task, props: { isOverlay?: boolean } = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -152,7 +154,7 @@ function renderTaskCard(task: Task) {
           }}
         >
           <BoardCallbacksContext.Provider value={callbacks}>
-            <TaskCard task={task} />
+            <TaskCard task={task} {...props} />
           </BoardCallbacksContext.Provider>
         </BoardDataContext.Provider>
       </TooltipProvider>,
@@ -163,6 +165,70 @@ function renderTaskCard(task: Task) {
 }
 
 describe('TaskCard', () => {
+  it('uses the whole card as the drag activator without rendering a separate handle', () => {
+    const { container, root } = renderTaskCard(buildTask())
+
+    const article = container.querySelector('article')
+    const dragHandle = container.querySelector('[data-task-card-drag-handle="true"]')
+
+    expect(article).not.toBeNull()
+    expect(article?.getAttribute('data-sortable-activator')).toBe('true')
+    expect(dragHandle).toBeNull()
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('measures the live card DOM rect for the initial source placeholder when dnd-kit has not populated a rect yet', () => {
+    const { container, root } = renderTaskCard(buildTask())
+    const article = container.querySelector('[data-pm-task-card="true"]') as HTMLElement | null
+    const title = article?.querySelector('h4')
+
+    expect(article).not.toBeNull()
+    article!.getBoundingClientRect = () => ({
+      x: 10,
+      y: 20,
+      top: 20,
+      left: 10,
+      right: 290,
+      bottom: 157,
+      width: 280,
+      height: 137,
+      toJSON: () => ({}),
+    })
+
+    const rect = getDragStartTaskRect({
+      activeId: 'task-1',
+      activatorEvent: { target: title } as unknown as Event,
+      dndRect: null,
+    })
+
+    expect(rect?.height).toBe(137)
+    expect(rect?.width).toBe(280)
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('renders dragged overlay cards with a translucent lift that does not change visual size', () => {
+    const { container, root } = renderTaskCard(buildTask(), { isOverlay: true })
+
+    const article = container.querySelector('article')
+    expect(article?.className).not.toContain('rotate-[')
+    expect(article?.className).not.toContain('scale-[')
+    expect(article?.className).toContain('opacity-80')
+    expect(article?.className).toContain('shadow-2xl')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
   it('renders paused approval runs in a dedicated agent row after the footer', () => {
     const { container, root } = renderTaskCard(buildTask({
       latest_run_id: 'run-1',
