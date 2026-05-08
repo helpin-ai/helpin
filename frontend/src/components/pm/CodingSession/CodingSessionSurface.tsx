@@ -11,6 +11,7 @@ import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
 import {
+  shouldShowFailedCodingSessionRecoveryNotice,
   shouldShowCodingSessionPlanPanel,
   shouldShowCodingSessionSidePanel,
 } from '@/components/pm/CodingSession/codingSessionLayout';
@@ -238,6 +239,7 @@ export function CodingSessionSurface({
   );
   const showPlanPanel = shouldShowCodingSessionPlanPanel(streamState.current_plan);
   const showSidePanel = shouldShowCodingSessionSidePanel(streamState.current_plan, previewsByKey.size);
+  const showRecoveryNotice = shouldShowFailedCodingSessionRecoveryNotice(session?.status, streamState.current_plan, previewsByKey.size);
   const approvalPreviewPanelKey = useMemo<string | null>(() => {
     if (!activeInteraction || activeInteraction.interaction_kind !== 'approval_request') return null;
     const previewPanelKey = normalizeCodingSessionPreviewPanelKey(
@@ -567,6 +569,17 @@ export function CodingSessionSurface({
             className="min-h-0 space-y-4 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5rem)]"
             data-coding-session-side-panel
           >
+            {showRecoveryNotice ? (
+              <div
+                className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200"
+                data-coding-session-recovered-output
+              >
+                <div className="font-medium">Recovered output before failure</div>
+                <p className="mt-0.5 text-amber-800/80 dark:text-amber-200/75">
+                  This plan or draft was captured before the run stopped. Review it as partial work, then continue or retry the run when ready.
+                </p>
+              </div>
+            ) : null}
             {showPlanPanel ? (
               <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
             ) : null}

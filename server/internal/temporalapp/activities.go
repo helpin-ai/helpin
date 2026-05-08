@@ -637,6 +637,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			return ExecuteRunResult{}, nonRetryableRunError(unexpectedErr)
 		}
 		bgCtx := context.Background()
+		a.salvageFailedRuntimeStateFromSnapshotStore(bgCtx, state)
 		_ = a.failRun(bgCtx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
@@ -650,6 +651,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			if persistWorkspace {
 				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
 			}
+			a.salvageFailedRuntimeStateFromSnapshotStore(ctx, state)
 			_ = a.failRun(ctx, state, err.Error())
 			return ExecuteRunResult{}, nonRetryableRunError(err)
 		}
@@ -1307,19 +1309,7 @@ func (a *AgentRunActivities) latestLiveCodexUserMessage(ctx context.Context, run
 }
 
 func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage, _ planningRunInput) error {
-	if state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
-		return nil
-	}
-	switch state.run.TargetType {
-	case "epic":
-		if state.epic == nil {
-			return nil
-		}
-	case "story", "task":
-		if state.task == nil {
-			return nil
-		}
-	default:
+	if a == nil || a.artifactRepo == nil || state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
 	}
 

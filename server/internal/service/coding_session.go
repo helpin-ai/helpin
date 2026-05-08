@@ -366,7 +366,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	}
 
 	var streamSnapshot *model.CodingSessionStreamSnapshot
-	if s.sessionSnapshotRepo != nil && run.Status != model.AgentRunStatusCompleted && run.Status != model.AgentRunStatusFailed && run.Status != model.AgentRunStatusCancelled {
+	if s.sessionSnapshotRepo != nil && run.Status != model.AgentRunStatusCompleted && run.Status != model.AgentRunStatusCancelled {
 		snapshotRecord, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
 		if err != nil {
 			return nil, err

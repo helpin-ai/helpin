@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  shouldShowFailedCodingSessionRecoveryNotice,
   shouldShowCodingSessionPlanPanel,
   shouldShowCodingSessionSidePanel,
 } from '../codingSessionLayout';
@@ -24,5 +25,12 @@ describe('coding session layout decisions', () => {
   it('shows the side panel for plans or preview content', () => {
     expect(shouldShowCodingSessionSidePanel(populatedPlan, 0)).toBe(true);
     expect(shouldShowCodingSessionSidePanel(null, 1)).toBe(true);
+  });
+
+  it('shows failed-run recovery copy only when partial output is visible', () => {
+    expect(shouldShowFailedCodingSessionRecoveryNotice('failed', populatedPlan, 0)).toBe(true);
+    expect(shouldShowFailedCodingSessionRecoveryNotice('failed', null, 1)).toBe(true);
+    expect(shouldShowFailedCodingSessionRecoveryNotice('failed', null, 0)).toBe(false);
+    expect(shouldShowFailedCodingSessionRecoveryNotice('running', populatedPlan, 1)).toBe(false);
   });
 });

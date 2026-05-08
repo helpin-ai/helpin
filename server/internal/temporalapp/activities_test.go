@@ -6076,6 +6076,150 @@ func TestCaptureTranscriptPlanningArtifactsPersistsTaskPlannerPreview(t *testing
 	}
 }
 
+func TestCaptureTranscriptPlanningArtifactsPersistsDocumentTargetPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:document-preview-linkage-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_artifacts (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		artifact_type TEXT NOT NULL,
+		format TEXT NOT NULL,
+		storage_mode TEXT NOT NULL,
+		inline_content TEXT,
+		object_key TEXT,
+		metadata TEXT NOT NULL,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create artifact table: %v", err)
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{artifactRepo: artifactRepo}
+	run := &model.AgentRun{ID: "run-document-1", WorkspaceID: "ws-1", TargetType: "document", TargetID: "doc-1"}
+	state := &resolvedRunState{run: run}
+	execCtx := &workerpkg.ExecutionContext{
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			ToolInvocations: []model.ToolInvocation{
+				{
+					ToolName: workerpkg.ToolPublishPreview,
+					Input: json.RawMessage(`{
+						"panel_key":"docs_change",
+						"title":"Docs change",
+						"format":"json",
+						"content":{"scope":"document","content_markdown":"# Updated docs"},
+						"replace":true
+					}`),
+				},
+			},
+		},
+	}
+
+	if err := activities.captureTranscriptPlanningArtifacts(context.Background(), state, execCtx, &model.AgentRunMessage{SequenceNo: 7}, planningRunInput{}); err != nil {
+		t.Fatalf("captureTranscriptPlanningArtifacts returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list preview artifacts: %v", err)
+	}
+	if len(artifacts) != 1 || artifacts[0].ArtifactType != workerpkg.RunPreviewArtifactType {
+		t.Fatalf("expected one run preview artifact, got %#v", artifacts)
+	}
+	var preview workerpkg.PublishedPreview
+	if err := json.Unmarshal([]byte(derefString(artifacts[0].InlineContent)), &preview); err != nil {
+		t.Fatalf("unmarshal preview artifact: %v", err)
+	}
+	if preview.PanelKey != "docs_change" {
+		t.Fatalf("unexpected document preview %#v", preview)
+	}
+}
+
+func TestSalvageFailedRuntimeStatePersistsPlanAndPreviewOnce(t *testing.T) {
+	dbName := fmt.Sprintf("file:failed-runtime-salvage-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_artifacts (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		artifact_type TEXT NOT NULL,
+		format TEXT NOT NULL,
+		storage_mode TEXT NOT NULL,
+		inline_content TEXT,
+		object_key TEXT,
+		metadata TEXT NOT NULL,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create artifact table: %v", err)
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{artifactRepo: artifactRepo}
+	run := &model.AgentRun{ID: "run-failed-salvage", WorkspaceID: "ws-1", TargetType: "document", TargetID: "doc-1"}
+	state := &resolvedRunState{run: run}
+	snapshot := &model.CodingSessionStreamSnapshot{
+		CurrentPlan: &model.CodingSessionRunPlan{
+			Plan: []model.CodingSessionRunPlanStep{{
+				Step:   "Draft the docs update",
+				Status: "in_progress",
+			}},
+		},
+		LiveTurnSegments: []model.CodingSessionLiveTurnSegment{{
+			SegmentID: "tool-1",
+			Kind:      "tool_call",
+			ToolCall: &model.CodingSessionLiveToolCall{
+				ToolCallID: "tool-1",
+				ToolName:   workerpkg.ToolPublishPreview,
+				ArgsText: `{
+					"panel_key":"docs_change",
+					"title":"Recovered docs draft",
+					"format":"json",
+					"content":{"scope":"document","content_markdown":"# Recovered"},
+					"replace":true
+				}`,
+				Status: "completed",
+			},
+		}},
+	}
+
+	if err := activities.salvageFailedRuntimeState(context.Background(), state, snapshot); err != nil {
+		t.Fatalf("salvageFailedRuntimeState returned error: %v", err)
+	}
+	if err := activities.salvageFailedRuntimeState(context.Background(), state, snapshot); err != nil {
+		t.Fatalf("second salvageFailedRuntimeState returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	if len(artifacts) != 2 {
+		t.Fatalf("expected one plan and one preview artifact after idempotent salvage, got %#v", artifacts)
+	}
+	types := map[string]int{}
+	for _, artifact := range artifacts {
+		types[artifact.ArtifactType]++
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if metadata["source"] != "failure_salvage" {
+			t.Fatalf("expected failure_salvage metadata, got %#v", metadata)
+		}
+	}
+	if types[model.AgentRunArtifactTypeRunPlan] != 1 || types[workerpkg.RunPreviewArtifactType] != 1 {
+		t.Fatalf("unexpected salvaged artifact types %#v", types)
+	}
+}
+
 func TestPersistAssistantRunMessagePersistsRunPlanArtifact(t *testing.T) {
 	dbName := fmt.Sprintf("file:run-plan-artifact-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})

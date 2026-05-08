@@ -10,3 +10,11 @@ export function shouldShowCodingSessionSidePanel(
 ): boolean {
   return shouldShowCodingSessionPlanPanel(plan) || previewCount > 0;
 }
+
+export function shouldShowFailedCodingSessionRecoveryNotice(
+  status: string | null | undefined,
+  plan: RunPlanArtifact | null | undefined,
+  previewCount: number,
+): boolean {
+  return status === 'failed' && shouldShowCodingSessionSidePanel(plan, previewCount);
+}
