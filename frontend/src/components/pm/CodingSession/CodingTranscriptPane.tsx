@@ -37,6 +37,7 @@ import {
   formatCodingSessionElapsed,
   isStatusTranscriptMessage,
 } from './codingSessionPresentation';
+import type { CodingSessionComposerState } from './codingSessionComposer';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
 import { AgentRunArtifactView } from '@/components/pm/AgentRunArtifactView';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
@@ -98,6 +99,7 @@ export function CodingTranscriptPane({
   onSendMessage,
   sendingMessage = false,
   messagePlaceholder = 'Reply to agent… (⌘↵ to send)',
+  messageComposer,
   session,
   activeInteraction,
   acting,
@@ -121,6 +123,7 @@ export function CodingTranscriptPane({
   onSendMessage?: (content: string) => Promise<void>;
   sendingMessage?: boolean;
   messagePlaceholder?: string;
+  messageComposer?: CodingSessionComposerState;
   session?: CodingSession | null;
   activeInteraction?: CodingSessionInteraction | null;
   acting?: string | null;
@@ -133,6 +136,12 @@ export function CodingTranscriptPane({
 }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
+  const resolvedMessageComposer: CodingSessionComposerState = messageComposer ?? {
+    visible: Boolean(onSendMessage),
+    enabled: Boolean(onSendMessage),
+    mode: 'answer',
+    placeholder: messagePlaceholder,
+  };
   const visibleLiveSegments = liveTurnSegments.filter((segment) => {
     if (segment.kind === 'assistant_message') {
       return segment.assistant_message.content.trim().length > 0;
@@ -178,6 +187,7 @@ export function CodingTranscriptPane({
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
     | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
     | { kind: 'placeholder' }
+    | { kind: 'running'; since: string }
     | { kind: 'empty' }
     | { kind: 'bottom-spacer' };
 
@@ -214,6 +224,10 @@ export function CodingTranscriptPane({
     if (showLivePlaceholder) {
       list.push({ kind: 'placeholder' });
     }
+    const runningSince = session?.started_at ?? session?.created_at;
+    if (session?.status === 'running' && runningSince) {
+      list.push({ kind: 'running', since: runningSince });
+    }
     if (!loading && list.length === 0) {
       list.push({ kind: 'empty' });
     }
@@ -221,7 +235,18 @@ export function CodingTranscriptPane({
       list.push({ kind: 'bottom-spacer' });
     }
     return list;
-  }, [promptMessage, transcriptMessages, reviewArtifacts, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+  }, [
+    promptMessage,
+    transcriptMessages,
+    reviewArtifacts,
+    liveReasoningMessage,
+    visibleLiveSegments,
+    showLivePlaceholder,
+    session?.status,
+    session?.started_at,
+    session?.created_at,
+    loading,
+  ]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -382,6 +407,8 @@ export function CodingTranscriptPane({
             placeholder
           />
         );
+      case 'running':
+        return <RunningActivityRow since={item.since} />;
       case 'empty':
         return (
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
@@ -439,8 +466,6 @@ export function CodingTranscriptPane({
         </div>
       </div>
 
-      {session?.status === 'running' && <RunningIndicator since={session.created_at} />}
-
       {(session?.pause_reason === 'authentication' || activeInteraction) ? (
         <InterruptionOverlay
           session={session ?? null}
@@ -455,8 +480,14 @@ export function CodingTranscriptPane({
         />
       ) : null}
 
-      {onSendMessage ? (
-        <MessageInput onSend={onSendMessage} sending={sendingMessage} placeholder={messagePlaceholder} />
+      {resolvedMessageComposer.visible ? (
+        <MessageInput
+          onSend={onSendMessage}
+          sending={sendingMessage}
+          enabled={resolvedMessageComposer.enabled && Boolean(onSendMessage)}
+          placeholder={resolvedMessageComposer.placeholder}
+          disabledReason={resolvedMessageComposer.disabledReason}
+        />
       ) : null}
     </section>
   );
@@ -648,14 +679,19 @@ function InterruptionOverlay({
 function MessageInput({
   onSend,
   sending,
+  enabled,
   placeholder,
+  disabledReason,
 }: {
-  onSend: (content: string) => Promise<void>;
+  onSend?: (content: string) => Promise<void>;
   sending: boolean;
+  enabled: boolean;
   placeholder: string;
+  disabledReason?: string;
 }) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const disabled = !enabled || sending;
   const resizeTextarea = useCallback((textarea = textareaRef.current) => {
     if (!textarea) return;
     textarea.style.height = 'auto';
@@ -670,7 +706,7 @@ function MessageInput({
 
   const handleSubmit = async () => {
     const trimmed = value.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || disabled || !onSend) return;
     await onSend(trimmed);
     setValue('');
   };
@@ -693,14 +729,17 @@ function MessageInput({
           }}
           placeholder={placeholder}
           className="min-h-[2.5rem] max-h-32 resize-none overflow-hidden text-sm focus-visible:border-ring/70 focus-visible:ring-2 focus-visible:ring-ring/15"
-          disabled={sending}
+          disabled={disabled}
+          title={disabledReason}
           rows={1}
         />
         <Button
           size="icon"
           className="h-10 w-10 shrink-0 rounded-full"
           onClick={() => void handleSubmit()}
-          disabled={!value.trim() || sending}
+          disabled={!enabled || !value.trim() || sending}
+          data-coding-session-message-submit
+          title={disabledReason}
         >
           {sending ? <Loading01Icon className="h-5 w-5 animate-spin" /> : <ArrowUp02Icon className="h-5 w-5" />}
         </Button>
@@ -1120,13 +1159,23 @@ function useElapsedMs(since: string): number {
   return Math.max(0, now - origin);
 }
 
-function RunningIndicator({ since }: { since: string }) {
+function RunningActivityRow({ since }: { since: string }) {
   const elapsed = useElapsedMs(since);
   return (
-    <div className="flex items-center gap-2.5 border-t border-border bg-muted/50 px-4 py-2">
-      <UnicodeSpinner name="braille" className="text-sm text-primary" />
-      <span className="text-xs font-medium text-primary">Running</span>
-      <span className="ml-auto text-xs tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
+    <div className="flex gap-3" data-coding-session-running-activity>
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
+        <UnicodeSpinner
+          name="braille"
+          className="agent-working-chroma text-xs"
+          data-agent-working-spinner
+        />
+      </div>
+      <div className="min-w-0 flex-1 pb-4">
+        <div className="flex min-h-7 items-center gap-2">
+          <span className="text-xs font-medium text-foreground/80">Agent running</span>
+          <span className="text-[11px] tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
+        </div>
+      </div>
     </div>
   );
 }

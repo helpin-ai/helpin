@@ -232,16 +232,17 @@ describe('CodingSessionHeader', () => {
     expect(container.querySelector('.animate-pulse')).toBeNull();
   });
 
-  it('marks the active working lifecycle step with a calm pulse', () => {
+  it('marks the active working lifecycle step with a calm colorful pulse', () => {
     renderHeader(buildSession({
       status: 'running',
       execution_stage: 'codex_running',
       started_at: '2026-05-07T08:00:00Z',
     }));
 
-    const pulse = container.querySelector('.animate-pulse');
     const stage = container.querySelector('[data-coding-session-lifecycle-stage]');
+    const pulse = container.querySelector('[data-agent-working-pulse]');
     expect(pulse).toBeTruthy();
+    expect(pulse?.className).toContain('agent-working-chroma');
     expect(pulse?.getAttribute('aria-hidden')).toBe('true');
     expect(stage?.textContent).toContain('Agent working');
     expect(stage?.textContent).toContain('Runtime is active');

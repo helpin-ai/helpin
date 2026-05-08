@@ -190,13 +190,72 @@ describe('CodingTranscriptPane', () => {
           loading={false}
           session={buildSession({ status: 'running', pause_reason: 'none' })}
           onSendMessage={async () => {}}
+          messageComposer={{
+            visible: true,
+            enabled: true,
+            mode: 'answer',
+            placeholder: 'Answer the agent...',
+          }}
         />,
       );
     });
 
-    const composer = container.querySelector('textarea[placeholder^="Reply to agent"]');
+    const composer = container.querySelector('textarea[placeholder^="Answer the agent"]');
     expect(composer?.className).toContain('focus-visible:border-ring/70');
     expect(composer?.className).toContain('focus-visible:ring-ring/15');
+  });
+
+  it('renders a disabled composer when messages cannot be delivered', () => {
+    const onSendMessage = vi.fn(async () => {});
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'running', pause_reason: 'none' })}
+          onSendMessage={onSendMessage}
+          messageComposer={{
+            visible: true,
+            enabled: false,
+            mode: 'waiting',
+            placeholder: 'Agent is working. You can answer when it asks for input.',
+          }}
+        />,
+      );
+    });
+
+    const composer = container.querySelector('textarea[placeholder^="Agent is working"]') as HTMLTextAreaElement | null;
+    const submit = container.querySelector('[data-coding-session-message-submit]') as HTMLButtonElement | null;
+    expect(composer?.disabled).toBe(true);
+    expect(submit?.disabled).toBe(true);
+
+    act(() => {
+      submit?.click();
+    });
+    expect(onSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('renders the running state as the latest activity row with the colorful spinner', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'running', pause_reason: 'none' })}
+        />,
+      );
+    });
+
+    const runningActivity = container.querySelector('[data-coding-session-running-activity]');
+    expect(runningActivity?.textContent).toContain('Agent running');
+    expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('agent-working-chroma');
+    expect(container.querySelector('[data-coding-session-running-footer]')).toBeNull();
   });
 
   it('auto-grows the main composer while typing', () => {
@@ -210,11 +269,17 @@ describe('CodingTranscriptPane', () => {
           loading={false}
           session={buildSession({ status: 'running', pause_reason: 'none' })}
           onSendMessage={async () => {}}
+          messageComposer={{
+            visible: true,
+            enabled: true,
+            mode: 'answer',
+            placeholder: 'Answer the agent...',
+          }}
         />,
       );
     });
 
-    const composer = container.querySelector('textarea[placeholder^="Reply to agent"]') as HTMLTextAreaElement | null;
+    const composer = container.querySelector('textarea[placeholder^="Answer the agent"]') as HTMLTextAreaElement | null;
     expect(composer).toBeTruthy();
     Object.defineProperty(composer!, 'scrollHeight', {
       configurable: true,

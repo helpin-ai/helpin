@@ -423,7 +423,8 @@ function CodingSessionLifecycleStrip({ session }: { session: CodingSession }) {
         {activeWorkingStep ? (
           <span
             aria-hidden="true"
-            className="mr-1.5 h-1.5 w-1.5 rounded-full bg-primary/70 animate-pulse"
+            className="agent-working-chroma mr-1.5 h-1.5 w-1.5 rounded-full bg-current animate-pulse"
+            data-agent-working-pulse
           />
         ) : null}
         <span className="font-medium text-foreground/80">{stage.label}</span>

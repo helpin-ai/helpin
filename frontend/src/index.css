@@ -460,6 +460,29 @@
   to { visibility: hidden; }
 }
 
+@keyframes agent-working-chroma {
+  0%, 100% {
+    color: var(--primary);
+  }
+  34% {
+    color: oklch(0.7 0.16 164);
+  }
+  68% {
+    color: oklch(0.76 0.17 73);
+  }
+}
+
+.agent-working-chroma {
+  animation: agent-working-chroma 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-working-chroma {
+    animation: none;
+    color: var(--primary);
+  }
+}
+
 .tiptap .slash-command-chip {
   background: var(--muted);
   color: var(--muted-foreground);

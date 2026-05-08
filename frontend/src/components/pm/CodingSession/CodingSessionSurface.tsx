@@ -19,6 +19,7 @@ import {
   buildCodingSessionStreamState,
   mergeCodingSessionStreamSnapshotSeed,
 } from '@/components/pm/CodingSession/codingSessionStream';
+import { resolveCodingSessionComposerState } from '@/components/pm/CodingSession/codingSessionComposer';
 import { normalizeCodingSessionPreviewPanelKey } from '@/components/pm/CodingSession/previewPanelKeys';
 import {
   codingSessionApprovalStatesByPreviewKey,
@@ -37,7 +38,7 @@ import { Button } from '@/components/ui/button';
 
 const STATUS_ICON = {
   queued: <Clock01Icon className="h-3.5 w-3.5" />,
-  running: <UnicodeSpinner name="braille" className="text-sm text-primary" />,
+  running: <UnicodeSpinner name="braille" className="agent-working-chroma text-sm" />,
   paused: <SecurityCheckIcon className="h-3.5 w-3.5" />,
   completed: <CheckmarkCircle02Icon className="h-3.5 w-3.5" />,
   failed: <CancelCircleIcon className="h-3.5 w-3.5" />,
@@ -375,16 +376,11 @@ export function CodingSessionSurface({
     }
   }, [workspaceId, activeSessionId, session, continueRun]);
 
-  const canSendMessage = session !== null && (
-    session.status === 'running'
-    || session.status === 'paused'
-    || session.status === 'failed'
-    || session.status === 'cancelled'
+  const messageComposer = useMemo(
+    () => resolveCodingSessionComposerState(session, activeInteraction, loading),
+    [activeInteraction, loading, session],
   );
   const terminalContinuation = session !== null && (session.status === 'failed' || session.status === 'cancelled');
-  const messagePlaceholder = terminalContinuation
-    ? 'This run ended. Type instructions to continue from the previous progress… (⌘↵ to send)'
-    : 'Reply to agent… (⌘↵ to send)';
 
   const canSuggestHandoff = session !== null
     && session.status === 'completed'
@@ -550,12 +546,12 @@ export function CodingSessionSurface({
           liveReasoningMessage={streamState.live_reasoning_message}
           liveTurnSegments={streamState.live_turn_segments}
           loading={loading}
-          onSendMessage={canSendMessage ? sendMessage : undefined}
+          onSendMessage={messageComposer.enabled ? sendMessage : undefined}
           sendingMessage={sendingMessage}
           session={session}
           activeInteraction={activeInteraction}
           acting={acting}
-          messagePlaceholder={messagePlaceholder}
+          messageComposer={messageComposer}
           availablePreviewPanelKey={approvalPreviewPanelKey}
           attachedPreview={approvalPreview}
           onViewPreview={handleViewPreview}
