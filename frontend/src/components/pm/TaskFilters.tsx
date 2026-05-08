@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Tick01Icon, FilterHorizontalIcon, Cancel01Icon, ArrowLeft02Icon } from '@/lib/icons';
+import { Tick01Icon, FilterHorizontalIcon, Cancel01Icon, ArrowLeft02Icon, PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -14,13 +14,15 @@ import {
 import { PRIORITY_CONFIG, SEVERITY_CONFIG, TASK_TYPE_CONFIG } from '@/lib/pmConstants';
 import type { Priority, Severity, TaskType, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { AssignableMember, TeamUserMembership } from '@/lib/types';
-import type { BoardFilters } from '@/stores/pmBoardStore';
+import { usePMBoardStore, type BoardFilters } from '@/stores/pmBoardStore';
+import { isDefaultView } from '@/lib/pmDefaultViews';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { useCompanies, useContacts, useConversations, useDeals } from '@/hooks/queries';
 import { useWorkspaceMemberPresenceMap } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { filterAssignableMembersForTeam } from '@/components/pm/task-detail/taskFilterMembers';
+import { SaveViewDialog } from './SaveViewDialog';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -554,8 +556,30 @@ export function TaskFilterTrigger() {
 
 // ── Filter bar (renders on its own row below the header) ───────────
 
+function suggestViewName(
+  filterState: FilterState,
+  definitions: FilterDefinition[],
+): string {
+  const parts: string[] = [];
+  for (const def of definitions) {
+    const values = filterState[def.key];
+    if (!values || values.length === 0) continue;
+    if (values.length === 1) {
+      const label = def.options.find((o) => o.value === values[0])?.label ?? values[0];
+      parts.push(`${def.label}: ${label}`);
+    } else {
+      parts.push(`${def.label} (${values.length})`);
+    }
+  }
+  return parts.slice(0, 2).join(' · ');
+}
+
 export function TaskFilterBar() {
-  const { filterState, definitions, activeKeys, activeCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
+  const { workspaceId, filterState, definitions, activeKeys, activeCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
+  const { activeViewId, saveCurrentAsView } = usePMBoardStore();
+  const [saveOpen, setSaveOpen] = useState(false);
+
+  const canSaveAsView = !activeViewId || isDefaultView(activeViewId);
 
   if (activeCount === 0) return null;
 
@@ -585,24 +609,65 @@ export function TaskFilterBar() {
       >
         Clear all
       </Button>
+      {canSaveAsView && (
+        <>
+          <button
+            type="button"
+            onClick={() => setSaveOpen(true)}
+            className="inline-flex items-center gap-1 rounded-md border border-dashed border-border/80 px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground transition-colors"
+          >
+            <PlusSignIcon className="h-3 w-3" />
+            Save as view
+          </button>
+          <SaveViewDialog
+            open={saveOpen}
+            onOpenChange={setSaveOpen}
+            title="Save as new view"
+            initialName={suggestViewName(filterState, definitions)}
+            onSave={(name, isShared) => {
+              saveCurrentAsView(workspaceId, name, isShared);
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }
+
+const OWNER_AVATAR_INLINE_CAP = 7;
 
 export function TaskOwnerAvatarFilterRow() {
   const { workspaceId, assignableMembers, activeTeamId, userMemberships, filterState, handleToggle } = useFilterContext();
   const { data: memberPresenceByUserId } = useWorkspaceMemberPresenceMap(workspaceId);
   const ownerFilters = filterState.owner_member_ids ?? [];
+  const [overflowOpen, setOverflowOpen] = useState(false);
+
   const members = useMemo(
     () => filterAssignableMembersForTeam(assignableMembers, activeTeamId, userMemberships),
     [assignableMembers, activeTeamId, userMemberships],
   );
 
+  // Sort selected first so they're guaranteed visible in the inline row.
+  const sortedMembers = useMemo(() => {
+    const selected: AssignableMember[] = [];
+    const unselected: AssignableMember[] = [];
+    for (const m of members) {
+      if (ownerFilters.includes(m.id)) selected.push(m);
+      else unselected.push(m);
+    }
+    return [...selected, ...unselected];
+  }, [members, ownerFilters]);
+
+  const visible = sortedMembers.slice(0, OWNER_AVATAR_INLINE_CAP);
+  const overflow = sortedMembers.slice(OWNER_AVATAR_INLINE_CAP);
+  const overflowCount = overflow.length;
+  const hasOverflowSelected = overflow.some((m) => ownerFilters.includes(m.id));
+
   if (members.length === 0) return null;
 
   return (
     <div className="ml-3 flex min-w-0 items-center -space-x-1">
-      {members.map((member) => {
+      {visible.map((member) => {
         const isSelected = ownerFilters.includes(member.id);
         const label = member.display_name?.trim() || member.email;
         const presenceStatus = member.user_id ? (memberPresenceByUserId?.get(member.user_id)?.status ?? null) : null;
@@ -634,6 +699,61 @@ export function TaskOwnerAvatarFilterRow() {
           </QuickTooltip>
         );
       })}
+      {overflowCount > 0 && (
+        <Popover open={overflowOpen} onOpenChange={setOverflowOpen}>
+          <QuickTooltip label={`${overflowCount} more`}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-medium ring-offset-1 ring-offset-background transition-colors hover:z-10 ${
+                  hasOverflowSelected
+                    ? 'z-10 bg-primary/10 text-primary ring-[1.5px] ring-ring'
+                    : 'bg-muted text-muted-foreground hover:bg-accent hover:text-foreground'
+                }`}
+                aria-label={`Show ${overflowCount} more members`}
+              >
+                +{overflowCount}
+              </button>
+            </PopoverTrigger>
+          </QuickTooltip>
+          <PopoverContent className="w-64 p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search members..." />
+              <CommandList>
+                <CommandEmpty>No members.</CommandEmpty>
+                <CommandGroup>
+                  {members.map((member) => {
+                    const isSelected = ownerFilters.includes(member.id);
+                    const label = member.display_name?.trim() || member.email;
+                    const presenceStatus = member.user_id ? (memberPresenceByUserId?.get(member.user_id)?.status ?? null) : null;
+                    return (
+                      <CommandItem
+                        key={member.id}
+                        value={label}
+                        onSelect={() => handleToggle('owner_member_ids', member.id)}
+                      >
+                        <UserAvatar
+                          name={label}
+                          avatarUrl={member.avatar_url}
+                          avatarStyle={member.avatar_style}
+                          avatarSeed={member.avatar_seed}
+                          avatarBackgroundMode={member.avatar_background_mode}
+                          avatarBackgroundColor={member.avatar_background_color}
+                          presenceStatus={presenceStatus}
+                          className="mr-2 h-5 w-5"
+                          fallbackClassName="text-[8px]"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{label}</span>
+                        {isSelected && <Tick01Icon className="ml-2 h-3.5 w-3.5 text-primary" />}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }
