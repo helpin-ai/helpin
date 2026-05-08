@@ -878,7 +878,7 @@ export function CommentThread({
           avatarSeed={entry.author.avatar_seed}
           avatarBackgroundMode={entry.author.avatar_background_mode}
           avatarBackgroundColor={entry.author.avatar_background_color}
-          className={`${avatarSize} shrink-0 mt-0.5`}
+          className={`${avatarSize} shrink-0 -mt-1`}
         />
         <div className="min-w-0 flex-1 flex items-start gap-2">
           <div className="min-w-0 flex-1">
@@ -1109,7 +1109,7 @@ export function CommentThread({
         <button
           type="button"
           onClick={openTopComposer}
-          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-primary hover:underline cursor-pointer"
+          className="ml-9 inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
         >
           <Message01Icon className="h-4 w-4" />
           Add a comment

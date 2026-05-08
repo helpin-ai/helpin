@@ -1611,6 +1611,10 @@ function TaskDetailPanelBody({
                 ))}
               </div>
             ) : (
+              <>
+                {comments.length > 0 && (
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comments</h3>
+                )}
               <CommentThread
                 workspaceId={workspaceId}
                 entityType="task"
@@ -1622,6 +1626,7 @@ function TaskDetailPanelBody({
                 onCommentsChange={setComments}
                 hideEmptyState
               />
+              </>
             )}
 
             {/* Activity section */}
