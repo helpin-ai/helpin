@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -55,9 +56,11 @@ func defaultSystemAgentNameForPresetKey(presetKey string) string {
 	case model.AgentPresetTaskPlanner:
 		return "Scribe"
 	case model.AgentPresetCRMOperator:
-		return "CRM Operator"
+		return "Beacon"
 	case model.AgentPresetSupportAgent:
 		return "Echo"
+	case model.AgentPresetDocumentationAgent:
+		return "Quill"
 	case model.AgentPresetCodeBuilder:
 		return "Forge"
 	case model.AgentPresetReviewAgent:
@@ -183,6 +186,7 @@ type AgentService struct {
 	epicRepo                   *repository.PMEpicRepository
 	conversationRepo           *repository.SupportConversationRepository
 	messageRepo                *repository.SupportMessageRepository
+	supportCoverageSvc         *SupportCoverageService
 	handoffRepo                *repository.AgentHandoffRepository
 	automationRuleRepo         *repository.AutomationRuleRepository
 	installationRepo           *repository.SupportInboxInstallationRepository
@@ -213,6 +217,7 @@ type AgentService struct {
 	codexChatGPTAccessToken    string
 	codexChatGPTAccountID      string
 	skillPackageStore          skillPackageStore
+	agentDraftLLM              agentDraftLLM
 }
 
 // NewAgentService creates a new AgentService.
@@ -336,6 +341,11 @@ func (s *AgentService) SetNotificationService(notificationService *NotificationS
 func (s *AgentService) SetCRMRepositories(contactRepo *repository.CRMContactRepository, dealRepo *repository.CRMDealRepository) *AgentService {
 	s.crmContactRepo = contactRepo
 	s.crmDealRepo = dealRepo
+	return s
+}
+
+func (s *AgentService) SetSupportCoverageService(supportCoverageService *SupportCoverageService) *AgentService {
+	s.supportCoverageSvc = supportCoverageService
 	return s
 }
 
@@ -623,6 +633,30 @@ func (s *AgentService) ListAgents(ctx context.Context, workspaceID string) ([]mo
 		materializeAgentSystemPrompt(&agents[idx])
 	}
 	return agents, nil
+}
+
+func (s *AgentService) ListAgentsForActor(ctx context.Context, workspaceID string, actor *authorization.Actor) ([]model.Agent, error) {
+	agents, err := s.ListAgents(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if actor == nil || actor.Role == "admin" || actor.Role == "owner" {
+		return agents, nil
+	}
+	actorTeamIDs := make(map[string]struct{}, len(actor.TeamMemberships))
+	for _, tm := range actor.TeamMemberships {
+		teamID := strings.TrimSpace(tm.TeamID)
+		if teamID != "" {
+			actorTeamIDs[teamID] = struct{}{}
+		}
+	}
+	filtered := make([]model.Agent, 0, len(agents))
+	for _, agent := range agents {
+		if agentVisibleToActorTeams(agent, actorTeamIDs) {
+			filtered = append(filtered, agent)
+		}
+	}
+	return filtered, nil
 }
 
 // GetAgent returns a single agent.
@@ -1385,6 +1419,7 @@ func (s *AgentService) applyPresetToSystemAgent(agent *model.Agent, preset model
 	agent.AllowedCommands = mustJSONStringSlice(preset.AllowedCommands)
 	agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
 	agent.TeamID = nil
+	agent.TeamIDs = nil
 	agent.ApprovalMode = "never"
 	agent.DefaultInvocationMode = preset.DefaultInvocationMode
 	if preset.Scope == "workspace" {
@@ -1756,9 +1791,9 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if role == "" {
 		role = "Custom Agent"
 	}
-	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, "opencode"))
+	runtimeKind := strings.TrimSpace(stringOrDefault(req.RuntimeKind, "native_sdk"))
 	if runtimeKind == "" {
-		runtimeKind = "opencode"
+		runtimeKind = "native_sdk"
 	}
 	triggerMode := stringOrDefault(req.TriggerMode, "manual")
 	if triggerMode == "" {
@@ -1768,7 +1803,7 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		return nil, err
 	}
 
-	approvalMode := "never"
+	approvalMode := "always"
 	if req.ApprovalMode != nil && *req.ApprovalMode != "" {
 		approvalMode = *req.ApprovalMode
 	}
@@ -1776,6 +1811,7 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	if req.MaxConcurrentRuns != nil && *req.MaxConcurrentRuns > 0 {
 		maxConcurrentRuns = *req.MaxConcurrentRuns
 	}
+	teamIDs := resolveCreateAgentTeamIDs(req)
 
 	agent := &model.Agent{
 		WorkspaceID:                req.WorkspaceID,
@@ -1796,13 +1832,14 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 		InstructionTemplateVersion: "",
 		PlanningNotes:              nil,
 		MonthlyTokenBudget:         normalizeTokenBudget(req.MonthlyTokenBudget),
-		TeamID:                     trimPtr(req.TeamID),
+		TeamID:                     firstTeamIDPtr(teamIDs),
+		TeamIDs:                    teamIDs,
 		AllowedTools:               normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools)),
 		AllowedCommands:            normalizeJSONSlice(req.AllowedCommands),
 		AllowedTargets:             sliceOrPresetJSON(req.AllowedTargets, []string{"task"}),
 		ApprovalMode:               approvalMode,
 		MaxConcurrentRuns:          maxConcurrentRuns,
-		DefaultInvocationMode:      stringOrDefault(req.DefaultInvocationMode, model.InvocationModeAutonomous),
+		DefaultInvocationMode:      stringOrDefault(req.DefaultInvocationMode, model.InvocationModeInteractive),
 	}
 	if sourceTemplate != nil {
 		agent.SourceTemplateID = &sourceTemplate.ID
@@ -1827,7 +1864,9 @@ func (s *AgentService) createCustomAgent(ctx context.Context, req model.CreateAg
 	}
 
 	newValue := agent.Name
-	_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "created", nil, nil, &newValue, nil)
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "created", nil, nil, &newValue, nil)
+	}
 
 	s.publishSimpleEvent("created", "agent", agent.ID, agent.WorkspaceID, actorID)
 
@@ -1844,6 +1883,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if agent == nil {
 		return nil, fmt.Errorf("agent not found")
 	}
+	if req.TeamID != nil && req.TeamIDs != nil {
+		return nil, fmt.Errorf("team_ids and legacy team_id cannot both be set")
+	}
 	if agent.IsSystem {
 		systemPresetKey := normalizePresetKey(agent.PresetKey)
 		if systemPresetKey == "" {
@@ -1852,7 +1894,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		if req.PresetKey != nil && normalizePresetKey(*req.PresetKey) != systemPresetKey {
 			return nil, fmt.Errorf("system agent preset cannot be changed")
 		}
-		if req.TeamID != nil && trimPtr(req.TeamID) != nil {
+		if (req.TeamID != nil && trimPtr(req.TeamID) != nil) || (req.TeamIDs != nil && len(normalizeServiceTeamIDs(*req.TeamIDs)) > 0) {
 			return nil, fmt.Errorf("system agent cannot be restricted to a team")
 		}
 		if req.Skills != nil {
@@ -1957,8 +1999,12 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 	if req.ActiveTaskID != nil {
 		agent.ActiveTaskID = req.ActiveTaskID
 	}
-	if req.TeamID != nil {
-		agent.TeamID = trimPtr(req.TeamID)
+	if req.TeamIDs != nil {
+		agent.TeamIDs = normalizeServiceTeamIDs(*req.TeamIDs)
+		agent.TeamID = firstTeamIDPtr(agent.TeamIDs)
+	} else if req.TeamID != nil {
+		agent.TeamIDs = resolveLegacyAgentTeamIDs(req.TeamID)
+		agent.TeamID = firstTeamIDPtr(agent.TeamIDs)
 	}
 	if req.AllowedTools != nil {
 		agent.AllowedTools = normalizeAllowedToolsJSON(normalizeJSONSlice(req.AllowedTools))
@@ -2017,6 +2063,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 			agent.RuntimeKind = defaultRuntimeKindForPresetKey(systemPresetKey)
 			agent.TriggerMode = defaultTriggerModeForPresetKey(systemPresetKey)
 			agent.TeamID = nil
+			agent.TeamIDs = nil
 			agent.ApprovalMode = "never"
 			agent.SystemPrompt, agent.InstructionTemplateVersion = syncManagedSystemPromptForPreset(systemPresetKey, agent.SystemPrompt, agent.PlanningNotes, agent.InstructionTemplateVersion)
 			agent.PlanningNotes = nil
@@ -2056,7 +2103,9 @@ func (s *AgentService) UpdateAgent(ctx context.Context, workspaceID, id string, 
 		return nil, err
 	}
 
-	_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "updated", nil, nil, nil, nil)
+	if s.activitySvc != nil {
+		_ = s.activitySvc.Log(ctx, agent.WorkspaceID, "agent", agent.ID, &actorID, "updated", nil, nil, nil, nil)
+	}
 
 	s.publishSimpleEvent("updated", "agent", agent.ID, agent.WorkspaceID, actorID)
 	materializeAgentSystemPrompt(agent)
@@ -2283,6 +2332,180 @@ func (s *AgentService) StartTargetRun(ctx context.Context, workspaceID, targetTy
 	return s.startTargetRun(ctx, workspaceID, targetType, targetID, req, strPtr(actorID), manualRunTriggerContext(), nil, nil)
 }
 
+func supportCoverageGapRunContext(detail *model.SupportCoverageGapDetail, extra *string) string {
+	sections := make([]string, 0, 5)
+	if trimmed := strings.TrimSpace(derefString(extra)); trimmed != "" {
+		sections = append(sections, "Operator notes:\n"+trimmed)
+	}
+	if detail == nil {
+		return strings.TrimSpace(strings.Join(sections, "\n\n"))
+	}
+
+	var b strings.Builder
+	b.WriteString("Support coverage gap context:\n")
+	writeRunFact := func(label, value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		b.WriteString(fmt.Sprintf("- %s=%s\n", label, value))
+	}
+	writeRunFact("gap_id", detail.ID)
+	writeRunFact("title", detail.Title)
+	writeRunFact("topic", firstNonEmptyCoverageContext(detail.TopicTitle, detail.IssueKey))
+	writeRunFact("gap_kind", detail.GapKind)
+	writeRunFact("gap_category", detail.GapCategory)
+	writeRunFact("v1_gap_type", detail.V1GapType)
+	writeRunFact("recommended_action", supportCoverageGapAgentAction(detail))
+	writeRunFact("failure_mode", detail.FailureMode)
+	writeRunFact("source_signal", detail.SourceSignal)
+	writeRunFact("status", detail.Status)
+	b.WriteString(fmt.Sprintf("- confidence=%.2f\n", detail.Confidence))
+	b.WriteString(fmt.Sprintf("- evidence_count=%d\n", detail.EvidenceCount))
+	if detail.AnalysisExplanation != nil {
+		b.WriteString("\nAnalysis explanation:\n")
+		writeRunFact("customer_need", detail.AnalysisExplanation.CustomerNeed)
+		writeRunFact("ai_failure", detail.AnalysisExplanation.AIFailure)
+		writeRunFact("human_resolution", detail.AnalysisExplanation.HumanResolution)
+		writeRunFact("decision_reason", detail.AnalysisExplanation.DecisionReason)
+	}
+	if len(detail.RelatedArticles) > 0 {
+		b.WriteString("\nRelated docs:\n")
+		for i, article := range detail.RelatedArticles {
+			if i >= 8 {
+				break
+			}
+			title := firstNonEmptyCoverageContext(article.ArticleTitle, "Untitled article")
+			b.WriteString(fmt.Sprintf("- document_id=%s title=%q\n", article.DocumentID, title))
+		}
+	}
+	if len(detail.Recommendations) > 0 {
+		b.WriteString("\nRecommendations:\n")
+		for i, rec := range detail.Recommendations {
+			if i >= 6 {
+				break
+			}
+			b.WriteString(fmt.Sprintf("- type=%s priority=%s target_type=%s target_id=%s title=%q\n",
+				strings.TrimSpace(rec.RecommendationType),
+				strings.TrimSpace(rec.Priority),
+				strings.TrimSpace(rec.TargetType),
+				strings.TrimSpace(derefString(rec.TargetID)),
+				strings.TrimSpace(rec.TargetTitle),
+			))
+			if change := strings.TrimSpace(rec.SuggestedChange); change != "" {
+				b.WriteString("  suggested_change: " + truncateRunContextText(change, 700) + "\n")
+			}
+			if notes := strings.TrimSpace(rec.ImplementationNotes); notes != "" {
+				b.WriteString("  implementation_notes: " + truncateRunContextText(notes, 500) + "\n")
+			}
+			if rationale := strings.TrimSpace(rec.Rationale); rationale != "" {
+				b.WriteString("  rationale: " + truncateRunContextText(rationale, 500) + "\n")
+			}
+		}
+	}
+	if len(detail.Evidence) > 0 {
+		b.WriteString("\nEvidence excerpts:\n")
+		for i, ev := range detail.Evidence {
+			if i >= 10 {
+				break
+			}
+			b.WriteString(fmt.Sprintf("- evidence_type=%s source_signal=%s sender=%s conversation_id=%s document_id=%s\n",
+				strings.TrimSpace(ev.EvidenceType),
+				strings.TrimSpace(ev.SourceSignal),
+				strings.TrimSpace(ev.SenderRole),
+				strings.TrimSpace(derefString(ev.ConversationID)),
+				strings.TrimSpace(derefString(ev.DocumentID)),
+			))
+			if excerpt := strings.TrimSpace(ev.Excerpt); excerpt != "" {
+				b.WriteString("  excerpt: " + truncateRunContextText(excerpt, 700) + "\n")
+			}
+		}
+	}
+	sections = append(sections, strings.TrimSpace(b.String()))
+	sections = append(sections, supportCoverageGapAgentInstructions(detail))
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
+func supportCoverageGapAgentAction(detail *model.SupportCoverageGapDetail) string {
+	if detail == nil {
+		return "investigate_documentation_gap"
+	}
+	if primary := primarySupportCoverageRecommendationType(detail); primary != "" {
+		switch primary {
+		case model.SupportCoverageFixCreateArticle, model.SupportCoverageFixCreateWebsitePage:
+			return "write_new_doc_or_route_to_better_docs_surface"
+		case model.SupportCoverageFixUpdateArticle, model.SupportCoverageFixUpdateWebsitePage:
+			return "improve_existing_doc_and_avoid_duplicate_docs"
+		case model.SupportCoverageFixAddData:
+			return "identify_missing_data_and_prepare_docs_or_data_handoff"
+		case model.SupportCoverageFixAddAction:
+			return "identify_missing_action_and_prepare_docs_or_product_handoff"
+		case model.SupportCoverageFixDefinePolicy:
+			return "write_or_update_policy_docs"
+		case model.SupportCoverageFixImproveWorkflow:
+			return "update_internal_workflow_docs_or_handoff_process_gap"
+		case model.SupportCoverageFixNoFix:
+			return "summarize_no_documentation_fix_and_request_human_decision"
+		}
+	}
+	switch strings.TrimSpace(detail.V1GapType) {
+	case model.SupportCoverageV1GapMissingArticle:
+		return "write_new_doc_or_route_to_better_docs_surface"
+	case model.SupportCoverageV1GapWeakArticle:
+		return "improve_existing_doc_and_avoid_duplicate_docs"
+	case model.SupportCoverageV1GapOutdatedOrConflictingArticle:
+		return "reconcile_outdated_or_conflicting_docs"
+	case model.SupportCoverageV1GapNeedsReview:
+		return "investigate_and_request_clarification_before_drafting"
+	default:
+		return "investigate_documentation_gap"
+	}
+}
+
+func supportCoverageGapAgentInstructions(detail *model.SupportCoverageGapDetail) string {
+	action := supportCoverageGapAgentAction(detail)
+	return strings.Join([]string{
+		"Documentation Agent routing instructions:",
+		"- Treat this support coverage gap as an operations inbox item, not a generic writing prompt.",
+		"- First decide whether the fix belongs in public help docs, API docs, internal docs, multiple surfaces, or outside documentation.",
+		"- Use recommended_action=" + action + " as the starting strategy, then verify it against evidence and related docs.",
+		"- If this is a data, action, policy, or workflow gap, only create docs when documentation is part of the fix; otherwise prepare a concise handoff that names the owner, missing capability, and customer impact.",
+		"- Prefer improving linked docs for weak or conflicting gaps; avoid creating duplicate articles.",
+		"- For missing docs, write the right document type and place it in the appropriate collection or propose where it belongs.",
+		"- For needs_review gaps, summarize the ambiguity and ask for clarification or create a review checkpoint before drafting.",
+		"- Do not mark the gap resolved unless a draft, proposal, or explicit human handoff exists.",
+	}, "\n")
+}
+
+func primarySupportCoverageRecommendationType(detail *model.SupportCoverageGapDetail) string {
+	for _, rec := range detail.Recommendations {
+		if strings.TrimSpace(rec.Priority) == model.SupportCoverageRecommendationPriorityPrimary {
+			return strings.TrimSpace(rec.RecommendationType)
+		}
+	}
+	if len(detail.Recommendations) > 0 {
+		return strings.TrimSpace(detail.Recommendations[0].RecommendationType)
+	}
+	return ""
+}
+
+func firstNonEmptyCoverageContext(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func truncateRunContextText(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if limit <= 0 || len(value) <= limit {
+		return value
+	}
+	return strings.TrimSpace(value[:limit]) + "..."
+}
+
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
@@ -2504,6 +2727,56 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 		if s.activitySvc != nil {
 			_ = s.activitySvc.Log(ctx, workspaceID, "support_conversation", conversation.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
+		}
+		s.publishRunEvent(run, derefString(actorID))
+		return run, nil
+
+	case "support_coverage_gap":
+		if s.supportCoverageSvc == nil {
+			return nil, fmt.Errorf("support coverage service not configured")
+		}
+		detail, err := s.supportCoverageSvc.GetGapDetail(ctx, workspaceID, targetID)
+		if err != nil {
+			return nil, fmt.Errorf("get support coverage gap: %w", err)
+		}
+		if detail == nil {
+			return nil, fmt.Errorf("support coverage gap not found")
+		}
+
+		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "support_coverage_gap")
+		if err != nil {
+			return nil, err
+		}
+		if err := validateAgentTeamScope(agent, "support_coverage_gap", nil); err != nil {
+			return nil, err
+		}
+		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
+			return nil, err
+		}
+
+		context := supportCoverageGapRunContext(detail, req.AdditionalContext)
+		input, err := buildAgentRunInputPayload("support_coverage_gap", detail.ID, trigger, event, req.Output, &context, req.AllowedTools)
+		if err != nil {
+			return nil, fmt.Errorf("build support coverage gap run input: %w", err)
+		}
+
+		run, err := s.createRun(ctx, createRunParams{
+			workspaceID:    workspaceID,
+			agent:          agent,
+			targetType:     "support_coverage_gap",
+			targetID:       detail.ID,
+			parentRunID:    parentRunID,
+			actorID:        actorID,
+			input:          input,
+			trigger:        trigger,
+			invocationMode: resolveInvocationMode(agent),
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if s.activitySvc != nil {
+			_ = s.activitySvc.Log(ctx, workspaceID, "support_coverage_gap", detail.ID, actorID, "updated", strPtr("agent_run"), nil, strPtr("started"), agentRunActivityMetadata(agent, run, "started"))
 		}
 		s.publishRunEvent(run, derefString(actorID))
 		return run, nil
@@ -4527,18 +4800,82 @@ func strPtr(s string) *string {
 }
 
 func validateAgentTeamScope(agent *model.Agent, targetType string, targetTeamID *string) error {
-	agentTeamID := strings.TrimSpace(derefString(agent.TeamID))
-	if agentTeamID == "" {
+	agentTeamIDs := agentTeamIDsForScope(agent)
+	if len(agentTeamIDs) == 0 {
 		return nil
 	}
 	actualTargetTeamID := strings.TrimSpace(derefString(targetTeamID))
 	if actualTargetTeamID == "" {
-		return fmt.Errorf("agent is restricted to team %s and cannot run on workspace-scoped %s targets", agentTeamID, targetType)
+		return fmt.Errorf("agent is restricted to specific teams and cannot run on workspace-scoped %s targets", targetType)
 	}
-	if actualTargetTeamID != agentTeamID {
-		return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for team %s", agentTeamID, targetType, actualTargetTeamID)
+	if !slices.Contains(agentTeamIDs, actualTargetTeamID) {
+		return fmt.Errorf("agent is restricted to specific teams and cannot run on %s targets for team %s", targetType, actualTargetTeamID)
 	}
 	return nil
+}
+
+func resolveCreateAgentTeamIDs(req model.CreateAgentRequest) []string {
+	if len(req.TeamIDs) > 0 {
+		return normalizeServiceTeamIDs(req.TeamIDs)
+	}
+	return resolveLegacyAgentTeamIDs(req.TeamID)
+}
+
+func resolveLegacyAgentTeamIDs(teamID *string) []string {
+	trimmed := strings.TrimSpace(derefString(teamID))
+	if trimmed == "" {
+		return nil
+	}
+	return []string{trimmed}
+}
+
+func normalizeServiceTeamIDs(teamIDs []string) []string {
+	seen := make(map[string]struct{}, len(teamIDs))
+	normalized := make([]string, 0, len(teamIDs))
+	for _, teamID := range teamIDs {
+		teamID = strings.TrimSpace(teamID)
+		if teamID == "" {
+			continue
+		}
+		if _, ok := seen[teamID]; ok {
+			continue
+		}
+		seen[teamID] = struct{}{}
+		normalized = append(normalized, teamID)
+	}
+	return normalized
+}
+
+func firstTeamIDPtr(teamIDs []string) *string {
+	teamIDs = normalizeServiceTeamIDs(teamIDs)
+	if len(teamIDs) == 0 {
+		return nil
+	}
+	return strPtr(teamIDs[0])
+}
+
+func agentTeamIDsForScope(agent *model.Agent) []string {
+	if agent == nil {
+		return nil
+	}
+	teamIDs := normalizeServiceTeamIDs(agent.TeamIDs)
+	if len(teamIDs) > 0 {
+		return teamIDs
+	}
+	return resolveLegacyAgentTeamIDs(agent.TeamID)
+}
+
+func agentVisibleToActorTeams(agent model.Agent, actorTeamIDs map[string]struct{}) bool {
+	teamIDs := agentTeamIDsForScope(&agent)
+	if len(teamIDs) == 0 {
+		return true
+	}
+	for _, teamID := range teamIDs {
+		if _, ok := actorTeamIDs[teamID]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func derefString(value *string) string {

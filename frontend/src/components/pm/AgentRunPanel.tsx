@@ -18,12 +18,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
+import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { Agent, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 
 interface Props {
   taskId: string;
   workspaceId: string;
+  taskTeamId?: string | null;
   latestRunAgentId?: string | null;
   delivery?: AgentRunDeliveryContext;
   canEditDelivery?: boolean;
@@ -45,10 +48,16 @@ export interface AgentRunDeliveryContext {
   ensureDeliveryTargetSaved: (showSuccessToast: boolean) => Promise<boolean>;
 }
 
-export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery, canEditDelivery = false }: Props) {
+export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentId, delivery, canEditDelivery = false }: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
   const urlRunId = search.run ?? null;
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { isAdmin } = usePermissions(access);
+  const accessibleTeamIds = useMemo(
+    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
+    [access?.team_memberships],
+  );
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
@@ -115,7 +124,15 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
     void fetchRuns();
   }, [fetchRuns]);
 
-  const taskRunnableAgents = useMemo(() => agents.filter(isTaskRunnableAgent), [agents]);
+  const taskRunnableAgents = useMemo(
+    () => agents.filter((agent) => isAgentAvailableForTarget(agent, {
+      targetType: 'task',
+      targetTeamId: taskTeamId,
+      accessibleTeamIds,
+      canSeeAllAgents: isAdmin,
+    })),
+    [accessibleTeamIds, agents, isAdmin, taskTeamId],
+  );
   const preferredAgent = useMemo(() => {
     if (latestRunAgentId) {
       return taskRunnableAgents.find((agent) => agent.id === latestRunAgentId) ?? null;
@@ -282,10 +299,6 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
       />
     </div>
   );
-}
-
-function isTaskRunnableAgent(agent: Agent) {
-  return agent.allowed_targets.includes('task');
 }
 
 function AgentRunExecutionContext({

@@ -1,13 +1,16 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { GapDetailPane } from '@/components/support/coverage/GapDetailPane'
 import { GapList } from '@/components/support/coverage/GapList'
+import { useAgents } from '@/hooks/queries/useAgents'
 import { useDocsCollections, useDocsSpaces } from '@/hooks/queries/useDocs'
 import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession'
 import { Loading01Icon } from '@/lib/icons'
+import { isAgentAvailableForTarget } from '@/lib/agentAccess'
+import { agentService } from '@/lib/services/agentService'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import type {
   SupportCoverageGapDetail,
@@ -39,11 +42,17 @@ export function SupportCoveragePage() {
   const [targetCollectionId, setTargetCollectionId] = useState('')
   const [applying, setApplying] = useState(false)
   const [confirmSuggestionId, setConfirmSuggestionId] = useState<string | null>(null)
+  const [startingDocsAgentGapId, setStartingDocsAgentGapId] = useState<string | null>(null)
 
+  const { data: agents = [] } = useAgents(wsId)
   const { data: spaces } = useDocsSpaces(wsId)
   const { data: collections } = useDocsCollections(wsId, targetSpaceId)
   const { data: access } = useWorkspaceAccess(wsId)
-  const { has } = usePermissions(access)
+  const { has, isAdmin } = usePermissions(access)
+  const accessibleTeamIds = useMemo(
+    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
+    [access?.team_memberships],
+  )
   const canGenerate = has('support.edit') && has('docs.edit')
   const canReanalyze = has('settings.manage')
   const [reanalyzing, setReanalyzing] = useState(false)
@@ -90,6 +99,16 @@ export function SupportCoveragePage() {
     return () => clearInterval(interval)
   }, [reanalyzing, wsId, statusFilter])
   const externalSpaces = spaces?.filter((space) => space.type === 'external_capable') ?? []
+  const documentationAgent = agents.find(
+    (agent) =>
+      agent.is_system &&
+      agent.preset_key === 'documentation_agent' &&
+      isAgentAvailableForTarget(agent, {
+        targetType: 'support_coverage_gap',
+        accessibleTeamIds,
+        canSeeAllAgents: isAdmin,
+      }),
+  )
 
   useEffect(() => {
     if (!wsId) return
@@ -202,6 +221,23 @@ export function SupportCoveragePage() {
       return
     }
     await refreshGap(gapId)
+  }
+
+  const handleRunDocumentationAgent = async (gapId: string) => {
+    if (!wsId || !documentationAgent || startingDocsAgentGapId) return
+    setStartingDocsAgentGapId(gapId)
+    const { error } = await agentService.startRun(wsId, {
+      agent_id: documentationAgent.id,
+      target_type: 'support_coverage_gap',
+      target_id: gapId,
+      additional_context: 'Convert this support coverage gap into the right documentation work. Draft or propose changes for review before publishing.',
+    })
+    setStartingDocsAgentGapId(null)
+    if (error) {
+      toast.error(error || 'Failed to start Quill')
+      return
+    }
+    toast.success('Quill started')
   }
 
   if (loading) {
@@ -342,6 +378,8 @@ export function SupportCoveragePage() {
               wsSlug={wsSlug}
               loading={detailLoading}
               canGenerate={canGenerate}
+              canRunDocumentationAgent={canGenerate && Boolean(documentationAgent)}
+              startingDocumentationAgent={startingDocsAgentGapId === selectedGap.id}
               externalSpaces={externalSpaces}
               collections={collections}
               targetSpaceId={targetSpaceId}
@@ -355,6 +393,7 @@ export function SupportCoveragePage() {
               onTargetCollectionChange={setTargetCollectionId}
               onSuggestImprovements={handleSuggestImprovements}
               onDraftNewArticle={handleDraftNewArticle}
+              onRunDocumentationAgent={handleRunDocumentationAgent}
               onApplySuggestion={handleApplySuggestion}
               onDiscardSuggestion={handleDiscardSuggestion}
               onSetConfirmSuggestion={setConfirmSuggestionId}

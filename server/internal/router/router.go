@@ -518,6 +518,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Route("/agents", func(r chi.Router) {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListAgents)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.CreateAgent)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/draft", h.Automation.DraftCustomAgent)
 					r.Route("/{id}", func(r chi.Router) {
 						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetAgent)
 						r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.Automation.UpdateAgent)

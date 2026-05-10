@@ -40,6 +40,9 @@ func (r *AgentRepository) List(ctx context.Context, workspaceID string) ([]model
 	if err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).Order("is_system DESC, created_at DESC").Find(&agents).Error; err != nil {
 		return nil, fmt.Errorf("list agents: %w", err)
 	}
+	if err := r.LoadTeamAccess(ctx, agents); err != nil {
+		return nil, err
+	}
 	return agents, nil
 }
 
@@ -52,6 +55,11 @@ func (r *AgentRepository) GetByID(ctx context.Context, workspaceID, id string) (
 		}
 		return nil, fmt.Errorf("get agent: %w", err)
 	}
+	agents := []model.Agent{agent}
+	if err := r.LoadTeamAccess(ctx, agents); err != nil {
+		return nil, err
+	}
+	agent = agents[0]
 	return &agent, nil
 }
 
@@ -75,6 +83,11 @@ func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error 
 	if err := r.db.WithContext(ctx).Create(agent).Error; err != nil {
 		return fmt.Errorf("create agent: %w", err)
 	}
+	if len(normalizeAgentTeamIDs(agent.TeamIDs)) > 0 {
+		if err := r.ReplaceTeamAccess(ctx, agent.ID, agent.TeamIDs); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -82,6 +95,9 @@ func (r *AgentRepository) Create(ctx context.Context, agent *model.Agent) error 
 func (r *AgentRepository) Update(ctx context.Context, agent *model.Agent) error {
 	if err := r.db.WithContext(ctx).Save(agent).Error; err != nil {
 		return fmt.Errorf("update agent: %w", err)
+	}
+	if err := r.ReplaceTeamAccess(ctx, agent.ID, agent.TeamIDs); err != nil {
+		return err
 	}
 	return nil
 }
@@ -92,6 +108,98 @@ func (r *AgentRepository) Delete(ctx context.Context, workspaceID, id string) er
 		return fmt.Errorf("delete agent: %w", err)
 	}
 	return nil
+}
+
+func (r *AgentRepository) LoadTeamAccess(ctx context.Context, agents []model.Agent) error {
+	if len(agents) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(agents))
+	indexByID := make(map[string]int, len(agents))
+	for idx := range agents {
+		ids = append(ids, agents[idx].ID)
+		indexByID[agents[idx].ID] = idx
+		agents[idx].TeamIDs = nil
+	}
+	var access []model.AgentTeamAccess
+	if err := r.db.WithContext(ctx).Where("agent_id IN ?", ids).Order("agent_id ASC, created_at ASC, team_id ASC").Find(&access).Error; err != nil {
+		if isMissingAgentTeamAccessTable(err) {
+			for idx := range agents {
+				if agents[idx].TeamID != nil && strings.TrimSpace(*agents[idx].TeamID) != "" {
+					agents[idx].TeamIDs = []string{strings.TrimSpace(*agents[idx].TeamID)}
+				}
+			}
+			return nil
+		}
+		return fmt.Errorf("load agent team access: %w", err)
+	}
+	for _, row := range access {
+		idx, ok := indexByID[row.AgentID]
+		if !ok {
+			continue
+		}
+		agents[idx].TeamIDs = append(agents[idx].TeamIDs, row.TeamID)
+	}
+	for idx := range agents {
+		if len(agents[idx].TeamIDs) == 0 && agents[idx].TeamID != nil && strings.TrimSpace(*agents[idx].TeamID) != "" {
+			agents[idx].TeamIDs = []string{strings.TrimSpace(*agents[idx].TeamID)}
+		}
+	}
+	return nil
+}
+
+func (r *AgentRepository) ReplaceTeamAccess(ctx context.Context, agentID string, teamIDs []string) error {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return fmt.Errorf("agent_id is required")
+	}
+	if err := r.db.WithContext(ctx).Where("agent_id = ?", agentID).Delete(&model.AgentTeamAccess{}).Error; err != nil {
+		if isMissingAgentTeamAccessTable(err) {
+			return nil
+		}
+		return fmt.Errorf("delete agent team access: %w", err)
+	}
+	normalized := normalizeAgentTeamIDs(teamIDs)
+	if len(normalized) == 0 {
+		return nil
+	}
+	rows := make([]model.AgentTeamAccess, 0, len(normalized))
+	for _, teamID := range normalized {
+		rows = append(rows, model.AgentTeamAccess{AgentID: agentID, TeamID: teamID})
+	}
+	if err := r.db.WithContext(ctx).Create(&rows).Error; err != nil {
+		if isMissingAgentTeamAccessTable(err) {
+			return nil
+		}
+		return fmt.Errorf("replace agent team access: %w", err)
+	}
+	return nil
+}
+
+func isMissingAgentTeamAccessTable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such table: agent_team_access") ||
+		strings.Contains(msg, `relation "agent_team_access" does not exist`)
+}
+
+func normalizeAgentTeamIDs(teamIDs []string) []string {
+	seen := make(map[string]struct{}, len(teamIDs))
+	normalized := make([]string, 0, len(teamIDs))
+	for _, teamID := range teamIDs {
+		teamID = strings.TrimSpace(teamID)
+		if teamID == "" {
+			continue
+		}
+		if _, ok := seen[teamID]; ok {
+			continue
+		}
+		seen[teamID] = struct{}{}
+		normalized = append(normalized, teamID)
+	}
+	return normalized
 }
 
 // AgentRunNotifier publishes agent run events to WebSocket clients.

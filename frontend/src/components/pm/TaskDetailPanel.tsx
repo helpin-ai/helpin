@@ -1585,6 +1585,7 @@ function TaskDetailPanelBody({
               <AgentRunPanel
                 taskId={taskDetail.task.id}
                 workspaceId={workspaceId}
+                taskTeamId={taskDetail.task.team_id}
                 latestRunAgentId={taskDetail.task.latest_run_agent_id}
                 delivery={delivery}
                 canEditDelivery={canEdit && fieldVis.delivery}

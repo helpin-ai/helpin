@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -397,7 +398,7 @@ func (h *AutomationHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agents, err := h.agentService.ListAgents(r.Context(), workspaceID)
+	agents, err := h.agentService.ListAgentsForActor(r.Context(), workspaceID, authorization.GetActor(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -406,6 +407,38 @@ func (h *AutomationHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		agents = []model.Agent{}
 	}
 	writeJSON(w, http.StatusOK, agents)
+}
+
+// DraftCustomAgent handles POST /api/automation/agents/draft.
+func (h *AutomationHandler) DraftCustomAgent(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+
+	var req model.CustomAgentDraftRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	skillCatalog, err := h.agentService.ListSkillCatalog(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	result, err := h.agentService.DraftCustomAgentWithCatalog(
+		r.Context(),
+		req,
+		h.agentService.ListToolCatalog().Tools,
+		skillCatalog.Skills,
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // CreateAgent handles POST /api/automation/agents.
