@@ -1817,15 +1817,32 @@ function FlowTemplateGallery({
           <DialogDescription>Install a ready-made automation, or build a custom flow.</DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant={category === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setCategory('all')}>
-            All
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {['all', ...categories].map((item) => {
+              const active = category === item;
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setCategory(item)}
+                  className={cn(
+                    'h-8 rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30',
+                    active
+                      ? 'border-primary bg-primary text-primary-foreground shadow-sm'
+                      : 'border-border/70 bg-background text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground',
+                  )}
+                  aria-pressed={active}
+                >
+                  {item === 'all' ? 'All' : TEMPLATE_CATEGORY_LABELS[item] ?? item}
+                </button>
+              );
+            })}
+          </div>
+          <Button type="button" variant="outline" size="sm" className="self-start sm:self-auto" onClick={() => onPick(null)}>
+            <PlusSignIcon className="h-4 w-4" />
+            Custom flow
           </Button>
-          {categories.map((item) => (
-            <Button key={item} type="button" variant={category === item ? 'default' : 'outline'} size="sm" onClick={() => setCategory(item)}>
-              {TEMPLATE_CATEGORY_LABELS[item] ?? item}
-            </Button>
-          ))}
         </div>
 
         <div className="grid max-h-[62vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
@@ -1867,17 +1884,6 @@ function FlowTemplateGallery({
               </button>
             );
           })}
-          <button
-            type="button"
-            onClick={() => onPick(null)}
-            className="group flex flex-col items-start gap-2 rounded-xl border border-dashed border-border/60 bg-transparent p-4 text-left transition-colors hover:border-border hover:bg-muted/30 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-foreground/70">
-              <PlusSignIcon className="h-4 w-4" />
-            </span>
-            <p className="text-sm font-medium leading-tight">Start from scratch</p>
-            <p className="text-xs leading-relaxed text-muted-foreground">Build a custom flow from the ground up.</p>
-          </button>
         </div>
       </DialogContent>
     </Dialog>
