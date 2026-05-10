@@ -1,0 +1,35 @@
+key: review_merged_prs
+version: 1
+name: Review merged PRs
+icon: git-pull-request
+short_description: Reviews merged pull requests and creates PM follow-up tasks for issues.
+categories: [engineering]
+agent:
+  create:
+    preset: review_agent
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt_ref: ./prompt.md
+    allowed_tools: [get_pull_request_diff, find_tasks_for_git_changes, create_task, add_task_comment]
+    allowed_targets: [repository]
+    approval_mode: always
+trigger:
+  type: event
+  event: github.pull_request_merged
+inputs:
+  - key: repository_id
+    type: repository
+    required: true
+    label: Repository
+  - key: base_branch
+    type: branch
+    required: true
+    default: main
+    label: Base branch
+flow:
+  action: start_agent_run
+  target:
+    from_input: repository_id
+  parameters:
+    base_branch:
+      from_input: base_branch

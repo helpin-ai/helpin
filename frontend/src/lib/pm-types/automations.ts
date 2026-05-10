@@ -46,11 +46,75 @@ export interface AutomationRule {
   trigger_config: Record<string, string>;
   action_type: string;
   action_config: Record<string, unknown>;
+  template_key?: string;
+  template_instance_id?: string;
+  template_version?: number;
   position: number;
   stop_on_match: boolean;
   created_by?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface FlowTemplateInput {
+  key: string;
+  type: string;
+  required?: boolean;
+  label: string;
+  default?: unknown;
+  depends_on?: string;
+}
+
+export interface FlowTemplateManifest {
+  key: string;
+  version: number;
+  name: string;
+  icon: string;
+  short_description: string;
+  description_ref?: string;
+  categories: string[];
+  agent: {
+    create?: {
+      preset: string;
+      runtime_kind?: string;
+      name_template?: string;
+      system_prompt_ref?: string;
+      allowed_tools?: string[];
+      allowed_targets?: string[];
+      approval_mode?: string;
+    };
+    reuse_system?: string;
+    pick_existing?: {
+      required?: boolean;
+      constraints?: {
+        presets?: string[];
+        targets?: string[];
+      };
+    };
+    none?: boolean;
+  };
+  trigger: {
+    type: string;
+    event?: string;
+  };
+  inputs: FlowTemplateInput[];
+  flow: {
+    action: string;
+    target?: Record<string, string>;
+    conditions?: Record<string, string>[];
+    parameters?: Record<string, unknown>;
+  };
+}
+
+export interface InstallFlowTemplateRequest {
+  name?: string;
+  inputs: Record<string, unknown>;
+}
+
+export interface InstallFlowTemplateResponse {
+  template: FlowTemplateManifest;
+  agent?: import('./agents').Agent;
+  rule: AutomationRule;
 }
 
 export interface CreateAutomationRuleRequest {
@@ -108,4 +172,3 @@ export interface UpdateViewRequest {
   is_pinned?: boolean;
   position?: number;
 }
-

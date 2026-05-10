@@ -1,0 +1,24 @@
+key: docs_freshness_sweep
+version: 1
+name: Docs freshness sweep
+icon: file-text
+short_description: Runs Quill on a schedule to find stale or missing docs.
+categories: [docs]
+agent:
+  reuse_system: documentation_agent
+trigger:
+  type: cron
+inputs:
+  - key: schedule
+    type: cron
+    required: true
+    label: Schedule
+  - key: space_id
+    type: collection
+    required: false
+    label: Docs area
+flow:
+  action: start_agent_run
+  parameters:
+    space_id:
+      from_input: space_id

@@ -499,6 +499,14 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					})
 				})
 
+				r.Route("/templates", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListFlowTemplates)
+					r.Route("/{key}", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetFlowTemplate)
+						r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/install", h.Automation.InstallFlowTemplate)
+					})
+				})
+
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/activity", h.Automation.ListActivity)
 
 				r.Route("/library", func(r chi.Router) {

@@ -1,0 +1,48 @@
+key: release_notes_writer
+version: 1
+name: Release Notes Writer
+icon: scroll
+short_description: Drafts release notes from a GitHub release and prepares a Docs proposal.
+categories: [engineering, docs]
+agent:
+  create:
+    preset: documentation_agent
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt_ref: ./prompt.md
+    allowed_tools:
+      - get_release_context
+      - find_tasks_for_git_changes
+      - list_documents
+      - list_collections
+      - read_document
+      - publish_document_change_proposal
+      - create_document
+    allowed_targets: [repository, document]
+    approval_mode: always
+trigger:
+  type: event
+  event: github.release_published
+inputs:
+  - key: repository_id
+    type: repository
+    required: true
+    label: Repository
+  - key: destination_collection_id
+    type: collection
+    required: true
+    label: Where to publish
+  - key: include_prerelease
+    type: bool
+    required: false
+    default: false
+    label: Include prereleases
+flow:
+  action: start_agent_run
+  target:
+    from_input: repository_id
+  parameters:
+    include_prerelease:
+      from_input: include_prerelease
+    destination_collection_id:
+      from_input: destination_collection_id

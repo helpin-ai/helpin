@@ -1,0 +1,32 @@
+key: stale_task_escalation
+version: 1
+name: Stale task escalation
+icon: timer
+short_description: Finds stale tasks on a schedule and posts or creates follow-up work.
+categories: [workflow]
+agent:
+  create:
+    preset: task_planner
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt_ref: ./prompt.md
+    allowed_tools: [list_tasks, add_task_comment, create_task, list_workspace_teams, list_team_workflows_with_stages]
+    allowed_targets: [workspace, task]
+    approval_mode: always
+trigger:
+  type: cron
+inputs:
+  - key: schedule
+    type: cron
+    required: true
+    label: Schedule
+  - key: stale_after_days
+    type: int
+    required: true
+    default: 7
+    label: Stale after days
+flow:
+  action: start_agent_run
+  parameters:
+    stale_after_days:
+      from_input: stale_after_days

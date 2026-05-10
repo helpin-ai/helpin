@@ -1,0 +1,31 @@
+key: merge_when_done
+version: 1
+name: Merge when done
+icon: git-branch
+short_description: Merges a task branch when the task enters the selected done state.
+categories: [engineering, workflow]
+agent:
+  none: true
+trigger:
+  type: event
+  event: task.state_entered
+inputs:
+  - key: workflow_id
+    type: workflow
+    required: true
+    label: Workflow
+  - key: done_state_id
+    type: workflow_state
+    required: true
+    label: Done state
+    depends_on: workflow_id
+  - key: target_branch
+    type: branch
+    required: true
+    default: main
+    label: Target branch
+flow:
+  action: merge_branch
+  parameters:
+    target_branch:
+      from_input: target_branch

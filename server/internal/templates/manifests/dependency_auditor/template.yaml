@@ -1,0 +1,30 @@
+key: dependency_auditor
+version: 1
+name: Dependency Auditor
+icon: package
+short_description: Reviews repository dependencies on a schedule and files upgrade tasks.
+categories: [engineering]
+agent:
+  create:
+    preset: code_builder
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt_ref: ./prompt.md
+    allowed_tools: [read_file, read_files, search_files, ripgrep, run_command, create_task]
+    allowed_targets: [repository]
+    approval_mode: always
+trigger:
+  type: cron
+inputs:
+  - key: repository_id
+    type: repository
+    required: true
+    label: Repository
+  - key: schedule
+    type: cron
+    required: true
+    label: Schedule
+flow:
+  action: start_agent_run
+  target:
+    from_input: repository_id

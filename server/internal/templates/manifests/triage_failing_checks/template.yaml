@@ -1,0 +1,39 @@
+key: triage_failing_checks
+version: 1
+name: Triage failing checks
+icon: zap
+short_description: Reviews failing GitHub check suites and files diagnosis tasks.
+categories: [engineering]
+agent:
+  create:
+    preset: code_builder
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt_ref: ./prompt.md
+    allowed_tools: [get_check_run_logs, read_file, read_files, search_files, ripgrep, run_command, create_task]
+    allowed_targets: [repository]
+    approval_mode: always
+trigger:
+  type: event
+  event: github.check_suite_completed
+inputs:
+  - key: repository_id
+    type: repository
+    required: true
+    label: Repository
+  - key: branch
+    type: branch
+    required: false
+    label: Branch
+  - key: conclusion
+    type: enum<failure,cancelled,timed_out>
+    required: true
+    default: failure
+    label: Conclusion
+flow:
+  action: start_agent_run
+  target:
+    from_input: repository_id
+  parameters:
+    conclusion:
+      from_input: conclusion

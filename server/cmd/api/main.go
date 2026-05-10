@@ -43,6 +43,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 	"github.com/helpin-ai/helpin/server/internal/storage"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
+	flowtemplates "github.com/helpin-ai/helpin/server/internal/templates"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	appwebauthn "github.com/helpin-ai/helpin/server/internal/webauthn"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
@@ -1126,6 +1127,11 @@ func main() {
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, pmTaskRepo, supportInstallRepo)
+	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
+	if err != nil {
+		fatalWithSentry("failed to load flow templates", err)
+	}
+	flowTemplateInstaller := flowtemplates.NewInstaller(db, flowTemplateRegistry)
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
@@ -1181,7 +1187,7 @@ func main() {
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
-		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService),
+		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller),
 		Invite:              handler.NewInviteHandler(inviteService),
 		PMWorkflow:          handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMImport:            handler.NewPMImportHandler(pmImportService),

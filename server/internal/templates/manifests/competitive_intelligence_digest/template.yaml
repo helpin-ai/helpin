@@ -1,0 +1,31 @@
+key: competitive_intelligence_digest
+version: 1
+name: Competitive Intelligence Digest
+icon: chart
+short_description: Tracks competitor updates and creates follow-up tasks from notable changes.
+categories: [marketing]
+agent:
+  create:
+    preset: researcher
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt_ref: ./prompt.md
+    allowed_tools: [web_search_exa, web_search_brave, fetch_url, crawl_url, create_task]
+    allowed_targets: [workspace, task]
+    approval_mode: always
+trigger:
+  type: cron
+inputs:
+  - key: schedule
+    type: cron
+    required: true
+    label: Schedule
+  - key: competitors
+    type: string
+    required: true
+    label: Competitors
+flow:
+  action: start_agent_run
+  parameters:
+    competitors:
+      from_input: competitors

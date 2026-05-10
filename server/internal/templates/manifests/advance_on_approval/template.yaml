@@ -1,0 +1,31 @@
+key: advance_on_approval
+version: 1
+name: Advance on approval
+icon: check
+short_description: Moves a task forward when an interactive agent run is approved.
+categories: [workflow]
+agent:
+  none: true
+trigger:
+  type: event
+  event: agent_run.approved
+inputs:
+  - key: workflow_id
+    type: workflow
+    required: true
+    label: Workflow
+  - key: from_state_id
+    type: workflow_state
+    required: true
+    label: Approved from
+    depends_on: workflow_id
+  - key: to_state_id
+    type: workflow_state
+    required: true
+    label: Move to
+    depends_on: workflow_id
+flow:
+  action: move_to_state
+  parameters:
+    target_state_id:
+      from_input: to_state_id

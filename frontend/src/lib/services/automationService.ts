@@ -21,8 +21,11 @@ import type {
   CreateAgentFromTemplateRequest,
   CreateAgentFromTemplateResponse,
   CreateAutomationRuleRequest,
+  FlowTemplateManifest,
   CreateWorkspaceSkillRequest,
   HandoffAgentRunRequest,
+  InstallFlowTemplateRequest,
+  InstallFlowTemplateResponse,
   PaginatedResponse,
   ResumeAgentRunRequest,
   SendAgentRunMessageRequest,
@@ -65,6 +68,15 @@ export const automationService = {
 
   listFlowsByWorkflow: (workspaceId: string, workflowId: string) =>
     api.get<AutomationRule[]>(`/automation/flows${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
+
+  listFlowTemplates: (workspaceId: string) =>
+    api.get<FlowTemplateManifest[]>(`/automation/templates${qs(workspaceId)}`),
+
+  getFlowTemplate: (workspaceId: string, key: string) =>
+    api.get<FlowTemplateManifest>(`/automation/templates/${key}${qs(workspaceId)}`),
+
+  installFlowTemplate: (workspaceId: string, key: string, payload: InstallFlowTemplateRequest) =>
+    api.post<InstallFlowTemplateResponse>(`/automation/templates/${key}/install${qs(workspaceId)}`, payload),
 
   createFlow: (workspaceId: string, data: CreateAutomationRuleRequest) =>
     api.post<AutomationRule>(`/automation/flows${qs(workspaceId)}`, data),

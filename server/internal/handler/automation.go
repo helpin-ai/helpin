@@ -10,6 +10,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
+	flowtemplates "github.com/helpin-ai/helpin/server/internal/templates"
 )
 
 // AutomationHandler exposes the product-level Automation API facade.
@@ -17,6 +18,8 @@ type AutomationHandler struct {
 	automationService *service.AutomationInventoryService
 	ruleEngine        *service.AutomationRuleEngine
 	agentService      *service.AgentService
+	templateRegistry  *flowtemplates.Registry
+	templateInstaller *flowtemplates.Installer
 }
 
 // NewAutomationHandler creates a new AutomationHandler.
@@ -24,11 +27,15 @@ func NewAutomationHandler(
 	automationService *service.AutomationInventoryService,
 	ruleEngine *service.AutomationRuleEngine,
 	agentService *service.AgentService,
+	templateRegistry *flowtemplates.Registry,
+	templateInstaller *flowtemplates.Installer,
 ) *AutomationHandler {
 	return &AutomationHandler{
 		automationService: automationService,
 		ruleEngine:        ruleEngine,
 		agentService:      agentService,
+		templateRegistry:  templateRegistry,
+		templateInstaller: templateInstaller,
 	}
 }
 
@@ -166,6 +173,77 @@ func (h *AutomationHandler) DeleteFlow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "flow deleted"})
+}
+
+// ListFlowTemplates handles GET /api/automation/templates.
+func (h *AutomationHandler) ListFlowTemplates(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if h.templateRegistry == nil {
+		writeError(w, http.StatusServiceUnavailable, "flow templates are unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, h.templateRegistry.List())
+}
+
+// GetFlowTemplate handles GET /api/automation/templates/{key}.
+func (h *AutomationHandler) GetFlowTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	templateKey := chi.URLParam(r, "key")
+	if workspaceID == "" || templateKey == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and template_key are required")
+		return
+	}
+	if h.templateRegistry == nil {
+		writeError(w, http.StatusServiceUnavailable, "flow templates are unavailable")
+		return
+	}
+	tmpl, ok := h.templateRegistry.Get(templateKey)
+	if !ok {
+		writeError(w, http.StatusNotFound, "flow template not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, tmpl)
+}
+
+type installFlowTemplateRequest struct {
+	Name   string         `json:"name"`
+	Inputs map[string]any `json:"inputs"`
+}
+
+// InstallFlowTemplate handles POST /api/automation/templates/{key}/install.
+func (h *AutomationHandler) InstallFlowTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	templateKey := chi.URLParam(r, "key")
+	if workspaceID == "" || templateKey == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and template_key are required")
+		return
+	}
+	if h.templateInstaller == nil {
+		writeError(w, http.StatusServiceUnavailable, "flow templates are unavailable")
+		return
+	}
+
+	var req installFlowTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.templateInstaller.Install(r.Context(), flowtemplates.InstallRequest{
+		WorkspaceID: workspaceID,
+		TemplateKey: templateKey,
+		ActorID:     middleware.GetUserID(r.Context()),
+		Name:        req.Name,
+		Inputs:      req.Inputs,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
 }
 
 // ListActivity handles GET /api/automation/activity.

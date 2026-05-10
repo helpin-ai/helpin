@@ -18,6 +18,7 @@ import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker'
 import { BASE_BRANCH_TOKEN, TASK_BRANCH_TOKEN, describeMergeInto, describeRunBranchOverrides } from '@/lib/branchLabels';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -25,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
-import { useAutomationFlows, useAutomationOverview, useAgents, useWorkflows } from '@/hooks/queries';
+import { useAllDocsCollections, useAutomationFlowTemplates, useAutomationFlows, useAutomationOverview, useAgents, useInstallAutomationFlowTemplate, useWorkflows } from '@/hooks/queries';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -36,7 +37,8 @@ import { pmTaskService } from '@/lib/services/pmTaskService';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import type { AutomationInventoryItem } from '@/lib/types';
-import type { Agent, AgentTargetType, AutomationRule, EpicWithStats, GitRepository, Task, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { Agent, AgentTargetType, AutomationRule, EpicWithStats, FlowTemplateInput, FlowTemplateManifest, GitRepository, Task, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { DocsCollection } from '@/lib/docsTypes';
 import { buildAutomationActivityPath } from '@/lib/automationUi';
 import { isAgentAvailableForTarget, isAgentVisibleToActor } from '@/lib/agentAccess';
 import { cn } from '@/lib/utils';
@@ -368,74 +370,37 @@ const FLOW_EMPTY_STATE_CARDS: Array<{
   },
 ];
 
-type FlowTemplate = {
-  id: string;
-  title: string;
-  description: string;
-  icon: typeof PlayIcon;
-  tone: 'emerald' | 'blue' | 'purple' | 'amber' | 'rose' | 'slate';
-  apply: (base: FlowDraft) => FlowDraft;
+const FLOW_TEMPLATE_ICONS: Record<string, typeof PlayIcon> = {
+  'git-pull-request': GitPullRequestIcon,
+  zap: ZapIcon,
+  sparkles: SparklesIcon,
+  'git-branch': GitBranchIcon,
+  tag: Tag01Icon,
+  clock: Clock03Icon,
+  check: SparklesIcon,
+  'file-text': SparklesIcon,
+  shield: ZapIcon,
+  package: GitBranchIcon,
+  timer: Clock03Icon,
+  chart: SparklesIcon,
+  scroll: SparklesIcon,
+  'dollar-sign': SparklesIcon,
 };
 
-const FLOW_TEMPLATES: FlowTemplate[] = [
-  {
-    id: 'review-merged-prs',
-    title: 'Review merged PRs',
-    description: 'When a PR merges, start an agent to review the diff.',
-    icon: GitPullRequestIcon,
-    tone: 'emerald',
-    apply: (base) => ({ ...base, name: 'Review merged PRs', triggerType: 'github.pull_request_merged', baseBranch: 'main', actionType: 'start_agent_run' }),
-  },
-  {
-    id: 'run-on-check-failure',
-    title: 'Fix failing checks',
-    description: 'When CI check suite completes, start an agent if it failed.',
-    icon: ZapIcon,
-    tone: 'amber',
-    apply: (base) => ({ ...base, name: 'Fix failing checks', triggerType: 'github.check_suite_completed', conclusion: 'failure', actionType: 'start_agent_run' }),
-  },
-  {
-    id: 'approve-advances',
-    title: 'Advance on approval',
-    description: 'When an interactive agent run is approved, move the task to the next state.',
-    icon: SparklesIcon,
-    tone: 'blue',
-    apply: (base) => ({ ...base, name: 'Advance on approval', triggerType: 'agent_run.approved', actionType: 'move_to_state' }),
-  },
-  {
-    id: 'merge-on-done',
-    title: 'Merge when done',
-    description: 'When a task enters Done, merge its branch into main.',
-    icon: GitBranchIcon,
-    tone: 'purple',
-    apply: (base) => ({ ...base, name: 'Merge when done', triggerType: 'task.state_entered', actionType: 'merge_branch', targetBranch: 'main' }),
-  },
-  {
-    id: 'release-tag',
-    title: 'Run on release',
-    description: 'When a release is published, kick off a release agent.',
-    icon: Tag01Icon,
-    tone: 'rose',
-    apply: (base) => ({ ...base, name: 'Run on release', triggerType: 'github.release_published', actionType: 'start_agent_run' }),
-  },
-  {
-    id: 'hourly-tick',
-    title: 'Hourly digest',
-    description: 'On every hour, run an agent across the workspace or against a fixed target.',
-    icon: Clock03Icon,
-    tone: 'slate',
-    apply: (base) => ({ ...base, name: 'Hourly digest', triggerType: 'cron', cronCategory: '0 * * * *', actionType: 'start_agent_run', targetMode: 'workspace' }),
-  },
-];
-
-const TEMPLATE_TONE: Record<FlowTemplate['tone'], string> = {
-  emerald: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-  amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-  slate: 'bg-muted text-foreground/70',
+const TEMPLATE_CATEGORY_LABELS: Record<string, string> = {
+  engineering: 'Engineering',
+  sales: 'Sales',
+  support: 'Support',
+  marketing: 'Marketing',
+  docs: 'Docs',
+  workflow: 'Workflow',
 };
+
+const TEMPLATE_ICON_TONE = 'bg-primary/10 text-primary';
+
+function defaultTemplateInputs(template: FlowTemplateManifest) {
+  return Object.fromEntries(template.inputs.map((input) => [input.key, input.default ?? (input.type === 'bool' ? false : '')]));
+}
 
 function defaultDraft(): FlowDraft {
   return {
@@ -1811,34 +1776,69 @@ function FlowTemplateGallery({
   open,
   onOpenChange,
   onPick,
+  templates,
+  loading,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onPick: (template: FlowTemplate | null) => void;
+  onPick: (template: FlowTemplateManifest | null) => void;
+  templates: FlowTemplateManifest[];
+  loading: boolean;
 }) {
+  const [category, setCategory] = useState('all');
+  const categories = useMemo(() => {
+    const keys = new Set<string>();
+    for (const template of templates) {
+      for (const item of template.categories ?? []) keys.add(item);
+    }
+    return Array.from(keys).sort((a, b) => (TEMPLATE_CATEGORY_LABELS[a] ?? a).localeCompare(TEMPLATE_CATEGORY_LABELS[b] ?? b));
+  }, [templates]);
+  const visibleTemplates = useMemo(
+    () => category === 'all' ? templates : templates.filter((template) => template.categories?.includes(category)),
+    [category, templates],
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Create a flow</DialogTitle>
-          <DialogDescription>Start from a template, or build from scratch.</DialogDescription>
+          <DialogDescription>Install a ready-made automation, or build a custom flow.</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-          {FLOW_TEMPLATES.map((template) => {
-            const Icon = template.icon;
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant={category === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setCategory('all')}>
+            All
+          </Button>
+          {categories.map((item) => (
+            <Button key={item} type="button" variant={category === item ? 'default' : 'outline'} size="sm" onClick={() => setCategory(item)}>
+              {TEMPLATE_CATEGORY_LABELS[item] ?? item}
+            </Button>
+          ))}
+        </div>
+
+        <div className="grid max-h-[62vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
+          {loading && Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="rounded-lg border border-border/60 p-4">
+              <Skeleton className="h-8 w-8 rounded-lg" />
+              <Skeleton className="mt-3 h-4 w-28" />
+              <Skeleton className="mt-2 h-10 w-full" />
+            </div>
+          ))}
+          {!loading && visibleTemplates.map((template) => {
+            const Icon = FLOW_TEMPLATE_ICONS[template.icon] ?? PlayIcon;
             return (
               <button
-                key={template.id}
+                key={template.key}
                 type="button"
                 onClick={() => onPick(template)}
-                className="group flex flex-col items-start gap-2 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                className="group flex min-h-36 flex-col items-start gap-2 rounded-lg border border-border/60 bg-card p-4 text-left transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
               >
-                <span className={cn('flex h-8 w-8 items-center justify-center rounded-lg', TEMPLATE_TONE[template.tone])}>
+                <span className={cn('flex h-8 w-8 items-center justify-center rounded-md', TEMPLATE_ICON_TONE)}>
                   <Icon className="h-4 w-4" />
                 </span>
-                <p className="text-sm font-medium leading-tight">{template.title}</p>
-                <p className="text-xs leading-relaxed text-muted-foreground">{template.description}</p>
+                <p className="text-sm font-medium leading-tight">{template.name}</p>
+                <p className="text-xs leading-relaxed text-muted-foreground">{template.short_description}</p>
               </button>
             );
           })}
@@ -1856,6 +1856,195 @@ function FlowTemplateGallery({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function FlowTemplateInstallDialog({
+  open,
+  onOpenChange,
+  template,
+  values,
+  agents,
+  workflows,
+  repositories,
+  collections,
+  saving,
+  canEdit,
+  onBack,
+  onValuesChange,
+  onInstall,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  template: FlowTemplateManifest | null;
+  values: Record<string, unknown>;
+  agents: Agent[];
+  workflows: WorkflowWithStates[];
+  repositories: GitRepository[];
+  collections: DocsCollection[];
+  saving: boolean;
+  canEdit: boolean;
+  onBack: () => void;
+  onValuesChange: (values: Record<string, unknown>) => void;
+  onInstall: () => void;
+}) {
+  const setValue = (key: string, value: unknown) => onValuesChange({ ...values, [key]: value });
+  const validation = useMemo(() => {
+    if (!template) return null;
+    for (const input of template.inputs) {
+      if (input.required && !String(values[input.key] ?? '').trim()) {
+        return `${input.label} is required`;
+      }
+    }
+    return null;
+  }, [template, values]);
+
+  if (!template) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Install: {template.name}</DialogTitle>
+          <DialogDescription>{template.short_description}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {template.inputs.map((input) => (
+            <TemplateInputControl
+              key={input.key}
+              input={input}
+              template={template}
+              value={values[input.key]}
+              values={values}
+              agents={agents}
+              workflows={workflows}
+              repositories={repositories}
+              collections={collections}
+              onChange={(value) => setValue(input.key, value)}
+            />
+          ))}
+
+          {validation && (
+            <p className="flex items-center gap-2 text-xs text-destructive">
+              <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+              {validation}
+            </p>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button type="button" variant="ghost" size="sm" onClick={onBack}>
+            ← Back to templates
+          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" onClick={onInstall} disabled={saving || !canEdit || !!validation}>
+              {saving ? 'Installing…' : 'Install'}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TemplateInputControl({
+  input,
+  template,
+  value,
+  values,
+  agents,
+  workflows,
+  repositories,
+  collections,
+  onChange,
+}: {
+  input: FlowTemplateInput;
+  template: FlowTemplateManifest;
+  value: unknown;
+  values: Record<string, unknown>;
+  agents: Agent[];
+  workflows: WorkflowWithStates[];
+  repositories: GitRepository[];
+  collections: DocsCollection[];
+  onChange: (value: unknown) => void;
+}) {
+  const label = (
+    <label className="text-xs font-medium text-muted-foreground">
+      {input.label}{input.required ? ' *' : ''}
+    </label>
+  );
+  const selectedWorkflowId = stringValue(values.workflow_id);
+  const workflowStates = selectedWorkflowId
+    ? workflows.find((workflow) => workflow.workflow.id === selectedWorkflowId)?.states ?? []
+    : workflows.flatMap((workflow) => workflow.states);
+
+  if (input.type === 'bool') {
+    return (
+      <label className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2 text-sm">
+        <Checkbox checked={value === true} onCheckedChange={(checked) => onChange(checked === true)} />
+        <span>{input.label}</span>
+      </label>
+    );
+  }
+
+  const selectOptions = (() => {
+    switch (input.type) {
+      case 'agent':
+        return agents
+          .filter((agent) => {
+            const targets = template.agent.pick_existing?.constraints?.targets ?? [];
+            if (targets.length > 0 && !targets.some((target) => agent.allowed_targets?.includes(target))) return false;
+            const presets = template.agent.pick_existing?.constraints?.presets ?? [];
+            if (presets.length > 0 && (!agent.preset_key || !presets.includes(agent.preset_key))) return false;
+            return true;
+          })
+          .map((agent) => ({ value: agent.id, label: agent.name }));
+      case 'repository':
+        return repositories.map((repo) => ({ value: repo.id, label: repo.full_name }));
+      case 'collection':
+        return collections.map((collection) => ({ value: collection.id, label: collection.name }));
+      case 'workflow':
+        return workflows.map((workflow) => ({ value: workflow.workflow.id, label: workflow.workflow.name }));
+      case 'workflow_state':
+        return workflowStates.map((state) => ({ value: state.id, label: state.name }));
+      default:
+        if (input.type.startsWith('enum<') && input.type.endsWith('>')) {
+          return input.type.slice(5, -1).split(',').map((option) => ({ value: option.trim(), label: option.trim() }));
+        }
+        return null;
+    }
+  })();
+
+  if (selectOptions) {
+    return (
+      <div className="space-y-1.5">
+        {label}
+        <Select value={stringValue(value)} onValueChange={onChange}>
+          <SelectTrigger>
+            <SelectValue placeholder={`Select ${input.label.toLowerCase()}`} />
+          </SelectTrigger>
+          <SelectContent>
+            {selectOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {label}
+      <Input
+        type={input.type === 'int' ? 'number' : 'text'}
+        value={String(value ?? '')}
+        placeholder={input.type === 'cron' ? '0 9 * * 1' : undefined}
+        onChange={(event) => onChange(input.type === 'int' ? Number(event.target.value) : event.target.value)}
+      />
+    </div>
   );
 }
 
@@ -1878,10 +2067,13 @@ export function AutomationFlowsPage({
   );
   const settingsQuery = useWorkspaceSettings(workspaceId);
   const inventoryQuery = useAutomationOverview(workspaceId);
+  const flowTemplatesQuery = useAutomationFlowTemplates(workspaceId);
+  const installFlowTemplate = useInstallAutomationFlowTemplate(workspaceId);
   const { data: agents = [] } = useAgents(workspaceId);
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const rulesQuery = useAutomationFlows(workspaceId);
   const { teams } = useWorkspaceTeams(workspaceId);
+  const { data: docsCollections = [] } = useAllDocsCollections(workspaceId);
   const tasksQuery = useQuery({
     queryKey: ['pm', workspaceId, 'flow-composer', 'tasks'],
     queryFn: async () => unwrap(await pmTaskService.list(workspaceId, { archived: false, per_page: 100 })),
@@ -1903,6 +2095,8 @@ export function AutomationFlowsPage({
 
   const [composerOpen, setComposerOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<FlowTemplateManifest | null>(null);
+  const [templateInputs, setTemplateInputs] = useState<Record<string, unknown>>({});
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [draft, setDraft] = useState<FlowDraft>(defaultDraft());
   const [saving, setSaving] = useState(false);
@@ -2031,18 +2225,23 @@ export function AutomationFlowsPage({
     setGalleryOpen(true);
   };
 
-  const handleTemplatePick = (template: FlowTemplate | null) => {
-    const base = defaultDraft();
-    const next = template ? template.apply(base) : base;
-    applyTriggerDefaults(next, workflows);
-    setDraft(next);
+  const handleTemplatePick = (template: FlowTemplateManifest | null) => {
     setEditingRuleId(null);
     setGalleryOpen(false);
-    setComposerOpen(true);
+    if (!template) {
+      const next = defaultDraft();
+      applyTriggerDefaults(next, workflows);
+      setDraft(next);
+      setComposerOpen(true);
+      return;
+    }
+    setSelectedTemplate(template);
+    setTemplateInputs(defaultTemplateInputs(template));
   };
 
   const backToGallery = () => {
     setComposerOpen(false);
+    setSelectedTemplate(null);
     setGalleryOpen(true);
   };
 
@@ -2094,6 +2293,21 @@ export function AutomationFlowsPage({
     resetComposerSearch();
   };
 
+  const handleInstallTemplate = async () => {
+    if (!selectedTemplate) return;
+    try {
+      const result = await installFlowTemplate.mutateAsync({
+        templateKey: selectedTemplate.key,
+        payload: { name: selectedTemplate.name, inputs: templateInputs },
+      });
+      toast.success(`${result.template.name} installed`);
+      setSelectedTemplate(null);
+      await refreshAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to install template');
+    }
+  };
+
   if (!workspaceId) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
@@ -2107,6 +2321,28 @@ export function AutomationFlowsPage({
           if (!open) resetComposerSearch();
         }}
         onPick={handleTemplatePick}
+        templates={flowTemplatesQuery.data ?? []}
+        loading={flowTemplatesQuery.isLoading}
+      />
+      <FlowTemplateInstallDialog
+        open={!!selectedTemplate}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTemplate(null);
+        }}
+        template={selectedTemplate}
+        values={templateInputs}
+        agents={agents}
+        workflows={workflows}
+        repositories={repositories}
+        collections={docsCollections}
+        saving={installFlowTemplate.isPending}
+        canEdit={permissions.canManageSettings}
+        onBack={() => {
+          setSelectedTemplate(null);
+          setGalleryOpen(true);
+        }}
+        onValuesChange={setTemplateInputs}
+        onInstall={() => void handleInstallTemplate()}
       />
       <FlowComposer
         workspaceId={workspaceId}

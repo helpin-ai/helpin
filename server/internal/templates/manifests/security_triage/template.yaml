@@ -1,0 +1,30 @@
+key: security_triage
+version: 1
+name: Security Triage
+icon: shield
+short_description: Runs security scanners and creates tasks for confirmed findings.
+categories: [engineering]
+agent:
+  create:
+    preset: code_builder
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt_ref: ./prompt.md
+    allowed_tools: [scan_semgrep, scan_trivy, scan_gitleaks, create_task, add_task_comment]
+    allowed_targets: [repository]
+    approval_mode: always
+trigger:
+  type: cron
+inputs:
+  - key: repository_id
+    type: repository
+    required: true
+    label: Repository
+  - key: schedule
+    type: cron
+    required: true
+    label: Schedule
+flow:
+  action: start_agent_run
+  target:
+    from_input: repository_id

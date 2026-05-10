@@ -1,0 +1,32 @@
+key: buying_signal_to_task
+version: 1
+name: High-intent buyer signal to task
+icon: dollar-sign
+short_description: Reviews new high-confidence buyer signals and creates follow-up tasks.
+categories: [sales]
+agent:
+  create:
+    preset: crm_operator
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt_ref: ./prompt.md
+    allowed_tools: [list_buyer_signals, create_task, add_task_comment, list_workspace_teams, list_team_workflows_with_stages]
+    allowed_targets: [workspace, task]
+    approval_mode: always
+trigger:
+  type: cron
+inputs:
+  - key: schedule
+    type: cron
+    required: true
+    label: Schedule
+  - key: minimum_confidence
+    type: int
+    required: false
+    default: 80
+    label: Minimum confidence
+flow:
+  action: start_agent_run
+  parameters:
+    minimum_confidence:
+      from_input: minimum_confidence
