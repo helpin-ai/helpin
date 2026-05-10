@@ -2063,7 +2063,7 @@ export function AgentsPage() {
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
   const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
-  const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
+  const agentTemplates: AgentTemplate[] = [];
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [templateSetupDialogOpen, setTemplateSetupDialogOpen] = useState(false);
   const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
@@ -2184,14 +2184,6 @@ export function AgentsPage() {
     const res = await automationService.listSkillCatalog(workspaceId);
     if (!res.error && res.data) {
       setSkillCatalog(res.data);
-    }
-  }, [workspaceId]);
-
-  const loadAgentTemplates = useCallback(async () => {
-    if (!workspaceId) return;
-    const res = await automationService.listAgentTemplates(workspaceId);
-    if (!res.error) {
-      setAgentTemplates(res.data ?? []);
     }
   }, [workspaceId]);
 
@@ -2363,8 +2355,7 @@ export function AgentsPage() {
     loadPresets();
     loadToolCatalog();
     loadSkillCatalog();
-    loadAgentTemplates();
-  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog, loadAgentTemplates]);
+  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
 
   const loadFleetData = useCallback(async () => {
     if (!workspaceId || agents.length === 0) {
