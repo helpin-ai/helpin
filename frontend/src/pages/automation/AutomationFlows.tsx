@@ -2389,6 +2389,12 @@ export function AutomationFlowsPage({
       });
       toast.success(`${result.template.name} installed`);
       setSelectedTemplate(null);
+      onSearchChange({
+        show_rule: result.rule.id,
+        show_rule_title: result.rule.name,
+        show_trigger: undefined,
+        show_trigger_title: undefined,
+      });
       await refreshAll();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to install template');
