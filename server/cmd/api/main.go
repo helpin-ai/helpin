@@ -918,11 +918,11 @@ func main() {
 	docsAISectionService := service.NewDocsAISectionService(docsAISectionCandidateRepo, docsBlockRepo, docsBlockService, docsDocumentRepo, docsSearchService, supportConversationRepo, agentService, llmProvider, cfg.CrawlerProxyURLs)
 	docsAISectionService.SetRuleEngine(ruleEngine)
 	docsAISectionService.SetActivityService(pmActivityService)
-	docsChangeProposalService := service.NewDocsChangeProposalService(docsChangeProposalRepo, docsDocumentRepo, docsContentService, docsBlockService, wsPublisher)
+	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
+	docsChangeProposalService := service.NewDocsChangeProposalService(docsChangeProposalRepo, docsDocumentRepo, docsContentService, docsBlockService, docsVersionService, wsPublisher)
 	docsReferencesService := service.NewDocsReferencesService(docsLinkRepo, docsBlockRepo, docsDocumentRepo, pmCommentService, agentService)
 	var docsEntityReferenceResolverService *service.DocsEntityReferenceResolverService
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
-	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 

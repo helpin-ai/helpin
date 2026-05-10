@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -11,20 +12,30 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
+// proposalVersionSnapshotter is the small consumer interface used by
+// DocsChangeProposalService to record an applied proposal in version history.
+// Defined here (where it is consumed) so tests can inject fakes without
+// pulling in the full DocsVersionService.
+type proposalVersionSnapshotter interface {
+	SnapshotOnProposalApply(ctx context.Context, documentID, userID string, proposal *model.DocsChangeProposal) (*model.DocsVersion, error)
+}
+
 type DocsChangeProposalService struct {
 	proposalRepo *repository.DocsChangeProposalRepository
 	docRepo      *repository.DocsDocumentRepository
 	contentSvc   *DocsContentService
 	blockSvc     *DocsBlockService
+	versionSvc   proposalVersionSnapshotter
 	wsPublisher  *websocket.Publisher
 }
 
-func NewDocsChangeProposalService(proposalRepo *repository.DocsChangeProposalRepository, docRepo *repository.DocsDocumentRepository, contentSvc *DocsContentService, blockSvc *DocsBlockService, wsPublisher *websocket.Publisher) *DocsChangeProposalService {
+func NewDocsChangeProposalService(proposalRepo *repository.DocsChangeProposalRepository, docRepo *repository.DocsDocumentRepository, contentSvc *DocsContentService, blockSvc *DocsBlockService, versionSvc proposalVersionSnapshotter, wsPublisher *websocket.Publisher) *DocsChangeProposalService {
 	return &DocsChangeProposalService{
 		proposalRepo: proposalRepo,
 		docRepo:      docRepo,
 		contentSvc:   contentSvc,
 		blockSvc:     blockSvc,
+		versionSvc:   versionSvc,
 		wsPublisher:  wsPublisher,
 	}
 }
@@ -146,6 +157,21 @@ func (s *DocsChangeProposalService) Apply(ctx context.Context, workspaceID, docu
 	}
 	proposal.Status = model.DocsChangeProposalStatusApplied
 	proposal.ResolvedBy = &actorID
+	// Record the applied change in version history. Failures here are
+	// non-fatal: the proposal has already been applied and the content has
+	// already been written, so we log and continue rather than unwinding.
+	if s.versionSvc != nil {
+		if _, err := s.versionSvc.SnapshotOnProposalApply(ctx, proposal.DocumentID, actorID, proposal); err != nil {
+			slog.WarnContext(ctx, "snapshot on proposal apply failed",
+				"error", err,
+				"workspace_id", proposal.WorkspaceID,
+				"document_id", proposal.DocumentID,
+				"proposal_id", proposal.ID,
+				"agent_id", derefString(proposal.AgentID),
+				"agent_run_id", derefString(proposal.AgentRunID),
+			)
+		}
+	}
 	s.publishProposalEvent("updated", proposal, actorID)
 	return proposal, content, nil
 }

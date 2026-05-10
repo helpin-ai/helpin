@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -46,6 +47,41 @@ func (s *DocsVersionService) CreateSnapshot(ctx context.Context, documentID, use
 	version, err := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, label, model.VersionTypeManual, wc)
 	s.publishVersionEvent(ctx, "created", version, userID)
 	return version, err
+}
+
+// SnapshotOnProposalApply creates a publish-type version snapshot when an
+// agent-authored Docs change proposal is applied. The snapshot label captures
+// the proposal's summary so version history reflects which reviewed change
+// landed and via which proposal.
+func (s *DocsVersionService) SnapshotOnProposalApply(ctx context.Context, documentID, userID string, proposal *model.DocsChangeProposal) (*model.DocsVersion, error) {
+	content, err := s.contentRepo.GetByDocumentID(ctx, documentID)
+	if err != nil {
+		return nil, err
+	}
+	if content == nil {
+		return nil, fmt.Errorf("no content to snapshot")
+	}
+	label := proposalApplyLabel(proposal)
+	wc := repository.WordCount(content.ContentText)
+	version, err := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypePublish, wc)
+	s.publishVersionEvent(ctx, "created", version, userID)
+	return version, err
+}
+
+// proposalApplyLabel builds a human-readable snapshot label from a proposal's
+// summary, falling back to a generic label when the summary is missing.
+func proposalApplyLabel(proposal *model.DocsChangeProposal) string {
+	const maxSummary = 80
+	if proposal != nil {
+		summary := strings.TrimSpace(proposal.Summary)
+		if summary != "" {
+			if len(summary) > maxSummary {
+				summary = strings.TrimRight(summary[:maxSummary], " ") + "…"
+			}
+			return "Applied: " + summary
+		}
+	}
+	return "Applied proposal"
 }
 
 // SnapshotOnPublish creates a version snapshot labeled "Published" with type=publish.
