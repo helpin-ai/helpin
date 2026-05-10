@@ -42,6 +42,9 @@ export interface Agent {
   preset_version_key?: string;
   source_template_id?: string;
   source_template_key?: string;
+  template_key?: string;
+  template_instance_id?: string;
+  template_version?: number;
   role: string;
   status: AgentStatus;
   runtime_kind: AgentRuntimeKind;

@@ -38,6 +38,7 @@ import { gitService } from '@/lib/services/gitService';
 import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import { agentTemplateSourceLabel } from '@/lib/agentTemplateLabels';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import type {
@@ -1447,8 +1448,9 @@ function agentRoleLabel(agent: Agent, presets: AgentPresetDefinition[]) {
   if (agent.is_system) {
     return presetLabel(fallbackPresetKey(agent), presets);
   }
-  if (agent.source_template_key === 'release_notes_writer') {
-    return 'Release Notes Writer';
+  const templateLabel = agentTemplateSourceLabel(agent);
+  if (templateLabel) {
+    return templateLabel;
   }
   const role = agent.role?.trim();
   return role || 'Custom agent';
@@ -1732,6 +1734,7 @@ function AgentCard({
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
+  const templateLabel = agentTemplateSourceLabel(agent);
   const attention = needsAttention(agent, stats);
 
   return (
@@ -1750,7 +1753,7 @@ function AgentCard({
               <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
               <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
-              {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
+              {templateLabel ? <Badge variant="secondary" className="text-[10px]">{templateLabel}</Badge> : null}
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
@@ -1951,6 +1954,7 @@ function AgentRow({
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
+  const templateLabel = agentTemplateSourceLabel(agent);
   const attention = needsAttention(agent, stats);
   const invocationLabel = INVOCATION_MODE_LABELS[agent.default_invocation_mode];
 
@@ -1974,7 +1978,7 @@ function AgentRow({
             <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
               <span className="truncate text-xs text-muted-foreground">{role}</span>
               {agent.is_system ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">System</Badge> : null}
-              {agent.source_template_key ? <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Template</Badge> : null}
+              {templateLabel ? <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{templateLabel}</Badge> : null}
             </div>
           </div>
         </div>
@@ -2456,13 +2460,6 @@ export function AgentsPage() {
     setTemplateSetupDialogOpen(false);
     setForm(createEmptyCustomForm());
     setDialogOpen(true);
-  };
-
-  const openTemplateLibrary = async () => {
-    setTemplateDialogOpen(true);
-    if (agentTemplates.length === 0) {
-      await loadAgentTemplates();
-    }
   };
 
   const openCreateFromTemplateDrawer = async (template: AgentTemplate) => {
@@ -3275,16 +3272,10 @@ export function AgentsPage() {
               </button>
             </div>
             {canEdit && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => void openTemplateLibrary()}>
-                  <BookOpen01Icon className="mr-1.5 h-4 w-4" />
-                  Use Template
-                </Button>
-                <Button size="sm" onClick={openCreateDialog}>
-                  <PlusSignIcon className="mr-1.5 h-4 w-4" />
-                  New Custom Agent
-                </Button>
-              </>
+              <Button size="sm" onClick={openCreateDialog}>
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
+                New Custom Agent
+              </Button>
             )}
           </div>
         )}
@@ -3305,10 +3296,6 @@ export function AgentsPage() {
           </p>
           {canEdit && (
             <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
-              <Button variant="outline" className="gap-2" onClick={() => void openTemplateLibrary()}>
-                <BookOpen01Icon className="h-4 w-4" />
-                Use Template
-              </Button>
               <Button className="gap-2" onClick={openCreateDialog}>
                 <PlusSignIcon className="h-4 w-4" />
                 New Custom Agent
