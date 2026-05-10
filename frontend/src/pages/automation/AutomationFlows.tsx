@@ -1839,8 +1839,10 @@ function FlowTemplateGallery({
               );
             })}
           </div>
-          <Button type="button" variant="outline" size="sm" className="self-start sm:self-auto" onClick={() => onPick(null)}>
-            <PlusSignIcon className="h-4 w-4" />
+          <Button type="button" variant="outline" size="sm" className="h-auto self-start py-1 pl-1 pr-3 sm:self-auto" onClick={() => onPick(null)}>
+            <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-md', TEMPLATE_ICON_TONE)}>
+              <PlusSignIcon className="h-4 w-4" />
+            </span>
             Custom flow
           </Button>
         </div>
