@@ -49,7 +49,7 @@ func (s *DocsVersionService) CreateSnapshot(ctx context.Context, documentID, use
 	return version, err
 }
 
-// SnapshotOnProposalApply creates a publish-type version snapshot when an
+// SnapshotOnProposalApply creates an applied-proposal version snapshot when an
 // agent-authored Docs change proposal is applied. The snapshot label captures
 // the proposal's summary so version history reflects which reviewed change
 // landed and via which proposal.
@@ -63,7 +63,7 @@ func (s *DocsVersionService) SnapshotOnProposalApply(ctx context.Context, docume
 	}
 	label := proposalApplyLabel(proposal)
 	wc := repository.WordCount(content.ContentText)
-	version, err := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypePublish, wc)
+	version, err := s.versionRepo.Create(ctx, documentID, userID, content.Content, content.ContentText, &label, model.VersionTypeProposalApply, wc)
 	s.publishVersionEvent(ctx, "created", version, userID)
 	return version, err
 }

@@ -91,6 +91,12 @@ func (s *DocsChangeProposalService) Create(ctx context.Context, workspaceID stri
 	sources := req.Sources
 	if len(sources) == 0 || strings.TrimSpace(string(sources)) == "" || strings.TrimSpace(string(sources)) == "null" {
 		sources = json.RawMessage(`[]`)
+	} else {
+		normalizedSources, err := json.Marshal(model.NormalizeDocsChangeProposalSources(sources))
+		if err != nil {
+			return nil, fmt.Errorf("marshal proposal sources: %w", err)
+		}
+		sources = normalizedSources
 	}
 	proposal := &model.DocsChangeProposal{
 		WorkspaceID:     workspaceID,
@@ -126,7 +132,25 @@ func (s *DocsChangeProposalService) ListPending(ctx context.Context, workspaceID
 	if doc == nil || doc.WorkspaceID != workspaceID {
 		return nil, fmt.Errorf("document not found")
 	}
-	return s.proposalRepo.ListPendingByDocument(ctx, workspaceID, documentID)
+	proposals, err := s.proposalRepo.ListPendingByDocument(ctx, workspaceID, documentID)
+	if err != nil {
+		return nil, err
+	}
+	return proposals, nil
+}
+
+func (s *DocsChangeProposalService) Get(ctx context.Context, workspaceID, documentID, proposalID string) (*model.DocsChangeProposal, error) {
+	if s == nil || s.proposalRepo == nil {
+		return nil, fmt.Errorf("docs change proposal service is not configured")
+	}
+	proposal, err := s.proposalRepo.GetByDocumentIDAndID(ctx, strings.TrimSpace(workspaceID), strings.TrimSpace(documentID), strings.TrimSpace(proposalID))
+	if err != nil {
+		return nil, err
+	}
+	if proposal == nil {
+		return nil, ErrDocsChangeProposalNotFound
+	}
+	return proposal, nil
 }
 
 func (s *DocsChangeProposalService) Apply(ctx context.Context, workspaceID, documentID, proposalID, actorID string) (*model.DocsChangeProposal, *model.DocsContent, error) {
@@ -135,7 +159,7 @@ func (s *DocsChangeProposalService) Apply(ctx context.Context, workspaceID, docu
 		return nil, nil, err
 	}
 	if strings.TrimSpace(proposal.DocumentID) != strings.TrimSpace(documentID) {
-		return nil, nil, fmt.Errorf("proposal not found")
+		return nil, nil, ErrDocsChangeProposalNotFound
 	}
 	var content *model.DocsContent
 	switch proposal.Scope {
@@ -182,7 +206,7 @@ func (s *DocsChangeProposalService) Discard(ctx context.Context, workspaceID, do
 		return nil, err
 	}
 	if strings.TrimSpace(proposal.DocumentID) != strings.TrimSpace(documentID) {
-		return nil, fmt.Errorf("proposal not found")
+		return nil, ErrDocsChangeProposalNotFound
 	}
 	if err := s.proposalRepo.Resolve(ctx, workspaceID, proposal.ID, model.DocsChangeProposalStatusDiscarded, actorID); err != nil {
 		return nil, err
@@ -202,7 +226,7 @@ func (s *DocsChangeProposalService) loadPending(ctx context.Context, workspaceID
 		return nil, err
 	}
 	if proposal == nil {
-		return nil, fmt.Errorf("proposal not found")
+		return nil, ErrDocsChangeProposalNotFound
 	}
 	if proposal.Status != model.DocsChangeProposalStatusPending {
 		return nil, fmt.Errorf("proposal is already resolved")

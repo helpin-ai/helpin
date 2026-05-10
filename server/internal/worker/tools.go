@@ -851,7 +851,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolPublishAISectionCandidate)
 
-	r.register("publish_document_change_proposal", "Submit a proposed Helpin Docs document or block change for review in Docs. This persists a Docs proposal; after success, finish without calling request_approval.", map[string]interface{}{
+	r.register("publish_document_change_proposal", "Submit a proposed Docs document or block change for review in Docs. This persists a Docs proposal; after success, finish without calling request_approval.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"scope": map[string]interface{}{
@@ -885,12 +885,13 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 				"items": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"title":       map[string]interface{}{"type": "string"},
-						"url":         map[string]interface{}{"type": "string"},
-						"source_type": map[string]interface{}{"type": "string"},
-						"excerpt":     map[string]interface{}{"type": "string"},
+						"type":  map[string]interface{}{"type": "string", "enum": []string{"conversation", "document", "url", "agent_run", "coverage_gap"}},
+						"id":    map[string]interface{}{"type": "string"},
+						"label": map[string]interface{}{"type": "string"},
+						"url":   map[string]interface{}{"type": "string"},
 					},
-					"additionalProperties": true,
+					"required":             []string{"type", "label"},
+					"additionalProperties": false,
 				},
 			},
 		},

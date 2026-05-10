@@ -666,14 +666,14 @@ func toolPublishAISectionCandidate(ctx *ExecutionContext, input json.RawMessage)
 }
 
 type documentChangeProposalPreview struct {
-	Scope           string           `json:"scope"`
-	DocumentID      string           `json:"document_id"`
-	BlockID         string           `json:"block_id,omitempty"`
-	Revision        int              `json:"revision,omitempty"`
-	Summary         string           `json:"summary"`
-	ContentMarkdown string           `json:"content_markdown"`
-	Content         json.RawMessage  `json:"content,omitempty"`
-	Sources         []map[string]any `json:"sources,omitempty"`
+	Scope           string                           `json:"scope"`
+	DocumentID      string                           `json:"document_id"`
+	BlockID         string                           `json:"block_id,omitempty"`
+	Revision        int                              `json:"revision,omitempty"`
+	Summary         string                           `json:"summary"`
+	ContentMarkdown string                           `json:"content_markdown"`
+	Content         json.RawMessage                  `json:"content,omitempty"`
+	Sources         []model.DocsChangeProposalSource `json:"sources,omitempty"`
 }
 
 func toolPublishDocumentChangeProposal(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -719,13 +719,13 @@ func toolPublishDocumentChangeProposal(ctx *ExecutionContext, input json.RawMess
 
 func buildDocumentChangeProposal(input json.RawMessage, ctx *ExecutionContext) (documentChangeProposalPreview, error) {
 	var params struct {
-		Scope      string           `json:"scope"`
-		DocumentID string           `json:"document_id"`
-		BlockID    string           `json:"block_id"`
-		Revision   int              `json:"revision"`
-		Content    string           `json:"content"`
-		Summary    string           `json:"summary"`
-		Sources    []map[string]any `json:"sources"`
+		Scope      string                           `json:"scope"`
+		DocumentID string                           `json:"document_id"`
+		BlockID    string                           `json:"block_id"`
+		Revision   int                              `json:"revision"`
+		Content    string                           `json:"content"`
+		Summary    string                           `json:"summary"`
+		Sources    []model.DocsChangeProposalSource `json:"sources"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return documentChangeProposalPreview{}, fmt.Errorf("parse input: %w", err)
@@ -772,7 +772,7 @@ func buildDocumentChangeProposal(input json.RawMessage, ctx *ExecutionContext) (
 		Revision:        params.Revision,
 		Summary:         params.Summary,
 		ContentMarkdown: params.Content,
-		Sources:         normalizeAISectionCandidateSources(params.Sources),
+		Sources:         params.Sources,
 	}
 	switch params.Scope {
 	case "document":
