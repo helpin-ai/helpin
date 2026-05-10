@@ -980,6 +980,46 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolFindTasksForGitChanges)
 
+	r.register("get_pull_request_diff", "Load the changed files and patches for a GitHub pull request. Defaults owner/repo from the current repository-targeted run when omitted.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"owner": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository owner. Defaults from the current run repository when omitted.",
+			},
+			"repo": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository name. Defaults from the current run repository when omitted.",
+			},
+			"pull_number": map[string]interface{}{
+				"type":        "integer",
+				"description": "Pull request number.",
+			},
+		},
+		"required":             []string{"pull_number"},
+		"additionalProperties": false,
+	}, toolGetPullRequestDiff)
+
+	r.register("get_check_run_logs", "Load a GitHub check run's conclusion, output text, and annotations for diagnosing failed checks.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"owner": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository owner. Defaults from the current run repository when omitted.",
+			},
+			"repo": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository name. Defaults from the current run repository when omitted.",
+			},
+			"check_run_id": map[string]interface{}{
+				"type":        "integer",
+				"description": "GitHub check run ID.",
+			},
+		},
+		"required":             []string{"check_run_id"},
+		"additionalProperties": false,
+	}, toolGetCheckRunLogs)
+
 	r.register("get_task_context", "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
