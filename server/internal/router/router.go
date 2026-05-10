@@ -506,6 +506,11 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 						r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/install", h.Automation.InstallFlowTemplate)
 					})
 				})
+				r.Route("/template-instances", func(r chi.Router) {
+					r.Route("/{instanceID}", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/uninstall", h.Automation.UninstallFlowTemplate)
+					})
+				})
 
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/activity", h.Automation.ListActivity)
 

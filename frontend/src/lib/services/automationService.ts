@@ -26,6 +26,8 @@ import type {
   HandoffAgentRunRequest,
   InstallFlowTemplateRequest,
   InstallFlowTemplateResponse,
+  UninstallFlowTemplateRequest,
+  UninstallFlowTemplateResponse,
   PaginatedResponse,
   ResumeAgentRunRequest,
   SendAgentRunMessageRequest,
@@ -77,6 +79,9 @@ export const automationService = {
 
   installFlowTemplate: (workspaceId: string, key: string, payload: InstallFlowTemplateRequest) =>
     api.post<InstallFlowTemplateResponse>(`/automation/templates/${key}/install${qs(workspaceId)}`, payload),
+
+  uninstallFlowTemplate: (workspaceId: string, instanceId: string, payload: UninstallFlowTemplateRequest) =>
+    api.post<UninstallFlowTemplateResponse>(`/automation/template-instances/${instanceId}/uninstall${qs(workspaceId)}`, payload),
 
   createFlow: (workspaceId: string, data: CreateAutomationRuleRequest) =>
     api.post<AutomationRule>(`/automation/flows${qs(workspaceId)}`, data),

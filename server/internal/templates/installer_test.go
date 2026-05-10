@@ -207,6 +207,139 @@ func TestInstallerInstallPickExistingTemplateUsesExistingAgentAndStampsOnlyRule(
 	}
 }
 
+func TestUninstallerKeepCreatedAgentClearsTemplateFields(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	installer := NewInstaller(db, mustTestRegistry(t))
+	installed, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "release_notes_writer",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"repository_id":             "repo-1",
+			"destination_collection_id": "collection-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	uninstaller := NewUninstaller(db)
+	result, err := uninstaller.Uninstall(context.Background(), UninstallRequest{
+		WorkspaceID:        "ws-1",
+		TemplateInstanceID: *installed.Rule.TemplateInstanceID,
+		DeleteCreatedAgent: false,
+	})
+	if err != nil {
+		t.Fatalf("Uninstall returned error: %v", err)
+	}
+	if result.AgentAction != AgentActionKept {
+		t.Fatalf("agent action = %q, want %q", result.AgentAction, AgentActionKept)
+	}
+
+	var count int64
+	if err := db.Model(&model.AutomationRule{}).Where("id = ?", installed.Rule.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count rule: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("rule count = %d, want 0", count)
+	}
+
+	var agent model.Agent
+	if err := db.First(&agent, "id = ?", installed.Agent.ID).Error; err != nil {
+		t.Fatalf("load kept agent: %v", err)
+	}
+	if agent.TemplateKey != nil || agent.TemplateInstanceID != nil || agent.TemplateVersion != nil {
+		t.Fatalf("kept agent template fields = %v/%v/%v, want cleared", agent.TemplateKey, agent.TemplateInstanceID, agent.TemplateVersion)
+	}
+}
+
+func TestUninstallerDeleteCreatedAgent(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	installer := NewInstaller(db, mustTestRegistry(t))
+	installed, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "release_notes_writer",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"repository_id":             "repo-1",
+			"destination_collection_id": "collection-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	result, err := NewUninstaller(db).Uninstall(context.Background(), UninstallRequest{
+		WorkspaceID:        "ws-1",
+		TemplateInstanceID: *installed.Rule.TemplateInstanceID,
+		DeleteCreatedAgent: true,
+	})
+	if err != nil {
+		t.Fatalf("Uninstall returned error: %v", err)
+	}
+	if result.AgentAction != AgentActionDeleted {
+		t.Fatalf("agent action = %q, want %q", result.AgentAction, AgentActionDeleted)
+	}
+
+	var count int64
+	if err := db.Model(&model.Agent{}).Where("id = ?", installed.Agent.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count agent: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("agent count = %d, want 0", count)
+	}
+}
+
+func TestUninstallerDoesNotDeleteAgentReferencedByAnotherRule(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	installer := NewInstaller(db, mustTestRegistry(t))
+	installed, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "release_notes_writer",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"repository_id":             "repo-1",
+			"destination_collection_id": "collection-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	otherRule := model.AutomationRule{
+		ID:            "rule-other",
+		WorkspaceID:   "ws-1",
+		Name:          "Other flow",
+		Enabled:       true,
+		TriggerType:   model.TriggerGitHubReleasePub,
+		TriggerConfig: json.RawMessage(`{}`),
+		ActionType:    model.ActionStartAgentRun,
+		ActionConfig:  json.RawMessage(`{"agent_id":"` + installed.Agent.ID + `","target_type":"repository","target_id":"repo-2"}`),
+	}
+	if err := db.Create(&otherRule).Error; err != nil {
+		t.Fatalf("create other rule: %v", err)
+	}
+
+	result, err := NewUninstaller(db).Uninstall(context.Background(), UninstallRequest{
+		WorkspaceID:        "ws-1",
+		TemplateInstanceID: *installed.Rule.TemplateInstanceID,
+		DeleteCreatedAgent: true,
+	})
+	if err != nil {
+		t.Fatalf("Uninstall returned error: %v", err)
+	}
+	if result.AgentAction != AgentActionStillReferenced {
+		t.Fatalf("agent action = %q, want %q", result.AgentAction, AgentActionStillReferenced)
+	}
+
+	var agent model.Agent
+	if err := db.First(&agent, "id = ?", installed.Agent.ID).Error; err != nil {
+		t.Fatalf("load referenced agent: %v", err)
+	}
+	if agent.TemplateInstanceID == nil || *agent.TemplateInstanceID != *installed.Rule.TemplateInstanceID {
+		t.Fatalf("referenced agent template_instance_id = %v, want preserved", agent.TemplateInstanceID)
+	}
+}
+
 func setupInstallerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})

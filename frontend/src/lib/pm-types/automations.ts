@@ -117,6 +117,20 @@ export interface InstallFlowTemplateResponse {
   rule: AutomationRule;
 }
 
+export type TemplateAgentUninstallAction = 'none' | 'kept' | 'deleted' | 'still_referenced';
+
+export interface UninstallFlowTemplateRequest {
+  delete_created_agent?: boolean;
+}
+
+export interface UninstallFlowTemplateResponse {
+  template_key: string;
+  template_instance_id: string;
+  rule_id: string;
+  agent_id?: string;
+  agent_action: TemplateAgentUninstallAction;
+}
+
 export interface CreateAutomationRuleRequest {
   workspace_id: string;
   name: string;

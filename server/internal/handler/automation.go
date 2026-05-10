@@ -15,11 +15,12 @@ import (
 
 // AutomationHandler exposes the product-level Automation API facade.
 type AutomationHandler struct {
-	automationService *service.AutomationInventoryService
-	ruleEngine        *service.AutomationRuleEngine
-	agentService      *service.AgentService
-	templateRegistry  *flowtemplates.Registry
-	templateInstaller *flowtemplates.Installer
+	automationService   *service.AutomationInventoryService
+	ruleEngine          *service.AutomationRuleEngine
+	agentService        *service.AgentService
+	templateRegistry    *flowtemplates.Registry
+	templateInstaller   *flowtemplates.Installer
+	templateUninstaller *flowtemplates.Uninstaller
 }
 
 // NewAutomationHandler creates a new AutomationHandler.
@@ -29,13 +30,15 @@ func NewAutomationHandler(
 	agentService *service.AgentService,
 	templateRegistry *flowtemplates.Registry,
 	templateInstaller *flowtemplates.Installer,
+	templateUninstaller *flowtemplates.Uninstaller,
 ) *AutomationHandler {
 	return &AutomationHandler{
-		automationService: automationService,
-		ruleEngine:        ruleEngine,
-		agentService:      agentService,
-		templateRegistry:  templateRegistry,
-		templateInstaller: templateInstaller,
+		automationService:   automationService,
+		ruleEngine:          ruleEngine,
+		agentService:        agentService,
+		templateRegistry:    templateRegistry,
+		templateInstaller:   templateInstaller,
+		templateUninstaller: templateUninstaller,
 	}
 }
 
@@ -244,6 +247,41 @@ func (h *AutomationHandler) InstallFlowTemplate(w http.ResponseWriter, r *http.R
 		return
 	}
 	writeJSON(w, http.StatusCreated, result)
+}
+
+type uninstallFlowTemplateRequest struct {
+	DeleteCreatedAgent bool `json:"delete_created_agent"`
+}
+
+// UninstallFlowTemplate handles POST /api/automation/template-instances/{instanceID}/uninstall.
+func (h *AutomationHandler) UninstallFlowTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	instanceID := chi.URLParam(r, "instanceID")
+	if workspaceID == "" || instanceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and template_instance_id are required")
+		return
+	}
+	if h.templateUninstaller == nil {
+		writeError(w, http.StatusServiceUnavailable, "flow templates are unavailable")
+		return
+	}
+
+	var req uninstallFlowTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.templateUninstaller.Uninstall(r.Context(), flowtemplates.UninstallRequest{
+		WorkspaceID:        workspaceID,
+		TemplateInstanceID: instanceID,
+		ActorID:            middleware.GetUserID(r.Context()),
+		DeleteCreatedAgent: req.DeleteCreatedAgent,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // ListActivity handles GET /api/automation/activity.

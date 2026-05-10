@@ -12,6 +12,7 @@ import type {
   CreateAgentRequest,
   CreateAutomationRuleRequest,
   InstallFlowTemplateRequest,
+  UninstallFlowTemplateRequest,
   UpdateAgentRequest,
   UpdateAutomationRuleRequest,
 } from '@/lib/pmTypes';
@@ -88,6 +89,19 @@ export function useInstallAutomationFlowTemplate(wsId: string) {
   return useMutation({
     mutationFn: async ({ templateKey, payload }: { templateKey: string; payload: InstallFlowTemplateRequest }) =>
       unwrap(await automationService.installFlowTemplate(wsId, templateKey, payload)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+    },
+  });
+}
+
+export function useUninstallAutomationFlowTemplate(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ instanceId, payload }: { instanceId: string; payload: UninstallFlowTemplateRequest }) =>
+      unwrap(await automationService.uninstallFlowTemplate(wsId, instanceId, payload)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) });
       qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) });

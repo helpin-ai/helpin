@@ -1132,6 +1132,7 @@ func main() {
 		fatalWithSentry("failed to load flow templates", err)
 	}
 	flowTemplateInstaller := flowtemplates.NewInstaller(db, flowTemplateRegistry)
+	flowTemplateUninstaller := flowtemplates.NewUninstaller(db)
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
@@ -1187,7 +1188,7 @@ func main() {
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
-		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller),
+		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
 		Invite:              handler.NewInviteHandler(inviteService),
 		PMWorkflow:          handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMImport:            handler.NewPMImportHandler(pmImportService),

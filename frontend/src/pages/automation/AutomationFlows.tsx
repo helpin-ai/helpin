@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
-import { useAllDocsCollections, useAutomationFlowTemplates, useAutomationFlows, useAutomationOverview, useAgents, useInstallAutomationFlowTemplate, useWorkflows } from '@/hooks/queries';
+import { useAllDocsCollections, useAutomationFlowTemplates, useAutomationFlows, useAutomationOverview, useAgents, useInstallAutomationFlowTemplate, useUninstallAutomationFlowTemplate, useWorkflows } from '@/hooks/queries';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -915,6 +915,8 @@ function FlowRow({
   onEdit,
   onToggle,
   onDelete,
+  onUninstallTemplate,
+  agentReferencedElsewhere,
 }: {
   rule: AutomationRule;
   statesById: Map<string, WorkflowState>;
@@ -926,6 +928,8 @@ function FlowRow({
   onEdit: (rule: AutomationRule) => void;
   onToggle: (rule: AutomationRule) => void;
   onDelete: (rule: AutomationRule) => void;
+  onUninstallTemplate: (rule: AutomationRule, agentReferencedElsewhere: boolean) => void;
+  agentReferencedElsewhere: boolean;
 }) {
   const hasError = flowHasError(rule, agentNames);
   const title = describeFlowTitle(rule, statesById, agentNames);
@@ -983,6 +987,11 @@ function FlowRow({
                       <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>
                         Activity
                       </a>
+                    </DropdownMenuItem>
+                  )}
+                  {rule.template_instance_id && (
+                    <DropdownMenuItem onClick={() => onUninstallTemplate(rule, agentReferencedElsewhere)}>
+                      Uninstall template
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuItem
@@ -1949,6 +1958,74 @@ function FlowTemplateInstallDialog({
   );
 }
 
+function UninstallTemplateDialog({
+  rule,
+  open,
+  onOpenChange,
+  agentReferencedElsewhere,
+  deleteCreatedAgent,
+  onDeleteCreatedAgentChange,
+  saving,
+  onConfirm,
+}: {
+  rule: AutomationRule | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  agentReferencedElsewhere: boolean;
+  deleteCreatedAgent: boolean;
+  onDeleteCreatedAgentChange: (value: boolean) => void;
+  saving: boolean;
+  onConfirm: () => void;
+}) {
+  if (!rule) return null;
+  const hasCreatedAgent = !!rule.action_config?.agent_id;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Uninstall template?</DialogTitle>
+          <DialogDescription>
+            The flow will be removed. Any edits made to this flow will be lost.
+          </DialogDescription>
+        </DialogHeader>
+
+        {hasCreatedAgent && (
+          <div className="space-y-3 rounded-lg border border-border/60 p-3 text-sm">
+            {agentReferencedElsewhere ? (
+              <p className="text-muted-foreground">The agent is used by another flow, so it will be kept.</p>
+            ) : (
+              <>
+                <label className="flex items-start gap-3">
+                  <Checkbox checked={!deleteCreatedAgent} onCheckedChange={() => onDeleteCreatedAgentChange(false)} />
+                  <span>
+                    <span className="block font-medium">Keep the agent</span>
+                    <span className="text-muted-foreground">It will become a regular custom agent.</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-3">
+                  <Checkbox checked={deleteCreatedAgent} onCheckedChange={() => onDeleteCreatedAgentChange(true)} />
+                  <span>
+                    <span className="block font-medium">Delete the agent too</span>
+                    <span className="text-muted-foreground">Use this only when the agent was created just for this flow.</span>
+                  </span>
+                </label>
+              </>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type="button" variant="destructive" onClick={onConfirm} disabled={saving}>
+            {saving ? 'Uninstalling…' : 'Uninstall'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function TemplateInputControl({
   input,
   template,
@@ -2069,6 +2146,7 @@ export function AutomationFlowsPage({
   const inventoryQuery = useAutomationOverview(workspaceId);
   const flowTemplatesQuery = useAutomationFlowTemplates(workspaceId);
   const installFlowTemplate = useInstallAutomationFlowTemplate(workspaceId);
+  const uninstallFlowTemplate = useUninstallAutomationFlowTemplate(workspaceId);
   const { data: agents = [] } = useAgents(workspaceId);
   const { data: workflows = [] } = useWorkflows(workspaceId);
   const rulesQuery = useAutomationFlows(workspaceId);
@@ -2097,6 +2175,9 @@ export function AutomationFlowsPage({
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<FlowTemplateManifest | null>(null);
   const [templateInputs, setTemplateInputs] = useState<Record<string, unknown>>({});
+  const [uninstallRule, setUninstallRule] = useState<AutomationRule | null>(null);
+  const [uninstallDeleteAgent, setUninstallDeleteAgent] = useState(false);
+  const [uninstallAgentReferencedElsewhere, setUninstallAgentReferencedElsewhere] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [draft, setDraft] = useState<FlowDraft>(defaultDraft());
   const [saving, setSaving] = useState(false);
@@ -2270,6 +2351,12 @@ export function AutomationFlowsPage({
     await refreshAll();
   };
 
+  const openUninstallTemplate = (rule: AutomationRule, agentReferencedElsewhere: boolean) => {
+    setUninstallRule(rule);
+    setUninstallDeleteAgent(false);
+    setUninstallAgentReferencedElsewhere(agentReferencedElsewhere);
+  };
+
   const handleSave = async () => {
     const validationError = validateDraft(draft);
     if (validationError) {
@@ -2308,6 +2395,26 @@ export function AutomationFlowsPage({
     }
   };
 
+  const handleUninstallTemplate = async () => {
+    if (!uninstallRule?.template_instance_id) return;
+    try {
+      const result = await uninstallFlowTemplate.mutateAsync({
+        instanceId: uninstallRule.template_instance_id,
+        payload: { delete_created_agent: uninstallDeleteAgent && !uninstallAgentReferencedElsewhere },
+      });
+      const suffix = result.agent_action === 'deleted'
+        ? ' and deleted the agent'
+        : result.agent_action === 'kept'
+          ? ' and kept the agent'
+          : '';
+      toast.success(`Template uninstalled${suffix}`);
+      setUninstallRule(null);
+      await refreshAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to uninstall template');
+    }
+  };
+
   if (!workspaceId) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
@@ -2343,6 +2450,18 @@ export function AutomationFlowsPage({
         }}
         onValuesChange={setTemplateInputs}
         onInstall={() => void handleInstallTemplate()}
+      />
+      <UninstallTemplateDialog
+        rule={uninstallRule}
+        open={!!uninstallRule}
+        onOpenChange={(open) => {
+          if (!open) setUninstallRule(null);
+        }}
+        agentReferencedElsewhere={uninstallAgentReferencedElsewhere}
+        deleteCreatedAgent={uninstallDeleteAgent}
+        onDeleteCreatedAgentChange={setUninstallDeleteAgent}
+        saving={uninstallFlowTemplate.isPending}
+        onConfirm={() => void handleUninstallTemplate()}
       />
       <FlowComposer
         workspaceId={workspaceId}
@@ -2475,6 +2594,11 @@ export function AutomationFlowsPage({
                 onEdit={openEditComposer}
                 onToggle={handleToggle}
                 onDelete={handleDelete}
+                onUninstallTemplate={openUninstallTemplate}
+                agentReferencedElsewhere={
+                  !!rule.action_config?.agent_id
+                  && authoredFlows.some((other) => other.id !== rule.id && stringValue(other.action_config?.agent_id) === stringValue(rule.action_config?.agent_id))
+                }
               />
             )) : (
               <div className="rounded-lg border border-dashed border-border/70 px-6 py-12 text-center">
