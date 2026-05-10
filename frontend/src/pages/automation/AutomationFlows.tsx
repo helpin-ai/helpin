@@ -1811,7 +1811,7 @@ function FlowTemplateGallery({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="flex max-h-[86vh] flex-col sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Create a flow</DialogTitle>
           <DialogDescription>Install a ready-made automation, or build a custom flow.</DialogDescription>
@@ -1847,7 +1847,7 @@ function FlowTemplateGallery({
           </Button>
         </div>
 
-        <div className="grid max-h-[62vh] gap-3 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
+        <div className="grid h-[52vh] min-h-[360px] auto-rows-min content-start gap-3 overflow-y-auto pr-1 sm:grid-cols-2 md:grid-cols-3">
           {loading && Array.from({ length: 6 }).map((_, index) => (
             <div key={index} className="rounded-lg border border-border/60 p-4">
               <Skeleton className="h-8 w-8 rounded-lg" />
