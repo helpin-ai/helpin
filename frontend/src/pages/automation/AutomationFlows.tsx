@@ -1787,12 +1787,14 @@ function FlowTemplateGallery({
   onPick,
   templates,
   loading,
+  error,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPick: (template: FlowTemplateManifest | null) => void;
   templates: FlowTemplateManifest[];
   loading: boolean;
+  error: string | null;
 }) {
   const [category, setCategory] = useState('all');
   const categories = useMemo(() => {
@@ -1834,7 +1836,21 @@ function FlowTemplateGallery({
               <Skeleton className="mt-2 h-10 w-full" />
             </div>
           ))}
-          {!loading && visibleTemplates.map((template) => {
+          {!loading && error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/[0.03] p-4 text-sm sm:col-span-2 md:col-span-3">
+              <p className="font-medium text-destructive">Templates could not be loaded</p>
+              <p className="mt-1 text-muted-foreground">{error}</p>
+            </div>
+          )}
+          {!loading && !error && visibleTemplates.length === 0 && (
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-sm sm:col-span-2 md:col-span-3">
+              <p className="font-medium">No templates available</p>
+              <p className="mt-1 text-muted-foreground">
+                {category === 'all' ? 'No flow templates are available in this workspace yet.' : 'No templates match this category.'}
+              </p>
+            </div>
+          )}
+          {!loading && !error && visibleTemplates.map((template) => {
             const Icon = FLOW_TEMPLATE_ICONS[template.icon] ?? PlayIcon;
             return (
               <button
@@ -2436,6 +2452,7 @@ export function AutomationFlowsPage({
         onPick={handleTemplatePick}
         templates={flowTemplatesQuery.data ?? []}
         loading={flowTemplatesQuery.isLoading}
+        error={flowTemplatesQuery.error instanceof Error ? flowTemplatesQuery.error.message : flowTemplatesQuery.isError ? 'Request failed' : null}
       />
       <FlowTemplateInstallDialog
         open={!!selectedTemplate}
