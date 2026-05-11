@@ -441,11 +441,7 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		Reason:  strPtr(fmt.Sprintf("automation rule %q", rule.Name)),
 	}
 	if strings.HasPrefix(strings.TrimSpace(event.TriggerType), "github.") {
-		eventContext.GitHub = &model.AgentRunGitHubEventContext{
-			EventType:    strings.TrimPrefix(strings.TrimSpace(event.TriggerType), "github."),
-			RepoFullName: strings.TrimSpace(event.RepoFullName),
-			RepositoryID: strings.TrimSpace(event.RepositoryID),
-		}
+		eventContext.GitHub = githubRunEventContext(event)
 		if event.TriggerType == model.TriggerGitHubReleasePub {
 			eventContext.GitHub.EventType = "release_published"
 			eventContext.GitHub.Release = &model.AgentRunGitHubReleaseEventContext{
@@ -1298,6 +1294,28 @@ func (e *AutomationRuleEngine) syncRuleSchedule(ctx context.Context, rule *model
 		return err
 	}
 	return e.runEngine.StartRuleSchedule(ctx, rule.ID, rule.WorkspaceID, schedule)
+}
+
+func githubRunEventContext(event model.AutomationEvent) *model.AgentRunGitHubEventContext {
+	ctx := &model.AgentRunGitHubEventContext{
+		EventType:    strings.TrimPrefix(strings.TrimSpace(event.TriggerType), "github."),
+		RepoFullName: strings.TrimSpace(event.RepoFullName),
+		RepositoryID: strings.TrimSpace(event.RepositoryID),
+	}
+	switch event.TriggerType {
+	case model.TriggerGitHubPROpened, model.TriggerGitHubPRMerged, model.TriggerGitHubPRClosed, model.TriggerGitHubPRReviewReq:
+		ctx.PullRequest = &model.AgentRunGitHubPullRequestEventContext{
+			Number:     event.PullRequestNumber,
+			BaseBranch: strings.TrimSpace(event.BaseBranch),
+			HeadBranch: strings.TrimSpace(event.Branch),
+		}
+	case model.TriggerGitHubCheckSuite:
+		ctx.CheckSuite = &model.AgentRunGitHubCheckSuiteEventContext{
+			Branch:     strings.TrimSpace(event.Branch),
+			Conclusion: strings.TrimSpace(event.Conclusion),
+		}
+	}
+	return ctx
 }
 
 func matchGitHubPushConfig(cfg model.TriggerConfigGitHubPush, event model.AutomationEvent) bool {

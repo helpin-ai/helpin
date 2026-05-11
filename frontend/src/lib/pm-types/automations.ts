@@ -61,8 +61,16 @@ export interface FlowTemplateInput {
   type: string;
   required?: boolean;
   label: string;
+  section?: string;
+  help_text?: string;
+  placeholder?: string;
   default?: unknown;
   depends_on?: string;
+  show_if?: string;
+  space_type?: string;
+  min?: number;
+  max?: number;
+  options?: Array<{ value: string; label: string }>;
 }
 
 export interface FlowTemplateManifest {
@@ -79,6 +87,8 @@ export interface FlowTemplateManifest {
       runtime_kind?: string;
       name_template?: string;
       system_prompt_ref?: string;
+      system_prompt?: string;
+      skills?: string[];
       allowed_tools?: string[];
       allowed_targets?: string[];
       approval_mode?: string;
@@ -103,12 +113,15 @@ export interface FlowTemplateManifest {
     target?: Record<string, string>;
     conditions?: Record<string, string>[];
     parameters?: Record<string, unknown>;
+    additional_context?: string;
   };
 }
 
 export interface InstallFlowTemplateRequest {
   name?: string;
+  agent_name?: string;
   inputs: Record<string, unknown>;
+  agent_overrides?: import('./agents').CreateAgentFromTemplateOverrides;
 }
 
 export interface InstallFlowTemplateResponse {

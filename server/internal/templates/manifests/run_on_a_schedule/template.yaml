@@ -15,10 +15,14 @@ inputs:
     type: agent
     required: true
     label: Agent
+    section: What should run?
+    help_text: Select the agent that should run on this schedule.
   - key: schedule
     type: cron
     required: true
-    label: Schedule
+    label: Run schedule
+    section: When should it run
+    help_text: How often the selected agent should run.
 flow:
   action: start_agent_run
   parameters:

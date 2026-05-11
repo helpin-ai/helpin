@@ -35,6 +35,8 @@ type AgentCreateSpec struct {
 	RuntimeKind     string   `yaml:"runtime_kind,omitempty" json:"runtime_kind,omitempty"`
 	NameTemplate    string   `yaml:"name_template,omitempty" json:"name_template,omitempty"`
 	SystemPromptRef string   `yaml:"system_prompt_ref,omitempty" json:"system_prompt_ref,omitempty"`
+	SystemPrompt    string   `yaml:"system_prompt,omitempty" json:"system_prompt,omitempty"`
+	Skills          []string `yaml:"skills,omitempty" json:"skills,omitempty"`
 	AllowedTools    []string `yaml:"allowed_tools,omitempty" json:"allowed_tools,omitempty"`
 	AllowedTargets  []string `yaml:"allowed_targets,omitempty" json:"allowed_targets,omitempty"`
 	ApprovalMode    string   `yaml:"approval_mode,omitempty" json:"approval_mode,omitempty"`
@@ -81,19 +83,33 @@ type Trigger struct {
 }
 
 type Input struct {
-	Key       string      `yaml:"key" json:"key"`
-	Type      string      `yaml:"type" json:"type"`
-	Required  bool        `yaml:"required,omitempty" json:"required,omitempty"`
-	Label     string      `yaml:"label" json:"label"`
-	Default   interface{} `yaml:"default,omitempty" json:"default,omitempty"`
-	DependsOn string      `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+	Key         string      `yaml:"key" json:"key"`
+	Type        string      `yaml:"type" json:"type"`
+	Required    bool        `yaml:"required,omitempty" json:"required,omitempty"`
+	Label       string      `yaml:"label" json:"label"`
+	Section     string      `yaml:"section,omitempty" json:"section,omitempty"`
+	HelpText    string      `yaml:"help_text,omitempty" json:"help_text,omitempty"`
+	Placeholder string      `yaml:"placeholder,omitempty" json:"placeholder,omitempty"`
+	Default     interface{} `yaml:"default,omitempty" json:"default,omitempty"`
+	DependsOn   string      `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+	ShowIf      string      `yaml:"show_if,omitempty" json:"show_if,omitempty"`
+	SpaceType   string      `yaml:"space_type,omitempty" json:"space_type,omitempty"`
+	Min         *int        `yaml:"min,omitempty" json:"min,omitempty"`
+	Max         *int        `yaml:"max,omitempty" json:"max,omitempty"`
+	Options     []Option    `yaml:"options,omitempty" json:"options,omitempty"`
+}
+
+type Option struct {
+	Value string `yaml:"value" json:"value"`
+	Label string `yaml:"label" json:"label"`
 }
 
 type FlowSpec struct {
-	Action     string                 `yaml:"action" json:"action"`
-	Target     map[string]string      `yaml:"target,omitempty" json:"target,omitempty"`
-	Conditions []map[string]string    `yaml:"conditions,omitempty" json:"conditions,omitempty"`
-	Parameters map[string]interface{} `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+	Action            string                 `yaml:"action" json:"action"`
+	Target            map[string]string      `yaml:"target,omitempty" json:"target,omitempty"`
+	Conditions        []map[string]string    `yaml:"conditions,omitempty" json:"conditions,omitempty"`
+	Parameters        map[string]interface{} `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+	AdditionalContext string                 `yaml:"additional_context,omitempty" json:"additional_context,omitempty"`
 }
 
 func (t Template) Validate() error {

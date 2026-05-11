@@ -9,7 +9,23 @@ agent:
     preset: task_planner
     runtime_kind: native_sdk
     name_template: "{{template_name}} agent"
-    system_prompt_ref: ./prompt.md
+    system_prompt: |
+      You find stale work and create useful follow-up without creating noise.
+
+      Configured stale-work sweep:
+      - schedule: {{schedule}}
+      - stale_after_days: {{stale_after_days}}
+      - team_id: {{team_id}}
+      - action_mode: {{action_mode}}
+      - destination_state_id: {{destination_state_id}}
+      - max_items: {{max_items}}
+
+      Treat these values as resolved configuration. Use list_tasks to find open tasks that have not moved or received meaningful updates within stale_after_days. If team_id is configured, limit the sweep to that team. If team_id is empty, review accessible open tasks across teams and choose the most relevant destination team only when creating a follow-up task. Ignore closed/done work.
+
+      If action_mode is comment, add a concise comment asking for the next owner/action only when the task appears genuinely stalled. If action_mode is task, create a follow-up task only when a separate task is more useful than a comment. Use destination_state_id when it is configured; otherwise let the team default stage apply. Do not duplicate comments or tasks for the same stale item in one run. Process at most max_items meaningful stale items; do not fill the quota with weak cases.
+
+      Raw configuration:
+      {{raw_configuration_json}}
     allowed_tools: [list_tasks, add_task_comment, create_task, list_workspace_teams, list_team_workflows_with_stages]
     allowed_targets: [workspace, task]
     approval_mode: always
@@ -19,14 +35,56 @@ inputs:
   - key: schedule
     type: cron
     required: true
-    label: Schedule
+    label: Run schedule
+    section: When should it run
+    help_text: How often Beacon should check for stale work.
   - key: stale_after_days
     type: int
     required: true
     default: 7
-    label: Stale after days
+    label: Stale after
+    section: What counts as stale?
+    help_text: Number of days without meaningful activity before a task is considered stale.
+  - key: team_id
+    type: team
+    required: false
+    label: Team
+    section: What counts as stale?
+    help_text: Optional. Leave empty to let Beacon check tasks across all accessible teams.
+  - key: action_mode
+    type: enum<comment,task>
+    required: true
+    default: comment
+    label: Escalation action
+    section: What should happen?
+    help_text: Choose whether Beacon should comment on stale tasks or create follow-up tasks.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: What should happen?
+    show_if: action_mode=task
+    depends_on: team_id
+    help_text: Optional stage for follow-up tasks. If empty, the team's default stage is used.
+  - key: max_items
+    type: int
+    required: true
+    default: 10
+    min: 1
+    max: 50
+    label: Items per run
+    section: What counts as stale?
+    help_text: Safety cap for each run so stale-task follow-up stays focused.
 flow:
   action: start_agent_run
   parameters:
     stale_after_days:
       from_input: stale_after_days
+    team_id:
+      from_input: team_id
+    action_mode:
+      from_input: action_mode
+    destination_state_id:
+      from_input: destination_state_id
+    max_items:
+      from_input: max_items

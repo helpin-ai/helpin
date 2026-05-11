@@ -9,8 +9,24 @@ agent:
     preset: crm_operator
     runtime_kind: native_sdk
     name_template: "{{template_name}} agent"
-    system_prompt_ref: ./prompt.md
-    allowed_tools: [list_buyer_signals, create_task, add_task_comment, list_workspace_teams, list_team_workflows_with_stages]
+    system_prompt: |
+      You convert high-intent CRM buyer signals into focused sales follow-up work.
+
+      Configured buyer-signal flow:
+      - schedule: {{schedule}}
+      - minimum_confidence: {{minimum_confidence}}
+      - signal_types: {{signal_types}}
+      - destination_team_id: {{destination_team_id}}
+      - destination_state_id: {{destination_state_id}}
+      - max_tasks: {{max_tasks}}
+
+      Treat these values as resolved configuration. Use list_buyer_signals to find new or unresolved signals at or above minimum_confidence and matching signal_types. Buyer signals can mean different things: budget, authority, need, timeline, churn risk, competitor pressure, or direct buying intent. Do not treat every signal as the same generic "ready to buy" event.
+
+      Create one clear follow-up task per account/contact situation, not one task per raw signal when several signals point to the same next action. Include signal evidence, contact/account context, recommended next step, owner/team context when inferable, and urgency. If a matching open task already exists, add a comment only when the new signal materially changes the situation. Stop after max_tasks meaningful tasks; do not fill the quota with weak signals.
+
+      Raw configuration:
+      {{raw_configuration_json}}
+    allowed_tools: [list_buyer_signals, list_tasks, create_task, add_task_comment, list_workspace_teams, list_team_workflows_with_stages]
     allowed_targets: [workspace, task]
     approval_mode: always
 trigger:
@@ -19,14 +35,63 @@ inputs:
   - key: schedule
     type: cron
     required: true
-    label: Schedule
+    label: Run schedule
+    section: When should it run
+    help_text: How often Beacon should review CRM signals and create meaningful follow-up tasks.
   - key: minimum_confidence
     type: int
     required: false
     default: 80
-    label: Minimum confidence
+    label: Minimum signal confidence
+    section: Which signals should become tasks?
+    help_text: Only signals at or above this confidence score are considered for tasks.
+  - key: signal_types
+    type: multi_select
+    required: false
+    default: [buying_intent, budget_signal, authority_signal, need_signal, timeline_signal]
+    label: Signal types to watch
+    section: Which signals should become tasks?
+    help_text: Choose the CRM signal categories that should be eligible for task creation.
+    options:
+      - { value: buying_intent, label: Buying intent }
+      - { value: budget_signal, label: Budget signal }
+      - { value: authority_signal, label: Authority signal }
+      - { value: need_signal, label: Need signal }
+      - { value: timeline_signal, label: Timeline signal }
+      - { value: competitor_mention, label: Competitor mention }
+      - { value: churn_risk, label: Churn risk }
+  - key: destination_team_id
+    type: team
+    required: false
+    label: Team
+    section: Where should tasks be created?
+    help_text: Optional. If empty, Beacon will use the best matching team when possible.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: Where should tasks be created?
+    depends_on: destination_team_id
+    help_text: Optional stage for created tasks. If empty, the team's default stage is used.
+  - key: max_tasks
+    type: int
+    required: true
+    default: 10
+    min: 1
+    max: 50
+    label: Tasks per run
+    section: Which signals should become tasks?
+    help_text: Safety cap for each scheduled run; Beacon should still create only meaningful tasks.
 flow:
   action: start_agent_run
   parameters:
     minimum_confidence:
       from_input: minimum_confidence
+    signal_types:
+      from_input: signal_types
+    destination_team_id:
+      from_input: destination_team_id
+    destination_state_id:
+      from_input: destination_state_id
+    max_tasks:
+      from_input: max_tasks

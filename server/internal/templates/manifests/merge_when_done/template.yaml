@@ -14,16 +14,22 @@ inputs:
     type: workflow
     required: true
     label: Workflow
+    section: What should it watch?
+    help_text: Choose the workflow that contains the done state.
   - key: done_state_id
     type: workflow_state
     required: true
     label: Done state
+    section: What should it watch?
     depends_on: workflow_id
+    help_text: Tasks entering this state will trigger a merge attempt.
   - key: target_branch
     type: branch
     required: true
     default: main
     label: Target branch
+    section: What should happen?
+    help_text: Branch the completed work should merge into.
 flow:
   action: merge_branch
   parameters:

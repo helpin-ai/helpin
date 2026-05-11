@@ -88,6 +88,14 @@ func (u *Uninstaller) Uninstall(ctx context.Context, req UninstallRequest) (*Uni
 			Delete(&model.AutomationRule{}).Error; err != nil {
 			return fmt.Errorf("delete template rule: %w", err)
 		}
+		if err := logTemplateActivity(ctx, tx, workspaceID, rule.ID, actorID, "template.uninstalled", map[string]any{
+			"template_key":         result.TemplateKey,
+			"template_instance_id": instanceID,
+			"agent_id":             result.AgentID,
+			"delete_created_agent": req.DeleteCreatedAgent,
+		}); err != nil {
+			return err
+		}
 
 		if !hasCreatedAgent {
 			return nil

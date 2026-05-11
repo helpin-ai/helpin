@@ -2,16 +2,48 @@ key: security_triage
 version: 1
 name: Security Triage
 icon: shield
-short_description: Runs security scanners and creates tasks for confirmed findings.
+short_description: Runs security scanners and saves a triage report.
 categories: [engineering]
 agent:
   create:
     preset: code_builder
     runtime_kind: native_sdk
     name_template: "{{template_name}} agent"
-    system_prompt_ref: ./prompt.md
-    allowed_tools: [scan_semgrep, scan_trivy, scan_gitleaks, create_task, add_task_comment]
-    allowed_targets: [repository]
+    skills: [security_triage]
+    system_prompt: |
+      You are Sentinel, an autonomous security triage agent for the selected repository.
+
+      Configured security triage:
+      - repository_id: {{repository_id}}
+      - report_space_id: {{report_space_id}}
+      - report_collection_id: {{report_collection_id}}
+      - scanners: {{scanners}}
+      - severity_threshold: {{severity_threshold}}
+      - include_low_info: {{include_low_info}}
+      - create_follow_up_tasks: {{create_follow_up_tasks}}
+      - destination_team_id: {{destination_team_id}}
+      - destination_state_id: {{destination_state_id}}
+      - max_tasks: {{max_tasks}}
+      - schedule: {{schedule}}
+
+      Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
+
+      Run only the configured scanners through the dedicated scanner tools: scan_semgrep, scan_trivy, and scan_gitleaks. Do not run scanner CLIs through run_command. Do not modify files.
+
+      Use scanner pagination and filtering instead of rerunning a scanner when output is compacted. Start scanner analysis with summary_only: true for counts/groups only, then request detail_level: "index" with narrow filters for compact finding rows. Use detail_level: "full" only for narrow follow-up inspection.
+
+      Triage normalized scanner findings against repository code and configuration. Suppress false positives and non-actionable findings. Report applicable findings at or above severity_threshold. If include_low_info is false, exclude low and informational findings from the actionable section.
+
+      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Security triage - <scope/context>`. Use the repository full name, repository name, or scanner scope for `<scope/context>`. Include scanner coverage, confirmed findings grouped by severity/root cause, suppressed false positives, duplicate/open-task notes, and a clear "No actionable security findings" section when clean.
+
+      If create_follow_up_tasks is true, ensure a shared workspace label named security exists with ensure_task_label. Then call list_tasks with the returned security label_id, open_only: true, detail_level: "compact", and limit: 100. Do not filter existing-task lookup by destination_state_id; duplicates must be detected across every open workflow state.
+
+      For task creation, group related findings by fix unit. Put a single-line <!-- sentinel:root_cause=... finding_ids=[...] --> marker at the top of every created task description, capped to roughly 300 characters. Create at most max_tasks new remediation tasks with create_task. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply. Attach the security label to every created task with label_ids.
+
+      Raw configuration:
+      {{raw_configuration_json}}
+    allowed_tools: [update_plan, list_directory, read_file, read_files, read_file_range, search_files, ripgrep, grep, run_command, scan_semgrep, scan_trivy, scan_gitleaks, web_search_exa, create_document, write_document_content, link_document_to_object, ensure_task_label, list_tasks, create_task, add_task_comment]
+    allowed_targets: [repository, document]
     approval_mode: always
 trigger:
   type: cron
@@ -20,11 +52,104 @@ inputs:
     type: repository
     required: true
     label: Repository
+    section: What should it scan?
+    help_text: The repository Quill should inspect for security findings.
   - key: schedule
     type: cron
     required: true
-    label: Schedule
+    label: Run schedule
+    section: When should it run
+    help_text: How often Quill should create a security triage report.
+  - key: report_space_id
+    type: space
+    required: true
+    label: Docs space
+    section: Where should the report be saved?
+    help_text: Security triage reports are saved as internal Docs documents in this space.
+  - key: report_collection_id
+    type: collection
+    required: true
+    label: Docs collection
+    section: Where should the report be saved?
+    depends_on: report_space_id
+    help_text: The collection where security triage reports will be created.
+  - key: scanners
+    type: multi_select
+    required: true
+    default: [semgrep, trivy, gitleaks]
+    label: Security scanners
+    section: What should it scan?
+    help_text: Select the scanner outputs or finding types Quill should include.
+    options:
+      - { value: semgrep, label: Semgrep }
+      - { value: trivy, label: Trivy }
+      - { value: gitleaks, label: Gitleaks }
+  - key: severity_threshold
+    type: enum<critical,high,medium>
+    required: true
+    default: medium
+    label: Severity threshold
+    section: What should it scan?
+    help_text: Findings below this severity are excluded unless low/info findings are enabled.
+  - key: include_low_info
+    type: bool
+    required: false
+    default: false
+    label: Also include low/info findings
+    section: What should it scan?
+    help_text: Turn on for a broader report; keep off for focused remediation work.
+  - key: create_follow_up_tasks
+    type: bool
+    required: false
+    default: false
+    label: Create remediation tasks
+    section: Should it create follow-up tasks?
+    help_text: Off by default. The report still lists confirmed remediation work.
+  - key: destination_team_id
+    type: team
+    required: false
+    label: Team
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Optional destination for tasks created from confirmed security fixes.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    depends_on: destination_team_id
+    help_text: Optional stage for remediation tasks. If empty, the team's default stage is used.
+  - key: max_tasks
+    type: int
+    required: false
+    default: 20
+    min: 1
+    max: 100
+    label: Remediation tasks per run
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Safety cap for task creation. The report still includes all confirmed findings.
 flow:
   action: start_agent_run
   target:
     from_input: repository_id
+  parameters:
+    scanners:
+      from_input: scanners
+    report_space_id:
+      from_input: report_space_id
+    report_collection_id:
+      from_input: report_collection_id
+    severity_threshold:
+      from_input: severity_threshold
+    include_low_info:
+      from_input: include_low_info
+    create_follow_up_tasks:
+      from_input: create_follow_up_tasks
+    max_tasks:
+      from_input: max_tasks
+    destination_team_id:
+      from_input: destination_team_id
+    destination_state_id:
+      from_input: destination_state_id

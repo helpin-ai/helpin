@@ -213,8 +213,10 @@ func (h *AutomationHandler) GetFlowTemplate(w http.ResponseWriter, r *http.Reque
 }
 
 type installFlowTemplateRequest struct {
-	Name   string         `json:"name"`
-	Inputs map[string]any `json:"inputs"`
+	Name           string                                  `json:"name"`
+	AgentName      string                                  `json:"agent_name,omitempty"`
+	Inputs         map[string]any                          `json:"inputs"`
+	AgentOverrides *model.CreateAgentFromTemplateOverrides `json:"agent_overrides,omitempty"`
 }
 
 // InstallFlowTemplate handles POST /api/automation/templates/{key}/install.
@@ -236,11 +238,13 @@ func (h *AutomationHandler) InstallFlowTemplate(w http.ResponseWriter, r *http.R
 		return
 	}
 	result, err := h.templateInstaller.Install(r.Context(), flowtemplates.InstallRequest{
-		WorkspaceID: workspaceID,
-		TemplateKey: templateKey,
-		ActorID:     middleware.GetUserID(r.Context()),
-		Name:        req.Name,
-		Inputs:      req.Inputs,
+		WorkspaceID:    workspaceID,
+		TemplateKey:    templateKey,
+		ActorID:        middleware.GetUserID(r.Context()),
+		Name:           req.Name,
+		AgentName:      req.AgentName,
+		Inputs:         req.Inputs,
+		AgentOverrides: req.AgentOverrides,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

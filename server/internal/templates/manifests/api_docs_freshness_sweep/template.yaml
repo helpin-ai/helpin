@@ -1,0 +1,151 @@
+key: api_docs_freshness_sweep
+version: 1
+name: API docs freshness sweep
+icon: file-text
+short_description: Verifies API docs against source code and saves an accuracy report.
+categories: [docs, engineering]
+agent:
+  reuse_system: documentation_agent
+trigger:
+  type: cron
+inputs:
+  - key: schedule
+    type: cron
+    required: true
+    label: Run schedule
+    section: When should it run
+    help_text: How often Quill should check API docs for drift.
+  - key: docs_scope
+    type: enum<space,collection>
+    required: true
+    default: space
+    label: API docs area
+    section: What should it review?
+    help_text: Review a whole API docs space or limit the sweep to one collection.
+    options:
+      - { value: space, label: Entire API docs space }
+      - { value: collection, label: One API docs collection }
+  - key: space_id
+    type: space
+    required: true
+    label: Docs space
+    section: What should it review?
+    space_type: any
+    show_if: docs_scope=space|collection
+    help_text: The Docs space containing API docs Quill should verify.
+  - key: collection_id
+    type: collection
+    required: false
+    label: Docs collection
+    section: What should it review?
+    show_if: docs_scope=collection
+    depends_on: space_id
+    help_text: Limit the sweep to one API docs collection.
+  - key: source_repository_id
+    type: repository
+    required: true
+    label: Repository
+    section: What should it review?
+    help_text: Required. Quill uses this repository as the source of truth for endpoints, schemas, auth, errors, limits, and examples.
+  - key: report_space_id
+    type: space
+    required: true
+    label: Docs space
+    section: Where should the report be saved?
+    space_type: internal
+    help_text: Internal Docs space where API docs accuracy reports will be saved.
+  - key: report_collection_id
+    type: collection
+    required: true
+    label: Docs collection
+    section: Where should the report be saved?
+    depends_on: report_space_id
+    help_text: Internal collection where Quill should create each API docs freshness report.
+  - key: create_follow_up_tasks
+    type: bool
+    required: false
+    default: false
+    label: Create tasks for high-confidence fixes
+    section: Should it create follow-up tasks?
+    help_text: Off by default. The report still includes prioritized API docs recommendations.
+  - key: destination_team_id
+    type: team
+    required: false
+    label: Team
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Team for optional tasks Quill creates from concrete, high-confidence API docs fixes.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    depends_on: destination_team_id
+    help_text: Optional stage for follow-up tasks. If empty, the team's default stage is used.
+flow:
+  action: start_agent_run
+  target:
+    from_input: source_repository_id
+  additional_context: |
+    Run an API docs freshness sweep with Quill.
+
+    Review scope:
+    - docs_scope: {{docs_scope}}
+    - space_id: {{space_id}}
+    - collection_id: {{collection_id}}
+    - source_repository_id: {{source_repository_id}}
+
+    Report destination:
+    - report_space_id: {{report_space_id}}
+    - report_collection_id: {{report_collection_id}}
+
+    Follow-up tasks:
+    - create_follow_up_tasks: {{create_follow_up_tasks}}
+    - destination_team_id: {{destination_team_id}}
+    - destination_state_id: {{destination_state_id}}
+
+    Review the selected API docs against the configured source repository. Focus on real API accuracy: endpoint existence, paths, methods, request and response schemas, auth requirements, permissions, pagination, filtering, rate limits, webhooks, error codes, SDK or curl examples, versioning, deprecations, and release drift.
+
+    Source verification:
+    - Use read-only repository inspection as the source of truth. Look for route definitions, handlers/controllers, OpenAPI specs, schema/types, validation logic, auth middleware, SDK examples, tests, and error handling.
+    - Separate confirmed mismatches from uncertain findings. Do not claim an API docs issue is confirmed unless the repository evidence supports it.
+
+    Always create a new API docs freshness report in the configured internal Docs report space and collection. Use this title format: `YYYY-MM-DD - API docs freshness sweep - <scope/context>`. Use the selected collection name, selected API docs space name, repository name, or another concise scope label for `<scope/context>`. The report should include:
+    - Scope reviewed and repository/source evidence used.
+    - Confirmed API docs mismatches grouped by severity.
+    - Missing endpoint docs, stale schemas, incorrect examples, auth/error/limit gaps, and version/deprecation issues.
+    - Unverified or ambiguous areas that need owner review.
+    - Suggested doc updates or new API docs, with evidence and likely owner/team when inferable.
+    - A clear "No actionable API docs issues found" section when the sweep is clean.
+
+    Prefer document change proposals for edits to existing API docs. Do not directly rewrite existing API docs unless explicitly instructed. New internal report documents may be created directly.
+
+    If create_follow_up_tasks is true, create PM tasks only for confirmed, high-confidence API docs fixes that need human execution. Use destination_team_id when present. Use destination_state_id when configured; otherwise let the team default stage apply. Combine related endpoint/schema fixes into one task when they share a root cause. Do not create tasks for uncertain findings; keep those in the report.
+
+    Do not sweep outside the configured review scope.
+
+    Additional user instructions:
+    {{additional_instructions}}
+
+    Raw configuration:
+    {{raw_configuration_json}}
+  parameters:
+    docs_scope:
+      from_input: docs_scope
+    space_id:
+      from_input: space_id
+    collection_id:
+      from_input: collection_id
+    source_repository_id:
+      from_input: source_repository_id
+    report_space_id:
+      from_input: report_space_id
+    report_collection_id:
+      from_input: report_collection_id
+    create_follow_up_tasks:
+      from_input: create_follow_up_tasks
+    destination_team_id:
+      from_input: destination_team_id
+    destination_state_id:
+      from_input: destination_state_id

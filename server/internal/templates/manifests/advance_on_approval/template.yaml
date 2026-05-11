@@ -14,16 +14,22 @@ inputs:
     type: workflow
     required: true
     label: Workflow
+    section: What should it watch?
+    help_text: Choose the workflow that contains the approval and destination states.
   - key: from_state_id
     type: workflow_state
     required: true
-    label: Approved from
+    label: Approval state
+    section: What should it watch?
     depends_on: workflow_id
+    help_text: Tasks entering this state will be treated as approved.
   - key: to_state_id
     type: workflow_state
     required: true
-    label: Move to
+    label: Destination state
+    section: Where should tasks move?
     depends_on: workflow_id
+    help_text: The state approved tasks should move to automatically.
 flow:
   action: move_to_state
   parameters:

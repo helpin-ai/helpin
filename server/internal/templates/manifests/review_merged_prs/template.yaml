@@ -2,16 +2,40 @@ key: review_merged_prs
 version: 1
 name: Review merged PRs
 icon: git-pull-request
-short_description: Reviews merged pull requests and creates PM follow-up tasks for issues.
+short_description: Reviews merged pull requests and saves an internal review report.
 categories: [engineering]
 agent:
   create:
     preset: review_agent
     runtime_kind: native_sdk
     name_template: "{{template_name}} agent"
-    system_prompt_ref: ./prompt.md
-    allowed_tools: [get_pull_request_diff, find_tasks_for_git_changes, create_task, add_task_comment]
-    allowed_targets: [repository]
+    system_prompt: |
+      You review merged pull requests for the selected repository and save a concise internal Docs report.
+
+      Configured PR review:
+      - repository_id: {{repository_id}}
+      - base_branch: {{base_branch}}
+      - report_space_id: {{report_space_id}}
+      - report_collection_id: {{report_collection_id}}
+      - destination_team_id: {{destination_team_id}}
+      - destination_state_id: {{destination_state_id}}
+      - create_follow_up_tasks: {{create_follow_up_tasks}}
+
+      Treat these values as resolved configuration. Review the merged PR diff and linked tasks rigorously. Look for real bugs, edge cases, regressions, risky migrations, missing tests, missing docs, security or data-loss risks, and concrete follow-up work that should not block the merge but should be tracked.
+
+      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Merged PR review - <scope/context>`. Use the repository full name, repository name, or selected base branch for `<scope/context>`. The report should include:
+      - PR summary and files or areas reviewed.
+      - Important findings, grouped by severity.
+      - Missing tests or docs.
+      - Suggested follow-ups, with evidence from PR files, linked tasks, and the diff.
+      - A clear "No actionable issues found" section when the review is clean.
+
+      If create_follow_up_tasks is true, create PM tasks only for high-confidence issues that are concrete and actionable. Use destination_team_id when present; otherwise use the linked task's team if available. Use destination_state_id when it is configured; otherwise let the team default stage apply. Combine related issues into one task when they share a root cause. Do not create generic "review this PR" tasks, style-only tasks, or speculative cleanup.
+
+      Raw configuration:
+      {{raw_configuration_json}}
+    allowed_tools: [get_pull_request_diff, find_tasks_for_git_changes, create_document, write_document_content, link_document_to_object, create_task, add_task_comment]
+    allowed_targets: [repository, document]
     approval_mode: always
 trigger:
   type: event
@@ -21,11 +45,50 @@ inputs:
     type: repository
     required: true
     label: Repository
+    section: What should it review?
+    help_text: The repository whose merged pull requests should be reviewed.
   - key: base_branch
     type: branch
     required: true
     default: main
-    label: Base branch
+    label: Branch
+    section: What should it review?
+    help_text: Only PRs merged into this branch start the review.
+  - key: report_space_id
+    type: space
+    required: true
+    label: Docs space
+    section: Where should the report be saved?
+    help_text: Reports are saved as internal Docs documents in this space.
+  - key: report_collection_id
+    type: collection
+    required: true
+    label: Docs collection
+    section: Where should the report be saved?
+    depends_on: report_space_id
+    help_text: The collection where PR review reports will be created.
+  - key: create_follow_up_tasks
+    type: bool
+    required: false
+    default: false
+    label: Create tasks for high-confidence issues
+    section: Should it create follow-up tasks?
+    help_text: Off by default to avoid noisy PM work. Reports still include suggested follow-ups.
+  - key: destination_team_id
+    type: team
+    required: false
+    label: Team
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Optional destination for tasks the agent creates for concrete, high-confidence issues.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    depends_on: destination_team_id
+    help_text: Optional stage for follow-up tasks. If empty, the team's default stage is used.
 flow:
   action: start_agent_run
   target:
@@ -33,3 +96,13 @@ flow:
   parameters:
     base_branch:
       from_input: base_branch
+    report_space_id:
+      from_input: report_space_id
+    report_collection_id:
+      from_input: report_collection_id
+    destination_team_id:
+      from_input: destination_team_id
+    destination_state_id:
+      from_input: destination_state_id
+    create_follow_up_tasks:
+      from_input: create_follow_up_tasks

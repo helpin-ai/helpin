@@ -36,6 +36,9 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			trigger_config TEXT NOT NULL DEFAULT '{}',
 			action_type TEXT NOT NULL,
 			action_config TEXT NOT NULL DEFAULT '{}',
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			position INTEGER NOT NULL DEFAULT 0,
 			stop_on_match BOOLEAN NOT NULL DEFAULT 0,
 			created_by TEXT,
@@ -186,6 +189,10 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 		name TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'idle',
 		runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
+		source_template_key TEXT NOT NULL DEFAULT '',
+		template_key TEXT,
+		template_instance_id TEXT,
+		template_version INTEGER,
 		trigger_mode TEXT NOT NULL DEFAULT 'manual',
 		approval_mode TEXT NOT NULL DEFAULT 'class_default',
 		is_system BOOLEAN NOT NULL DEFAULT 0,
@@ -223,6 +230,28 @@ func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
 	}
 	if updated == nil || updated.Enabled {
 		t.Fatalf("expected missing-agent cron rule to be disabled, got %#v", updated)
+	}
+}
+
+func TestGitHubRunEventContextIncludesPullRequest(t *testing.T) {
+	event := model.AutomationEvent{
+		TriggerType:       model.TriggerGitHubPRMerged,
+		RepoFullName:      "acme/api",
+		RepositoryID:      "repo-1",
+		Branch:            "feature/review",
+		BaseBranch:        "main",
+		PullRequestNumber: 42,
+	}
+
+	got := githubRunEventContext(event)
+	if got.EventType != "pull_request_merged" || got.RepoFullName != "acme/api" || got.RepositoryID != "repo-1" {
+		t.Fatalf("github context = %#v", got)
+	}
+	if got.PullRequest == nil {
+		t.Fatal("expected pull request context")
+	}
+	if got.PullRequest.Number != 42 || got.PullRequest.BaseBranch != "main" || got.PullRequest.HeadBranch != "feature/review" {
+		t.Fatalf("pull request context = %#v", got.PullRequest)
 	}
 }
 

@@ -26,6 +26,7 @@ import {
   SecurityCheckIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -64,7 +65,6 @@ import type {
   GitRepository,
   UpdateWorkspaceAgentPresetVersionRequest,
   SkillCatalogResponse,
-  ToolCatalogEntry,
   ToolCatalogResponse,
   UpdateAgentRequest,
   WorkflowWithStates,
@@ -1137,108 +1137,6 @@ function DrawerConfigSection({
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
-  );
-}
-
-function ToolMultiSelectPopover({
-  open,
-  onOpenChange,
-  tools,
-  selectedTools,
-  disabled,
-  onToggleTool,
-  onClearTools,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  tools: ToolCatalogEntry[];
-  selectedTools: string[];
-  disabled?: boolean;
-  onToggleTool: (toolName: string) => void;
-  onClearTools: () => void;
-}) {
-  const selectedSet = new Set(selectedTools);
-
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 px-2 text-[11px]"
-          disabled={tools.length === 0 || disabled}
-        >
-          <PlusSignIcon className="h-3.5 w-3.5" />
-          Select tools
-          {selectedTools.length > 0 && (
-            <span className="rounded-full bg-muted px-1.5 py-0 text-[10px] text-muted-foreground">
-              {selectedTools.length}
-            </span>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-[28rem] overflow-hidden p-0"
-        onWheelCapture={(event) => event.stopPropagation()}
-      >
-        <Command>
-          <CommandInput placeholder="Search tools..." />
-          <CommandList className="max-h-72 overscroll-contain">
-            <CommandEmpty>
-              {tools.length === 0 ? 'Tool catalog unavailable.' : 'No tools match.'}
-            </CommandEmpty>
-            <CommandGroup heading={`${selectedTools.length} selected`}>
-              {tools.map((tool) => {
-                const selected = selectedSet.has(tool.name);
-                return (
-                  <CommandItem
-                    key={tool.name}
-                    value={`${tool.name} ${tool.category} ${tool.description}`}
-                    onSelect={() => onToggleTool(tool.name)}
-                    data-checked={selected ? 'true' : undefined}
-                    aria-label={`${selected ? 'Remove' : 'Add'} ${tool.name}`}
-                    className="cursor-pointer items-start py-2"
-                  >
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-foreground">{tool.name}</span>
-                        <Badge variant="outline" className="text-[10px]">
-                          {tool.category}
-                        </Badge>
-                      </div>
-                      <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
-                    </div>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-        <div className="flex items-center justify-between border-t border-border/60 px-2 py-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-[11px] text-muted-foreground"
-            onClick={onClearTools}
-            disabled={selectedTools.length === 0}
-          >
-            Clear
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            onClick={() => onOpenChange(false)}
-          >
-            Done
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -3166,12 +3064,6 @@ export function AgentsPage() {
       allowed_tools: current.allowed_tools.filter((tool) => tool !== toolName),
     }));
   };
-  const clearTools = () => {
-    setForm((current) => ({
-      ...current,
-      allowed_tools: [],
-    }));
-  };
   const skillCatalogEntries = skillCatalog?.skills ?? [];
   const attachedSkillKeys = new Set(form.skills.map((s) => s.key));
   const availableSkillEntries = skillCatalogEntries.filter((s) => !attachedSkillKeys.has(s.key));
@@ -4101,7 +3993,6 @@ export function AgentsPage() {
                             selectedTools={form.allowed_tools}
                             disabled={codexUsesPresetCapabilities || systemVersionReadOnly}
                             onToggleTool={toggleTool}
-                            onClearTools={clearTools}
                           />
                       </div>
                       {form.allowed_tools.length > 0 ? (
@@ -5917,7 +5808,6 @@ export function AgentsPage() {
                         selectedTools={form.allowed_tools}
                         disabled={codexUsesPresetCapabilities}
                         onToggleTool={toggleTool}
-                        onClearTools={clearTools}
                       />
                     </div>
                     <p className="text-[11px] leading-relaxed text-muted-foreground">

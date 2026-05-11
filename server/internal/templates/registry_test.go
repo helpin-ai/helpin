@@ -147,11 +147,13 @@ func TestEmbeddedSystemRegistryLoads(t *testing.T) {
 	}
 	want := []string{
 		"advance_on_approval",
+		"api_docs_freshness_sweep",
 		"buying_signal_to_task",
 		"competitive_intelligence_digest",
 		"dependency_auditor",
 		"docs_freshness_sweep",
 		"merge_when_done",
+		"public_help_freshness_sweep",
 		"release_notes_writer",
 		"review_merged_prs",
 		"run_on_a_schedule",
@@ -162,6 +164,69 @@ func TestEmbeddedSystemRegistryLoads(t *testing.T) {
 	}
 	if got := keysOf(registry.List()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("system registry keys = %#v, want %#v", got, want)
+	}
+}
+
+func TestEmbeddedReportTemplatesUseStandardTitlePattern(t *testing.T) {
+	registry, err := LoadSystemRegistry()
+	if err != nil {
+		t.Fatalf("LoadSystemRegistry returned error: %v", err)
+	}
+	reportTemplates := []string{
+		"api_docs_freshness_sweep",
+		"competitive_intelligence_digest",
+		"dependency_auditor",
+		"docs_freshness_sweep",
+		"public_help_freshness_sweep",
+		"review_merged_prs",
+		"security_triage",
+		"triage_failing_checks",
+	}
+	for _, key := range reportTemplates {
+		t.Run(key, func(t *testing.T) {
+			tmpl, ok := registry.Get(key)
+			if !ok {
+				t.Fatalf("template %q not found", key)
+			}
+			prompt := strings.TrimSpace(tmpl.Flow.AdditionalContext)
+			if prompt == "" && tmpl.Agent.Create != nil {
+				prompt = strings.TrimSpace(tmpl.Agent.Create.SystemPrompt)
+			}
+			if !strings.Contains(prompt, "Use this title format: `YYYY-MM-DD - ") {
+				t.Fatalf("template %q missing standard report title format in prompt:\n%s", key, prompt)
+			}
+		})
+	}
+}
+
+func TestReleaseNotesWriterExplainsPrereleaseOption(t *testing.T) {
+	registry, err := LoadSystemRegistry()
+	if err != nil {
+		t.Fatalf("LoadSystemRegistry returned error: %v", err)
+	}
+	tmpl, ok := registry.Get("release_notes_writer")
+	if !ok {
+		t.Fatal("release_notes_writer template not found")
+	}
+
+	var prereleaseInput *Input
+	for i := range tmpl.Inputs {
+		if tmpl.Inputs[i].Key == "include_prerelease" {
+			prereleaseInput = &tmpl.Inputs[i]
+			break
+		}
+	}
+	if prereleaseInput == nil {
+		t.Fatal("include_prerelease input not found")
+	}
+	if prereleaseInput.Label != "Also run for prereleases" {
+		t.Fatalf("include_prerelease label = %q, want clear prerelease wording", prereleaseInput.Label)
+	}
+	if !strings.Contains(prereleaseInput.HelpText, "normal GitHub releases") || !strings.Contains(prereleaseInput.HelpText, "beta, RC, or preview") {
+		t.Fatalf("include_prerelease help_text = %q, want normal release and prerelease examples", prereleaseInput.HelpText)
+	}
+	if !strings.Contains(tmpl.Agent.Create.SystemPrompt, "If include_prerelease is false") {
+		t.Fatalf("release notes writer prompt does not explain include_prerelease behavior:\n%s", tmpl.Agent.Create.SystemPrompt)
 	}
 }
 

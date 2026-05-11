@@ -6,11 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
 )
+
+var templatePlaceholderPattern = regexp.MustCompile(`\{\{[a-zA-Z0-9_]+\}\}`)
 
 type Installer struct {
 	db       *gorm.DB
@@ -18,11 +22,13 @@ type Installer struct {
 }
 
 type InstallRequest struct {
-	WorkspaceID string
-	TemplateKey string
-	ActorID     string
-	Name        string
-	Inputs      map[string]any
+	WorkspaceID    string
+	TemplateKey    string
+	ActorID        string
+	Name           string
+	AgentName      string
+	Inputs         map[string]any
+	AgentOverrides *model.CreateAgentFromTemplateOverrides
 }
 
 type InstallResult struct {
@@ -63,29 +69,51 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 	var result InstallResult
 	err := i.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result.Template = tmpl
-		agent, err := i.resolveAgent(ctx, tx, tmpl, workspaceID, instanceID, templateVersion, req.Inputs)
+		agent, err := i.resolveAgent(ctx, tx, tmpl, workspaceID, instanceID, templateVersion, req.AgentName, req.Inputs, req.AgentOverrides)
 		if err != nil {
 			return err
 		}
 		result.Agent = agent
 
-		rule, err := buildRule(tmpl, workspaceID, actorID, templateName, instanceID, templateVersion, req.Inputs, agent)
+		rule, err := buildRule(ctx, tx, tmpl, workspaceID, actorID, templateName, instanceID, templateVersion, req.Inputs, agent)
 		if err != nil {
 			return err
 		}
 		if err := tx.Create(rule).Error; err != nil {
 			return fmt.Errorf("create automation rule: %w", err)
 		}
+		if err := logTemplateActivity(ctx, tx, workspaceID, rule.ID, actorID, "template.installed", map[string]any{
+			"template_key":         tmpl.Key,
+			"template_instance_id": instanceID,
+			"template_version":     templateVersion,
+			"agent_id":             agentIDForActivity(agent),
+		}); err != nil {
+			return err
+		}
 		result.Rule = rule
 		return nil
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "failed to install flow template",
+			"error", err,
+			"template_key", templateKey,
+			"workspace_id", workspaceID,
+			"actor_id", actorID,
+		)
 		return nil, err
 	}
+	slog.InfoContext(ctx, "flow template installed",
+		"template_key", result.Template.Key,
+		"template_instance_id", derefString(result.Rule.TemplateInstanceID),
+		"workspace_id", workspaceID,
+		"actor_id", actorID,
+		"rule_id", result.Rule.ID,
+		"agent_id", agentIDForActivity(result.Agent),
+	)
 	return &result, nil
 }
 
-func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, instanceID string, templateVersion int, inputs map[string]any) (*model.Agent, error) {
+func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, instanceID string, templateVersion int, agentName string, inputs map[string]any, overrides *model.CreateAgentFromTemplateOverrides) (*model.Agent, error) {
 	mode, err := tmpl.Agent.mode()
 	if err != nil {
 		return nil, err
@@ -126,18 +154,23 @@ func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template
 		}
 		return &agent, nil
 	case "create":
+		name := renderNameTemplate(tmpl.Agent.Create.NameTemplate, tmpl.Name)
+		if override := strings.TrimSpace(agentName); override != "" {
+			name = override
+		}
 		agent := &model.Agent{
 			ID:                    newTemplateInstanceID(),
 			WorkspaceID:           workspaceID,
 			IsSystem:              false,
-			Name:                  renderNameTemplate(tmpl.Agent.Create.NameTemplate, tmpl.Name),
+			Name:                  name,
 			PresetKey:             strings.TrimSpace(tmpl.Agent.Create.Preset),
 			Role:                  tmpl.Name,
 			Status:                "idle",
 			RuntimeKind:           firstNonEmpty(tmpl.Agent.Create.RuntimeKind, model.AgentTemplateRuntimeKindNativeSDK),
-			Skills:                model.AgentSkillRefs{},
+			Skills:                templateSkillRefs(tmpl.Agent.Create.Skills),
 			TriggerMode:           "manual",
 			ExecutionConfig:       model.JSONBlob(`{}`),
+			SystemPrompt:          strPtr(defaultTemplateSystemPrompt(tmpl, inputs)),
 			AllowedTools:          mustJSON(tmpl.Agent.Create.AllowedTools),
 			AllowedCommands:       json.RawMessage(`[]`),
 			AllowedTargets:        mustJSON(tmpl.Agent.Create.AllowedTargets),
@@ -148,6 +181,7 @@ func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template
 			TemplateInstanceID:    strPtr(instanceID),
 			TemplateVersion:       &templateVersion,
 		}
+		applyTemplateAgentOverrides(agent, overrides)
 		if err := tx.WithContext(ctx).Create(agent).Error; err != nil {
 			return nil, fmt.Errorf("create template agent: %w", err)
 		}
@@ -157,8 +191,8 @@ func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template
 	}
 }
 
-func buildRule(tmpl Template, workspaceID, actorID, name, instanceID string, templateVersion int, inputs map[string]any, agent *model.Agent) (*model.AutomationRule, error) {
-	triggerConfig, err := buildTriggerConfig(tmpl, inputs)
+func buildRule(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, actorID, name, instanceID string, templateVersion int, inputs map[string]any, agent *model.Agent) (*model.AutomationRule, error) {
+	triggerConfig, err := buildTriggerConfig(ctx, tx, tmpl, workspaceID, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +221,7 @@ func buildRule(tmpl Template, workspaceID, actorID, name, instanceID string, tem
 	}, nil
 }
 
-func buildTriggerConfig(tmpl Template, inputs map[string]any) (json.RawMessage, error) {
+func buildTriggerConfig(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID string, inputs map[string]any) (json.RawMessage, error) {
 	if tmpl.Trigger.Type == model.TriggerCron {
 		schedule := stringInput(inputs, "schedule")
 		if schedule == "" {
@@ -196,6 +230,11 @@ func buildTriggerConfig(tmpl Template, inputs map[string]any) (json.RawMessage, 
 		return json.Marshal(map[string]string{"schedule": schedule})
 	}
 	cfg := map[string]any{}
+	if repoFullName, err := triggerRepoFullName(ctx, tx, tmpl, workspaceID, inputs); err != nil {
+		return nil, err
+	} else if repoFullName != "" {
+		cfg["repo_full_name"] = repoFullName
+	}
 	switch tmpl.Trigger.Event {
 	case model.TriggerTaskStateEntered:
 		if stateID := firstNonEmpty(stringInput(inputs, "done_state_id"), stringInput(inputs, "from_state_id")); stateID != "" {
@@ -224,6 +263,42 @@ func buildTriggerConfig(tmpl Template, inputs map[string]any) (json.RawMessage, 
 	return json.Marshal(cfg)
 }
 
+func triggerRepoFullName(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID string, inputs map[string]any) (string, error) {
+	switch strings.TrimSpace(tmpl.Trigger.Event) {
+	case model.TriggerGitHubPush,
+		model.TriggerGitHubPROpened,
+		model.TriggerGitHubPRMerged,
+		model.TriggerGitHubPRClosed,
+		model.TriggerGitHubPRReviewReq,
+		model.TriggerGitHubReleasePub,
+		model.TriggerGitHubCheckSuite:
+	default:
+		return "", nil
+	}
+	if repoFullName := stringInput(inputs, "repo_full_name"); repoFullName != "" {
+		return repoFullName, nil
+	}
+	repositoryID := stringInput(inputs, "repository_id")
+	if repositoryID == "" {
+		return "", nil
+	}
+	var repo model.GitRepository
+	err := tx.WithContext(ctx).
+		Select("full_name").
+		Where("id = ? AND workspace_id = ?", repositoryID, workspaceID).
+		First(&repo).Error
+	if err == gorm.ErrRecordNotFound {
+		return "", fmt.Errorf("repository %q not found", repositoryID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("load repository: %w", err)
+	}
+	if strings.TrimSpace(repo.FullName) == "" {
+		return "", fmt.Errorf("repository %q has no full name", repositoryID)
+	}
+	return strings.TrimSpace(repo.FullName), nil
+}
+
 func buildActionConfig(tmpl Template, inputs map[string]any, agent *model.Agent) (json.RawMessage, error) {
 	switch tmpl.Flow.Action {
 	case model.ActionStartAgentRun:
@@ -239,6 +314,9 @@ func buildActionConfig(tmpl Template, inputs map[string]any, agent *model.Agent)
 			}
 		}
 		copyFlowParameters(cfg, tmpl, inputs)
+		if additionalContext := strings.TrimSpace(tmpl.Flow.AdditionalContext); additionalContext != "" {
+			cfg["additional_context"] = renderTemplateText(additionalContext, inputs)
+		}
 		return json.Marshal(cfg)
 	case model.ActionMoveToState:
 		return json.Marshal(map[string]string{"target_state_id": resolveParameterInput(tmpl, inputs, "target_state_id")})
@@ -280,6 +358,136 @@ func validatePickedAgent(constraints PickExistingConstraints, agent *model.Agent
 		}
 	}
 	return nil
+}
+
+func applyTemplateAgentOverrides(agent *model.Agent, overrides *model.CreateAgentFromTemplateOverrides) {
+	if agent == nil || overrides == nil {
+		return
+	}
+	if overrides.Role != nil {
+		if value := strings.TrimSpace(*overrides.Role); value != "" {
+			agent.Role = value
+		}
+	}
+	if overrides.RuntimeKind != nil {
+		if value := strings.TrimSpace(*overrides.RuntimeKind); value != "" {
+			agent.RuntimeKind = value
+		}
+	}
+	if overrides.Skills != nil {
+		agent.Skills = overrides.Skills.Normalize()
+	}
+	if overrides.Provider != nil {
+		agent.Provider = trimPtr(overrides.Provider)
+	}
+	if overrides.Model != nil {
+		agent.Model = trimPtr(overrides.Model)
+	}
+	if overrides.MonthlyTokenBudget != nil {
+		if *overrides.MonthlyTokenBudget > 0 {
+			agent.MonthlyTokenBudget = overrides.MonthlyTokenBudget
+		} else {
+			agent.MonthlyTokenBudget = nil
+		}
+	}
+	if len(overrides.ExecutionConfig) > 0 {
+		agent.ExecutionConfig = overrides.ExecutionConfig
+	}
+	if overrides.SystemPrompt != nil {
+		agent.SystemPrompt = trimPtr(overrides.SystemPrompt)
+	}
+	if overrides.PlanningNotes != nil {
+		agent.PlanningNotes = trimPtr(overrides.PlanningNotes)
+	}
+	if len(overrides.AllowedTools) > 0 {
+		agent.AllowedTools = json.RawMessage(overrides.AllowedTools)
+	}
+	if len(overrides.AllowedCommands) > 0 {
+		agent.AllowedCommands = json.RawMessage(overrides.AllowedCommands)
+	}
+	if len(overrides.AllowedTargets) > 0 {
+		agent.AllowedTargets = json.RawMessage(overrides.AllowedTargets)
+	}
+	if overrides.ApprovalMode != nil {
+		if value := strings.TrimSpace(*overrides.ApprovalMode); value != "" {
+			agent.ApprovalMode = value
+		}
+	}
+	if overrides.MaxConcurrentRuns != nil && *overrides.MaxConcurrentRuns > 0 {
+		agent.MaxConcurrentRuns = *overrides.MaxConcurrentRuns
+	}
+	if overrides.DefaultInvocationMode != nil {
+		if value := strings.TrimSpace(*overrides.DefaultInvocationMode); value != "" {
+			agent.DefaultInvocationMode = value
+		}
+	}
+}
+
+func defaultTemplateSystemPrompt(tmpl Template, inputs map[string]any) string {
+	if tmpl.Agent.Create != nil {
+		if prompt := strings.TrimSpace(tmpl.Agent.Create.SystemPrompt); prompt != "" {
+			return renderTemplateText(prompt, inputs)
+		}
+	}
+	lines := []string{
+		fmt.Sprintf("You are running the %s flow template.", strings.TrimSpace(tmpl.Name)),
+		"Use the configured flow inputs as resolved product context. Do not ask the user to provide these values again.",
+	}
+	if len(inputs) > 0 {
+		if payload, err := json.MarshalIndent(inputs, "", "  "); err == nil {
+			lines = append(lines, "", "Configured inputs:", "```json", string(payload), "```")
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func renderTemplateText(text string, inputs map[string]any) string {
+	payload, err := json.MarshalIndent(inputs, "", "  ")
+	rawJSON := "{}"
+	if err == nil {
+		rawJSON = string(payload)
+	}
+	replacerArgs := []string{"{{raw_configuration_json}}", "```json\n" + rawJSON + "\n```"}
+	for key, value := range inputs {
+		replacerArgs = append(replacerArgs, "{{"+key+"}}", inputLabelValue(value))
+	}
+	rendered := strings.NewReplacer(replacerArgs...).Replace(text)
+	rendered = templatePlaceholderPattern.ReplaceAllString(rendered, "")
+	return strings.TrimSpace(rendered)
+}
+
+func inputLabelValue(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case []string:
+		return strings.Join(typed, ", ")
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, ", ")
+	case bool:
+		if typed {
+			return "true"
+		}
+		return "false"
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+}
+
+func templateSkillRefs(keys []string) model.AgentSkillRefs {
+	refs := make(model.AgentSkillRefs, 0, len(keys))
+	for _, key := range keys {
+		if key = strings.TrimSpace(key); key != "" {
+			refs = append(refs, model.AgentSkillRef{Key: key})
+		}
+	}
+	return refs.Normalize()
 }
 
 func copyFlowParameters(out map[string]any, tmpl Template, inputs map[string]any) {
@@ -391,6 +599,13 @@ func firstNonEmpty(values ...string) string {
 func strPtr(value string) *string {
 	value = strings.TrimSpace(value)
 	return &value
+}
+
+func trimPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	return nilIfBlank(*value)
 }
 
 func nilIfBlank(value string) *string {

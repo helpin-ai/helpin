@@ -567,7 +567,7 @@ export function CustomAgentCreatePanel({
               <p className="mt-1 text-xs text-muted-foreground">Choose where this agent can be started and who can use it.</p>
             </div>
             <div className="space-y-5">
-              <div className="grid gap-2 md:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {TARGET_OPTIONS.map((target) => {
                   const active = form.allowed_targets.includes(target.value);
                   return (
@@ -587,7 +587,7 @@ export function CustomAgentCreatePanel({
               </div>
               <div className="space-y-3">
                 <FieldLabel tooltip="Workspace-wide agents can work across the workspace. Specific teams narrows who can see and run the agent.">Team access</FieldLabel>
-                <div className="grid gap-2 md:grid-cols-2">
+                <div className="grid gap-2 sm:grid-cols-2 sm:max-w-md">
                   <button
                     type="button"
                     className={[

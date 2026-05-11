@@ -2,16 +2,43 @@ key: dependency_auditor
 version: 1
 name: Dependency Auditor
 icon: package
-short_description: Reviews repository dependencies on a schedule and files upgrade tasks.
+short_description: Reviews repository dependencies on a schedule and saves an audit report.
 categories: [engineering]
 agent:
   create:
     preset: code_builder
     runtime_kind: native_sdk
     name_template: "{{template_name}} agent"
-    system_prompt_ref: ./prompt.md
-    allowed_tools: [read_file, read_files, search_files, ripgrep, run_command, create_task]
-    allowed_targets: [repository]
+    skills: [dependency_auditor]
+    system_prompt: |
+      You are an autonomous dependency auditor for the selected repository.
+
+      Configured audit:
+      - repository_id: {{repository_id}}
+      - report_space_id: {{report_space_id}}
+      - report_collection_id: {{report_collection_id}}
+      - ecosystems: {{ecosystems}}
+      - include_indirect: {{include_indirect}}
+      - create_follow_up_tasks: {{create_follow_up_tasks}}
+      - destination_team_id: {{destination_team_id}}
+      - destination_state_id: {{destination_state_id}}
+      - max_tasks: {{max_tasks}}
+      - schedule: {{schedule}}
+
+      Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or repository selection.
+
+      Scan only the configured ecosystems. Ignore indirect or transitive dependencies unless include_indirect is true. Do not modify files or open upgrade PRs.
+
+      Repositories may contain more than one language ecosystem. Scan every selected ecosystem in the same run and deduplicate findings within each ecosystem identity.
+
+      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Dependency audit - <scope/context>`. Use the repository full name, repository name, or scanned ecosystem summary for `<scope/context>`. Include the scanned ecosystems, notable outdated direct dependencies, risk/impact, suggested upgrade order, and a clear "No actionable dependency updates found" section when the audit is clean.
+
+      If create_follow_up_tasks is true, create tasks only for actionable upgrade work with clear owner value, up to max_tasks. Group related dependencies into one task when they should be upgraded and tested together. When include_indirect is false, create tasks only for direct dependency work. When include_indirect is true, include transitive dependency work only when there is a concrete security, compatibility, or maintenance reason. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+
+      Raw configuration:
+      {{raw_configuration_json}}
+    allowed_tools: [update_plan, list_directory, read_file, read_files, read_file_range, search_files, ripgrep, grep, run_command, web_search_exa, create_document, write_document_content, link_document_to_object, create_task]
+    allowed_targets: [repository, document]
     approval_mode: always
 trigger:
   type: cron
@@ -20,11 +47,97 @@ inputs:
     type: repository
     required: true
     label: Repository
+    section: What should it audit?
+    help_text: The repository Quill should inspect for dependency manifests and lockfiles.
   - key: schedule
     type: cron
     required: true
-    label: Schedule
+    label: Run schedule
+    section: When should it run
+    help_text: How often Quill should create a dependency audit report.
+  - key: report_space_id
+    type: space
+    required: true
+    label: Docs space
+    section: Where should the report be saved?
+    help_text: Audit reports are saved as internal Docs documents in this space.
+  - key: report_collection_id
+    type: collection
+    required: true
+    label: Docs collection
+    section: Where should the report be saved?
+    depends_on: report_space_id
+    help_text: The collection where dependency audit reports will be created.
+  - key: ecosystems
+    type: multi_select
+    required: true
+    default: [go, rust, python, node, java]
+    label: Package ecosystems
+    section: What should it audit?
+    help_text: Select the dependency ecosystems Quill should check in this repository.
+    options:
+      - { value: go, label: Go }
+      - { value: rust, label: Rust }
+      - { value: python, label: Python }
+      - { value: node, label: Node / JavaScript }
+      - { value: java, label: Java / JVM }
+  - key: include_indirect
+    type: bool
+    required: false
+    default: false
+    label: Include transitive dependencies
+    section: What should it audit?
+    help_text: Turn on to include indirect dependencies from lockfiles when available.
+  - key: create_follow_up_tasks
+    type: bool
+    required: false
+    default: false
+    label: Create tasks for actionable updates
+    section: Should it create follow-up tasks?
+    help_text: Off by default. The report still includes prioritized upgrade recommendations.
+  - key: destination_team_id
+    type: team
+    required: false
+    label: Team
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Optional destination for tasks created from confirmed dependency updates.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    depends_on: destination_team_id
+    help_text: Optional stage for follow-up tasks. If empty, the team's default stage is used.
+  - key: max_tasks
+    type: int
+    required: false
+    default: 20
+    min: 1
+    max: 100
+    label: Follow-up tasks per run
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Safety cap for task creation. The report still includes all prioritized updates.
 flow:
   action: start_agent_run
   target:
     from_input: repository_id
+  parameters:
+    ecosystems:
+      from_input: ecosystems
+    report_space_id:
+      from_input: report_space_id
+    report_collection_id:
+      from_input: report_collection_id
+    include_indirect:
+      from_input: include_indirect
+    create_follow_up_tasks:
+      from_input: create_follow_up_tasks
+    max_tasks:
+      from_input: max_tasks
+    destination_team_id:
+      from_input: destination_team_id
+    destination_state_id:
+      from_input: destination_state_id
