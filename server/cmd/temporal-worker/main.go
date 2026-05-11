@@ -409,6 +409,7 @@ func main() {
 		workspaceRepo,
 		repository.NewOrganizationRepository(db),
 		storyRepo,
+		workflowRepo,
 		pmActivityService,
 		wsPublisher,
 		githubAppClient,

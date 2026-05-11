@@ -803,6 +803,18 @@ func seedGitDeliveryStatusFixture(t *testing.T, db *gorm.DB) {
 		id, team_id, repository_id, base_branch, branch_template, auto_sync_states, review_state_id, done_state_id, closed_state_id, created_at, updated_at
 	) VALUES (?, ?, ?, 'main', '{task_key}-{slug}', 1, ?, ?, ?, ?, ?)`,
 		"trd-1", "team-1", "repo-1", "state-review", "state-done", "state-closed", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-todo", "wf-1", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-progress", "wf-1", "In Progress", model.PMStateTypeStarted, 1, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-review", "wf-1", "In Review", model.PMStateTypeStarted, 2, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-done", "wf-1", "Done", model.PMStateTypeDone, 3, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-closed", "wf-1", "Closed", model.PMStateTypeDone, 4, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-default-done", "wf-default", "Done", model.PMStateTypeDone, 0, false, now, now)
 	mustExec(t, db, `INSERT INTO pm_tasks (
 		id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, position, created_at, updated_at
 	) VALUES (?, ?, ?, ?, 'feature', ?, ?, ?, 'none', 'none', 0, ?, ?)`,
@@ -830,6 +842,7 @@ func newGitDeliveryStatusService(db *gorm.DB, app gitHubAppClient) *GitService {
 		deliveryRepo:    repository.NewTaskDeliveryTargetRepository(db),
 		settingsRepo:    repository.NewSettingsRepository(db),
 		taskRepo:        repository.NewPMTaskRepository(db),
+		workflowRepo:    repository.NewPMWorkflowRepository(db),
 		githubApp:       app,
 	}
 }
@@ -839,7 +852,7 @@ func TestUpdateDeliveryStatusAfterMergeUpdatesTargetLinkAndTaskState(t *testing.
 	seedGitDeliveryStatusFixture(t, db)
 
 	svc := newGitDeliveryStatusService(db, nil)
-	if err := svc.UpdateDeliveryStatusAfterMerge(context.Background(), "ws-1", "task-1", "merged"); err != nil {
+	if err := svc.UpdateDeliveryStatusAfterMerge(context.Background(), "ws-1", "task-1", "merged", "main"); err != nil {
 		t.Fatalf("UpdateDeliveryStatusAfterMerge returned error: %v", err)
 	}
 
@@ -953,6 +966,67 @@ func TestProcessWebhookPRMergedUpdatesTargetLinkAndTaskState(t *testing.T) {
 	}
 	if task.WorkflowStateID != "state-done" {
 		t.Fatalf("workflow_state_id = %q, want state-done", task.WorkflowStateID)
+	}
+}
+
+func TestProcessWebhookPRMergedToStagingSetsReviewState(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	mustExec(t, db, `UPDATE pm_tasks SET workflow_state_id = ? WHERE id = ?`, "state-progress", "task-1")
+
+	svc := newGitDeliveryStatusService(db, nil)
+	if err := svc.ProcessWebhookPR(context.Background(), "ws-1", "acme/api", "closed", 42, "Fix merge status", "https://github.test/acme/api/pull/42", "merged", "hel-31-fix-merge-status", "staging"); err != nil {
+		t.Fatalf("ProcessWebhookPR returned error: %v", err)
+	}
+
+	assertMergedDeliveryStatus(t, db)
+	task, err := repository.NewPMTaskRepository(db).GetRawByID(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.WorkflowID != "wf-1" {
+		t.Fatalf("workflow_id = %q, want wf-1", task.WorkflowID)
+	}
+	if task.WorkflowStateID != "state-review" {
+		t.Fatalf("workflow_state_id = %q, want state-review", task.WorkflowStateID)
+	}
+}
+
+func TestProcessWebhookPRMergedStateNotInTaskWorkflowDoesNotTransitionTask(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	mustExec(t, db, `UPDATE pm_team_repo_defaults SET done_state_id = ? WHERE id = ?`, "state-default-done", "trd-1")
+
+	svc := newGitDeliveryStatusService(db, nil)
+	if err := svc.ProcessWebhookPR(context.Background(), "ws-1", "acme/api", "closed", 42, "Fix merge status", "https://github.test/acme/api/pull/42", "merged", "hel-31-fix-merge-status", "main"); err != nil {
+		t.Fatalf("ProcessWebhookPR returned error: %v", err)
+	}
+
+	task, err := repository.NewPMTaskRepository(db).GetRawByID(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.WorkflowStateID != "state-review" {
+		t.Fatalf("workflow_state_id = %q, want unchanged state-review", task.WorkflowStateID)
+	}
+}
+
+func TestProcessWebhookPRMergedDoesNotRegressDoneTaskOnStagingMerge(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	mustExec(t, db, `UPDATE pm_tasks SET workflow_state_id = ? WHERE id = ?`, "state-done", "task-1")
+
+	svc := newGitDeliveryStatusService(db, nil)
+	if err := svc.ProcessWebhookPR(context.Background(), "ws-1", "acme/api", "closed", 42, "Fix merge status", "https://github.test/acme/api/pull/42", "merged", "hel-31-fix-merge-status", "staging"); err != nil {
+		t.Fatalf("ProcessWebhookPR returned error: %v", err)
+	}
+
+	task, err := repository.NewPMTaskRepository(db).GetRawByID(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.WorkflowStateID != "state-done" {
+		t.Fatalf("workflow_state_id = %q, want unchanged state-done", task.WorkflowStateID)
 	}
 }
 
@@ -1086,7 +1160,7 @@ func TestMergeBranchThenUpdateDeliveryStatusUsesGitHubMergeResult(t *testing.T) 
 	if err := svc.MergeBranch(context.Background(), "ws-1", "task-1", "main"); err != nil {
 		t.Fatalf("MergeBranch returned error: %v", err)
 	}
-	if err := svc.UpdateDeliveryStatusAfterMerge(context.Background(), "ws-1", "task-1", "merged"); err != nil {
+	if err := svc.UpdateDeliveryStatusAfterMerge(context.Background(), "ws-1", "task-1", "merged", "main"); err != nil {
 		t.Fatalf("UpdateDeliveryStatusAfterMerge returned error: %v", err)
 	}
 	if len(app.mergeCalls) != 1 {

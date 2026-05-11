@@ -306,6 +306,7 @@ func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.
 		repository.NewWorkspaceRepository(db),
 		repository.NewOrganizationRepository(db),
 		repository.NewPMTaskRepository(db),
+		repository.NewPMWorkflowRepository(db),
 		nil,
 		nil,
 		nil,

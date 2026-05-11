@@ -36,6 +36,7 @@ type GitService struct {
 	workspaceRepo   *repository.WorkspaceRepository
 	orgRepo         *repository.OrganizationRepository
 	taskRepo        *repository.PMTaskRepository
+	workflowRepo    *repository.PMWorkflowRepository
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	ruleEngine      *AutomationRuleEngine
@@ -65,6 +66,7 @@ func NewGitService(
 	workspaceRepo *repository.WorkspaceRepository,
 	orgRepo *repository.OrganizationRepository,
 	taskRepo *repository.PMTaskRepository,
+	workflowRepo *repository.PMWorkflowRepository,
 	activitySvc *PMActivityService,
 	wsPublisher *websocket.Publisher,
 	githubApp *githubapp.Client,
@@ -85,6 +87,7 @@ func NewGitService(
 		workspaceRepo:   workspaceRepo,
 		orgRepo:         orgRepo,
 		taskRepo:        taskRepo,
+		workflowRepo:    workflowRepo,
 		activitySvc:     activitySvc,
 		wsPublisher:     wsPublisher,
 		githubApp:       app,
@@ -1169,11 +1172,11 @@ type GitPRReconcileResultError struct {
 
 // UpdateDeliveryStatusAfterMerge reconciles task delivery state after a direct
 // merge path succeeds, without waiting for a GitHub webhook.
-func (s *GitService) UpdateDeliveryStatusAfterMerge(ctx context.Context, workspaceID, taskID, prStatus string) error {
-	return s.updateDeliveryStatusForPR(ctx, workspaceID, taskID, prStatus, nil)
+func (s *GitService) UpdateDeliveryStatusAfterMerge(ctx context.Context, workspaceID, taskID, prStatus, baseBranch string) error {
+	return s.updateDeliveryStatusForPR(ctx, workspaceID, taskID, prStatus, baseBranch, nil)
 }
 
-func (s *GitService) updateDeliveryStatusForPR(ctx context.Context, workspaceID, taskID, prStatus string, meta *deliveryStatusMetadata) error {
+func (s *GitService) updateDeliveryStatusForPR(ctx context.Context, workspaceID, taskID, prStatus, baseBranch string, meta *deliveryStatusMetadata) error {
 	prStatus = strings.TrimSpace(prStatus)
 	if workspaceID == "" || taskID == "" || prStatus == "" {
 		return fmt.Errorf("workspace_id, task_id, and pr_status are required")
@@ -1240,14 +1243,14 @@ func (s *GitService) updateDeliveryStatusForPR(ctx context.Context, workspaceID,
 		s.publishTaskGitLinkUpdated(workspaceID, links[i].ID, taskID)
 	}
 
-	if err := s.syncTaskWorkflowForPRStatus(ctx, taskID, prStatus); err != nil {
+	if err := s.syncTaskWorkflowForPRStatus(ctx, taskID, prStatus, baseBranch); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *GitService) syncTaskWorkflowForPRStatus(ctx context.Context, taskID, prStatus string) error {
+func (s *GitService) syncTaskWorkflowForPRStatus(ctx context.Context, taskID, prStatus, baseBranch string) error {
 	if s.taskRepo == nil || s.settingsRepo == nil {
 		return nil
 	}
@@ -1271,18 +1274,110 @@ func (s *GitService) syncTaskWorkflowForPRStatus(ctx context.Context, taskID, pr
 	case "open":
 		nextStateID = teamDefault.ReviewStateID
 	case "merged":
-		nextStateID = teamDefault.DoneStateID
+		configuredBaseBranch := strings.TrimSpace(teamDefault.BaseBranch)
+		if configuredBaseBranch == "" {
+			configuredBaseBranch = "main"
+		}
+		mergedBaseBranch := strings.TrimSpace(baseBranch)
+		if mergedBaseBranch == "" {
+			mergedBaseBranch = configuredBaseBranch
+		}
+		if mergedBaseBranch == configuredBaseBranch {
+			nextStateID = teamDefault.DoneStateID
+		} else {
+			nextStateID = teamDefault.ReviewStateID
+		}
 	case "closed":
 		nextStateID = teamDefault.ClosedStateID
 	}
-	if nextStateID == nil || *nextStateID == "" || story.WorkflowStateID == *nextStateID {
+	if nextStateID == nil || strings.TrimSpace(*nextStateID) == "" {
+		slog.DebugContext(ctx, "git pr status has no configured workflow state", "task_id", taskID, "pr_status", prStatus, "base_branch", baseBranch)
 		return nil
+	}
+	if story.WorkflowStateID == *nextStateID {
+		return nil
+	}
+	if s.workflowRepo != nil {
+		ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, *nextStateID, story.WorkflowID)
+		if err != nil {
+			return fmt.Errorf("validate target workflow state: %w", err)
+		}
+		if !ok {
+			slog.WarnContext(ctx, "skipping git pr workflow sync because target state is outside task workflow",
+				"task_id", taskID,
+				"workflow_id", story.WorkflowID,
+				"target_state_id", *nextStateID,
+				"pr_status", prStatus,
+				"base_branch", baseBranch,
+			)
+			return nil
+		}
+		shouldApply, err := s.shouldApplyPRWorkflowStateTransition(ctx, story, *nextStateID)
+		if err != nil {
+			return err
+		}
+		if !shouldApply {
+			slog.DebugContext(ctx, "skipping git pr workflow sync because task is already ahead of target state",
+				"task_id", taskID,
+				"current_state_id", story.WorkflowStateID,
+				"target_state_id", *nextStateID,
+				"pr_status", prStatus,
+				"base_branch", baseBranch,
+			)
+			return nil
+		}
 	}
 	story.WorkflowStateID = *nextStateID
 	if err := s.taskRepo.Update(ctx, story); err != nil {
 		return fmt.Errorf("update task workflow state: %w", err)
 	}
+	s.publishTaskUpdated(story.WorkspaceID, story.ID)
 	return nil
+}
+
+func (s *GitService) shouldApplyPRWorkflowStateTransition(ctx context.Context, story *model.PMTask, nextStateID string) (bool, error) {
+	if story == nil || s.workflowRepo == nil || strings.TrimSpace(story.WorkflowStateID) == "" {
+		return true, nil
+	}
+	currentState, err := s.workflowRepo.GetStateByID(ctx, story.WorkflowStateID)
+	if err != nil {
+		return false, fmt.Errorf("load current workflow state: %w", err)
+	}
+	if currentState == nil || currentState.WorkflowID != story.WorkflowID {
+		return true, nil
+	}
+	targetState, err := s.workflowRepo.GetStateByID(ctx, nextStateID)
+	if err != nil {
+		return false, fmt.Errorf("load target workflow state: %w", err)
+	}
+	if targetState == nil {
+		return false, nil
+	}
+
+	currentRank := pmWorkflowStateTypeRank(currentState.StateType)
+	targetRank := pmWorkflowStateTypeRank(targetState.StateType)
+	if currentRank > targetRank {
+		return false, nil
+	}
+	if currentRank == targetRank && currentState.Position > targetState.Position {
+		return false, nil
+	}
+	return true, nil
+}
+
+func pmWorkflowStateTypeRank(stateType string) int {
+	switch stateType {
+	case model.PMStateTypeBacklog:
+		return 0
+	case model.PMStateTypeUnstarted:
+		return 1
+	case model.PMStateTypeStarted:
+		return 2
+	case model.PMStateTypeDone:
+		return 3
+	default:
+		return -1
+	}
 }
 
 func deliveryStateForPRStatus(prStatus string) string {
@@ -1397,7 +1492,11 @@ func (s *GitService) ReconcileOpenPullRequestStatuses(ctx context.Context, limit
 			prURL = strings.TrimSpace(pr.HTMLURL)
 		}
 		prNumber := *link.PRNumber
-		if err := s.updateDeliveryStatusForPR(ctx, link.WorkspaceID, link.TaskID, newStatus, &deliveryStatusMetadata{
+		prBaseBranch := ""
+		if pr != nil {
+			prBaseBranch = pr.BaseRef
+		}
+		if err := s.updateDeliveryStatusForPR(ctx, link.WorkspaceID, link.TaskID, newStatus, prBaseBranch, &deliveryStatusMetadata{
 			LinkID:   link.ID,
 			PRNumber: &prNumber,
 			PRTitle:  &prTitle,
@@ -1456,6 +1555,18 @@ func (s *GitService) publishTaskGitLinkUpdated(workspaceID, linkID, taskID strin
 		WorkspaceID: workspaceID,
 		ParentType:  "task",
 		ParentID:    taskID,
+	})
+}
+
+func (s *GitService) publishTaskUpdated(workspaceID, taskID string) {
+	if s.wsPublisher == nil || workspaceID == "" || taskID == "" {
+		return
+	}
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "task",
+		EntityID:    taskID,
+		WorkspaceID: workspaceID,
 	})
 }
 
@@ -1539,7 +1650,7 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo, ac
 	}
 	var story *model.PMTask
 	if link != nil {
-		err = s.updateDeliveryStatusForPR(ctx, workspaceID, link.TaskID, prStatus, &deliveryStatusMetadata{
+		err = s.updateDeliveryStatusForPR(ctx, workspaceID, link.TaskID, prStatus, baseBranch, &deliveryStatusMetadata{
 			LinkID:   link.ID,
 			PRNumber: &prNumber,
 			PRTitle:  &prTitle,
@@ -1551,18 +1662,6 @@ func (s *GitService) ProcessWebhookPR(ctx context.Context, workspaceID, repo, ac
 		story, err = s.taskRepo.GetRawByID(ctx, link.TaskID)
 		if err != nil {
 			story = nil
-		}
-		if prStatus == "open" && story != nil && story.TeamID != nil && *story.TeamID != "" {
-			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates && teamDefault.ReviewStateID != nil {
-				story.WorkflowStateID = *teamDefault.ReviewStateID
-				_ = s.taskRepo.Update(ctx, story)
-			}
-		}
-		if prStatus == "closed" && story != nil && story.TeamID != nil && *story.TeamID != "" {
-			if teamDefault, cfgErr := s.settingsRepo.GetTeamRepoDefault(ctx, *story.TeamID); cfgErr == nil && teamDefault != nil && teamDefault.AutoSyncStates && teamDefault.ClosedStateID != nil {
-				story.WorkflowStateID = *teamDefault.ClosedStateID
-				_ = s.taskRepo.Update(ctx, story)
-			}
 		}
 	}
 

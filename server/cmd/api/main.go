@@ -788,6 +788,7 @@ func main() {
 		workspaceRepo,
 		orgRepo,
 		pmTaskRepo,
+		pmWorkflowRepo,
 		pmActivityService,
 		wsPublisher,
 		githubAppClient,
