@@ -25,7 +25,13 @@ function asNumber(value: unknown) {
 }
 
 function isPersistedRunMessageEvent(event: CodingSessionEvent) {
-  return event.runtime_metadata?.source === 'agent_run_message';
+  if (event.runtime_metadata?.source === 'agent_run_message') return true;
+  const payload = asRecord(event.payload);
+  return (
+    typeof payload?.message_id === 'string'
+    && typeof payload?.role === 'string'
+    && typeof payload?.sequence_no === 'number'
+  );
 }
 
 function isTranscriptMessageEvent(event: CodingSessionEvent) {
@@ -185,6 +191,96 @@ function cloneLiveTurnSegment(segment: CodingSessionLiveTurnSegment): CodingSess
 
 function cloneLiveTurnSegments(segments?: CodingSessionLiveTurnSegment[] | null) {
   return (segments ?? []).map(cloneLiveTurnSegment);
+}
+
+function cloneStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null): CodingSessionStreamSnapshot | null {
+  if (!snapshot) return null;
+  return {
+    ...(snapshot.live_assistant_message ? { live_assistant_message: cloneAssistantMessage(snapshot.live_assistant_message)! } : {}),
+    ...(snapshot.live_reasoning_message ? { live_reasoning_message: cloneReasoningMessage(snapshot.live_reasoning_message)! } : {}),
+    ...(snapshot.live_turn_segments ? { live_turn_segments: cloneLiveTurnSegments(snapshot.live_turn_segments) } : {}),
+    ...(snapshot.current_plan ? { current_plan: { ...snapshot.current_plan, plan: snapshot.current_plan.plan.map((step) => ({ ...step })) } } : {}),
+  };
+}
+
+function isEmptyStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null) {
+  return !snapshot
+    || (!snapshot.live_assistant_message
+      && !snapshot.live_reasoning_message
+      && (!snapshot.live_turn_segments || snapshot.live_turn_segments.length === 0)
+      && !snapshot.current_plan);
+}
+
+function chooseAssistantSnapshotMessage(
+  current?: CodingSessionLiveAssistantMessage | null,
+  incoming?: CodingSessionLiveAssistantMessage | null,
+) {
+  if (!incoming) return cloneAssistantMessage(current);
+  if (!current) return cloneAssistantMessage(incoming);
+  if (current.message_id !== incoming.message_id) return cloneAssistantMessage(incoming);
+  return cloneAssistantMessage(
+    incoming.content.length >= current.content.length ? incoming : current,
+  );
+}
+
+function chooseReasoningSnapshotMessage(
+  current?: CodingSessionLiveReasoningMessage | null,
+  incoming?: CodingSessionLiveReasoningMessage | null,
+) {
+  if (!incoming) return cloneReasoningMessage(current);
+  if (!current) return cloneReasoningMessage(incoming);
+  if (current.message_id !== incoming.message_id) return cloneReasoningMessage(incoming);
+  const incomingScore = incoming.content.length + (incoming.encrypted_value ? incoming.encrypted_value.length : 0);
+  const currentScore = current.content.length + (current.encrypted_value ? current.encrypted_value.length : 0);
+  return cloneReasoningMessage(incomingScore >= currentScore ? incoming : current);
+}
+
+function mergeSnapshotSegments(
+  current?: CodingSessionLiveTurnSegment[] | null,
+  incoming?: CodingSessionLiveTurnSegment[] | null,
+) {
+  const merged: CodingSessionLiveTurnSegment[] = [];
+  const indexes = new Map<string, number>();
+  const addSegment = (segment: CodingSessionLiveTurnSegment) => {
+    const cloned = cloneLiveTurnSegment(segment);
+    const existingIndex = indexes.get(cloned.segment_id);
+    if (typeof existingIndex === 'number') {
+      merged[existingIndex] = cloned;
+      return;
+    }
+    indexes.set(cloned.segment_id, merged.length);
+    merged.push(cloned);
+  };
+  for (const segment of current ?? []) addSegment(segment);
+  for (const segment of incoming ?? []) addSegment(segment);
+  return merged;
+}
+
+export function mergeCodingSessionStreamSnapshotSeed(
+  current?: CodingSessionStreamSnapshot | null,
+  incoming?: CodingSessionStreamSnapshot | null,
+): CodingSessionStreamSnapshot | null {
+  if (isEmptyStreamSnapshot(incoming)) return cloneStreamSnapshot(current);
+  if (isEmptyStreamSnapshot(current)) return cloneStreamSnapshot(incoming);
+
+  const liveAssistantMessage = chooseAssistantSnapshotMessage(
+    current?.live_assistant_message,
+    incoming?.live_assistant_message,
+  );
+  const liveReasoningMessage = chooseReasoningSnapshotMessage(
+    current?.live_reasoning_message,
+    incoming?.live_reasoning_message,
+  );
+  const liveTurnSegments = mergeSnapshotSegments(current?.live_turn_segments, incoming?.live_turn_segments);
+  const currentPlan = incoming?.current_plan ?? current?.current_plan;
+
+  const merged: CodingSessionStreamSnapshot = {
+    ...(liveAssistantMessage ? { live_assistant_message: liveAssistantMessage } : {}),
+    ...(liveReasoningMessage ? { live_reasoning_message: liveReasoningMessage } : {}),
+    ...(liveTurnSegments.length > 0 ? { live_turn_segments: liveTurnSegments } : {}),
+    ...(currentPlan ? { current_plan: { ...currentPlan, plan: currentPlan.plan.map((step) => ({ ...step })) } } : {}),
+  };
+  return isEmptyStreamSnapshot(merged) ? null : merged;
 }
 
 function parseLiveToolCall(value: unknown): CodingSessionLiveToolCall | null {
@@ -440,7 +536,7 @@ function transcriptMessageFromEvent(event: CodingSessionEvent): CodingSessionTra
       content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
       message_type: asString(payload.message_type),
       timestamp: event.timestamp,
-      sequence_no: event.sequence_no,
+      sequence_no: asNumber(payload.sequence_no) ?? event.sequence_no,
       tool_calls: role === 'assistant'
         ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
         : undefined,
@@ -466,6 +562,10 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
     );
   if (!content) return null;
 
+  const responsePayload = asRecord(payload.response_payload);
+  const resolverUserId =
+    asString(payload.resolved_by) ?? asString(responsePayload?.resolved_by);
+
   return {
     event_id: event.id,
     message_id: asString(payload.interaction_id) ?? event.id,
@@ -474,6 +574,7 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
     message_type: interactionKind === 'approval_request' ? 'approval_request_resolution' : 'review_checkpoint_resolution',
     timestamp: event.timestamp,
     sequence_no: event.sequence_no,
+    resolver_user_id: resolverUserId,
   };
 }
 
@@ -747,6 +848,25 @@ export function buildCodingSessionStreamState(
   let liveReasoningMessage = cloneReasoningMessage(snapshot?.live_reasoning_message);
   const liveTurnSegments = cloneLiveTurnSegments(snapshot?.live_turn_segments);
   let currentPlanLive: RunPlanArtifact | null = parsePlanArtifactValue(snapshot?.current_plan);
+  const snapshotAssistantDeltaCoverage = new Map<string, string>();
+  for (const segment of snapshot?.live_turn_segments ?? []) {
+    if (segment.kind !== 'assistant_message') continue;
+    const messageID = segment.assistant_message.message_id;
+    if (!messageID || !segment.assistant_message.content) continue;
+    snapshotAssistantDeltaCoverage.set(
+      messageID,
+      `${snapshotAssistantDeltaCoverage.get(messageID) ?? ''}${segment.assistant_message.content}`,
+    );
+  }
+  if (snapshot?.live_assistant_message?.message_id && snapshot.live_assistant_message.content) {
+    const existingCoverage = snapshotAssistantDeltaCoverage.get(snapshot.live_assistant_message.message_id);
+    if (!existingCoverage || snapshot.live_assistant_message.content.length > existingCoverage.length) {
+      snapshotAssistantDeltaCoverage.set(
+        snapshot.live_assistant_message.message_id,
+        snapshot.live_assistant_message.content,
+      );
+    }
+  }
 
   if (liveTurnSegments.length === 0 && liveAssistantMessage) {
     if (liveAssistantMessage.content) {
@@ -788,7 +908,7 @@ export function buildCodingSessionStreamState(
     switch (event.type) {
       case 'assistant.message.started': {
         const messageID = asString(payload.message_id) ?? `assistant:${event.id}`;
-        liveAssistantMessage = ensureAssistantMessage(null, messageID, event.timestamp);
+        liveAssistantMessage = ensureAssistantMessage(liveAssistantMessage, messageID, event.timestamp);
         break;
       }
 
@@ -798,6 +918,11 @@ export function buildCodingSessionStreamState(
         const previousContent = liveAssistantMessage.content;
         // Use raw coalescing (not asString) to preserve whitespace-only deltas like " " or " found".
         const deltaContent = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
+        const coveredSnapshotPrefix = snapshotAssistantDeltaCoverage.get(messageID);
+        if (deltaContent && coveredSnapshotPrefix?.startsWith(deltaContent)) {
+          snapshotAssistantDeltaCoverage.set(messageID, coveredSnapshotPrefix.slice(deltaContent.length));
+          break;
+        }
         liveAssistantMessage.content += deltaContent;
         liveAssistantMessage.status = 'streaming';
         if (deltaContent || previousContent.length === 0) {

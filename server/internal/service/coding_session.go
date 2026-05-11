@@ -56,39 +56,12 @@ func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID,
 
 	pending := make([]pendingEvent, 0, len(messages)+len(artifacts)+len(interactions)+1)
 	for _, message := range messages {
-		eventType := "user.message.completed"
-		switch strings.TrimSpace(message.Role) {
-		case "assistant":
-			eventType = "assistant.message.completed"
-		case "tool":
-			eventType = "tool.call.completed"
-		}
-		payload := map[string]any{
-			"message_id":       message.ID,
-			"role":             message.Role,
-			"message_type":     message.MessageType,
-			"content":          message.Content,
-			"sequence_no":      message.SequenceNo,
-			"content_blocks":   json.RawMessage(message.ContentBlocks),
-			"turn_segments":    json.RawMessage(message.TurnSegments),
-			"tool_invocations": json.RawMessage(message.ToolInvocations),
-		}
+		event := model.CodingSessionEventFromAgentRunMessage(run, &message)
 		pending = append(pending, pendingEvent{
-			at:      message.CreatedAt.UTC(),
+			at:      event.Timestamp,
 			weight:  10,
-			eventID: "msg:" + message.ID,
-			event: model.CodingSessionEvent{
-				ID:          "msg:" + message.ID,
-				SessionID:   run.ID,
-				RunID:       run.ID,
-				Timestamp:   message.CreatedAt.UTC(),
-				Type:        eventType,
-				RuntimeKind: run.RuntimeKind,
-				Payload:     payload,
-				RuntimeMetadata: map[string]any{
-					"source": "agent_run_message",
-				},
-			},
+			eventID: event.ID,
+			event:   event,
 		})
 	}
 
@@ -387,19 +360,13 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		title = "Coding Session"
 	}
 
-	var summary *string
-	if strings.TrimSpace(derefString(run.ExecutionStage)) != "" {
-		stage := strings.TrimSpace(derefString(run.ExecutionStage))
-		summary = &stage
-	}
-
 	artifacts, err := s.ListRunArtifacts(ctx, run.WorkspaceID, run.ID)
 	if err != nil {
 		return nil, err
 	}
 
 	var streamSnapshot *model.CodingSessionStreamSnapshot
-	if s.sessionSnapshotRepo != nil && run.Status != model.AgentRunStatusCompleted && run.Status != model.AgentRunStatusFailed && run.Status != model.AgentRunStatusCancelled {
+	if s.sessionSnapshotRepo != nil && run.Status != model.AgentRunStatusCompleted && run.Status != model.AgentRunStatusCancelled {
 		snapshotRecord, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
 		if err != nil {
 			return nil, err
@@ -441,8 +408,10 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		Status:              run.Status,
 		PauseReason:         run.PauseReason,
 		ErrorMessage:        run.ErrorMessage,
+		ExecutionStage:      trimPtr(run.ExecutionStage),
+		LastHeartbeatAt:     run.LastHeartbeatAt,
+		StartedAt:           run.StartedAt,
 		Title:               title,
-		Summary:             summary,
 		SystemPrompt:        systemPrompt,
 		Capabilities:        codingSessionCapabilitiesForRun(run),
 		Repo:                repoState,
@@ -755,12 +724,15 @@ func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessag
 	}
 	response.Message = strings.TrimSpace(response.Message)
 	if strings.TrimSpace(intent) == model.AgentRunResumeIntentApprove {
-		if response.Message != "" {
-			return response.Message
-		}
 		var request model.ApprovalRequest
 		if err := json.Unmarshal(requestPayload, &request); err != nil {
+			if response.Message != "" {
+				return response.Message
+			}
 			return "Approved. Continue."
+		}
+		if response.Message != "" {
+			return response.Message
 		}
 		switch strings.ToLower(strings.TrimSpace(request.Phase)) {
 		case "prd":
@@ -1197,6 +1169,24 @@ func (s *AgentService) publishCodingSessionEvent(run *model.AgentRun, eventType 
 		RuntimeKind: run.RuntimeKind,
 		Payload:     payload,
 	}
+	data, _ := json.Marshal(event)
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "coding_session_event",
+		EntityID:    event.ID,
+		WorkspaceID: run.WorkspaceID,
+		ActorID:     actorID,
+		ParentType:  "coding_session",
+		ParentID:    run.ID,
+		Data:        data,
+	})
+}
+
+func (s *AgentService) publishCodingSessionMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
+	if s.wsPublisher == nil || run == nil || message == nil {
+		return
+	}
+	event := model.CodingSessionEventFromAgentRunMessage(run, message)
 	data, _ := json.Marshal(event)
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",

@@ -14,6 +14,9 @@ dist-ssr
 playwright-report
 test-results
 
+# TanStack Router build cache
+.tanstack/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

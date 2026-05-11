@@ -1,18 +1,26 @@
 import { create } from 'zustand';
+import type { ConversationListFilters } from '@/lib/supportInboxFilters';
+import { defaultConversationListFiltersForNav, parseSupportInboxViewFilters } from '@/lib/supportInboxFilters';
 
-export type NavFilter = 'my_inbox' | 'all' | 'unassigned' | 'mentions' | 'ai_active' | 'resolved_by_ai';
+export type NavFilter = 'inbox' | 'mine' | 'waiting' | 'resolved' | 'spam' | 'ai_active' | 'resolved_by_ai';
 export type ReplyMode = 'reply' | 'note';
 export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';
 
 const STORAGE_KEY = 'support_inbox_ui';
 const DRAFTS_STORAGE_KEY = 'support_inbox_drafts';
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 
 interface PersistedState {
   navCollapsed: boolean;
   detailSidebarCollapsed: boolean;
   selectedMailboxId: string;
   version: number;
+}
+
+export function supportInboxBuiltinViewKey(navFilter: NavFilter, selectedMailboxId = 'all'): string {
+  return navFilter === 'inbox' && selectedMailboxId !== 'all'
+    ? `team:${selectedMailboxId}`
+    : `nav:${navFilter}`;
 }
 
 function loadPersisted(): PersistedState {
@@ -32,14 +40,38 @@ function loadPersisted(): PersistedState {
         version: STORE_VERSION,
       };
     }
-  } catch {}
-  return { navCollapsed: false, detailSidebarCollapsed: false, selectedMailboxId: 'all', version: STORE_VERSION };
+  } catch {
+    // Ignore unavailable or corrupt local storage.
+  }
+  return {
+    navCollapsed: false,
+    detailSidebarCollapsed: false,
+    selectedMailboxId: 'all',
+    version: STORE_VERSION,
+  };
 }
 
 function savePersisted(state: PersistedState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {}
+  } catch {
+    // Ignore local storage write failures.
+  }
+}
+
+function recordStringMapEqual(a: Record<string, string>, b: Record<string, string>): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  return aKeys.length === bKeys.length && aKeys.every((key) => a[key] === b[key]);
+}
+
+function builtinViewFilterMapsEqual(
+  a: Record<string, Record<string, string>>,
+  b: Record<string, Record<string, string>>,
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  return aKeys.length === bKeys.length && aKeys.every((key) => b[key] && recordStringMapEqual(a[key], b[key]));
 }
 
 function loadDrafts(): Record<string, string> {
@@ -49,7 +81,9 @@ function loadDrafts(): Record<string, string> {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') return parsed as Record<string, string>;
     }
-  } catch {}
+  } catch {
+    // Ignore unavailable or corrupt draft storage.
+  }
   return {};
 }
 
@@ -67,7 +101,9 @@ function saveDraftsDebounced(drafts: Record<string, string>) {
       } else {
         localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(filtered));
       }
-    } catch {}
+    } catch {
+      // Ignore local storage write failures.
+    }
   }, 500);
 }
 
@@ -84,7 +120,20 @@ function removeDraftFromStorage(conversationId: string) {
         localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
       }
     }
-  } catch {}
+  } catch {
+    // Ignore unavailable or corrupt draft storage.
+  }
+}
+
+function parseNavFilter(value: unknown): NavFilter {
+  return value === 'mine' ||
+    value === 'waiting' ||
+    value === 'resolved' ||
+    value === 'spam' ||
+    value === 'ai_active' ||
+    value === 'resolved_by_ai'
+    ? value
+    : 'inbox';
 }
 
 interface SupportInboxState {
@@ -95,6 +144,10 @@ interface SupportInboxState {
   // Filters
   statusFilter: string;
   searchQuery: string;
+  conversationListFilters: ConversationListFilters;
+  activeCustomViewId: string | null;
+  customViewDirty: boolean;
+  builtinViewFilters: Record<string, Record<string, string>>;
   // Selection
   selectedConversationId: string | null;
   // Reply
@@ -113,9 +166,25 @@ interface SupportInboxState {
   // Actions
   setNavFilter: (filter: NavFilter) => void;
   setSelectedMailboxId: (mailboxId: string) => void;
+  setMailboxFilter: (mailboxId: string) => void;
+  syncRouteState: (state: {
+    navFilter: NavFilter;
+    selectedMailboxId: string;
+    statusFilter: string;
+    searchQuery: string;
+    activeCustomViewId?: string | null;
+    conversationListFilters?: ConversationListFilters;
+  }) => void;
   toggleNavCollapsed: () => void;
   setStatusFilter: (status: string) => void;
   setSearchQuery: (query: string) => void;
+  setConversationListFilter: <K extends keyof ConversationListFilters>(key: K, value: ConversationListFilters[K]) => void;
+  setConversationMailboxFilters: (mailboxIds: string[]) => void;
+  resetConversationListFilters: () => void;
+  applyCustomView: (view: { id: string; filters: Record<string, string> }) => void;
+  markCustomViewClean: () => void;
+  setBuiltinViewFilters: (filters: Record<string, Record<string, string>>) => void;
+  setBuiltinViewFilter: (key: string, filters: Record<string, string>) => void;
   selectConversation: (id: string | null) => void;
   setReplyMode: (mode: ReplyMode) => void;
   toggleDetailSidebar: () => void;
@@ -132,11 +201,15 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
   const persistedDrafts = loadDrafts();
 
   return {
-    navFilter: 'all',
+    navFilter: 'inbox',
     navCollapsed: persisted.navCollapsed,
     selectedMailboxId: persisted.selectedMailboxId,
     statusFilter: 'all',
     searchQuery: '',
+    conversationListFilters: defaultConversationListFiltersForNav('inbox'),
+    activeCustomViewId: null,
+    customViewDirty: false,
+    builtinViewFilters: {},
     selectedConversationId: null,
     replyMode: 'reply',
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
@@ -147,10 +220,15 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     drafts: persistedDrafts,
 
     setNavFilter: (filter) => {
-      const openByDefault = filter === 'my_inbox' || filter === 'unassigned' || filter === 'mentions';
+      const savedFilters = get().builtinViewFilters[supportInboxBuiltinViewKey(filter)];
+      const savedState = savedFilters ? parseSupportInboxViewFilters(savedFilters, filter) : null;
       set({
         navFilter: filter,
-        statusFilter: openByDefault ? 'open' : 'all',
+        statusFilter: 'all',
+        activeCustomViewId: null,
+        customViewDirty: false,
+        searchQuery: savedState?.searchQuery ?? '',
+        conversationListFilters: savedState?.listFilters ?? defaultConversationListFiltersForNav(filter),
         selectedMailboxId: 'all',
         selectedConversationId: null,
         activePanel: 'list',
@@ -163,12 +241,15 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
       });
     },
     setSelectedMailboxId: (mailboxId) => {
-      // Reset navFilter too: if the user was on "Mentions" / "Unassigned"
-      // / etc. and clicks a team inbox, they expect the full inbox view,
-      // not mentions-within-that-inbox. Mirrors setNavFilter which
-      // already resets selectedMailboxId.
+      const savedFilters = get().builtinViewFilters[supportInboxBuiltinViewKey('inbox', mailboxId)];
+      const savedState = savedFilters ? parseSupportInboxViewFilters(savedFilters, 'inbox') : null;
       set({
-        navFilter: 'all',
+        navFilter: 'inbox',
+        statusFilter: 'all',
+        activeCustomViewId: null,
+        customViewDirty: false,
+        searchQuery: savedState?.searchQuery ?? '',
+        conversationListFilters: savedState?.listFilters ?? defaultConversationListFiltersForNav('inbox'),
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
         activePanel: 'list',
@@ -177,6 +258,38 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         navCollapsed: get().navCollapsed,
         detailSidebarCollapsed: get().detailSidebarCollapsed,
         selectedMailboxId: mailboxId,
+        version: STORE_VERSION,
+      });
+    },
+    setMailboxFilter: (mailboxId) => {
+      set({
+        activeCustomViewId: null,
+        customViewDirty: false,
+        selectedMailboxId: mailboxId,
+        selectedConversationId: null,
+        activePanel: 'list',
+      });
+      savePersisted({
+        navCollapsed: get().navCollapsed,
+        detailSidebarCollapsed: get().detailSidebarCollapsed,
+        selectedMailboxId: mailboxId,
+        version: STORE_VERSION,
+      });
+    },
+    syncRouteState: ({ navFilter, selectedMailboxId, statusFilter, searchQuery, activeCustomViewId, conversationListFilters }) => {
+      set({
+        navFilter,
+        selectedMailboxId,
+        statusFilter,
+        searchQuery,
+        activeCustomViewId: activeCustomViewId ?? null,
+        customViewDirty: false,
+        conversationListFilters: conversationListFilters ?? defaultConversationListFiltersForNav(navFilter),
+      });
+      savePersisted({
+        navCollapsed: get().navCollapsed,
+        detailSidebarCollapsed: get().detailSidebarCollapsed,
+        selectedMailboxId,
         version: STORE_VERSION,
       });
     },
@@ -190,8 +303,76 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         version: STORE_VERSION,
       });
     },
-    setStatusFilter: (status) => set({ statusFilter: status }),
-    setSearchQuery: (query) => set({ searchQuery: query }),
+    setStatusFilter: (status) =>
+      set((state) => ({
+        statusFilter: status,
+        customViewDirty: state.activeCustomViewId ? true : state.customViewDirty,
+      })),
+    setSearchQuery: (query) =>
+      set((state) => ({
+        searchQuery: query,
+        customViewDirty: state.activeCustomViewId ? true : state.customViewDirty,
+      })),
+    setConversationListFilter: (key, value) =>
+      set((state) => ({
+        customViewDirty: state.activeCustomViewId ? true : state.customViewDirty,
+        conversationListFilters: {
+          ...state.conversationListFilters,
+          [key]: value,
+        },
+        selectedConversationId: null,
+      })),
+    setConversationMailboxFilters: (mailboxIds) =>
+      set((state) => ({
+        customViewDirty: state.activeCustomViewId ? true : state.customViewDirty,
+        selectedMailboxId: 'all',
+        conversationListFilters: {
+          ...state.conversationListFilters,
+          mailboxIds,
+        },
+        selectedConversationId: null,
+      })),
+    resetConversationListFilters: () =>
+      set({
+        activeCustomViewId: null,
+        customViewDirty: false,
+        conversationListFilters: defaultConversationListFiltersForNav(get().navFilter),
+        selectedConversationId: null,
+      }),
+    applyCustomView: (view) => {
+      const filters = view.filters ?? {};
+      const navFilter = parseNavFilter(filters.nav_filter);
+      const parsed = parseSupportInboxViewFilters(filters, navFilter);
+      set({
+        activeCustomViewId: view.id,
+        customViewDirty: false,
+        navFilter,
+        selectedMailboxId: parsed.selectedMailboxId,
+        statusFilter: 'all',
+        searchQuery: parsed.searchQuery,
+        conversationListFilters: parsed.listFilters,
+        selectedConversationId: null,
+        activePanel: 'list',
+      });
+      savePersisted({
+        navCollapsed: get().navCollapsed,
+        detailSidebarCollapsed: get().detailSidebarCollapsed,
+        selectedMailboxId: parsed.selectedMailboxId,
+        version: STORE_VERSION,
+      });
+    },
+    markCustomViewClean: () => set({ customViewDirty: false }),
+    setBuiltinViewFilters: (filters) =>
+      set((state) => (builtinViewFilterMapsEqual(state.builtinViewFilters, filters) ? state : { builtinViewFilters: filters })),
+    setBuiltinViewFilter: (key, filters) =>
+      set((state) => ({
+        activeCustomViewId: null,
+        customViewDirty: false,
+        builtinViewFilters: {
+          ...state.builtinViewFilters,
+          [key]: filters,
+        },
+      })),
     selectConversation: (id) => set({ selectedConversationId: id, activePanel: id ? 'thread' : 'list' }),
     setReplyMode: (mode) => set({ replyMode: mode }),
     toggleDetailSidebar: () => {
@@ -211,7 +392,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     setDraft: (conversationId, content) =>
       set((state) => {
         if (!content) {
-          const { [conversationId]: _, ...rest } = state.drafts;
+          const rest = { ...state.drafts };
+          delete rest[conversationId];
           saveDraftsDebounced(rest);
           return { drafts: rest };
         }
@@ -222,7 +404,8 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     clearDraft: (conversationId) =>
       set((state) => {
         if (!(conversationId in state.drafts)) return state;
-        const { [conversationId]: _, ...rest } = state.drafts;
+        const rest = { ...state.drafts };
+        delete rest[conversationId];
         removeDraftFromStorage(conversationId);
         return { drafts: rest };
       }),

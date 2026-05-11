@@ -1,8 +1,13 @@
 import { api } from '../api';
 import { automationService } from './automationService';
 import type {
+  Agent,
   AgentRun,
+  CodingSession,
+  CodingSessionEventListResponse,
+  CodingSessionInteraction,
   CreateAgentRequest,
+  AgentTriggerUsageSummary,
   AgentPresetDefinition,
   UpdateAgentRequest,
   AgentModelProviderOption,
@@ -12,6 +17,7 @@ import type {
   UpdateWorkspaceAgentPresetVersionRequest,
   ApproveAgentRunRequest,
   HandoffAgentRunRequest,
+  ResolveCodingSessionInteractionRequest,
   ResumeAgentRunRequest,
   StartAgentRunRequest,
   SendAgentRunMessageRequest,
@@ -24,17 +30,17 @@ const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspac
 
 export const agentService = {
   list: (workspaceId: string) =>
-    automationService.listAgents(workspaceId) as ReturnType<typeof automationService.listAgents>,
+    api.get<Agent[]>(`/pm/agents${qs(workspaceId)}`),
   get: (workspaceId: string, id: string) =>
-    automationService.getAgent(workspaceId, id) as ReturnType<typeof automationService.getAgent>,
+    api.get<Agent>(`/pm/agents/${id}${qs(workspaceId)}`),
   getUsage: (workspaceId: string, id: string) =>
-    automationService.getAgentUsage(workspaceId, id) as ReturnType<typeof automationService.getAgentUsage>,
+    api.get<AgentTriggerUsageSummary>(`/pm/agents/${id}/usage${qs(workspaceId)}`),
   create: (workspaceId: string, payload: CreateAgentRequest) =>
-    automationService.createAgent(workspaceId, payload) as ReturnType<typeof automationService.createAgent>,
+    api.post<Agent>(`/pm/agents${qs(workspaceId)}`, payload),
   update: (workspaceId: string, id: string, payload: UpdateAgentRequest) =>
-    automationService.updateAgent(workspaceId, id, payload) as ReturnType<typeof automationService.updateAgent>,
+    api.put<Agent>(`/pm/agents/${id}${qs(workspaceId)}`, payload),
   delete: (workspaceId: string, id: string) =>
-    automationService.deleteAgent(workspaceId, id) as ReturnType<typeof automationService.deleteAgent>,
+    api.del(`/pm/agents/${id}${qs(workspaceId)}`),
   listPresets: (workspaceId: string) =>
     api.get<AgentPresetDefinition[]>(`/pm/agent-presets${qs(workspaceId)}`),
   createPresetVersion: (workspaceId: string, payload: CreateWorkspaceAgentPresetVersionRequest) =>
@@ -58,6 +64,8 @@ export const agentService = {
     automationService.startRun(workspaceId, payload) as ReturnType<typeof automationService.startRun>,
   listWorkspaceRuns: (workspaceId: string, page = 1, perPage = 100) =>
     automationService.listWorkspaceRuns(workspaceId, page, perPage) as ReturnType<typeof automationService.listWorkspaceRuns>,
+  listRecentRuns: (workspaceId: string, limit = 20) =>
+    api.get<{ runs: AgentRun[] }>(`/pm/agent-runs/recent${qs(workspaceId)}&limit=${limit}`),
   listTargetRuns: (workspaceId: string, targetType: string, targetId: string) =>
     automationService.listTargetRuns(workspaceId, targetType, targetId) as ReturnType<typeof automationService.listTargetRuns>,
   listRuns: (workspaceId: string, agentId: string) =>
@@ -74,6 +82,25 @@ export const agentService = {
     automationService.sendRunMessage(workspaceId, runId, payload) as ReturnType<typeof automationService.sendRunMessage>,
   listRunArtifacts: (workspaceId: string, runId: string) =>
     automationService.listRunArtifacts(workspaceId, runId) as ReturnType<typeof automationService.listRunArtifacts>,
+  /** Run-scoped snapshot — same shape as the coding-session view, includes stream_state_snapshot.current_plan. */
+  getRunSnapshot: (workspaceId: string, runId: string) =>
+    api.get<CodingSession>(`/pm/agent-runs/${encodeURIComponent(runId)}/snapshot${qs(workspaceId)}`),
+  /** Run-scoped event stream. `after` is the last seen sequence_no for incremental pulls. */
+  listRunEvents: (workspaceId: string, runId: string, after = 0) =>
+    api.get<CodingSessionEventListResponse>(
+      `/pm/agent-runs/${encodeURIComponent(runId)}/events${qs(workspaceId)}&after=${after}`,
+    ),
+  /** Resolve a pending agent-run interaction (request_user_input, approval, etc.). */
+  resolveInteraction: (
+    workspaceId: string,
+    runId: string,
+    interactionId: string,
+    payload: ResolveCodingSessionInteractionRequest,
+  ) =>
+    api.post<CodingSessionInteraction>(
+      `/pm/agent-runs/${encodeURIComponent(runId)}/interactions/${encodeURIComponent(interactionId)}/resolve${qs(workspaceId)}`,
+      payload,
+    ),
   cancelRun: (workspaceId: string, runId: string) =>
     automationService.cancelRun(workspaceId, runId) as ReturnType<typeof automationService.cancelRun>,
   startCodexDeviceCodeAuth: (workspaceId: string, runId: string) =>

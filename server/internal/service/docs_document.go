@@ -20,6 +20,7 @@ type DocsDocumentService struct {
 	deletionDeps   DocsDocumentDeletionDependencies
 	translationSvc *DocsHelpcenterTranslationService
 	helpcenterSvc  *DocsHelpcenterService
+	ruleEngine     *AutomationRuleEngine
 	wsPublisher    *websocket.Publisher
 	useSortKey     bool
 }
@@ -43,6 +44,10 @@ func (s *DocsDocumentService) SetDeletionDependencies(deps DocsDocumentDeletionD
 // services have been constructed.
 func (s *DocsDocumentService) SetHelpcenterService(helpcenterSvc *DocsHelpcenterService) {
 	s.helpcenterSvc = helpcenterSvc
+}
+
+func (s *DocsDocumentService) SetRuleEngine(engine *AutomationRuleEngine) {
+	s.ruleEngine = engine
 }
 
 // Create creates a new document.
@@ -170,7 +175,11 @@ func (s *DocsDocumentService) Update(ctx context.Context, id string, req model.U
 	}
 	// collection_id is handled above via move semantics, skip raw patch.
 	if req.OwnerID != nil {
-		updates["owner_id"] = *req.OwnerID
+		if *req.OwnerID == "" {
+			updates["owner_id"] = nil
+		} else {
+			updates["owner_id"] = *req.OwnerID
+		}
 	}
 	if req.TemplateKey != nil {
 		updates["template_key"] = *req.TemplateKey
@@ -235,6 +244,19 @@ func (s *DocsDocumentService) Publish(ctx context.Context, id string) (*model.Do
 	updated, err := s.docRepo.GetByID(ctx, id)
 	if err == nil && updated != nil {
 		publishWorkspaceEventWithParent(s.wsPublisher, "updated", "docs_document", updated.ID, updated.WorkspaceID, "", "docs_space", updated.SpaceID, nil)
+		if s.ruleEngine != nil {
+			event := model.AutomationEvent{
+				WorkspaceID: updated.WorkspaceID,
+				TriggerType: model.TriggerDocPublished,
+				TargetType:  "document",
+				TargetID:    updated.ID,
+				PublishedAt: updated.PublishedAt,
+			}
+			if updated.TeamID != nil {
+				event.TeamID = *updated.TeamID
+			}
+			s.ruleEngine.EvaluateEvent(ctx, event, nil)
+		}
 	}
 	return updated, err
 }
@@ -482,7 +504,7 @@ func (s *DocsDocumentService) ToggleLock(ctx context.Context, id string, lock bo
 // checkLocked returns an error if the document is locked, preventing mutation.
 func checkLocked(doc *model.DocsDocument) error {
 	if doc.IsLocked {
-		return fmt.Errorf("document is locked and cannot be modified")
+		return ErrDocsDocumentLocked
 	}
 	return nil
 }

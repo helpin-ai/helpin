@@ -23,10 +23,12 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var errCoverageNoPublicSegment = errors.New("coverage conversation has no public segment")
+
 const (
 	coverageAnalysisMaxMessages             = 80
 	coverageAnalysisMaxMessageChars         = 2000
-	coverageAnalyzerVersion                 = "v1"
+	coverageAnalyzerVersion                 = "v4"
 	coverageAnalysisWorkflowID              = "coverage-daily-analysis"
 	coverageAnalysisCronSchedule            = "30 4 * * *"
 	coverageAnalysisOverlap                 = 2 * time.Hour
@@ -34,6 +36,7 @@ const (
 	coverageAnalysisBootstrapWindow         = 30 * 24 * time.Hour
 	coverageAnalysisWorkspaceLimit          = 1000
 	coverageAnalysisConversationConcurrency = 4
+	coverageKnowledgeMinRelevanceScore      = 0.1
 )
 
 type CoverageConversationMessage struct {
@@ -50,15 +53,22 @@ type CoverageConversationMessage struct {
 }
 
 type CoverageConversationAnalysisInput struct {
-	WorkspaceID     string                        `json:"workspace_id"`
-	ConversationID  string                        `json:"conversation_id"`
-	Subject         string                        `json:"subject"`
-	Status          string                        `json:"status"`
-	FlowState       string                        `json:"flow_state"`
-	AITurnCount     int                           `json:"ai_turn_count"`
-	TranscriptHash  string                        `json:"transcript_hash"`
-	Messages        []CoverageConversationMessage `json:"messages"`
-	RetrievalTraces []CoverageRetrievalTraceInput `json:"retrieval_traces"`
+	WorkspaceID           string                        `json:"workspace_id"`
+	ConversationID        string                        `json:"conversation_id"`
+	Subject               string                        `json:"subject"`
+	Status                string                        `json:"status"`
+	FlowState             string                        `json:"flow_state"`
+	AITurnCount           int                           `json:"ai_turn_count"`
+	TranscriptHash        string                        `json:"transcript_hash"`
+	SegmentID             string                        `json:"segment_id"`
+	SegmentStartMessageID string                        `json:"segment_start_message_id"`
+	SegmentEndMessageID   string                        `json:"segment_end_message_id"`
+	SegmentStartAt        *time.Time                    `json:"segment_start_at,omitempty"`
+	SegmentEndAt          *time.Time                    `json:"segment_end_at,omitempty"`
+	SegmentResolved       bool                          `json:"segment_resolved"`
+	HasHumanReply         bool                          `json:"has_human_reply"`
+	Messages              []CoverageConversationMessage `json:"messages"`
+	RetrievalTraces       []CoverageRetrievalTraceInput `json:"retrieval_traces"`
 }
 
 type CoverageRetrievalTraceInput struct {
@@ -74,6 +84,7 @@ type CoverageKnowledgeCandidate struct {
 	SourceType    string  `json:"source_type"`
 	TargetType    string  `json:"target_type"`
 	DocumentID    string  `json:"document_id,omitempty"`
+	BlockID       string  `json:"block_id,omitempty"`
 	PageID        string  `json:"page_id,omitempty"`
 	Title         string  `json:"title"`
 	URL           string  `json:"url,omitempty"`
@@ -82,6 +93,10 @@ type CoverageKnowledgeCandidate struct {
 }
 
 type CoverageConversationAnalysisResult struct {
+	IsSupportQuery       bool   `json:"is_support_query"`
+	ConversationType     string `json:"conversation_type"`
+	ClassificationReason string `json:"classification_reason"`
+
 	HasGap             bool                     `json:"has_gap"`
 	GapKind            string                   `json:"gap_kind"`
 	GapCategory        string                   `json:"gap_category"`
@@ -119,6 +134,21 @@ type CoverageKnowledgeSuggestionDraft struct {
 	MarkdownContent string `json:"markdown_content"`
 }
 
+// CoverageConversationSegment represents a lifecycle segment of a support
+// conversation delimited by resolved/reopened system events. The daily
+// analyzer operates on the latest segment so that unrelated earlier issues
+// do not contaminate gap detection.
+type CoverageConversationSegment struct {
+	ID              string
+	StartMessageID  string
+	EndMessageID    string
+	StartAt         time.Time
+	EndAt           *time.Time
+	Resolved        bool
+	PublicMessages  []model.SupportMessage
+	PublicMessageID map[string]bool
+}
+
 type CoverageFindingUpsertInput struct {
 	WorkspaceID                  string
 	ConversationID               string
@@ -127,6 +157,11 @@ type CoverageFindingUpsertInput struct {
 	Result                       CoverageConversationAnalysisResult
 	MatchedKnowledgeCandidates   []CoverageKnowledgeCandidate
 	RecommendationDecisionReason string
+	SegmentID                    string
+	SegmentStartMessageID        string
+	SegmentEndMessageID          string
+	SegmentResolved              bool
+	HasHumanReply                bool
 }
 
 type SupportCoverageDailyAnalyzer struct {
@@ -293,7 +328,7 @@ func (s *SupportCoverageDailyAnalyzer) RunWorkspaceDailyAnalysis(ctx context.Con
 }
 
 func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx context.Context, workspaceID, runID string, conversation model.SupportConversation) (bool, error) {
-	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversation.ID, false)
+	messages, err := s.messageRepo.ListByConversation(ctx, workspaceID, conversation.ID, true)
 	if err != nil {
 		return false, err
 	}
@@ -303,6 +338,9 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 	}
 	input, err := BuildCoverageConversationAnalysisInput(conversation, messages, traces)
 	if err != nil {
+		if errors.Is(err, errCoverageNoPublicSegment) {
+			return false, nil
+		}
 		return false, err
 	}
 	alreadyAnalyzed, err := s.analysisRepo.AlreadyAnalyzedConversation(ctx, workspaceID, conversation.ID, input.TranscriptHash, coverageAnalyzerVersion)
@@ -312,6 +350,27 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 	if alreadyAnalyzed {
 		return false, nil
 	}
+
+	// Deterministic prefilter: skip obvious non-support conversations without LLM.
+	if localClass, skip := classifyCoverageConversationLocally(input); skip {
+		classPayload, _ := json.Marshal(localClass)
+		if err := s.analysisRepo.RecordConversationAnalysis(ctx, &model.SupportCoverageConversationAnalysis{
+			WorkspaceID:          workspaceID,
+			RunID:                runID,
+			ConversationID:       conversation.ID,
+			Status:               model.SupportCoverageConversationAnalysisStatusSkipped,
+			TranscriptHash:       input.TranscriptHash,
+			AnalyzerVersion:      coverageAnalyzerVersion,
+			IsSupportQuery:       false,
+			ConversationType:     localClass.ConversationType,
+			ClassificationReason: localClass.ClassificationReason,
+			RawOutput:            classPayload,
+		}); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
 	result, raw, err := s.AnalyzeConversation(ctx, input)
 	if err != nil {
 		analysisErr := err.Error()
@@ -331,17 +390,35 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		return false, nil
 	}
 
+	// Defense-in-depth: override speculative human_resolution when no human actually replied.
+	if !input.HasHumanReply && result.HumanResolution != "No human response observed" {
+		result.HumanResolution = "No human response observed"
+		raw, err = json.Marshal(result)
+		if err != nil {
+			return false, fmt.Errorf("marshal overridden analyzer result: %w", err)
+		}
+	}
+
+	// Determine status: non-support conversations are "skipped", others "analyzed".
+	analysisStatus := model.SupportCoverageConversationAnalysisStatusAnalyzed
+	if !result.IsSupportQuery {
+		analysisStatus = model.SupportCoverageConversationAnalysisStatusSkipped
+	}
+
 	analysis := &model.SupportCoverageConversationAnalysis{
 		WorkspaceID:               workspaceID,
 		RunID:                     runID,
 		ConversationID:            conversation.ID,
-		Status:                    model.SupportCoverageConversationAnalysisStatusAnalyzed,
+		Status:                    analysisStatus,
 		HasGap:                    result.HasGap,
 		GapKind:                   result.GapKind,
 		GapCategory:               result.GapCategory,
 		PrimaryRecommendationType: primaryRecommendationType(result.RecommendedFixes),
 		TranscriptHash:            input.TranscriptHash,
 		AnalyzerVersion:           coverageAnalyzerVersion,
+		IsSupportQuery:            result.IsSupportQuery,
+		ConversationType:          result.ConversationType,
+		ClassificationReason:      result.ClassificationReason,
 		CustomerNeed:              result.CustomerNeed,
 		AIFailure:                 result.AIFailure,
 		HumanResolution:           result.HumanResolution,
@@ -389,6 +466,11 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 		Result:                       *result,
 		MatchedKnowledgeCandidates:   matchedKnowledge,
 		RecommendationDecisionReason: recommendationDecisionReason,
+		SegmentID:                    input.SegmentID,
+		SegmentStartMessageID:        input.SegmentStartMessageID,
+		SegmentEndMessageID:          input.SegmentEndMessageID,
+		SegmentResolved:              input.SegmentResolved,
+		HasHumanReply:                input.HasHumanReply,
 	})
 	if err != nil {
 		return false, err
@@ -397,12 +479,24 @@ func (s *SupportCoverageDailyAnalyzer) runConversationCoverageAnalysis(ctx conte
 }
 
 func BuildCoverageConversationAnalysisInput(conversation model.SupportConversation, messages []model.SupportMessage, traces []model.SupportAIRetrievalTrace) (CoverageConversationAnalysisInput, error) {
-	orderedMessages := sortedCoverageMessages(messages)
-	hash := CoverageTranscriptHash(orderedMessages)
+	segment := BuildLatestCoverageConversationSegment(messages)
+	if segment == nil {
+		return CoverageConversationAnalysisInput{}, errCoverageNoPublicSegment
+	}
+	return BuildCoverageConversationAnalysisInputForSegment(conversation, *segment, traces)
+}
+
+// BuildCoverageConversationAnalysisInputForSegment builds analyzer input from
+// a specific conversation segment. The IsInternal/system guard is kept as
+// defense-in-depth even though segment.PublicMessages should already exclude
+// internal messages.
+func BuildCoverageConversationAnalysisInputForSegment(conversation model.SupportConversation, segment CoverageConversationSegment, traces []model.SupportAIRetrievalTrace) (CoverageConversationAnalysisInput, error) {
+	orderedMessages := sortedCoverageMessages(segment.PublicMessages)
+	hash := CoverageSegmentTranscriptHash(segment)
 	analysisMessages := make([]CoverageConversationMessage, 0, len(orderedMessages))
 
 	for _, message := range orderedMessages {
-		if message.IsInternal {
+		if message.IsInternal || strings.TrimSpace(message.MessageType) == "system" {
 			continue
 		}
 		analysisMessage := CoverageConversationMessage{
@@ -428,26 +522,64 @@ func BuildCoverageConversationAnalysisInput(conversation model.SupportConversati
 		analysisMessages = analysisMessages[len(analysisMessages)-coverageAnalysisMaxMessages:]
 	}
 
+	// Filter retrieval traces to messages actually sent to the LLM.
+	analysisMessageIDs := map[string]bool{}
+	for _, message := range analysisMessages {
+		analysisMessageIDs[strings.TrimSpace(message.ID)] = true
+	}
+	filteredTraces := filterCoverageRetrievalTracesByMessageIDs(traces, analysisMessageIDs)
+
+	hasHumanReply := false
+	for _, message := range analysisMessages {
+		if message.SenderType == "user" {
+			hasHumanReply = true
+			break
+		}
+	}
+
 	flowState := ""
 	if conversation.FlowState != nil {
 		flowState = strings.TrimSpace(*conversation.FlowState)
 	}
-	traceInputs, err := coverageRetrievalTraceInputs(traces)
+	traceInputs, err := coverageRetrievalTraceInputs(filteredTraces)
 	if err != nil {
 		return CoverageConversationAnalysisInput{}, err
 	}
 
 	return CoverageConversationAnalysisInput{
-		WorkspaceID:     conversation.WorkspaceID,
-		ConversationID:  conversation.ID,
-		Subject:         strings.TrimSpace(conversation.Subject),
-		Status:          strings.TrimSpace(conversation.Status),
-		FlowState:       flowState,
-		AITurnCount:     conversation.AITurnCount,
-		TranscriptHash:  hash,
-		Messages:        analysisMessages,
-		RetrievalTraces: traceInputs,
+		WorkspaceID:           conversation.WorkspaceID,
+		ConversationID:        conversation.ID,
+		Subject:               strings.TrimSpace(conversation.Subject),
+		Status:                strings.TrimSpace(conversation.Status),
+		FlowState:             flowState,
+		AITurnCount:           conversation.AITurnCount,
+		TranscriptHash:        hash,
+		SegmentID:             segment.ID,
+		SegmentStartMessageID: segment.StartMessageID,
+		SegmentEndMessageID:   segment.EndMessageID,
+		SegmentStartAt:        timePtrIfNonZero(segment.StartAt),
+		SegmentEndAt:          segment.EndAt,
+		SegmentResolved:       segment.Resolved,
+		HasHumanReply:         hasHumanReply,
+		Messages:              analysisMessages,
+		RetrievalTraces:       traceInputs,
 	}, nil
+}
+
+// filterCoverageRetrievalTracesByMessageIDs returns only traces whose
+// MessageID appears in the provided set. This ensures traces from earlier
+// segments or truncated messages do not leak into analysis.
+func filterCoverageRetrievalTracesByMessageIDs(traces []model.SupportAIRetrievalTrace, messageIDs map[string]bool) []model.SupportAIRetrievalTrace {
+	if len(traces) == 0 || len(messageIDs) == 0 {
+		return nil
+	}
+	filtered := make([]model.SupportAIRetrievalTrace, 0, len(traces))
+	for _, trace := range traces {
+		if messageIDs[strings.TrimSpace(trace.MessageID)] {
+			filtered = append(filtered, trace)
+		}
+	}
+	return filtered
 }
 
 func coverageKnowledgeCandidatesFromTraceInput(traces []CoverageRetrievalTraceInput) []CoverageKnowledgeCandidate {
@@ -484,7 +616,19 @@ func (s *SupportCoverageDailyAnalyzer) matchCurrentKnowledgeForAnalysis(ctx cont
 	if len(spaceIDs) == 0 && len(contentSourceIDs) == 0 {
 		return nil, nil
 	}
-	return s.knowledgeMatcher.MatchKnowledge(ctx, workspaceID, spaceIDs, contentSourceIDs, query, 8)
+	candidates, err := s.knowledgeMatcher.MatchKnowledge(ctx, workspaceID, spaceIDs, contentSourceIDs, query, 8)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) > 0 && candidates[0].CombinedScore < coverageKnowledgeMinRelevanceScore {
+		slog.InfoContext(ctx, "skipping coverage knowledge refinement: best candidate below threshold",
+			"best_score", candidates[0].CombinedScore,
+			"threshold", coverageKnowledgeMinRelevanceScore,
+			"workspace_id", workspaceID,
+		)
+		return nil, nil
+	}
+	return candidates, nil
 }
 
 func (s *SupportCoverageDailyAnalyzer) externalDocsSpaceIDs(ctx context.Context, workspaceID string) ([]string, error) {
@@ -519,6 +663,109 @@ func (s *SupportCoverageDailyAnalyzer) supportContentSourceIDs(ctx context.Conte
 		}
 	}
 	return ids, nil
+}
+
+// CoverageLocalClassification is the result of the deterministic prefilter.
+type CoverageLocalClassification struct {
+	ConversationType     string `json:"conversation_type"`
+	ClassificationReason string `json:"classification_reason"`
+}
+
+// classifyCoverageConversationLocally applies conservative deterministic rules
+// to skip obvious non-support conversations before the LLM call. The second
+// return value is true when the classification is high-confidence and the
+// conversation can be skipped without LLM analysis.
+func classifyCoverageConversationLocally(input CoverageConversationAnalysisInput) (CoverageLocalClassification, bool) {
+	// Rule 1: No customer messages at all — nothing to analyze.
+	hasCustomerMessage := false
+	for _, m := range input.Messages {
+		if m.SenderType == "customer" {
+			hasCustomerMessage = true
+			break
+		}
+	}
+	if !hasCustomerMessage {
+		return CoverageLocalClassification{
+			ConversationType:     "other",
+			ClassificationReason: "no customer messages in conversation",
+		}, true
+	}
+
+	// Gather subject (lowercased) and first customer message for pattern matching.
+	subjectLower := strings.ToLower(strings.TrimSpace(input.Subject))
+	var firstCustomerContent string
+	for _, m := range input.Messages {
+		if m.SenderType == "customer" {
+			firstCustomerContent = strings.ToLower(m.Content)
+			break
+		}
+	}
+
+	// Rule 2: Auto-reply / bounce patterns in subject.
+	autoReplyPrefixes := []string{
+		"out of office",
+		"automatic reply",
+		"auto-reply",
+		"auto reply",
+		"delivery status notification",
+		"undeliverable",
+		"mail delivery failed",
+		"returned mail",
+	}
+	for _, prefix := range autoReplyPrefixes {
+		if strings.HasPrefix(subjectLower, prefix) || strings.Contains(subjectLower, prefix) {
+			return CoverageLocalClassification{
+				ConversationType:     "auto_reply",
+				ClassificationReason: fmt.Sprintf("subject matches auto-reply pattern: %s", prefix),
+			}, true
+		}
+	}
+
+	// Rule 3: Newsletter / promotional patterns — only if no question mark in content.
+	hasQuestion := strings.Contains(firstCustomerContent, "?")
+	newsletterSignals := []string{
+		"view this email in your browser",
+		"manage your preferences",
+		"unsubscribe from this list",
+		"you are receiving this email because",
+	}
+	if !hasQuestion {
+		for _, signal := range newsletterSignals {
+			if strings.Contains(firstCustomerContent, signal) {
+				return CoverageLocalClassification{
+					ConversationType:     "newsletter",
+					ClassificationReason: fmt.Sprintf("content matches newsletter pattern: %s", signal),
+				}, true
+			}
+		}
+	}
+
+	// Rule 4: Cold outreach patterns — only if no question mark in content.
+	if !hasQuestion {
+		coldOutreachSignals := []string{
+			"book a call",
+			"book a demo",
+			"schedule a call",
+			"increase your leads",
+			"guest post",
+			"backlinks",
+			"seo services",
+			"partnership opportunity",
+			"link building",
+			"we help companies like yours",
+		}
+		for _, signal := range coldOutreachSignals {
+			if strings.Contains(firstCustomerContent, signal) || strings.Contains(subjectLower, signal) {
+				return CoverageLocalClassification{
+					ConversationType:     "cold_outreach",
+					ClassificationReason: fmt.Sprintf("content matches cold outreach pattern: %s", signal),
+				}, true
+			}
+		}
+	}
+
+	// No confident local classification — let the LLM decide.
+	return CoverageLocalClassification{}, false
 }
 
 func (s *SupportCoverageDailyAnalyzer) AnalyzeConversation(ctx context.Context, input CoverageConversationAnalysisInput) (*CoverageConversationAnalysisResult, json.RawMessage, error) {
@@ -701,6 +948,10 @@ func (s *SupportCoverageDailyAnalyzer) UpsertFinding(ctx context.Context, input 
 		"recommended_fixes":            result.RecommendedFixes,
 		"conversation_analysis_id":     input.AnalysisID,
 		"matched_knowledge_candidates": input.MatchedKnowledgeCandidates,
+		"segment_id":                   input.SegmentID,
+		"segment_start_message_id":     input.SegmentStartMessageID,
+		"segment_end_message_id":       input.SegmentEndMessageID,
+		"segment_resolved":             input.SegmentResolved,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal evidence metadata: %w", err)
@@ -767,15 +1018,17 @@ func (s *SupportCoverageDailyAnalyzer) recommendationRowsForFinding(ctx context.
 			UpdatedAt:           now,
 		}
 		if isCoverageDocsFix(fix) {
-			suggestion, err := s.createDocsSuggestionForFix(ctx, input, gapID, fix, metadata, now)
-			if err != nil {
-				return nil, err
-			}
-			row.SuggestionID = &suggestion.ID
 			if strings.TrimSpace(fix.TargetID) != "" {
 				if err := s.coverageRepo.LinkGapArticle(ctx, gapID, strings.TrimSpace(fix.TargetID), input.WorkspaceID); err != nil {
 					return nil, fmt.Errorf("link recommendation article: %w", err)
 				}
+			}
+			if input.HasHumanReply {
+				suggestion, err := s.createDocsSuggestionForFix(ctx, input, gapID, fix, metadata, now)
+				if err != nil {
+					return nil, err
+				}
+				row.SuggestionID = &suggestion.ID
 			}
 		}
 		rows = append(rows, row)
@@ -835,6 +1088,35 @@ func CoverageTranscriptHash(messages []model.SupportMessage) string {
 	}
 	sum := sha256.Sum256([]byte(strings.Join(records, "\x1e")))
 	return hex.EncodeToString(sum[:])
+}
+
+// CoverageSegmentTranscriptHash computes a transcript hash that incorporates
+// segment boundary information so that different segments of the same
+// conversation produce different hashes.
+func CoverageSegmentTranscriptHash(segment CoverageConversationSegment) string {
+	baseHash := CoverageTranscriptHash(segment.PublicMessages)
+	fields := []string{
+		strings.TrimSpace(segment.ID),
+		strings.TrimSpace(segment.StartMessageID),
+		strings.TrimSpace(segment.EndMessageID),
+		baseHash,
+	}
+	if !segment.StartAt.IsZero() {
+		fields = append(fields, segment.StartAt.UTC().Format(time.RFC3339Nano))
+	}
+	if segment.EndAt != nil && !segment.EndAt.IsZero() {
+		fields = append(fields, segment.EndAt.UTC().Format(time.RFC3339Nano))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(fields, "\x1f")))
+	return hex.EncodeToString(sum[:])
+}
+
+func timePtrIfNonZero(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	utc := t.UTC()
+	return &utc
 }
 
 func primaryCoverageTargetID(fixes []CoverageRecommendedFix) string {
@@ -921,10 +1203,50 @@ func firstNonEmptyCoverageString(values ...string) string {
 	return ""
 }
 
+// validConversationTypes is the set of recognized conversation_type values.
+var validConversationTypes = map[string]bool{
+	"support_query": true,
+	"newsletter":    true,
+	"cold_outreach": true,
+	"auto_reply":    true,
+	"transactional": true,
+	"spam":          true,
+	"internal":      true,
+	"other":         true,
+}
+
 func normalizeCoverageConversationAnalysisResult(result *CoverageConversationAnalysisResult) {
 	if result == nil {
 		return
 	}
+	// Normalize classification fields.
+	result.ConversationType = strings.TrimSpace(result.ConversationType)
+	result.ClassificationReason = strings.TrimSpace(result.ClassificationReason)
+	if result.ConversationType == "" {
+		result.ConversationType = "support_query"
+	}
+	if !validConversationTypes[result.ConversationType] {
+		result.ConversationType = "other"
+	}
+	// Derive IsSupportQuery from conversation_type to enforce consistency.
+	result.IsSupportQuery = result.ConversationType == "support_query"
+
+	// If not a support query, force zero-value gap fields.
+	if !result.IsSupportQuery {
+		result.HasGap = false
+		result.ShouldRunRetrieval = false
+		result.RecommendedFixes = nil
+		result.GapKind = ""
+		result.GapCategory = ""
+		result.CanonicalTitle = ""
+		result.CustomerNeed = ""
+		result.AIFailure = ""
+		result.HumanResolution = ""
+		result.SearchQuery = ""
+		result.Confidence = 0
+		return
+	}
+
 	result.GapKind = strings.TrimSpace(result.GapKind)
 	result.GapCategory = strings.TrimSpace(result.GapCategory)
 	result.CanonicalTitle = strings.TrimSpace(result.CanonicalTitle)
@@ -981,6 +1303,18 @@ func normalizeCoverageFixBundleDecision(decision *CoverageFixBundleDecision) {
 func coverageConversationAnalysisSystemPrompt() string {
 	return `You analyze support conversations to find durable AI coverage gaps. Return JSON only.
 
+The provided messages may be only the latest lifecycle segment of a longer conversation.
+Do not infer gaps from earlier issues that are not present in the provided segment.
+Use segment_id and segment boundary fields only as analysis context.
+
+First classify whether the conversation contains a genuine customer or prospect need. Set conversation_type=support_query for customer/prospect questions, support issues, account or billing requests, setup/troubleshooting requests, and product-evaluation questions such as pricing, migration, integration, security, or comparisons.
+
+Set is_support_query=false for newsletters, cold outreach, auto-replies, bounces, transactional notifications with no support request, spam/phishing, internal messages, and emails that are not from someone seeking help or product information. Explain the classification briefly in classification_reason.
+
+If is_support_query=false, set has_gap=false, should_run_retrieval=false, recommended_fixes=[], and leave gap details empty.
+
+If is_support_query=true, proceed with gap analysis:
+
 Decide from the full conversation outcome, not one message. Treat human replies as the best evidence of what was missing. Use live retrieval traces to diagnose what AI actually searched and saw during the conversation.
 
 Do not create a gap if the AI correctly resolved the issue. Set should_run_retrieval=true only when current docs, website, or customer-facing content search can materially improve the recommendation.
@@ -989,7 +1323,14 @@ Prefer knowledge/content gaps only when customer-facing knowledge could reasonab
 
 Recommend multiple fixes when one surface alone will not reduce repeated human intervention. Limit to 3 fixes. Mark exactly one fix as primary unless two fixes are equally necessary.
 
-Recommend website/content changes for prospect, sales, pricing, migration, integration, security, comparison, or pre-purchase questions. Recommend docs changes for setup, usage, troubleshooting, and post-signup workflows.`
+Recommend website/content changes for prospect, sales, pricing, migration, integration, security, comparison, or pre-purchase questions. Recommend docs changes for setup, usage, troubleshooting, and post-signup workflows.
+
+Be concise in all text fields. Each field should be one sentence, two at most:
+- customer_need: what the customer needed, not a retelling of the conversation.
+- ai_failure: specifically what the AI lacked or got wrong.
+- human_resolution: the concrete action the human took. If no message from a human agent (sender_type=user) appears in the conversation, set human_resolution to "No human response observed" exactly. Do not speculate what a human agent would or should do.
+- decision_reason: why this gap matters, not a summary of the above fields.
+- rationale, suggested_change, implementation_notes in recommended_fixes: one actionable sentence each. Do not repeat information across fields.`
 }
 
 func coverageConversationAnalysisJSONSchema() map[string]any {
@@ -997,6 +1338,9 @@ func coverageConversationAnalysisJSONSchema() map[string]any {
 		"type":                 "object",
 		"additionalProperties": false,
 		"required": []string{
+			"is_support_query",
+			"conversation_type",
+			"classification_reason",
 			"has_gap",
 			"gap_kind",
 			"gap_category",
@@ -1011,17 +1355,20 @@ func coverageConversationAnalysisJSONSchema() map[string]any {
 			"confidence",
 		},
 		"properties": map[string]any{
-			"has_gap":              map[string]any{"type": "boolean"},
-			"gap_kind":             map[string]any{"type": "string", "enum": []string{"", "content", "data", "action", "policy"}},
-			"gap_category":         map[string]any{"type": "string", "enum": []string{"", model.SupportCoverageGapCategoryKnowledge, model.SupportCoverageGapCategoryStructure, model.SupportCoverageGapCategoryConflict, model.SupportCoverageGapCategoryContext, model.SupportCoverageGapCategoryAction, model.SupportCoverageGapCategoryWorkflow, model.SupportCoverageGapCategoryPolicy, model.SupportCoverageGapCategoryEvaluation, model.SupportCoverageGapCategoryUnknown}},
-			"canonical_title":      map[string]any{"type": "string"},
-			"customer_need":        map[string]any{"type": "string"},
-			"ai_failure":           map[string]any{"type": "string"},
-			"human_resolution":     map[string]any{"type": "string"},
-			"decision_reason":      map[string]any{"type": "string"},
-			"search_query":         map[string]any{"type": "string"},
-			"should_run_retrieval": map[string]any{"type": "boolean"},
-			"confidence":           map[string]any{"type": "number"},
+			"is_support_query":      map[string]any{"type": "boolean"},
+			"conversation_type":     map[string]any{"type": "string", "enum": []string{"support_query", "newsletter", "cold_outreach", "auto_reply", "transactional", "spam", "internal", "other"}},
+			"classification_reason": map[string]any{"type": "string"},
+			"has_gap":               map[string]any{"type": "boolean"},
+			"gap_kind":              map[string]any{"type": "string", "enum": []string{"", "content", "data", "action", "policy"}},
+			"gap_category":          map[string]any{"type": "string", "enum": []string{"", model.SupportCoverageGapCategoryKnowledge, model.SupportCoverageGapCategoryStructure, model.SupportCoverageGapCategoryConflict, model.SupportCoverageGapCategoryContext, model.SupportCoverageGapCategoryAction, model.SupportCoverageGapCategoryWorkflow, model.SupportCoverageGapCategoryPolicy, model.SupportCoverageGapCategoryEvaluation, model.SupportCoverageGapCategoryUnknown}},
+			"canonical_title":       map[string]any{"type": "string"},
+			"customer_need":         map[string]any{"type": "string"},
+			"ai_failure":            map[string]any{"type": "string"},
+			"human_resolution":      map[string]any{"type": "string"},
+			"decision_reason":       map[string]any{"type": "string"},
+			"search_query":          map[string]any{"type": "string"},
+			"should_run_retrieval":  map[string]any{"type": "boolean"},
+			"confidence":            map[string]any{"type": "number"},
 			"recommended_fixes": map[string]any{
 				"type":     "array",
 				"maxItems": 3,
@@ -1051,7 +1398,9 @@ func coverageFixBundleRefinementSystemPrompt() string {
 
 Use update_article only when a candidate help article is clearly about the same customer need but is missing, outdated, or unclear. Use update_website_page when a website/content page should answer a prospect, sales, pricing, integration, migration, security, comparison, or pre-purchase question. Use create_article or create_website_page when no candidate covers the same topic.
 
-Preserve data, action, policy, workflow, and agent-instruction recommendations from the first-pass analysis if they remain relevant. Mixed cases may produce multiple fixes, capped at 3. Mark exactly one primary fix unless two fixes are equally necessary. Keep decision_reason short enough for a UI card.`
+Preserve data, action, policy, workflow, and agent-instruction recommendations from the first-pass analysis if they remain relevant. Mixed cases may produce multiple fixes, capped at 3. Mark exactly one primary fix unless two fixes are equally necessary.
+
+Be concise: decision_reason should be one sentence for a UI card. Each fix field (rationale, suggested_change, implementation_notes) should be one actionable sentence. Do not repeat information across fields.`
 }
 
 func coverageFixBundleDecisionJSONSchema() map[string]any {
@@ -1104,6 +1453,93 @@ func coverageKnowledgeSuggestionJSONSchema() map[string]any {
 			"markdown_content": map[string]any{"type": "string"},
 		},
 	}
+}
+
+// BuildLatestCoverageConversationSegment derives lifecycle segments from the
+// chronologically ordered message list and returns the latest one. Segments
+// are delimited by resolved system events. The first public message after a
+// resolved event starts a new segment — this handles the email reopen edge
+// case where the customer reply is written before the reopened system event.
+func BuildLatestCoverageConversationSegment(messages []model.SupportMessage) *CoverageConversationSegment {
+	ordered := sortedCoverageMessages(messages)
+	var segments []CoverageConversationSegment
+	var current *CoverageConversationSegment
+
+	ensureCurrent := func(message model.SupportMessage) {
+		if current != nil {
+			return
+		}
+		current = &CoverageConversationSegment{
+			ID:              message.ID,
+			StartMessageID:  message.ID,
+			StartAt:         message.CreatedAt.UTC(),
+			PublicMessageID: map[string]bool{},
+		}
+	}
+
+	closeCurrent := func(event model.SupportMessage) {
+		if current == nil || len(current.PublicMessages) == 0 {
+			return
+		}
+		endAt := event.CreatedAt.UTC()
+		current.EndAt = &endAt
+		current.EndMessageID = event.ID
+		current.Resolved = true
+		segments = append(segments, *current)
+		current = nil
+	}
+
+	for _, message := range ordered {
+		if isCoverageResolvedSystemMessage(message) {
+			closeCurrent(message)
+			continue
+		}
+		if message.IsInternal || strings.TrimSpace(message.MessageType) == "system" {
+			continue
+		}
+		ensureCurrent(message)
+		current.PublicMessages = append(current.PublicMessages, message)
+		current.PublicMessageID[message.ID] = true
+		current.EndMessageID = message.ID
+	}
+
+	if current != nil && len(current.PublicMessages) > 0 {
+		segments = append(segments, *current)
+	}
+	if len(segments) == 0 {
+		return nil
+	}
+	segment := segments[len(segments)-1]
+	if segment.PublicMessageID == nil {
+		segment.PublicMessageID = map[string]bool{}
+		for _, message := range segment.PublicMessages {
+			segment.PublicMessageID[message.ID] = true
+		}
+	}
+	segment.ID = coverageSegmentID(segment)
+	return &segment
+}
+
+func isCoverageResolvedSystemMessage(message model.SupportMessage) bool {
+	if strings.TrimSpace(message.MessageType) != "system" || message.SystemEventType == nil {
+		return false
+	}
+	return strings.TrimSpace(*message.SystemEventType) == model.SystemEventResolved
+}
+
+func coverageSegmentID(segment CoverageConversationSegment) string {
+	start := strings.TrimSpace(segment.StartMessageID)
+	end := strings.TrimSpace(segment.EndMessageID)
+	if start == "" && len(segment.PublicMessages) > 0 {
+		start = segment.PublicMessages[0].ID
+	}
+	if end == "" && len(segment.PublicMessages) > 0 {
+		end = segment.PublicMessages[len(segment.PublicMessages)-1].ID
+	}
+	if end == "" {
+		end = "open"
+	}
+	return start + ":" + end
 }
 
 func sortedCoverageMessages(messages []model.SupportMessage) []model.SupportMessage {

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -106,6 +107,29 @@ func (h *WorkspaceHandler) UpdateMember(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "member updated"})
+}
+
+// UpdateSupportTaskPreferences handles PATCH /api/workspaces/{id}/me/support-task-preferences.
+func (h *WorkspaceHandler) UpdateSupportTaskPreferences(w http.ResponseWriter, r *http.Request) {
+	actor := authorization.GetActor(r.Context())
+	if actor == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req model.UpdateSupportTaskPreferencesRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.workspaceService.UpdateSupportTaskPreferences(r.Context(), actor.WorkspaceID, actor.WorkspaceMemberID, req); err != nil {
+		slog.ErrorContext(r.Context(), "update support task preferences", "error", err)
+		writeError(w, http.StatusInternalServerError, "failed to update preferences")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "preferences updated"})
 }
 
 // RemoveMember handles DELETE /api/workspaces/{id}/members/{memberId}.
@@ -294,17 +318,34 @@ func (h *WorkspaceHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	for i, module := range modules {
 		moduleStrings[i] = string(module)
 	}
+	claims := middleware.ClaimsFrom(r.Context())
+	mfaSatisfied := claims != nil && claims.MFASatisfied
+	securityPolicy, err := h.workspaceService.GetWorkspaceMFAPolicy(r.Context(), actor.WorkspaceID, actor.UserID, mfaSatisfied)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to resolve workspace security policy")
+		return
+	}
+
+	// Fetch full member record for preference fields.
+	member, memberErr := h.workspaceService.GetMyMembership(r.Context(), actor.WorkspaceID, actor.UserID)
+
+	membership := map[string]interface{}{
+		"id":      actor.WorkspaceMemberID,
+		"user_id": actor.UserID,
+		"role":    actor.Role,
+		"status":  actor.Status,
+	}
+	if memberErr == nil && member != nil {
+		membership["support_default_team_id"] = member.SupportDefaultTeamID
+		membership["support_task_dialog_dismissed"] = member.SupportTaskDialogDismissed
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"workspace_id": actor.WorkspaceID,
-		"membership": map[string]string{
-			"id":      actor.WorkspaceMemberID,
-			"user_id": actor.UserID,
-			"role":    actor.Role,
-			"status":  actor.Status,
-		},
+		"workspace_id":     actor.WorkspaceID,
+		"membership":       membership,
 		"permissions":      permStrings,
 		"team_memberships": teamMemberships,
 		"modules":          moduleStrings,
+		"security_policy":  securityPolicy,
 	})
 }

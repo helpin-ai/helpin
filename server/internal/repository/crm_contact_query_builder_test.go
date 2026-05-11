@@ -112,6 +112,9 @@ func newCRMContactQueryBuilderTestDB(t *testing.T) *gorm.DB {
 		avatar_url TEXT,
 		source TEXT,
 		custom_properties TEXT,
+		email_status TEXT NOT NULL DEFAULT 'valid',
+		email_status_reason TEXT,
+		email_status_updated_at DATETIME,
 		created_at DATETIME,
 		updated_at DATETIME
 	)`).Error

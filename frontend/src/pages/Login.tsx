@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
+import { loginRedirectFromSearch } from '@/lib/authRedirect';
 
 export default function Login() {
   useTitle('Sign In');
@@ -24,11 +25,12 @@ export default function Login() {
   const { signIn, signInWithPasskey, verify2FASignIn } = useAuthStore();
   const navigate = useNavigate();
   const passkeySupported = passkeyService.isSupported();
+  const redirect = loginRedirectFromSearch();
+  const registerHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : '/register';
 
   const completeLoginRedirect = async () => {
-    // Check for redirect (e.g. from invitation join page).
-    const redirect = new URLSearchParams(window.location.search).get('redirect');
-    if (redirect && redirect.startsWith('/join/')) {
+    const redirect = loginRedirectFromSearch();
+    if (redirect) {
       navigate({ to: redirect as string });
       return;
     }
@@ -79,8 +81,8 @@ export default function Login() {
 
       setLoading(true);
       try {
-        const redirect = new URLSearchParams(window.location.search).get('redirect');
-        if (redirect && redirect.startsWith('/join/')) {
+        const redirect = loginRedirectFromSearch();
+        if (redirect) {
           navigate({ to: redirect as string });
           return;
         }
@@ -295,7 +297,7 @@ export default function Login() {
             )}
             {!twoFaToken && (
               <p className="text-sm text-muted-foreground">
-                Don't have an account? <Link to="/register" className="text-primary hover:underline">Sign up</Link>
+                Don't have an account? <Link to={registerHref as '/register'} className="text-primary hover:underline">Sign up</Link>
               </p>
             )}
           </CardFooter>

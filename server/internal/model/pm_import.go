@@ -11,7 +11,8 @@ const (
 	PMImportStatusFailed     = "failed"
 	PMImportStatusCanceled   = "canceled"
 
-	PMImportSourceShortcut = "shortcut"
+	PMImportSourceShortcut           = "shortcut"
+	PMImportSourceShortcutAPIPreview = "shortcut_api_preview"
 )
 
 type PMImportJob struct {
@@ -58,11 +59,16 @@ type ShortcutTeamPreview struct {
 }
 
 type ShortcutUserMatch struct {
-	Email         string  `json:"email"`
-	MatchedUserID *string `json:"matched_user_id"`
-	MatchedName   *string `json:"matched_name"`
-	ShortcutName  *string `json:"shortcut_name,omitempty"`
-	StoryCount    int     `json:"story_count"`
+	Email               string  `json:"email"`
+	ShortcutMemberID    *string `json:"shortcut_member_id,omitempty"`
+	MatchedUserID       *string `json:"matched_user_id"`
+	MatchedMemberID     *string `json:"matched_member_id,omitempty"`
+	MatchedMemberStatus *string `json:"matched_member_status,omitempty"`
+	MatchedName         *string `json:"matched_name"`
+	ShortcutName        *string `json:"shortcut_name,omitempty"`
+	StoryCount          int     `json:"story_count"`
+	OwnerCount          int     `json:"owner_count"`
+	RequesterCount      int     `json:"requester_count"`
 }
 
 type ShortcutImportPreviewSummary struct {
@@ -141,10 +147,12 @@ type ShortcutImportOptions struct {
 
 type ShortcutImportExecuteRequest struct {
 	UserMappings          map[string]string                     `json:"user_mappings"`
+	MemberMappings        map[string]string                     `json:"member_mappings,omitempty"`
 	TeamMappings          map[string]string                     `json:"team_mappings,omitempty"`
 	WorkflowStateMappings []ShortcutWorkflowStateMappingPayload `json:"workflow_state_mappings"`
 	Options               ShortcutImportOptions                 `json:"options"`
 	APIToken              string                                `json:"api_token,omitempty"`
+	PreviewScanID         string                                `json:"preview_scan_id,omitempty"`
 }
 
 type ShortcutImportExecuteResponse struct {
@@ -238,6 +246,21 @@ type ShortcutAPIImportPreviewRequest struct {
 	APIToken string                `json:"api_token"`
 	Options  ShortcutImportOptions `json:"options"`
 	ScanID   string                `json:"scan_id,omitempty"`
+}
+
+type ShortcutAPIPreviewStartResponse struct {
+	ScanID string `json:"scan_id"`
+	Status string `json:"status"`
+}
+
+type ShortcutAPIPreviewScanResponse struct {
+	ScanID    string                         `json:"scan_id"`
+	Status    string                         `json:"status"`
+	Progress  ShortcutImportStatusProgress   `json:"progress"`
+	Preview   *ShortcutImportPreviewResponse `json:"preview,omitempty"`
+	Error     *string                        `json:"error,omitempty"`
+	CreatedAt *time.Time                     `json:"created_at,omitempty"`
+	UpdatedAt *time.Time                     `json:"updated_at,omitempty"`
 }
 
 type ShortcutAPIImportExecuteRequest = ShortcutImportExecuteRequest

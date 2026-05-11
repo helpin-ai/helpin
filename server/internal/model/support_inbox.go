@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
@@ -50,6 +52,7 @@ type SupportConversation struct {
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage         *string                    `json:"last_message,omitempty" gorm:"->"`
 	UnreadCount         int                        `json:"unread_count" gorm:"->"`
+	AwaitingReply       bool                       `json:"awaiting_reply" gorm:"->"`
 	CountryCode         *string                    `json:"country_code,omitempty" gorm:"->"`
 	CountryName         *string                    `json:"country_name,omitempty" gorm:"->"`
 	OpenedByDisplayName *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
@@ -59,6 +62,8 @@ type SupportConversation struct {
 	MailboxHandle       *string                    `json:"mailbox_handle,omitempty" gorm:"->"`
 	MailboxIcon         *string                    `json:"mailbox_icon,omitempty" gorm:"->"`
 	Triage              *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
+	Tags                []SupportTag               `json:"tags,omitempty" gorm:"-"`
+	SystemTags          []string                   `json:"system_tags,omitempty" gorm:"-"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
@@ -76,6 +81,13 @@ const (
 	SupportConversationFlowStateAssignedToHuman = "assigned_to_human"
 	SupportConversationFlowStateResolvedByAI    = "resolved_by_ai"
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
+)
+
+const (
+	SupportConversationListFilterInbox    = "inbox"
+	SupportConversationListFilterMine     = "mine"
+	SupportConversationListFilterMentions = "mentions"
+	SupportConversationListFilterResolved = "resolved"
 )
 
 func NormalizeSupportConversationStatus(status string) string {
@@ -145,10 +157,17 @@ type UpdateSupportTeammatePresenceRequest struct {
 
 // UnreadStats holds aggregate unread conversation counts for sidebar badges.
 type UnreadStats struct {
-	Total      int `json:"total"`
-	MyInbox    int `json:"my_inbox"`
-	Unassigned int `json:"unassigned"`
-	AIActive   int `json:"ai_active"`
+	Inbox         int `json:"inbox"`
+	Mine          int `json:"mine"`
+	Waiting       int `json:"waiting"`
+	AIActive      int `json:"ai_active"`
+	Total         int `json:"total"`
+	MyInbox       int `json:"my_inbox"`
+	Unassigned    int `json:"unassigned"`
+	InboxTotal    int `json:"inbox_total"`
+	MineTotal     int `json:"mine_total"`
+	WaitingTotal  int `json:"waiting_total"`
+	AIActiveTotal int `json:"ai_active_total"`
 }
 
 type SupportInboxScope struct {
@@ -158,6 +177,7 @@ type SupportInboxScope struct {
 	Icon         string  `json:"icon"`
 	IsShared     bool    `json:"is_shared"`
 	IsDefault    bool    `json:"is_default"`
+	TotalCount   int     `json:"total_count"`
 	UnreadCount  int     `json:"unread_count"`
 	Active       bool    `json:"active"`
 	LinkedTeamID *string `json:"linked_team_id,omitempty"`
@@ -210,6 +230,14 @@ type SupportMessage struct {
 	EmailReadAt       *time.Time `json:"email_read_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	// CancellableUntil is the moment the email-fallback timer fires for an
+	// outbound agent reply. Until this passes, the agent can soft-delete the
+	// message and the queued email is removed from the per-conversation Redis
+	// outbox. NULL for messages that aren't subject to email fallback.
+	CancellableUntil *time.Time `json:"cancellable_until,omitempty" gorm:"index"`
+	// DeletedAt enables GORM soft-delete: removed messages keep their row
+	// (auditability) but are filtered out of every read path automatically.
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
 	// Virtual fields — populated by service layer, not stored in DB.
 	Attachments []SupportAttachmentPayload `json:"attachments,omitempty" gorm:"-"`
@@ -245,9 +273,9 @@ type SupportLinkPreview struct {
 type SupportCannedResponse struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ShortCode   string    `json:"short_code" gorm:"not null"` // e.g., "greeting", "thanks"
-	Title       string    `json:"title" gorm:"not null"`
+	ShortCode   string    `json:"short_code" gorm:"not null"` // e.g., "!greeting", "!thanks"
 	Content     string    `json:"content" gorm:"not null"`
+	Tag         string    `json:"tag" gorm:"not null;default:'General'"`
 	CreatedByID string    `json:"created_by_id" gorm:"type:uuid"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -472,6 +500,94 @@ type CreateSupportEmailRouteRequest struct {
 }
 
 type DisableSupportEmailRouteRequest struct{}
+
+type SupportEmailSenderDomain struct {
+	ID                         string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_support_email_sender_domain_workspace_domain"`
+	Domain                     string     `json:"domain" gorm:"not null;uniqueIndex:idx_support_email_sender_domain_workspace_domain"`
+	FromLocalPart              string     `json:"from_local_part" gorm:"not null;default:'support'"`
+	PostmarkDomainID           *int       `json:"postmark_domain_id,omitempty" gorm:"uniqueIndex"`
+	ReturnPathDomain           string     `json:"return_path_domain"`
+	ReturnPathDomainCNAMEValue string     `json:"return_path_domain_cname_value"`
+	ReturnPathDomainVerified   bool       `json:"return_path_domain_verified" gorm:"not null;default:false"`
+	DKIMHost                   string     `json:"dkim_host"`
+	DKIMTextValue              string     `json:"dkim_text_value"`
+	DKIMPendingHost            string     `json:"dkim_pending_host"`
+	DKIMPendingTextValue       string     `json:"dkim_pending_text_value"`
+	DKIMVerified               bool       `json:"dkim_verified" gorm:"not null;default:false"`
+	DKIMUpdateStatus           string     `json:"dkim_update_status"`
+	Status                     string     `json:"status" gorm:"not null;default:'pending_dns';index"`
+	Active                     bool       `json:"active" gorm:"not null;default:false;index"`
+	LastCheckedAt              *time.Time `json:"last_checked_at,omitempty"`
+	LastError                  *string    `json:"last_error,omitempty"`
+	CreatedByID                string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt                  time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                  time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (SupportEmailSenderDomain) TableName() string { return "support_email_sender_domains" }
+
+type CreateSupportEmailSenderDomainRequest struct {
+	Domain        string `json:"domain"`
+	FromLocalPart string `json:"from_local_part"`
+}
+
+type SupportEmailSender struct {
+	ID                          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                 string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_support_email_sender_workspace_email"`
+	MailboxID                   *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
+	Email                       string     `json:"email" gorm:"not null;uniqueIndex:idx_support_email_sender_workspace_email"`
+	LocalPart                   string     `json:"local_part" gorm:"not null"`
+	Domain                      string     `json:"domain" gorm:"not null;index"`
+	DisplayName                 string     `json:"display_name"`
+	PostmarkDomainID            *int       `json:"postmark_domain_id,omitempty" gorm:"index"`
+	ReturnPathDomain            string     `json:"return_path_domain"`
+	ReturnPathDomainCNAMEValue  string     `json:"return_path_domain_cname_value"`
+	ReturnPathDomainVerified    bool       `json:"return_path_domain_verified" gorm:"not null;default:false"`
+	DKIMHost                    string     `json:"dkim_host"`
+	DKIMTextValue               string     `json:"dkim_text_value"`
+	DKIMPendingHost             string     `json:"dkim_pending_host"`
+	DKIMPendingTextValue        string     `json:"dkim_pending_text_value"`
+	DKIMVerified                bool       `json:"dkim_verified" gorm:"not null;default:false"`
+	DKIMUpdateStatus            string     `json:"dkim_update_status"`
+	DMARCHost                   string     `json:"dmarc_host"`
+	DMARCPolicy                 string     `json:"dmarc_policy"`
+	DMARCRecordPresent          bool       `json:"dmarc_record_present" gorm:"not null;default:false"`
+	DMARCLastCheckedAt          *time.Time `json:"dmarc_last_checked_at,omitempty"`
+	DomainStatus                string     `json:"domain_status" gorm:"not null;default:'pending_dns';index"`
+	ForwardingStatus            string     `json:"forwarding_status" gorm:"not null;default:'not_started';index"`
+	ForwardingVerificationToken string     `json:"-" gorm:"uniqueIndex"`
+	ForwardingAddress           string     `json:"forwarding_address"`
+	ForwardingVerifiedAt        *time.Time `json:"forwarding_verified_at,omitempty"`
+	ForwardingLastCheckedAt     *time.Time `json:"forwarding_last_checked_at,omitempty"`
+	ForwardingLastError         *string    `json:"forwarding_last_error,omitempty"`
+	EmailRouteID                *string    `json:"email_route_id,omitempty" gorm:"type:uuid;index"`
+	VerificationStatus          string     `json:"verification_status" gorm:"not null;default:'pending_dns';index"`
+	DefaultScope                string     `json:"default_scope" gorm:"not null;default:'none';index"`
+	Active                      bool       `json:"active" gorm:"not null;default:false;index"`
+	LastCheckedAt               *time.Time `json:"last_checked_at,omitempty"`
+	LastError                   *string    `json:"last_error,omitempty"`
+	CreatedByID                 string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt                   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	MailboxName   *string `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle *string `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon   *string `json:"mailbox_icon,omitempty" gorm:"->"`
+}
+
+func (SupportEmailSender) TableName() string { return "support_email_senders" }
+
+type CreateSupportEmailSenderRequest struct {
+	Email       string  `json:"email"`
+	DisplayName string  `json:"display_name"`
+	MailboxID   *string `json:"mailbox_id"`
+}
+
+type SetSupportEmailSenderDefaultRequest struct {
+	DefaultScope string  `json:"default_scope"`
+	MailboxID    *string `json:"mailbox_id"`
+}
 
 type CreateSupportMailboxRequest struct {
 	Name               string   `json:"name"`
@@ -757,9 +873,9 @@ type WidgetMessageReceivedPayload struct {
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.
 type CannedResponseRequest struct {
-	ShortCode string `json:"short_code"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
+	ShortCode string  `json:"short_code"`
+	Content   string  `json:"content"`
+	Tag       *string `json:"tag,omitempty"`
 }
 
 // TypingIndicatorRequest represents a typing indicator event.
@@ -927,7 +1043,7 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		ReplyTimeCustomMinutes:          nil,
 		SpecialNoticeText:               nil,
 		EmailFallbackEnabled:            true,
-		EmailFallbackDelaySecs:          120,
+		EmailFallbackDelaySecs:          180,
 		EmailFallbackFromName:           "",
 		EmailFallbackMaxDeliveryAgeSecs: 600,
 		WidgetName:                      "",

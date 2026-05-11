@@ -51,6 +51,7 @@ export interface SupportGapEvidence {
   document_id: string | null
   source_signal: string
   excerpt: string
+  sender_role: string
   created_at: string
 }
 
@@ -135,6 +136,7 @@ export interface SupportCoverageSummary {
   total_open_gaps: number
   total_evidence_count: number
   handoffs_after_fixes: number
+  last_analyzed_at?: string | null
 }
 
 export interface SupportConversationCoverageState {
@@ -153,6 +155,34 @@ export const V1_GAP_TYPE_LABELS: Record<SupportCoverageV1GapType, string> = {
   weak_article: 'Weak Article',
   outdated_or_conflicting_article: 'Outdated / Conflicting',
   needs_review: 'Unclassified',
+}
+
+// Gap kind is the high-level grouping (content, data, action/policy).
+// gap_category is the granular sub-type — we map it to one of 3 kinds for display.
+export const GAP_KIND_LABELS: Record<string, string> = {
+  content: 'Content',
+  data: 'Data',
+  action: 'Action',
+  policy: 'Action',
+}
+
+export const GAP_KIND_DESCRIPTIONS: Record<string, string> = {
+  content: 'Missing or incomplete docs and knowledge',
+  data: 'AI lacked customer or account data',
+  action: 'AI couldn\'t perform the required operation',
+}
+
+export const GAP_KIND_COLORS: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+  content: { bg: 'bg-blue-50 dark:bg-blue-950/30', text: 'text-blue-700 dark:text-blue-400', border: 'border-blue-200 dark:border-blue-800', dot: 'bg-blue-500' },
+  data: { bg: 'bg-amber-50 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-800', dot: 'bg-amber-500' },
+  action: { bg: 'bg-purple-50 dark:bg-purple-950/30', text: 'text-purple-700 dark:text-purple-400', border: 'border-purple-200 dark:border-purple-800', dot: 'bg-purple-500' },
+  policy: { bg: 'bg-purple-50 dark:bg-purple-950/30', text: 'text-purple-700 dark:text-purple-400', border: 'border-purple-200 dark:border-purple-800', dot: 'bg-purple-500' },
+}
+
+// Resolve gap_kind to display kind (policy → action).
+export function resolveGapKindDisplay(gapKind: string): string {
+  if (gapKind === 'policy') return 'action'
+  return gapKind || 'content'
 }
 
 export const GAP_STATUS_LABELS: Record<SupportCoverageGapStatus, string> = {

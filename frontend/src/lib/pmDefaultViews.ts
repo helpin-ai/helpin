@@ -21,7 +21,7 @@ export function getDefaultViews(currentMemberId: string): PMView[] {
       id: '__default_owned_by_me__',
       workspace_id: '',
       name: 'Owned by me',
-      filters: { owner_member_id: currentMemberId },
+      filters: { owner_member_ids: currentMemberId },
       is_shared: false,
       is_pinned: true,
       position: -3,

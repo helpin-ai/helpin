@@ -24,21 +24,23 @@ type InternalCommandDefinition struct {
 }
 
 type InternalCommandService struct {
-	agentService        *AgentService
-	taskService         *PMTaskService
-	labelService        *PMLabelService
-	commentService      *PMCommentService
-	crmDealService      *CRMDealService
-	crmActivityService  *CRMActivityService
-	docsDocumentService *DocsDocumentService
-	docsContentService  *DocsContentService
-	docsContentRepo     *repository.DocsContentRepository
-	docsLinkService     *DocsLinkService
-	pmAutomationService *PMAutomationService
-	gitService          *GitService
-	taskRepo            *repository.PMTaskRepository
-	taskLinkRepo        *repository.PMTaskLinkRepository
-	definitions         map[string]InternalCommandDefinition
+	agentService         *AgentService
+	taskService          *PMTaskService
+	labelService         *PMLabelService
+	commentService       *PMCommentService
+	crmDealService       *CRMDealService
+	crmActivityService   *CRMActivityService
+	crmEnrichmentService *CRMEnrichmentService
+	docsDocumentService  *DocsDocumentService
+	docsContentService   *DocsContentService
+	docsBlockService     *DocsBlockService
+	docsContentRepo      *repository.DocsContentRepository
+	docsLinkService      *DocsLinkService
+	pmAutomationService  *PMAutomationService
+	gitService           *GitService
+	taskRepo             *repository.PMTaskRepository
+	taskLinkRepo         *repository.PMTaskLinkRepository
+	definitions          map[string]InternalCommandDefinition
 }
 
 // SetPMAutomationService sets the PM automation service (breaks circular dependency).
@@ -61,6 +63,11 @@ func (s *InternalCommandService) SetGitService(svc *GitService) {
 	s.gitService = svc
 }
 
+// SetCRMEnrichmentService sets guarded CRM enrichment dependencies.
+func (s *InternalCommandService) SetCRMEnrichmentService(svc *CRMEnrichmentService) {
+	s.crmEnrichmentService = svc
+}
+
 // SetDocsCreateDependencies wires document creation dependencies after service
 // construction so callers can avoid circular startup ordering.
 func (s *InternalCommandService) SetDocsCreateDependencies(documentSvc *DocsDocumentService, contentRepo *repository.DocsContentRepository) {
@@ -69,6 +76,13 @@ func (s *InternalCommandService) SetDocsCreateDependencies(documentSvc *DocsDocu
 	}
 	s.docsDocumentService = documentSvc
 	s.docsContentRepo = contentRepo
+}
+
+func (s *InternalCommandService) SetDocsBlockService(blockSvc *DocsBlockService) {
+	if s == nil {
+		return
+	}
+	s.docsBlockService = blockSvc
 }
 
 func NewInternalCommandService(
@@ -314,18 +328,18 @@ func (s *InternalCommandService) registerDefaults() {
 		Tool:                 mustCommandToolMetadata("pm.create_task"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				Name          string   `json:"name"`
-				Description   *string  `json:"description"`
-				TaskType      string   `json:"task_type"`
-				Estimate      *int     `json:"estimate"`
-				Priority      *string  `json:"priority"`
-				EpicID        *string  `json:"epic_id"`
-				TeamID        string   `json:"team_id"`
-				WorkflowID    *string  `json:"workflow_id"`
-				StateID       *string  `json:"state_id"`
-				OwnerMemberID *string  `json:"owner_member_id"`
-				LabelIDs      []string `json:"label_ids"`
-				Deadline      *string  `json:"deadline"`
+				Name           string   `json:"name"`
+				Description    *string  `json:"description"`
+				TaskType       string   `json:"task_type"`
+				Estimate       *int     `json:"estimate"`
+				Priority       *string  `json:"priority"`
+				EpicID         *string  `json:"epic_id"`
+				TeamID         string   `json:"team_id"`
+				WorkflowID     *string  `json:"workflow_id"`
+				StateID        *string  `json:"state_id"`
+				OwnerMemberIDs []string `json:"owner_member_ids"`
+				LabelIDs       []string `json:"label_ids"`
+				Deadline       *string  `json:"deadline"`
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse create task input: %w", err)
@@ -345,7 +359,7 @@ func (s *InternalCommandService) registerDefaults() {
 			req.Priority = stringPtrOrNil(commandDerefString(req.Priority))
 			req.WorkflowID = stringPtrOrNil(commandDerefString(req.WorkflowID))
 			req.StateID = stringPtrOrNil(commandDerefString(req.StateID))
-			req.OwnerMemberID = stringPtrOrNil(commandDerefString(req.OwnerMemberID))
+			req.OwnerMemberIDs = commandTrimStringSlice(req.OwnerMemberIDs)
 
 			var deadline *time.Time
 			if req.Deadline != nil {
@@ -370,7 +384,7 @@ func (s *InternalCommandService) registerDefaults() {
 				WorkflowStateID: stateID,
 				EpicID:          req.EpicID,
 				TeamID:          stringPtrOrNil(req.TeamID),
-				OwnerMemberID:   req.OwnerMemberID,
+				OwnerMemberIDs:  req.OwnerMemberIDs,
 				Estimate:        req.Estimate,
 				Priority:        req.Priority,
 				Deadline:        deadline,
@@ -756,6 +770,44 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "docs.update_document_block",
+		Module:               "docs",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"document"},
+		Tool:                 mustCommandToolMetadata("docs.update_document_block"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.docsBlockService == nil {
+				return nil, fmt.Errorf("docs block service is not available")
+			}
+			var req struct {
+				DocumentID string          `json:"document_id"`
+				BlockID    string          `json:"block_id"`
+				Revision   int             `json:"revision"`
+				Content    json.RawMessage `json:"content"`
+			}
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse document block input: %w", err)
+			}
+			if strings.TrimSpace(req.DocumentID) == "" {
+				return nil, fmt.Errorf("document_id is required")
+			}
+			if strings.TrimSpace(req.BlockID) == "" {
+				return nil, fmt.Errorf("block_id is required")
+			}
+			if req.Revision <= 0 {
+				return nil, fmt.Errorf("revision is required")
+			}
+			if len(req.Content) == 0 || strings.TrimSpace(string(req.Content)) == "" || strings.TrimSpace(string(req.Content)) == "null" {
+				return nil, fmt.Errorf("content is required")
+			}
+			content, err := s.docsBlockService.Patch(ctx, req.DocumentID, req.BlockID, req.Revision, req.Content, meta.ActorID)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(map[string]any{"document_id": req.DocumentID, "block_id": req.BlockID, "content_id": content.ID}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "docs.create_document",
 		Module:               "docs",
 		Mutating:             true,
@@ -899,6 +951,81 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, err
 			}
 			return mustJSON(map[string]any{"activity_id": activity.ID, "deal_id": dealID}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "crm.enrich_contact",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_contact"},
+		Tool:                 mustCommandToolMetadata("crm.enrich_contact"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnrichCRMContactRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse contact enrichment input: %w", err)
+			}
+			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
+			if req.ContactID == "" {
+				return nil, fmt.Errorf("contact_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnrichContact(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "crm.enrich_company",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_company"},
+		Tool:                 mustCommandToolMetadata("crm.enrich_company"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnrichCRMCompanyRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse company enrichment input: %w", err)
+			}
+			req.CompanyID = strings.TrimSpace(firstNonEmptyCommand(req.CompanyID, meta.TargetID))
+			if req.CompanyID == "" {
+				return nil, fmt.Errorf("company_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnrichCompany(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "crm.ensure_contact_company",
+		Module:               "crm",
+		Mutating:             true,
+		SupportedTargetTypes: []string{"crm_contact"},
+		Tool:                 mustCommandToolMetadata("crm.ensure_contact_company"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.crmEnrichmentService == nil {
+				return nil, fmt.Errorf("CRM enrichment service is not configured")
+			}
+			var req model.EnsureCRMContactCompanyRequest
+			if err := json.Unmarshal(input, &req); err != nil {
+				return nil, fmt.Errorf("parse contact company input: %w", err)
+			}
+			req.ContactID = strings.TrimSpace(firstNonEmptyCommand(req.ContactID, meta.TargetID))
+			if req.ContactID == "" {
+				return nil, fmt.Errorf("contact_id is required")
+			}
+			result, err := s.crmEnrichmentService.EnsureContactCompany(ctx, meta.WorkspaceID, req)
+			if err != nil {
+				return nil, err
+			}
+			return mustJSON(result), nil
 		},
 	})
 	s.register(InternalCommandDefinition{
@@ -1281,6 +1408,21 @@ func commandDerefString(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func commandTrimStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	trimmed := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		trimmed = append(trimmed, value)
+	}
+	return trimmed
 }
 
 func compactTaskComments(comments []model.CommentWithAuthor, limit int) []map[string]any {

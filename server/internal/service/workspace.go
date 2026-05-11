@@ -378,6 +378,16 @@ func (s *WorkspaceService) ListMembers(ctx context.Context, workspaceID string) 
 	return s.workspaceRepo.ListMembers(ctx, workspaceID)
 }
 
+func (s *WorkspaceService) GetWorkspaceMFAPolicy(ctx context.Context, workspaceID, userID string, mfaSatisfied bool) (model.WorkspaceMFAPolicy, error) {
+	policy, err := s.workspaceRepo.GetWorkspaceMFAPolicy(ctx, workspaceID, userID)
+	if err != nil {
+		return model.WorkspaceMFAPolicy{}, err
+	}
+	policy.MFARequired = policy.EnforceTwoFactor && !mfaSatisfied
+	policy.MFASatisfied = mfaSatisfied
+	return policy, nil
+}
+
 // ListMemberPresence returns live presence for active workspace members.
 func (s *WorkspaceService) ListMemberPresence(ctx context.Context, workspaceID string) ([]model.WorkspaceMemberPresenceStatus, error) {
 	statuses, err := resolveSupportTeammatePresenceStatuses(
@@ -471,6 +481,20 @@ func (s *WorkspaceService) UpdateMember(ctx context.Context, workspaceID, actorI
 	}
 
 	return s.workspaceRepo.UpdateMemberRole(ctx, workspaceID, memberID, req.Role)
+}
+
+// UpdateSupportTaskPreferences updates support task preferences for the calling member.
+func (s *WorkspaceService) UpdateSupportTaskPreferences(ctx context.Context, workspaceID, memberID string, req model.UpdateSupportTaskPreferencesRequest) error {
+	if req.SupportDefaultTeamID != nil && *req.SupportDefaultTeamID != "" {
+		team, err := s.workspaceRepo.GetTeamByID(ctx, workspaceID, *req.SupportDefaultTeamID)
+		if err != nil {
+			return fmt.Errorf("validate team: %w", err)
+		}
+		if team == nil {
+			return fmt.Errorf("team not found in this workspace")
+		}
+	}
+	return s.workspaceRepo.UpdateSupportTaskPreferences(ctx, memberID, req.SupportDefaultTeamID, req.SupportTaskDialogDismissed)
 }
 
 // RemoveMember revokes a workspace member with owner/admin safeguards.

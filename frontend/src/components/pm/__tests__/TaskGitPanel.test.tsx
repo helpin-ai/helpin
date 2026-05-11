@@ -65,14 +65,20 @@ describe('TaskGitPanel', () => {
           <TaskGitPanel workspaceId="ws-1" taskId="task-1" />
         </QueryClientProvider>,
       )
-      await Promise.resolve()
+    })
+    // Wait for the React Query subscription + commit. The mock's promise
+    // resolves on the microtask queue, but useQuery's internal observer
+    // schedules its commit on a macrotask — yielding once to setTimeout
+    // is enough to flush both.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     expect(container.textContent).toContain('open')
 
     await act(async () => {
       await client.invalidateQueries({ queryKey: queryKeys.git.taskLinks('ws-1', 'task-1') })
-      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     expect(gitService.getTaskGitLinks).toHaveBeenCalledTimes(2)

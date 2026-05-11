@@ -172,6 +172,10 @@ func (s *SupportInboxService) ListInboxScopes(ctx context.Context, workspaceID s
 	if err != nil {
 		return nil, err
 	}
+	sharedTotal, err := s.mailboxRepo.CountWorkload(ctx, workspaceID, nil)
+	if err != nil {
+		return nil, err
+	}
 	sharedIsDefault := settings != nil && (settings.DefaultMailboxID == nil || strings.TrimSpace(derefString(settings.DefaultMailboxID)) == "")
 
 	response := &model.SupportInboxScopeListResponse{
@@ -182,6 +186,7 @@ func (s *SupportInboxService) ListInboxScopes(ctx context.Context, workspaceID s
 			Icon:        "inbox",
 			IsShared:    true,
 			IsDefault:   sharedIsDefault,
+			TotalCount:  sharedTotal,
 			UnreadCount: sharedUnread,
 			Active:      true,
 		},
@@ -194,6 +199,10 @@ func (s *SupportInboxService) ListInboxScopes(ctx context.Context, workspaceID s
 		if countErr != nil {
 			return nil, countErr
 		}
+		totalCount, countErr := s.mailboxRepo.CountWorkload(ctx, workspaceID, &mailboxID)
+		if countErr != nil {
+			return nil, countErr
+		}
 		response.Mailboxes = append(response.Mailboxes, model.SupportInboxScope{
 			ID:           mailbox.ID,
 			Name:         mailbox.Name,
@@ -201,6 +210,7 @@ func (s *SupportInboxService) ListInboxScopes(ctx context.Context, workspaceID s
 			Icon:         mailbox.Icon,
 			IsShared:     false,
 			IsDefault:    settings != nil && settings.DefaultMailboxID != nil && strings.TrimSpace(*settings.DefaultMailboxID) == mailbox.ID,
+			TotalCount:   totalCount,
 			UnreadCount:  unreadCount,
 			Active:       mailbox.Active,
 			LinkedTeamID: mailbox.LinkedTeamID,
@@ -569,7 +579,6 @@ func (s *SupportInboxService) moveConversationInternal(ctx context.Context, work
 	}
 	return updatedConversation, nil
 }
-
 
 func (s *SupportInboxService) maybeApplyMailboxRouting(ctx context.Context, workspaceID string, explicitMailboxID *string, useWorkspaceDefault bool) (*string, *model.SupportMailbox, error) {
 	return s.maybeApplyMailboxRoutingForChannel(ctx, workspaceID, explicitMailboxID, useWorkspaceDefault, "")

@@ -206,6 +206,10 @@ function sourceLabel(value?: string) {
       return 'Scheduled';
     case 'support_widget':
       return 'Support';
+    case 'command_bar':
+      return 'Command bar';
+    case 'agent_run':
+      return 'Agent run';
     case 'task_assignment':
       return 'Assignment';
     default:
@@ -736,6 +740,7 @@ export function AutomationActivityPage({
       || search.status
       || search.source
       || search.reference_id
+      || search.run_id
       || search.fired_after
       || search.fired_before,
   );
@@ -775,6 +780,7 @@ export function AutomationActivityPage({
       status: trimFilterValue(search.status),
       source: trimFilterValue(search.source),
       reference_id: trimFilterValue(search.reference_id),
+      run_id: trimFilterValue(search.run_id),
       fired_after: trimFilterValue(search.fired_after),
       fired_before: trimFilterValue(search.fired_before),
     }),
@@ -955,7 +961,7 @@ export function AutomationActivityPage({
         </Button>
       )}
     >
-      <div className="space-y-5">
+      <div className="space-y-5 pb-20">
         <div className="grid gap-3 lg:grid-cols-4">
           <SummaryCard
             label="Needs You"

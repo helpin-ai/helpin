@@ -6,10 +6,12 @@ import type {
   MoveTaskRequest,
   PaginatedResponse,
   ReorderTaskRequest,
+  SaveTaskAsTemplateRequest,
   SeedPMTasksRequest,
   SeedPMTasksResponse,
   Task,
   TaskDetail,
+  TaskTemplate,
   TaskLabelLinkRequest,
   TaskMemberColumn,
   TaskStateColumn,
@@ -53,7 +55,7 @@ export const pmTaskService = {
       workflow_id?: string;
       state_id?: string;
       task_type?: string;
-      owner_member_id?: string;
+      owner_member_ids?: string;
       requester_member_id?: string;
       label_id?: string;
       priority?: string;
@@ -187,6 +189,10 @@ export const pmTaskService = {
       deadline: toRFC3339(payload.deadline),
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/tasks/${id}?${qs(workspaceId)}`),
+  saveAsTemplate: (workspaceId: string, id: string, payload: SaveTaskAsTemplateRequest) =>
+    api.post<TaskTemplate>(`/pm/tasks/${id}/save-as-template?${qs(workspaceId)}`, payload),
+  duplicate: (workspaceId: string, id: string) =>
+    api.post<TaskDetail>(`/pm/tasks/${id}/duplicate?${qs(workspaceId)}`, {}),
   move: (workspaceId: string, id: string, payload: MoveTaskRequest) =>
     api.put<TaskDetail>(`/pm/tasks/${id}/move?${qs(workspaceId)}`, payload),
   reorder: (workspaceId: string, id: string, payload: ReorderTaskRequest) =>

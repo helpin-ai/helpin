@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
+import {
+  getFlushablePendingTaskPatch,
+  hasPendingTaskSave,
+  isBlockedFailedTaskPatch,
+  taskPatchSignature,
+} from '@/components/pm/task-detail/taskPendingPatch';
 
 describe('getFlushablePendingTaskPatch', () => {
   it('returns metadata-only patches so they can be flushed on close', () => {
@@ -50,5 +55,13 @@ describe('getFlushablePendingTaskPatch', () => {
         1,
       ),
     ).toBe(false);
+  });
+
+  it('blocks autosave retry for the same failed patch only', () => {
+    const failedSignature = taskPatchSignature({ estimate: 2 });
+
+    expect(isBlockedFailedTaskPatch({ estimate: 2 }, failedSignature)).toBe(true);
+    expect(isBlockedFailedTaskPatch({ estimate: 3 }, failedSignature)).toBe(false);
+    expect(isBlockedFailedTaskPatch({ estimate: 2, priority: 'high' }, failedSignature)).toBe(false);
   });
 });

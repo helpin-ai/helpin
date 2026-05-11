@@ -176,6 +176,8 @@ jobs:
             -t ${{ env.IMAGE_PREFIX }}/server:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/server:stage-latest \
+            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-api \
+            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-api,mode=max \
             --push \
             build-stg-server/server/
           docker buildx build \
@@ -184,6 +186,8 @@ jobs:
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/temporal-worker:stage-latest \
+            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-temporal-worker \
+            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-temporal-worker,mode=max \
             --push \
             build-stg-server/server/
           docker buildx build \
@@ -192,6 +196,8 @@ jobs:
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:${{ needs.version.outputs.server_tag }} \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:sha-${{ github.sha }} \
             -t ${{ env.IMAGE_PREFIX }}/server-migrate:stage-latest \
+            --cache-from type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-migrate \
+            --cache-to type=registry,ref=${{ env.IMAGE_PREFIX }}/server-buildcache:stage-migrate,mode=max \
             --push \
             build-stg-server/server/
 
@@ -335,9 +341,27 @@ jobs:
           [ -n "$SERVER_TAG" ] && RELEASE_NAME="$SERVER_TAG"
           [ -z "$RELEASE_NAME" ] && RELEASE_NAME="$HELPCENTER_TAG"
 
-          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n1 || echo "")
+          # Pick the most recent prefixed tag matching the component being released.
+          # Prefer a stable tag, fall back to the latest rc tag.
+          prev_for_prefix() {
+            local PREFIX=$1
+            local STABLE
+            STABLE=$(git tag -l "${PREFIX}-v*" --sort=-v:refname | grep -vE '\-(rc|dev)\.' | head -n1 || echo "")
+            if [ -n "$STABLE" ]; then
+              echo "$STABLE"
+              return
+            fi
+            git tag -l "${PREFIX}-v*" --sort=-v:refname | head -n1 || echo ""
+          }
+
+          PREV_TAG=""
+          [ -n "$SERVER_TAG" ] && PREV_TAG=$(prev_for_prefix server)
+          [ -z "$PREV_TAG" ] && [ -n "$HELPCENTER_TAG" ] && PREV_TAG=$(prev_for_prefix helpcenter)
+
+          # Cap to the most recent 200 commits so the release body stays under
+          # GitHub's 125k-char limit even when the prev tag is far behind.
           if [ -n "$PREV_TAG" ]; then
-            COMMITS=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)")
+            COMMITS=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)" | head -n 200)
           else
             COMMITS=$(git log --pretty=format:"- %s (%h)" -20)
           fi

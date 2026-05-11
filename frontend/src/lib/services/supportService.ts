@@ -22,6 +22,11 @@ import type {
   SupportAIRewriteDraftRequest,
   SupportAIRewriteDraftResponse,
   SupportInboxScopeListResponse,
+  SupportInboxView,
+  SupportInboxViewCount,
+  CreateSupportInboxViewRequest,
+  UpdateSupportInboxViewRequest,
+  UpdateSupportInboxBuiltinViewRequest,
   SupportWorkspaceUnreadCount,
   SupportMailbox,
   CreateSupportMailboxRequest,
@@ -29,11 +34,22 @@ import type {
   SupportMailboxMember,
   SupportEmailRoute,
   CreateSupportEmailRouteRequest,
+  SupportEmailSender,
+  CreateSupportEmailSenderRequest,
+  SetSupportEmailSenderDefaultRequest,
+  SupportEmailSenderDomain,
+  CreateSupportEmailSenderDomainRequest,
   SupportTriageRule,
   CreateSupportTriageRuleRequest,
   UpdateSupportTriageRuleRequest,
   SupportConversationTriage,
+  SupportMessageActionResponse,
   SupportMessageEmailDetail,
+  SupportCannedResponse,
+  CreateCannedResponseRequest,
+  UpdateCannedResponseRequest,
+  SupportMessageInfo,
+  SupportTag,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -43,30 +59,58 @@ export const supportService = {
     workspaceId: string,
     filters?: {
       status?: string;
+      statuses?: string;
       priority?: string;
       filter?: string;
       mailbox_id?: string | null;
+      mailbox_ids?: string;
       ai_state?: string;
+      ai?: string;
       flow_state?: string;
       search?: string;
+      assigned_to?: string;
+      sort?: string;
+      tag_ids?: string;
+      system_tags?: string;
       page?: number;
       per_page?: number;
     },
   ) => {
     let path = `/support/inbox/conversations${qs(workspaceId)}`;
     if (filters?.status) path += `&status=${encodeURIComponent(filters.status)}`;
+    if (filters?.statuses) path += `&statuses=${encodeURIComponent(filters.statuses)}`;
     if (filters?.priority) path += `&priority=${encodeURIComponent(filters.priority)}`;
     if (filters?.filter) path += `&filter=${encodeURIComponent(filters.filter)}`;
     if (filters?.mailbox_id && filters.mailbox_id !== 'all') path += `&mailbox_id=${encodeURIComponent(filters.mailbox_id)}`;
+    if (filters?.mailbox_ids) path += `&mailbox_ids=${encodeURIComponent(filters.mailbox_ids)}`;
     if (filters?.ai_state) path += `&ai_state=${encodeURIComponent(filters.ai_state)}`;
+    if (filters?.ai) path += `&ai=${encodeURIComponent(filters.ai)}`;
     if (filters?.flow_state) path += `&flow_state=${encodeURIComponent(filters.flow_state)}`;
     if (filters?.search?.trim()) path += `&search=${encodeURIComponent(filters.search.trim())}`;
+    if (filters?.assigned_to) path += `&assigned_to=${encodeURIComponent(filters.assigned_to)}`;
+    if (filters?.sort) path += `&sort=${encodeURIComponent(filters.sort)}`;
+    if (filters?.tag_ids) path += `&tag_ids=${encodeURIComponent(filters.tag_ids)}`;
+    if (filters?.system_tags) path += `&system_tags=${encodeURIComponent(filters.system_tags)}`;
     if (filters?.page) path += `&page=${encodeURIComponent(String(filters.page))}`;
     if (filters?.per_page) path += `&per_page=${encodeURIComponent(String(filters.per_page))}`;
     return api.get<ConversationListResponse>(path);
   },
   listInboxScopes: (workspaceId: string) =>
     api.get<SupportInboxScopeListResponse>(`/support/inbox/mailboxes/scopes${qs(workspaceId)}`),
+  listInboxViews: (workspaceId: string) =>
+    api.get<SupportInboxView[]>(`/support/inbox/views${qs(workspaceId)}`),
+  listBuiltinInboxViews: (workspaceId: string) =>
+    api.get<SupportInboxView[]>(`/support/inbox/views/builtin${qs(workspaceId)}`),
+  listInboxViewCounts: (workspaceId: string) =>
+    api.get<SupportInboxViewCount[]>(`/support/inbox/views/counts${qs(workspaceId)}`),
+  createInboxView: (workspaceId: string, payload: CreateSupportInboxViewRequest) =>
+    api.post<SupportInboxView>(`/support/inbox/views${qs(workspaceId)}`, payload),
+  updateInboxView: (workspaceId: string, viewId: string, payload: UpdateSupportInboxViewRequest) =>
+    api.put<SupportInboxView>(`/support/inbox/views/${viewId}${qs(workspaceId)}`, payload),
+  updateBuiltinInboxView: (workspaceId: string, viewKey: string, payload: UpdateSupportInboxBuiltinViewRequest) =>
+    api.put<SupportInboxView>(`/support/inbox/views/builtin/${encodeURIComponent(viewKey)}${qs(workspaceId)}`, payload),
+  deleteInboxView: (workspaceId: string, viewId: string) =>
+    api.del(`/support/inbox/views/${viewId}${qs(workspaceId)}`),
   listWorkspaceUnread: () =>
     api.get<SupportWorkspaceUnreadCount[]>(`/support/workspace-unread`),
   listMailboxes: (workspaceId: string) =>
@@ -87,6 +131,26 @@ export const supportService = {
     api.post<SupportEmailRoute>(`/support/inbox/email-routes${qs(workspaceId)}`, payload),
   disableEmailRoute: (workspaceId: string, routeId: string) =>
     api.post(`/support/inbox/email-routes/${routeId}/disable${qs(workspaceId)}`, {}),
+  listEmailSenders: (workspaceId: string) =>
+    api.get<SupportEmailSender[]>(`/support/inbox/email-senders${qs(workspaceId)}`),
+  createEmailSender: (workspaceId: string, payload: CreateSupportEmailSenderRequest) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders${qs(workspaceId)}`, payload),
+  verifyEmailSender: (workspaceId: string, senderId: string) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders/${senderId}/verify-dns${qs(workspaceId)}`, {}),
+  setDefaultEmailSender: (workspaceId: string, senderId: string, payload: SetSupportEmailSenderDefaultRequest) =>
+    api.post<SupportEmailSender>(`/support/inbox/email-senders/${senderId}/set-default${qs(workspaceId)}`, payload),
+  disableEmailSender: (workspaceId: string, senderId: string) =>
+    api.post(`/support/inbox/email-senders/${senderId}/disable${qs(workspaceId)}`, {}),
+  listEmailSenderDomains: (workspaceId: string) =>
+    api.get<SupportEmailSenderDomain[]>(`/support/inbox/email-sender-domains${qs(workspaceId)}`),
+  createEmailSenderDomain: (workspaceId: string, payload: CreateSupportEmailSenderDomainRequest) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains${qs(workspaceId)}`, payload),
+  verifyEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains/${domainId}/verify${qs(workspaceId)}`, {}),
+  activateEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post<SupportEmailSenderDomain>(`/support/inbox/email-sender-domains/${domainId}/activate${qs(workspaceId)}`, {}),
+  deactivateEmailSenderDomain: (workspaceId: string, domainId: string) =>
+    api.post(`/support/inbox/email-sender-domains/${domainId}/deactivate${qs(workspaceId)}`, {}),
   listTriageRules: (workspaceId: string) =>
     api.get<SupportTriageRule[]>(`/support/inbox/triage-rules${qs(workspaceId)}`),
   createTriageRule: (workspaceId: string, payload: CreateSupportTriageRuleRequest) =>
@@ -95,6 +159,28 @@ export const supportService = {
     api.put<SupportTriageRule>(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`, payload),
   deleteTriageRule: (workspaceId: string, ruleId: string) =>
     api.del(`/support/inbox/triage-rules/${ruleId}${qs(workspaceId)}`),
+  listCannedResponses: (workspaceId: string) =>
+    api.get<SupportCannedResponse[]>(`/support/inbox/canned-responses${qs(workspaceId)}`),
+  searchCannedResponses: (workspaceId: string, query: string) =>
+    api.get<SupportCannedResponse[]>(`/support/inbox/canned-responses/search${qs(workspaceId)}&q=${encodeURIComponent(query)}`),
+  createCannedResponse: (workspaceId: string, payload: CreateCannedResponseRequest) =>
+    api.post<SupportCannedResponse>(`/support/inbox/canned-responses${qs(workspaceId)}`, payload),
+  updateCannedResponse: (workspaceId: string, responseId: string, payload: UpdateCannedResponseRequest) =>
+    api.put<SupportCannedResponse>(`/support/inbox/canned-responses/${responseId}${qs(workspaceId)}`, payload),
+  deleteCannedResponse: (workspaceId: string, responseId: string) =>
+    api.del(`/support/inbox/canned-responses/${responseId}${qs(workspaceId)}`),
+  listTags: (workspaceId: string) =>
+    api.get<SupportTag[]>(`/support/inbox/tags${qs(workspaceId)}`),
+  createTag: (workspaceId: string, payload: { name: string; color?: string }) =>
+    api.post<SupportTag>(`/support/inbox/tags${qs(workspaceId)}`, payload),
+  updateTag: (workspaceId: string, tagId: string, payload: { name?: string; color?: string }) =>
+    api.put<SupportTag>(`/support/inbox/tags/${tagId}${qs(workspaceId)}`, payload),
+  deleteTag: (workspaceId: string, tagId: string) =>
+    api.del(`/support/inbox/tags/${tagId}${qs(workspaceId)}`),
+  addConversationTag: (workspaceId: string, conversationId: string, tagId: string) =>
+    api.post<{ message: string }>(`/support/inbox/conversations/${conversationId}/tags/${tagId}${qs(workspaceId)}`, {}),
+  removeConversationTag: (workspaceId: string, conversationId: string, tagId: string) =>
+    api.del<{ message: string }>(`/support/inbox/conversations/${conversationId}/tags/${tagId}${qs(workspaceId)}`),
   getConversation: (workspaceId: string, id: string) =>
     api.get<SupportConversation>(`/support/inbox/conversations/${id}${qs(workspaceId)}`),
   listConversationAssignees: (workspaceId: string, conversationId: string) =>
@@ -105,6 +191,13 @@ export const supportService = {
     api.get<SupportMessage[]>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`),
   createConversationMessage: (workspaceId: string, conversationId: string, payload: CreateMessageRequest) =>
     api.post<SupportMessage>(`/support/inbox/conversations/${conversationId}/messages${qs(workspaceId)}`, payload),
+  deleteConversationMessage: (workspaceId: string, conversationId: string, messageId: string, undo = false) => {
+    let path = `/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`;
+    if (undo) path += '&undo=1';
+    return api.del<SupportMessageActionResponse>(path);
+  },
+  getConversationMessageInfo: (workspaceId: string, conversationId: string, messageId: string) =>
+    api.get<SupportMessageInfo>(`/support/inbox/conversations/${conversationId}/messages/${messageId}${qs(workspaceId)}`),
   rewriteConversationDraft: (workspaceId: string, conversationId: string, payload: SupportAIRewriteDraftRequest) =>
     api.post<SupportAIRewriteDraftResponse>(`/support/inbox/conversations/${conversationId}/rewrite-draft${qs(workspaceId)}`, payload),
   updateConversationStatus: (workspaceId: string, conversationId: string, status: ConversationStatus) =>

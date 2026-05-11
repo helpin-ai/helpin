@@ -778,6 +778,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                       })}
                       {invitationPreassignments
                         .filter((pa) => pa.team_id === selectedTeam.id)
+                        .filter((pa) => invitations.some((i) => i.id === pa.invitation_id))
                         .map((pa) => {
                           const inv = invitations.find((i) => i.id === pa.invitation_id);
                           return (

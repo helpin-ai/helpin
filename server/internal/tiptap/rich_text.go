@@ -79,7 +79,7 @@ func looksLikeHTML(input string) bool {
 	for _, marker := range []string{
 		"<p", "<div", "<span", "<strong", "<em", "<ul", "<ol", "<li",
 		"<h1", "<h2", "<h3", "<h4", "<h5", "<h6", "<br", "<a", "<blockquote",
-		"<code", "<pre", "<img", "<table",
+		"<code", "<pre", "<img", "<table", "<section",
 	} {
 		if strings.Contains(lower, marker) {
 			return true

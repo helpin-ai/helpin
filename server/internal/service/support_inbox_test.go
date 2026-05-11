@@ -14,6 +14,23 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
+func supportConversationListParams(workspaceID, status, priority string, pagination model.PMPagination, workspaceMemberID, role string, mailboxID *string, flowState, search string, aiState ...string) repository.ConversationRepositoryListParams {
+	return repository.ConversationRepositoryListParams{
+		ConversationListParams: repository.ConversationListParams{
+			WorkspaceID: workspaceID,
+			Status:      status,
+			Priority:    priority,
+			Pagination:  pagination,
+			MailboxID:   mailboxID,
+			FlowState:   flowState,
+			Search:      search,
+			AIState:     aiState,
+		},
+		WorkspaceMemberID: workspaceMemberID,
+		Role:              role,
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Repository-level tests
 // ---------------------------------------------------------------------------
@@ -81,7 +98,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// List all
-		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "", "")
+		conversations, total, err := repo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "", ""))
 		if err != nil {
 			t.Fatalf("list conversations: %v", err)
 		}
@@ -93,7 +110,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by status
-		openConvs, totalOpen, err := repo.List(ctx, workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil, "", "")
+		openConvs, totalOpen, err := repo.List(ctx, supportConversationListParams(workspaceID, "open", "", model.PMPagination{}, "", model.RoleOwner, nil, "", ""))
 		if err != nil {
 			t.Fatalf("list open conversations: %v", err)
 		}
@@ -105,7 +122,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Filter by priority
-		_, totalHigh, err := repo.List(ctx, workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil, "", "")
+		_, totalHigh, err := repo.List(ctx, supportConversationListParams(workspaceID, "", "high", model.PMPagination{}, "", model.RoleOwner, nil, "", ""))
 		if err != nil {
 			t.Fatalf("list high priority: %v", err)
 		}
@@ -155,7 +172,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			}
 		}
 
-		pageTwo, total, err := repo.List(ctx, searchWorkspaceID, "", "", model.PMPagination{Page: 2, PerPage: 50}, "", model.RoleOwner, nil, "", "")
+		pageTwo, total, err := repo.List(ctx, supportConversationListParams(searchWorkspaceID, "", "", model.PMPagination{Page: 2, PerPage: 50}, "", model.RoleOwner, nil, "", ""))
 		if err != nil {
 			t.Fatalf("list second page: %v", err)
 		}
@@ -176,7 +193,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatal("expected second page to include the older conversation")
 		}
 
-		searchResults, searchTotal, err := repo.List(ctx, searchWorkspaceID, "", "", model.PMPagination{Page: 1, PerPage: 50}, "", model.RoleOwner, nil, "", "matta.trisha@gmail.com")
+		searchResults, searchTotal, err := repo.List(ctx, supportConversationListParams(searchWorkspaceID, "", "", model.PMPagination{Page: 1, PerPage: 50}, "", model.RoleOwner, nil, "", "matta.trisha@gmail.com"))
 		if err != nil {
 			t.Fatalf("search conversations: %v", err)
 		}
@@ -232,7 +249,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("create new session: %v", err)
 		}
 
-		conversations, total, err := repo.List(ctx, workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "", "")
+		conversations, total, err := repo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{}, "", model.RoleOwner, nil, "", ""))
 		if err != nil {
 			t.Fatalf("list conversations: %v", err)
 		}
@@ -364,7 +381,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 1, 2 per page
-		page1, total, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil, "", "")
+		page1, total, err := pRepo.List(ctx, supportConversationListParams(paginationWS, "", "", model.PMPagination{Page: 1, PerPage: 2}, "", model.RoleOwner, nil, "", ""))
 		if err != nil {
 			t.Fatalf("page 1: %v", err)
 		}
@@ -376,7 +393,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 
 		// Page 3, 2 per page → 1 result
-		page3, _, err := pRepo.List(ctx, paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil, "", "")
+		page3, _, err := pRepo.List(ctx, supportConversationListParams(paginationWS, "", "", model.PMPagination{Page: 3, PerPage: 2}, "", model.RoleOwner, nil, "", ""))
 		if err != nil {
 			t.Fatalf("page 3: %v", err)
 		}
@@ -450,7 +467,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatal("expected linked team member to have mailbox access")
 		}
 
-		teamConversations, total, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil, "", "")
+		teamConversations, total, err := repo.List(ctx, supportConversationListParams(linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-team", model.RoleMember, nil, "", ""))
 		if err != nil {
 			t.Fatalf("list conversations for linked team member: %v", err)
 		}
@@ -458,7 +475,7 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("expected linked team member to see private conversation, got total=%d conversations=%#v", total, teamConversations)
 		}
 
-		outsiderConversations, outsiderTotal, err := repo.List(ctx, linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil, "", "")
+		outsiderConversations, outsiderTotal, err := repo.List(ctx, supportConversationListParams(linkedWorkspaceID, "", "", model.PMPagination{}, "wm-linked-outsider", model.RoleMember, nil, "", ""))
 		if err != nil {
 			t.Fatalf("list conversations for outsider: %v", err)
 		}
@@ -487,6 +504,11 @@ func TestSupportConversationRepository(t *testing.T) {
 		ctx := context.Background()
 		now := time.Now()
 		customerMessageAt := now.Add(-time.Minute)
+
+		baseStats, err := repo.GetUnreadStats(ctx, workspaceID, "user-123", "", model.RoleOwner, nil)
+		if err != nil {
+			t.Fatalf("get baseline unread stats: %v", err)
+		}
 
 		humanConv := &model.SupportConversation{
 			WorkspaceID:     workspaceID,
@@ -564,26 +586,69 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("seed escalated unread message: %v", err)
 		}
 
+		waitingConv := &model.SupportConversation{
+			WorkspaceID:    workspaceID,
+			Subject:        "Waiting conversation",
+			Status:         model.SupportConversationStatusWaitingOnCustomer,
+			TeamLastSeenAt: &now,
+		}
+		if err := repo.Create(ctx, waitingConv); err != nil {
+			t.Fatalf("create waiting conversation: %v", err)
+		}
+		if err := db.Exec(
+			`UPDATE support_conversations SET team_last_seen_at = ?, updated_at = ? WHERE id = ?`,
+			now.Add(-2*time.Minute), now, waitingConv.ID,
+		).Error; err != nil {
+			t.Fatalf("seed waiting read cursor: %v", err)
+		}
+		if err := db.Exec(
+			`INSERT INTO support_messages (id, workspace_id, conversation_id, sender_type, content, message_type, is_internal, created_at, updated_at) VALUES (?, ?, ?, 'customer', ?, 'reply', 0, ?, ?)`,
+			"msg-waiting-unread", workspaceID, waitingConv.ID, "I have replied", customerMessageAt, customerMessageAt,
+		).Error; err != nil {
+			t.Fatalf("seed waiting unread message: %v", err)
+		}
+
 		stats, err := repo.GetUnreadStats(ctx, workspaceID, "user-123", "", model.RoleOwner, nil)
 		if err != nil {
 			t.Fatalf("get unread stats: %v", err)
 		}
 
-		if stats.Total != 2 {
-			t.Fatalf("expected total unread human inbox count 2, got %d", stats.Total)
+		if got := stats.Inbox - baseStats.Inbox; got != 3 {
+			t.Fatalf("expected inbox unread count delta 3, got %d", got)
 		}
-		if stats.MyInbox != 1 {
-			t.Fatalf("expected my inbox count 1, got %d", stats.MyInbox)
+		if got := stats.Mine - baseStats.Mine; got != 1 {
+			t.Fatalf("expected mine unread count delta 1, got %d", got)
 		}
-		if stats.Unassigned != 1 {
-			t.Fatalf("expected unassigned count 1, got %d", stats.Unassigned)
+		if got := stats.Waiting - baseStats.Waiting; got != 1 {
+			t.Fatalf("expected waiting unread count delta 1, got %d", got)
 		}
-		if stats.AIActive != 1 {
-			t.Fatalf("expected AI active unread count 1, got %d", stats.AIActive)
+		if got := stats.Total - baseStats.Total; got != 3 {
+			t.Fatalf("expected total unread human inbox count delta 3, got %d", got)
+		}
+		if got := stats.MyInbox - baseStats.MyInbox; got != 1 {
+			t.Fatalf("expected my inbox count delta 1, got %d", got)
+		}
+		if got := stats.Unassigned - baseStats.Unassigned; got != 2 {
+			t.Fatalf("expected unassigned count delta 2, got %d", got)
+		}
+		if got := stats.AIActive - baseStats.AIActive; got != 1 {
+			t.Fatalf("expected AI active unread count delta 1, got %d", got)
+		}
+		if got := stats.InboxTotal - baseStats.InboxTotal; got != 3 {
+			t.Fatalf("expected inbox workload count delta 3, got %d", got)
+		}
+		if got := stats.MineTotal - baseStats.MineTotal; got != 1 {
+			t.Fatalf("expected mine workload count delta 1, got %d", got)
+		}
+		if got := stats.WaitingTotal - baseStats.WaitingTotal; got != 1 {
+			t.Fatalf("expected waiting workload count delta 1, got %d", got)
+		}
+		if got := stats.AIActiveTotal - baseStats.AIActiveTotal; got != 1 {
+			t.Fatalf("expected AI active workload count delta 1, got %d", got)
 		}
 	})
 
-	t.Run("Mailbox unread counts include active AI conversations but exclude AI-resolved ones", func(t *testing.T) {
+	t.Run("Mailbox workload counts match human inbox list scope", func(t *testing.T) {
 		ctx := context.Background()
 		now := time.Now()
 		customerMessageAt := now.Add(-time.Minute)
@@ -705,8 +770,16 @@ func TestSupportConversationRepository(t *testing.T) {
 		if err != nil {
 			t.Fatalf("count billing mailbox unread: %v", err)
 		}
-		if count != 3 {
-			t.Fatalf("expected billing mailbox unread count 3, got %d", count)
+		if count != 2 {
+			t.Fatalf("expected billing mailbox unread count 2, got %d", count)
+		}
+
+		workloadCount, err := mailboxRepo.CountWorkload(ctx, workspaceID, &billingMailbox.ID)
+		if err != nil {
+			t.Fatalf("count billing mailbox workload: %v", err)
+		}
+		if workloadCount != 2 {
+			t.Fatalf("expected billing mailbox workload count 2, got %d", workloadCount)
 		}
 	})
 }
@@ -1244,6 +1317,7 @@ func TestCreateConversationMessage_PublicMentionsNotifyWorkspaceMembers(t *testi
 	seedWorkspace(t, db, workspaceID, "Support Mentions", "support-mentions", senderUserID)
 	seedWorkspaceMember(t, db, "wm-sender", workspaceID, senderUserID, "sender@example.com", "Sender User", model.RoleAdmin)
 	seedWorkspaceMember(t, db, "wm-mentioned", workspaceID, mentionedUserID, "mentioned@example.com", "Teammate Mentioned", model.RoleMember)
+	seedSupportModuleGrant(t, db, "grant-mentioned-support", workspaceID, model.ModuleGrantSubjectWorkspaceMember, "wm-mentioned")
 	for _, userID := range []string{senderUserID, mentionedUserID} {
 		mustExec(t, db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1487,6 +1561,60 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 	}
 
 	_ = ownerMember
+}
+
+func TestSupportInboxServiceListContactConversationsReturnsUnpagedTotal(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-contact-conversation-total"
+	contactID := "contact-conversation-total"
+	userID := "owner-contact-total"
+	seedWorkspace(t, db, workspaceID, "Contact Conversation Total", "contact-conversation-total", userID)
+	seedWorkspaceMember(t, db, "member-contact-total", workspaceID, userID, "owner-contact-total@example.com", "Owner Contact Total", model.RoleOwner)
+
+	repo := repository.NewSupportConversationRepository(db)
+	svc := NewSupportInboxService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	ctx = authorization.WithActor(ctx, &authorization.Actor{
+		UserID:            userID,
+		WorkspaceID:       workspaceID,
+		WorkspaceMemberID: "member-contact-total",
+		Role:              model.RoleOwner,
+	})
+	now := time.Now().UTC()
+
+	for i := 0; i < 3; i++ {
+		conversation := &model.SupportConversation{
+			WorkspaceID:   workspaceID,
+			Subject:       fmt.Sprintf("Linked conversation %d", i+1),
+			Status:        model.SupportConversationStatusOpen,
+			Priority:      "medium",
+			Channel:       "widget",
+			CRMContactID:  strPtr(contactID),
+			CustomerEmail: strPtr(fmt.Sprintf("customer-%d@example.com", i+1)),
+		}
+		if err := repo.Create(ctx, conversation); err != nil {
+			t.Fatalf("create linked conversation %d: %v", i+1, err)
+		}
+		if err := db.Model(&model.SupportConversation{}).
+			Where("id = ?", conversation.ID).
+			Updates(map[string]any{
+				"created_at": now.Add(-time.Duration(i) * time.Minute),
+				"updated_at": now.Add(-time.Duration(i) * time.Minute),
+			}).Error; err != nil {
+			t.Fatalf("timestamp linked conversation %d: %v", i+1, err)
+		}
+	}
+
+	conversations, total, err := svc.ListContactConversations(ctx, workspaceID, contactID, model.PMPagination{Page: 1, PerPage: 2})
+	if err != nil {
+		t.Fatalf("list contact conversations: %v", err)
+	}
+	if len(conversations) != 2 {
+		t.Fatalf("len(conversations) = %d, want 2", len(conversations))
+	}
+	if total != 3 {
+		t.Fatalf("total = %d, want 3", total)
+	}
 }
 
 func TestSupportInboxServiceUpdateConversationStatus_KeepsResolvedEventsInternal(t *testing.T) {
@@ -2406,7 +2534,6 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		response := &model.SupportCannedResponse{
 			WorkspaceID: workspaceID,
 			ShortCode:   "greeting",
-			Title:       "Greeting",
 			Content:     "Hello! How can we help you today?",
 			CreatedByID: "user-123",
 		}
@@ -2436,6 +2563,9 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		if fetched.ShortCode != "greeting" {
 			t.Errorf("expected short_code 'greeting', got %q", fetched.ShortCode)
 		}
+		if fetched.Tag != "General" {
+			t.Errorf("expected default category 'General', got %q", fetched.Tag)
+		}
 	})
 
 	t.Run("Search canned responses", func(t *testing.T) {
@@ -2444,19 +2574,17 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		// Create multiple responses
 		responses := []struct {
 			shortCode string
-			title     string
 			content   string
 		}{
-			{"greetshort", "Greetshort", "Hello there! How can we help?"},
-			{"thankshort", "Thankshort", "Thank you for reaching out!"},
-			{"closingshort", "Closingshort", "Is there anything else?"},
+			{"greetshort", "Hello there! How can we help?"},
+			{"thankshort", "Thank you for reaching out!"},
+			{"closingshort", "Is there anything else?"},
 		}
 
 		for _, r := range responses {
 			err := repo.Create(ctx, &model.SupportCannedResponse{
 				WorkspaceID: workspaceID,
 				ShortCode:   r.shortCode,
-				Title:       r.title,
 				Content:     r.content,
 			})
 			if err != nil {
@@ -2473,13 +2601,13 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 			t.Errorf("expected 1 result for 'greetshort', got %d", len(results))
 		}
 
-		// Search by title
-		results, err = repo.Search(ctx, workspaceID, "Thankshort")
+		// Search by another short_code
+		results, err = repo.Search(ctx, workspaceID, "thankshort")
 		if err != nil {
 			t.Fatalf("search: %v", err)
 		}
 		if len(results) != 1 {
-			t.Errorf("expected 1 result for 'Thankshort', got %d", len(results))
+			t.Errorf("expected 1 result for 'thankshort', got %d", len(results))
 		}
 
 		// Search by content
@@ -2492,13 +2620,34 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		}
 	})
 
+	t.Run("Search ignores deprecated title field", func(t *testing.T) {
+		ctx := context.Background()
+
+		err := repo.Create(ctx, &model.SupportCannedResponse{
+			WorkspaceID: workspaceID,
+			ShortCode:   "not-title-searchable",
+			Content:     "Body does not contain the deprecated search token",
+			Tag:         "Support",
+		})
+		if err != nil {
+			t.Fatalf("create title-only response: %v", err)
+		}
+
+		results, err := repo.Search(ctx, workspaceID, "UniqueDeprecatedTitleOnly")
+		if err != nil {
+			t.Fatalf("search title-only token: %v", err)
+		}
+		if len(results) != 0 {
+			t.Errorf("expected title-only search to return 0 results, got %d", len(results))
+		}
+	})
+
 	t.Run("Update canned response", func(t *testing.T) {
 		ctx := context.Background()
 
 		response := &model.SupportCannedResponse{
 			WorkspaceID: workspaceID,
 			ShortCode:   "test",
-			Title:       "Test",
 			Content:     "Original content",
 		}
 		err := repo.Create(ctx, response)
@@ -2507,7 +2656,6 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		}
 
 		// Update
-		response.Title = "Updated Title"
 		response.Content = "Updated content"
 		err = repo.Update(ctx, response)
 		if err != nil {
@@ -2519,8 +2667,8 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		if err != nil {
 			t.Fatalf("get: %v", err)
 		}
-		if fetched.Title != "Updated Title" {
-			t.Errorf("expected title 'Updated Title', got %q", fetched.Title)
+		if fetched.Content != "Updated content" {
+			t.Errorf("expected content 'Updated content', got %q", fetched.Content)
 		}
 	})
 
@@ -2530,7 +2678,6 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		response := &model.SupportCannedResponse{
 			WorkspaceID: workspaceID,
 			ShortCode:   "delete-me",
-			Title:       "Delete Me",
 			Content:     "This will be deleted",
 		}
 		err := repo.Create(ctx, response)
@@ -2564,7 +2711,6 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 		err := repo.Create(ctx, &model.SupportCannedResponse{
 			WorkspaceID: otherWS,
 			ShortCode:   "isolated",
-			Title:       "Isolated",
 			Content:     "Only in other workspace",
 		})
 		if err != nil {
@@ -2580,6 +2726,130 @@ func TestSupportCannedResponseRepository(t *testing.T) {
 			t.Errorf("expected 0 results from cross-workspace search, got %d", len(results))
 		}
 	})
+}
+
+func TestSupportInboxServiceSeedWorkspaceDefaultsSeedsStarterShortcuts(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-support-shortcut-defaults"
+	ownerID := "user-shortcut-defaults"
+	seedWorkspace(t, db, workspaceID, "Shortcut Defaults", "shortcut-defaults", ownerID)
+
+	cannedRepo := repository.NewSupportCannedResponseRepository(db)
+	svc := NewSupportInboxService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewSupportInboxInstallationRepository(db),
+		nil,
+		cannedRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	if err := svc.SeedWorkspaceDefaults(ctx, workspaceID, ownerID); err != nil {
+		t.Fatalf("seed workspace defaults: %v", err)
+	}
+
+	responses, err := cannedRepo.List(ctx, workspaceID)
+	if err != nil {
+		t.Fatalf("list canned responses: %v", err)
+	}
+	if len(responses) != 12 {
+		t.Fatalf("expected 12 starter shortcuts, got %d", len(responses))
+	}
+
+	byCode := map[string]model.SupportCannedResponse{}
+	for _, response := range responses {
+		byCode[response.ShortCode] = response
+	}
+	if byCode["!hello"].Tag != "General" {
+		t.Fatalf("expected !hello in General, got %q", byCode["!hello"].Tag)
+	}
+	if !strings.Contains(byCode["!hello"].Content, `{{customer.first_name | fallback: "there"}}`) {
+		t.Fatalf("expected !hello to include customer first-name fallback, got %q", byCode["!hello"].Content)
+	}
+	if !strings.Contains(byCode["!hello"].Content, "\n\nThanks for reaching out.") {
+		t.Fatalf("expected !hello to separate greeting from message body, got %q", byCode["!hello"].Content)
+	}
+	if !strings.Contains(byCode["!followup"].Content, "\n\nJust checking in") {
+		t.Fatalf("expected !followup to separate greeting from message body, got %q", byCode["!followup"].Content)
+	}
+	if byCode["!demo"].Tag != "Sales" {
+		t.Fatalf("expected !demo in Sales, got %q", byCode["!demo"].Tag)
+	}
+
+	if err := svc.SeedWorkspaceDefaults(ctx, workspaceID, ownerID); err != nil {
+		t.Fatalf("seed workspace defaults again: %v", err)
+	}
+	responses, err = cannedRepo.List(ctx, workspaceID)
+	if err != nil {
+		t.Fatalf("list canned responses after second seed: %v", err)
+	}
+	if len(responses) != 12 {
+		t.Fatalf("expected second seed to avoid duplicates, got %d shortcuts", len(responses))
+	}
+}
+
+func TestSupportInboxServiceSeedWorkspaceDefaultsKeepsExistingShortcutSet(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-support-existing-shortcuts"
+	ownerID := "user-existing-shortcuts"
+	seedWorkspace(t, db, workspaceID, "Existing Shortcuts", "existing-shortcuts", ownerID)
+
+	cannedRepo := repository.NewSupportCannedResponseRepository(db)
+	if err := cannedRepo.Create(ctx, &model.SupportCannedResponse{
+		WorkspaceID: workspaceID,
+		ShortCode:   "!custom",
+		Content:     "Custom saved reply",
+		Tag:         "General",
+		CreatedByID: ownerID,
+	}); err != nil {
+		t.Fatalf("create custom shortcut: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewSupportInboxInstallationRepository(db),
+		nil,
+		cannedRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	if err := svc.SeedWorkspaceDefaults(ctx, workspaceID, ownerID); err != nil {
+		t.Fatalf("seed workspace defaults: %v", err)
+	}
+
+	responses, err := cannedRepo.List(ctx, workspaceID)
+	if err != nil {
+		t.Fatalf("list canned responses: %v", err)
+	}
+	if len(responses) != 1 {
+		t.Fatalf("expected existing shortcut set to remain unchanged, got %d shortcuts", len(responses))
+	}
+	if responses[0].ShortCode != "!custom" {
+		t.Fatalf("expected custom shortcut to remain, got %q", responses[0].ShortCode)
+	}
 }
 
 // ---------------------------------------------------------------------------

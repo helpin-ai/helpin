@@ -1,3 +1,5 @@
+import { buildLoginPathForCurrentLocation } from './authRedirect';
+
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 interface ApiResponse<T> {
@@ -46,7 +48,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       localStorage.removeItem('refresh_token');
       localStorage.removeItem('remember_me');
       stopTokenRefreshTimer();
-      window.location.href = '/login';
+      window.location.href = buildLoginPathForCurrentLocation();
       return { data: null, error: 'Session expired' };
     }
 

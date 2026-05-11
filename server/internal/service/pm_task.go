@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,9 +15,12 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
+var attachmentIDAttrPattern = regexp.MustCompile(`data-attachment-id=["']([^"']+)["']`)
+
 // PMTaskService contains task business logic.
 type PMTaskService struct {
 	taskRepo            *repository.PMTaskRepository
+	templateRepo        *repository.PMTaskTemplateRepository
 	workspaceRepo       *repository.WorkspaceRepository
 	workflowRepo        *repository.PMWorkflowRepository
 	epicRepo            *repository.PMEpicRepository
@@ -71,6 +75,11 @@ func (s *PMTaskService) SetAgentService(svc *AgentService) {
 // SetRecurringService sets the recurring template service (breaks circular dependency).
 func (s *PMTaskService) SetRecurringService(svc *PMRecurringTemplateService) {
 	s.recurringService = svc
+}
+
+// SetTaskTemplateRepository sets the template repository used by task-to-template actions.
+func (s *PMTaskService) SetTaskTemplateRepository(repo *repository.PMTaskTemplateRepository) {
+	s.templateRepo = repo
 }
 
 func pmDnDWebsocketData(traceID string) json.RawMessage {
@@ -263,12 +272,24 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	if err := s.requireCanEdit(ctx, req.WorkspaceID, actorID); err != nil {
 		return nil, err
 	}
+	if err := s.applyTemplateDefaultsToCreateRequest(ctx, &req); err != nil {
+		return nil, err
+	}
 	if err := requireTeamMembershipForCreate(ctx, req.TeamID); err != nil {
 		return nil, err
 	}
 
 	workflowID := req.WorkflowID
 	stateID := req.WorkflowStateID
+	if workflowID == "" && stateID != "" {
+		state, err := s.workflowRepo.GetStateByID(ctx, stateID)
+		if err != nil {
+			return nil, err
+		}
+		if state != nil {
+			workflowID = state.WorkflowID
+		}
+	}
 	if workflowID == "" {
 		defaultWorkflow, err := s.workflowRepo.GetDefaultWorkflow(ctx, req.WorkspaceID)
 		if err != nil {
@@ -326,11 +347,6 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		return nil, fmt.Errorf("invalid severity")
 	}
 
-	ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, req.OwnerMemberID, req.OwnerID)
-	if err != nil {
-		return nil, err
-	}
-
 	requesterMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, req.WorkspaceID, req.RequesterMemberID, req.RequesterID)
 	if err != nil {
 		return nil, err
@@ -360,8 +376,6 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		EpicID:            req.EpicID,
 		SprintID:          req.SprintID,
 		TeamID:            req.TeamID,
-		OwnerID:           memberUserIDPtr(ownerMember),
-		OwnerMemberID:     memberIDPtr(ownerMember),
 		RequesterID:       memberUserIDPtr(requesterMember),
 		RequesterMemberID: memberIDPtr(requesterMember),
 		Estimate:          req.Estimate,
@@ -397,11 +411,31 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 			s.logger.ErrorContext(ctx, "failed to reassign attachments to task", "error", err, "task_id", newTask.ID, "attachment_ids", req.AttachmentIDs)
 		}
 	}
+	if req.TemplateID != nil && strings.TrimSpace(*req.TemplateID) != "" && s.attachmentRepo != nil {
+		attachmentClones, err := s.attachmentRepo.CloneUploadedFromEntityToEntityWithSources(ctx, "task_template", strings.TrimSpace(*req.TemplateID), "task", newTask.ID)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to clone template attachments to task", "error", err, "task_id", newTask.ID, "template_id", *req.TemplateID)
+		} else {
+			if missingInlineIDs := missingInlineAttachmentIDs(newTask.Description, attachmentIDRewriteMap(attachmentClones)); len(missingInlineIDs) > 0 {
+				inlineClones, err := s.attachmentRepo.CloneUploadedByIDToEntity(ctx, missingInlineIDs, "task", newTask.ID)
+				if err != nil {
+					s.logger.ErrorContext(ctx, "failed to clone inline template attachments to task", "error", err, "task_id", newTask.ID, "template_id", *req.TemplateID)
+				} else {
+					attachmentClones = append(attachmentClones, inlineClones...)
+				}
+			}
+			if rewrittenDescription := rewriteAttachmentIDs(newTask.Description, attachmentIDRewriteMap(attachmentClones)); !stringPtrEqual(rewrittenDescription, newTask.Description) {
+				newTask.Description = rewrittenDescription
+				if err := s.taskRepo.UpdateFields(ctx, newTask.ID, map[string]interface{}{"description": rewrittenDescription}); err != nil {
+					s.logger.ErrorContext(ctx, "failed to rewrite template attachment ids in task description", "error", err, "task_id", newTask.ID, "template_id", *req.TemplateID)
+				}
+			}
+		}
+	}
 
-	ownerIDs := dedupeIDs(req.OwnerIDs)
-	if newTask.OwnerID != nil {
-		ownerIDs = append(ownerIDs, *newTask.OwnerID)
-		ownerIDs = dedupeIDs(ownerIDs)
+	ownerIDs, err := s.resolveOwnerUserIDs(ctx, req.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
+	if err != nil {
+		return nil, err
 	}
 	for _, ownerID := range ownerIDs {
 		if err := s.taskRepo.AddOwner(ctx, newTask.ID, ownerID); err != nil {
@@ -574,6 +608,528 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	return detail, nil
 }
 
+type taskTemplateChecklistItem struct {
+	Text     string `json:"text"`
+	Position int    `json:"position,omitempty"`
+}
+
+type taskTemplateExternalLink struct {
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
+}
+
+// SaveAsTemplate creates a reusable template from an existing task.
+func (s *PMTaskService) SaveAsTemplate(ctx context.Context, taskID string, req model.SaveTaskAsTemplateRequest) (*model.PMTaskTemplate, error) {
+	if s.templateRepo == nil {
+		return nil, fmt.Errorf("task template repository is not configured")
+	}
+	detail, err := s.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	task := detail.Task
+	if err := requireCanManage(ctx, task.TeamID); err != nil {
+		return nil, err
+	}
+
+	name := strings.TrimSpace(task.Name)
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		name = strings.TrimSpace(*req.Name)
+	}
+	if name == "" {
+		return nil, fmt.Errorf("template name is required")
+	}
+	existing, err := s.templateRepo.GetByName(ctx, task.WorkspaceID, task.TeamID, name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, fmt.Errorf("template name already exists in this scope")
+	}
+
+	labelIDs := make([]string, 0, len(detail.Labels))
+	for _, label := range detail.Labels {
+		labelIDs = append(labelIDs, label.ID)
+	}
+	labelIDsJSON, err := optionalTaskTemplateJSON(labelIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	var checklistItems []taskTemplateChecklistItem
+	if s.checklistRepo != nil {
+		items, err := s.checklistRepo.List(ctx, task.ID)
+		if err != nil {
+			return nil, err
+		}
+		checklistItems = make([]taskTemplateChecklistItem, 0, len(items))
+		for _, item := range items {
+			text := strings.TrimSpace(item.Text)
+			if text == "" {
+				continue
+			}
+			checklistItems = append(checklistItems, taskTemplateChecklistItem{
+				Text:     text,
+				Position: item.Position,
+			})
+		}
+	}
+	checklistJSON, err := optionalTaskTemplateJSON(checklistItems)
+	if err != nil {
+		return nil, err
+	}
+
+	var externalLinks []taskTemplateExternalLink
+	if s.externalLinkRepo != nil {
+		links, err := s.externalLinkRepo.List(ctx, task.ID)
+		if err != nil {
+			return nil, err
+		}
+		externalLinks = make([]taskTemplateExternalLink, 0, len(links))
+		for _, link := range links {
+			linkURL := strings.TrimSpace(link.URL)
+			if linkURL == "" {
+				continue
+			}
+			externalLinks = append(externalLinks, taskTemplateExternalLink{
+				URL:   linkURL,
+				Title: strings.TrimSpace(link.Title),
+			})
+		}
+	}
+	externalLinksJSON, err := optionalTaskTemplateJSON(externalLinks)
+	if err != nil {
+		return nil, err
+	}
+
+	taskType := task.TaskType
+	priority := task.Priority
+	severity := task.Severity
+	deadline := optionalTaskTemplateDate(task.Deadline)
+	var ownerMemberID *string
+	if len(task.OwnerMemberIDs) > 0 && strings.TrimSpace(task.OwnerMemberIDs[0]) != "" {
+		ownerMemberID = &task.OwnerMemberIDs[0]
+	}
+	ownerMemberIDsJSON, err := optionalTaskTemplateJSON(dedupeIDs(task.OwnerMemberIDs))
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl := &model.PMTaskTemplate{
+		WorkspaceID:     task.WorkspaceID,
+		TeamID:          task.TeamID,
+		Name:            name,
+		Description:     task.Description,
+		TaskType:        &taskType,
+		Priority:        &priority,
+		Severity:        &severity,
+		Estimate:        task.Estimate,
+		LabelIDs:        labelIDsJSON,
+		OwnerMemberID:   ownerMemberID,
+		OwnerMemberIDs:  ownerMemberIDsJSON,
+		EpicID:          task.EpicID,
+		SprintID:        task.SprintID,
+		WorkflowStateID: &task.WorkflowStateID,
+		Deadline:        deadline,
+		ChecklistItems:  checklistJSON,
+		ExternalLinks:   externalLinksJSON,
+	}
+	if err := s.templateRepo.Create(ctx, tmpl); err != nil {
+		return nil, err
+	}
+	if s.attachmentRepo != nil {
+		attachmentClones, err := s.attachmentRepo.CloneUploadedFromEntityToEntityWithSources(ctx, "task", task.ID, "task_template", tmpl.ID)
+		if err != nil {
+			return nil, err
+		}
+		if missingInlineIDs := missingInlineAttachmentIDs(tmpl.Description, attachmentIDRewriteMap(attachmentClones)); len(missingInlineIDs) > 0 {
+			inlineClones, err := s.attachmentRepo.CloneUploadedByIDToEntity(ctx, missingInlineIDs, "task_template", tmpl.ID)
+			if err != nil {
+				return nil, err
+			}
+			attachmentClones = append(attachmentClones, inlineClones...)
+		}
+		if rewrittenDescription := rewriteAttachmentIDs(tmpl.Description, attachmentIDRewriteMap(attachmentClones)); !stringPtrEqual(rewrittenDescription, tmpl.Description) {
+			tmpl.Description = rewrittenDescription
+			if err := s.templateRepo.Update(ctx, tmpl); err != nil {
+				return nil, err
+			}
+		}
+	}
+	publishWorkspaceEvent(s.wsPublisher, "created", "story_template", tmpl.ID, task.WorkspaceID, "")
+	return tmpl, nil
+}
+
+func attachmentIDRewriteMap(clones []repository.PMAttachmentClone) map[string]string {
+	if len(clones) == 0 {
+		return nil
+	}
+	replacements := make(map[string]string, len(clones))
+	for _, clone := range clones {
+		replacements[clone.Source.ID] = clone.Clone.ID
+	}
+	return replacements
+}
+
+func missingInlineAttachmentIDs(description *string, replacements map[string]string) []string {
+	ids := extractInlineAttachmentIDs(description)
+	if len(ids) == 0 {
+		return nil
+	}
+	missing := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := replacements[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	return missing
+}
+
+func extractInlineAttachmentIDs(description *string) []string {
+	if description == nil || *description == "" {
+		return nil
+	}
+	matches := attachmentIDAttrPattern.FindAllStringSubmatch(*description, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(matches))
+	seen := make(map[string]bool, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		id := strings.TrimSpace(match[1])
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func rewriteAttachmentIDs(description *string, replacements map[string]string) *string {
+	if description == nil || len(replacements) == 0 {
+		return description
+	}
+	rewritten := *description
+	for sourceID, targetID := range replacements {
+		if sourceID == "" || targetID == "" || sourceID == targetID {
+			continue
+		}
+		rewritten = strings.ReplaceAll(rewritten, `data-attachment-id="`+sourceID+`"`, `data-attachment-id="`+targetID+`"`)
+		rewritten = strings.ReplaceAll(rewritten, `data-attachment-id='`+sourceID+`'`, `data-attachment-id='`+targetID+`'`)
+	}
+	if rewritten == *description {
+		return description
+	}
+	return &rewritten
+}
+
+func stringPtrEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+func optionalTaskTemplateJSON[T any](items []T) (*string, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(items)
+	if err != nil {
+		return nil, err
+	}
+	value := string(payload)
+	return &value, nil
+}
+
+func optionalTaskTemplateDate(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.UTC().Format("2006-01-02")
+	return &formatted
+}
+
+func (s *PMTaskService) applyTemplateDefaultsToCreateRequest(ctx context.Context, req *model.CreateTaskRequest) error {
+	if req == nil || req.TemplateID == nil || strings.TrimSpace(*req.TemplateID) == "" {
+		return nil
+	}
+	if s.templateRepo == nil {
+		return nil
+	}
+	tmpl, err := s.templateRepo.GetByID(ctx, strings.TrimSpace(*req.TemplateID))
+	if err != nil {
+		return err
+	}
+	if tmpl == nil {
+		return fmt.Errorf("task template not found")
+	}
+	if tmpl.WorkspaceID != req.WorkspaceID {
+		return fmt.Errorf("task template not found")
+	}
+	if !canViewTaskTemplate(ctx, tmpl.TeamID) {
+		return &model.ErrForbidden{Message: "you do not have access to this template"}
+	}
+
+	if req.TeamID == nil {
+		req.TeamID = tmpl.TeamID
+	}
+	if req.Description == nil {
+		req.Description = tmpl.Description
+	}
+	if strings.TrimSpace(req.TaskType) == "" && tmpl.TaskType != nil {
+		req.TaskType = *tmpl.TaskType
+	}
+	if req.Priority == nil {
+		req.Priority = tmpl.Priority
+	}
+	if req.Severity == nil {
+		req.Severity = tmpl.Severity
+	}
+	if req.Estimate == nil {
+		req.Estimate = tmpl.Estimate
+	}
+	if req.EpicID == nil {
+		req.EpicID = tmpl.EpicID
+	}
+	if req.SprintID == nil {
+		req.SprintID = tmpl.SprintID
+	}
+	if strings.TrimSpace(req.WorkflowStateID) == "" && tmpl.WorkflowStateID != nil {
+		req.WorkflowStateID = *tmpl.WorkflowStateID
+	}
+	if req.Deadline == nil && tmpl.Deadline != nil && strings.TrimSpace(*tmpl.Deadline) != "" {
+		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(*tmpl.Deadline))
+		if err != nil {
+			return fmt.Errorf("invalid task template deadline: %w", err)
+		}
+		req.Deadline = &parsed
+	}
+	if len(req.LabelIDs) == 0 {
+		labelIDs, err := parseTaskTemplateStringSlice(tmpl.LabelIDs)
+		if err != nil {
+			return err
+		}
+		req.LabelIDs = labelIDs
+	}
+	if len(req.OwnerMemberIDs) == 0 {
+		ownerMemberIDs, err := parseTaskTemplateOwnerMemberIDs(tmpl)
+		if err != nil {
+			return err
+		}
+		req.OwnerMemberIDs = ownerMemberIDs
+	}
+	if len(req.ChecklistItems) == 0 {
+		checklistItems, err := parseTaskTemplateChecklistItems(tmpl.ChecklistItems)
+		if err != nil {
+			return err
+		}
+		req.ChecklistItems = checklistItems
+	}
+	if len(req.ExternalLinks) == 0 {
+		externalLinks, err := parseTaskTemplateExternalLinks(tmpl.ExternalLinks)
+		if err != nil {
+			return err
+		}
+		req.ExternalLinks = externalLinks
+	}
+	return nil
+}
+
+func parseTaskTemplateStringSlice(value *string) ([]string, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	var result []string
+	if err := json.Unmarshal([]byte(*value), &result); err != nil {
+		return nil, err
+	}
+	return dedupeIDs(result), nil
+}
+
+func parseTaskTemplateOwnerMemberIDs(tmpl *model.PMTaskTemplate) ([]string, error) {
+	if tmpl == nil {
+		return nil, nil
+	}
+	ownerMemberIDs, err := parseTaskTemplateStringSlice(tmpl.OwnerMemberIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(ownerMemberIDs) == 0 && tmpl.OwnerMemberID != nil {
+		ownerMemberIDs = append(ownerMemberIDs, *tmpl.OwnerMemberID)
+	}
+	return dedupeIDs(ownerMemberIDs), nil
+}
+
+func parseTaskTemplateChecklistItems(value *string) ([]model.CreateChecklistItemRequest, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	var raw []taskTemplateChecklistItem
+	if err := json.Unmarshal([]byte(*value), &raw); err != nil {
+		return nil, err
+	}
+	items := make([]model.CreateChecklistItemRequest, 0, len(raw))
+	for _, item := range raw {
+		text := strings.TrimSpace(item.Text)
+		if text == "" {
+			continue
+		}
+		position := item.Position
+		items = append(items, model.CreateChecklistItemRequest{Text: text, Position: &position})
+	}
+	return items, nil
+}
+
+func parseTaskTemplateExternalLinks(value *string) ([]model.CreateExternalLinkRequest, error) {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return nil, nil
+	}
+	var raw []taskTemplateExternalLink
+	if err := json.Unmarshal([]byte(*value), &raw); err != nil {
+		return nil, err
+	}
+	links := make([]model.CreateExternalLinkRequest, 0, len(raw))
+	for _, link := range raw {
+		linkURL := strings.TrimSpace(link.URL)
+		if linkURL == "" {
+			continue
+		}
+		links = append(links, model.CreateExternalLinkRequest{URL: linkURL, Title: strings.TrimSpace(link.Title)})
+	}
+	return links, nil
+}
+
+// Duplicate creates a fresh task from reusable content on an existing task.
+func (s *PMTaskService) Duplicate(ctx context.Context, taskID, actorID string) (*model.TaskDetail, error) {
+	detail, err := s.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil {
+		return nil, fmt.Errorf("task not found")
+	}
+	source := detail.Task
+	if err := s.requireCanEdit(ctx, source.WorkspaceID, actorID); err != nil {
+		return nil, err
+	}
+
+	labelIDs := make([]string, 0, len(detail.Labels))
+	for _, label := range detail.Labels {
+		labelIDs = append(labelIDs, label.ID)
+	}
+
+	var checklistItems []model.PMChecklistItem
+	if s.checklistRepo != nil {
+		checklistItems, err = s.checklistRepo.List(ctx, source.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	externalLinks := []model.CreateExternalLinkRequest{}
+	if s.externalLinkRepo != nil {
+		links, err := s.externalLinkRepo.List(ctx, source.ID)
+		if err != nil {
+			return nil, err
+		}
+		externalLinks = make([]model.CreateExternalLinkRequest, 0, len(links))
+		for _, link := range links {
+			linkURL := strings.TrimSpace(link.URL)
+			if linkURL == "" {
+				continue
+			}
+			externalLinks = append(externalLinks, model.CreateExternalLinkRequest{
+				URL:   linkURL,
+				Title: strings.TrimSpace(link.Title),
+			})
+		}
+	}
+
+	duplicateName := strings.TrimSpace(source.Name) + " (copy)"
+	if strings.TrimSpace(source.Name) == "" {
+		duplicateName = "Untitled task (copy)"
+	}
+	duplicate, err := s.Create(ctx, model.CreateTaskRequest{
+		WorkspaceID:       source.WorkspaceID,
+		Name:              duplicateName,
+		Description:       source.Description,
+		TaskType:          source.TaskType,
+		WorkflowID:        source.WorkflowID,
+		WorkflowStateID:   source.WorkflowStateID,
+		EpicID:            source.EpicID,
+		SprintID:          source.SprintID,
+		TeamID:            source.TeamID,
+		OwnerMemberIDs:    dedupeIDs(source.OwnerMemberIDs),
+		RequesterID:       source.RequesterID,
+		RequesterMemberID: source.RequesterMemberID,
+		Estimate:          source.Estimate,
+		Priority:          &source.Priority,
+		Severity:          &source.Severity,
+		Deadline:          source.Deadline,
+		Blocked:           &source.Blocked,
+		Blocker:           source.Blocker,
+		LabelIDs:          labelIDs,
+		ExternalLinks:     externalLinks,
+	}, actorID)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.checklistRepo != nil && len(checklistItems) > 0 {
+		for _, sourceItem := range checklistItems {
+			text := strings.TrimSpace(sourceItem.Text)
+			if text == "" {
+				continue
+			}
+			item := &model.PMChecklistItem{
+				TaskID:     duplicate.Task.ID,
+				Text:       text,
+				Completed:  sourceItem.Completed,
+				Position:   sourceItem.Position,
+				AssigneeID: sourceItem.AssigneeID,
+			}
+			if err := s.checklistRepo.Create(ctx, item); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if s.attachmentRepo != nil {
+		attachmentClones, err := s.attachmentRepo.CloneUploadedFromEntityToEntityWithSources(ctx, "task", source.ID, "task", duplicate.Task.ID)
+		if err != nil {
+			return nil, err
+		}
+		if missingInlineIDs := missingInlineAttachmentIDs(duplicate.Task.Description, attachmentIDRewriteMap(attachmentClones)); len(missingInlineIDs) > 0 {
+			inlineClones, err := s.attachmentRepo.CloneUploadedByIDToEntity(ctx, missingInlineIDs, "task", duplicate.Task.ID)
+			if err != nil {
+				return nil, err
+			}
+			attachmentClones = append(attachmentClones, inlineClones...)
+		}
+		if rewrittenDescription := rewriteAttachmentIDs(duplicate.Task.Description, attachmentIDRewriteMap(attachmentClones)); !stringPtrEqual(rewrittenDescription, duplicate.Task.Description) {
+			duplicate.Task.Description = rewrittenDescription
+			if err := s.taskRepo.UpdateFields(ctx, duplicate.Task.ID, map[string]interface{}{"description": rewrittenDescription}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	created, err := s.taskRepo.GetByID(ctx, duplicate.Task.ID)
+	if err != nil {
+		return nil, err
+	}
+	if created == nil {
+		return nil, fmt.Errorf("task not found")
+	}
+	s.populateTaskDetail(ctx, created)
+	return created, nil
+}
+
 // Seed creates a batch of synthetic tasks for board and list testing.
 func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) (*model.SeedPMTasksResponse, error) {
 	if req.WorkspaceID == "" {
@@ -684,7 +1240,6 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 			blocker = &blockerValue
 		}
 
-		ownerMember := seededTaskMember(activeMembers, i)
 		requesterMember := seededTaskMember(activeMembers, i+1)
 
 		tasks = append(tasks, model.PMTask{
@@ -695,8 +1250,6 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 			TaskType:          taskType,
 			WorkflowID:        workflow.Workflow.ID,
 			WorkflowStateID:   state.ID,
-			OwnerID:           seededAssignableMemberUserIDPtr(ownerMember),
-			OwnerMemberID:     seededAssignableMemberIDPtr(ownerMember),
 			RequesterID:       seededAssignableMemberUserIDPtr(requesterMember),
 			RequesterMemberID: seededAssignableMemberIDPtr(requesterMember),
 			Estimate:          &estimate,
@@ -719,6 +1272,16 @@ func (s *PMTaskService) Seed(ctx context.Context, req model.SeedPMTasksRequest) 
 
 	if err := s.taskRepo.CreateInBatches(ctx, tasks, 100); err != nil {
 		return nil, err
+	}
+
+	for i := range tasks {
+		ownerMember := seededTaskMember(activeMembers, i)
+		if ownerMember == nil || ownerMember.UserID == nil || *ownerMember.UserID == "" {
+			continue
+		}
+		if err := s.taskRepo.AddOwner(ctx, tasks[i].ID, *ownerMember.UserID); err != nil {
+			return nil, err
+		}
 	}
 
 	return &model.SeedPMTasksResponse{Created: len(tasks)}, nil
@@ -786,12 +1349,14 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		stateChanged = true
 	}
 
-	ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, stateID, workflowID)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
+	if req.WorkflowID != nil || req.WorkflowStateID != nil {
+		ok, err := s.workflowRepo.StateBelongsToWorkflow(ctx, stateID, workflowID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("workflow_state_id must belong to workflow_id")
+		}
 	}
 	current.WorkflowID = workflowID
 	current.WorkflowStateID = stateID
@@ -805,14 +1370,16 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	if req.TeamID != nil {
 		current.TeamID = nullableString(req.TeamID)
 	}
-	if err := validateEpicScope(ctx, s.epicRepo, current.WorkspaceID, current.EpicID, current.TeamID); err != nil {
-		return nil, err
+	teamChanged := req.TeamID != nil
+	if req.EpicID != nil || teamChanged {
+		if err := validateEpicScope(ctx, s.epicRepo, current.WorkspaceID, current.EpicID, current.TeamID); err != nil {
+			return nil, err
+		}
 	}
-	if err := validateSprintScope(ctx, s.sprintRepo, current.WorkspaceID, current.SprintID, current.TeamID); err != nil {
-		return nil, err
-	}
-	if req.OwnerID != nil {
-		// Handled below via workspace member resolution.
+	if req.SprintID != nil || teamChanged {
+		if err := validateSprintScope(ctx, s.sprintRepo, current.WorkspaceID, current.SprintID, current.TeamID); err != nil {
+			return nil, err
+		}
 	}
 	if req.RequesterID != nil {
 		// Handled below via workspace member resolution.
@@ -859,14 +1426,6 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		current.ExternalID = req.ExternalID
 	}
 
-	if req.OwnerID != nil || req.OwnerMemberID != nil {
-		ownerMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.WorkspaceID, req.OwnerMemberID, req.OwnerID)
-		if err != nil {
-			return nil, err
-		}
-		current.OwnerMemberID = memberIDPtr(ownerMember)
-		current.OwnerID = memberUserIDPtr(ownerMember)
-	}
 	if req.RequesterID != nil || req.RequesterMemberID != nil {
 		requesterMember, err := resolveWorkspaceMember(ctx, s.workspaceRepo, current.WorkspaceID, req.RequesterMemberID, req.RequesterID)
 		if err != nil {
@@ -885,19 +1444,27 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 		return nil, err
 	}
 
-	if req.OwnerIDs != nil {
-		owners := dedupeIDs(req.OwnerIDs)
-		if current.OwnerID != nil {
-			owners = append(owners, *current.OwnerID)
-			owners = dedupeIDs(owners)
-		}
-		if err := s.taskRepo.ReplaceOwners(ctx, current.ID, owners); err != nil {
+	if req.OwnerMemberIDs != nil || req.OwnerIDs != nil {
+		nextOwnerIDs, err := s.resolveOwnerUserIDs(ctx, current.WorkspaceID, req.OwnerMemberIDs, req.OwnerIDs)
+		if err != nil {
 			return nil, err
 		}
-		if req.FollowerIDs == nil {
-			// Auto-follow owners if explicit follower list was not provided.
-			for _, ownerID := range owners {
-				if err := s.taskRepo.AddFollower(ctx, current.ID, ownerID); err != nil {
+		currentOwnerIDs, err := s.taskRepo.ListOwnerUserIDs(ctx, current.ID)
+		if err != nil {
+			return nil, err
+		}
+		currentOwnerSet := stringSet(currentOwnerIDs)
+		nextOwnerSet := stringSet(nextOwnerIDs)
+		for _, ownerID := range nextOwnerIDs {
+			if _, exists := currentOwnerSet[ownerID]; !exists {
+				if err := s.AddOwner(ctx, current.ID, ownerID, actorID); err != nil {
+					return nil, err
+				}
+			}
+		}
+		for _, ownerID := range currentOwnerIDs {
+			if _, exists := nextOwnerSet[ownerID]; !exists {
+				if err := s.RemoveOwner(ctx, current.ID, ownerID, actorID); err != nil {
 					return nil, err
 				}
 			}
@@ -905,9 +1472,6 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	}
 	if req.FollowerIDs != nil {
 		followers := dedupeIDs(req.FollowerIDs)
-		if current.OwnerID != nil {
-			followers = append(followers, *current.OwnerID)
-		}
 		if current.RequesterID != nil {
 			followers = append(followers, *current.RequesterID)
 		}
@@ -1707,6 +2271,36 @@ func isIgnorableAutoRequesterResolutionError(err error) bool {
 	default:
 		return false
 	}
+}
+
+func (s *PMTaskService) resolveOwnerUserIDs(ctx context.Context, workspaceID string, ownerMemberIDs, ownerIDs []string) ([]string, error) {
+	members, err := resolveWorkspaceMemberReferences(ctx, s.workspaceRepo, workspaceID, ownerMemberIDs, ownerIDs)
+	if err != nil {
+		return nil, err
+	}
+	userIDs := make([]string, 0, len(members))
+	for _, member := range members {
+		if member == nil {
+			continue
+		}
+		if member.UserID == nil || strings.TrimSpace(*member.UserID) == "" {
+			return nil, fmt.Errorf("workspace member %s does not have an active user", member.ID)
+		}
+		userIDs = append(userIDs, *member.UserID)
+	}
+	return dedupeIDs(userIDs), nil
+}
+
+func stringSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		set[value] = struct{}{}
+	}
+	return set
 }
 
 func dedupeIDs(ids []string) []string {

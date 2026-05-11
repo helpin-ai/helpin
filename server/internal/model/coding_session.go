@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"strings"
+	"time"
+)
 
 type CodingSession struct {
 	ID                  string                       `json:"id"`
@@ -15,6 +19,9 @@ type CodingSession struct {
 	Status              string                       `json:"status"`
 	PauseReason         string                       `json:"pause_reason"`
 	ErrorMessage        *string                      `json:"error_message,omitempty"`
+	ExecutionStage      *string                      `json:"execution_stage,omitempty"`
+	LastHeartbeatAt     *time.Time                   `json:"last_heartbeat_at,omitempty"`
+	StartedAt           *time.Time                   `json:"started_at,omitempty"`
 	Title               string                       `json:"title"`
 	Summary             *string                      `json:"summary,omitempty"`
 	SystemPrompt        *string                      `json:"system_prompt,omitempty"`
@@ -86,6 +93,43 @@ type CodingSessionEvent struct {
 type CodingSessionEventListResponse struct {
 	Events         []CodingSessionEvent `json:"events"`
 	NextSequenceNo int                  `json:"next_sequence_no"`
+}
+
+func CodingSessionEventFromAgentRunMessage(run *AgentRun, message *AgentRunMessage) CodingSessionEvent {
+	if run == nil || message == nil {
+		return CodingSessionEvent{}
+	}
+
+	eventType := "user.message.completed"
+	switch strings.TrimSpace(message.Role) {
+	case "assistant":
+		eventType = "assistant.message.completed"
+	case "tool":
+		eventType = "tool.call.completed"
+	}
+
+	return CodingSessionEvent{
+		ID:          "msg:" + message.ID,
+		SessionID:   run.ID,
+		RunID:       run.ID,
+		SequenceNo:  message.SequenceNo,
+		Timestamp:   message.CreatedAt.UTC(),
+		Type:        eventType,
+		RuntimeKind: run.RuntimeKind,
+		Payload: map[string]any{
+			"message_id":       message.ID,
+			"role":             message.Role,
+			"message_type":     message.MessageType,
+			"content":          message.Content,
+			"sequence_no":      message.SequenceNo,
+			"content_blocks":   json.RawMessage(message.ContentBlocks),
+			"turn_segments":    json.RawMessage(message.TurnSegments),
+			"tool_invocations": json.RawMessage(message.ToolInvocations),
+		},
+		RuntimeMetadata: map[string]any{
+			"source": "agent_run_message",
+		},
+	}
 }
 
 type CodingSessionLiveToolResult struct {

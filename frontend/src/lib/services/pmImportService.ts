@@ -35,10 +35,15 @@ export interface ShortcutTeamPreview {
 
 export interface ShortcutUserMatch {
   email: string;
+  shortcut_member_id?: string | null;
   matched_user_id: string | null;
+  matched_member_id?: string | null;
+  matched_member_status?: string | null;
   matched_name: string | null;
   shortcut_name?: string | null;
   story_count: number;
+  owner_count: number;
+  requester_count: number;
 }
 
 export interface ShortcutImportPreviewResponse {
@@ -47,6 +52,11 @@ export interface ShortcutImportPreviewResponse {
   teams: ShortcutTeamPreview[];
   workflows: ShortcutWorkflowPreview[];
   warnings: string[];
+}
+
+export interface ShortcutAPIPreviewStartResponse {
+  scan_id: string;
+  status: 'pending' | 'scanning' | 'ready' | 'failed' | 'canceled';
 }
 
 export interface ShortcutImportResult {
@@ -90,6 +100,16 @@ export interface ShortcutImportStatusResponse {
   created_at?: string;
   updated_at?: string;
   completed_at?: string | null;
+}
+
+export interface ShortcutAPIPreviewScanResponse {
+  scan_id: string;
+  status: 'pending' | 'scanning' | 'ready' | 'failed' | 'canceled';
+  progress: ShortcutImportStatusProgress;
+  preview?: ShortcutImportPreviewResponse;
+  error?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ShortcutImportCount {
@@ -235,24 +255,33 @@ export const pmImportService = {
     },
     scanId?: string,
   ) =>
-    jsonRequest<ShortcutImportPreviewResponse>(
+    jsonRequest<ShortcutAPIPreviewStartResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/api/preview`,
       { api_token: apiToken, options, ...(scanId ? { scan_id: scanId } : {}) },
+    ),
+
+  getShortcutAPIPreview: (workspaceId: string, scanId: string) =>
+    statusRequest<ShortcutAPIPreviewScanResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/api/preview/${encodeURIComponent(scanId)}`,
     ),
 
   executeShortcutAPI: (
     workspaceId: string,
     apiToken: string,
     userMappings: Record<string, string>,
+    memberMappings: Record<string, string>,
     teamMappings: Record<string, string>,
     workflowStateMappings: WorkflowStateMappingPayload[],
     options: ShortcutImportOptionsPayload,
+    previewScanId?: string | null,
   ) =>
     jsonRequest<ShortcutImportExecuteResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/import/shortcut/api/execute`,
       {
         api_token: apiToken,
+        ...(previewScanId ? { preview_scan_id: previewScanId } : {}),
         user_mappings: userMappings,
+        member_mappings: memberMappings,
         team_mappings: teamMappings,
         workflow_state_mappings: workflowStateMappings,
         options,

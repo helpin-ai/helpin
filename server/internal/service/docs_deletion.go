@@ -24,6 +24,7 @@ type docsAssetStore interface {
 // part of the graph.
 type DocsDocumentDeletionDependencies struct {
 	ContentRepo     *repository.DocsContentRepository
+	BlockRepo       *repository.DocsBlockRepository
 	VersionRepo     *repository.DocsVersionRepository
 	LinkRepo        *repository.DocsLinkRepository
 	ChunkRepo       *repository.DocsChunkRepository
@@ -59,6 +60,11 @@ func (s *DocsDocumentService) deleteDocumentRows(ctx context.Context, documentID
 	}
 	if deps.ContentRepo != nil {
 		if err := deps.ContentRepo.DeleteByDocumentIDs(ctx, documentIDs); err != nil {
+			return err
+		}
+	}
+	if deps.BlockRepo != nil {
+		if err := deps.BlockRepo.DeleteByDocumentIDs(ctx, documentIDs); err != nil {
 			return err
 		}
 	}
@@ -127,6 +133,13 @@ func (s *DocsDocumentService) collectAssetKeysForDeletedDocuments(ctx context.Co
 		}
 		addDocsContentAssetRefs(keys, workspaceID, deps.AssetStore, contents)
 	}
+	if deps.BlockRepo != nil {
+		blocks, err := deps.BlockRepo.ListByDocumentIDs(ctx, documentIDs)
+		if err != nil {
+			return nil, err
+		}
+		addDocsBlockAssetRefs(keys, workspaceID, deps.AssetStore, blocks)
+	}
 	if deps.VersionRepo != nil {
 		versions, err := deps.VersionRepo.ListByDocumentIDs(ctx, documentIDs)
 		if err != nil {
@@ -165,6 +178,13 @@ func (s *DocsDocumentService) collectAssetKeysForSurvivingDocuments(ctx context.
 		}
 		addDocsContentAssetRefs(keys, workspaceID, deps.AssetStore, contents)
 	}
+	if deps.BlockRepo != nil {
+		blocks, err := deps.BlockRepo.ListByWorkspaceExcludingDocuments(ctx, workspaceID, excludeDocumentIDs)
+		if err != nil {
+			return nil, err
+		}
+		addDocsBlockAssetRefs(keys, workspaceID, deps.AssetStore, blocks)
+	}
 	if deps.VersionRepo != nil {
 		versions, err := deps.VersionRepo.ListByWorkspaceExcludingDocuments(ctx, workspaceID, excludeDocumentIDs)
 		if err != nil {
@@ -201,6 +221,12 @@ func addDocsContentAssetRefs(out map[string]struct{}, workspaceID string, store 
 func addDocsVersionAssetRefs(out map[string]struct{}, workspaceID string, store docsAssetStore, versions []model.DocsVersion) {
 	for _, version := range versions {
 		addOwnedDocsAssetRefs(out, workspaceID, store, string(version.Content))
+	}
+}
+
+func addDocsBlockAssetRefs(out map[string]struct{}, workspaceID string, store docsAssetStore, blocks []model.DocsBlock) {
+	for _, block := range blocks {
+		addOwnedDocsAssetRefs(out, workspaceID, store, string(block.Content))
 	}
 }
 

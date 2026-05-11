@@ -86,6 +86,20 @@ func applyTaskStringFilter(q *gorm.DB, column string, value *string) *gorm.DB {
 	return q.Where(column+" IN ?", values)
 }
 
+func applyTaskOwnerMemberIDsFilter(q *gorm.DB, memberIDs []string) *gorm.DB {
+	if len(memberIDs) == 0 {
+		return q
+	}
+	return q.Where(`EXISTS (
+		SELECT 1
+		FROM pm_task_owners po
+		JOIN workspace_members wm ON wm.user_id = po.user_id
+		WHERE po.task_id = pm_tasks.id
+		  AND wm.workspace_id = pm_tasks.workspace_id
+		  AND wm.id IN ?
+	)`, memberIDs)
+}
+
 func applyTaskAssociationFilter(q *gorm.DB, objectType string, value *string) *gorm.DB {
 	values := splitFilterValues(value)
 	if len(values) == 0 {
@@ -306,8 +320,7 @@ func (r *PMTaskRepository) List(ctx context.Context, workspaceID string, filters
 	query = applyTaskStringFilter(query, "pm_tasks.workflow_id", filters.WorkflowID)
 	query = applyTaskStringFilter(query, "pm_tasks.workflow_state_id", filters.WorkflowStateID)
 	query = applyTaskStringFilter(query, "pm_tasks.task_type", filters.TaskType)
-	query = applyTaskStringFilter(query, "pm_tasks.owner_id", filters.OwnerID)
-	query = applyTaskStringFilter(query, "pm_tasks.owner_member_id", filters.OwnerMemberID)
+	query = applyTaskOwnerMemberIDsFilter(query, filters.OwnerMemberIDs)
 	query = applyTaskStringFilter(query, "pm_tasks.priority", filters.Priority)
 	query = applyTaskStringFilter(query, "pm_tasks.requester_id", filters.RequesterID)
 	query = applyTaskStringFilter(query, "pm_tasks.requester_member_id", filters.RequesterMemberID)
@@ -433,6 +446,21 @@ func (r *PMTaskRepository) ListByIDs(ctx context.Context, workspaceID string, id
 		Where("workspace_id = ? AND id IN ?", workspaceID, ids).
 		Find(&tasks).Error; err != nil {
 		return nil, fmt.Errorf("list tasks by ids: %w", err)
+	}
+	return tasks, nil
+}
+
+// ListByEpicID returns raw, non-archived tasks for an epic in a workspace.
+func (r *PMTaskRepository) ListByEpicID(ctx context.Context, workspaceID, epicID string) ([]model.PMTask, error) {
+	if workspaceID == "" || epicID == "" {
+		return []model.PMTask{}, nil
+	}
+	var tasks []model.PMTask
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND epic_id = ? AND archived = FALSE", workspaceID, epicID).
+		Order("display_id ASC, created_at ASC").
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("list tasks by epic id: %w", err)
 	}
 	return tasks, nil
 }
@@ -858,7 +886,7 @@ func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID s
 
 	baseQuery := r.db.WithContext(ctx).
 		Model(&model.PMTask{}).
-		Where("workflow_state_id IN ? AND archived = false", stateIDs)
+		Where("workflow_state_id IN ?", stateIDs)
 	baseQuery = r.applyBoardFilters(baseQuery, filters)
 
 	var aggregateRows []struct {
@@ -892,7 +920,7 @@ func (r *PMTaskRepository) ListByWorkflowState(ctx context.Context, workflowID s
 	var allTasks []model.PMTask
 	for i, state := range states {
 		query := r.db.WithContext(ctx).
-			Where("workflow_state_id = ? AND archived = false", state.ID)
+			Where("workflow_state_id = ?", state.ID)
 		query = r.applyBoardFilters(query, filters)
 		query = query.Order(boardTaskOrderClause(state.StateType))
 		if perStateLimit > 0 {
@@ -961,7 +989,7 @@ func (r *PMTaskRepository) ListColumnTasks(ctx context.Context, stateID string, 
 	}
 
 	taskQuery := r.db.WithContext(ctx).
-		Where("workflow_state_id = ? AND archived = false", stateID)
+		Where("workflow_state_id = ?", stateID)
 	taskQuery = r.applyBoardFilters(taskQuery, filters)
 
 	var total int64
@@ -996,8 +1024,6 @@ func (r *PMTaskRepository) collectAndEnrich(ctx context.Context, tasks []model.P
 	tasks = r.applyLatestRunMetadata(ctx, tasks)
 	epicIDs := map[string]struct{}{}
 	sprintIDs := map[string]struct{}{}
-	ownerMemberIDs := map[string]struct{}{}
-	ownerIDs := map[string]struct{}{}
 	stateIDs := map[string]struct{}{}
 	taskIDs := make([]string, len(tasks))
 	for i, s := range tasks {
@@ -1008,18 +1034,11 @@ func (r *PMTaskRepository) collectAndEnrich(ctx context.Context, tasks []model.P
 		if s.SprintID != nil {
 			sprintIDs[*s.SprintID] = struct{}{}
 		}
-		if s.OwnerMemberID != nil {
-			ownerMemberIDs[*s.OwnerMemberID] = struct{}{}
-		}
-		if s.OwnerID != nil {
-			ownerIDs[*s.OwnerID] = struct{}{}
-		}
 		stateIDs[s.WorkflowStateID] = struct{}{}
 	}
 	epicNameMap := r.batchEpicNames(ctx, epicIDs)
 	sprintNameMap := r.batchSprintNames(ctx, sprintIDs)
-	ownerNameMap := r.batchMemberNames(ctx, ownerMemberIDs)
-	legacyOwnerNameMap := r.batchOwnerNames(ctx, ownerIDs)
+	ownerMemberIDsByTaskID := r.batchTaskOwnerMemberIDs(ctx, taskIDs)
 	labelMap := r.batchTaskLabels(ctx, taskIDs)
 	stateInfoMap := r.batchStateInfo(ctx, stateIDs)
 	contactsMap := map[string][]model.AssociationObjectSummary{}
@@ -1029,7 +1048,7 @@ func (r *PMTaskRepository) collectAndEnrich(ctx context.Context, tasks []model.P
 	if options.includeContacts || options.includeCompanies || options.includeDeals || options.includeSupport {
 		contactsMap, companiesMap, dealsMap, supportMap = r.batchTaskAssociations(ctx, taskIDs, options)
 	}
-	return r.enrichBoardTasks(tasks, epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap, labelMap, stateInfoMap, contactsMap, companiesMap, dealsMap, supportMap)
+	return r.enrichBoardTasks(tasks, epicNameMap, sprintNameMap, ownerMemberIDsByTaskID, labelMap, stateInfoMap, contactsMap, companiesMap, dealsMap, supportMap)
 }
 
 // stateInfo holds denormalized workflow state metadata for board tasks.
@@ -1105,7 +1124,8 @@ func (r *PMTaskRepository) applyLatestRunMetadata(ctx context.Context, tasks []m
 // enrichBoardTasks maps epic/owner names, state info, and labels onto raw tasks for board display.
 func (r *PMTaskRepository) enrichBoardTasks(
 	tasks []model.PMTask,
-	epicNameMap, sprintNameMap, ownerNameMap, legacyOwnerNameMap map[string]string,
+	epicNameMap, sprintNameMap map[string]string,
+	ownerMemberIDsByTaskID map[string][]string,
 	labelMap map[string][]model.PMLabel,
 	stateInfoMap map[string]stateInfo,
 	contactsMap, companiesMap, dealsMap, supportMap map[string][]model.AssociationObjectSummary,
@@ -1114,12 +1134,14 @@ func (r *PMTaskRepository) enrichBoardTasks(
 	for _, task := range tasks {
 		bs := model.BoardTask{
 			PMTask:               task,
+			OwnerMemberIDs:       ownerMemberIDsByTaskID[task.ID],
 			Labels:               []model.PMLabel{},
 			Contacts:             contactsMap[task.ID],
 			Companies:            companiesMap[task.ID],
 			Deals:                dealsMap[task.ID],
 			SupportConversations: supportMap[task.ID],
 		}
+		bs.PMTask.OwnerMemberIDs = ownerMemberIDsByTaskID[task.ID]
 		if task.EpicID != nil {
 			if name, ok := epicNameMap[*task.EpicID]; ok {
 				bs.EpicName = &name
@@ -1128,15 +1150,6 @@ func (r *PMTaskRepository) enrichBoardTasks(
 		if task.SprintID != nil {
 			if name, ok := sprintNameMap[*task.SprintID]; ok {
 				bs.SprintName = &name
-			}
-		}
-		if task.OwnerMemberID != nil {
-			if name, ok := ownerNameMap[*task.OwnerMemberID]; ok {
-				bs.OwnerName = &name
-			}
-		} else if task.OwnerID != nil {
-			if name, ok := legacyOwnerNameMap[*task.OwnerID]; ok {
-				bs.OwnerName = &name
 			}
 		}
 		if labels, ok := labelMap[task.ID]; ok {
@@ -1403,11 +1416,15 @@ func (r *PMTaskRepository) applyBoardFilters(q *gorm.DB, filters model.PMTaskFil
 	q = applyTaskAssociationFilter(q, model.CRMObjectCompany, filters.CompanyID)
 	q = applyTaskAssociationFilter(q, model.CRMObjectDeal, filters.DealID)
 	q = applyTaskSupportConversationFilter(q, filters.SupportConversationID)
-	q = applyTaskStringFilter(q, "pm_tasks.owner_id", filters.OwnerID)
-	q = applyTaskStringFilter(q, "pm_tasks.owner_member_id", filters.OwnerMemberID)
+	q = applyTaskOwnerMemberIDsFilter(q, filters.OwnerMemberIDs)
 	q = applyTaskStringFilter(q, "pm_tasks.requester_id", filters.RequesterID)
 	q = applyTaskStringFilter(q, "pm_tasks.requester_member_id", filters.RequesterMemberID)
 	q = applyTaskStringFilter(q, "pm_tasks.severity", filters.Severity)
+	archived := false
+	if filters.Archived != nil {
+		archived = *filters.Archived
+	}
+	q = q.Where("pm_tasks.archived = ?", archived)
 	if filters.Blocked != nil && *filters.Blocked != "" {
 		q = r.applyDerivedBlockedFilter(q, *filters.Blocked == "true")
 	}
@@ -1484,6 +1501,31 @@ func (r *PMTaskRepository) batchEpicNames(ctx context.Context, epicIDs map[strin
 		epicNameMap[row.ID] = row.Name
 	}
 	return epicNameMap
+}
+
+func (r *PMTaskRepository) batchTaskOwnerMemberIDs(ctx context.Context, taskIDs []string) map[string][]string {
+	result := map[string][]string{}
+	if len(taskIDs) == 0 {
+		return result
+	}
+	var rows []struct {
+		TaskID   string `gorm:"column:task_id"`
+		MemberID string `gorm:"column:member_id"`
+	}
+	if err := r.db.WithContext(ctx).
+		Table("pm_task_owners po").
+		Select("po.task_id, wm.id AS member_id").
+		Joins("JOIN pm_tasks t ON t.id = po.task_id").
+		Joins("JOIN workspace_members wm ON wm.user_id = po.user_id AND wm.workspace_id = t.workspace_id").
+		Where("po.task_id IN ?", taskIDs).
+		Order("po.task_id, po.created_at ASC").
+		Scan(&rows).Error; err != nil {
+		return result
+	}
+	for _, row := range rows {
+		result[row.TaskID] = append(result[row.TaskID], row.MemberID)
+	}
+	return result
 }
 
 // batchOwnerNames looks up user full names by IDs.
@@ -1606,32 +1648,45 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 		return []model.TaskMemberColumn{}, nil
 	}
 
-	baseQuery := r.db.WithContext(ctx).
-		Model(&model.PMTask{}).
-		Where("workflow_state_id IN ? AND archived = false", stateIDs)
-	baseQuery = r.applyBoardFilters(baseQuery, filters)
-
-	// Aggregate counts per owner_member_id (NULL grouped as unassigned).
+	// Aggregate counts per owning member. Multi-owner tasks intentionally
+	// contribute once to each owner's column.
 	type memberAggregate struct {
-		OwnerMemberID *string `gorm:"column:owner_member_id"`
-		TaskCount     int     `gorm:"column:task_count"`
-		PointTotal    int     `gorm:"column:point_total"`
+		MemberID   string `gorm:"column:member_id"`
+		TaskCount  int    `gorm:"column:task_count"`
+		PointTotal int    `gorm:"column:point_total"`
 	}
 	var aggregateRows []memberAggregate
-	if err := baseQuery.
-		Select("pm_tasks.owner_member_id, COUNT(pm_tasks.id) AS task_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
-		Group("pm_tasks.owner_member_id").
+	ownedAggregateQuery := r.db.WithContext(ctx).
+		Model(&model.PMTask{}).
+		Where("pm_tasks.workspace_id = ? AND pm_tasks.workflow_state_id IN ?", workspaceID, stateIDs).
+		Joins("JOIN pm_task_owners po ON po.task_id = pm_tasks.id").
+		Joins("JOIN workspace_members wm ON wm.user_id = po.user_id AND wm.workspace_id = pm_tasks.workspace_id")
+	ownedAggregateQuery = r.applyBoardFilters(ownedAggregateQuery, filters)
+	if err := ownedAggregateQuery.
+		Select("wm.id AS member_id, COUNT(DISTINCT pm_tasks.id) AS task_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
+		Group("wm.id").
 		Scan(&aggregateRows).Error; err != nil {
 		return nil, fmt.Errorf("list member board aggregates: %w", err)
 	}
 
 	aggregates := map[string]memberAggregate{} // key: member_id or "" for unassigned
 	for _, row := range aggregateRows {
-		key := ""
-		if row.OwnerMemberID != nil {
-			key = *row.OwnerMemberID
-		}
-		aggregates[key] = row
+		aggregates[row.MemberID] = row
+	}
+
+	var unassignedAggregate memberAggregate
+	unassignedAggregateQuery := r.db.WithContext(ctx).
+		Model(&model.PMTask{}).
+		Where("pm_tasks.workspace_id = ? AND pm_tasks.workflow_state_id IN ?", workspaceID, stateIDs).
+		Where("NOT EXISTS (SELECT 1 FROM pm_task_owners po WHERE po.task_id = pm_tasks.id)")
+	unassignedAggregateQuery = r.applyBoardFilters(unassignedAggregateQuery, filters)
+	if err := unassignedAggregateQuery.
+		Select("'' AS member_id, COUNT(DISTINCT pm_tasks.id) AS task_count, COALESCE(SUM(pm_tasks.estimate), 0) AS point_total").
+		Scan(&unassignedAggregate).Error; err != nil {
+		return nil, fmt.Errorf("list unassigned member board aggregate: %w", err)
+	}
+	if unassignedAggregate.TaskCount > 0 {
+		aggregates[""] = unassignedAggregate
 	}
 
 	// Collect all member keys that have tasks.
@@ -1654,12 +1709,16 @@ func (r *PMTaskRepository) ListByMember(ctx context.Context, workspaceID, workfl
 	for _, key := range memberKeys {
 		query := r.db.WithContext(ctx).
 			Model(&model.PMTask{}).
-			Where("workflow_state_id IN ? AND archived = false", stateIDs)
+			Where("pm_tasks.workspace_id = ? AND pm_tasks.workflow_state_id IN ?", workspaceID, stateIDs)
 		query = r.applyBoardFilters(query, filters)
 		if key == "" {
-			query = query.Where("owner_member_id IS NULL")
+			query = query.Where("NOT EXISTS (SELECT 1 FROM pm_task_owners po WHERE po.task_id = pm_tasks.id)")
 		} else {
-			query = query.Where("owner_member_id = ?", key)
+			query = query.
+				Select("pm_tasks.*").
+				Joins("JOIN pm_task_owners po ON po.task_id = pm_tasks.id").
+				Joins("JOIN workspace_members wm ON wm.user_id = po.user_id AND wm.workspace_id = pm_tasks.workspace_id").
+				Where("wm.id = ?", key)
 		}
 		query = query.Joins("JOIN pm_workflow_states ws ON ws.id = pm_tasks.workflow_state_id").
 			Order(memberBoardTaskOrderClause())
@@ -1841,17 +1900,21 @@ func (r *PMTaskRepository) ListMemberColumnTasks(ctx context.Context, workspaceI
 
 	taskQuery := r.db.WithContext(ctx).
 		Model(&model.PMTask{}).
-		Where("workflow_state_id IN ? AND archived = false", stateIDs)
+		Where("pm_tasks.workspace_id = ? AND pm_tasks.workflow_state_id IN ?", workspaceID, stateIDs)
 	taskQuery = r.applyBoardFilters(taskQuery, filters)
 
 	if memberID == nil {
-		taskQuery = taskQuery.Where("owner_member_id IS NULL")
+		taskQuery = taskQuery.Where("NOT EXISTS (SELECT 1 FROM pm_task_owners po WHERE po.task_id = pm_tasks.id)")
 	} else {
-		taskQuery = taskQuery.Where("owner_member_id = ?", *memberID)
+		taskQuery = taskQuery.
+			Select("pm_tasks.*").
+			Joins("JOIN pm_task_owners po ON po.task_id = pm_tasks.id").
+			Joins("JOIN workspace_members wm ON wm.user_id = po.user_id AND wm.workspace_id = pm_tasks.workspace_id").
+			Where("wm.id = ?", *memberID)
 	}
 
 	var total int64
-	if err := taskQuery.Model(&model.PMTask{}).Count(&total).Error; err != nil {
+	if err := taskQuery.Distinct("pm_tasks.id").Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count member column tasks: %w", err)
 	}
 
@@ -1984,10 +2047,8 @@ func (r *PMTaskRepository) buildTaskDetail(ctx context.Context, task model.PMTas
 		return nil, fmt.Errorf("list task followers: %w", err)
 	}
 
-	ownerMember, err := r.loadAssignableMember(ctx, task.WorkspaceID, task.OwnerMemberID)
-	if err != nil {
-		return nil, err
-	}
+	task.OwnerMemberIDs = r.batchTaskOwnerMemberIDs(ctx, []string{task.ID})[task.ID]
+
 	requesterMember, err := r.loadAssignableMember(ctx, task.WorkspaceID, task.RequesterMemberID)
 	if err != nil {
 		return nil, err
@@ -2046,7 +2107,6 @@ func (r *PMTaskRepository) buildTaskDetail(ctx context.Context, task model.PMTas
 		Task:            task,
 		Owners:          owners,
 		Followers:       followers,
-		OwnerMember:     ownerMember,
 		RequesterMember: requesterMember,
 		Labels:          labels,
 		EpicName:        epicName,

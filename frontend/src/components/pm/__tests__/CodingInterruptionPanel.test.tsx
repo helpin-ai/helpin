@@ -3,6 +3,13 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+// CodingTranscriptPane internally calls useWorkspaceMembers (TanStack Query).
+// Stub it so tests don't need a QueryClientProvider — they only assert
+// transcript rendering behavior, not workspace-member resolution.
+vi.mock('@/hooks/queries/useWorkspaces', () => ({
+  useWorkspaceMembers: () => ({ data: [], isLoading: false, error: null }),
+}));
+
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count, getScrollElement }: { count: number; getScrollElement: () => HTMLElement | null }) => ({
     getTotalSize: () => count * 120,
@@ -733,7 +740,7 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 120 }));
 
     act(() => {
       root.unmount();

@@ -29,18 +29,20 @@ func (Workspace) TableName() string { return "workspaces" }
 
 // WorkspaceMember represents a row in the workspace_members table.
 type WorkspaceMember struct {
-	ID          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_ws_member_ws_user,priority:1"`
-	UserID      *string    `json:"user_id" gorm:"type:uuid;uniqueIndex:idx_ws_member_ws_user,priority:2"`
-	Email       string     `json:"email" gorm:"not null"`
-	DisplayName string     `json:"display_name" gorm:"not null"`
-	Role        string     `json:"role" gorm:"not null;default:'member'"`
-	Status      string     `json:"status" gorm:"not null;default:'active';index"`
-	InvitedBy   *string    `json:"invited_by,omitempty" gorm:"type:uuid"`
-	InvitedAt   *time.Time `json:"invited_at,omitempty"`
-	AcceptedAt  *time.Time `json:"accepted_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                         string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_ws_member_ws_user,priority:1"`
+	UserID                     *string    `json:"user_id" gorm:"type:uuid;uniqueIndex:idx_ws_member_ws_user,priority:2"`
+	Email                      string     `json:"email" gorm:"not null"`
+	DisplayName                string     `json:"display_name" gorm:"not null"`
+	Role                       string     `json:"role" gorm:"not null;default:'member'"`
+	Status                     string     `json:"status" gorm:"not null;default:'active';index"`
+	InvitedBy                  *string    `json:"invited_by,omitempty" gorm:"type:uuid"`
+	InvitedAt                  *time.Time `json:"invited_at,omitempty"`
+	AcceptedAt                 *time.Time `json:"accepted_at,omitempty"`
+	SupportDefaultTeamID       *string    `json:"support_default_team_id,omitempty" gorm:"type:uuid"`
+	SupportTaskDialogDismissed bool       `json:"support_task_dialog_dismissed" gorm:"default:false"`
+	CreatedAt                  time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                  time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceMember) TableName() string { return "workspace_members" }
@@ -93,6 +95,15 @@ type AssignableMember struct {
 	AcceptedAt            *time.Time `json:"accepted_at,omitempty"`
 }
 
+// WorkspaceMFAPolicy captures the workspace MFA policy and the current user's
+// ability to satisfy it.
+type WorkspaceMFAPolicy struct {
+	EnforceTwoFactor bool `json:"enforce_two_factor"`
+	MFARequired      bool `json:"mfa_required"`
+	MFAEnabled       bool `json:"mfa_enabled"`
+	MFASatisfied     bool `json:"mfa_satisfied"`
+}
+
 // CreateWorkspaceRequest is the payload for POST /api/workspaces.
 type CreateWorkspaceRequest struct {
 	Name           string  `json:"name"`
@@ -129,4 +140,10 @@ func (WorkspaceKeyHistory) TableName() string { return "workspace_key_history" }
 // UpdateWorkspaceMemberRequest is the payload for PUT /api/workspaces/{id}/members/{memberId}.
 type UpdateWorkspaceMemberRequest struct {
 	Role string `json:"role"`
+}
+
+// UpdateSupportTaskPreferencesRequest is the payload for updating support task creation preferences.
+type UpdateSupportTaskPreferencesRequest struct {
+	SupportDefaultTeamID       *string `json:"support_default_team_id"`
+	SupportTaskDialogDismissed *bool   `json:"support_task_dialog_dismissed"`
 }

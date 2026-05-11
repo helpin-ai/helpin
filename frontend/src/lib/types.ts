@@ -141,7 +141,8 @@ export type Permission =
   | 'search.read'
   | 'ws.connect';
 
-export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support';
+export type WorkspaceModule = 'pm' | 'docs' | 'crm' | 'support' | 'automation';
+export type ManagedWorkspaceModule = Extract<WorkspaceModule, 'crm' | 'support' | 'automation'>;
 export type ModuleGrantSubjectType = 'team' | 'workspace_member';
 
 export interface WorkspaceModuleGrant {
@@ -169,6 +170,8 @@ export interface WorkspaceAccess {
     user_id: string;
     role: 'owner' | 'admin' | 'member' | 'viewer';
     status: string;
+    support_default_team_id?: string;
+    support_task_dialog_dismissed: boolean;
   };
   permissions: Permission[];
   team_memberships: {
@@ -176,6 +179,14 @@ export interface WorkspaceAccess {
     role: string;
   }[];
   modules: WorkspaceModule[];
+  security_policy?: WorkspaceMFAPolicy;
+}
+
+export interface WorkspaceMFAPolicy {
+  enforce_two_factor: boolean;
+  mfa_required: boolean;
+  mfa_enabled: boolean;
+  mfa_satisfied: boolean;
 }
 
 export interface MemberWithUser {
@@ -291,6 +302,7 @@ export interface WorkspaceConfig {
   sprint_duration_weeks: number;
   notifications_enabled: boolean;
   team_weight: number;
+  enforce_two_factor?: boolean;
 }
 
 export interface WorkspaceTeam {
@@ -362,6 +374,7 @@ export interface JobRoleCriteria {
 export interface Invitation {
   id: string;
   workspace_id: string;
+  workspace_member_id?: string;
   email: string;
   role: string;
   status: 'pending' | 'accepted' | 'revoked';
@@ -458,6 +471,7 @@ export interface AutomationTriggerExecutionFilters {
   status?: string;
   source?: string;
   reference_id?: string;
+  run_id?: string;
   fired_after?: string;
   fired_before?: string;
   page?: number;

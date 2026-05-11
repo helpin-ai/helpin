@@ -62,8 +62,8 @@ function MetadataRow({
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-xs text-muted-foreground self-center">{label}</span>
-      <div className="min-w-0 self-center">{children}</div>
+      <span className="text-[12px] text-muted-foreground self-center">{label}</span>
+      <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
 }
@@ -268,7 +268,7 @@ export function SprintDetailPage() {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
     for (const task of tasks) {
-      const ownerKey = task.owner_member_id;
+      const ownerKey = task.owner_member_ids?.[0];
       if (ownerKey) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
@@ -342,7 +342,7 @@ export function SprintDetailPage() {
   }
 
   return (
-    <div className="flex h-full flex-col max-w-7xl mx-auto">
+    <div className="flex h-full flex-col max-w-7xl 2xl:max-w-[1600px] min-[2560px]:max-w-[2000px] mx-auto">
       {/* ── Header bar ──────────────────────────────────────────── */}
       <div className="ui-divider-bottom-fade flex items-center gap-2 px-4 py-2.5">
         <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={goBack}>

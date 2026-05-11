@@ -20,6 +20,16 @@ func NewPMCommentRepository(db *gorm.DB) *PMCommentRepository {
 	return &PMCommentRepository{db: db}
 }
 
+// DB returns the underlying database handle for transaction orchestration.
+func (r *PMCommentRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a repository bound to the provided transaction.
+func (r *PMCommentRepository) WithTx(tx *gorm.DB) *PMCommentRepository {
+	return NewPMCommentRepository(tx)
+}
+
 // List returns top-level comments for an entity with author info, nested replies, reactions, and attachments.
 func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID string) ([]model.CommentWithAuthor, error) {
 	var comments []model.PMComment
@@ -237,9 +247,37 @@ func (r *PMCommentRepository) GetByID(ctx context.Context, id string) (*model.PM
 	return &comment, nil
 }
 
+// GetWithAuthor returns one comment enriched with author, reactions, and attachments.
+func (r *PMCommentRepository) GetWithAuthor(ctx context.Context, id string) (*model.CommentWithAuthor, error) {
+	comment, err := r.GetByID(ctx, id)
+	if err != nil || comment == nil {
+		return nil, err
+	}
+
+	var author model.User
+	if err := r.db.WithContext(ctx).Where("id = ?", comment.AuthorID).First(&author).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("load comment author: %w", err)
+		}
+	}
+
+	reactionsMap := r.loadReactions(ctx, []string{comment.ID})
+	attachmentsMap := r.loadCommentAttachments(ctx, []string{comment.ID})
+	return &model.CommentWithAuthor{
+		Comment:     *comment,
+		Author:      author,
+		Reactions:   reactionsMap[comment.ID],
+		Attachments: attachmentsMap[comment.ID],
+	}, nil
+}
+
 // Create inserts a comment.
 func (r *PMCommentRepository) Create(ctx context.Context, comment *model.PMComment) error {
-	if err := r.db.WithContext(ctx).Create(comment).Error; err != nil {
+	db := r.db.WithContext(ctx)
+	if comment.ResolvedAt == nil && comment.ResolvedBy == nil {
+		db = db.Omit("ResolvedAt", "ResolvedBy")
+	}
+	if err := db.Create(comment).Error; err != nil {
 		return fmt.Errorf("create comment: %w", err)
 	}
 	return nil
@@ -247,8 +285,26 @@ func (r *PMCommentRepository) Create(ctx context.Context, comment *model.PMComme
 
 // Update updates a comment.
 func (r *PMCommentRepository) Update(ctx context.Context, comment *model.PMComment) error {
-	if err := r.db.WithContext(ctx).Save(comment).Error; err != nil {
+	db := r.db.WithContext(ctx)
+	if comment.ResolvedAt == nil && comment.ResolvedBy == nil {
+		db = db.Omit("ResolvedAt", "ResolvedBy")
+	}
+	if err := db.Save(comment).Error; err != nil {
 		return fmt.Errorf("update comment: %w", err)
+	}
+	return nil
+}
+
+// UpdateResolution updates only the comment resolution fields.
+func (r *PMCommentRepository) UpdateResolution(ctx context.Context, id string, resolvedAt interface{}, resolvedBy interface{}) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMComment{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"resolved_at": resolvedAt,
+			"resolved_by": resolvedBy,
+		}).Error; err != nil {
+		return fmt.Errorf("update comment resolution: %w", err)
 	}
 	return nil
 }

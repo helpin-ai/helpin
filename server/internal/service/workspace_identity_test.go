@@ -272,7 +272,7 @@ func TestWorkspaceRepositoryListSupportAssignableMembers(t *testing.T) {
 	_ = ownerMember
 }
 
-func TestPMTaskServiceCreateSupportsPendingOwnerMember(t *testing.T) {
+func TestPMTaskServiceCreateRejectsPendingOwnerMember(t *testing.T) {
 	db := newWorkspaceIdentityTestDB(t)
 	ctx := context.Background()
 
@@ -284,8 +284,7 @@ func TestPMTaskServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 	actor := seedWorkspaceIdentityUser(t, db, "user-actor", "actor@example.com", "Actor User")
 	seedWorkspaceIdentityWorkspace(t, db, "ws-1", actor.ID)
 
-	actorMember, err := workspaceRepo.AddMember(ctx, "ws-1", actor.ID, model.RoleOwner)
-	if err != nil {
+	if _, err := workspaceRepo.AddMember(ctx, "ws-1", actor.ID, model.RoleOwner); err != nil {
 		t.Fatalf("add actor member: %v", err)
 	}
 	pendingOwner, err := workspaceRepo.UpsertPendingMember(ctx, "ws-1", "pending-owner@example.com", model.RoleMember, actor.ID)
@@ -312,47 +311,15 @@ func TestPMTaskServiceCreateSupportsPendingOwnerMember(t *testing.T) {
 		nil,
 	)
 
-	story, err := svc.Create(ctx, model.CreateTaskRequest{
+	_, err = svc.Create(ctx, model.CreateTaskRequest{
 		WorkspaceID:     "ws-1",
 		Name:            "Pending assignee story",
 		WorkflowID:      "wf-1",
 		WorkflowStateID: "state-1",
-		OwnerMemberID:   &pendingOwner.ID,
+		OwnerMemberIDs:  []string{pendingOwner.ID},
 	}, actor.ID)
-	if err != nil {
-		t.Fatalf("create story with pending owner: %v", err)
-	}
-
-	if story.Task.OwnerMemberID == nil || *story.Task.OwnerMemberID != pendingOwner.ID {
-		t.Fatalf("story owner_member_id = %#v, want %s", story.Task.OwnerMemberID, pendingOwner.ID)
-	}
-	if story.Task.OwnerID != nil {
-		t.Fatalf("story owner_id = %#v, want nil for pending member", story.Task.OwnerID)
-	}
-	if story.OwnerMember == nil || story.OwnerMember.Email != "pending-owner@example.com" {
-		t.Fatalf("story owner member = %#v", story.OwnerMember)
-	}
-	if story.Task.RequesterMemberID == nil || *story.Task.RequesterMemberID != actorMember.ID {
-		t.Fatalf("story requester_member_id = %#v, want %s", story.Task.RequesterMemberID, actorMember.ID)
-	}
-	if story.Task.RequesterID == nil || *story.Task.RequesterID != actor.ID {
-		t.Fatalf("story requester_id = %#v, want %s", story.Task.RequesterID, actor.ID)
-	}
-
-	var ownerLinks int64
-	if err := db.Table("pm_task_owners").Where("task_id = ?", story.Task.ID).Count(&ownerLinks).Error; err != nil {
-		t.Fatalf("count story owners: %v", err)
-	}
-	if ownerLinks != 0 {
-		t.Fatalf("expected no legacy owner links for pending assignee, got %d", ownerLinks)
-	}
-
-	var followerLinks int64
-	if err := db.Table("pm_task_followers").Where("task_id = ?", story.Task.ID).Count(&followerLinks).Error; err != nil {
-		t.Fatalf("count story followers: %v", err)
-	}
-	if followerLinks != 1 {
-		t.Fatalf("expected requester to auto-follow, got %d follower links", followerLinks)
+	if err == nil {
+		t.Fatal("expected pending task owner member to be rejected")
 	}
 }
 
@@ -751,6 +718,9 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			avatar_background_mode TEXT,
 			avatar_background_color TEXT,
 			default_workspace_id TEXT,
+			totp_secret_encrypted TEXT,
+			totp_verified BOOLEAN NOT NULL DEFAULT 0,
+			recovery_codes_encrypted TEXT,
 			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -780,6 +750,8 @@ func newWorkspaceIdentityTestDB(t *testing.T) *gorm.DB {
 			invited_by TEXT,
 			invited_at DATETIME,
 			accepted_at DATETIME,
+			support_default_team_id TEXT,
+			support_task_dialog_dismissed BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,

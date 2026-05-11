@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -12,10 +13,13 @@ import (
 
 // DocsContentService handles business logic for document content.
 type DocsContentService struct {
-	contentRepo    *repository.DocsContentRepository
-	docRepo        *repository.DocsDocumentRepository
-	translationSvc *DocsHelpcenterTranslationService
-	wsPublisher    *websocket.Publisher
+	contentRepo         *repository.DocsContentRepository
+	docRepo             *repository.DocsDocumentRepository
+	translationSvc      *DocsHelpcenterTranslationService
+	wsPublisher         *websocket.Publisher
+	notificationService *NotificationService
+	workspaceRepo       *repository.WorkspaceRepository
+	agentService        *AgentService
 }
 
 // NewDocsContentService creates a new DocsContentService.
@@ -27,6 +31,15 @@ func (s *DocsContentService) SetTranslationService(translationSvc *DocsHelpcente
 	s.translationSvc = translationSvc
 }
 
+func (s *DocsContentService) SetMentionNotificationDependencies(notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) {
+	s.notificationService = notificationService
+	s.workspaceRepo = workspaceRepo
+}
+
+func (s *DocsContentService) SetAgentMentionDependencies(agentService *AgentService) {
+	s.agentService = agentService
+}
+
 // Get returns the content for a document.
 func (s *DocsContentService) Get(ctx context.Context, documentID string) (*model.DocsContent, error) {
 	return s.contentRepo.GetByDocumentID(ctx, documentID)
@@ -35,7 +48,18 @@ func (s *DocsContentService) Get(ctx context.Context, documentID string) (*model
 // Save creates or updates document content.
 // Automatically extracts content_text and computes word_count in the repository layer.
 func (s *DocsContentService) Save(ctx context.Context, documentID string, content json.RawMessage, actorID string) (*model.DocsContent, error) {
-	saved, err := s.contentRepo.Upsert(ctx, documentID, content)
+	var previousText string
+	if s.notificationService != nil && s.workspaceRepo != nil && actorID != "" {
+		if existing, err := s.contentRepo.GetByDocumentID(ctx, documentID); err != nil {
+			slog.WarnContext(ctx, "failed to load previous docs content before mention diff", "document_id", documentID, "error", err)
+		} else if existing != nil {
+			previousText = existing.ContentText
+		}
+	}
+
+	content = s.restoreImportedToggleAttrs(ctx, documentID, content)
+
+	saved, err := s.contentRepo.UpsertWithActor(ctx, documentID, content, actorID)
 	if err != nil {
 		return nil, err
 	}
@@ -47,9 +71,121 @@ func (s *DocsContentService) Save(ctx context.Context, documentID string, conten
 	if s.docRepo != nil {
 		if doc, err := s.docRepo.GetByID(ctx, documentID); err == nil && doc != nil {
 			publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, actorID)
+			s.emitNewMentionNotifications(ctx, doc, previousText, saved.ContentText, actorID)
+			s.startNewAgentMentionRuns(ctx, doc, previousText, saved.ContentText, actorID)
 		}
 	}
 	return saved, nil
+}
+
+func (s *DocsContentService) emitNewMentionNotifications(ctx context.Context, doc *model.DocsDocument, previousText, currentText, actorID string) {
+	if s.notificationService == nil || s.workspaceRepo == nil || doc == nil || actorID == "" {
+		return
+	}
+
+	addedMentions := diffMentionHandles(extractMentions(previousText), extractMentions(currentText))
+	if len(addedMentions) == 0 {
+		return
+	}
+	readableTeamIDs := s.readableTeamIDsForDoc(ctx, doc)
+
+	if _, err := emitMentionNotificationForHandles(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+		WorkspaceID:      doc.WorkspaceID,
+		ActorID:          actorID,
+		Body:             currentText,
+		EventType:        "doc.mention",
+		EntityType:       "doc",
+		EntityID:         doc.ID,
+		Title:            "mentioned you in " + doc.Title,
+		TeamID:           derefString(doc.TeamID),
+		ReadableTeamIDs:  readableTeamIDs,
+		EntitySnapshot:   model.JSONB{"title": doc.Title},
+		NotificationBody: truncate(currentText, 200),
+	}, addedMentions); err != nil {
+		slog.ErrorContext(ctx, "failed to emit docs mention notification", "error", err, "document_id", doc.ID)
+	}
+}
+
+func (s *DocsContentService) readableTeamIDsForDoc(ctx context.Context, doc *model.DocsDocument) []string {
+	if doc == nil {
+		return nil
+	}
+	if scoped := mentionScopeForTeamID(doc.TeamID); len(scoped) > 0 {
+		return scoped
+	}
+	if s.workspaceRepo == nil {
+		return nil
+	}
+	teams, err := s.workspaceRepo.ListTeams(ctx, doc.WorkspaceID)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to load docs mention team scope", "workspace_id", doc.WorkspaceID, "document_id", doc.ID, "error", err)
+		return nil
+	}
+	teamIDs := make([]string, 0, len(teams))
+	for _, team := range teams {
+		if team.ID != "" {
+			teamIDs = append(teamIDs, team.ID)
+		}
+	}
+	return teamIDs
+}
+
+func (s *DocsContentService) startNewAgentMentionRuns(ctx context.Context, doc *model.DocsDocument, previousText, currentText, actorID string) {
+	if s.agentService == nil || doc == nil || actorID == "" {
+		return
+	}
+	addedMentions := diffMentionHandles(extractMentions(previousText), extractMentions(currentText))
+	if len(addedMentions) == 0 {
+		return
+	}
+	mentionSet := make(map[string]struct{}, len(addedMentions))
+	for _, mention := range addedMentions {
+		if mention != "" {
+			mentionSet[strings.ToLower(mention)] = struct{}{}
+		}
+	}
+	if len(mentionSet) == 0 {
+		return
+	}
+
+	agents, err := s.agentService.ListAgents(ctx, doc.WorkspaceID)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to resolve docs agent mentions", "workspace_id", doc.WorkspaceID, "document_id", doc.ID, "error", err)
+		return
+	}
+	for _, agent := range agents {
+		if !agentMentionAllowsTarget(agent.AllowedTargets, "document") {
+			continue
+		}
+		matched := false
+		for _, handle := range mentionHandleVariants(agent.Name) {
+			if _, ok := mentionSet[handle]; ok {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		contextText := "You were mentioned in the document \"" + doc.Title + "\". Review the document and respond with the next useful action."
+		if _, err := s.agentService.StartTargetRun(ctx, doc.WorkspaceID, "document", doc.ID, model.StartAgentRunRequest{
+			AgentID:           agent.ID,
+			AdditionalContext: &contextText,
+		}, actorID); err != nil {
+			slog.WarnContext(ctx, "failed to start docs agent mention run", "workspace_id", doc.WorkspaceID, "document_id", doc.ID, "agent_id", agent.ID, "error", err)
+			continue
+		}
+		slog.InfoContext(ctx, "started docs agent mention run", "workspace_id", doc.WorkspaceID, "document_id", doc.ID, "agent_id", agent.ID)
+	}
+}
+
+func agentMentionAllowsTarget(raw json.RawMessage, target string) bool {
+	for _, allowed := range parseJSONStringSlice(raw) {
+		if allowed == target {
+			return true
+		}
+	}
+	return false
 }
 
 // ListBySpaceWithImportHTML returns content records that have stored import HTML for a space.

@@ -247,7 +247,7 @@ export interface SprintPlanningTaskPreview {
   workflow_state_id: string;
   state_name?: string;
   state_type?: StateType;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   estimate?: number;
   priority: Priority;
   sprint_id?: string;
@@ -287,7 +287,7 @@ export interface Task {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority: Priority;
@@ -326,7 +326,6 @@ export interface Task {
   epic_name?: string;
   sprint_name?: string;
   team_name?: string;
-  owner_name?: string;
   state_name?: string;
   state_type?: StateType;
   state_color?: string;
@@ -440,7 +439,6 @@ export interface TaskDetail {
     created_at: string;
     updated_at: string;
   }>;
-  owner_member?: AssignableMember;
   requester_member?: AssignableMember;
   labels: Label[];
   epic_name?: string;
@@ -496,6 +494,11 @@ export interface Comment {
   author_id: string;
   body: string;
   parent_id?: string;
+  block_id?: string;
+  range?: Record<string, unknown>;
+  anchor_text?: string;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -513,6 +516,10 @@ export interface CommentWithAuthor {
     email: string;
     full_name: string;
     avatar_url?: string;
+    avatar_style?: string;
+    avatar_seed?: string;
+    avatar_background_mode?: string;
+    avatar_background_color?: string;
     created_at: string;
     updated_at: string;
   };
@@ -641,8 +648,10 @@ export interface TaskTemplate {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
   checklist_items?: string;
   external_links?: string;
@@ -792,13 +801,19 @@ export interface CreateTaskTemplateRequest {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
+  attachment_ids?: string[];
   checklist_items?: string;
   external_links?: string;
 }
 
+export interface SaveTaskAsTemplateRequest {
+  name?: string;
+}
 
 export interface UpdateTaskTemplateRequest {
   team_id?: string;
@@ -810,9 +825,12 @@ export interface UpdateTaskTemplateRequest {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
+  attachment_ids?: string[];
   checklist_items?: string;
   external_links?: string;
   archived?: boolean;
@@ -896,7 +914,7 @@ export interface CreateTaskRequest {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority?: Priority;
@@ -933,7 +951,7 @@ export interface UpdateTaskRequest {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority?: Priority;
@@ -1029,7 +1047,7 @@ export interface UpdateExternalLinkRequest {
 export interface Attachment {
   id: string;
   workspace_id: string;
-  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'task_template' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -1047,7 +1065,7 @@ export interface AttachmentResponse {
 }
 
 export interface CreateAttachmentRequest {
-  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'task_template' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -1059,6 +1077,9 @@ export interface CreateCommentRequest {
   entity_id: string;
   body: string;
   parent_id?: string;
+  block_id?: string;
+  range?: Record<string, unknown>;
+  anchor_text?: string;
   attachment_ids?: string[];
 }
 

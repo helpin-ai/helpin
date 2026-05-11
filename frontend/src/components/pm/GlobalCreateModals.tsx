@@ -165,7 +165,7 @@ function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClo
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] });
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
         window.dispatchEvent(new CustomEvent('task-created', {
-          detail: { ownerMemberId: data?.task?.owner_member_id, teamId: data?.task?.team_id },
+          detail: { ownerMemberIds: data?.task?.owner_member_ids ?? [], teamId: data?.task?.team_id },
         }));
         return data?.task
           ? {

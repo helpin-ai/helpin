@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type JSX, type KeyboardEvent, type SVGProps } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type SVGProps } from 'react';
 import * as Flags from 'country-flag-icons/react/3x2';
 import { CheckmarkCircle02Icon, CodeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon, PencilEdit01Icon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
@@ -12,6 +12,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { timeAgo, getInitial, getAvatarColor } from './helpers';
 import { ConversationActionsMenu, type ConversationActionMoveOption } from './ConversationActionsMenu';
+import { SUPPORT_SYSTEM_TAGS, SupportTagBadge } from './SupportTagPicker';
 
 const EMPTY_ARRAY: string[] = [];
 
@@ -200,6 +201,85 @@ interface ConversationRowProps {
   onSelectConversation: (id: string, unreadCount?: number) => void;
 }
 
+type ConversationRowTag = {
+  id: string;
+  name: string;
+  color?: string | null;
+};
+
+export function getVisibleSupportTagCount(tagWidths: number[], availableWidth: number, gap = 4) {
+  if (tagWidths.length === 0) return 0;
+  if (availableWidth <= 0) return tagWidths.length;
+
+  let usedWidth = 0;
+  let visibleCount = 0;
+  for (const width of tagWidths) {
+    const nextWidth = usedWidth + (visibleCount > 0 ? gap : 0) + Math.max(0, width);
+    if (nextWidth > availableWidth + 0.5) break;
+    usedWidth = nextWidth;
+    visibleCount += 1;
+  }
+
+  return visibleCount > 0 ? visibleCount : 1;
+}
+
+function ConversationTagRail({ tags }: { tags: ConversationRowTag[] }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const measuringRef = useRef<HTMLDivElement | null>(null);
+  const [visibleCount, setVisibleCount] = useState(tags.length);
+
+  const recalculate = useCallback(() => {
+    const container = containerRef.current;
+    const measuring = measuringRef.current;
+    if (!container || !measuring) {
+      setVisibleCount(tags.length);
+      return;
+    }
+
+    const availableWidth = container.getBoundingClientRect().width || container.clientWidth;
+    const tagWidths = Array.from(measuring.children).map((child) =>
+      (child as HTMLElement).getBoundingClientRect().width
+    );
+    const nextVisibleCount = Math.min(tags.length, getVisibleSupportTagCount(tagWidths, availableWidth));
+    setVisibleCount((current) => current === nextVisibleCount ? current : nextVisibleCount);
+  }, [tags.length]);
+
+  useLayoutEffect(() => {
+    setVisibleCount(tags.length);
+    const frame = window.requestAnimationFrame(recalculate);
+    return () => window.cancelAnimationFrame(frame);
+  }, [recalculate, tags]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(recalculate);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [recalculate]);
+
+  const visibleTags = tags.slice(0, visibleCount);
+
+  return (
+    <div className="relative mt-1 min-w-0">
+      <div ref={containerRef} className="flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
+        {visibleTags.map((tag) => (
+          <SupportTagBadge key={tag.id} name={tag.name} color={tag.color} className="h-4 max-w-full shrink-0 px-1.5 text-[10px]" />
+        ))}
+      </div>
+      <div
+        ref={measuringRef}
+        aria-hidden="true"
+        className="invisible pointer-events-none absolute left-0 top-0 flex h-0 max-w-none flex-nowrap items-center gap-1 overflow-hidden"
+      >
+        {tags.map((tag) => (
+          <SupportTagBadge key={tag.id} name={tag.name} color={tag.color} className="h-4 shrink-0 px-1.5 text-[10px]" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export const ConversationRow = memo(function ConversationRow({
   workspaceId,
   conversation,
@@ -211,6 +291,7 @@ export const ConversationRow = memo(function ConversationRow({
   const displayName = conversation.customer_name || conversation.customer_email || visitorLabel;
   const unreadCount = conversation.unread_count ?? 0;
   const isUnread = unreadCount > 0;
+  const isAwaitingReply = conversation.awaiting_reply ?? isUnread;
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsMounted, setActionsMounted] = useState(false);
   const typingState = useSupportPresenceStore((s) => s.typingIndicators[conversation.id]);
@@ -234,7 +315,18 @@ export const ConversationRow = memo(function ConversationRow({
     () => moveOptions.filter((option) => option.id !== (conversation.mailbox_id ?? 'shared')),
     [conversation.mailbox_id, moveOptions]
   );
-
+  const rowTags = [
+    ...(conversation.system_tags ?? []).map((tag) => ({
+      id: tag,
+      name: SUPPORT_SYSTEM_TAGS[tag].name,
+      color: SUPPORT_SYSTEM_TAGS[tag].color,
+    })),
+    ...(conversation.tags ?? []).map((tag) => ({
+      id: tag.id,
+      name: tag.name,
+      color: tag.color,
+    })),
+  ];
   const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
     if (event.key === 'Enter' || event.key === ' ') {
@@ -292,7 +384,7 @@ export const ConversationRow = memo(function ConversationRow({
       className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
         isSelected
           ? 'bg-muted'
-          : isUnread
+          : isAwaitingReply
             ? 'bg-blue-50/70 dark:bg-blue-950/20'
             : ''
       }`}
@@ -302,7 +394,7 @@ export const ConversationRow = memo(function ConversationRow({
         className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200 ${
           isSelected
             ? 'h-8 bg-primary'
-            : isUnread
+            : isAwaitingReply
               ? 'h-5 bg-blue-500'
               : 'h-0 bg-transparent'
         }`}
@@ -327,7 +419,7 @@ export const ConversationRow = memo(function ConversationRow({
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
           {/* Headline: name + time */}
           <div className="grid items-center gap-2" style={{ gridTemplateColumns: '1fr auto' }}>
-            <span className={`text-[13.5px] leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}`}>
+            <span className={`text-[13.5px] leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isAwaitingReply ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}`}>
               {displayName}
             </span>
             <div className="relative flex min-w-[40px] items-center justify-end">
@@ -368,7 +460,7 @@ export const ConversationRow = memo(function ConversationRow({
           {/* Context: message preview + activity */}
           <div className="grid items-center gap-1.5 mt-0.5" style={{ gridTemplateColumns: '1fr auto' }}>
             <p
-              className={`text-sm m-0 leading-[18px] ${isUnread ? 'font-medium text-foreground/80' : 'text-muted-foreground'}`}
+              className={`text-sm m-0 leading-[18px] ${isAwaitingReply ? 'font-medium text-foreground/80' : 'text-muted-foreground'}`}
               style={{ display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', maxHeight: '18px' }}
             >
               {isCustomerTyping ? (
@@ -430,6 +522,7 @@ export const ConversationRow = memo(function ConversationRow({
               ) : null}
             </div>
           </div>
+          {rowTags.length > 0 && <ConversationTagRail tags={rowTags} />}
         </div>
       </div>
     </div>

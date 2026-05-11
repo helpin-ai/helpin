@@ -979,3 +979,83 @@ func TestSupportInboxServiceListConversationMessages_AllowsWidgetValidatedContex
 		t.Fatalf("message id = %q, want %q", messages[0].ID, message.ID)
 	}
 }
+
+func TestWidgetCreateMessageReopensResolvedConversation(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-widget-reopen"
+	seedWorkspace(t, db, workspaceID, "Widget Reopen WS", "widget-reopen-ws", "user-123")
+
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	installationRepo := repository.NewSupportInboxInstallationRepository(db)
+
+	resolvedAt := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	conversation := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Resolved widget conversation",
+		Status:      model.SupportConversationStatusResolved,
+		FlowState:   strPtr(model.SupportConversationFlowStateResolvedByHuman),
+		ResolvedAt:  &resolvedAt,
+		ClosedAt:    &resolvedAt,
+		AnonymousID: strPtr("anon-widget-reopen"),
+		Source:      "widget",
+		Channel:     "widget",
+	}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	session := &model.SupportWidgetSession{
+		WorkspaceID:    workspaceID,
+		SessionToken:   "widget-reopen-session",
+		AnonymousID:    "anon-widget-reopen",
+		IsAnonymous:    true,
+		ConversationID: &conversation.ID,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		conversationRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		nil,
+		nil,
+		installationRepo,
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	if _, err := svc.WidgetCreateMessage(ctx, session.SessionToken, "I need more help on this.", nil); err != nil {
+		t.Fatalf("WidgetCreateMessage: %v", err)
+	}
+
+	updated, err := conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Status != model.SupportConversationStatusOpen {
+		t.Fatalf("status = %q, want %q", updated.Status, model.SupportConversationStatusOpen)
+	}
+	if updated.ResolvedAt != nil {
+		t.Fatalf("resolved_at = %#v, want nil", updated.ResolvedAt)
+	}
+	if updated.ClosedAt != nil {
+		t.Fatalf("closed_at = %#v, want nil", updated.ClosedAt)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateWaitingForHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateWaitingForHuman)
+	}
+}

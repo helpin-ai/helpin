@@ -127,18 +127,18 @@ func toolCreateTask(ctx *ExecutionContext, input json.RawMessage) (string, error
 		return "", fmt.Errorf("execution context is required")
 	}
 	var params struct {
-		Name          string   `json:"name"`
-		Description   *string  `json:"description"`
-		TaskType      string   `json:"task_type"`
-		Estimate      *int     `json:"estimate"`
-		Priority      *string  `json:"priority"`
-		EpicID        *string  `json:"epic_id"`
-		TeamID        string   `json:"team_id"`
-		WorkflowID    *string  `json:"workflow_id"`
-		StateID       *string  `json:"state_id"`
-		OwnerMemberID *string  `json:"owner_member_id"`
-		LabelIDs      []string `json:"label_ids"`
-		Deadline      *string  `json:"deadline"`
+		Name           string   `json:"name"`
+		Description    *string  `json:"description"`
+		TaskType       string   `json:"task_type"`
+		Estimate       *int     `json:"estimate"`
+		Priority       *string  `json:"priority"`
+		EpicID         *string  `json:"epic_id"`
+		TeamID         string   `json:"team_id"`
+		WorkflowID     *string  `json:"workflow_id"`
+		StateID        *string  `json:"state_id"`
+		OwnerMemberIDs []string `json:"owner_member_ids"`
+		LabelIDs       []string `json:"label_ids"`
+		Deadline       *string  `json:"deadline"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
@@ -169,8 +169,8 @@ func toolCreateTask(ctx *ExecutionContext, input json.RawMessage) (string, error
 	trimPtr(&params.EpicID)
 	trimPtr(&params.WorkflowID)
 	trimPtr(&params.StateID)
-	trimPtr(&params.OwnerMemberID)
 	trimPtr(&params.Deadline)
+	params.OwnerMemberIDs = trimStringSlice(params.OwnerMemberIDs)
 
 	if params.EpicID == nil && strings.TrimSpace(ctx.TargetType) == "epic" && strings.TrimSpace(ctx.TargetID) != "" {
 		epicID := strings.TrimSpace(ctx.TargetID)
@@ -187,18 +187,18 @@ func toolCreateTask(ctx *ExecutionContext, input json.RawMessage) (string, error
 	}
 
 	commandInput, _ := json.Marshal(map[string]any{
-		"name":            params.Name,
-		"description":     params.Description,
-		"task_type":       strings.TrimSpace(params.TaskType),
-		"estimate":        params.Estimate,
-		"priority":        params.Priority,
-		"epic_id":         params.EpicID,
-		"team_id":         params.TeamID,
-		"workflow_id":     params.WorkflowID,
-		"state_id":        params.StateID,
-		"owner_member_id": params.OwnerMemberID,
-		"label_ids":       params.LabelIDs,
-		"deadline":        params.Deadline,
+		"name":             params.Name,
+		"description":      params.Description,
+		"task_type":        strings.TrimSpace(params.TaskType),
+		"estimate":         params.Estimate,
+		"priority":         params.Priority,
+		"epic_id":          params.EpicID,
+		"team_id":          params.TeamID,
+		"workflow_id":      params.WorkflowID,
+		"state_id":         params.StateID,
+		"owner_member_ids": params.OwnerMemberIDs,
+		"label_ids":        params.LabelIDs,
+		"deadline":         params.Deadline,
 	})
 	targetType, targetID := "workspace", ctx.WorkspaceID
 	if strings.TrimSpace(ctx.TargetType) == "epic" && strings.TrimSpace(ctx.TargetID) != "" {
@@ -215,23 +215,38 @@ func toolCreateTask(ctx *ExecutionContext, input json.RawMessage) (string, error
 		return "", fmt.Errorf("task creation is not available for this agent")
 	}
 	result, err := ctx.Services.CreateTask(ctx.Context, ctx.WorkspaceID, ctx.AgentID, CreateTaskToolRequest{
-		Name:          params.Name,
-		Description:   params.Description,
-		TaskType:      strings.TrimSpace(params.TaskType),
-		Estimate:      params.Estimate,
-		Priority:      params.Priority,
-		EpicID:        params.EpicID,
-		TeamID:        params.TeamID,
-		WorkflowID:    params.WorkflowID,
-		StateID:       params.StateID,
-		OwnerMemberID: params.OwnerMemberID,
-		LabelIDs:      params.LabelIDs,
-		Deadline:      deadline,
+		Name:           params.Name,
+		Description:    params.Description,
+		TaskType:       strings.TrimSpace(params.TaskType),
+		Estimate:       params.Estimate,
+		Priority:       params.Priority,
+		EpicID:         params.EpicID,
+		TeamID:         params.TeamID,
+		WorkflowID:     params.WorkflowID,
+		StateID:        params.StateID,
+		OwnerMemberIDs: params.OwnerMemberIDs,
+		LabelIDs:       params.LabelIDs,
+		Deadline:       deadline,
 	})
 	if err != nil {
 		return "", fmt.Errorf("create task: %w", err)
 	}
 	return toCompactJSONString(result), nil
+}
+
+func trimStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	trimmed := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		trimmed = append(trimmed, value)
+	}
+	return trimmed
 }
 
 func parseTaskToolDeadline(value string) (*time.Time, error) {

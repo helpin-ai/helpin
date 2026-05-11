@@ -443,6 +443,33 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 			wantMatch: false,
 		},
 		{
+			name: "doc published matches document target",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerDocPublished,
+				TriggerConfig: json.RawMessage(`{}`),
+			},
+			event:     model.AutomationEvent{TargetType: "document", TargetID: "doc-1"},
+			wantMatch: true,
+		},
+		{
+			name: "doc published requires target",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerDocPublished,
+				TriggerConfig: json.RawMessage(`{}`),
+			},
+			event:     model.AutomationEvent{},
+			wantMatch: false,
+		},
+		{
+			name: "ai section regenerated matches section target",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerAISectionRegenerated,
+				TriggerConfig: json.RawMessage(`{}`),
+			},
+			event:     model.AutomationEvent{TargetType: "ai_section", TargetID: "section-1"},
+			wantMatch: true,
+		},
+		{
 			name: "github push matches branch",
 			rule: model.AutomationRule{
 				TriggerType:   model.TriggerGitHubPush,

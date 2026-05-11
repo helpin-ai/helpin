@@ -298,7 +298,7 @@ export const SprintPlanningColumn = memo(function SprintPlanningColumn({
                       ) : (
                         <SprintPlanningTaskCard
                           task={task}
-                          owner={task.owner_member_id ? ownerByMemberId.get(task.owner_member_id) : undefined}
+                          owner={task.owner_member_ids?.[0] ? ownerByMemberId.get(task.owner_member_ids[0]) : undefined}
                           canDrag={canEdit}
                           onOpenTask={onOpenTask}
                         />

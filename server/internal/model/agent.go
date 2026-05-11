@@ -16,6 +16,11 @@ const (
 	AgentPresetSupportAgent = "support_agent"
 	AgentPresetCodeBuilder  = "code_builder"
 	AgentPresetReviewAgent  = "review_agent"
+	// AgentPresetCommandAgent is stored under the legacy "researcher" key so
+	// existing seeded system-agent rows reconcile in place while the product
+	// surface moves to "Command Agent".
+	AgentPresetCommandAgent = "researcher"
+	AgentPresetResearcher   = AgentPresetCommandAgent
 
 	AgentModelProviderAnthropic           = "anthropic"
 	AgentModelProviderOpenAI              = "openai"
@@ -25,8 +30,10 @@ const (
 	AgentRunTriggerSourceManual         = "manual"
 	AgentRunTriggerSourceAutomationRule = "automation_rule"
 	AgentRunTriggerSourceSystem         = "system"
+	AgentRunTriggerSourceCommandBar     = "command_bar"
 
-	AgentRunTriggerTypeManual = "manual"
+	AgentRunTriggerTypeManual     = "manual"
+	AgentRunTriggerTypeCommandBar = "command_bar"
 )
 
 // Agent represents an LLM agent in a workspace.
@@ -456,6 +463,7 @@ type HandoffAgentRunRequest struct {
 type StartAgentRunRequest struct {
 	AgentID           string                 `json:"agent_id,omitempty"`
 	AdditionalContext *string                `json:"additional_context,omitempty"`
+	AllowedTools      []string               `json:"allowed_tools,omitempty"`
 	BaseBranch        *string                `json:"base_branch,omitempty"`
 	WorkingBranch     *string                `json:"working_branch,omitempty"`
 	Output            *AgentRunOutputContext `json:"output,omitempty"`
@@ -471,10 +479,11 @@ type StartTargetAgentRunRequest struct {
 }
 
 type AgentRunTriggerContext struct {
-	Source      string     `json:"source,omitempty"`
-	TriggerType string     `json:"trigger_type,omitempty"`
-	RuleID      *string    `json:"rule_id,omitempty"`
-	FiredAt     *time.Time `json:"fired_at,omitempty"`
+	Source      string          `json:"source,omitempty"`
+	TriggerType string          `json:"trigger_type,omitempty"`
+	RuleID      *string         `json:"rule_id,omitempty"`
+	FiredAt     *time.Time      `json:"fired_at,omitempty"`
+	Context     json.RawMessage `json:"context,omitempty"`
 }
 
 type AgentRunTargetContext struct {

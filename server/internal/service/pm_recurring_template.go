@@ -15,14 +15,14 @@ import (
 
 type PMRecurringTemplateService struct {
 	recurringRepo    *repository.PMRecurringTemplateRepository
-	taskRepo        *repository.PMTaskRepository
+	taskRepo         *repository.PMTaskRepository
 	workflowRepo     *repository.PMWorkflowRepository
 	sprintRepo       *repository.PMSprintRepository
 	workspaceRepo    *repository.WorkspaceRepository
 	checklistRepo    *repository.PMChecklistItemRepository
 	externalLinkRepo *repository.PMExternalLinkRepository
 	activityService  *PMActivityService
-	taskService     *PMTaskService
+	taskService      *PMTaskService
 	workflowRunner   recurringTemplateWorkflowRunner
 	wsPublisher      *websocket.Publisher
 	logger           *slog.Logger
@@ -41,7 +41,7 @@ func NewPMRecurringTemplateService(
 ) *PMRecurringTemplateService {
 	return &PMRecurringTemplateService{
 		recurringRepo:    recurringRepo,
-		taskRepo:        taskRepo,
+		taskRepo:         taskRepo,
 		workflowRepo:     workflowRepo,
 		sprintRepo:       sprintRepo,
 		workspaceRepo:    workspaceRepo,
@@ -135,14 +135,14 @@ func (s *PMRecurringTemplateService) GetByStoryID(ctx context.Context, storyID s
 		}
 	}
 	summary := &model.TaskRecurringSummary{
-		TemplateID:         tmpl.ID,
-		TemplateTitle:      tmpl.Title,
-		Status:             tmpl.Status,
-		GeneratedCount:     tmpl.GeneratedCount,
-		RuleSummary:        recurringRuleSummary(cfg),
-		NextRunAt:          tmpl.NextRunAt,
-		LastError:          tmpl.LastError,
-		Config:             cfg,
+		TemplateID:        tmpl.ID,
+		TemplateTitle:     tmpl.Title,
+		Status:            tmpl.Status,
+		GeneratedCount:    tmpl.GeneratedCount,
+		RuleSummary:       recurringRuleSummary(cfg),
+		NextRunAt:         tmpl.NextRunAt,
+		LastError:         tmpl.LastError,
+		Config:            cfg,
 		LastGeneratedTask: lastGenerated,
 	}
 	if story.RecurringOccurrenceNumber != nil {
@@ -620,7 +620,7 @@ func (s *PMRecurringTemplateService) buildSeedFromTask(ctx context.Context, stor
 	return model.PMRecurringTaskSeed{
 		Name:              story.Task.Name,
 		Description:       story.Task.Description,
-		TaskType:         story.Task.TaskType,
+		TaskType:          story.Task.TaskType,
 		WorkflowID:        story.Task.WorkflowID,
 		WorkflowStateID:   stateID,
 		EpicID:            story.Task.EpicID,
@@ -743,16 +743,20 @@ func (s *PMRecurringTemplateService) generateTaskFromTemplate(ctx context.Contex
 }
 
 func (s *PMRecurringTemplateService) seedToCreateRequest(ctx context.Context, seed model.PMRecurringTaskSeed, cfg model.PMRecurringTemplateConfig, tmpl *model.PMRecurringTemplate, scheduledFor *time.Time) (model.CreateTaskRequest, error) {
+	ownerMemberIDs := []string{}
+	if seed.OwnerMemberID != nil && strings.TrimSpace(*seed.OwnerMemberID) != "" {
+		ownerMemberIDs = []string{strings.TrimSpace(*seed.OwnerMemberID)}
+	}
 	req := model.CreateTaskRequest{
 		WorkspaceID:       tmpl.WorkspaceID,
 		Name:              seed.Name,
 		Description:       seed.Description,
-		TaskType:         seed.TaskType,
+		TaskType:          seed.TaskType,
 		WorkflowID:        seed.WorkflowID,
 		WorkflowStateID:   seed.WorkflowStateID,
 		EpicID:            seed.EpicID,
 		TeamID:            tmpl.TeamID,
-		OwnerMemberID:     seed.OwnerMemberID,
+		OwnerMemberIDs:    ownerMemberIDs,
 		RequesterMemberID: seed.RequesterMemberID,
 		Estimate:          seed.Estimate,
 		OwnerIDs:          append([]string{}, seed.OwnerIDs...),

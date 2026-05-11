@@ -97,7 +97,7 @@ func (s *DocsVersionService) Revert(ctx context.Context, documentID, versionID, 
 	_, _ = s.createInternalSnapshot(ctx, documentID, userID, &beforeLabel, model.VersionTypeRevert)
 
 	// Overwrite current content with the version's content.
-	updated, err := s.contentRepo.Upsert(ctx, documentID, version.Content)
+	updated, err := s.contentRepo.UpsertWithActor(ctx, documentID, version.Content, userID)
 	if err != nil {
 		return nil, err
 	}

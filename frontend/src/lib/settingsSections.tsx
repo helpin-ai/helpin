@@ -14,6 +14,7 @@ import {
   File01Icon,
   RepeatIcon,
   Robot01Icon,
+  Search01Icon,
   GitBranchIcon,
   FileImportIcon,
   HelpCircleIcon,
@@ -24,6 +25,7 @@ import {
   BubbleChatIcon,
   Route01Icon,
   Shield01Icon,
+  Shield02Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -38,6 +40,7 @@ function hi(icon: HugeIconData): IconComponent {
 }
 
 const Profile = hi(UserIcon);
+const Security = hi(Shield02Icon);
 const Account = hi(Settings02Icon);
 const Notifications = hi(Notification02Icon);
 const General = hi(Settings01Icon);
@@ -49,6 +52,7 @@ const Labels = hi(Tag01Icon);
 const TaskTemplates = hi(File01Icon);
 const RecurringTasks = hi(RepeatIcon);
 const Automations = hi(Robot01Icon);
+const CommandIntents = hi(Search01Icon);
 const Delivery = hi(GitBranchIcon);
 const ImportExport = hi(FileImportIcon);
 const HelpCenter = hi(HelpCircleIcon);
@@ -71,6 +75,7 @@ export type SettingsSection =
   | 'task-templates'
   | 'recurring-tasks'
   | 'automations'
+  | 'command-intents'
   | 'delivery'
   | 'import'
   | 'helpcenter'
@@ -81,7 +86,7 @@ export type SettingsSection =
   | 'chat-general'
   | 'inboxes-routing';
 
-export type SettingsRouteSection = SettingsSection | 'profile' | 'notifications' | 'account';
+export type SettingsRouteSection = SettingsSection | 'profile' | 'security' | 'notifications' | 'account';
 
 export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSection> = {
   id: T;
@@ -100,6 +105,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'Profile',
     description: '',
     icon: Profile,
+    group: 'Personal',
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    description: '',
+    icon: Security,
     group: 'Personal',
   },
   {
@@ -196,6 +208,14 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Projects',
   },
   {
+    id: 'command-intents',
+    label: 'Command Intents',
+    description: 'Review prompts the command bar could not match. Use them to add tools, preset coverage, or new presets.',
+    icon: CommandIntents,
+    group: 'Projects',
+    requiresManageSettings: true,
+  },
+  {
     id: 'inboxes-routing',
     label: 'Inboxes & Routing',
     description: 'Manage team inboxes, email forwarding, and AI conversation routing.',
@@ -255,7 +275,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
 
 export const SETTINGS_SECTIONS = SETTINGS_ROUTE_SECTIONS.filter(
   (section): section is SettingsSectionMeta<SettingsSection> =>
-    section.id !== 'profile' && section.id !== 'notifications' && section.id !== 'account',
+    section.id !== 'profile' && section.id !== 'security' && section.id !== 'notifications' && section.id !== 'account',
 );
 
 export const isSettingsSection = (value: string): value is SettingsSection =>

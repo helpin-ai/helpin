@@ -700,6 +700,24 @@ func (h *AgentHandler) ListWorkspaceRuns(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// ListRecentRuns handles GET /api/pm/agent-runs/recent?limit=20.
+// Returns the runs the current actor triggered, ordered by created_at desc.
+// Used by the command runs rail to rehydrate standalone runs on mount.
+func (h *AgentHandler) ListRecentRuns(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	runs, err := h.agentService.ListRecentRunsForActor(r.Context(), workspaceID, actorID, limit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if runs == nil {
+		runs = []model.AgentRun{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"runs": runs})
+}
+
 // ListTargetRuns handles GET /api/pm/agent-runs?target_type=...&target_id=....
 func (h *AgentHandler) ListTargetRuns(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

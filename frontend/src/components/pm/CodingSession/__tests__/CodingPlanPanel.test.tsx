@@ -72,17 +72,20 @@ describe('CodingPlanPanel', () => {
       expect(container.textContent).not.toContain('0/3 steps');
     });
 
-    it('collapses the details pane by default when the plan is stale', () => {
+    it('expands the details pane by default when the plan is stale', () => {
       render(stalePlan, 'completed');
       const details = container.querySelector('details');
       expect(details).not.toBeNull();
-      expect(details!.open).toBe(false);
+      expect(details!.open).toBe(true);
     });
 
     it('keeps the honest "N/M steps" counter when the agent DID finalize', () => {
       render(completedPlan, 'completed');
       expect(container.textContent).toContain('2/2 steps');
       expect(container.textContent).not.toContain('not finalized');
+      const details = container.querySelector('details');
+      expect(details).not.toBeNull();
+      expect(details!.open).toBe(true);
     });
   });
 

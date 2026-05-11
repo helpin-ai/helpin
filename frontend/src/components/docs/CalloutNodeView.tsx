@@ -1,25 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
 import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import type { CalloutVariant } from './CalloutExtension';
+import { normalizeCalloutVariant, type SemanticCalloutVariant } from './CalloutExtension';
 
-const VARIANT_STYLES: Record<CalloutVariant, { bg: string; border: string }> = {
-  blue: { bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-l-blue-400' },
-  green: { bg: 'bg-green-50 dark:bg-green-950/30', border: 'border-l-green-500' },
-  grey: { bg: 'bg-stone-100 dark:bg-stone-900/30', border: 'border-l-stone-400' },
-  red: { bg: 'bg-red-50 dark:bg-red-950/30', border: 'border-l-red-500' },
-  yellow: { bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-l-amber-400' },
+const VARIANT_STYLES: Record<SemanticCalloutVariant, { bg: string; border: string }> = {
+  info: { bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-l-blue-400' },
+  warning: { bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-l-amber-400' },
+  tip: { bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-l-emerald-500' },
+  danger: { bg: 'bg-red-50 dark:bg-red-950/30', border: 'border-l-red-500' },
+  success: { bg: 'bg-green-50 dark:bg-green-950/30', border: 'border-l-green-500' },
 };
 
-const VARIANT_DOTS: { key: CalloutVariant; color: string }[] = [
-  { key: 'yellow', color: '#d97706' },
-  { key: 'blue', color: '#3b82f6' },
-  { key: 'green', color: '#16a34a' },
-  { key: 'red', color: '#7f1d1d' },
-  { key: 'grey', color: '#9ca3af' },
+const VARIANT_DOTS: { key: SemanticCalloutVariant; color: string; label: string }[] = [
+  { key: 'info', color: '#3b82f6', label: 'Info' },
+  { key: 'warning', color: '#d97706', label: 'Warning' },
+  { key: 'tip', color: '#059669', label: 'Tip' },
+  { key: 'danger', color: '#dc2626', label: 'Danger' },
+  { key: 'success', color: '#16a34a', label: 'Success' },
 ];
 
 export function CalloutNodeView({ node, updateAttributes, editor, getPos }: NodeViewProps) {
-  const variant = (node.attrs.variant as CalloutVariant) || 'grey';
+  const variant = normalizeCalloutVariant(node.attrs.variant as string | undefined);
   const styles = VARIANT_STYLES[variant];
   const editable = editor.isEditable;
   const [focused, setFocused] = useState(false);
@@ -63,7 +63,7 @@ export function CalloutNodeView({ node, updateAttributes, editor, getPos }: Node
       >
         {editable && focused && (
           <div className="absolute -top-3 right-2 flex items-center gap-1.5 rounded-full bg-popover border shadow-sm px-2 py-1">
-            {VARIANT_DOTS.map(({ key, color }) => (
+            {VARIANT_DOTS.map(({ key, color, label }) => (
               <button
                 key={key}
                 type="button"
@@ -72,7 +72,7 @@ export function CalloutNodeView({ node, updateAttributes, editor, getPos }: Node
                 }`}
                 style={{ backgroundColor: color }}
                 onClick={() => updateAttributes({ variant: key })}
-                title={key.charAt(0).toUpperCase() + key.slice(1)}
+                title={label}
               />
             ))}
           </div>

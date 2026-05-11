@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1269,7 +1268,12 @@ func (s *DocsHelpcenterTranslationService) MarkArticleTranslationsForSourceChang
 	return s.translationRepo.MarkArticleTranslationsNeedsReview(ctx, documentID, defaultLocale, doc.UpdatedAt)
 }
 
-func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context.Context, documentID, locale string, requestedSlug *string) (*model.DocsHelpcenterArticleTranslation, error) {
+func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context.Context, documentID, locale string, requestedSlug *string, publishedContent json.RawMessage) (*model.DocsHelpcenterArticleTranslation, error) {
+	publishedContent, err := validatePublicationSnapshotContent(publishedContent)
+	if err != nil {
+		return nil, err
+	}
+
 	translation, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
 	if err != nil {
 		return nil, err
@@ -1338,6 +1342,9 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 		return nil, err
 	}
 	publication := buildArticleTranslationPublication(translation)
+	if len(publishedContent) > 0 {
+		publication.Content = publishedContent
+	}
 	if _, err := s.publicationRepo.UpsertArticlePublication(ctx, publication); err != nil {
 		return nil, err
 	}
@@ -1615,7 +1622,7 @@ func translationHasUnpublishedChanges(translation *model.DocsHelpcenterArticleTr
 	if strings.TrimSpace(stringPtrValue(translation.OGImageAlt)) != strings.TrimSpace(stringPtrValue(publication.OGImageAlt)) {
 		return true
 	}
-	return !bytes.Equal(compactJSON(translation.Content), compactJSON(publication.Content))
+	return !publicationContentEqual(translation.Content, publication.Content)
 }
 
 func validateEditableLocale(cfg *model.DocsHelpcenterConfig, locale string) (string, error) {

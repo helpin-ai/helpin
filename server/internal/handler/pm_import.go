@@ -164,7 +164,19 @@ func (h *PMImportHandler) PreviewShortcutAPI(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	resp, err := h.importService.PreviewShortcutAPI(r.Context(), workspaceID, userID, req)
+	resp, err := h.importService.StartShortcutAPIPreviewScan(r.Context(), workspaceID, userID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
+}
+
+func (h *PMImportHandler) GetShortcutAPIPreview(w http.ResponseWriter, r *http.Request) {
+	workspaceID := chi.URLParam(r, "id")
+	scanID := chi.URLParam(r, "scanId")
+	userID := middleware.GetUserID(r.Context())
+	resp, err := h.importService.GetShortcutAPIPreviewScan(r.Context(), workspaceID, userID, scanID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

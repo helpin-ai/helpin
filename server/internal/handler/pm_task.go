@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -50,8 +51,7 @@ func (h *PMTaskHandler) List(w http.ResponseWriter, r *http.Request) {
 		WorkflowID:            queryStringPtr(r, "workflow_id"),
 		WorkflowStateID:       queryStringPtr(r, "state_id"),
 		TaskType:              queryStringPtr(r, "task_type"),
-		OwnerID:               queryStringPtr(r, "owner_id"),
-		OwnerMemberID:         queryStringPtr(r, "owner_member_id"),
+		OwnerMemberIDs:        queryStringValues(r, "owner_member_ids"),
 		RequesterID:           queryStringPtr(r, "requester_id"),
 		RequesterMemberID:     queryStringPtr(r, "requester_member_id"),
 		LabelID:               queryStringPtr(r, "label_id"),
@@ -197,6 +197,7 @@ func (h *PMTaskHandler) ListBoardMemberColumn(w http.ResponseWriter, r *http.Req
 }
 
 func boardFilters(r *http.Request) model.PMTaskFilters {
+	archived, _ := queryBoolPtr(r, "archived")
 	return model.PMTaskFilters{
 		TeamID:                queryStringPtr(r, "team_id"),
 		Priority:              queryStringPtr(r, "priority"),
@@ -213,13 +214,13 @@ func boardFilters(r *http.Request) model.PMTaskFilters {
 		IncludeDeals:          r.URL.Query().Get("include_deals") == "true",
 		IncludeSupport:        r.URL.Query().Get("include_support") == "true",
 		LabelID:               queryStringPtr(r, "label_id"),
-		OwnerID:               queryStringPtr(r, "owner_id"),
-		OwnerMemberID:         queryStringPtr(r, "owner_member_id"),
+		OwnerMemberIDs:        queryStringValues(r, "owner_member_ids"),
 		RequesterID:           queryStringPtr(r, "requester_id"),
 		RequesterMemberID:     queryStringPtr(r, "requester_member_id"),
 		Blocked:               queryStringPtr(r, "blocked"),
 		Blocking:              queryStringPtr(r, "blocking"),
 		UpdatedAfter:          queryStringPtr(r, "updated_after"),
+		Archived:              archived,
 	}
 }
 
@@ -321,10 +322,46 @@ func (h *PMTaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err := h.taskService.Update(r.Context(), id, req, userID)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, pmTaskUpdateErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
+}
+
+// SaveAsTemplate handles POST /api/pm/tasks/{id}/save-as-template.
+func (h *PMTaskHandler) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req model.SaveTaskAsTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	tmpl, err := h.taskService.SaveAsTemplate(r.Context(), id, req)
+	if err != nil {
+		writeError(w, pmTaskUpdateErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, tmpl)
+}
+
+// Duplicate handles POST /api/pm/tasks/{id}/duplicate.
+func (h *PMTaskHandler) Duplicate(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	id := chi.URLParam(r, "id")
+	task, err := h.taskService.Duplicate(r.Context(), id, userID)
+	if err != nil {
+		writeError(w, pmTaskUpdateErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, task)
+}
+
+func pmTaskUpdateErrorStatus(err error) int {
+	var forbidden *model.ErrForbidden
+	if errors.As(err, &forbidden) {
+		return http.StatusForbidden
+	}
+	return http.StatusBadRequest
 }
 
 // Delete handles DELETE /api/pm/tasks/{id}.

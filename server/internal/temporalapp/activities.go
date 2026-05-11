@@ -81,49 +81,58 @@ type ReleaseFactsProvider interface {
 	GetTaskContext(ctx context.Context, workspaceID string, req model.GetTaskContextRequest) (*model.GetTaskContextResult, error)
 }
 
+type CommandBarPlanAdvancer interface {
+	AdvanceCommandBarPlanAfterRun(ctx context.Context, completedRunID string) (*model.AgentRun, error)
+	StartReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error)
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
-	runRepo             *repository.AgentRunRepository
-	runMessageRepo      *repository.AgentRunMessageRepository
-	agentRepo           *repository.AgentRepository
-	workspaceSkillRepo  *repository.WorkspaceSkillRepository
-	skillPackageStore   agentskills.SkillPackageStore
-	artifactRepo        *repository.AgentRunArtifactRepository
-	interactionRepo     *repository.AgentRunInteractionRepository
-	sessionSnapshotRepo *repository.CodingSessionStateSnapshotRepository
-	taskRepo            *repository.PMTaskRepository
-	taskLinkRepo        *repository.PMTaskLinkRepository
-	epicRepo            *repository.PMEpicRepository
-	conversationRepo    *repository.SupportConversationRepository
-	commentRepo         *repository.PMCommentRepository
-	checklistRepo       *repository.PMChecklistItemRepository
-	workflowRepo        *repository.PMWorkflowRepository
-	messageRepo         *repository.SupportMessageRepository
-	gitIntRepo          *repository.GitIntegrationRepository
-	gitRepo             *repository.GitRepositoryRepository
-	gitLinkRepo         *repository.TaskGitLinkRepository
-	deliveryRepo        *repository.TaskDeliveryTargetRepository
-	settingsRepo        *repository.SettingsRepository
-	workspaceRepo       *repository.WorkspaceRepository
-	docsSpaceRepo       *repository.DocsSpaceRepository
-	docsCollectionRepo  *repository.DocsCollectionRepository
-	docsDocRepo         *repository.DocsDocumentRepository
-	docsDocumentKeyRepo *repository.DocsDocumentKeyRepository
-	docsContentRepo     *repository.DocsContentRepository
-	docsVersionRepo     *repository.DocsVersionRepository
-	docsLinkRepo        *repository.DocsLinkRepository
-	docsSearchRepo      *repository.DocsSearchRepository
-	crmDealRepo         *repository.CRMDealRepository
-	crmContactRepo      *repository.CRMContactRepository
-	crmSignalRepo       *repository.CRMSignalRepository
-	crmActivityRepo     *repository.CRMActivityRepository
-	commandExecutor     InternalCommandExecutor
-	notificationEmitter NotificationEmitter
-	releaseFacts        ReleaseFactsProvider
-	wsPublisher         websocket.EventPublisher
-	runtimes            *workerpkg.RuntimeRegistry
-	githubApp           *githubapp.Client
-	runEngine           *RunEngine
+	runRepo                    *repository.AgentRunRepository
+	runMessageRepo             *repository.AgentRunMessageRepository
+	agentRepo                  *repository.AgentRepository
+	workspaceSkillRepo         *repository.WorkspaceSkillRepository
+	skillPackageStore          agentskills.SkillPackageStore
+	artifactRepo               *repository.AgentRunArtifactRepository
+	interactionRepo            *repository.AgentRunInteractionRepository
+	sessionSnapshotRepo        *repository.CodingSessionStateSnapshotRepository
+	taskRepo                   *repository.PMTaskRepository
+	taskLinkRepo               *repository.PMTaskLinkRepository
+	epicRepo                   *repository.PMEpicRepository
+	conversationRepo           *repository.SupportConversationRepository
+	commentRepo                *repository.PMCommentRepository
+	checklistRepo              *repository.PMChecklistItemRepository
+	workflowRepo               *repository.PMWorkflowRepository
+	messageRepo                *repository.SupportMessageRepository
+	gitIntRepo                 *repository.GitIntegrationRepository
+	gitRepo                    *repository.GitRepositoryRepository
+	gitLinkRepo                *repository.TaskGitLinkRepository
+	deliveryRepo               *repository.TaskDeliveryTargetRepository
+	settingsRepo               *repository.SettingsRepository
+	workspaceRepo              *repository.WorkspaceRepository
+	docsSpaceRepo              *repository.DocsSpaceRepository
+	docsCollectionRepo         *repository.DocsCollectionRepository
+	docsDocRepo                *repository.DocsDocumentRepository
+	docsDocumentKeyRepo        *repository.DocsDocumentKeyRepository
+	docsContentRepo            *repository.DocsContentRepository
+	docsBlockRepo              *repository.DocsBlockRepository
+	docsAISectionCandidateRepo *repository.DocsAISectionCandidateRepository
+	docsChangeProposalRepo     *repository.DocsChangeProposalRepository
+	docsVersionRepo            *repository.DocsVersionRepository
+	docsLinkRepo               *repository.DocsLinkRepository
+	docsSearchRepo             *repository.DocsSearchRepository
+	crmDealRepo                *repository.CRMDealRepository
+	crmContactRepo             *repository.CRMContactRepository
+	crmSignalRepo              *repository.CRMSignalRepository
+	crmActivityRepo            *repository.CRMActivityRepository
+	commandExecutor            InternalCommandExecutor
+	notificationEmitter        NotificationEmitter
+	releaseFacts               ReleaseFactsProvider
+	wsPublisher                websocket.EventPublisher
+	runtimes                   *workerpkg.RuntimeRegistry
+	githubApp                  *githubapp.Client
+	runEngine                  *RunEngine
+	commandBarAdvancer         CommandBarPlanAdvancer
 }
 
 // NewAgentRunActivities creates the activity set used by shared Temporal workers.
@@ -155,6 +164,9 @@ func NewAgentRunActivities(
 	docsDocRepo *repository.DocsDocumentRepository,
 	docsDocumentKeyRepo *repository.DocsDocumentKeyRepository,
 	docsContentRepo *repository.DocsContentRepository,
+	docsBlockRepo *repository.DocsBlockRepository,
+	docsAISectionCandidateRepo *repository.DocsAISectionCandidateRepository,
+	docsChangeProposalRepo *repository.DocsChangeProposalRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsSearchRepo *repository.DocsSearchRepository,
@@ -169,49 +181,54 @@ func NewAgentRunActivities(
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
 	runEngine *RunEngine,
+	commandBarAdvancer CommandBarPlanAdvancer,
 ) *AgentRunActivities {
 	return &AgentRunActivities{
-		runRepo:             runRepo,
-		runMessageRepo:      runMessageRepo,
-		agentRepo:           agentRepo,
-		workspaceSkillRepo:  workspaceSkillRepo,
-		skillPackageStore:   skillPackageStore,
-		artifactRepo:        artifactRepo,
-		interactionRepo:     interactionRepo,
-		sessionSnapshotRepo: sessionSnapshotRepo,
-		taskRepo:            taskRepo,
-		taskLinkRepo:        taskLinkRepo,
-		epicRepo:            epicRepo,
-		conversationRepo:    conversationRepo,
-		commentRepo:         commentRepo,
-		checklistRepo:       checklistRepo,
-		workflowRepo:        workflowRepo,
-		messageRepo:         messageRepo,
-		gitIntRepo:          gitIntRepo,
-		gitRepo:             gitRepo,
-		gitLinkRepo:         gitLinkRepo,
-		deliveryRepo:        deliveryRepo,
-		settingsRepo:        settingsRepo,
-		workspaceRepo:       workspaceRepo,
-		docsSpaceRepo:       docsSpaceRepo,
-		docsCollectionRepo:  docsCollectionRepo,
-		docsDocRepo:         docsDocRepo,
-		docsDocumentKeyRepo: docsDocumentKeyRepo,
-		docsContentRepo:     docsContentRepo,
-		docsVersionRepo:     docsVersionRepo,
-		docsLinkRepo:        docsLinkRepo,
-		docsSearchRepo:      docsSearchRepo,
-		crmDealRepo:         crmDealRepo,
-		crmContactRepo:      crmContactRepo,
-		crmSignalRepo:       crmSignalRepo,
-		crmActivityRepo:     crmActivityRepo,
-		commandExecutor:     commandExecutor,
-		notificationEmitter: notificationEmitter,
-		releaseFacts:        releaseFacts,
-		wsPublisher:         wsPublisher,
-		runtimes:            runtimes,
-		githubApp:           githubApp,
-		runEngine:           runEngine,
+		runRepo:                    runRepo,
+		runMessageRepo:             runMessageRepo,
+		agentRepo:                  agentRepo,
+		workspaceSkillRepo:         workspaceSkillRepo,
+		skillPackageStore:          skillPackageStore,
+		artifactRepo:               artifactRepo,
+		interactionRepo:            interactionRepo,
+		sessionSnapshotRepo:        sessionSnapshotRepo,
+		taskRepo:                   taskRepo,
+		taskLinkRepo:               taskLinkRepo,
+		epicRepo:                   epicRepo,
+		conversationRepo:           conversationRepo,
+		commentRepo:                commentRepo,
+		checklistRepo:              checklistRepo,
+		workflowRepo:               workflowRepo,
+		messageRepo:                messageRepo,
+		gitIntRepo:                 gitIntRepo,
+		gitRepo:                    gitRepo,
+		gitLinkRepo:                gitLinkRepo,
+		deliveryRepo:               deliveryRepo,
+		settingsRepo:               settingsRepo,
+		workspaceRepo:              workspaceRepo,
+		docsSpaceRepo:              docsSpaceRepo,
+		docsCollectionRepo:         docsCollectionRepo,
+		docsDocRepo:                docsDocRepo,
+		docsDocumentKeyRepo:        docsDocumentKeyRepo,
+		docsContentRepo:            docsContentRepo,
+		docsBlockRepo:              docsBlockRepo,
+		docsAISectionCandidateRepo: docsAISectionCandidateRepo,
+		docsChangeProposalRepo:     docsChangeProposalRepo,
+		docsVersionRepo:            docsVersionRepo,
+		docsLinkRepo:               docsLinkRepo,
+		docsSearchRepo:             docsSearchRepo,
+		crmDealRepo:                crmDealRepo,
+		crmContactRepo:             crmContactRepo,
+		crmSignalRepo:              crmSignalRepo,
+		crmActivityRepo:            crmActivityRepo,
+		commandExecutor:            commandExecutor,
+		notificationEmitter:        notificationEmitter,
+		releaseFacts:               releaseFacts,
+		wsPublisher:                wsPublisher,
+		runtimes:                   runtimes,
+		githubApp:                  githubApp,
+		runEngine:                  runEngine,
+		commandBarAdvancer:         commandBarAdvancer,
 	}
 }
 
@@ -333,6 +350,21 @@ func (a *AgentRunActivities) PrepareRunActivity(ctx context.Context, runID strin
 
 	recordActivityHeartbeatSafe(ctx, "prepared")
 	return nil
+}
+
+func (a *AgentRunActivities) AdvanceCommandBarPlanActivity(ctx context.Context, runID string) error {
+	if a == nil || a.commandBarAdvancer == nil {
+		return nil
+	}
+	_, err := a.commandBarAdvancer.AdvanceCommandBarPlanAfterRun(ctx, runID)
+	return err
+}
+
+func (a *AgentRunActivities) StartReadyCommandBarPlanStepsActivity(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error) {
+	if a == nil || a.commandBarAdvancer == nil {
+		return &CommandBarPlanProgress{Terminal: true, Status: "not_configured"}, nil
+	}
+	return a.commandBarAdvancer.StartReadyCommandBarPlanSteps(ctx, input)
 }
 
 // ExecuteRunActivity executes the agent loop on a shared runner workspace.
@@ -605,6 +637,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			return ExecuteRunResult{}, nonRetryableRunError(unexpectedErr)
 		}
 		bgCtx := context.Background()
+		a.salvageFailedRuntimeStateFromSnapshotStore(bgCtx, state)
 		_ = a.failRun(bgCtx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
@@ -618,6 +651,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			if persistWorkspace {
 				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
 			}
+			a.salvageFailedRuntimeStateFromSnapshotStore(ctx, state)
 			_ = a.failRun(ctx, state, err.Error())
 			return ExecuteRunResult{}, nonRetryableRunError(err)
 		}
@@ -1275,19 +1309,7 @@ func (a *AgentRunActivities) latestLiveCodexUserMessage(ctx context.Context, run
 }
 
 func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage, _ planningRunInput) error {
-	if state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
-		return nil
-	}
-	switch state.run.TargetType {
-	case "epic":
-		if state.epic == nil {
-			return nil
-		}
-	case "story", "task":
-		if state.task == nil {
-			return nil
-		}
-	default:
+	if a == nil || a.artifactRepo == nil || state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
 	}
 
@@ -2424,18 +2446,18 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				TargetType:  "workspace",
 				TargetID:    workspaceID,
 			}, "pm.create_task", mustJSON(map[string]any{
-				"name":            req.Name,
-				"description":     req.Description,
-				"task_type":       req.TaskType,
-				"estimate":        req.Estimate,
-				"priority":        req.Priority,
-				"epic_id":         req.EpicID,
-				"team_id":         req.TeamID,
-				"workflow_id":     req.WorkflowID,
-				"state_id":        req.StateID,
-				"owner_member_id": req.OwnerMemberID,
-				"label_ids":       req.LabelIDs,
-				"deadline":        req.Deadline,
+				"name":             req.Name,
+				"description":      req.Description,
+				"task_type":        req.TaskType,
+				"estimate":         req.Estimate,
+				"priority":         req.Priority,
+				"epic_id":          req.EpicID,
+				"team_id":          req.TeamID,
+				"workflow_id":      req.WorkflowID,
+				"state_id":         req.StateID,
+				"owner_member_ids": req.OwnerMemberIDs,
+				"label_ids":        req.LabelIDs,
+				"deadline":         req.Deadline,
 			}))
 			if err != nil {
 				return nil, err
@@ -2503,6 +2525,72 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return "", nil
 			}
 			return content.ContentText, nil
+		},
+		ListDocumentBlocks: func(ctx context.Context, documentID string) ([]model.DocsBlock, error) {
+			if a.docsBlockRepo == nil {
+				return []model.DocsBlock{}, nil
+			}
+			return a.docsBlockRepo.ListByDocument(ctx, documentID, false)
+		},
+		PublishAISectionCandidate: func(ctx context.Context, workspaceID, documentID, blockID, agentID, runID string, currentContent, candidateContent json.RawMessage, candidateText string, sourceRefs model.JSONB, prompt *string, promptHash *string, modelName *string) (*model.DocsAISectionCandidate, error) {
+			if a.docsAISectionCandidateRepo == nil {
+				return nil, fmt.Errorf("AI section candidate repository is not available")
+			}
+			doc, err := a.docsDocRepo.GetByID(ctx, documentID)
+			if err != nil {
+				return nil, err
+			}
+			if doc == nil || doc.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("document not found")
+			}
+			candidate := &model.DocsAISectionCandidate{
+				WorkspaceID:      workspaceID,
+				DocumentID:       documentID,
+				BlockID:          blockID,
+				AgentRunID:       strPtr(runID),
+				Status:           model.DocsAISectionCandidateStatusReady,
+				CurrentContent:   currentContent,
+				CandidateContent: candidateContent,
+				CandidateText:    candidateText,
+				SourceRefs:       sourceRefs,
+				Prompt:           prompt,
+				PromptHash:       promptHash,
+				Model:            modelName,
+				CreatedBy:        agentID,
+			}
+			return a.docsAISectionCandidateRepo.Create(ctx, candidate)
+		},
+		PublishDocumentChangeProposal: func(ctx context.Context, workspaceID string, req model.CreateDocsChangeProposalRequest) (*model.DocsChangeProposal, error) {
+			if a.docsChangeProposalRepo == nil {
+				return nil, fmt.Errorf("docs change proposal repository is not available")
+			}
+			doc, err := a.docsDocRepo.GetByID(ctx, strings.TrimSpace(req.DocumentID))
+			if err != nil {
+				return nil, err
+			}
+			if doc == nil || doc.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("document not found")
+			}
+			sources := req.Sources
+			if len(sources) == 0 || strings.TrimSpace(string(sources)) == "" || strings.TrimSpace(string(sources)) == "null" {
+				sources = json.RawMessage(`[]`)
+			}
+			proposal := &model.DocsChangeProposal{
+				WorkspaceID:     workspaceID,
+				DocumentID:      strings.TrimSpace(req.DocumentID),
+				BlockID:         trimStringPtr(req.BlockID),
+				AgentID:         trimStringPtr(req.AgentID),
+				AgentRunID:      trimStringPtr(req.AgentRunID),
+				Scope:           strings.TrimSpace(req.Scope),
+				Status:          model.DocsChangeProposalStatusPending,
+				Revision:        req.Revision,
+				Summary:         strings.TrimSpace(req.Summary),
+				ContentMarkdown: strings.TrimSpace(req.ContentMarkdown),
+				Content:         append(json.RawMessage(nil), req.Content...),
+				Sources:         append(json.RawMessage(nil), sources...),
+				CreatedBy:       strings.TrimSpace(req.CreatedBy),
+			}
+			return a.docsChangeProposalRepo.Create(ctx, proposal)
 		},
 		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
 			if a.commandExecutor == nil {
@@ -2586,6 +2674,17 @@ func (a *AgentRunActivities) pushVisitorConversationRefresh(ctx context.Context,
 		WorkspaceID: workspaceID,
 		Data:        listJSON,
 	})
+}
+
+func trimStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunState, errMsg string) error {

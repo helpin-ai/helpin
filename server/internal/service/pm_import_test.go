@@ -938,8 +938,12 @@ func TestPMImportServiceExecuteShortcutUsesManualUserMappingsForTeamMemberships(
 	if err := db.Where("workspace_id = ? AND external_id = ?", workspaceID, "4002").First(&story).Error; err != nil {
 		t.Fatalf("load imported story: %v", err)
 	}
-	if story.OwnerMemberID == nil || *story.OwnerMemberID != workspaceMember.ID {
-		t.Fatalf("expected owner_member_id to use mapped workspace member, got %v want %s", story.OwnerMemberID, workspaceMember.ID)
+	var ownerLinks int64
+	if err := db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.ID, "user-owner-one").Count(&ownerLinks).Error; err != nil {
+		t.Fatalf("count imported story owners: %v", err)
+	}
+	if ownerLinks != 1 {
+		t.Fatalf("expected imported story owner link, got %d", ownerLinks)
 	}
 }
 
@@ -1347,6 +1351,8 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			invited_by TEXT,
 			invited_at DATETIME,
 			accepted_at DATETIME,
+			support_default_team_id TEXT,
+			support_task_dialog_dismissed BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -1627,6 +1633,11 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			author_id TEXT NOT NULL,
 			body TEXT NOT NULL,
 			parent_id TEXT,
+			block_id TEXT,
+			block_range TEXT,
+			anchor_text TEXT,
+			resolved_at DATETIME,
+			resolved_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -1664,6 +1675,8 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			entities_total INTEGER NOT NULL DEFAULT 0,
 			result TEXT,
 			error TEXT,
+			payload_encrypted TEXT,
+			workflow_id TEXT,
 			started_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,

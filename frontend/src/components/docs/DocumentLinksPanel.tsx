@@ -26,6 +26,8 @@ interface DocumentLinksPanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   canEdit: boolean
+  /** When true, render only the body inline (no Sheet wrapper) — used inside the docs swap rail */
+  embedded?: boolean
 }
 
 export function DocumentLinksPanel({
@@ -34,6 +36,7 @@ export function DocumentLinksPanel({
   open,
   onOpenChange,
   canEdit,
+  embedded,
 }: DocumentLinksPanelProps) {
   const navigate = useNavigate()
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
@@ -106,17 +109,10 @@ export function DocumentLinksPanel({
     [navigate, wsSlug],
   )
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-80 sm:w-96">
-        <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <Link01Icon className="h-4 w-4" />
-            Linked Tasks
-          </SheetTitle>
-        </SheetHeader>
-
-        <div className="mt-4 space-y-3">
+  if (!open) return null
+  if (embedded) {
+    return (
+      <div className="p-4 space-y-3">
           {/* Add button / Search input */}
           {canEdit && !showSearch && (
             <Button
@@ -232,7 +228,20 @@ export function DocumentLinksPanel({
               ))}
             </div>
           )}
-        </div>
+      </div>
+    )
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-80 sm:w-96">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2">
+            <Link01Icon className="h-4 w-4" />
+            Linked Tasks
+          </SheetTitle>
+        </SheetHeader>
+        <div className="mt-4 space-y-3" />
       </SheetContent>
     </Sheet>
   )

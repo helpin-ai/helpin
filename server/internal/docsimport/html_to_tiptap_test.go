@@ -272,18 +272,40 @@ func TestConvert_HelpScoutCalloutDanger(t *testing.T) {
 }
 
 func TestConvert_YouTubeIframe(t *testing.T) {
-	r := convert(t, `<iframe src="https://www.youtube.com/embed/abc123"></iframe>`)
+	r := convert(t, `<iframe src="https://www.youtube.com/embed/abc123" width="560" height="315"></iframe>`)
 	j := toJSON(t, r)
-	if !strings.Contains(j, `"type":"videoEmbed"`) || !strings.Contains(j, `"provider":"youtube"`) {
-		t.Errorf("expected video embed, got: %s", j)
+	for _, want := range []string{`"type":"htmlBlock"`, `"renderMode":"sandboxed"`, `iframe src=\"https://www.youtube.com/embed/abc123\" width=\"560\" height=\"315\"`, `\u003c/iframe\u003e`} {
+		if !strings.Contains(j, want) {
+			t.Errorf("expected source iframe to be preserved as raw html block %q, got: %s", want, j)
+		}
 	}
 }
 
 func TestConvert_VimeoIframe(t *testing.T) {
 	r := convert(t, `<iframe src="https://player.vimeo.com/video/123456"></iframe>`)
 	j := toJSON(t, r)
-	if !strings.Contains(j, `"provider":"vimeo"`) {
-		t.Errorf("expected vimeo provider, got: %s", j)
+	for _, want := range []string{`"type":"htmlBlock"`, `"renderMode":"sandboxed"`, `iframe src=\"https://player.vimeo.com/video/123456\"`, `\u003c/iframe\u003e`} {
+		if !strings.Contains(j, want) {
+			t.Errorf("expected source iframe to be preserved as raw html block %q, got: %s", want, j)
+		}
+	}
+}
+
+func TestConvert_HelpScoutWistiaEmbedWrapper(t *testing.T) {
+	r := convert(t, `<script src="https://fast.wistia.com/assets/external/E-v1.js" type="text/javascript"></script>
+		<div class="wistia_embed wistia_async_uji8gq6l8o" style="height:534px;position:relative;width:300px">
+			<div class="wistia_swatch cc_cursor"><img src="https://cdn.example.com/swatch" alt=""></div>
+			<div class="wistia_swatch cc_cursor"><br></div>
+		</div>`)
+	j := toJSON(t, r)
+	if strings.Contains(j, `"type":"htmlBlock"`) || strings.Contains(j, `wistia_swatch`) {
+		t.Fatalf("expected Wistia wrapper to avoid swatch/htmlBlock fallback, got: %s", j)
+	}
+	if !strings.Contains(j, `"type":"videoEmbed"`) || !strings.Contains(j, `"provider":"wistia"`) {
+		t.Fatalf("expected Wistia wrapper to become videoEmbed, got: %s", j)
+	}
+	if !strings.Contains(j, `"embedUrl":"https://fast.wistia.net/embed/iframe/uji8gq6l8o"`) {
+		t.Fatalf("expected normalized Wistia embed URL, got: %s", j)
 	}
 }
 
@@ -293,11 +315,13 @@ func TestConvert_UnsupportedIframe(t *testing.T) {
 	if strings.Contains(j, `"type":"videoEmbed"`) {
 		t.Errorf("expected no video embed for unknown iframe, got: %s", j)
 	}
-	if !strings.Contains(j, `"type":"link"`) {
-		t.Errorf("expected link fallback, got: %s", j)
+	for _, want := range []string{`"type":"htmlBlock"`, `"renderMode":"sandboxed"`, `iframe src=\"https://unknown.example.com/embed\"`, `\u003c/iframe\u003e`} {
+		if !strings.Contains(j, want) {
+			t.Errorf("expected unsupported source iframe to be preserved as raw html block %q, got: %s", want, j)
+		}
 	}
-	if len(r.Warnings) == 0 {
-		t.Error("expected warning for unsupported iframe")
+	if len(r.Warnings) != 0 {
+		t.Errorf("expected no iframe warning when preserving source iframe, got: %#v", r.Warnings)
 	}
 }
 
@@ -344,6 +368,218 @@ func TestConvert_OrderedListStart(t *testing.T) {
 	j := toJSON(t, r)
 	if !strings.Contains(j, `"start":5`) {
 		t.Errorf("expected start:5, got: %s", j)
+	}
+}
+
+func TestConvert_HelpScoutNumberedDefinitionListBecomesOrderedList(t *testing.T) {
+	r := convert(t, `<dl><dt>3</dt><dd><strong>Two-Factor Authentication (2FA)</strong></dd></dl>`)
+	j := toJSON(t, r)
+	if strings.Contains(j, `"type":"htmlBlock"`) {
+		t.Fatalf("expected definition list to avoid htmlBlock fallback, got: %s", j)
+	}
+	if !strings.Contains(j, `"type":"orderedList"`) || !strings.Contains(j, `"start":3`) {
+		t.Fatalf("expected numbered definition list to become ordered list with start=3, got: %s", j)
+	}
+	if !strings.Contains(j, `Two-Factor Authentication`) || !strings.Contains(j, `"type":"bold"`) {
+		t.Fatalf("expected definition body formatting preserved, got: %s", j)
+	}
+}
+
+func TestConvert_HelpScoutStandaloneDefinitionTermsBecomeNativeBlocks(t *testing.T) {
+	r := convert(t, `<dt>1</dt><dd>Install the mobile application.</dd>`)
+	j := toJSON(t, r)
+	if strings.Contains(j, `"type":"htmlBlock"`) {
+		t.Fatalf("expected standalone dt/dd to avoid htmlBlock fallback, got: %s", j)
+	}
+	if !strings.Contains(j, `"type":"orderedList"`) || !strings.Contains(j, `Install the mobile application.`) {
+		t.Fatalf("expected standalone numeric dt/dd pair to become ordered list content, got: %s", j)
+	}
+}
+
+func TestConvert_DetailsBecomesToggleSection(t *testing.T) {
+	r := convert(t, `<details><summary><span>Authentication &amp; Setup</span><span>3 topics</span></summary><div><div>How to Get Your API Key</div><div><a href="#auth">Authentication</a></div></div></details>`)
+	j := toJSON(t, r)
+	if strings.Contains(j, `"type":"htmlBlock"`) {
+		t.Fatalf("expected details to avoid htmlBlock fallback, got: %s", j)
+	}
+	for _, want := range []string{
+		`"type":"toggleSection"`,
+		`"title":"Authentication \u0026 Setup"`,
+		`"badgeText":"3 topics"`,
+		`"sourceStyle":"helpScoutCard"`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected details summary metadata %q, got: %s", want, j)
+		}
+	}
+	if !strings.Contains(j, `How to Get Your API Key`) || !strings.Contains(j, `"type":"link"`) {
+		t.Fatalf("expected details body content and links preserved, got: %s", j)
+	}
+}
+
+func TestConvert_HelpScoutDetailsPreservesIconAndBadge(t *testing.T) {
+	r := convert(t, `<details><summary style="display:flex"><span>🔑</span><span>Authentication &amp; Setup</span><span>3 topics</span><span>▼</span></summary><div><div><a href="#api-key">How to Get Your ContentStudio API Key</a></div></div></details>`)
+	j := toJSON(t, r)
+	for _, want := range []string{
+		`"type":"toggleSection"`,
+		`"title":"Authentication \u0026 Setup"`,
+		`"icon":"🔑"`,
+		`"badgeText":"3 topics"`,
+		`"sourceStyle":"helpScoutCard"`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected Help Scout detail metadata %q, got: %s", want, j)
+		}
+	}
+	if strings.Contains(j, `Authentication \u0026 Setup 3 topics`) {
+		t.Fatalf("expected title to exclude icon and badge text, got: %s", j)
+	}
+}
+
+func TestConvert_HelpScoutFacebookBackgroundGridBecomesHtmlGrid(t *testing.T) {
+	dataImg := "data:image/png;base64,iVBORw0KGgo="
+	r := convert(t, `<div data-html-block=""><div style="background:#eeeeff"><table><tbody><tr><td><table><tbody><tr><td><img alt="" width="36" height="36" src="`+dataImg+`"/></td><td><span>106018623298955</span></td></tr></tbody></table></td><td><table><tbody><tr><td><img alt="" width="36" height="36" src="`+dataImg+`"/></td><td><span>191761991491375</span></td></tr></tbody></table></td></tr></tbody></table><button id="fb-show-more">Show 36 more ▾</button><div id="fb-second" style="display:none"><table><tbody><tr><td><table><tbody><tr><td><img alt="" width="36" height="36" src="`+dataImg+`"/></td><td><span>1654916007940525</span></td></tr></tbody></table></td></tr></tbody></table></div><button id="fb-show-less">Show less ▴</button></div></div>`)
+	j := toJSON(t, r)
+	for _, want := range []string{
+		`"type":"htmlBlock"`,
+		`docs-fb-background-grid`,
+		`docs-fb-background-card`,
+		`106018623298955`,
+		`191761991491375`,
+		`1654916007940525`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected Facebook background grid content %q, got: %s", want, j)
+		}
+	}
+	for _, notWant := range []string{`"type":"table"`, `Show 36 more`, `Show less`} {
+		if strings.Contains(j, notWant) {
+			t.Fatalf("expected Facebook background grid to avoid %q, got: %s", notWant, j)
+		}
+	}
+}
+
+func TestConvert_HelpScoutDataHTMLBlockPreservesUnknownStyledHTML(t *testing.T) {
+	r := convert(t, `<div data-html-block=""><div style="border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom:16px;" onclick="alert(1)">
+  <p>
+    <span style="background: #007BFF;color:#fff;width:24px;height:24px;line-height:24px;text-align:center;display: inline-block;border-radius:50%;font-weight:bold;">2</span>
+    Click on <strong>Generate API Key</strong> and copy your unique API key.
+  </p><script>window.helpScoutCustomHTML = true;</script>
+</div></div>`)
+	j := toJSON(t, r)
+	for _, want := range []string{
+		`"type":"htmlBlock"`,
+		`"renderMode":"sandboxed"`,
+		`border: 1px solid #e5e7eb`,
+		`border-radius: 10px`,
+		`background: #007BFF`,
+		`Generate API Key`,
+		`onclick`,
+		`script`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected Help Scout data-html-block to preserve styled HTML %q, got: %s", want, j)
+		}
+	}
+	for _, notWant := range []string{`"type":"paragraph"`} {
+		if strings.Contains(j, notWant) {
+			t.Fatalf("expected preserved data-html-block to avoid %q, got: %s", notWant, j)
+		}
+	}
+}
+
+func TestConvert_HelpScoutStyledDivPreservesCustomStepHTML(t *testing.T) {
+	r := convert(t, `<div style="border:1px solid #e5e7eb; border-radius:12px; padding:16px; margin-bottom:14px; display:flex; gap:12px;">
+  <span style="background:#0d6efd; color:#fff; width:28px; height:28px; display:flex; justify-content:center; align-items:center; border-radius:50%; font-weight:bold;">1</span>
+  <div>
+    <strong>Go to WordPress Admin → Plugins → Add New</strong><br/>
+    Log into your WordPress dashboard and click <strong>Add New</strong> under Plugins.
+  </div>
+</div>`)
+	j := toJSON(t, r)
+	for _, want := range []string{
+		`"type":"htmlBlock"`,
+		`"renderMode":"sandboxed"`,
+		`border:1px solid #e5e7eb`,
+		`display:flex`,
+		`Go to WordPress Admin`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected styled custom step HTML to be preserved %q, got: %s", want, j)
+		}
+	}
+	for _, notWant := range []string{`"type":"paragraph"`, `"text":"1"`} {
+		if strings.Contains(j, notWant) {
+			t.Fatalf("expected styled custom step HTML not to split badge into native paragraphs %q, got: %s", notWant, j)
+		}
+	}
+}
+
+func TestConvert_HelpScoutDataHTMLBlockWithInteractiveHTMLUsesSandbox(t *testing.T) {
+	r := convert(t, `<div data-html-block=""><div><table><tbody id="models-body"></tbody></table><script>document.getElementById("models-body").innerHTML = "<tr><td>Kling</td></tr>";</script></div></div>`)
+	j := toJSON(t, r)
+	for _, want := range []string{
+		`"type":"htmlBlock"`,
+		`"renderMode":"sandboxed"`,
+		`models-body`,
+		`script`,
+		`Kling`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected interactive Help Scout data-html-block to preserve raw sandbox HTML %q, got: %s", want, j)
+		}
+	}
+}
+
+func TestConvert_HeadingPreservesSourceIDForHashLinks(t *testing.T) {
+	r := convert(t, `<h3 id="Video-Model-Cost--Plan-Comparison-u_9kX">Video Models &amp; Plan Comparison</h3>`)
+	j := toJSON(t, r)
+	for _, want := range []string{
+		`"type":"heading"`,
+		`"id":"Video-Model-Cost--Plan-Comparison-u_9kX"`,
+		`Video Models`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected heading source ID to be preserved %q, got: %s", want, j)
+		}
+	}
+}
+
+func TestConvert_AddsHeadingAliasForStaleHashLinkByLinkText(t *testing.T) {
+	r := convert(t, `<p><a href="#Video-Model-Cost--Plan-Comparison-u_9kX">Video Models &amp; Plan Comparison</a></p><h3 id="Video-Model-Generation--Plan-Comparison-m-vqd">Video Models &amp; Plan Comparison</h3>`)
+	j := toJSON(t, r)
+	for _, want := range []string{
+		`"href":"#Video-Model-Cost--Plan-Comparison-u_9kX"`,
+		`"id":"Video-Model-Generation--Plan-Comparison-m-vqd"`,
+		`"anchorAliases":["Video-Model-Cost--Plan-Comparison-u_9kX"]`,
+	} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected stale hash link to be preserved as heading alias %q, got: %s", want, j)
+		}
+	}
+}
+
+func TestConvert_NormalizesMalformedHashHrefToLastAnchor(t *testing.T) {
+	r := convert(t, `<p><a href="#oldhttps://docs.contentstudio.io/article/1084-ai-powered-caption-generation#How-to-generate-content-from-images-gmDlz">How to generate content from images</a></p>`)
+	j := toJSON(t, r)
+	if !strings.Contains(j, `"href":"#How-to-generate-content-from-images-gmDlz"`) {
+		t.Fatalf("expected malformed hash href to be normalized to last anchor, got: %s", j)
+	}
+	if strings.Contains(j, `docs.contentstudio.io`) {
+		t.Fatalf("expected malformed hash href to remove embedded URL, got: %s", j)
+	}
+}
+
+func TestConvert_HelpScoutDataHTMLBlockWithDetailsUsesNativeToggle(t *testing.T) {
+	r := convert(t, `<div data-html-block=""><p>Intro</p><details><summary><span>🔑</span><span>Authentication &amp; Setup</span><span>3 topics</span><span>▼</span></summary><div><a href="#auth">Authentication</a></div></details></div>`)
+	j := toJSON(t, r)
+	for _, want := range []string{`"type":"paragraph"`, `"type":"toggleSection"`, `"icon":"🔑"`, `"badgeText":"3 topics"`} {
+		if !strings.Contains(j, want) {
+			t.Fatalf("expected data-html-block with known details to convert natively %q, got: %s", want, j)
+		}
+	}
+	if strings.Contains(j, `"type":"htmlBlock"`) {
+		t.Fatalf("expected known details inside data-html-block to avoid htmlBlock preservation, got: %s", j)
 	}
 }
 
