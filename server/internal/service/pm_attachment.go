@@ -8,7 +8,6 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
-	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -42,12 +41,22 @@ var allowedEntityTypes = map[string]bool{
 // PMAttachmentService contains attachment business logic.
 type PMAttachmentService struct {
 	attachmentRepo *repository.PMAttachmentRepository
-	s3Client       *storage.S3Client
+	s3Client       pmAttachmentObjectStore
 	wsPublisher    *websocket.Publisher
 }
 
+type pmAttachmentObjectStore interface {
+	HasPublicURL() bool
+	PublicURL(key string) string
+	GeneratePresignedPutURL(key, contentType string, size int64, publicRead bool) (string, error)
+	PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error
+	GeneratePresignedGetURL(key, filename string) (string, error)
+	GeneratePresignedInlineGetURL(key string) (string, error)
+	DeleteObject(ctx context.Context, key string) error
+}
+
 // NewPMAttachmentService creates a new PMAttachmentService.
-func NewPMAttachmentService(attachmentRepo *repository.PMAttachmentRepository, s3Client *storage.S3Client, wsPublisher *websocket.Publisher) *PMAttachmentService {
+func NewPMAttachmentService(attachmentRepo *repository.PMAttachmentRepository, s3Client pmAttachmentObjectStore, wsPublisher *websocket.Publisher) *PMAttachmentService {
 	return &PMAttachmentService{
 		attachmentRepo: attachmentRepo,
 		s3Client:       s3Client,
@@ -261,6 +270,25 @@ func (s *PMAttachmentService) Delete(ctx context.Context, id, userID string, pen
 		s.wsPublisher.Publish(websocket.Event{Action: "deleted", Entity: "attachment", EntityID: id, WorkspaceID: attachment.WorkspaceID, ActorID: userID, ParentType: attachment.EntityType, ParentID: attachment.EntityID})
 	}
 	return nil
+}
+
+// ContentURL returns a fresh inline content URL for an uploaded attachment.
+func (s *PMAttachmentService) ContentURL(ctx context.Context, id string) (string, error) {
+	if s.s3Client == nil {
+		return "", fmt.Errorf("file storage is not configured")
+	}
+	attachment, err := s.attachmentRepo.GetByID(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if attachment == nil || !attachment.IsUploaded || attachment.StorageKey == "" {
+		return "", fmt.Errorf("attachment not found")
+	}
+	downloadURL, err := s.s3Client.GeneratePresignedInlineGetURL(attachment.StorageKey)
+	if err != nil {
+		return "", fmt.Errorf("generate content URL: %w", err)
+	}
+	return downloadURL, nil
 }
 
 func (s *PMAttachmentService) shouldDeleteStorageObject(ctx context.Context, attachment *model.PMAttachment) bool {

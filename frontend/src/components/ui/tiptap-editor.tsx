@@ -13,7 +13,7 @@ import { TaskItem } from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
-import { diffRemovedInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
+import { diffRemovedInlineAttachmentIds, normalizeInlineAttachmentImageSrcs } from '@/components/pm/editorImageAttachments';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -153,8 +153,9 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
   const onUploadStateChangeRef = useRef(onUploadStateChange);
   onUploadStateChangeRef.current = onUploadStateChange;
   const pendingUploadsRef = useRef(0);
-  const currentHtmlRef = useRef(content);
-  currentHtmlRef.current = content;
+  const normalizedContent = useMemo(() => normalizeInlineAttachmentImageSrcs(content), [content]);
+  const currentHtmlRef = useRef(normalizedContent);
+  currentHtmlRef.current = normalizedContent;
   const [mentionState, setMentionState] = useState<{
     from: number;
     to: number;
@@ -357,7 +358,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
 
   const editor = useEditor({
     extensions,
-    content,
+    content: normalizedContent,
     editorProps: {
       attributes: {
         class: 'tiptap prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
@@ -510,12 +511,12 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
   useEffect(() => {
     if (!editor) return;
     const current = editor.getHTML();
-    if (content === '' && current !== '<p></p>' && current !== '') {
+    if (normalizedContent === '' && current !== '<p></p>' && current !== '') {
       editor.commands.clearContent();
-    } else if (content !== '' && content !== current) {
-      editor.commands.setContent(content);
+    } else if (normalizedContent !== '' && normalizedContent !== current) {
+      editor.commands.setContent(normalizedContent);
     }
-  }, [content, editor]);
+  }, [normalizedContent, editor]);
 
   if (!editor) return null;
 

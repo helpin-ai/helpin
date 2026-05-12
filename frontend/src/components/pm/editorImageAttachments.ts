@@ -1,3 +1,5 @@
+import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+
 const extractAttachmentIdsFromHtml = (html: string): string[] => {
   const ids = new Set<string>();
   const matches = html.matchAll(/data-attachment-id=["']([^"']+)["']/g);
@@ -53,4 +55,38 @@ export function removeInlineImagesByAttachmentIds(
   });
 
   return document.body.innerHTML;
+}
+
+export function normalizeInlineAttachmentImageSrcs(html: string | null | undefined): string {
+  if (!html) {
+    return html ?? '';
+  }
+
+  if (typeof DOMParser === 'undefined') {
+    return html.replace(
+      /<img\b([^>]*?)\sdata-attachment-id=["']([^"']+)["']([^>]*)>/gi,
+      (match, before: string, attachmentId: string, after: string) => {
+        const nextSrc = `src="${pmAttachmentService.contentUrl(attachmentId)}"`;
+        if (/\ssrc=["'][^"']*["']/i.test(match)) {
+          return match.replace(/\ssrc=["'][^"']*["']/i, ` ${nextSrc}`);
+        }
+        return `<img ${nextSrc}${before} data-attachment-id="${attachmentId}"${after}>`;
+      },
+    );
+  }
+
+  const document = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  let changed = false;
+
+  document.body.querySelectorAll('img[data-attachment-id]').forEach((image) => {
+    const attachmentId = image.getAttribute('data-attachment-id')?.trim();
+    if (!attachmentId) return;
+    const contentUrl = pmAttachmentService.contentUrl(attachmentId);
+    if (image.getAttribute('src') !== contentUrl) {
+      image.setAttribute('src', contentUrl);
+      changed = true;
+    }
+  });
+
+  return changed ? document.body.innerHTML : html;
 }
