@@ -6,6 +6,7 @@ import { pickBlockNodeViewAttrs } from '@/components/docs/nodeViewAttrs';
 export interface ResizableImageOptions {
   HTMLAttributes: Record<string, unknown>;
   enableCaption: boolean;
+  defaultAlignment: 'left' | 'center' | 'right';
 }
 
 declare module '@tiptap/core' {
@@ -35,6 +36,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
     return {
       HTMLAttributes: {},
       enableCaption: true,
+      defaultAlignment: 'center',
     };
   },
 
@@ -48,7 +50,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       aspectRatio: { default: null },
       attachmentId: { default: null },
       caption: { default: null },
-      alignment: { default: 'center' },
+      alignment: { default: this.options.defaultAlignment },
       linkUrl: { default: null },
       linkNewTab: { default: true },
     };
@@ -69,7 +71,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
             : null,
           attachmentId: dom.getAttribute('data-attachment-id'),
           caption: dom.getAttribute('data-caption'),
-          alignment: dom.getAttribute('data-alignment') || 'center',
+          alignment: dom.getAttribute('data-alignment') || this.options.defaultAlignment,
           linkUrl: dom.getAttribute('data-link-url') || null,
           linkNewTab: dom.getAttribute('data-link-new-tab') !== 'false',
         };

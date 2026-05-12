@@ -162,4 +162,22 @@ describe('editorImageAttachments', () => {
 
     editor.destroy()
   })
+
+  it('can default PM editor images to left alignment', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: [StarterKit, ResizableImageExtension.configure({ enableCaption: false, defaultAlignment: 'left' })],
+      content: '',
+    })
+
+    editor.commands.setResizableImage({
+      src: 'https://cdn.example.com/a.png',
+      alt: 'Screenshot',
+    })
+
+    const node = editor.getJSON().content?.[0]
+    expect(node?.attrs?.alignment).toBe('left')
+
+    editor.destroy()
+  })
 })
