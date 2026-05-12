@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CodingTranscriptPane } from '../CodingTranscriptPane';
-import type { CodingSession, CodingSessionInteraction, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
+import type { AgentRunArtifact, CodingSession, CodingSessionInteraction, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
 
 const scrollToIndexMock = vi.hoisted(() => vi.fn());
 
@@ -127,6 +127,28 @@ function buildTranscriptMessage(overrides: Partial<CodingSessionTranscriptMessag
   };
 }
 
+function buildReviewArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRunArtifact {
+  return {
+    id: 'review-artifact-1',
+    workspace_id: 'workspace-1',
+    run_id: 'run-1',
+    artifact_type: 'review_findings',
+    format: 'json',
+    storage_mode: 'inline',
+    inline_content: JSON.stringify({
+      findings: [{
+        id: 'finding-1',
+        title: 'Fix null handling',
+        priority: 'P1',
+      }],
+    }),
+    metadata: {},
+    sequence_no: 1,
+    created_at: '2026-05-07T08:15:00Z',
+    ...overrides,
+  };
+}
+
 describe('CodingTranscriptPane', () => {
   it('opens an existing run with breathing room after the latest activity', () => {
     act(() => {
@@ -203,6 +225,27 @@ describe('CodingTranscriptPane', () => {
     const composer = container.querySelector('textarea[placeholder^="Answer the agent"]');
     expect(composer?.className).toContain('focus-visible:border-ring/70');
     expect(composer?.className).toContain('focus-visible:ring-ring/15');
+  });
+
+  it('does not append review history artifacts to the main transcript', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          reviewArtifacts={[{ artifact: buildReviewArtifact() }]}
+          transcriptMessages={[
+            buildTranscriptMessage({ content: 'Implemented the requested changes.' }),
+          ]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'completed', pause_reason: 'none' })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Implemented the requested changes.');
+    expect(container.textContent).not.toContain('Review history');
   });
 
   it('renders a disabled composer when messages cannot be delivered', () => {

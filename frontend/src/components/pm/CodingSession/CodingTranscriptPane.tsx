@@ -39,7 +39,6 @@ import {
 } from './codingSessionPresentation';
 import type { CodingSessionComposerState } from './codingSessionComposer';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
-import { AgentRunArtifactView } from '@/components/pm/AgentRunArtifactView';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
@@ -90,7 +89,6 @@ function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): Segmen
 
 export function CodingTranscriptPane({
   promptArtifact,
-  reviewArtifacts = [],
   transcriptMessages,
   liveAssistantMessage,
   liveReasoningMessage,
@@ -182,7 +180,6 @@ export function CodingTranscriptPane({
     | { kind: 'context'; message: CodingSessionTranscriptMessage }
     | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
     | { kind: 'status'; message: CodingSessionTranscriptMessage }
-    | { kind: 'review-artifact'; artifact: AgentRunArtifact; decisionArtifact?: AgentRunArtifact | null }
     | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
     | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
@@ -202,13 +199,6 @@ export function CodingTranscriptPane({
       } else {
         list.push({ kind: 'transcript', message });
       }
-    }
-    for (const reviewArtifact of reviewArtifacts) {
-      list.push({
-        kind: 'review-artifact',
-        artifact: reviewArtifact.artifact,
-        decisionArtifact: reviewArtifact.decisionArtifact,
-      });
     }
     if (liveReasoningMessage) {
       list.push({ kind: 'thinking', reasoning: liveReasoningMessage });
@@ -238,7 +228,6 @@ export function CodingTranscriptPane({
   }, [
     promptMessage,
     transcriptMessages,
-    reviewArtifacts,
     liveReasoningMessage,
     visibleLiveSegments,
     showLivePlaceholder,
@@ -362,8 +351,6 @@ export function CodingTranscriptPane({
         return <StatusTimelineRow message={item.message} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
-      case 'review-artifact':
-        return <ReviewArtifactEntry artifact={item.artifact} decisionArtifact={item.decisionArtifact} />;
       case 'live-message': {
         const seg = item.segment;
         if (seg.kind !== 'assistant_message') return null;
@@ -490,28 +477,6 @@ export function CodingTranscriptPane({
         />
       ) : null}
     </section>
-  );
-}
-
-function ReviewArtifactEntry({
-  artifact,
-  decisionArtifact,
-}: {
-  artifact: AgentRunArtifact;
-  decisionArtifact?: AgentRunArtifact | null;
-}) {
-  return (
-    <div className="ml-auto w-full max-w-[90%] rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Review history
-        </div>
-        <div className="text-[11px] text-muted-foreground">
-          {formatCodingSessionRelative(artifact.created_at)}
-        </div>
-      </div>
-      <AgentRunArtifactView artifact={artifact} reviewDecisionArtifact={decisionArtifact} maxContentHeight="max-h-96" />
-    </div>
   );
 }
 
