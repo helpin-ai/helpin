@@ -366,6 +366,68 @@ describe('buildCodingSessionStreamState', () => {
     expect(state.transcript_messages.map((message) => message.message_type)).not.toContain('review_checkpoint_resolution');
   });
 
+  it('keeps persisted review approval transcript messages in timeline order', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'msg-review-approval',
+        type: 'user.message.completed',
+        sequence_no: 14,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'message-review-approval-1',
+          content: 'Approved review findings for implementation:\n\n- Missing regression coverage',
+          role: 'user',
+          message_type: 'approval',
+          sequence_no: 14,
+        },
+      }),
+      buildEvent({
+        id: 'assistant-final',
+        type: 'assistant.message.completed',
+        sequence_no: 20,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-final-1',
+          content: 'Implemented and committed the approved fix.',
+          role: 'assistant',
+          sequence_no: 20,
+        },
+      }),
+      buildEvent({
+        id: 'interaction-review-resolved',
+        type: 'interaction.resolved',
+        sequence_no: 21,
+        payload: {
+          interaction_id: 'interaction-1',
+          interaction_kind: 'review_checkpoint',
+          status: 'resolved',
+          request_payload: {
+            findings: [
+              {
+                id: 'finding_1',
+                title: 'Missing regression coverage',
+              },
+            ],
+          },
+          response_payload: {
+            decision: 'approve',
+            selection_mode: 'all',
+          },
+        },
+        runtime_metadata: { source: 'agent_run_interaction', interaction_kind: 'review_checkpoint' },
+      }),
+    ]);
+
+    expect(state.transcript_messages.map((message) => message.content)).toEqual([
+      'Approved review findings for implementation:\n\n- Missing regression coverage',
+      'Implemented and committed the approved fix.',
+    ]);
+    expect(state.transcript_messages.map((message) => message.message_type)).toEqual([
+      'approval',
+      undefined,
+    ]);
+  });
+
   it('keeps resolved review checkpoints out of the transcript when selected scope has no ids', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
