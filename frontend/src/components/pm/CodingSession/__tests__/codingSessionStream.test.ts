@@ -310,12 +310,24 @@ describe('buildCodingSessionStreamState', () => {
     });
   });
 
-  it('converts resolved review checkpoints into visible transcript entries with selected findings', () => {
+  it('does not append resolved review checkpoints to the transcript after final assistant output', () => {
     const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-final',
+        type: 'assistant.message.completed',
+        sequence_no: 20,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-final-1',
+          content: 'Implemented and committed the approved fix.',
+          role: 'assistant',
+          sequence_no: 20,
+        },
+      }),
       buildEvent({
         id: 'interaction-review-resolved',
         type: 'interaction.resolved',
-        sequence_no: 14,
+        sequence_no: 21,
         payload: {
           interaction_id: 'interaction-1',
           interaction_kind: 'review_checkpoint',
@@ -348,16 +360,13 @@ describe('buildCodingSessionStreamState', () => {
 
     expect(state.transcript_messages).toHaveLength(1);
     expect(state.transcript_messages[0]).toMatchObject({
-      role: 'user',
-      message_type: 'review_checkpoint_resolution',
+      role: 'assistant',
+      content: 'Implemented and committed the approved fix.',
     });
-    expect(state.transcript_messages[0]?.content).toContain('Approved selected review findings for implementation');
-    expect(state.transcript_messages[0]?.content).toContain('Missing regression coverage');
-    expect(state.transcript_messages[0]?.content).toContain('`server/internal/service/foo_test.go:10`');
-    expect(state.transcript_messages[0]?.content).toContain('Note: Fix this one first.');
+    expect(state.transcript_messages.map((message) => message.message_type)).not.toContain('review_checkpoint_resolution');
   });
 
-  it('does not fall back to all findings when selected scope has no ids', () => {
+  it('keeps resolved review checkpoints out of the transcript when selected scope has no ids', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
         id: 'interaction-review-resolved-empty-selected',
@@ -392,10 +401,7 @@ describe('buildCodingSessionStreamState', () => {
       }),
     ]);
 
-    expect(state.transcript_messages).toHaveLength(1);
-    expect(state.transcript_messages[0]?.content).toContain('Approved the review checkpoint.');
-    expect(state.transcript_messages[0]?.content).not.toContain('Nil panic in retry path');
-    expect(state.transcript_messages[0]?.content).not.toContain('Missing regression coverage');
+    expect(state.transcript_messages).toHaveLength(0);
   });
 
   it('does not render the same requested-changes note twice', () => {
