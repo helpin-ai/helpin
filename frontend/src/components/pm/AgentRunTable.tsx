@@ -5,7 +5,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
-import { formatRunTokenUsage } from '@/lib/agentTokenUsage';
+import { formatRunTokenUsageBreakdown, formatRunTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { TABLE_HEADER, TABLE_HEADER_CELL, TABLE_ROW, TABLE_CELL } from '@/lib/tableStyles';
 import { getAgentRunDisplayStatus, STATUS_META } from './agentRunConstants';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
@@ -82,6 +82,8 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
         const branchDisplay = branch ? truncateMiddle(branch, BRANCH_MAX_CHARS) : '-';
         const agent = agentsById.get(run.agent_id);
         const agentName = agent?.name ?? AGENT_RUNTIME_LABELS[run.runtime_kind] ?? run.runtime_kind;
+        const totalTokens = formatRunTokenUsageTotal(run);
+        const tokenBreakdown = formatRunTokenUsageBreakdown(run);
 
         return (
           <button
@@ -130,7 +132,20 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
               {formatDistanceToNow(parseISO(run.created_at), { addSuffix: true })}
             </div>
             <div className={`${TABLE_CELL} justify-end text-muted-foreground`} style={{ width: 180 }}>
-              {formatRunTokenUsage(run)}
+              {tokenBreakdown.length > 1 ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help tabular-nums">{totalTokens}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="end" className="space-y-1 px-3 py-2 text-xs">
+                    {tokenBreakdown.map((line) => (
+                      <div key={line}>{line}</div>
+                    ))}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <span className="tabular-nums">{totalTokens}</span>
+              )}
             </div>
           </button>
         );

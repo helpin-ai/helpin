@@ -126,6 +126,28 @@ export function getTaskAgentRunPrimaryAction({
   };
 }
 
+export function getTaskAgentRunExecutionContextLockReason({
+  activeRun,
+  activeRunAgentName,
+}: {
+  activeRun: Pick<AgentRun, 'status' | 'pause_reason' | 'approval_state'> | null | undefined;
+  activeRunAgentName?: string | null;
+}) {
+  if (!activeRun) return null;
+  const activeName = displayAgentName(activeRunAgentName);
+  const displayStatus = getAgentRunDisplayStatus(activeRun);
+  const stateText = displayStatus === 'awaiting_input'
+    ? 'waiting for input'
+    : displayStatus === 'awaiting_approval'
+      ? 'awaiting approval'
+      : displayStatus === 'awaiting_auth'
+        ? 'waiting for sign-in'
+        : activeRun.status === 'queued'
+          ? 'queued'
+          : 'running';
+  return `${activeName} is ${stateText}. Repository and branch can be changed after this run finishes.`;
+}
+
 export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery, canEditDelivery = false }: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
@@ -266,6 +288,10 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
     activeRunAgentName,
     triggering,
   });
+  const executionContextLockReason = getTaskAgentRunExecutionContextLockReason({
+    activeRun,
+    activeRunAgentName,
+  });
   const agentSelectionDisabled = !!activeRun || triggering;
 
   const handleRunAgent = async () => {
@@ -320,6 +346,7 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
             workspaceId={workspaceId}
             delivery={delivery}
             canEdit={canEditDelivery}
+            lockReason={executionContextLockReason}
           />
         ) : null}
 
@@ -400,10 +427,12 @@ function AgentRunExecutionContext({
   workspaceId,
   delivery,
   canEdit,
+  lockReason,
 }: {
   workspaceId: string;
   delivery: AgentRunDeliveryContext;
   canEdit: boolean;
+  lockReason?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const defaultRepository = useMemo(
@@ -416,7 +445,8 @@ function AgentRunExecutionContext({
   );
 
   const repositoryName = delivery.selectedRepository?.full_name ?? delivery.target?.repo_full_name ?? '';
-  const canUseDefaultRepository = canEdit && !delivery.repositoryId && Boolean(defaultRepository);
+  const contextLocked = Boolean(lockReason);
+  const canUseDefaultRepository = canEdit && !contextLocked && !delivery.repositoryId && Boolean(defaultRepository);
   const contextText = repositoryName
     ? `${repositoryName} · ${delivery.resolvedBaseBranch} -> ${delivery.branchPreview}`
     : 'Repository not configured';
@@ -457,6 +487,8 @@ function AgentRunExecutionContext({
                   type="button"
                   size="icon"
                   variant="ghost"
+                  disabled={contextLocked}
+                  title={lockReason ?? 'Edit execution context'}
                   className="h-6 w-6 shrink-0"
                   aria-label="Edit execution context"
                 >
