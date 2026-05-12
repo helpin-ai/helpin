@@ -109,4 +109,27 @@ describe('RichTextMentionContent', () => {
     })
     container.remove()
   })
+
+  it('renders saved description images centered by default', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <RichTextMentionContent
+          html={'<p><img src="https://cdn.example.com/task.png" alt="Task image" /></p>'}
+        />,
+      )
+    })
+
+    const imageWrapper = container.querySelector('[data-inline-image-align="center"]')
+    expect(imageWrapper).toBeTruthy()
+    expect(imageWrapper?.querySelector('img')?.getAttribute('src')).toBe('https://cdn.example.com/task.png')
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
 })

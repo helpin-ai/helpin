@@ -5,6 +5,7 @@ import { pickBlockNodeViewAttrs } from '@/components/docs/nodeViewAttrs';
 
 export interface ResizableImageOptions {
   HTMLAttributes: Record<string, unknown>;
+  enableCaption: boolean;
 }
 
 declare module '@tiptap/core' {
@@ -33,6 +34,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
   addOptions() {
     return {
       HTMLAttributes: {},
+      enableCaption: true,
     };
   },
 
@@ -80,7 +82,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
     return ['img', mergeAttributes(this.options.HTMLAttributes, rest, {
       ...(aspectRatio ? { 'data-aspect-ratio': aspectRatio } : {}),
       ...(attachmentId ? { 'data-attachment-id': attachmentId } : {}),
-      ...(caption ? { 'data-caption': caption } : {}),
+      ...(this.options.enableCaption && caption ? { 'data-caption': caption } : {}),
       ...(alignment && alignment !== 'center' ? { 'data-alignment': alignment } : {}),
       ...(linkUrl ? { 'data-link-url': linkUrl, 'data-link-new-tab': String(linkNewTab ?? true) } : {}),
     })];

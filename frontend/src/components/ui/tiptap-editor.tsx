@@ -340,7 +340,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       }),
     ];
     if (uploadConfig) {
-      exts.push(ResizableImageExtension as typeof exts[number]);
+      exts.push(ResizableImageExtension.configure({ enableCaption: false }) as typeof exts[number]);
     }
     return exts;
   // eslint-disable-next-line react-hooks/exhaustive-deps
