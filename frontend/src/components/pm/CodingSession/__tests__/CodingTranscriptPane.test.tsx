@@ -239,6 +239,7 @@ describe('CodingTranscriptPane', () => {
   });
 
   it('renders the running state as the latest activity row with the colorful spinner', () => {
+    vi.useFakeTimers();
     act(() => {
       root.render(
         <CodingTranscriptPane
@@ -255,7 +256,24 @@ describe('CodingTranscriptPane', () => {
     const runningActivity = container.querySelector('[data-coding-session-running-activity]');
     expect(runningActivity?.textContent).toContain('Agent running');
     expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('agent-working-chroma');
+    expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('text-base');
+    expect(runningActivity?.querySelector('[data-agent-running-halo]')?.className).toContain('animate-ping');
+    const ellipsis = runningActivity?.querySelector('[data-agent-running-ellipsis]');
+    expect(ellipsis?.textContent).toBe('.');
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(ellipsis?.textContent).toBe('..');
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(ellipsis?.textContent).toBe('...');
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(ellipsis?.textContent).toBe('.');
     expect(container.querySelector('[data-coding-session-running-footer]')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('auto-grows the main composer while typing', () => {
