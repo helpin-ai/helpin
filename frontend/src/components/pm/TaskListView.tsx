@@ -15,7 +15,7 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Loading01Icon } from '@/lib/icons';
+import { Copy01Icon, Loading01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -68,6 +68,7 @@ import type { AssignableMember, TeamEstimateSettings, WorkspaceTeam } from '@/li
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { showTaskDuplicatedToast } from '@/components/pm/TaskDuplicatedToast';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildTaskCopyUrl } from '@/lib/pmTaskLinks';
 import { useAgents, useAutomationRulesByWorkflow, useTeamEstimateSettings, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
@@ -316,6 +317,23 @@ export function TaskListView({
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
   }, [workspaceId]);
+
+  useEffect(() => {
+    const handleTaskCreated = (event: Event) => {
+      const created = (event as CustomEvent<{ task?: Task }>).detail?.task;
+      if (!created) return;
+      if (created.workspace_id !== workspaceId) return;
+      if (created.workflow_id !== workflow.workflow.id) return;
+      if (teamId && created.team_id !== teamId) return;
+      setTasks((current) => (
+        current.some((candidate) => candidate.id === created.id)
+          ? current
+          : [created, ...current]
+      ));
+    };
+    window.addEventListener('task-created', handleTaskCreated);
+    return () => window.removeEventListener('task-created', handleTaskCreated);
+  }, [workspaceId, workflow.workflow.id, teamId]);
 
   // Build lookup maps
   const availableWorkflows = useMemo(
@@ -900,6 +918,7 @@ export function TaskListView({
               task={info.row.original}
               workspaceId={workspaceId}
               workspaceSlug={workspaceSlug}
+              automatedStateIds={automatedStateIds}
               onOpenTask={handleOpenTask}
               setTasks={setTasks}
             />
@@ -2300,17 +2319,21 @@ function InlineActionsCell({
   task,
   workspaceId,
   workspaceSlug,
+  automatedStateIds,
   onOpenTask,
   setTasks,
 }: {
   task: Task;
   workspaceId: string;
   workspaceSlug: string | null;
+  automatedStateIds: Set<string>;
   onOpenTask: (task: Task) => void;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const { copy } = useCopyToClipboard();
 
   const copyLink = (e: React.MouseEvent) => {
@@ -2333,6 +2356,36 @@ function InlineActionsCell({
     }
   };
 
+  const duplicateTask = async () => {
+    if (duplicating) return;
+    setDuplicateConfirmOpen(false);
+    setDuplicating(true);
+    try {
+      const { data, error } = await pmTaskService.duplicate(workspaceId, task.id);
+      if (error || !data) {
+        toast.error(error ?? 'Failed to duplicate task');
+        return;
+      }
+      setTasks((current) => [data.task, ...current]);
+      showTaskDuplicatedToast({
+        taskName: data.task.name,
+        taskKey: data.task.task_key,
+        taskType: data.task.task_type,
+        onOpen: () => onOpenTask(data.task),
+      });
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+  const requestDuplicateTask = () => {
+    if (automatedStateIds.has(task.workflow_state_id)) {
+      setDuplicateConfirmOpen(true);
+      return;
+    }
+    void duplicateTask();
+  };
+
   const trigger = (
     <button
       type="button"
@@ -2348,7 +2401,7 @@ function InlineActionsCell({
     </button>
   );
 
-  if (!menuOpen && !archiveOpen) {
+  if (!menuOpen && !archiveOpen && !duplicateConfirmOpen) {
     return <div onClick={(e) => e.stopPropagation()}>{trigger}</div>;
   }
 
@@ -2357,6 +2410,10 @@ function InlineActionsCell({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={requestDuplicateTask} disabled={duplicating}>
+            <Copy01Icon className="mr-2 h-3.5 w-3.5" />
+            Duplicate Task
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onOpenTask(task)}>
             <TaskListOpenTaskIcon className="mr-2 h-3.5 w-3.5" />
             Open Task
@@ -2382,6 +2439,16 @@ function InlineActionsCell({
           description="This task will be hidden from the board and lists. You can restore it later from archived items."
           confirmLabel="Archive"
           onConfirm={archiveTask}
+        />
+      ) : null}
+      {duplicateConfirmOpen ? (
+        <ConfirmDialog
+          open={duplicateConfirmOpen}
+          onOpenChange={setDuplicateConfirmOpen}
+          title="Duplicate task and start agent?"
+          description="This task is in an auto-run state. Duplicating it will create a copy in the same state and start the assigned agent automatically."
+          confirmLabel="Duplicate and start agent"
+          onConfirm={duplicateTask}
         />
       ) : null}
     </div>

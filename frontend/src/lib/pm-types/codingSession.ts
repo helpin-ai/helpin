@@ -121,6 +121,9 @@ export interface CodingSession {
   status: AgentRunStatus;
   pause_reason: AgentRunPauseReason;
   error_message?: string;
+  execution_stage?: string;
+  last_heartbeat_at?: string;
+  started_at?: string;
   title: string;
   summary?: string;
   system_prompt?: string;

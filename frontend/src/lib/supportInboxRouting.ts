@@ -131,9 +131,7 @@ export function buildSupportInboxSearch({
     search.tag_ids = listFilters.tagIds.join(',');
   }
   if (listFilters?.aiStates && !stringArraysEqual(listFilters.aiStates, defaultAIStatesForNav(navFilter))) {
-    if (listFilters.aiStates.length > 0) {
-      search.ai = listFilters.aiStates.join(',');
-    }
+    search.ai = listFilters.aiStates.length > 0 ? listFilters.aiStates.join(',') : 'none';
   }
   return search;
 }

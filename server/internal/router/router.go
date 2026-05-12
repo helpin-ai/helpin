@@ -238,6 +238,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
 
+		// Public attachment content. Inline editor images cannot send bearer auth headers,
+		// so this keeps the durable attachment ID as the app-controlled image URL.
+		r.Get("/pm/attachments/{id}/content", h.PMAttachment.Content)
+
 		// ---- Help Center domain verification (Caddy on_demand_tls) ----
 		r.Get("/hc/verify-domain", h.Docs.VerifyDomain)
 
@@ -831,6 +835,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/counts", h.PMTask.CountByState)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/save-as-template", h.PMTask.SaveAsTemplate)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/duplicate", h.PMTask.Duplicate)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}", h.PMTask.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}", h.PMTask.Delete)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/move", h.PMTask.Move)
@@ -864,6 +870,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/attachments", h.PMAttachment.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Patch("/attachments/{id}/confirm", h.PMAttachment.ConfirmUpload)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/attachments", h.PMAttachment.List)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/attachments/{id}/content", h.PMAttachment.Content)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/attachments/{id}", h.PMAttachment.Delete)
 
 				// Objectives — pm.read / pm.edit

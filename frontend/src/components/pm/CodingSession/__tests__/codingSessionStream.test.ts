@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildCodingSessionStreamState } from '../codingSessionStream';
-import type { CodingSessionEvent } from '@/lib/pmTypes';
+import {
+  buildCodingSessionStreamState,
+  mergeCodingSessionStreamSnapshotSeed,
+} from '../codingSessionStream';
+import type { CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 
 function buildEvent(overrides: Partial<CodingSessionEvent> & Pick<CodingSessionEvent, 'id' | 'type' | 'sequence_no'>): CodingSessionEvent {
   return {
@@ -18,6 +21,43 @@ function buildEvent(overrides: Partial<CodingSessionEvent> & Pick<CodingSessionE
 }
 
 describe('buildCodingSessionStreamState', () => {
+  it('keeps live run status messages in persisted transcript order', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'msg-user',
+        type: 'user.message.completed',
+        sequence_no: 2,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'persisted-user-1',
+          content: 'Please start.',
+          role: 'user',
+          sequence_no: 2,
+        },
+      }),
+      buildEvent({
+        id: 'live-status',
+        type: 'assistant.message.completed',
+        sequence_no: 1_700_000_001,
+        payload: {
+          message_id: 'status-1',
+          content: 'Preparing workspace and loading run context.',
+          role: 'assistant',
+          message_type: 'status',
+          sequence_no: 1,
+        },
+      }),
+    ]);
+
+    expect(state.live_assistant_message).toBeNull();
+    expect(state.live_turn_segments).toHaveLength(0);
+    expect(state.transcript_messages.map((message) => message.content)).toEqual([
+      'Preparing workspace and loading run context.',
+      'Please start.',
+    ]);
+    expect(state.transcript_messages[0]?.message_type).toBe('status');
+  });
+
   it('builds a live assistant turn with attached tool execution and sidecar activity', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
@@ -545,6 +585,224 @@ describe('buildCodingSessionStreamState', () => {
         content: ' world',
       },
     });
+  });
+
+  it('preserves hydrated queued content when the matching live assistant start arrives', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-start-late',
+        type: 'assistant.message.started',
+        sequence_no: 1_700_000_100,
+        payload: {
+          message_id: 'assistant-live-queued',
+        },
+      }),
+      buildEvent({
+        id: 'assistant-delta-late',
+        type: 'assistant.message.delta',
+        sequence_no: 1_700_000_101,
+        payload: {
+          message_id: 'assistant-live-queued',
+          text: 'Starting runtime.',
+        },
+      }),
+    ], {
+      live_assistant_message: {
+        message_id: 'assistant-live-queued',
+        content: 'Queued. Preparing workspace.\n',
+        started_at: '2026-03-31T10:00:00Z',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [
+        {
+          segment_id: 'assistant-live-queued:segment:1',
+          kind: 'assistant_message',
+          assistant_message: {
+            message_id: 'assistant-live-queued',
+            content: 'Queued. Preparing workspace.\n',
+            started_at: '2026-03-31T10:00:00Z',
+            status: 'streaming',
+            tool_calls: [],
+          },
+        },
+      ],
+    });
+
+    expect(state.live_assistant_message?.content).toBe('Queued. Preparing workspace.\nStarting runtime.');
+    expect(state.live_turn_segments.map((segment) => (
+      segment.kind === 'assistant_message' ? segment.assistant_message.content : segment.tool_call.tool_name
+    ))).toEqual([
+      'Queued. Preparing workspace.\nStarting runtime.',
+    ]);
+  });
+
+  it('does not duplicate live deltas already covered by a refreshed stream snapshot', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-delta-duplicate-1',
+        type: 'assistant.message.delta',
+        sequence_no: 1_700_000_100,
+        payload: {
+          message_id: 'assistant-live-covered',
+          text: 'Queued. Preparing workspace.\n',
+        },
+      }),
+      buildEvent({
+        id: 'assistant-delta-duplicate-2',
+        type: 'assistant.message.delta',
+        sequence_no: 1_700_000_101,
+        payload: {
+          message_id: 'assistant-live-covered',
+          text: 'Starting runtime.',
+        },
+      }),
+    ], {
+      live_assistant_message: {
+        message_id: 'assistant-live-covered',
+        content: 'Queued. Preparing workspace.\nStarting runtime.',
+        started_at: '2026-03-31T10:00:00Z',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [
+        {
+          segment_id: 'assistant-live-covered:segment:1',
+          kind: 'assistant_message',
+          assistant_message: {
+            message_id: 'assistant-live-covered',
+            content: 'Queued. Preparing workspace.\n',
+            started_at: '2026-03-31T10:00:00Z',
+            status: 'streaming',
+            tool_calls: [],
+          },
+        },
+        {
+          segment_id: 'assistant-live-covered:segment:2',
+          kind: 'assistant_message',
+          assistant_message: {
+            message_id: 'assistant-live-covered',
+            content: 'Starting runtime.',
+            started_at: '2026-03-31T10:00:01Z',
+            status: 'streaming',
+            tool_calls: [],
+          },
+        },
+      ],
+    });
+
+    expect(state.live_assistant_message?.content).toBe('Queued. Preparing workspace.\nStarting runtime.');
+    expect(state.live_turn_segments).toHaveLength(2);
+  });
+
+  it('does not duplicate late queued deltas covered by preserved snapshot segments', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'queued-delta-late',
+        type: 'assistant.message.delta',
+        sequence_no: 1_700_000_100,
+        payload: {
+          message_id: 'assistant-queued',
+          text: 'Queued. Preparing workspace.',
+        },
+      }),
+    ], {
+      live_assistant_message: {
+        message_id: 'assistant-running',
+        content: 'Starting runtime.',
+        started_at: '2026-03-31T10:00:10Z',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [
+        {
+          segment_id: 'assistant-queued:segment:1',
+          kind: 'assistant_message',
+          assistant_message: {
+            message_id: 'assistant-queued',
+            content: 'Queued. Preparing workspace.',
+            started_at: '2026-03-31T10:00:00Z',
+            status: 'streaming',
+            tool_calls: [],
+          },
+        },
+        {
+          segment_id: 'assistant-running:segment:1',
+          kind: 'assistant_message',
+          assistant_message: {
+            message_id: 'assistant-running',
+            content: 'Starting runtime.',
+            started_at: '2026-03-31T10:00:10Z',
+            status: 'streaming',
+            tool_calls: [],
+          },
+        },
+      ],
+    });
+
+    expect(state.live_turn_segments.map((segment) => (
+      segment.kind === 'assistant_message' ? segment.assistant_message.content : segment.tool_call.tool_name
+    ))).toEqual([
+      'Queued. Preparing workspace.',
+      'Starting runtime.',
+    ]);
+  });
+
+  it('merges refreshed stream snapshots without dropping queued segments', () => {
+    const current: CodingSessionStreamSnapshot = {
+      live_assistant_message: {
+        message_id: 'assistant-queued',
+        content: 'Queued. Preparing workspace.',
+        started_at: '2026-03-31T10:00:00Z',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [
+        {
+          segment_id: 'assistant-queued:segment:1',
+          kind: 'assistant_message',
+          assistant_message: {
+            message_id: 'assistant-queued',
+            content: 'Queued. Preparing workspace.',
+            started_at: '2026-03-31T10:00:00Z',
+            status: 'streaming',
+            tool_calls: [],
+          },
+        },
+      ],
+    };
+    const incoming: CodingSessionStreamSnapshot = {
+      live_assistant_message: {
+        message_id: 'assistant-running',
+        content: 'Starting runtime.',
+        started_at: '2026-03-31T10:00:10Z',
+        status: 'streaming',
+        tool_calls: [],
+      },
+      live_turn_segments: [
+        {
+          segment_id: 'assistant-running:segment:1',
+          kind: 'assistant_message',
+          assistant_message: {
+            message_id: 'assistant-running',
+            content: 'Starting runtime.',
+            started_at: '2026-03-31T10:00:10Z',
+            status: 'streaming',
+            tool_calls: [],
+          },
+        },
+      ],
+    };
+
+    const merged = mergeCodingSessionStreamSnapshotSeed(current, incoming);
+
+    expect(merged?.live_turn_segments.map((segment) => (
+      segment.kind === 'assistant_message' ? segment.assistant_message.content : segment.tool_call.tool_name
+    ))).toEqual([
+      'Queued. Preparing workspace.',
+      'Starting runtime.',
+    ]);
+    expect(merged?.live_assistant_message?.message_id).toBe('assistant-running');
   });
 
   it('reconciles task-plan document steps from completed publish and review actions', () => {

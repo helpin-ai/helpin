@@ -52,6 +52,7 @@ type SupportConversation struct {
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
 	LastMessage         *string                    `json:"last_message,omitempty" gorm:"->"`
 	UnreadCount         int                        `json:"unread_count" gorm:"->"`
+	AwaitingReply       bool                       `json:"awaiting_reply" gorm:"->"`
 	CountryCode         *string                    `json:"country_code,omitempty" gorm:"->"`
 	CountryName         *string                    `json:"country_name,omitempty" gorm:"->"`
 	OpenedByDisplayName *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`

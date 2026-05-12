@@ -263,6 +263,22 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     );
   }, []);
 
+  const handleTaskOpened = useCallback((detail: TaskDetail) => {
+    setLoadedTask((current) => ({
+      taskId: detail.task.id,
+      taskDetail: detail,
+      states: current?.states ?? [],
+      recurringSummary: null,
+    }));
+    if (!workspaceSlug) return;
+    openTaskRoute(
+      navigateRef.current as never,
+      locationRef.current,
+      workspaceSlug,
+      detail.task.id,
+    );
+  }, [workspaceSlug]);
+
   const handleStoryArchived = useCallback(
     (archivedTaskId: string) => {
       handleClose();
@@ -287,6 +303,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
         if (!isOpen) handleClose();
       }}
       onTaskUpdated={handleStoryUpdated}
+      onTaskOpened={handleTaskOpened}
       onTaskArchived={handleStoryArchived}
     />
   );

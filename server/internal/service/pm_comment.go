@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
@@ -131,15 +133,24 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		Range:      req.Range,
 		AnchorText: strings.TrimSpace(req.AnchorText),
 	}
-	if err := s.commentRepo.Create(ctx, comment); err != nil {
-		return nil, err
-	}
-
-	// Reassign any pre-uploaded attachments to this comment.
-	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
-		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
-			s.logger.ErrorContext(ctx, "failed to reassign attachments to comment", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+	if s.attachmentRepo != nil {
+		if err := s.commentRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.commentRepo.WithTx(tx).Create(ctx, comment); err != nil {
+				return err
+			}
+			if len(req.AttachmentIDs) == 0 {
+				return nil
+			}
+			if err := s.attachmentRepo.WithTx(tx).ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to create comment with attachments", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+			return nil, err
 		}
+	} else if err := s.commentRepo.Create(ctx, comment); err != nil {
+		return nil, err
 	}
 
 	// Auto-follow task when someone comments.
@@ -414,15 +425,24 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 
 	oldValue := comment.Body
 	comment.Body = strings.TrimSpace(req.Body)
-	if err := s.commentRepo.Update(ctx, comment); err != nil {
-		return nil, err
-	}
-
-	// Reassign any newly uploaded attachments to this comment.
-	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
-		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
-			s.logger.ErrorContext(ctx, "failed to reassign attachments to comment on update", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+	if s.attachmentRepo != nil {
+		if err := s.commentRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.commentRepo.WithTx(tx).Update(ctx, comment); err != nil {
+				return err
+			}
+			if len(req.AttachmentIDs) == 0 {
+				return nil
+			}
+			if err := s.attachmentRepo.WithTx(tx).ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to update comment with attachments", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+			return nil, err
 		}
+	} else if err := s.commentRepo.Update(ctx, comment); err != nil {
+		return nil, err
 	}
 
 	if err := s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), "comment_updated", stringPtr("body"), &oldValue, &comment.Body, nil); err != nil {

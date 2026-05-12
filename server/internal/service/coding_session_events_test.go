@@ -348,6 +348,79 @@ func TestGetCodingSessionIncludesLiveStreamSnapshotForActiveRuns(t *testing.T) {
 	}
 }
 
+func TestGetCodingSessionIncludesStreamSnapshotForFailedRuns(t *testing.T) {
+	db := newInteractiveApprovalTestDB(t)
+
+	runRepo := repository.NewAgentRunRepository(db)
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	snapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
+
+	now := time.Now().UTC()
+	run := &model.AgentRun{
+		ID:             "run-session-failed-snapshot",
+		WorkspaceID:    "ws-1",
+		AgentID:        "agent-1",
+		TargetType:     "story",
+		TargetID:       "story-1",
+		RuntimeKind:    "codex",
+		InvocationMode: model.InvocationModeInteractive,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusFailed,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{}`),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := runRepo.Create(context.Background(), run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	payload, err := model.EncodeCodingSessionStreamSnapshot(&model.CodingSessionStreamSnapshot{
+		CurrentPlan: &model.CodingSessionRunPlan{
+			Plan: []model.CodingSessionRunPlanStep{{
+				Step:   "Draft release note",
+				Status: "in_progress",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("encode snapshot: %v", err)
+	}
+	if err := snapshotRepo.Upsert(context.Background(), &model.CodingSessionStateSnapshot{
+		ID:              "snapshot-failed-1",
+		WorkspaceID:     run.WorkspaceID,
+		RunID:           run.ID,
+		SchemaVersion:   model.CodingSessionStateSnapshotSchemaVersionV1,
+		SnapshotPayload: payload,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}); err != nil {
+		t.Fatalf("upsert snapshot: %v", err)
+	}
+
+	svc := &AgentService{
+		runRepo:             runRepo,
+		runMessageRepo:      runMessageRepo,
+		artifactRepo:        artifactRepo,
+		agentRepo:           agentRepo,
+		sessionSnapshotRepo: snapshotRepo,
+	}
+
+	session, err := svc.GetCodingSession(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("GetCodingSession returned error: %v", err)
+	}
+	if session.StreamStateSnapshot == nil || session.StreamStateSnapshot.CurrentPlan == nil {
+		t.Fatalf("expected failed session stream snapshot, got %#v", session.StreamStateSnapshot)
+	}
+	if got := session.StreamStateSnapshot.CurrentPlan.Plan[0].Step; got != "Draft release note" {
+		t.Fatalf("unexpected recovered plan step %q", got)
+	}
+}
+
 func TestGetCodingSessionIncludesRunErrorMessage(t *testing.T) {
 	db := newInteractiveApprovalTestDB(t)
 

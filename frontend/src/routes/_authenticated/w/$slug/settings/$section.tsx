@@ -1,5 +1,6 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import Profile from '@/pages/Profile'
+import SecuritySettings from '@/pages/SecuritySettings'
 import AccountSettings from '@/pages/AccountSettings'
 import NotificationSettings from '@/pages/NotificationSettings'
 import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport'
@@ -24,6 +25,14 @@ function SettingsSectionRoute() {
     return (
       <SettingsRouteViewport>
         <Profile />
+      </SettingsRouteViewport>
+    )
+  }
+
+  if (section === 'security') {
+    return (
+      <SettingsRouteViewport>
+        <SecuritySettings />
       </SettingsRouteViewport>
     )
   }

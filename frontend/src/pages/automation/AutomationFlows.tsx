@@ -2044,7 +2044,7 @@ export function AutomationFlowsPage({
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6 pb-20">
       <FlowTemplateGallery
         open={galleryOpen}
         onOpenChange={(open) => {

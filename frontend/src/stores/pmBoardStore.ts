@@ -14,7 +14,7 @@ import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmViewService } from '@/lib/services/pmViewService';
 import { getDefaultViews, isDefaultView } from '@/lib/pmDefaultViews';
 import { createDebouncedBoardFetchScheduler } from './pmBoardFetchScheduler';
-import { createPMDnDTraceID, logPMDnD, summarizePMDnDColumn } from '@/lib/pmDnDDebug';
+import { createPMDnDTraceID } from '@/lib/pmDnDDebug';
 
 export type BoardFilters = Record<string, string | undefined>;
 
@@ -97,10 +97,10 @@ interface PMBoardState {
 const cloneColumns = (columns: TaskStateColumn[]) =>
   columns.map((column) => ({
     ...column,
-    tasks: [...column.tasks],
+    tasks: column.tasks.map((task) => ({ ...task })),
     task_groups: column.task_groups?.map((group: TaskGroup) => ({
       ...group,
-      tasks: [...group.tasks],
+      tasks: group.tasks.map((task) => ({ ...task })),
     })) ?? [],
   }));
 
@@ -122,12 +122,14 @@ const sortTasks = (tasks: Task[], stateType?: StateType) => [...tasks].sort((a, 
 
 const isGroupedColumn = (column: Pick<TaskStateColumn, 'state'>) => column.state.state_type === groupedStateType;
 
+const reindexTasksByCurrentOrder = (tasks: Task[]) => tasks.map((task, index) => ({
+  ...task,
+  position: index,
+}));
+
 const reindexLoadedTasks = (column: TaskStateColumn) => {
   if (isGroupedColumn(column)) return;
-  column.tasks = column.tasks.map((task, index) => ({
-    ...task,
-    position: index,
-  }));
+  column.tasks = reindexTasksByCurrentOrder(column.tasks);
 };
 
 const taskMatchesFilters = (task: Task, teamId: string | null, filters: BoardFilters) => {
@@ -223,11 +225,45 @@ const mergeTaskGroups = (existing: TaskGroup[] | undefined, incoming: TaskGroup[
   return merged;
 };
 
-/** Preserve board-enriched display fields from existing task when IDs match. */
-const mergeEnrichedFields = (incoming: Task, existing: Task): Task => ({
-  ...incoming,
-  epic_name: incoming.epic_name ?? (incoming.epic_id === existing.epic_id ? existing.epic_name : undefined),
-});
+const keepWhenMissing = <T,>(incoming: T | undefined, existing: T | undefined) => (
+  incoming === undefined ? existing : incoming
+);
+
+/** Preserve board-enriched display fields when a mutation response only returns the base task. */
+const mergeEnrichedFields = (incoming: Task, existing: Task): Task => {
+  const epicId = keepWhenMissing(incoming.epic_id, existing.epic_id);
+  const sprintId = keepWhenMissing(incoming.sprint_id, existing.sprint_id);
+  const teamId = keepWhenMissing(incoming.team_id, existing.team_id);
+
+  return {
+    ...incoming,
+    epic_id: epicId,
+    sprint_id: sprintId,
+    team_id: teamId,
+    epic_name: incoming.epic_name ?? (epicId === existing.epic_id ? existing.epic_name : undefined),
+    sprint_name: incoming.sprint_name ?? (sprintId === existing.sprint_id ? existing.sprint_name : undefined),
+    team_name: incoming.team_name ?? (teamId === existing.team_id ? existing.team_name : undefined),
+    state_name: incoming.state_name ?? (incoming.workflow_state_id === existing.workflow_state_id ? existing.state_name : undefined),
+    state_type: incoming.state_type ?? (incoming.workflow_state_id === existing.workflow_state_id ? existing.state_type : undefined),
+    state_color: incoming.state_color ?? (incoming.workflow_state_id === existing.workflow_state_id ? existing.state_color : undefined),
+    labels: keepWhenMissing(incoming.labels, existing.labels),
+    contacts: keepWhenMissing(incoming.contacts, existing.contacts),
+    companies: keepWhenMissing(incoming.companies, existing.companies),
+    deals: keepWhenMissing(incoming.deals, existing.deals),
+    support_conversations: keepWhenMissing(incoming.support_conversations, existing.support_conversations),
+    is_blocked_by_task: keepWhenMissing(incoming.is_blocked_by_task, existing.is_blocked_by_task),
+    blocked_by_count: keepWhenMissing(incoming.blocked_by_count, existing.blocked_by_count),
+    blocked_by_tasks: keepWhenMissing(incoming.blocked_by_tasks, existing.blocked_by_tasks),
+    is_blocking_other_task: keepWhenMissing(incoming.is_blocking_other_task, existing.is_blocking_other_task),
+    blocking_count: keepWhenMissing(incoming.blocking_count, existing.blocking_count),
+    blocking_tasks: keepWhenMissing(incoming.blocking_tasks, existing.blocking_tasks),
+    latest_run_id: keepWhenMissing(incoming.latest_run_id, existing.latest_run_id),
+    latest_run_agent_id: keepWhenMissing(incoming.latest_run_agent_id, existing.latest_run_agent_id),
+    latest_run_status: keepWhenMissing(incoming.latest_run_status, existing.latest_run_status),
+    latest_run_pause_reason: keepWhenMissing(incoming.latest_run_pause_reason, existing.latest_run_pause_reason),
+    latest_run_at: keepWhenMissing(incoming.latest_run_at, existing.latest_run_at),
+  };
+};
 
 const upsertLoadedTask = (column: TaskStateColumn, task: Task) => {
   const nextTasks = sortTasks([
@@ -700,20 +736,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       return s.workflow?.workflow.id !== moveCtx.workflowId || s.teamId !== moveCtx.teamId;
     };
 
-    logPMDnD('store.move.begin', {
-      trace_id: traceID,
-      workspace_id: workspaceId,
-      task_id: taskId,
-      from_state_id: fromStateId,
-      to_state_id: toStateId,
-      to_index: toIndex,
-      target_state_type: targetStateType,
-      from_column: summarizePMDnDColumn(snapshot.find((column) => column.state.id === fromStateId)),
-      to_column: summarizePMDnDColumn(snapshot.find((column) => column.state.id === toStateId)),
-    });
-
     // Always optimistically move the card immediately
-    let optimisticColumns: TaskStateColumn[] | null = null;
     set((state) => {
       const columns = cloneColumns(state.columns);
       const fromCol = columns.find((column) => column.state.id === fromStateId);
@@ -723,7 +746,6 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       const sourceIndex = fromCol.tasks.findIndex((candidate) => candidate.id === taskId);
       if (sourceIndex === -1) return state;
       if (fromStateId === toStateId && fromCol.state.state_type === 'done') {
-        optimisticColumns = columns;
         return state;
       }
 
@@ -731,10 +753,12 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       if (!moving) return state;
 
       moving.workflow_state_id = toStateId;
+      moving.state_name = toCol.state.name;
+      moving.state_type = toCol.state.state_type;
+      moving.state_color = toCol.state.color;
       if (fromStateId === toStateId) {
         fromCol.tasks.splice(toIndex, 0, moving);
         reindexLoadedTasks(fromCol);
-        optimisticColumns = columns;
         return { columns };
       }
 
@@ -746,8 +770,12 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         moving.completed_at = new Date().toISOString();
         moving.moved_at = moving.completed_at;
         moving.completed = true;
-        moving.position = toCol.tasks.length;
-        toCol.tasks = sortTasks([...toCol.tasks, moving], toCol.state.state_type);
+        const insertIndex = Math.max(0, Math.min(toIndex, toCol.tasks.length));
+        moving.position = insertIndex;
+        toCol.tasks.splice(insertIndex, 0, moving);
+        toCol.tasks = reindexTasksByCurrentOrder(sortTasks(toCol.tasks, toCol.state.state_type));
+        toCol.task_groups = [];
+        toCol.has_more = toCol.tasks.length < toCol.task_count;
       } else {
         // Clear done metadata when moving out of done
         if (moving.completed_at) {
@@ -757,62 +785,23 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         toCol.tasks.splice(toIndex, 0, moving);
         reindexLoadedTasks(toCol);
       }
-      optimisticColumns = columns;
       return { columns };
     });
-
-    if (fromStateId === toStateId && targetStateType === 'done') {
-      logPMDnD('store.move.skip_done_reorder', {
-        trace_id: traceID,
-        task_id: taskId,
-        state_id: fromStateId,
-      });
-    } else if (optimisticColumns) {
-      const loggedColumns = optimisticColumns as TaskStateColumn[];
-      logPMDnD('store.move.optimistic_applied', {
-        trace_id: traceID,
-        task_id: taskId,
-        from_column: summarizePMDnDColumn(loggedColumns.find((column) => column.state.id === fromStateId)),
-        to_column: summarizePMDnDColumn(loggedColumns.find((column) => column.state.id === toStateId)),
-      });
-    }
 
     if (fromStateId === toStateId) {
       if (targetStateType === 'done') {
         return true;
       }
       const reorderPayload = { position: toIndex, debug_trace_id: traceID };
-      logPMDnD('store.move.reorder_request', {
-        trace_id: traceID,
-        task_id: taskId,
-        payload: reorderPayload,
-      });
       const reorderRes = await pmTaskService.reorder(workspaceId, taskId, reorderPayload);
       if (reorderRes.error && !contextChanged()) {
-        logPMDnD('store.move.reorder_error', {
-          trace_id: traceID,
-          task_id: taskId,
-          error: reorderRes.error,
-        });
         set({ columns: snapshot, error: reorderRes.error ?? 'Failed to reorder task' });
         return false;
-      } else {
-        logPMDnD('store.move.reorder_success', {
-          trace_id: traceID,
-          task_id: taskId,
-        });
       }
       return true;
     }
 
-    const movePayload = targetStateType === 'done'
-      ? { state_id: toStateId, debug_trace_id: traceID }
-      : { state_id: toStateId, position: toIndex, debug_trace_id: traceID };
-    logPMDnD('store.move.move_request', {
-      trace_id: traceID,
-      task_id: taskId,
-      payload: movePayload,
-    });
+    const movePayload = { state_id: toStateId, position: toIndex, debug_trace_id: traceID };
     const moveRes = await pmTaskService.move(
       workspaceId,
       taskId,
@@ -820,11 +809,6 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     );
     if (moveRes.error) {
       if (!contextChanged()) {
-        logPMDnD('store.move.move_error', {
-          trace_id: traceID,
-          task_id: taskId,
-          error: moveRes.error,
-        });
         set({ columns: snapshot, error: moveRes.error ?? 'Failed to move task' });
       }
       return false;
@@ -835,19 +819,6 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
 
     const updatedTask = moveRes.data?.task;
     if (updatedTask) {
-      logPMDnD('store.move.move_success', {
-        trace_id: traceID,
-        task_id: taskId,
-        response_task: {
-          id: updatedTask.id,
-          workflow_state_id: updatedTask.workflow_state_id,
-          position: updatedTask.position,
-          completed: updatedTask.completed,
-          completed_at: updatedTask.completed_at,
-          moved_at: updatedTask.moved_at,
-          updated_at: updatedTask.updated_at,
-        },
-      });
       set((state) => {
         const columns = cloneColumns(state.columns);
         const target = columns.find((column) => column.state.id === toStateId);
@@ -855,7 +826,13 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
         const idx = target.tasks.findIndex((candidate) => candidate.id === taskId);
         if (idx >= 0) {
           target.tasks[idx] = mergeEnrichedFields(updatedTask, target.tasks[idx]);
-          target.tasks = sortTasks(target.tasks, target.state.state_type);
+          target.tasks = target.state.state_type === 'done'
+            ? reindexTasksByCurrentOrder(sortTasks(target.tasks, target.state.state_type))
+            : sortTasks(target.tasks, target.state.state_type);
+          if (target.state.state_type === 'done') {
+            target.task_groups = [];
+            target.has_more = target.tasks.length < target.task_count;
+          }
         }
         return { columns };
       });
@@ -865,13 +842,6 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
     const fromTruncated = snapshot.find((c) => c.state.id === fromStateId)?.has_more;
     const toTruncated = snapshot.find((c) => c.state.id === toStateId)?.has_more;
     if (fromTruncated || toTruncated || targetStateType === 'done') {
-      logPMDnD('store.move.refresh_requested', {
-        trace_id: traceID,
-        task_id: taskId,
-        from_truncated: fromTruncated,
-        to_truncated: toTruncated,
-        target_state_type: targetStateType,
-      });
       get().refreshBoard();
     }
     return true;

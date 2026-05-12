@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Collapsible } from 'radix-ui';
 import { formatDistanceToNow } from 'date-fns';
@@ -8,7 +8,6 @@ import {
   BotIcon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  ArrowUpRight01Icon,
   ArrowExpandIcon,
   HelpCircleIcon,
   LayoutGridIcon,
@@ -1485,14 +1484,6 @@ function lastRunStatusClass(run?: AgentRun) {
   }
 }
 
-function attentionDotClass(agent: Agent, stats?: AgentRunStats) {
-  if (needsModelConfiguration(agent)) return 'bg-amber-500';
-  if (stats?.attentionRunCount) return 'bg-amber-500';
-  if (isFailingAgent(stats)) return 'bg-rose-500';
-  if (isUnusedAgent(stats)) return 'bg-amber-500';
-  return 'bg-emerald-500';
-}
-
 function attentionRunPriority(run: AgentRun) {
   const displayStatus = getAgentRunDisplayStatus(run);
   if (displayStatus === 'awaiting_approval') return 3;
@@ -1548,33 +1539,83 @@ function AttentionRunBadge({
   );
 }
 
-function FlowRefs({
-  usage,
-  workspaceSlug,
+function AgentStatusBadge({
+  stats,
+  onOpenRun,
 }: {
-  usage?: AgentTriggerUsageSummary | null;
-  workspaceSlug?: string;
+  stats?: AgentRunStats;
+  onOpenRun: (runId: string) => void;
 }) {
-  const items = usage?.items ?? [];
-  if (items.length === 0) {
-    return <span className="text-xs text-muted-foreground">Not used by a flow yet</span>;
+  if (stats?.attentionRun) {
+    return <AttentionRunBadge stats={stats} onOpenRun={onOpenRun} />;
   }
 
-  const [first, ...rest] = items;
-  const href = resolveManagePath(first.manage_path, workspaceSlug) ?? buildAutomationFlowsPath(workspaceSlug);
+  if (stats?.lastRun) {
+    const label = lastRunStatusLabel(stats.lastRun);
+    return (
+      <Badge
+        asChild
+        variant="outline"
+        className={cn('h-5 px-1.5 text-[10px]', lastRunStatusClass(stats.lastRun))}
+      >
+        <button
+          type="button"
+          title={`${label}. Open latest run.`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenRun(stats.lastRun!.id);
+          }}
+        >
+          {label}
+        </button>
+      </Badge>
+    );
+  }
 
   return (
-    <div className="min-w-0 text-xs text-muted-foreground">
-      <a
-        href={href}
-        className="inline-flex max-w-full items-center gap-1 truncate text-foreground underline decoration-border underline-offset-4 hover:text-primary"
-        onClick={(event) => event.stopPropagation()}
+    <Badge variant="outline" className="h-5 border-border/70 bg-muted/30 px-1.5 text-[10px] text-muted-foreground">
+      Idle
+    </Badge>
+  );
+}
+
+function FlowRefs({
+  usage,
+}: {
+  usage?: AgentTriggerUsageSummary | null;
+}) {
+  const items = usage?.items ?? [];
+  const count = items.length;
+  if (items.length === 0) {
+    return <span className="text-xs text-muted-foreground">0 flows</span>;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex w-fit items-center rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted">
+          {count} {count === 1 ? 'flow' : 'flows'}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="start"
+        className="z-[1000] max-w-64 items-start py-2"
       >
-        <span className="truncate">{first.title}</span>
-        <ArrowUpRight01Icon className="h-3 w-3 shrink-0" />
-      </a>
-      {rest.length > 0 ? <span className="ml-1 text-muted-foreground">+{rest.length}</span> : null}
-    </div>
+        <div className="space-y-1">
+          <div className="space-y-0.5">
+            {items.slice(0, 8).map((item) => (
+              <p key={item.id} className="truncate text-xs text-background/90">
+                {item.title}
+              </p>
+            ))}
+          </div>
+          {items.length > 8 ? (
+            <p className="text-[11px] text-background/70">+{items.length - 8} more</p>
+          ) : null}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1605,7 +1646,6 @@ function AgentCard({
   agent,
   stats,
   usage,
-  workspaceSlug,
   presets,
   onOpen,
   onOpenRun,
@@ -1615,7 +1655,6 @@ function AgentCard({
   agent: Agent;
   stats?: AgentRunStats;
   usage?: AgentTriggerUsageSummary | null;
-  workspaceSlug?: string;
   presets: AgentPresetDefinition[];
   onOpen: (agent: Agent) => void;
   onOpenRun: (runId: string) => void;
@@ -1639,11 +1678,10 @@ function AgentCard({
           <AgentAvatar agent={agent} className="h-10 w-10 rounded-none border-0 bg-transparent shadow-none" genericBare />
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={cn('h-2 w-2 rounded-full', attentionDotClass(agent, stats))} />
               <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
+              <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
               {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
-              <AttentionRunBadge stats={stats} onOpenRun={onOpenRun} />
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
@@ -1668,25 +1706,20 @@ function AgentCard({
               <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
               <span className="text-sm">
                 <span className="font-mono text-foreground">{stats?.recentRuns ?? 0}</span>
-                <span className="text-muted-foreground"> runs · 7d</span>
+                <span className="text-muted-foreground"> runs in 7d</span>
               </span>
             </div>
-            {stats?.lastRun ? (
-              <Badge variant="outline" className={cn('text-[11px]', lastRunStatusClass(stats.lastRun))}>
-                {lastRunStatusLabel(stats.lastRun)}
-              </Badge>
-            ) : null}
           </div>
           {stats?.lastRun ? (
-            <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
+            <p className="font-mono text-[11px] text-muted-foreground">Last run {formatLastRunTime(stats.lastRun)}</p>
           ) : (
             <p className="text-[11px] text-muted-foreground">No runs in the last 7 days.</p>
           )}
         </div>
 
         <div className="space-y-1">
-          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Used By</p>
-          <FlowRefs usage={usage} workspaceSlug={workspaceSlug} />
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Used in flows</p>
+          <FlowRefs usage={usage} />
         </div>
 
         {canEdit ? (
@@ -1729,35 +1762,134 @@ function AgentCard({
 // AgentRow (list view)
 // ---------------------------------------------------------------------------
 
-function AgentRow({
+const AGENTS_LIST_GRID_CLASS =
+  'lg:grid-cols-[minmax(12rem,1.6fr)_7.25rem_6rem_6.5rem_8.25rem_6.75rem_9rem] xl:grid-cols-[minmax(15rem,1.7fr)_8.5rem_6.75rem_7rem_9rem_8rem_9.5rem]';
+
+export function AgentsListTable({ children }: { children: ReactNode }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border/70 bg-card">
+      <div className="min-w-[64rem] xl:min-w-[72rem]">{children}</div>
+    </div>
+  );
+}
+
+export function AgentsListHeader() {
+  return (
+    <div
+      className={cn(
+        'hidden items-center gap-4 border-b border-border/70 bg-muted/20 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid',
+        AGENTS_LIST_GRID_CLASS,
+      )}
+    >
+      <div>Agent</div>
+      <div>Model</div>
+      <div>Mode</div>
+      <div>Runs · 7d</div>
+      <div>Last run</div>
+      <div>Used in flows</div>
+      <div className="text-right">Action</div>
+    </div>
+  );
+}
+
+export function AgentActions({
   agent,
   stats,
-  usage,
   workspaceSlug,
-  presets,
-  onOpen,
   onOpenRun,
   onRunNow,
   canEdit,
 }: {
   agent: Agent;
   stats?: AgentRunStats;
-  usage?: AgentTriggerUsageSummary | null;
   workspaceSlug?: string;
+  onOpenRun: (runId: string) => void;
+  onRunNow: (agent: Agent) => void;
+  canEdit: boolean;
+}) {
+  const canRunNow = !agent.is_system && canEdit;
+  const runsPath = buildAutomationActivityPath(workspaceSlug, { page: 1, agent_id: agent.id });
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      {canRunNow ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 px-2.5 text-xs"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRunNow(agent);
+          }}
+        >
+          <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
+          Run now
+        </Button>
+      ) : null}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            aria-label="More agent actions"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <MoreHorizontalIcon className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {stats?.lastRun ? (
+            <DropdownMenuItem onClick={() => onOpenRun(stats.lastRun!.id)}>
+              Open latest run
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem asChild>
+            <a href={runsPath}>View runs</a>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function AgentRow({
+  agent,
+  stats,
+  usage,
+  presets,
+  onOpen,
+  onOpenRun,
+  onRunNow,
+  canEdit,
+  workspaceSlug,
+}: {
+  agent: Agent;
+  stats?: AgentRunStats;
+  usage?: AgentTriggerUsageSummary | null;
   presets: AgentPresetDefinition[];
   onOpen: (agent: Agent) => void;
   onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
   canEdit: boolean;
+  workspaceSlug?: string;
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
   const attention = needsAttention(agent, stats);
+  const invocationLabel = INVOCATION_MODE_LABELS[agent.default_invocation_mode];
 
   return (
     <div
       className={cn(
-        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/30 lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_112px]',
+        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3.5 transition-colors last:border-b-0 hover:bg-muted/25',
+        AGENTS_LIST_GRID_CLASS,
         attention && 'bg-amber-500/[0.03]',
       )}
       onClick={() => onOpen(agent)}
@@ -1768,13 +1900,13 @@ function AgentRow({
           <AgentAvatar agent={agent} className="h-8 w-8 rounded-none border-0 bg-transparent shadow-none" genericBare />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={cn('h-2 w-2 rounded-full', attentionDotClass(agent, stats))} />
               <span className="truncate text-sm font-medium">{agent.name}</span>
-              {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
-              {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
-              <AttentionRunBadge stats={stats} onOpenRun={onOpenRun} />
             </div>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">{role}</p>
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="truncate text-xs text-muted-foreground">{role}</span>
+              {agent.is_system ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">System</Badge> : null}
+              {agent.source_template_key ? <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Template</Badge> : null}
+            </div>
           </div>
         </div>
       </div>
@@ -1786,55 +1918,42 @@ function AgentRow({
 
       <div className="space-y-1">
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Mode</p>
-        <span className="text-sm text-muted-foreground">{INVOCATION_MODE_LABELS[agent.default_invocation_mode]}</span>
+        <span className="text-sm text-muted-foreground">{invocationLabel}</span>
       </div>
 
-      <div className="space-y-1">
+      <div className="min-w-0 space-y-1">
         <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Runs · 7d</p>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <RunBars5 statuses={stats?.lastFiveStatuses ?? []} />
-          <span className="font-mono text-sm">{stats?.recentRuns ?? 0}</span>
+          <span className="text-sm">
+            <span className="font-mono text-foreground">{stats?.recentRuns ?? 0}</span>
+          </span>
         </div>
       </div>
 
-      <div className="space-y-1">
-        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Last Run</p>
+      <div className="min-w-0 space-y-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Last run</p>
+        <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
         {stats?.lastRun ? (
-          <>
-            <Badge variant="outline" className={cn('text-[11px]', lastRunStatusClass(stats.lastRun))}>
-              {lastRunStatusLabel(stats.lastRun)}
-            </Badge>
-            <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
-          </>
+          <p className="font-mono text-[11px] text-muted-foreground">{formatLastRunTime(stats.lastRun)}</p>
         ) : (
-          <p className="text-xs text-muted-foreground">Never</p>
+          <p className="text-[11px] text-muted-foreground">Never</p>
         )}
       </div>
 
       <div className="space-y-1">
-        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Used By</p>
-        <FlowRefs usage={usage} workspaceSlug={workspaceSlug} />
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:hidden">Used in flows</p>
+        <FlowRefs usage={usage} />
       </div>
 
-      <div className="flex items-start justify-end text-muted-foreground">
-        {!agent.is_system && canEdit ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 px-2.5 text-xs"
-            onClick={(event) => {
-              event.stopPropagation();
-              onRunNow(agent);
-            }}
-          >
-            <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
-            Run now
-          </Button>
-        ) : (
-          <ArrowRight01Icon className="mt-0.5 h-4 w-4" />
-        )}
-      </div>
+      <AgentActions
+        agent={agent}
+        stats={stats}
+        workspaceSlug={workspaceSlug}
+        onOpenRun={onOpenRun}
+        onRunNow={onRunNow}
+        canEdit={canEdit}
+      />
     </div>
   );
 }
@@ -3077,12 +3196,12 @@ export function AgentsPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-4">
+    <div className="max-w-7xl mx-auto space-y-4 pb-20">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">Agents</h1>
           <p className="text-sm text-muted-foreground">
-            Your fleet of built-in and custom agents. See what each one does, whether it is configured, and which flows depend on it.
+            Built-in and custom agents for manual runs and automated flows.
           </p>
         </div>
         {sortedAgents.length > 0 && (
@@ -3158,31 +3277,23 @@ export function AgentsPage() {
 
       {/* ---- Agent list / grid ---- */}
       {sortedAgents.length > 0 && viewMode === 'list' && (
-        <div className="rounded-xl border border-border/70 overflow-hidden">
-          <div className="hidden items-center gap-4 border-b border-border/70 bg-muted/30 px-4 py-2 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground lg:grid lg:grid-cols-[minmax(0,3.2fr)_minmax(170px,0.95fr)_110px_120px_150px_170px_112px]">
-            <div>Agent · Role</div>
-            <div>Model</div>
-            <div>Mode</div>
-            <div>Runs · 7d</div>
-            <div>Last run</div>
-            <div>Used by</div>
-            <div className="text-right">Action</div>
-          </div>
+        <AgentsListTable>
+          <AgentsListHeader />
           {sortedAgents.map((agent) => (
             <AgentRow
               key={agent.id}
               agent={agent}
               stats={runStats[agent.id]}
               usage={agentUsageMap[agent.id]}
-              workspaceSlug={workspace?.slug}
               presets={presets}
               onOpen={openEditDialog}
               onOpenRun={openRunDetails}
               onRunNow={openRunNowDialog}
               canEdit={canEdit}
+              workspaceSlug={workspace?.slug}
             />
           ))}
-        </div>
+        </AgentsListTable>
       )}
 
       {sortedAgents.length > 0 && viewMode === 'cards' && (
@@ -3193,7 +3304,6 @@ export function AgentsPage() {
               agent={agent}
               stats={runStats[agent.id]}
               usage={agentUsageMap[agent.id]}
-              workspaceSlug={workspace?.slug}
               presets={presets}
               onOpen={openEditDialog}
               onOpenRun={openRunDetails}

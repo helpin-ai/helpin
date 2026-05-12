@@ -62,10 +62,14 @@ func CoverageDailyAnalysisWorkflow(ctx workflow.Context) error {
 	windowStart := windowEnd.Add(-24 * time.Hour)
 	selector := workflow.NewSelector(ctx)
 	inflight := 0
+	var childErr error
 	for _, workspaceID := range workspaceIDs {
 		if inflight >= CoverageAnalysisMaxWorkspaceChildren {
 			selector.Select(ctx)
 			inflight--
+			if childErr != nil {
+				break
+			}
 		}
 		input := CoverageWorkspaceAnalysisInput{
 			WorkspaceID: workspaceID,
@@ -76,12 +80,19 @@ func CoverageDailyAnalysisWorkflow(ctx workflow.Context) error {
 			WorkflowID: "coverage-analysis-ws-" + workspaceID,
 		})
 		future := workflow.ExecuteChildWorkflow(childCtx, CoverageWorkspaceAnalysisWorkflowType, input)
-		selector.AddFuture(future, func(workflow.Future) {})
+		selector.AddFuture(future, func(f workflow.Future) {
+			if err := f.Get(ctx, nil); err != nil && childErr == nil {
+				childErr = err
+			}
+		})
 		inflight++
 	}
 	for inflight > 0 {
 		selector.Select(ctx)
 		inflight--
+	}
+	if childErr != nil {
+		return childErr
 	}
 	return nil
 }

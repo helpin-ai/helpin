@@ -18,7 +18,7 @@ import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { RecurringTemplateBadge } from '@/components/pm/RecurringTemplateBadge';
 import { UserAvatar } from './UserAvatar';
-import { getSortableTaskCardStyle, animateCardLayoutChanges } from './TaskCard.sortable';
+import { getSortableTaskCardStyle, animateCardLayoutChanges, shouldIgnoreTaskCardDrag } from './TaskCard.sortable';
 import type { Agent, Priority, Severity, Task } from '@/lib/pmTypes';
 import type { AssignableMember } from '@/lib/types';
 import { EstimatePicker, formatEstimateDisplay } from '@/components/pm/EstimatePicker';
@@ -174,16 +174,39 @@ function TaskCardComponent({
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id, animateLayoutChanges: animateCardLayoutChanges });
+  } = useSortable({ id: task.id, disabled: isOverlay, animateLayoutChanges: animateCardLayoutChanges });
 
   const style = getSortableTaskCardStyle({
     transform,
     transition,
     isDragging,
   });
+  const setCardNodeRef = useCallback(
+    (node: HTMLElement | null) => {
+      setNodeRef(node);
+      if (!isOverlay) {
+        setActivatorNodeRef(node);
+      }
+    },
+    [isOverlay, setActivatorNodeRef, setNodeRef],
+  );
+  const cardDragListeners = useMemo(() => {
+    if (isOverlay || !listeners) return undefined;
+    const pointerDown = listeners.onPointerDown as ((event: React.PointerEvent<HTMLElement>) => void) | undefined;
+    return {
+      ...listeners,
+      onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+        if (shouldIgnoreTaskCardDrag(event.target, event.currentTarget)) {
+          return;
+        }
+        pointerDown?.(event);
+      },
+    };
+  }, [isOverlay, listeners]);
 
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [severityOpen, setSeverityOpen] = useState(false);
@@ -353,24 +376,28 @@ function TaskCardComponent({
 
   return (
     <article
-      ref={setNodeRef}
+      ref={setCardNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
+      data-pm-task-card="true"
+      data-pm-task-card-id={task.id}
+      {...(!isOverlay ? attributes : {})}
+      {...(cardDragListeners ?? {})}
       role="button"
       tabIndex={0}
       onClick={() => onOpen?.(task)}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onOpen?.(task);
         }
       }}
       className={cn(
-        'group/card relative shrink-0 cursor-pointer rounded-lg border border-border/60 bg-card shadow-sm transition-all overflow-hidden',
+        'group/card relative shrink-0 rounded-lg border border-border/60 bg-card shadow-sm transition-all overflow-hidden',
+        !isOverlay && 'cursor-grab touch-none select-none active:cursor-grabbing',
         'hover:border-border hover:shadow-md',
         isDragging && 'opacity-50',
-        isOverlay && 'ring-1 ring-primary/30 shadow-lg',
+        isOverlay && 'opacity-80 ring-1 ring-primary/30 shadow-2xl',
         showStateBadge && task.state_color && 'flex flex-row',
       )}
     >
@@ -613,7 +640,7 @@ function TaskCardComponent({
             </Tooltip>
           )}
           {vis.estimate && task.estimate != null && (workspaceId ? (
-            <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            <span data-no-task-card-drag="true" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
               <EstimatePicker
                 value={task.estimate != null ? String(task.estimate) : ''}
                 teamId={task.team_id}
@@ -628,7 +655,7 @@ function TaskCardComponent({
           ) : null)}
         </div>
         <span className="flex-1" />
-        <div data-task-card-footer-owners="true" className="flex min-w-0 items-center gap-1.5">
+        <div data-task-card-footer-owners="true" data-no-task-card-drag="true" className="flex min-w-0 items-center gap-1.5">
           {/* Assignee avatar / assign button */}
           {vis.assignee && (assignableMembers && workspaceId ? (
             <MultiMemberPickerPopover
@@ -752,23 +779,75 @@ function TaskCardComponent({
   );
 }
 
+function stringArrayEqual(prev: string[] | undefined, next: string[] | undefined) {
+  if (prev === next) return true;
+  if (!prev || !next) return prev === next;
+  if (prev.length !== next.length) return false;
+  return prev.every((value, index) => value === next[index]);
+}
+
+function labelsEqual(prev: Task['labels'], next: Task['labels']) {
+  if (prev === next) return true;
+  if (!prev || !next) return prev === next;
+  if (prev.length !== next.length) return false;
+  return prev.every((label, index) => {
+    const nextLabel = next[index];
+    return label.id === nextLabel.id
+      && label.name === nextLabel.name
+      && label.color === nextLabel.color
+      && label.archived === nextLabel.archived;
+  });
+}
+
+function dependencyTasksEqual(prev: Task['blocked_by_tasks'], next: Task['blocked_by_tasks']) {
+  if (prev === next) return true;
+  if (!prev || !next) return prev === next;
+  if (prev.length !== next.length) return false;
+  return prev.every((task, index) => {
+    const nextTask = next[index];
+    return task.id === nextTask.id
+      && task.task_key === nextTask.task_key
+      && task.name === nextTask.name
+      && task.completed === nextTask.completed;
+  });
+}
+
+function renderedTaskFieldsEqual(prev: Task, next: Task) {
+  if (prev === next) return true;
+
+  return prev.id === next.id
+    && prev.updated_at === next.updated_at
+    && prev.name === next.name
+    && prev.task_type === next.task_type
+    && prev.deadline === next.deadline
+    && prev.completed === next.completed
+    && prev.severity === next.severity
+    && prev.priority === next.priority
+    && prev.estimate === next.estimate
+    && prev.team_id === next.team_id
+    && stringArrayEqual(prev.owner_member_ids, next.owner_member_ids)
+    && prev.blocked === next.blocked
+    && prev.blocker === next.blocker
+    && prev.blocked_by_count === next.blocked_by_count
+    && dependencyTasksEqual(prev.blocked_by_tasks, next.blocked_by_tasks)
+    && prev.recurring_template_id === next.recurring_template_id
+    && prev.recurring_occurrence_number === next.recurring_occurrence_number
+    && prev.state_color === next.state_color
+    && prev.state_name === next.state_name
+    && prev.state_type === next.state_type
+    && prev.epic_name === next.epic_name
+    && prev.sprint_name === next.sprint_name
+    && labelsEqual(prev.labels, next.labels)
+    && prev.latest_run_id === next.latest_run_id
+    && prev.latest_run_agent_id === next.latest_run_agent_id
+    && prev.latest_run_status === next.latest_run_status
+    && prev.latest_run_pause_reason === next.latest_run_pause_reason
+    && prev.latest_run_at === next.latest_run_at;
+}
+
 export const TaskCard = memo(TaskCardComponent, (prev, next) => {
-  // Fast path: same object reference means no change
-  if (prev.task !== next.task) {
-    // Different reference — check if the task actually changed.
-    // latest_run_* fields are populated server-side and may shift without
-    // bumping updated_at, so compare them explicitly.
-    if (
-      prev.task.id !== next.task.id
-      || prev.task.updated_at !== next.task.updated_at
-      || prev.task.latest_run_id !== next.task.latest_run_id
-      || prev.task.latest_run_agent_id !== next.task.latest_run_agent_id
-      || prev.task.latest_run_status !== next.task.latest_run_status
-      || prev.task.latest_run_pause_reason !== next.task.latest_run_pause_reason
-      || prev.task.latest_run_at !== next.task.latest_run_at
-    ) return false;
-  }
-  return prev.isOverlay === next.isOverlay
+  return renderedTaskFieldsEqual(prev.task, next.task)
+    && prev.isOverlay === next.isOverlay
     && prev.teamName === next.teamName
     && prev.showStateBadge === next.showStateBadge;
 });

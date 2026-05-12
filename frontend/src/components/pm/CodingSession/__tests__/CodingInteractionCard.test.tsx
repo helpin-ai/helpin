@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CodingInteractionCard } from '../CodingInteractionCard';
+import type { PublishedPreview } from '@/components/pm/runPreviews';
 import type { CodingSessionInteraction } from '@/lib/pmTypes';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -62,6 +63,12 @@ function buildInteraction(overrides: Partial<CodingSessionInteraction> = {}): Co
 function renderCard(
   onResolve: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void,
   interaction?: CodingSessionInteraction,
+  options: {
+    availablePreviewPanelKey?: string | null;
+    attachedPreview?: PublishedPreview | null;
+    onViewPreview?: (panelKey: string) => void;
+    compact?: boolean;
+  } = {},
 ) {
   act(() => {
     root.render(
@@ -69,6 +76,10 @@ function renderCard(
         interaction={interaction ?? buildInteraction()}
         acting={null}
         onResolve={onResolve}
+        compact={options.compact}
+        availablePreviewPanelKey={options.availablePreviewPanelKey}
+        attachedPreview={options.attachedPreview}
+        onViewPreview={options.onViewPreview}
       />,
     );
   });
@@ -79,6 +90,16 @@ function clickButton(label: string) {
   expect(button).toBeTruthy();
   act(() => {
     button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+function typeTextarea(value: string) {
+  const textarea = container.querySelector('textarea');
+  expect(textarea).toBeTruthy();
+  act(() => {
+    const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+    valueSetter?.call(textarea, value);
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 
@@ -206,5 +227,170 @@ describe('CodingInteractionCard', () => {
     expect(container.querySelector('pre code')?.textContent).toContain('setError(err.response.data.detail)');
     expect(container.textContent).not.toContain('`{message, errors}`');
     expect(container.textContent).not.toContain('```tsx');
+  });
+
+  it('expands approval preview inline and exposes full preview from the approval header', () => {
+    const onResolve = vi.fn();
+    const onViewPreview = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve planning document',
+      summary: 'Review the proposed task document.',
+      request_payload: {
+        phase: 'task_doc',
+        preview_panel_key: 'task_plan_doc',
+        title: 'Approve planning document',
+      },
+    }), {
+      availablePreviewPanelKey: 'task_plan_doc',
+      attachedPreview: {
+        panelKey: 'task_plan_doc',
+        title: 'Task Planning Document',
+        format: 'markdown',
+        content: [
+          '# Outcome',
+          'Short proposed plan.',
+          '',
+          'This approval preview should show enough context for the reviewer to understand the decision without opening a separate panel. It summarizes the proposed implementation, the validation path, and the expected risk level. The collapsed state keeps the approval card compact while preserving the first useful paragraphs. Additional detail follows after the initial context so the reviewer can expand only when they need the rest of the document.',
+          '',
+          'The implementation keeps decision controls close to the document summary and avoids forcing a round trip to the full preview for routine approvals.',
+          '',
+          '## Open questions',
+          'Should the fix include a migration?',
+        ].join('\n'),
+        replace: true,
+        surroundingText: '',
+      },
+      onViewPreview,
+      compact: true,
+    });
+
+    expect(container.firstElementChild?.className).toContain('border-amber-400/60');
+    expect(container.firstElementChild?.className).not.toContain('border-l-2');
+    expect(container.textContent).not.toContain('task_doc approval');
+    expect(container.textContent).not.toContain('Review the proposed task document.');
+    expect(container.textContent).toContain('Document preview');
+    expect(container.textContent).toContain('Short proposed plan.');
+    expect(container.textContent).not.toContain('Should the fix include a migration?');
+    expect(container.textContent).toContain('Open full preview');
+    expect(container.querySelector('[data-coding-session-approval-preview-fade]')).toBeTruthy();
+
+    clickButton('Show full preview');
+
+    expect(container.textContent).toContain('Should the fix include a migration?');
+    expect(container.textContent).toContain('Collapse preview');
+    expect(container.querySelector('[data-coding-session-approval-preview-fade]')).toBeNull();
+
+    clickButton('Open full preview');
+
+    expect(onViewPreview).toHaveBeenCalledWith('task_plan_doc');
+  });
+
+  it('renders structured approval JSON previews without dumping raw JSON first', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve task plan',
+      request_payload: {
+        phase: 'plan',
+        preview_panel_key: 'task_plan',
+        title: 'Approve task plan',
+      },
+    }), {
+      attachedPreview: {
+        panelKey: 'task_plan',
+        title: 'Task Plan',
+        format: 'json',
+        content: {
+          summary: 'Plan summary',
+          proposed_tasks: [
+            { ref: 'T1', title: 'Ship faster', description: 'Do the work' },
+          ],
+        },
+        replace: true,
+        surroundingText: '',
+      },
+      compact: true,
+    });
+
+    expect(container.textContent).toContain('Plan summary');
+    expect(container.textContent).toContain('Ship faster');
+    expect(container.textContent).not.toContain('"proposed_tasks"');
+  });
+
+  it('labels approve as approve with note and sends the note with an approval decision', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'approval_request',
+      title: 'Approve PRD',
+      request_payload: {
+        phase: 'prd',
+        title: 'Approve PRD',
+      },
+    }));
+
+    typeTextarea('Looks good. Keep the scope narrow.');
+
+    const noteInput = container.querySelector('textarea');
+    expect(noteInput?.className).toContain('focus-visible:border-ring/70');
+    expect(noteInput?.className).toContain('focus-visible:ring-ring/15');
+
+    const approvalActions = container.querySelector('[data-coding-session-approval-actions]');
+    expect(approvalActions?.className).toContain('mt-5');
+    expect(approvalActions?.className).toContain('pt-4');
+    expect(approvalActions?.className).toContain('border-t');
+
+    clickButton('Approve with note');
+
+    expect(onResolve).toHaveBeenCalledWith(
+      'interaction-1',
+      {
+        decision: 'approve',
+        message: 'Looks good. Keep the scope narrow.',
+      },
+      'Looks good. Keep the scope narrow.',
+    );
+  });
+
+  it('shows permission approvals as readable permissions with raw details collapsed', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'permissions_approval',
+      title: 'Approve workspace access',
+      request_payload: {
+        reason: 'The agent needs to inspect project files.',
+        permissions: {
+          filesystem: 'workspace-write',
+          network: false,
+        },
+      },
+    }));
+
+    expect(container.textContent).toContain('filesystem');
+    expect(container.textContent).toContain('workspace-write');
+    expect(container.textContent).toContain('network');
+    expect(container.textContent).toContain('Not allowed');
+    expect(container.querySelector('details summary')?.textContent).toContain('Raw details');
+  });
+
+  it('uses destructive treatment for command denial actions', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve, buildInteraction({
+      interaction_kind: 'command_execution_approval',
+      title: 'Approve command execution',
+      request_payload: {
+        command: 'npm test -- CodingInteractionCard.test.tsx',
+        reason: 'Verify the card behavior.',
+        availableDecisions: ['accept', 'decline', 'cancel'],
+      },
+    }));
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea?.className).toContain('focus-visible:border-ring/70');
+
+    const declineButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Decline');
+    const cancelButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Cancel turn');
+    expect(declineButton?.className).toContain('hover:bg-destructive/10');
+    expect(cancelButton?.className).toContain('hover:bg-destructive/10');
   });
 });

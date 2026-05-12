@@ -21,6 +21,10 @@ import { toast } from 'sonner';
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
+export function sanitizeSupportShortcutSeed(content: string): string {
+  return content.replace(/\\(\r?\n)/g, '$1');
+}
+
 /** Splits text on @mention patterns and wraps them in highlight spans. */
 function renderMentionHighlights(content: string): ReactNode[] | null {
   const regex = /@([a-zA-Z0-9][a-zA-Z0-9._-]*)/g;
@@ -313,7 +317,7 @@ export const MessageBubble = memo(function MessageBubble({
   const canSaveAsShortcut = displayContent.trim().length > 0 && message.message_type !== 'system';
   const openShortcutComposer = useShortcutComposerStore((s) => s.openCreate);
   const handleSaveAsShortcut = useCallback(
-    () => openShortcutComposer({ seedContent: displayContent }),
+    () => openShortcutComposer({ seedContent: sanitizeSupportShortcutSeed(displayContent) }),
     [openShortcutComposer, displayContent],
   );
 

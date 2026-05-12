@@ -63,23 +63,7 @@ func (a *AgentRunActivities) publishRunMessageEvent(run *model.AgentRun, message
 		ParentID:    run.ID,
 		Data:        data,
 	})
-	eventType := "user.message.completed"
-	switch strings.TrimSpace(message.Role) {
-	case "assistant":
-		eventType = "assistant.message.completed"
-	case "tool":
-		eventType = "tool.call.completed"
-	}
-	a.publishCodingSessionEvent(run, eventType, map[string]any{
-		"message_id":       message.ID,
-		"role":             message.Role,
-		"message_type":     message.MessageType,
-		"content":          message.Content,
-		"sequence_no":      message.SequenceNo,
-		"content_blocks":   json.RawMessage(message.ContentBlocks),
-		"turn_segments":    json.RawMessage(message.TurnSegments),
-		"tool_invocations": json.RawMessage(message.ToolInvocations),
-	})
+	a.publishCodingSessionMessageEvent(run, message)
 }
 
 func (a *AgentRunActivities) publishRunStreamEvent(run *model.AgentRun, event workerpkg.ExecutionEvent) {
@@ -268,6 +252,23 @@ func (a *AgentRunActivities) publishCodingSessionEvent(run *model.AgentRun, even
 		ParentType:  "coding_session",
 		ParentID:    run.ID,
 		Data:        envelope,
+	})
+}
+
+func (a *AgentRunActivities) publishCodingSessionMessageEvent(run *model.AgentRun, message *model.AgentRunMessage) {
+	if a.wsPublisher == nil || run == nil || message == nil {
+		return
+	}
+	event := model.CodingSessionEventFromAgentRunMessage(run, message)
+	data, _ := json.Marshal(event)
+	a.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "coding_session_event",
+		EntityID:    event.ID,
+		WorkspaceID: run.WorkspaceID,
+		ParentType:  "coding_session",
+		ParentID:    run.ID,
+		Data:        data,
 	})
 }
 

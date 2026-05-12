@@ -25,6 +25,7 @@ import {
   BubbleChatIcon,
   Route01Icon,
   Shield01Icon,
+  Shield02Icon,
 } from '@hugeicons/core-free-icons';
 
 export type IconComponent = FC<{ className?: string; style?: CSSProperties }>;
@@ -39,6 +40,7 @@ function hi(icon: HugeIconData): IconComponent {
 }
 
 const Profile = hi(UserIcon);
+const Security = hi(Shield02Icon);
 const Account = hi(Settings02Icon);
 const Notifications = hi(Notification02Icon);
 const General = hi(Settings01Icon);
@@ -84,7 +86,7 @@ export type SettingsSection =
   | 'chat-general'
   | 'inboxes-routing';
 
-export type SettingsRouteSection = SettingsSection | 'profile' | 'notifications' | 'account';
+export type SettingsRouteSection = SettingsSection | 'profile' | 'security' | 'notifications' | 'account';
 
 export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSection> = {
   id: T;
@@ -103,6 +105,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     label: 'Profile',
     description: '',
     icon: Profile,
+    group: 'Personal',
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    description: '',
+    icon: Security,
     group: 'Personal',
   },
   {
@@ -266,7 +275,7 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
 
 export const SETTINGS_SECTIONS = SETTINGS_ROUTE_SECTIONS.filter(
   (section): section is SettingsSectionMeta<SettingsSection> =>
-    section.id !== 'profile' && section.id !== 'notifications' && section.id !== 'account',
+    section.id !== 'profile' && section.id !== 'security' && section.id !== 'notifications' && section.id !== 'account',
 );
 
 export const isSettingsSection = (value: string): value is SettingsSection =>

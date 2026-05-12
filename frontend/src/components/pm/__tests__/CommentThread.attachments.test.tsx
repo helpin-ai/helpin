@@ -4,7 +4,9 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { CommentWithAuthor, CreateCommentRequest } from '@/lib/pmTypes'
+import type { AttachmentResponse, CommentWithAuthor, CreateCommentRequest } from '@/lib/pmTypes'
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('@/components/pm/CommentEditor', () => ({
   CommentEditor: ({
@@ -34,6 +36,39 @@ vi.mock('@/components/pm/CommentEditor', () => ({
         Submit
       </button>
       <div data-testid="uploaded-files">{uploadedFiles.map((file) => file.id).join(',')}</div>
+    </div>
+  ),
+}))
+
+vi.mock('@/components/pm/ImageLightbox', () => ({
+  ImageLightbox: ({
+    src,
+    alt,
+    hasPrevious,
+    hasNext,
+    onPrevious,
+    onNext,
+    positionLabel,
+  }: {
+    src: string
+    alt?: string
+    hasPrevious?: boolean
+    hasNext?: boolean
+    onPrevious?: () => void
+    onNext?: () => void
+    positionLabel?: string
+  }) => (
+    <div data-testid="image-lightbox" data-src={src} data-alt={alt} data-position={positionLabel}>
+      {hasPrevious ? (
+        <button type="button" data-testid="lightbox-previous" onClick={onPrevious}>
+          Previous
+        </button>
+      ) : null}
+      {hasNext ? (
+        <button type="button" data-testid="lightbox-next" onClick={onNext}>
+          Next
+        </button>
+      ) : null}
     </div>
   ),
 }))
@@ -206,6 +241,26 @@ function existingCommentByCurrentUser(id: string): CommentWithAuthor {
   }
 }
 
+function createAttachment(id: string, fileName: string, contentType = 'image/png'): AttachmentResponse {
+  return {
+    attachment: {
+      id,
+      workspace_id: workspaceId,
+      entity_type: 'comment',
+      entity_id: 'comment-1',
+      file_name: fileName,
+      file_size: 1024,
+      content_type: contentType,
+      storage_key: `attachments/${id}`,
+      is_uploaded: true,
+      uploaded_by_id: 'user-1',
+      created_at: '2026-05-03T00:00:00Z',
+    },
+    url: `https://cdn.example.com/${fileName}`,
+    public_url: `https://cdn.example.com/${fileName}`,
+  }
+}
+
 async function submitComment(container: HTMLElement) {
   const button = container.querySelector<HTMLButtonElement>('[data-testid="submit-comment"]')
   if (!button) throw new Error('submit button not found')
@@ -267,6 +322,39 @@ describe('CommentThread attachment uploads', () => {
     expect(pmAttachmentService.remove).not.toHaveBeenCalled()
   })
 
+  it('navigates between multiple image attachments in a comment preview', async () => {
+    const comment = existingCommentByCurrentUser('comment-1')
+    comment.attachments = [
+      createAttachment('att-1', 'image-1.png'),
+      createAttachment('att-2', 'image-2.png'),
+      createAttachment('att-3', 'image-3.png'),
+      createAttachment('att-4', 'image-4.png'),
+    ]
+    const { container } = renderThread({ comments: [comment] })
+
+    const secondImage = container.querySelector<HTMLImageElement>('img[alt="image-2.png"]')
+    const trigger = secondImage?.closest('button')
+    expect(trigger).toBeTruthy()
+
+    await act(async () => {
+      trigger?.click()
+    })
+
+    let lightbox = container.querySelector<HTMLElement>('[data-testid="image-lightbox"]')
+    expect(lightbox?.dataset.src).toBe('https://cdn.example.com/image-2.png')
+    expect(lightbox?.dataset.position).toBe('2 / 4')
+    expect(container.querySelector('[data-testid="lightbox-previous"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="lightbox-next"]')).toBeTruthy()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="lightbox-next"]')?.click()
+    })
+
+    lightbox = container.querySelector<HTMLElement>('[data-testid="image-lightbox"]')
+    expect(lightbox?.dataset.src).toBe('https://cdn.example.com/image-3.png')
+    expect(lightbox?.dataset.position).toBe('3 / 4')
+  })
+
   it('cleans up only the still-pending pasted images on unmount', async () => {
     vi.mocked(pmAttachmentService.initiateUpload).mockResolvedValue({
       data: {
@@ -304,6 +392,77 @@ describe('CommentThread attachment uploads', () => {
     expect(pmAttachmentService.remove).toHaveBeenCalledWith(workspaceId, 'att-pending', { pendingOnly: true })
   })
 
+  it('does not pending-delete submitted attachments when unmounted before comment create resolves', async () => {
+    let uploadIndex = 0
+    vi.mocked(pmAttachmentService.initiateUpload).mockImplementation((_ws, payload) => {
+      uploadIndex += 1
+      return Promise.resolve({
+        data: {
+          attachment: {
+            id: `att-submit-${uploadIndex}`,
+            workspace_id: workspaceId,
+            entity_type: payload.entity_type,
+            entity_id: payload.entity_id,
+            file_name: payload.file_name,
+            file_size: payload.file_size,
+            content_type: payload.content_type,
+            storage_key: `attachments/att-submit-${uploadIndex}`,
+            is_uploaded: false,
+            uploaded_by_id: 'user-1',
+            created_at: '2026-05-03T00:00:00Z',
+          },
+          url: `https://upload.example.com/att-submit-${uploadIndex}`,
+          public_url: `https://cdn.example.com/att-submit-${uploadIndex}.png`,
+        },
+        error: null,
+        status: 200,
+      })
+    })
+    vi.mocked(uploadToS3).mockResolvedValue({ ok: true, error: null })
+    vi.mocked(pmAttachmentService.confirmUpload).mockResolvedValue({ data: null, error: null, status: 200 })
+
+    let resolveCreate: (value: Awaited<ReturnType<ReturnType<typeof createCommentService>['create']>>) => void
+    const commentService = createCommentService()
+    commentService.create.mockImplementation((_workspaceId: string, payload: CreateCommentRequest) =>
+      new Promise((resolve) => {
+        resolveCreate = resolve
+      }).then(() => ({
+        data: createComment('comment-submit', payload),
+        error: null,
+        status: 200,
+      })),
+    )
+
+    const { container, root } = renderThread({ commentService })
+
+    await pasteImage(container)
+    await pasteImage(container)
+    await submitComment(container)
+
+    act(() => {
+      root.unmount()
+    })
+
+    expect(commentService.create).toHaveBeenCalledWith(
+      workspaceId,
+      expect.objectContaining({ attachment_ids: ['att-submit-1', 'att-submit-2'] }),
+    )
+    expect(pmAttachmentService.remove).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveCreate!({
+        data: createComment('comment-submit', {
+          entity_type: 'task',
+          entity_id: 'task-1',
+          body: '<p>comment</p>',
+          attachment_ids: ['att-submit-1', 'att-submit-2'],
+        }),
+        error: null,
+        status: 200,
+      })
+    })
+  })
+
   it('cleans up edit-mode pending attachments on unmount', async () => {
     vi.mocked(pmAttachmentService.initiateUpload).mockResolvedValue({
       data: {
@@ -335,9 +494,10 @@ describe('CommentThread attachment uploads', () => {
 
     await clickEdit(container)
 
-    // After entering edit mode, the edit form is rendered before the bottom composer.
+    // With existing comments, the top-level composer stays collapsed; the visible
+    // editor is the edit form for the selected comment.
     const editors = container.querySelectorAll<HTMLElement>('[data-testid="comment-editor"]')
-    expect(editors.length).toBeGreaterThanOrEqual(2)
+    expect(editors.length).toBe(1)
     await pasteImageInto(editors[0])
 
     expect(pmAttachmentService.remove).not.toHaveBeenCalled()

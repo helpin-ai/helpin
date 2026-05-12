@@ -343,11 +343,11 @@ export function EmailTimeline({ workspaceId, contactId, dealId }: EmailTimelineP
                   <div className="flex flex-col gap-3 border-t border-border/60 bg-muted/20 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex flex-wrap gap-2">
                       <Button variant="outline" size="sm" disabled>
-                        <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5" />
+                        <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5 -scale-y-100" />
                         Reply
                       </Button>
                       <Button variant="outline" size="sm" disabled>
-                        <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5" />
+                        <ArrowTurnBackwardIcon className="mr-2 h-3.5 w-3.5 -scale-y-100" />
                         Reply all
                       </Button>
                       <Button variant="outline" size="sm" disabled>

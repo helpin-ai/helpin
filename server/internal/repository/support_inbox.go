@@ -489,6 +489,7 @@ var (
 	mdBlockquotePattern     = regexp.MustCompile(`(?m)^\s{0,3}>\s?`)
 	mdListBulletPattern     = regexp.MustCompile(`(?m)^\s{0,3}(?:[-*+]|\d+[.)])\s+`)
 	mdTableSepPattern       = regexp.MustCompile(`(?m)^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$`)
+	mdHardBreakPattern      = regexp.MustCompile(`\\\r?\n`)
 	mdEmphasisPattern       = regexp.MustCompile("(\\*\\*|__|\\*|_|`)")
 	whitespacePattern       = regexp.MustCompile(`\s+`)
 	spaceBeforePunctPattern = regexp.MustCompile(`\s+([,.;:!?\)])`)
@@ -510,6 +511,7 @@ func cleanMessageSnippet(raw string, limit int) string {
 	cleaned = mdImageInlinePattern.ReplaceAllString(cleaned, "$1")
 	cleaned = mdLinkInlinePattern.ReplaceAllString(cleaned, "$1")
 	cleaned = mdTableSepPattern.ReplaceAllString(cleaned, " ")
+	cleaned = mdHardBreakPattern.ReplaceAllString(cleaned, "\n")
 	cleaned = mdHTMLTagPattern.ReplaceAllString(cleaned, " ")
 	cleaned = strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`).Replace(cleaned)
 	cleaned = mdHeadingPattern.ReplaceAllString(cleaned, "")
@@ -790,6 +792,12 @@ func applyConversationAIFilters(query *gorm.DB, alias string, aiFilters []string
 			conditions = append(conditions, conversationAIHandoffCondition(alias))
 		case model.SupportAIFilterResolved, model.SupportSystemTagAIResolved, "resolved_by_ai":
 			conditions = append(conditions, conversationResolvedByAICondition(alias))
+		case "none":
+			conditions = append(conditions, fmt.Sprintf("NOT (%s) AND NOT (%s) AND NOT (%s)",
+				conversationAIActiveCondition(alias),
+				conversationAIHandoffCondition(alias),
+				conversationResolvedByAICondition(alias),
+			))
 		}
 	}
 	if len(conditions) == 0 {
@@ -978,6 +986,16 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 			  AND sm.message_type = 'reply'
 			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
 		) AS unread_count,
+		COALESCE((
+			SELECT m.sender_type = 'customer'
+			FROM support_messages m
+			WHERE m.conversation_id = support_conversations.id
+			  AND m.deleted_at IS NULL
+			  AND m.is_internal = false
+			  AND m.message_type = 'reply'
+			ORDER BY m.created_at DESC
+			LIMIT 1
+		), false) AS awaiting_reply,
 		%s AS country_code,
 		%s AS country_name,
 		sm.name AS mailbox_name,
@@ -1358,7 +1376,6 @@ func (r *SupportConversationRepository) MarkContactRead(ctx context.Context, con
 func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, workspaceID, userID, workspaceMemberID, role string, mailboxID *string) (model.UnreadStats, error) {
 	var stats model.UnreadStats
 	humanInboxCondition := conversationHumanInboxCondition("sc")
-	humanOpenInboxCondition := fmt.Sprintf("(%s AND sc.status = '%s')", humanInboxCondition, model.SupportConversationStatusOpen)
 	aiActiveCondition := conversationAIActiveCondition("sc")
 	mentionCondition, mentionArgs := r.mentionExistsCondition("sc", userID)
 	mineCondition := `(` + conversationHumanInboxCondition("sc") + ` OR sc.status = 'waiting_on_customer') AND (
@@ -1423,7 +1440,7 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 		FROM support_conversations sc
 		WHERE sc.workspace_id = ?
 		  AND sc.status NOT IN ('resolved', 'spam')
-	`, unreadCondition, humanOpenInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanOpenInboxCondition, unreadCondition, mineCondition, unreadCondition, humanOpenInboxCondition, humanOpenInboxCondition, mineCondition, aiActiveCondition)
+	`, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, unreadCondition, aiActiveCondition, unreadCondition, humanInboxCondition, unreadCondition, mineCondition, unreadCondition, humanInboxCondition, humanInboxCondition, mineCondition, aiActiveCondition)
 
 	args := []any{}
 	args = append(args, userID, userID)
