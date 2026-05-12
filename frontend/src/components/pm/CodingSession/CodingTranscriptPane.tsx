@@ -1159,20 +1159,44 @@ function useElapsedMs(since: string): number {
   return Math.max(0, now - origin);
 }
 
+function RunningEllipsis() {
+  const [dotCount, setDotCount] = useState(1);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setDotCount((current) => current === 3 ? 1 : current + 1);
+    }, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <span aria-hidden className="inline-block w-[1.25em] text-left" data-agent-running-ellipsis>
+      {'.'.repeat(dotCount)}
+    </span>
+  );
+}
+
 function RunningActivityRow({ since }: { since: string }) {
   const elapsed = useElapsedMs(since);
   return (
     <div className="flex gap-3" data-coding-session-running-activity>
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
+      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 shadow-sm">
+        <span
+          aria-hidden
+          className="absolute inset-0 animate-ping rounded-full bg-primary/20"
+          data-agent-running-halo
+        />
         <UnicodeSpinner
           name="braille"
-          className="agent-working-chroma text-xs"
+          className="agent-working-chroma relative text-base leading-none"
           data-agent-working-spinner
         />
       </div>
       <div className="min-w-0 flex-1 pb-4">
         <div className="flex min-h-7 items-center gap-2">
-          <span className="text-xs font-medium text-foreground/80">Agent running</span>
+          <span className="text-xs font-medium text-foreground/80">
+            Agent running<RunningEllipsis />
+          </span>
           <span className="text-[11px] tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
         </div>
       </div>
