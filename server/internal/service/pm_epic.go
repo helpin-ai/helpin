@@ -378,7 +378,7 @@ func (s *PMEpicService) Delete(ctx context.Context, id string, actorID string) e
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := s.requireAdmin(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.Delete(ctx, id); err != nil {

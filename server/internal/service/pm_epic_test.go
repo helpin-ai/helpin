@@ -482,19 +482,35 @@ func TestPMEpicService_Delete(t *testing.T) {
 	})
 }
 
-func TestPMEpicService_Delete_Forbidden(t *testing.T) {
+func TestPMEpicService_Delete_TeamMemberAccess(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	wsID := "ws-epic-del-forbid"
-	adminUserID := "user-del-admin"
-	managerUserID := "user-del-manager"
+	wsID := "ws-epic-del-team"
+	adminUserID := "user-del-team-admin"
+	memberUserID := "user-del-team-member"
+	otherUserID := "user-del-team-other"
+	memberID := "member-del-team-member"
+	otherMemberID := "member-del-team-other"
+	teamID := "team-del-alpha"
+	otherTeamID := "team-del-beta"
 
-	seedUser(t, db, adminUserID, "deladmin@test.com", "Admin", "hash")
-	seedUser(t, db, managerUserID, "delmanager@test.com", "Manager", "hash")
-	seedWorkspace(t, db, wsID, "Del WS", "del-ws", adminUserID)
-	seedWorkspaceMember(t, db, "member-del-admin", wsID, adminUserID, "deladmin@test.com", "Admin", model.RoleAdmin)
-	seedWorkspaceMember(t, db, "member-del-manager", wsID, managerUserID, "delmanager@test.com", "Manager", model.RoleMember)
+	seedUser(t, db, adminUserID, "delteamadmin@test.com", "Admin", "hash")
+	seedUser(t, db, memberUserID, "delteammember@test.com", "Member", "hash")
+	seedUser(t, db, otherUserID, "delteamother@test.com", "Other", "hash")
+	seedWorkspace(t, db, wsID, "Del Team WS", "del-team-ws", adminUserID)
+	seedWorkspaceMember(t, db, "member-del-team-admin", wsID, adminUserID, "delteamadmin@test.com", "Admin", model.RoleAdmin)
+	seedWorkspaceMember(t, db, memberID, wsID, memberUserID, "delteammember@test.com", "Member", model.RoleMember)
+	seedWorkspaceMember(t, db, otherMemberID, wsID, otherUserID, "delteamother@test.com", "Other", model.RoleMember)
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		teamID, wsID, "Alpha", now, now)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		otherTeamID, wsID, "Beta", now, now)
+	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"twm-del-team-member", teamID, memberID, "member", now, now)
+	mustExec(t, db, `INSERT INTO team_workspace_memberships (id, team_id, workspace_member_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"twm-del-team-other", otherTeamID, otherMemberID, "member", now, now)
 
 	epicRepo := repository.NewPMEpicRepository(db)
 	storyRepo := repository.NewPMTaskRepository(db)
@@ -505,12 +521,46 @@ func TestPMEpicService_Delete_Forbidden(t *testing.T) {
 	activityService := NewPMActivityService(activityRepo)
 	svc := NewPMEpicService(epicRepo, storyRepo, labelRepo, gitRepo, repository.NewPMAttachmentRepository(db), workspaceRepo, activityService, nil, nil)
 
-	// Manager can create (requireCanEdit) but cannot delete (requireAdmin)
-	created := createTestEpic(t, svc, wsID, managerUserID, "Manager Epic")
+	memberCtx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID:            memberUserID,
+		WorkspaceID:       wsID,
+		WorkspaceMemberID: memberID,
+		Role:              model.RoleMember,
+		TeamMemberships:   []authorization.TeamRole{{TeamID: teamID, Role: "member"}},
+	})
+	otherCtx := authorization.WithActor(context.Background(), &authorization.Actor{
+		UserID:            otherUserID,
+		WorkspaceID:       wsID,
+		WorkspaceMemberID: otherMemberID,
+		Role:              model.RoleMember,
+		TeamMemberships:   []authorization.TeamRole{{TeamID: otherTeamID, Role: "member"}},
+	})
 
-	err := svc.Delete(context.Background(), created.Epic.ID, managerUserID)
+	created, err := svc.Create(memberCtx, model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Member Team Epic",
+		TeamID:      &teamID,
+	}, memberUserID)
+	if err != nil {
+		t.Fatalf("Create member team epic: %v", err)
+	}
+
+	if err := svc.Delete(memberCtx, created.Epic.ID, memberUserID); err != nil {
+		t.Fatalf("Delete by member of epic team: %v", err)
+	}
+
+	otherEpic, err := svc.Create(memberCtx, model.CreateEpicRequest{
+		WorkspaceID: wsID,
+		Name:        "Other Member Team Epic",
+		TeamID:      &teamID,
+	}, memberUserID)
+	if err != nil {
+		t.Fatalf("Create other member team epic: %v", err)
+	}
+
+	err = svc.Delete(otherCtx, otherEpic.Epic.ID, otherUserID)
 	if err == nil {
-		t.Fatal("expected forbidden error for manager role on delete")
+		t.Fatal("expected forbidden error for member outside epic team")
 	}
 	if _, ok := err.(*model.ErrForbidden); !ok {
 		t.Fatalf("expected *model.ErrForbidden, got %T: %v", err, err)
