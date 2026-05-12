@@ -578,6 +578,46 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
   };
 }
 
+function resolvedInteractionResponseNote(event: CodingSessionEvent) {
+  if (event.type !== 'interaction.resolved') return undefined;
+  const payload = asRecord(event.payload);
+  const interactionKind = asString(payload?.interaction_kind);
+  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return undefined;
+  return asString(asRecord(payload?.response_payload)?.message)?.trim();
+}
+
+function resolvedInteractionResumeMessageType(event: CodingSessionEvent) {
+  if (event.type !== 'interaction.resolved') return undefined;
+  const payload = asRecord(event.payload);
+  const interactionKind = asString(payload?.interaction_kind);
+  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return undefined;
+  const decision = asString(asRecord(payload?.response_payload)?.decision)?.trim();
+  if (!decision) return undefined;
+  return decision === 'approve' ? 'approval' : 'request_changes';
+}
+
+function removeDuplicateResolvedInteractionResumeMessage(
+  transcriptMessages: CodingSessionTranscriptMessage[],
+  event: CodingSessionEvent,
+) {
+  const note = resolvedInteractionResponseNote(event);
+  const messageType = resolvedInteractionResumeMessageType(event);
+  if (!note || !messageType) return;
+
+  for (let index = transcriptMessages.length - 1; index >= 0; index -= 1) {
+    const message = transcriptMessages[index];
+    if (
+      message.role === 'user'
+      && message.message_type === messageType
+      && message.content.trim() === note
+      && (message.sequence_no ?? 0) <= event.sequence_no
+    ) {
+      transcriptMessages.splice(index, 1);
+      return;
+    }
+  }
+}
+
 function approvalRequestResolutionTranscriptContent(
   requestPayload: Record<string, unknown> | null,
   responsePayload: Record<string, unknown> | null,
@@ -891,6 +931,9 @@ export function buildCodingSessionStreamState(
   for (const event of sortedEvents) {
     const transcriptMessage = transcriptMessageFromEvent(event);
     if (transcriptMessage) {
+      if (event.type === 'interaction.resolved') {
+        removeDuplicateResolvedInteractionResumeMessage(transcriptMessages, event);
+      }
       transcriptMessages.push(transcriptMessage);
       continue;
     }

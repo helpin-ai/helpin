@@ -398,6 +398,49 @@ describe('buildCodingSessionStreamState', () => {
     expect(state.transcript_messages[0]?.content).not.toContain('Missing regression coverage');
   });
 
+  it('does not render the same requested-changes note twice', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'msg-request-changes',
+        type: 'user.message.completed',
+        sequence_no: 12,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'message-request-changes-1',
+          content: 'Members should be able to create and edit epics.',
+          role: 'user',
+          message_type: 'request_changes',
+          sequence_no: 12,
+        },
+      }),
+      buildEvent({
+        id: 'interaction-approval-resolved',
+        type: 'interaction.resolved',
+        sequence_no: 13,
+        payload: {
+          interaction_id: 'interaction-approval-1',
+          interaction_kind: 'approval_request',
+          status: 'resolved',
+          request_schema_version: 'helpin.v1',
+          request_payload: {
+            title: 'Task Planning Document: Fix Epic Editing for Team Members',
+          },
+          response_payload: {
+            decision: 'request_changes',
+            message: 'Members should be able to create and edit epics.',
+          },
+        },
+        runtime_metadata: { source: 'agent_run_interaction', interaction_kind: 'approval_request' },
+      }),
+    ]);
+
+    expect(state.transcript_messages.map((message) => message.message_type)).toEqual([
+      'approval_request_resolution',
+    ]);
+    const renderedText = state.transcript_messages.map((message) => message.content).join('\n');
+    expect(renderedText.match(/Members should be able to create and edit epics\./g)).toHaveLength(1);
+  });
+
   it('falls back to tool_input for persisted historical tool segments', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
