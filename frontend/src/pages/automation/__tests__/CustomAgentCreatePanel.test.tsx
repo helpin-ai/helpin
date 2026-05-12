@@ -36,6 +36,8 @@ function renderPanel(overrides: Partial<{
   form: CustomAgentFormData;
   onChange: (form: CustomAgentFormData) => void;
   onCreate: () => void;
+  mode: 'create' | 'edit';
+  canSave: boolean;
 }> = {}) {
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -120,6 +122,39 @@ function click(text: string) {
 }
 
 describe('CustomAgentCreatePanel', () => {
+  it('opens edit mode directly in settings with save copy', () => {
+    renderPanel({
+      mode: 'edit',
+      form: {
+        ...createDefaultCustomAgentForm(),
+        name: 'Docs helper',
+        system_prompt: 'Keep docs current.',
+      },
+    });
+
+    expect(container?.textContent).toContain('Edit Custom Agent');
+    expect(container?.textContent).toContain('Agent settings');
+    expect(container?.textContent).toContain('Save changes');
+    expect(container?.textContent).not.toContain('Describe the agent you want');
+    expect(container?.textContent).not.toContain('Generate agent setup');
+  });
+
+  it('disables edit save when there are no changes', () => {
+    renderPanel({
+      mode: 'edit',
+      canSave: false,
+      form: {
+        ...createDefaultCustomAgentForm(),
+        name: 'Docs helper',
+      },
+    });
+
+    const saveButton = Array.from(container?.querySelectorAll('button') ?? [])
+      .find((button) => button.textContent?.includes('Save changes'));
+    expect(saveButton).toBeTruthy();
+    expect((saveButton as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('renders a describe-or-start-blank purpose step without pseudo-template cards', () => {
     renderPanel();
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight01Icon,
@@ -1381,46 +1381,32 @@ function validateDraft(draft: FlowDraft) {
   return null;
 }
 
-function describeFilters(rule: AutomationRule, statesById: Map<string, WorkflowState>) {
-  const filters: string[] = [];
-  const triggerStateId = stringValue(rule.trigger_config?.state_id);
-  if (triggerStateId) {
-    const stateName = statesById.get(triggerStateId)?.name;
-    if (stateName) filters.push(`state = ${stateName}`);
-  }
+function flowMetadataPills(rule: AutomationRule, teamName?: string) {
+  const pills: Array<{ key: string; label: string; tone?: 'default' | 'info' | 'team' }> = [];
   const repoFullName = stringValue(rule.trigger_config?.repo_full_name);
   const branch = stringValue(rule.trigger_config?.branch);
   const baseBranch = stringValue(rule.trigger_config?.base_branch);
   const tagName = stringValue(rule.trigger_config?.tag_name);
   const conclusion = stringValue(rule.trigger_config?.conclusion);
   const schedule = scheduleExpressionFromConfig(rule.trigger_config);
-  if (repoFullName) filters.push(`repo = ${repoFullName}`);
-  if (branch) filters.push(`branch = ${branch}`);
-  if (baseBranch) filters.push(`base branch = ${baseBranch}`);
-  if (tagName) filters.push(`tag = ${tagName}`);
-  if (conclusion) filters.push(`conclusion = ${conclusion}`);
-  if (schedule) filters.push(`schedule = ${describeScheduleExpression(schedule)}`);
-  return filters.length ? filters.join(' · ') : 'No additional filters';
-}
+  const targetType = stringValue(rule.action_config?.target_type);
+  const branchOverrides = describeRunBranchOverrides(
+    stringValue(rule.action_config?.base_branch),
+    stringValue(rule.action_config?.working_branch),
+  );
 
-function describeThen(rule: AutomationRule, statesById: Map<string, WorkflowState>) {
-  if (rule.action_type === 'start_agent_run') {
-    const parts = ['Start an agent run'];
-    const baseBranch = stringValue(rule.action_config?.base_branch);
-    const workingBranch = stringValue(rule.action_config?.working_branch);
-    const overrides = describeRunBranchOverrides(baseBranch, workingBranch);
-    if (overrides) parts.push(overrides);
-    return parts.join(' ');
-  }
-  if (rule.action_type === 'move_to_state') {
-    const stateId = stringValue(rule.action_config?.target_state_id);
-    return stateId ? `Move the task to ${statesById.get(stateId)?.name ?? 'another state'}` : 'Move the task to another state';
-  }
-  if (rule.action_type === 'merge_branch') {
-    const branch = stringValue(rule.action_config?.target_branch);
-    return describeMergeInto(branch || BASE_BRANCH_TOKEN);
-  }
-  return rule.action_type.replaceAll('_', ' ');
+  if (repoFullName) pills.push({ key: 'repo', label: `Repo: ${repoFullName}` });
+  if (branch) pills.push({ key: 'branch', label: `Branch: ${branch}` });
+  if (baseBranch) pills.push({ key: 'base', label: `Base: ${baseBranch}` });
+  if (tagName) pills.push({ key: 'tag', label: `Tag: ${tagName}` });
+  if (conclusion) pills.push({ key: 'conclusion', label: `Conclusion: ${conclusion}` });
+  if (schedule) pills.push({ key: 'schedule', label: describeScheduleExpression(schedule), tone: 'info' });
+  if (targetType && targetType !== 'event') pills.push({ key: 'target', label: `Target: ${TARGET_SHORT_LABELS[targetType as FlowDraft['targetMode']] ?? targetType.replaceAll('_', ' ')}` });
+  if (branchOverrides) pills.push({ key: 'branches', label: branchOverrides.replace(/[()]/g, ''), tone: 'info' });
+  if (teamName) pills.push({ key: 'team', label: teamName, tone: 'team' });
+  if (rule.template_instance_id) pills.push({ key: 'template', label: 'Template', tone: 'info' });
+
+  return pills;
 }
 
 function relativeTime(value?: string) {
@@ -1523,55 +1509,73 @@ function agentUnavailableReasonForFlow(agent: Agent, targetType: AgentTargetType
   return null;
 }
 
-function describeFlowTitle(rule: AutomationRule, statesById: Map<string, WorkflowState>, agentNames: Map<string, string>) {
+function FlowTitle({
+  rule,
+  statesById,
+  agentNames,
+}: {
+  rule: AutomationRule;
+  statesById: Map<string, WorkflowState>;
+  agentNames: Map<string, string>;
+}) {
   const triggerStateId = stringValue(rule.trigger_config?.state_id);
   const stateName = statesById.get(triggerStateId)?.name;
+  const targetStateId = stringValue(rule.action_config?.target_state_id);
+  const targetStateName = statesById.get(targetStateId)?.name;
+  const agentId = stringValue(rule.action_config?.agent_id);
+  const agentName = agentNames.get(agentId);
 
-  let triggerPart = '';
+  let triggerVerb = triggerLabel(rule.trigger_type);
+  let triggerValue = '';
   if (rule.trigger_type === 'task.state_entered' && stateName) {
-    triggerPart = `Story enters ${stateName}`;
+    triggerVerb = 'Story enters';
+    triggerValue = stateName;
   } else if (rule.trigger_type === 'agent_run.approved' && stateName) {
-    triggerPart = `Approved in ${stateName}`;
+    triggerVerb = 'Approved in';
+    triggerValue = stateName;
   } else if (rule.trigger_type.startsWith('github.pull_request')) {
-    const action = rule.trigger_type === 'github.pull_request_merged' ? 'merged'
-      : rule.trigger_type === 'github.pull_request_opened' ? 'opened'
-      : rule.trigger_type === 'github.pull_request_closed' ? 'closed'
-      : 'review requested';
+    triggerVerb = rule.trigger_type === 'github.pull_request_merged' ? 'PR merged'
+      : rule.trigger_type === 'github.pull_request_opened' ? 'PR opened'
+      : rule.trigger_type === 'github.pull_request_closed' ? 'PR closed'
+      : 'PR review requested';
     const baseBranch = stringValue(rule.trigger_config?.base_branch);
-    triggerPart = `PR ${action}${baseBranch ? ` to base branch ${baseBranch}` : ''}`;
+    triggerValue = baseBranch ? `base branch ${baseBranch}` : '';
   } else if (rule.trigger_type === 'github.push') {
-    triggerPart = 'Push arrives';
+    triggerVerb = 'Push arrives';
   } else if (rule.trigger_type === 'github.release_published') {
-    triggerPart = 'Release published';
+    triggerVerb = 'Release published';
   } else if (rule.trigger_type === 'github.check_suite_completed') {
-    triggerPart = 'Check suite completes';
+    triggerVerb = 'Check suite completes';
   } else if (rule.trigger_type === 'cron') {
-    triggerPart = 'Schedule ticks';
-  } else {
-    triggerPart = triggerLabel(rule.trigger_type);
+    triggerVerb = 'Schedule ticks';
   }
 
-  let actionPart = '';
+  let actionVerb = rule.action_type.replaceAll('_', ' ');
+  let actionValue = '';
   if (rule.action_type === 'start_agent_run') {
-    const agentId = stringValue(rule.action_config?.agent_id);
-    const agentName = agentNames.get(agentId);
     const overrides = describeRunBranchOverrides(
       stringValue(rule.action_config?.base_branch),
       stringValue(rule.action_config?.working_branch),
     );
-    actionPart = agentName ? `Run ${agentName}${overrides}` : 'Start agent';
+    actionVerb = 'Run';
+    actionValue = agentName ? `${agentName}${overrides}` : 'agent';
   } else if (rule.action_type === 'move_to_state') {
-    const targetStateId = stringValue(rule.action_config?.target_state_id);
-    const targetStateName = statesById.get(targetStateId)?.name;
-    actionPart = targetStateName ? `Move to ${targetStateName}` : 'Move task state';
+    actionVerb = 'Move to';
+    actionValue = targetStateName || 'task state';
   } else if (rule.action_type === 'merge_branch') {
-    const branch = stringValue(rule.action_config?.target_branch);
-    actionPart = describeMergeInto(branch || BASE_BRANCH_TOKEN);
-  } else {
-    actionPart = rule.action_type.replaceAll('_', ' ');
+    actionVerb = 'Merge into';
+    actionValue = stringValue(rule.action_config?.target_branch) || BASE_BRANCH_TOKEN;
   }
 
-  return `${triggerPart} \u2192 ${actionPart}`;
+  return (
+    <p className="min-w-0 truncate text-sm text-foreground/90">
+      <span className="font-medium">{triggerVerb}</span>
+      {triggerValue ? <span className="font-semibold text-foreground"> {triggerValue}</span> : null}
+      <ArrowRight01Icon className="mx-1.5 inline h-3.5 w-3.5 align-[-2px] text-muted-foreground/60" />
+      <span className="font-medium">{actionVerb}</span>
+      {actionValue ? <span className="font-semibold text-foreground"> {actionValue}</span> : null}
+    </p>
+  );
 }
 
 function flowHasError(rule: AutomationRule, agentNames: Map<string, string>) {
@@ -1702,18 +1706,16 @@ function FlowRow({
   onUninstallTemplate: (rule: AutomationRule, agentReferencedElsewhere: boolean) => void;
   agentReferencedElsewhere: boolean;
 }) {
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const hasError = flowHasError(rule, agentNames);
-  const title = describeFlowTitle(rule, statesById, agentNames);
-  const filters = describeFilters(rule, statesById);
-  const hasFilters = filters !== 'No additional filters';
+  const metadataPills = flowMetadataPills(rule, teamName);
   const agentId = stringValue(rule.action_config?.agent_id);
-  const agentName = agentNames.get(agentId);
   const agentMissing = rule.action_type === 'start_agent_run' && (!agentId || !agentNames.has(agentId));
 
   const lastRunLabel = (() => {
     if (healthItem?.health.last_success_at) return `Last run ${relativeTime(healthItem.health.last_success_at)}`;
     if (healthItem?.health.last_seen_at) return `Last run ${relativeTime(healthItem.health.last_seen_at)}`;
-    return 'Never run';
+    return 'Last run never';
   })();
 
   const flowState = deriveFlowState(rule, healthItem);
@@ -1725,7 +1727,7 @@ function FlowRow({
   return (
     <div
       className={cn(
-        'rounded-lg border bg-card transition-colors',
+        'group rounded-lg border bg-card transition-colors',
         hasError || flowState === 'error'
           ? 'border-destructive/40 bg-destructive/[0.03]'
           : 'border-border/60 hover:border-border',
@@ -1736,75 +1738,91 @@ function FlowRow({
         <div className="min-w-0 space-y-2">
           <div className="flex items-center gap-2">
             <FlowStatePill state={flowState} />
-            <p className="truncate text-sm font-medium text-foreground/90">{title}</p>
+            <FlowTitle rule={rule} statesById={statesById} agentNames={agentNames} />
             {agentMissing && (
               <Badge variant="destructive" className="text-xs">Missing agent</Badge>
             )}
             <span className="flex-1" />
             {canEdit && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                    <MoreHorizontalIcon className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => onEdit(rule)}>Edit</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onToggle(rule)}>
-                    {rule.enabled ? 'Disable' : 'Enable'}
-                  </DropdownMenuItem>
-                  {workspaceSlug && (
-                    <DropdownMenuItem asChild>
-                      <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>
-                        Activity
-                      </a>
-                    </DropdownMenuItem>
-                  )}
-                  {rule.template_instance_id && (
-                    <DropdownMenuItem onClick={() => onUninstallTemplate(rule, agentReferencedElsewhere)}>
-                      Uninstall template
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => onDelete(rule)}
+              <div className="flex shrink-0 items-center gap-1">
+                <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                      'h-7 px-2 text-xs',
+                      rule.enabled
+                        ? 'text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300'
+                        : 'text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300',
+                    )}
+                    onClick={() => onToggle(rule)}
                   >
-                    Delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    {rule.enabled ? 'Disable' : 'Enable'}
+                  </Button>
+                </div>
+                <DropdownMenu onOpenChange={(open) => {
+                  if (!open) {
+                    window.requestAnimationFrame(() => {
+                      menuTriggerRef.current?.blur();
+                    });
+                  }
+                }}>
+                  <DropdownMenuTrigger asChild>
+                    <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-7 w-7 p-0">
+                      <MoreHorizontalIcon className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    onCloseAutoFocus={(event) => {
+                      event.preventDefault();
+                      menuTriggerRef.current?.blur();
+                    }}
+                  >
+                    <DropdownMenuItem onClick={() => onEdit(rule)}>
+                      Edit
+                    </DropdownMenuItem>
+                    {workspaceSlug && (
+                      <DropdownMenuItem asChild>
+                        <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, source: 'automation_rule', reference_id: rule.id }, 'trigger-executions')}>
+                          Activity
+                        </a>
+                      </DropdownMenuItem>
+                    )}
+                    {rule.template_instance_id && (
+                      <DropdownMenuItem onClick={() => onUninstallTemplate(rule, agentReferencedElsewhere)}>
+                        Uninstall template
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => onDelete(rule)}
+                    >
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="secondary" className="text-xs font-normal">
-              {rule.trigger_type.replace('github.', '').replaceAll('_', '.')}
-              {hasFilters && (
-                <span className="ml-1 text-muted-foreground">| {filters}</span>
-              )}
-            </Badge>
-            <ArrowRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-            {rule.action_type === 'start_agent_run' && agentName ? (
-              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-xs font-normal text-emerald-600 dark:text-emerald-400">
-                {agentName}
-              </Badge>
-            ) : rule.action_type === 'move_to_state' ? (
-              <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-xs font-normal text-blue-600 dark:text-blue-400">
-                {describeThen(rule, statesById)}
-              </Badge>
-            ) : rule.action_type === 'merge_branch' ? (
-              <Badge variant="outline" className="border-purple-500/30 bg-purple-500/10 text-xs font-normal text-purple-600 dark:text-purple-400">
-                {describeThen(rule, statesById)}
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-xs font-normal">
-                {describeThen(rule, statesById)}
-              </Badge>
-            )}
-            {teamName && (
-              <Badge variant="outline" className="text-xs font-normal">{teamName}</Badge>
-            )}
-          </div>
+          {metadataPills.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {metadataPills.map((pill) => (
+                <Badge
+                  key={pill.key}
+                  variant="outline"
+                  className={cn(
+                    'max-w-[22rem] truncate text-xs font-normal',
+                    pill.tone === 'info' && 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-400',
+                    pill.tone === 'team' && 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-400',
+                  )}
+                >
+                  {pill.label}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
 
           {flowState === 'error' && lastErrorMessage && (
             <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] text-destructive">
@@ -1815,11 +1833,13 @@ function FlowRow({
 
         {/* RIGHT — outcome strip */}
         <div className="grid grid-cols-2 gap-3 border-t border-border/60 pt-3 md:border-l md:border-t-0 md:pl-4 md:pt-0">
-          <FlowStat value={handled} label="Handled" sub="last 7 days" />
-          <FlowStat value={flagged} label="Flagged" sub="for review" tone="warn" />
-          <div className="col-span-2 flex items-center justify-between border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-            <span className="uppercase tracking-[0.1em]">Last run</span>
-            <span className="font-mono text-foreground/80">{lastRunLabel.replace('Last run ', '')}</span>
+          <FlowStat value={handled} label="Runs" sub="last 7 days" />
+          <FlowStat value={flagged} label="Needs review" sub="last 7 days" tone="warn" />
+          <div className="col-span-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+            <span>
+              Last run:{' '}
+              <span className="font-mono text-foreground/80">{lastRunLabel.replace('Last run ', '')}</span>
+            </span>
           </div>
         </div>
       </div>
@@ -3639,7 +3659,7 @@ export function AutomationFlowsPage({
     }
     tabs.sort((a, b) => a.label.localeCompare(b.label));
     if (uncategorized > 0) {
-      tabs.push({ id: '__uncategorized__', label: 'Uncategorized', count: uncategorized });
+      tabs.push({ id: '__uncategorized__', label: 'Workspace-wide', count: uncategorized });
     }
     return tabs;
   }, [highlightedFlows, teamNamesById]);
