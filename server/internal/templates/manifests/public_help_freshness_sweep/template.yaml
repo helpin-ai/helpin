@@ -35,7 +35,7 @@ inputs:
     help_text: The public help space Quill should review.
   - key: collection_id
     type: collection
-    required: false
+    required: true
     label: Help collection
     section: What should it review?
     show_if: docs_scope=collection

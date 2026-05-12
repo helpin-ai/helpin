@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
+	"github.com/helpin-ai/helpin/server/internal/automationcron"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"gorm.io/gorm"
 )
@@ -17,8 +20,19 @@ import (
 var templatePlaceholderPattern = regexp.MustCompile(`\{\{[a-zA-Z0-9_]+\}\}`)
 
 type Installer struct {
-	db       *gorm.DB
-	registry *Registry
+	db              *gorm.DB
+	registry        *Registry
+	scheduleManager RuleScheduleManager
+	agentValidator  TemplateAgentValidator
+}
+
+type RuleScheduleManager interface {
+	StartRuleScheduleForRule(ctx context.Context, rule *model.AutomationRule) error
+	StopRuleScheduleForRule(ctx context.Context, ruleID string) error
+}
+
+type TemplateAgentValidator interface {
+	ValidateTemplateAgent(ctx context.Context, agent *model.Agent) error
 }
 
 type InstallRequest struct {
@@ -41,22 +55,36 @@ func NewInstaller(db *gorm.DB, registry *Registry) *Installer {
 	return &Installer{db: db, registry: registry}
 }
 
+func (i *Installer) SetScheduleManager(manager RuleScheduleManager) *Installer {
+	if i != nil {
+		i.scheduleManager = manager
+	}
+	return i
+}
+
+func (i *Installer) SetAgentValidator(validator TemplateAgentValidator) *Installer {
+	if i != nil {
+		i.agentValidator = validator
+	}
+	return i
+}
+
 func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallResult, error) {
 	if i == nil || i.db == nil || i.registry == nil {
-		return nil, fmt.Errorf("template installer is not configured")
+		return nil, internalErrorf(fmt.Errorf("template installer is not configured"), "flow templates are unavailable")
 	}
 	workspaceID := strings.TrimSpace(req.WorkspaceID)
 	templateKey := strings.TrimSpace(req.TemplateKey)
 	actorID := strings.TrimSpace(req.ActorID)
 	if workspaceID == "" || templateKey == "" {
-		return nil, fmt.Errorf("workspace_id and template_key are required")
+		return nil, validationErrorf("workspace_id and template_key are required")
 	}
 	tmpl, ok := i.registry.Get(templateKey)
 	if !ok {
-		return nil, fmt.Errorf("template %q not found", templateKey)
+		return nil, notFoundErrorf("template %q not found", templateKey)
 	}
 	if err := validateInstallInputs(tmpl, req.Inputs); err != nil {
-		return nil, err
+		return nil, validationErrorf("%s", err.Error())
 	}
 
 	instanceID := newTemplateInstanceID()
@@ -80,7 +108,7 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 			return err
 		}
 		if err := tx.Create(rule).Error; err != nil {
-			return fmt.Errorf("create automation rule: %w", err)
+			return internalErrorf(err, "could not create flow")
 		}
 		if err := logTemplateActivity(ctx, tx, workspaceID, rule.ID, actorID, "template.installed", map[string]any{
 			"template_key":         tmpl.Key,
@@ -88,7 +116,7 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 			"template_version":     templateVersion,
 			"agent_id":             agentIDForActivity(agent),
 		}); err != nil {
-			return err
+			return internalErrorf(err, "could not record flow activity")
 		}
 		result.Rule = rule
 		return nil
@@ -102,6 +130,20 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 		)
 		return nil, err
 	}
+	if result.Rule != nil && result.Rule.TriggerType == model.TriggerCron && i.scheduleManager != nil {
+		if err := i.scheduleManager.StartRuleScheduleForRule(ctx, result.Rule); err != nil {
+			if cleanupErr := i.rollbackInstalledInstance(ctx, workspaceID, instanceID); cleanupErr != nil {
+				slog.ErrorContext(ctx, "failed to roll back flow template after schedule start failure",
+					"error", cleanupErr,
+					"schedule_error", err,
+					"template_key", templateKey,
+					"template_instance_id", instanceID,
+					"workspace_id", workspaceID,
+				)
+			}
+			return nil, internalErrorf(err, "could not start scheduled flow")
+		}
+	}
 	slog.InfoContext(ctx, "flow template installed",
 		"template_key", result.Template.Key,
 		"template_instance_id", derefString(result.Rule.TemplateInstanceID),
@@ -111,6 +153,30 @@ func (i *Installer) Install(ctx context.Context, req InstallRequest) (*InstallRe
 		"agent_id", agentIDForActivity(result.Agent),
 	)
 	return &result, nil
+}
+
+func (i *Installer) rollbackInstalledInstance(ctx context.Context, workspaceID, instanceID string) error {
+	return i.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var ruleIDs []string
+		if err := tx.Model(&model.AutomationRule{}).
+			Where("workspace_id = ? AND template_instance_id = ?", workspaceID, instanceID).
+			Pluck("id", &ruleIDs).Error; err != nil {
+			return fmt.Errorf("load installed template rules: %w", err)
+		}
+		if len(ruleIDs) > 0 {
+			if err := tx.Where("workspace_id = ? AND entity_type = ? AND entity_id IN ?", workspaceID, "automation_flow", ruleIDs).
+				Delete(&model.PMActivityLog{}).Error; err != nil {
+				return fmt.Errorf("delete installed template activity: %w", err)
+			}
+		}
+		if err := tx.Where("workspace_id = ? AND template_instance_id = ?", workspaceID, instanceID).Delete(&model.AutomationRule{}).Error; err != nil {
+			return fmt.Errorf("delete installed template rule: %w", err)
+		}
+		if err := tx.Where("workspace_id = ? AND template_instance_id = ?", workspaceID, instanceID).Delete(&model.Agent{}).Error; err != nil {
+			return fmt.Errorf("delete installed template agent: %w", err)
+		}
+		return nil
+	})
 }
 
 func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, instanceID string, templateVersion int, agentName string, inputs map[string]any, overrides *model.CreateAgentFromTemplateOverrides) (*model.Agent, error) {
@@ -128,35 +194,39 @@ func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template
 			Order("created_at ASC").
 			First(&agent).Error
 		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("system agent %q not found", tmpl.Agent.ReuseSystem)
+			return nil, notFoundErrorf("system agent %q not found", tmpl.Agent.ReuseSystem)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("load system agent: %w", err)
+			return nil, internalErrorf(err, "could not load system agent")
 		}
 		return &agent, nil
 	case "pick_existing":
 		agentID := stringInput(inputs, "agent_id")
 		if agentID == "" {
-			return nil, fmt.Errorf("agent_id is required")
+			return nil, validationErrorf("agent_id is required")
 		}
 		var agent model.Agent
 		err := tx.WithContext(ctx).
 			Where("id = ? AND workspace_id = ?", agentID, workspaceID).
 			First(&agent).Error
 		if err == gorm.ErrRecordNotFound {
-			return nil, fmt.Errorf("agent %q not found", agentID)
+			return nil, notFoundErrorf("agent %q not found", agentID)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("load agent: %w", err)
+			return nil, internalErrorf(err, "could not load agent")
 		}
 		if err := validatePickedAgent(tmpl.Agent.PickExisting.Constraints, &agent); err != nil {
-			return nil, err
+			return nil, validationErrorf("%s", err.Error())
 		}
 		return &agent, nil
 	case "create":
 		name := renderNameTemplate(tmpl.Agent.Create.NameTemplate, tmpl.Name)
 		if override := strings.TrimSpace(agentName); override != "" {
 			name = override
+		}
+		name, err := uniqueTemplateAgentName(ctx, tx, workspaceID, name)
+		if err != nil {
+			return nil, err
 		}
 		agent := &model.Agent{
 			ID:                    newTemplateInstanceID(),
@@ -182,8 +252,13 @@ func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template
 			TemplateVersion:       &templateVersion,
 		}
 		applyTemplateAgentOverrides(agent, overrides)
+		if i.agentValidator != nil {
+			if err := i.agentValidator.ValidateTemplateAgent(ctx, agent); err != nil {
+				return nil, validationErrorf("template agent is invalid: %s", err.Error())
+			}
+		}
 		if err := tx.WithContext(ctx).Create(agent).Error; err != nil {
-			return nil, fmt.Errorf("create template agent: %w", err)
+			return nil, internalErrorf(err, "could not create template agent")
 		}
 		return agent, nil
 	default:
@@ -191,12 +266,36 @@ func (i *Installer) resolveAgent(ctx context.Context, tx *gorm.DB, tmpl Template
 	}
 }
 
+func uniqueTemplateAgentName(ctx context.Context, tx *gorm.DB, workspaceID, baseName string) (string, error) {
+	baseName = strings.TrimSpace(baseName)
+	if baseName == "" {
+		baseName = "Template agent"
+	}
+	for idx := 1; idx <= 20; idx++ {
+		candidate := baseName
+		if idx > 1 {
+			candidate = fmt.Sprintf("%s (%d)", baseName, idx)
+		}
+		var count int64
+		if err := tx.WithContext(ctx).
+			Model(&model.Agent{}).
+			Where("workspace_id = ? AND name = ?", workspaceID, candidate).
+			Count(&count).Error; err != nil {
+			return "", internalErrorf(err, "could not check agent name")
+		}
+		if count == 0 {
+			return candidate, nil
+		}
+	}
+	return fmt.Sprintf("%s (%s)", baseName, newTemplateInstanceID()[:8]), nil
+}
+
 func buildRule(ctx context.Context, tx *gorm.DB, tmpl Template, workspaceID, actorID, name, instanceID string, templateVersion int, inputs map[string]any, agent *model.Agent) (*model.AutomationRule, error) {
 	triggerConfig, err := buildTriggerConfig(ctx, tx, tmpl, workspaceID, inputs)
 	if err != nil {
 		return nil, err
 	}
-	actionConfig, err := buildActionConfig(tmpl, inputs, agent)
+	actionConfig, err := buildActionConfig(tmpl, workspaceID, inputs, agent)
 	if err != nil {
 		return nil, err
 	}
@@ -288,18 +387,18 @@ func triggerRepoFullName(ctx context.Context, tx *gorm.DB, tmpl Template, worksp
 		Where("id = ? AND workspace_id = ?", repositoryID, workspaceID).
 		First(&repo).Error
 	if err == gorm.ErrRecordNotFound {
-		return "", fmt.Errorf("repository %q not found", repositoryID)
+		return "", notFoundErrorf("repository %q not found", repositoryID)
 	}
 	if err != nil {
-		return "", fmt.Errorf("load repository: %w", err)
+		return "", internalErrorf(err, "could not load repository")
 	}
 	if strings.TrimSpace(repo.FullName) == "" {
-		return "", fmt.Errorf("repository %q has no full name", repositoryID)
+		return "", validationErrorf("repository %q has no full name", repositoryID)
 	}
 	return strings.TrimSpace(repo.FullName), nil
 }
 
-func buildActionConfig(tmpl Template, inputs map[string]any, agent *model.Agent) (json.RawMessage, error) {
+func buildActionConfig(tmpl Template, workspaceID string, inputs map[string]any, agent *model.Agent) (json.RawMessage, error) {
 	switch tmpl.Flow.Action {
 	case model.ActionStartAgentRun:
 		if agent == nil {
@@ -314,6 +413,12 @@ func buildActionConfig(tmpl Template, inputs map[string]any, agent *model.Agent)
 			}
 		}
 		copyFlowParameters(cfg, tmpl, inputs)
+		if tmpl.Trigger.Type == model.TriggerCron {
+			if _, hasType := cfg["target_type"]; !hasType {
+				cfg["target_type"] = "workspace"
+				cfg["target_id"] = workspaceID
+			}
+		}
 		if additionalContext := strings.TrimSpace(tmpl.Flow.AdditionalContext); additionalContext != "" {
 			cfg["additional_context"] = renderTemplateText(additionalContext, inputs)
 		}
@@ -333,15 +438,179 @@ func buildActionConfig(tmpl Template, inputs map[string]any, agent *model.Agent)
 
 func validateInstallInputs(tmpl Template, inputs map[string]any) error {
 	for _, input := range tmpl.Inputs {
-		if !input.Required {
+		if !templateInputVisible(input, inputs) {
 			continue
 		}
 		value, ok := inputs[input.Key]
-		if !ok || strings.TrimSpace(fmt.Sprint(value)) == "" {
+		if input.Required && (!ok || inputValueBlank(value)) {
 			return fmt.Errorf("input %q is required", input.Key)
+		}
+		if !ok || inputValueBlank(value) {
+			continue
+		}
+		if err := validateInstallInputValue(input, value); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func templateInputVisible(input Input, inputs map[string]any) bool {
+	showIf := strings.TrimSpace(input.ShowIf)
+	if showIf == "" {
+		return true
+	}
+	key, rawExpected, ok := strings.Cut(showIf, "=")
+	key = strings.TrimSpace(key)
+	if !ok {
+		value, exists := inputs[key]
+		if !exists {
+			return false
+		}
+		if boolValue, ok := value.(bool); ok {
+			return boolValue
+		}
+		return !inputValueBlank(value)
+	}
+	actual := strings.TrimSpace(fmt.Sprint(inputs[key]))
+	for _, expected := range strings.Split(rawExpected, "|") {
+		if actual == strings.TrimSpace(expected) {
+			return true
+		}
+	}
+	return false
+}
+
+func inputValueBlank(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case []string:
+		return len(typed) == 0
+	case []any:
+		return len(typed) == 0
+	default:
+		return strings.TrimSpace(fmt.Sprint(value)) == ""
+	}
+}
+
+func validateInstallInputValue(input Input, value any) error {
+	inputType := strings.TrimSpace(input.Type)
+	switch {
+	case inputType == "cron":
+		if err := automationcron.ValidateExpression(strings.TrimSpace(fmt.Sprint(value))); err != nil {
+			return fmt.Errorf("input %q %w", input.Key, err)
+		}
+	case inputType == "int":
+		intValue, err := intInputValue(value)
+		if err != nil {
+			return fmt.Errorf("input %q must be an integer", input.Key)
+		}
+		if input.Min != nil && intValue < *input.Min {
+			return fmt.Errorf("input %q must be at least %d", input.Key, *input.Min)
+		}
+		if input.Max != nil && intValue > *input.Max {
+			return fmt.Errorf("input %q must be at most %d", input.Key, *input.Max)
+		}
+	case strings.HasPrefix(inputType, "enum<"):
+		options := enumInputOptions(input)
+		selected := strings.TrimSpace(fmt.Sprint(value))
+		if !slices.Contains(options, selected) {
+			return fmt.Errorf("input %q must be one of %s", input.Key, strings.Join(options, ", "))
+		}
+	case inputType == "multi_select":
+		if len(input.Options) == 0 {
+			return nil
+		}
+		allowed := optionValues(input.Options)
+		for _, selected := range stringSliceInputValue(value) {
+			if !slices.Contains(allowed, selected) {
+				return fmt.Errorf("input %q contains unsupported option %q", input.Key, selected)
+			}
+		}
+	}
+	return nil
+}
+
+func intInputValue(value any) (int, error) {
+	switch typed := value.(type) {
+	case int:
+		return typed, nil
+	case int64:
+		return int(typed), nil
+	case float64:
+		if typed != float64(int(typed)) {
+			return 0, fmt.Errorf("not an integer")
+		}
+		return int(typed), nil
+	case string:
+		return strconv.Atoi(strings.TrimSpace(typed))
+	default:
+		return strconv.Atoi(strings.TrimSpace(fmt.Sprint(value)))
+	}
+}
+
+func enumInputOptions(input Input) []string {
+	if len(input.Options) > 0 {
+		return optionValues(input.Options)
+	}
+	inputType := strings.TrimSpace(input.Type)
+	raw := strings.TrimSuffix(strings.TrimPrefix(inputType, "enum<"), ">")
+	parts := strings.Split(raw, ",")
+	options := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if value := strings.TrimSpace(part); value != "" {
+			options = append(options, value)
+		}
+	}
+	return options
+}
+
+func optionValues(options []Option) []string {
+	values := make([]string, 0, len(options))
+	for _, option := range options {
+		if value := strings.TrimSpace(option.Value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func stringSliceInputValue(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if item = strings.TrimSpace(item); item != "" {
+				out = append(out, item)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+				out = append(out, text)
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return []string{}
+		}
+		parts := strings.Split(typed, ",")
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if item := strings.TrimSpace(part); item != "" {
+				out = append(out, item)
+			}
+		}
+		return out
+	default:
+		return []string{strings.TrimSpace(fmt.Sprint(value))}
+	}
 }
 
 func validatePickedAgent(constraints PickExistingConstraints, agent *model.Agent) error {

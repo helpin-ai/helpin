@@ -18,7 +18,8 @@ const (
 )
 
 type Uninstaller struct {
-	db *gorm.DB
+	db              *gorm.DB
+	scheduleManager RuleScheduleManager
 }
 
 type UninstallRequest struct {
@@ -40,15 +41,22 @@ func NewUninstaller(db *gorm.DB) *Uninstaller {
 	return &Uninstaller{db: db}
 }
 
+func (u *Uninstaller) SetScheduleManager(manager RuleScheduleManager) *Uninstaller {
+	if u != nil {
+		u.scheduleManager = manager
+	}
+	return u
+}
+
 func (u *Uninstaller) Uninstall(ctx context.Context, req UninstallRequest) (*UninstallResult, error) {
 	if u == nil || u.db == nil {
-		return nil, fmt.Errorf("template uninstaller is not configured")
+		return nil, internalErrorf(fmt.Errorf("template uninstaller is not configured"), "flow templates are unavailable")
 	}
 	workspaceID := strings.TrimSpace(req.WorkspaceID)
 	instanceID := strings.TrimSpace(req.TemplateInstanceID)
 	actorID := strings.TrimSpace(req.ActorID)
 	if workspaceID == "" || instanceID == "" {
-		return nil, fmt.Errorf("workspace_id and template_instance_id are required")
+		return nil, validationErrorf("workspace_id and template_instance_id are required")
 	}
 
 	var result UninstallResult
@@ -58,9 +66,9 @@ func (u *Uninstaller) Uninstall(ctx context.Context, req UninstallRequest) (*Uni
 			Where("workspace_id = ? AND template_instance_id = ?", workspaceID, instanceID).
 			First(&rule).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				return fmt.Errorf("template instance %q not found", instanceID)
+				return notFoundErrorf("template instance %q not found", instanceID)
 			}
-			return fmt.Errorf("load template rule: %w", err)
+			return internalErrorf(err, "could not load template instance")
 		}
 
 		result = UninstallResult{
@@ -76,17 +84,22 @@ func (u *Uninstaller) Uninstall(ctx context.Context, req UninstallRequest) (*Uni
 			Where("workspace_id = ? AND template_instance_id = ?", workspaceID, instanceID).
 			First(&agent).Error; err != nil {
 			if err != gorm.ErrRecordNotFound {
-				return fmt.Errorf("load template agent: %w", err)
+				return internalErrorf(err, "could not load template agent")
 			}
 		} else {
 			hasCreatedAgent = true
 			result.AgentID = agent.ID
 		}
 
+		if rule.TriggerType == model.TriggerCron && u.scheduleManager != nil {
+			if err := u.scheduleManager.StopRuleScheduleForRule(ctx, rule.ID); err != nil {
+				return internalErrorf(err, "could not stop scheduled flow")
+			}
+		}
 		if err := tx.WithContext(ctx).
 			Where("workspace_id = ? AND id = ?", workspaceID, rule.ID).
 			Delete(&model.AutomationRule{}).Error; err != nil {
-			return fmt.Errorf("delete template rule: %w", err)
+			return internalErrorf(err, "could not delete flow")
 		}
 		if err := logTemplateActivity(ctx, tx, workspaceID, rule.ID, actorID, "template.uninstalled", map[string]any{
 			"template_key":         result.TemplateKey,
@@ -94,7 +107,7 @@ func (u *Uninstaller) Uninstall(ctx context.Context, req UninstallRequest) (*Uni
 			"agent_id":             result.AgentID,
 			"delete_created_agent": req.DeleteCreatedAgent,
 		}); err != nil {
-			return err
+			return internalErrorf(err, "could not record flow activity")
 		}
 
 		if !hasCreatedAgent {
@@ -102,31 +115,38 @@ func (u *Uninstaller) Uninstall(ctx context.Context, req UninstallRequest) (*Uni
 		}
 		referenced, err := otherRulesReferenceAgent(ctx, tx, workspaceID, agent.ID, rule.ID)
 		if err != nil {
-			return err
+			return internalErrorf(err, "could not check agent references")
 		}
 		if referenced {
 			result.AgentAction = AgentActionStillReferenced
 			return nil
 		}
 		if req.DeleteCreatedAgent {
+			var runCount int64
+			if err := tx.WithContext(ctx).
+				Model(&model.AgentRun{}).
+				Where("workspace_id = ? AND agent_id = ?", workspaceID, agent.ID).
+				Count(&runCount).Error; err != nil {
+				return internalErrorf(err, "could not check agent run history")
+			}
+			if runCount > 0 {
+				if err := detachTemplateAgent(ctx, tx, workspaceID, agent.ID); err != nil {
+					return err
+				}
+				result.AgentAction = AgentActionKept
+				return nil
+			}
 			if err := tx.WithContext(ctx).
 				Where("workspace_id = ? AND id = ?", workspaceID, agent.ID).
 				Delete(&model.Agent{}).Error; err != nil {
-				return fmt.Errorf("delete template agent: %w", err)
+				return internalErrorf(err, "could not delete template agent")
 			}
 			result.AgentAction = AgentActionDeleted
 			return nil
 		}
 
-		if err := tx.WithContext(ctx).
-			Model(&model.Agent{}).
-			Where("workspace_id = ? AND id = ?", workspaceID, agent.ID).
-			Updates(map[string]any{
-				"template_key":         nil,
-				"template_instance_id": nil,
-				"template_version":     nil,
-			}).Error; err != nil {
-			return fmt.Errorf("clear template fields on agent: %w", err)
+		if err := detachTemplateAgent(ctx, tx, workspaceID, agent.ID); err != nil {
+			return err
 		}
 		result.AgentAction = AgentActionKept
 		return nil
@@ -149,6 +169,21 @@ func (u *Uninstaller) Uninstall(ctx context.Context, req UninstallRequest) (*Uni
 		"agent_action", result.AgentAction,
 	)
 	return &result, nil
+}
+
+func detachTemplateAgent(ctx context.Context, tx *gorm.DB, workspaceID, agentID string) error {
+	if err := tx.WithContext(ctx).
+		Model(&model.Agent{}).
+		Where("workspace_id = ? AND id = ?", workspaceID, agentID).
+		Updates(map[string]any{
+			"template_key":         nil,
+			"template_instance_id": nil,
+			"template_version":     nil,
+			"is_system":            false,
+		}).Error; err != nil {
+		return internalErrorf(err, "could not detach template agent")
+	}
+	return nil
 }
 
 func otherRulesReferenceAgent(ctx context.Context, tx *gorm.DB, workspaceID, agentID, deletedRuleID string) (bool, error) {

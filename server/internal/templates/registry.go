@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -37,7 +38,9 @@ func LoadRegistry(fsys fs.FS) (*Registry, error) {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 		var tmpl Template
-		if err := yaml.Unmarshal(payload, &tmpl); err != nil {
+		decoder := yaml.NewDecoder(bytes.NewReader(payload))
+		decoder.KnownFields(true)
+		if err := decoder.Decode(&tmpl); err != nil {
 			return fmt.Errorf("parse %s: %w", path, err)
 		}
 		tmpl.basePath = filepath.Dir(path)

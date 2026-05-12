@@ -7,7 +7,7 @@ agent:
   pick_existing:
     required: true
     constraints:
-      targets: [workspace, task, epic, repository, document]
+      targets: [workspace]
 trigger:
   type: cron
 inputs:
@@ -16,7 +16,7 @@ inputs:
     required: true
     label: Agent
     section: What should run?
-    help_text: Select the agent that should run on this schedule.
+    help_text: Select a workspace-capable agent. Scheduled runs do not have a task, repo, or doc target unless a template asks for one explicitly.
   - key: schedule
     type: cron
     required: true

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -247,7 +248,7 @@ func (h *AutomationHandler) InstallFlowTemplate(w http.ResponseWriter, r *http.R
 		AgentOverrides: req.AgentOverrides,
 	})
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeFlowTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, result)
@@ -282,10 +283,29 @@ func (h *AutomationHandler) UninstallFlowTemplate(w http.ResponseWriter, r *http
 		DeleteCreatedAgent: req.DeleteCreatedAgent,
 	})
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeFlowTemplateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func writeFlowTemplateError(w http.ResponseWriter, r *http.Request, err error) {
+	if templateErr, ok := flowtemplates.ClassifyError(err); ok {
+		switch templateErr.Kind {
+		case flowtemplates.ErrorKindValidation:
+			writeError(w, http.StatusBadRequest, templateErr.Error())
+		case flowtemplates.ErrorKindNotFound:
+			writeError(w, http.StatusNotFound, templateErr.Error())
+		case flowtemplates.ErrorKindConflict:
+			writeError(w, http.StatusConflict, templateErr.Error())
+		default:
+			slog.ErrorContext(r.Context(), "flow template operation failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "flow template operation failed")
+		}
+		return
+	}
+	slog.ErrorContext(r.Context(), "flow template operation failed", "error", err)
+	writeError(w, http.StatusInternalServerError, "flow template operation failed")
 }
 
 // ListActivity handles GET /api/automation/activity.
@@ -586,6 +606,10 @@ func (h *AutomationHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	agent, err := h.agentService.GetAgent(r.Context(), workspaceID, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -605,6 +629,10 @@ func (h *AutomationHandler) UpdateAgent(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 
 	agent, err := h.agentService.UpdateAgent(r.Context(), workspaceID, id, req, actorID)
 	if err != nil {
@@ -620,6 +648,10 @@ func (h *AutomationHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) 
 	id := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	if err := h.agentService.DeleteAgent(r.Context(), workspaceID, id, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -632,6 +664,10 @@ func (h *AutomationHandler) GetAgentUsage(w http.ResponseWriter, r *http.Request
 	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	summary, err := h.agentService.GetAgentUsageSummary(r.Context(), workspaceID, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -690,6 +726,10 @@ func (h *AutomationHandler) StartRun(w http.ResponseWriter, r *http.Request) {
 	var req model.StartTargetAgentRunRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, req.AgentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 

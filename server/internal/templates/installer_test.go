@@ -3,6 +3,7 @@ package templates
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -60,6 +61,45 @@ func TestInstallerInstallCreateAgentTemplateCreatesStampedAgentAndRule(t *testin
 		t.Fatalf("target = %s/%s, want repository/repo-1", actionConfig.TargetType, actionConfig.TargetID)
 	}
 	assertTemplateActivity(t, db, result.Rule.ID, "template.installed", "release_notes_writer")
+}
+
+func TestInstallerInstallCreateAgentTemplateSuffixesDuplicateAgentName(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	if err := db.Create(&model.Agent{
+		ID:                    "existing-release-notes-agent",
+		WorkspaceID:           "ws-1",
+		Name:                  "Release Notes Writer agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+	}).Error; err != nil {
+		t.Fatalf("create existing agent: %v", err)
+	}
+	installer := NewInstaller(db, mustTestRegistry(t))
+	result, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "release_notes_writer",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"repository_id":             "repo-1",
+			"destination_collection_id": "collection-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	if result.Agent == nil {
+		t.Fatal("expected created agent")
+	}
+	if result.Agent.Name != "Release Notes Writer agent (2)" {
+		t.Fatalf("agent name = %q, want suffixed duplicate", result.Agent.Name)
+	}
 }
 
 func TestInstallerInstallGitHubTemplateAddsRepositoryFilter(t *testing.T) {
@@ -352,6 +392,180 @@ func TestInstallerInstallAPIDocsFreshnessRequiresSourceRepositoryTarget(t *testi
 	}
 }
 
+func TestInstallerValidatesManifestInputValues(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	systemAgent := model.Agent{
+		ID:                    "agent-quill",
+		WorkspaceID:           "ws-1",
+		IsSystem:              true,
+		Name:                  "Quill",
+		PresetKey:             model.AgentPresetDocumentationAgent,
+		Role:                  "Documentation Agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`[]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+	}
+	if err := db.Create(&systemAgent).Error; err != nil {
+		t.Fatalf("create system agent: %v", err)
+	}
+
+	installer := NewInstaller(db, mustTestRegistry(t))
+	tests := []struct {
+		name   string
+		inputs map[string]any
+		want   string
+	}{
+		{
+			name: "invalid cron",
+			inputs: map[string]any{
+				"schedule":             "every monday",
+				"docs_scope":           "space",
+				"space_id":             "space-1",
+				"source_repository_id": "repo-1",
+				"report_space_id":      "space-1",
+				"report_collection_id": "collection-1",
+			},
+			want: `input "schedule" cron expression must use standard 5-field syntax`,
+		},
+		{
+			name: "invalid enum",
+			inputs: map[string]any{
+				"schedule":             "0 9 * * 1",
+				"docs_scope":           "everything",
+				"space_id":             "space-1",
+				"source_repository_id": "repo-1",
+				"report_space_id":      "space-1",
+				"report_collection_id": "collection-1",
+			},
+			want: `input "docs_scope" must be one of`,
+		},
+		{
+			name: "visible required field",
+			inputs: map[string]any{
+				"schedule":             "0 9 * * 1",
+				"docs_scope":           "collection",
+				"space_id":             "space-1",
+				"source_repository_id": "repo-1",
+				"report_space_id":      "space-1",
+				"report_collection_id": "collection-1",
+			},
+			want: `input "collection_id" is required`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := installer.Install(context.Background(), InstallRequest{
+				WorkspaceID: "ws-1",
+				TemplateKey: "api_docs_freshness_sweep",
+				ActorID:     "user-1",
+				Inputs:      tt.inputs,
+			})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Install error = %v, want substring %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestInstallerStartsCronSchedule(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	existingAgent := model.Agent{
+		ID:                    "agent-existing",
+		WorkspaceID:           "ws-1",
+		IsSystem:              false,
+		Name:                  "Scheduled Agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`["workspace"]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+	}
+	if err := db.Create(&existingAgent).Error; err != nil {
+		t.Fatalf("create existing agent: %v", err)
+	}
+	scheduler := &fakeTemplateScheduleManager{}
+	installer := NewInstaller(db, mustTestRegistry(t))
+	installer.SetScheduleManager(scheduler)
+
+	result, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "run_on_a_schedule",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"agent_id": "agent-existing",
+			"schedule": "0 9 * * 1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	if len(scheduler.started) != 1 || scheduler.started[0] != result.Rule.ID {
+		t.Fatalf("started schedules = %#v, want [%s]", scheduler.started, result.Rule.ID)
+	}
+	var actionConfig model.ActionConfigRunAgent
+	if err := json.Unmarshal(result.Rule.ActionConfig, &actionConfig); err != nil {
+		t.Fatalf("unmarshal action config: %v", err)
+	}
+	if actionConfig.TargetType != "workspace" || actionConfig.TargetID != "ws-1" {
+		t.Fatalf("action target = %s/%s, want workspace/ws-1", actionConfig.TargetType, actionConfig.TargetID)
+	}
+}
+
+func TestInstallerRollsBackWhenCronScheduleStartFails(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	existingAgent := model.Agent{
+		ID:                    "agent-existing",
+		WorkspaceID:           "ws-1",
+		IsSystem:              false,
+		Name:                  "Scheduled Agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`["workspace"]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+	}
+	if err := db.Create(&existingAgent).Error; err != nil {
+		t.Fatalf("create existing agent: %v", err)
+	}
+	installer := NewInstaller(db, mustTestRegistry(t))
+	installer.SetScheduleManager(&fakeTemplateScheduleManager{startErr: errors.New("temporal down")})
+
+	_, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "run_on_a_schedule",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"agent_id": "agent-existing",
+			"schedule": "0 9 * * 1",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "could not start scheduled flow") {
+		t.Fatalf("Install error = %v, want schedule start error", err)
+	}
+	var count int64
+	if err := db.Model(&model.AutomationRule{}).Count(&count).Error; err != nil {
+		t.Fatalf("count rules: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("rule count = %d, want rollback to zero", count)
+	}
+}
+
 func TestInstallerInstallNoneTemplateCreatesRuleWithoutAgent(t *testing.T) {
 	db := setupInstallerTestDB(t)
 	installer := NewInstaller(db, mustTestRegistry(t))
@@ -453,6 +667,55 @@ func TestInstallerInstallPickExistingTemplateUsesExistingAgentAndStampsOnlyRule(
 	}
 }
 
+func TestUninstallerStopsCronScheduleBeforeDeletingRule(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	existingAgent := model.Agent{
+		ID:                    "agent-existing",
+		WorkspaceID:           "ws-1",
+		IsSystem:              false,
+		Name:                  "Scheduled Agent",
+		Status:                "idle",
+		RuntimeKind:           "native_sdk",
+		AllowedTools:          json.RawMessage(`[]`),
+		AllowedCommands:       json.RawMessage(`[]`),
+		AllowedTargets:        json.RawMessage(`["workspace"]`),
+		Skills:                model.AgentSkillRefs{},
+		ExecutionConfig:       model.JSONBlob(`{}`),
+		ApprovalMode:          "always",
+		DefaultInvocationMode: "interactive",
+	}
+	if err := db.Create(&existingAgent).Error; err != nil {
+		t.Fatalf("create existing agent: %v", err)
+	}
+	installer := NewInstaller(db, mustTestRegistry(t))
+	installed, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "run_on_a_schedule",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"agent_id": "agent-existing",
+			"schedule": "0 9 * * 1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+
+	scheduler := &fakeTemplateScheduleManager{}
+	uninstaller := NewUninstaller(db)
+	uninstaller.SetScheduleManager(scheduler)
+	if _, err := uninstaller.Uninstall(context.Background(), UninstallRequest{
+		WorkspaceID:        "ws-1",
+		TemplateInstanceID: *installed.Rule.TemplateInstanceID,
+		DeleteCreatedAgent: false,
+	}); err != nil {
+		t.Fatalf("Uninstall returned error: %v", err)
+	}
+	if len(scheduler.stopped) != 1 || scheduler.stopped[0] != installed.Rule.ID {
+		t.Fatalf("stopped schedules = %#v, want [%s]", scheduler.stopped, installed.Rule.ID)
+	}
+}
+
 func TestUninstallerKeepCreatedAgentClearsTemplateFields(t *testing.T) {
 	db := setupInstallerTestDB(t)
 	installer := NewInstaller(db, mustTestRegistry(t))
@@ -534,6 +797,48 @@ func TestUninstallerDeleteCreatedAgent(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("agent count = %d, want 0", count)
+	}
+}
+
+func TestUninstallerKeepsCreatedAgentWithRunHistory(t *testing.T) {
+	db := setupInstallerTestDB(t)
+	installer := NewInstaller(db, mustTestRegistry(t))
+	installed, err := installer.Install(context.Background(), InstallRequest{
+		WorkspaceID: "ws-1",
+		TemplateKey: "release_notes_writer",
+		ActorID:     "user-1",
+		Inputs: map[string]any{
+			"repository_id":             "repo-1",
+			"destination_collection_id": "collection-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO agent_runs (id, workspace_id, agent_id, target_type, target_id, runtime_kind, invocation_mode, approval_state, pause_reason, status, input, output_summary)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"run-with-history", "ws-1", installed.Agent.ID, "repository", "repo-1", "native_sdk", "interactive", "pending", "none", "completed", `{}`, `{}`,
+	).Error; err != nil {
+		t.Fatalf("create agent run: %v", err)
+	}
+
+	result, err := NewUninstaller(db).Uninstall(context.Background(), UninstallRequest{
+		WorkspaceID:        "ws-1",
+		TemplateInstanceID: *installed.Rule.TemplateInstanceID,
+		DeleteCreatedAgent: true,
+	})
+	if err != nil {
+		t.Fatalf("Uninstall returned error: %v", err)
+	}
+	if result.AgentAction != AgentActionKept {
+		t.Fatalf("agent action = %q, want %q", result.AgentAction, AgentActionKept)
+	}
+	var agent model.Agent
+	if err := db.First(&agent, "id = ?", installed.Agent.ID).Error; err != nil {
+		t.Fatalf("load preserved agent: %v", err)
+	}
+	if agent.TemplateKey != nil || agent.TemplateInstanceID != nil || agent.TemplateVersion != nil {
+		t.Fatalf("preserved agent template fields = %v/%v/%v, want cleared", agent.TemplateKey, agent.TemplateInstanceID, agent.TemplateVersion)
 	}
 }
 
@@ -638,6 +943,25 @@ func setupInstallerTestDB(t *testing.T) *gorm.DB {
 			created_at datetime,
 			PRIMARY KEY (agent_id, team_id)
 		)`,
+		`CREATE TABLE agent_runs (
+			id text PRIMARY KEY,
+			workspace_id text NOT NULL,
+			agent_id text NOT NULL,
+			target_type text NOT NULL,
+			target_id text NOT NULL,
+			runtime_kind text NOT NULL DEFAULT 'native_sdk',
+			invocation_mode text NOT NULL DEFAULT 'interactive',
+			approval_state text NOT NULL DEFAULT 'pending',
+			pause_reason text NOT NULL DEFAULT 'none',
+			triggered_by_user_id text,
+			status text NOT NULL DEFAULT 'queued',
+			input text NOT NULL DEFAULT '{}',
+			output_summary text NOT NULL DEFAULT '{}',
+			error_message text,
+			completed_at datetime,
+			created_at datetime,
+			updated_at datetime
+		)`,
 		`CREATE TABLE automation_rules (
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
@@ -726,4 +1050,27 @@ func mustTestRegistry(t *testing.T) *Registry {
 		t.Fatalf("load system registry: %v", err)
 	}
 	return registry
+}
+
+type fakeTemplateScheduleManager struct {
+	started  []string
+	stopped  []string
+	startErr error
+	stopErr  error
+}
+
+func (f *fakeTemplateScheduleManager) StartRuleScheduleForRule(ctx context.Context, rule *model.AutomationRule) error {
+	if f.startErr != nil {
+		return f.startErr
+	}
+	f.started = append(f.started, rule.ID)
+	return nil
+}
+
+func (f *fakeTemplateScheduleManager) StopRuleScheduleForRule(ctx context.Context, ruleID string) error {
+	if f.stopErr != nil {
+		return f.stopErr
+	}
+	f.stopped = append(f.stopped, ruleID)
+	return nil
 }

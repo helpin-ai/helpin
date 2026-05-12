@@ -107,6 +107,14 @@ agent:
 `),
 			want: "unsupported pick_existing constraint",
 		},
+		{
+			name: "unknown yaml field",
+			content: validTemplateYAML("bad", "Bad", "cron", model.ActionStartAgentRun, `
+agents:
+  reuse_system: documentation_agent
+`),
+			want: "field agents not found",
+		},
 	}
 
 	for _, tc := range tests {

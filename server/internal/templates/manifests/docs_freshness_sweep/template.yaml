@@ -35,7 +35,7 @@ inputs:
     help_text: The internal docs space Quill should check.
   - key: collection_id
     type: collection
-    required: false
+    required: true
     label: Docs collection
     section: What should it review?
     show_if: docs_scope=collection

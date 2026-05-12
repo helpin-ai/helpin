@@ -966,6 +966,11 @@ func TestResolveCronTriggerConfig(t *testing.T) {
 			wantSchedule: "0 6 * * 1",
 		},
 		{
+			name:    "six field cron is rejected",
+			cfg:     model.TriggerConfigCron{Schedule: "0 0 6 * * 1"},
+			wantErr: true,
+		},
+		{
 			name:    "empty config is rejected",
 			cfg:     model.TriggerConfigCron{},
 			wantErr: true,

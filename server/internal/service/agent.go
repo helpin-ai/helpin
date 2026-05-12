@@ -640,14 +640,17 @@ func (s *AgentService) ListAgentsForActor(ctx context.Context, workspaceID strin
 	if err != nil {
 		return nil, err
 	}
-	if actor == nil || actor.Role == "admin" || actor.Role == "owner" {
+	if actor != nil && (actor.Role == "admin" || actor.Role == "owner") {
 		return agents, nil
 	}
-	actorTeamIDs := make(map[string]struct{}, len(actor.TeamMemberships))
-	for _, tm := range actor.TeamMemberships {
-		teamID := strings.TrimSpace(tm.TeamID)
-		if teamID != "" {
-			actorTeamIDs[teamID] = struct{}{}
+	actorTeamIDs := map[string]struct{}{}
+	if actor != nil {
+		actorTeamIDs = make(map[string]struct{}, len(actor.TeamMemberships))
+		for _, tm := range actor.TeamMemberships {
+			teamID := strings.TrimSpace(tm.TeamID)
+			if teamID != "" {
+				actorTeamIDs[teamID] = struct{}{}
+			}
 		}
 	}
 	filtered := make([]model.Agent, 0, len(agents))
@@ -657,6 +660,37 @@ func (s *AgentService) ListAgentsForActor(ctx context.Context, workspaceID strin
 		}
 	}
 	return filtered, nil
+}
+
+// RequireActorCanUseAgent enforces the actor boundary for team-scoped agents.
+// Agent team access controls who can see and manually start an agent; tools and target RBAC
+// control what the agent can access after it starts.
+func (s *AgentService) RequireActorCanUseAgent(ctx context.Context, workspaceID, agentID string, actor *authorization.Actor) error {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return fmt.Errorf("agent_id is required")
+	}
+	agent, err := s.GetAgent(ctx, workspaceID, agentID)
+	if err != nil {
+		return err
+	}
+	if actor != nil && (actor.Role == "admin" || actor.Role == "owner") {
+		return nil
+	}
+	actorTeamIDs := map[string]struct{}{}
+	if actor != nil {
+		actorTeamIDs = make(map[string]struct{}, len(actor.TeamMemberships))
+		for _, tm := range actor.TeamMemberships {
+			teamID := strings.TrimSpace(tm.TeamID)
+			if teamID != "" {
+				actorTeamIDs[teamID] = struct{}{}
+			}
+		}
+	}
+	if !agentVisibleToActorTeams(*agent, actorTeamIDs) {
+		return fmt.Errorf("agent is not available to this actor")
+	}
+	return nil
 }
 
 // GetAgent returns a single agent.
@@ -2529,9 +2563,6 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err != nil {
 			return nil, err
 		}
-		if err := validateAgentTeamScope(agent, "task", task.TeamID); err != nil {
-			return nil, err
-		}
 		resolved := worker.ResolveAgentProfile(agent, resolveInvocationMode(agent))
 
 		var delivery *model.TaskDeliveryTarget
@@ -2588,9 +2619,6 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err != nil {
 			return nil, err
 		}
-		if err := validateAgentTeamScope(agent, "epic", epic.TeamID); err != nil {
-			return nil, err
-		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
@@ -2639,9 +2667,6 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "repository")
 		if err != nil {
-			return nil, err
-		}
-		if err := validateAgentTeamScope(agent, "repository", nil); err != nil {
 			return nil, err
 		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
@@ -2747,9 +2772,6 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err != nil {
 			return nil, err
 		}
-		if err := validateAgentTeamScope(agent, "support_coverage_gap", nil); err != nil {
-			return nil, err
-		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
@@ -2796,9 +2818,6 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err != nil {
 			return nil, err
 		}
-		if err := validateAgentTeamScope(agent, "document", doc.TeamID); err != nil {
-			return nil, err
-		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
@@ -2836,9 +2855,6 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		}
 		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "crm_contact")
 		if err != nil {
-			return nil, err
-		}
-		if err := validateAgentTeamScope(agent, "crm_contact", nil); err != nil {
 			return nil, err
 		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
@@ -2880,9 +2896,6 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		if err != nil {
 			return nil, err
 		}
-		if err := validateAgentTeamScope(agent, "crm_deal", nil); err != nil {
-			return nil, err
-		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
 			return nil, err
 		}
@@ -2914,9 +2927,6 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 
 		agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, "workspace")
 		if err != nil {
-			return nil, err
-		}
-		if err := validateAgentTeamScope(agent, "workspace", nil); err != nil {
 			return nil, err
 		}
 		if err := validateRunAllowedTools(req.AllowedTools, agent); err != nil {
@@ -4272,6 +4282,23 @@ func (s *AgentService) requireRunnableAgent(ctx context.Context, workspaceID, ag
 	return agent, nil
 }
 
+func (s *AgentService) ValidateTemplateAgent(ctx context.Context, agent *model.Agent) error {
+	if agent == nil {
+		return fmt.Errorf("agent is required")
+	}
+	normalizeAgentRecord(agent)
+	if err := s.validateAndMaterializeAgentSkills(ctx, agent); err != nil {
+		return err
+	}
+	if err := validateRuntimeForAgent(agent); err != nil {
+		return err
+	}
+	if err := validateTriggerModeForAgent(agent.TriggerMode, agent); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *AgentService) markAgentIdle(ctx context.Context, workspaceID, agentID string) error {
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
@@ -4797,21 +4824,6 @@ func validateTriggerMode(triggerMode string) error {
 
 func strPtr(s string) *string {
 	return &s
-}
-
-func validateAgentTeamScope(agent *model.Agent, targetType string, targetTeamID *string) error {
-	agentTeamIDs := agentTeamIDsForScope(agent)
-	if len(agentTeamIDs) == 0 {
-		return nil
-	}
-	actualTargetTeamID := strings.TrimSpace(derefString(targetTeamID))
-	if actualTargetTeamID == "" {
-		return fmt.Errorf("agent is restricted to specific teams and cannot run on workspace-scoped %s targets", targetType)
-	}
-	if !slices.Contains(agentTeamIDs, actualTargetTeamID) {
-		return fmt.Errorf("agent is restricted to specific teams and cannot run on %s targets for team %s", targetType, actualTargetTeamID)
-	}
-	return nil
 }
 
 func resolveCreateAgentTeamIDs(req model.CreateAgentRequest) []string {

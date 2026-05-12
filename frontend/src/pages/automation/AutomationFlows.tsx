@@ -1173,6 +1173,10 @@ function allowedActions(triggerType: string): FlowDraft['actionType'][] {
   return ['start_agent_run'];
 }
 
+function requiresExplicitAgentTarget(triggerType: string) {
+  return triggerType.startsWith('github.') && triggerType !== 'github.release_published';
+}
+
 function triggerLabel(triggerType: string) {
   return TRIGGER_OPTIONS.find((option) => option.value === triggerType)?.label ?? triggerType;
 }
@@ -1361,6 +1365,9 @@ function validateDraft(draft: FlowDraft) {
   }
   if (draft.actionType === 'start_agent_run') {
     if (!draft.agentId) return 'Choose an agent';
+    if (requiresExplicitAgentTarget(draft.triggerType) && draft.targetMode === 'event') {
+      return 'Choose where the agent should run';
+    }
     if (draft.targetMode !== 'event' && draft.targetMode !== 'workspace' && !draft.targetId) {
       return 'Choose a target';
     }
@@ -1993,6 +2000,10 @@ function FlowComposer({
     normalized.scheduleWeekdays = normalizeScheduleWeekdays(normalized.scheduleWeekdays);
     normalized.scheduleDayOfMonth = clampScheduleNumber(normalized.scheduleDayOfMonth, 1, 31, 1);
     applyTriggerDefaults(normalized, workflows);
+    if (normalized.actionType === 'start_agent_run' && normalized.triggerType === 'cron' && normalized.targetMode === 'event') {
+      normalized.targetMode = 'workspace';
+      normalized.targetId = workspaceId;
+    }
     return normalized;
   });
 
@@ -2092,10 +2103,15 @@ function FlowComposer({
                   <PillGlue>repository is</PillGlue>
                   <Select
                     value={repoSelectValue}
-                    onValueChange={(value) => updateDraft((current) => ({
-                      ...current,
-                      repoFullName: value === '__custom__' ? '' : value,
-                    }))}
+                    onValueChange={(value) => updateDraft((current) => {
+                      const repo = repositories.find((entry) => entry.full_name === value);
+                      return {
+                        ...current,
+                        repoFullName: value === '__custom__' ? '' : value,
+                        targetMode: repo && requiresExplicitAgentTarget(current.triggerType) ? 'repository' : current.targetMode,
+                        targetId: repo && requiresExplicitAgentTarget(current.triggerType) ? repo.id : current.targetId,
+                      };
+                    })}
                   >
                     <SelectTrigger size="sm" className="min-w-[10rem]">
                       <SelectValue />
@@ -3909,7 +3925,7 @@ export function AutomationFlowsPage({
         skillCatalog={skillCatalogQuery.data?.skills ?? []}
         timezone={scheduleTimezone}
         saving={installFlowTemplate.isPending}
-        canEdit={permissions.canManageSettings}
+        canEdit={permissions.canAdminAutomations}
         onBack={() => {
           setSelectedTemplate(null);
           setTemplateAgentSetup(null);
@@ -3950,7 +3966,7 @@ export function AutomationFlowsPage({
         repositories={repositories}
         timezone={scheduleTimezone}
         saving={saving}
-        canEdit={permissions.canManageSettings}
+        canEdit={permissions.canAdminAutomations}
         onOpenChange={(open) => {
           setComposerOpen(open);
           if (!open) {
@@ -3968,7 +3984,7 @@ export function AutomationFlowsPage({
           <h1 className="text-2xl font-semibold tracking-tight">Automation flows</h1>
           <p className="text-sm text-muted-foreground">Event-driven automations that trigger agents and workflow actions.</p>
         </div>
-        {permissions.canManageSettings && (
+        {permissions.canAdminAutomations && (
           <Button size="sm" variant="outline" onClick={openCreateComposer}>
             + New flow
           </Button>
@@ -3992,7 +4008,7 @@ export function AutomationFlowsPage({
             Flows are event-driven automations — they watch for a trigger (a task changing state, a PR
             merging, a tag shipping, a schedule) and run an agent to act on it.
           </p>
-          {permissions.canManageSettings && (
+          {permissions.canAdminAutomations && (
             <Button className="mb-8 gap-2" onClick={openCreateComposer}>
               <PlusSignIcon className="h-4 w-4" />
               New flow
@@ -4063,7 +4079,7 @@ export function AutomationFlowsPage({
                 teamName={rule.team_id ? teamNamesById.get(rule.team_id) : undefined}
                 healthItem={flowHealth.get(rule.id)}
                 workspaceSlug={workspaceSlug}
-                canEdit={permissions.canManageSettings}
+                canEdit={permissions.canAdminAutomations}
                 onEdit={openEditComposer}
                 onToggle={handleToggle}
                 onDelete={handleDelete}

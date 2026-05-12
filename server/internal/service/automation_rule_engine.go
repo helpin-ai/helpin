@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
+	"github.com/helpin-ai/helpin/server/internal/automationcron"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -1271,6 +1272,9 @@ func resolveCronTriggerConfig(cfg model.TriggerConfigCron) (schedule, preset str
 	if schedule == "" {
 		return "", "", fmt.Errorf("schedule or preset is required")
 	}
+	if err := automationcron.ValidateExpression(schedule); err != nil {
+		return "", "", err
+	}
 	return schedule, preset, nil
 }
 
@@ -1294,6 +1298,17 @@ func (e *AutomationRuleEngine) syncRuleSchedule(ctx context.Context, rule *model
 		return err
 	}
 	return e.runEngine.StartRuleSchedule(ctx, rule.ID, rule.WorkspaceID, schedule)
+}
+
+func (e *AutomationRuleEngine) StartRuleScheduleForRule(ctx context.Context, rule *model.AutomationRule) error {
+	return e.syncRuleSchedule(ctx, rule, false)
+}
+
+func (e *AutomationRuleEngine) StopRuleScheduleForRule(ctx context.Context, ruleID string) error {
+	if e == nil || e.runEngine == nil || strings.TrimSpace(ruleID) == "" {
+		return nil
+	}
+	return e.runEngine.StopRuleSchedule(ctx, ruleID)
 }
 
 func githubRunEventContext(event model.AutomationEvent) *model.AgentRunGitHubEventContext {

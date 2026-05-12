@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
@@ -125,12 +125,13 @@ export function CustomAgentCreatePanel({
   tools,
   skills,
   providerOptions,
+  advancedOpen,
+  onAdvancedOpenChange,
   onCreate,
   saving,
 }: CustomAgentCreatePanelProps) {
   const [started, setStarted] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [draftDescription, setDraftDescription] = useState('');
   const [drafting, setDrafting] = useState(false);
   const [draftProgressStep, setDraftProgressStep] = useState(0);
@@ -140,7 +141,17 @@ export function CustomAgentCreatePanel({
   const [toolSearch, setToolSearch] = useState('');
   const [toolCategory, setToolCategory] = useState('All');
   const [toolRemovalMessage, setToolRemovalMessage] = useState('');
+  const latestFormRef = useRef(form);
+  const draftRequestRef = useRef(0);
   const missing = validateCustomAgentCreateForm(form);
+
+  useEffect(() => {
+    latestFormRef.current = form;
+  }, [form]);
+
+  useEffect(() => () => {
+    draftRequestRef.current += 1;
+  }, []);
 
   useEffect(() => {
     if (!drafting) {
@@ -190,13 +201,18 @@ export function CustomAgentCreatePanel({
     setDrafting(true);
     setDraftProgressStep(0);
     setDraftError('');
+    const requestId = draftRequestRef.current + 1;
+    draftRequestRef.current = requestId;
     const res = await automationService.draftCustomAgent(workspaceId, { description });
+    if (requestId !== draftRequestRef.current) {
+      return;
+    }
     setDrafting(false);
     if (res.error || !res.data) {
       setDraftError(res.error || 'Could not draft this agent. You can still start blank.');
       return;
     }
-    onChange(applyCustomAgentDraftToForm(form, res.data.draft));
+    onChange(applyCustomAgentDraftToForm(latestFormRef.current, res.data.draft));
     setStarted(true);
   };
 
@@ -586,7 +602,7 @@ export function CustomAgentCreatePanel({
                 })}
               </div>
               <div className="space-y-3">
-                <FieldLabel tooltip="Workspace-wide agents can work across the workspace. Specific teams narrows who can see and run the agent.">Team access</FieldLabel>
+                <FieldLabel tooltip="Choose who can see this agent in pickers and start runs. The agent's tools and skills control what it can do after it starts.">Who can use this agent</FieldLabel>
                 <div className="grid gap-2 sm:grid-cols-2 sm:max-w-md">
                   <button
                     type="button"
@@ -671,15 +687,15 @@ export function CustomAgentCreatePanel({
             <button
               type="button"
               className="flex w-full items-center justify-between text-left"
-              onClick={() => setAdvancedSettingsOpen((open) => !open)}
+              onClick={() => onAdvancedOpenChange(!advancedOpen)}
             >
               <span>
                 <span className="block text-sm font-semibold">Advanced settings</span>
                 <span className="mt-1 block text-xs text-muted-foreground">Runtime, model, parallel tasks, and token limits.</span>
               </span>
-              <span className="text-xs text-muted-foreground">{advancedSettingsOpen ? 'Hide' : 'Show'}</span>
+              <span className="text-xs text-muted-foreground">{advancedOpen ? 'Hide' : 'Show'}</span>
             </button>
-            {advancedSettingsOpen ? (
+            {advancedOpen ? (
               <div className="grid gap-3 border-t border-border pt-3 md:grid-cols-2">
                     <label className="block space-y-2">
                       <FieldLabel tooltip="Execution engine for this agent. These options match the original custom-agent form.">Runtime</FieldLabel>
