@@ -131,3 +131,23 @@ func requireCanManage(ctx context.Context, teamID *string) error {
 	}
 	return requireCanManageTeams(ctx, []string{*teamID})
 }
+
+// requireCanEditTeamEpics checks that the actor can create/edit/delete epics
+// in the given team. Admins/owners can edit any team's epics. Regular members
+// can edit epics in teams they belong to, regardless of team role.
+func requireCanEditTeamEpics(ctx context.Context, teamID *string) error {
+	actor := authorization.GetActor(ctx)
+	if actor == nil {
+		return nil
+	}
+	if isPrivileged(actor) {
+		return nil
+	}
+	if teamID == nil || *teamID == "" {
+		return &model.ErrForbidden{Message: "team_id is required"}
+	}
+	if actor.IsMemberOfTeam(*teamID) {
+		return nil
+	}
+	return &model.ErrForbidden{Message: "you can only edit epics in your own teams"}
+}
