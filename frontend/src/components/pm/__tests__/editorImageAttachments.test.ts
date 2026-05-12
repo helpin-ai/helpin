@@ -144,4 +144,22 @@ describe('editorImageAttachments', () => {
 
     editor.destroy()
   })
+
+  it('can disable image captions for PM editor descriptions', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: [StarterKit, ResizableImageExtension.configure({ enableCaption: false })],
+      content: '',
+    })
+
+    editor.commands.setResizableImage({
+      src: 'https://cdn.example.com/a.png',
+      alt: 'Screenshot',
+      caption: 'Existing caption',
+    })
+
+    expect(editor.getHTML()).not.toContain('data-caption')
+
+    editor.destroy()
+  })
 })
