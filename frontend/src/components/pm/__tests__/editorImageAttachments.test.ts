@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   diffRemovedInlineAttachmentIds,
   extractInlineAttachmentIds,
+  normalizeInlineAttachmentImageSrcs,
   removeInlineImagesByAttachmentIds,
 } from '../editorImageAttachments'
 import { uploadEditorImage } from '@/hooks/useEditorImageUpload'
@@ -14,6 +15,7 @@ import { ResizableImageExtension } from '@/components/ui/resizable-image-extensi
 
 vi.mock('@/lib/services/pmAttachmentService', () => ({
   pmAttachmentService: {
+    contentUrl: (id: string) => `http://localhost:8080/api/pm/attachments/${id}/content`,
     initiateUpload: vi.fn(),
     confirmUpload: vi.fn(),
   },
@@ -64,6 +66,17 @@ describe('editorImageAttachments', () => {
     expect(diffRemovedInlineAttachmentIds(previousHtml, nextHtml)).toEqual(['att-1'])
   })
 
+  it('normalizes existing inline image srcs to app attachment content URLs', () => {
+    const html =
+      '<p>Before</p><img src="https://assets.helpin.ai/ws-1/att-1-image.png" alt="Image" data-attachment-id="att-1" width="200px" />'
+
+    const normalized = normalizeInlineAttachmentImageSrcs(html)
+
+    expect(normalized).toContain('src="http://localhost:8080/api/pm/attachments/att-1/content"')
+    expect(normalized).toContain('data-attachment-id="att-1"')
+    expect(normalized).toContain('width="200px"')
+  })
+
   it('returns attachment metadata after a successful image upload', async () => {
     vi.mocked(pmAttachmentService.initiateUpload).mockResolvedValue({
       data: {
@@ -102,7 +115,7 @@ describe('editorImageAttachments', () => {
 
     expect(result).toEqual({
       attachmentId: 'att-123',
-      publicUrl: 'https://cdn.example.com/clipboard.png',
+      publicUrl: 'http://localhost:8080/api/pm/attachments/att-123/content',
     })
     expect(pmAttachmentService.confirmUpload).toHaveBeenCalledWith('ws-1', 'att-123')
   })

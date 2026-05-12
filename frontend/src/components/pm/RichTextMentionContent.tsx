@@ -2,6 +2,7 @@ import { createElement, useCallback, useMemo, useRef } from 'react'
 
 import { LoadingImage } from '@/components/ui/loading-image'
 import { MentionText } from '@/components/pm/MentionText'
+import { normalizeInlineAttachmentImageSrcs } from '@/components/pm/editorImageAttachments'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
 
 interface RichTextMentionContentProps {
@@ -152,7 +153,8 @@ export function RichTextMentionContent({
   const content = useMemo(() => {
     if (!html || typeof DOMParser === 'undefined') return null
 
-    const parsed = new DOMParser().parseFromString(html, 'text/html')
+    const normalizedHtml = normalizeInlineAttachmentImageSrcs(html)
+    const parsed = new DOMParser().parseFromString(normalizedHtml, 'text/html')
     const counter = { current: 0 }
     return Array.from(parsed.body.childNodes)
       .map((node, index) => renderNode(node, `node-${index}`, members, teams, onHtmlChange ? handleCheckToggle : undefined, onHtmlChange ? counter : undefined))
