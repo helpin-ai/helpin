@@ -8,5 +8,7 @@ describe('TipTap placeholder CSS', () => {
 
     expect(css).not.toMatch(/\.tiptap\.is-editor-empty\s+p\.is-empty::before/)
     expect(css).not.toMatch(/\.ProseMirror\.is-editor-empty\s+p\.is-empty::before/)
+    expect(css).not.toMatch(/\.tiptap\s+p\.is-editor-empty:first-child::before/)
+    expect(css).not.toMatch(/\.tiptap\s*>\s*\.is-editor-empty::before/)
   })
 })

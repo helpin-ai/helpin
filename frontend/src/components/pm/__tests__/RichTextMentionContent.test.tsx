@@ -110,7 +110,7 @@ describe('RichTextMentionContent', () => {
     container.remove()
   })
 
-  it('renders saved description images centered by default', () => {
+  it('renders saved description images left aligned by default', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -123,7 +123,7 @@ describe('RichTextMentionContent', () => {
       )
     })
 
-    const imageWrapper = container.querySelector('[data-inline-image-align="center"]')
+    const imageWrapper = container.querySelector('[data-inline-image-align="left"]')
     expect(imageWrapper).toBeTruthy()
     expect(imageWrapper?.querySelector('img')?.getAttribute('src')).toBe('https://cdn.example.com/task.png')
 

@@ -308,7 +308,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       TextColor,
       Placeholder.configure({
         placeholder,
-        showOnlyCurrent: false,
+        showOnlyCurrent: true,
         emptyNodeClass: 'is-empty',
         emptyEditorClass: 'is-editor-empty',
       }),
@@ -340,7 +340,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       }),
     ];
     if (uploadConfig) {
-      exts.push(ResizableImageExtension.configure({ enableCaption: false }) as typeof exts[number]);
+      exts.push(ResizableImageExtension.configure({ enableCaption: false, defaultAlignment: 'left' }) as typeof exts[number]);
     }
     return exts;
   // eslint-disable-next-line react-hooks/exhaustive-deps

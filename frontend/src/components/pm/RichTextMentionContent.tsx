@@ -75,7 +75,7 @@ function renderNode(
   const props: Record<string, unknown> = { key, ...mapAttributes(element) }
 
   if (tag === 'img') {
-    const alignment = element.getAttribute('data-alignment') || 'center'
+    const alignment = element.getAttribute('data-alignment') || 'left'
     return (
       <span
         key={key}

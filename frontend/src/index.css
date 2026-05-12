@@ -331,10 +331,8 @@
 .tiptap {
   outline: none;
 }
-/* Show placeholder only when the entire editor is empty (first child of empty editor) */
+/* Show placeholder only on the first empty paragraph of an empty editor. */
 .tiptap.is-editor-empty > p.is-empty:first-child::before,
-.tiptap p.is-editor-empty:first-child::before,
-.tiptap > .is-editor-empty::before,
 .ProseMirror.is-editor-empty > p.is-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
