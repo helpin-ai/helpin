@@ -552,14 +552,9 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
   if (event.type !== 'interaction.resolved') return null;
   const payload = asRecord(event.payload) ?? {};
   const interactionKind = asString(payload.interaction_kind);
-  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return null;
+  if (interactionKind !== 'approval_request') return null;
 
-  const content = interactionKind === 'approval_request'
-    ? approvalRequestResolutionTranscriptContent(asRecord(payload.request_payload), asRecord(payload.response_payload))
-    : reviewCheckpointResolutionTranscriptContent(
-      asRecord(payload.request_payload),
-      asRecord(payload.response_payload),
-    );
+  const content = approvalRequestResolutionTranscriptContent(asRecord(payload.request_payload), asRecord(payload.response_payload));
   if (!content) return null;
 
   const responsePayload = asRecord(payload.response_payload);
@@ -571,7 +566,7 @@ function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEve
     message_id: asString(payload.interaction_id) ?? event.id,
     role: 'user',
     content,
-    message_type: interactionKind === 'approval_request' ? 'approval_request_resolution' : 'review_checkpoint_resolution',
+    message_type: 'approval_request_resolution',
     timestamp: event.timestamp,
     sequence_no: event.sequence_no,
     resolver_user_id: resolverUserId,
@@ -582,7 +577,7 @@ function resolvedInteractionResponseNote(event: CodingSessionEvent) {
   if (event.type !== 'interaction.resolved') return undefined;
   const payload = asRecord(event.payload);
   const interactionKind = asString(payload?.interaction_kind);
-  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return undefined;
+  if (interactionKind !== 'approval_request') return undefined;
   return asString(asRecord(payload?.response_payload)?.message)?.trim();
 }
 
@@ -590,7 +585,7 @@ function resolvedInteractionResumeMessageType(event: CodingSessionEvent) {
   if (event.type !== 'interaction.resolved') return undefined;
   const payload = asRecord(event.payload);
   const interactionKind = asString(payload?.interaction_kind);
-  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return undefined;
+  if (interactionKind !== 'approval_request') return undefined;
   const decision = asString(asRecord(payload?.response_payload)?.decision)?.trim();
   if (!decision) return undefined;
   return decision === 'approve' ? 'approval' : 'request_changes';
@@ -630,71 +625,6 @@ function approvalRequestResolutionTranscriptContent(
   const lines: string[] = [
     decision === 'approve' ? `Approved ${title}.` : `Requested changes on ${title}.`,
   ];
-  if (note) {
-    lines.push('');
-    lines.push(`Note: ${note}`);
-  }
-  return lines.join('\n');
-}
-
-function reviewCheckpointResolutionTranscriptContent(
-  requestPayload: Record<string, unknown> | null,
-  responsePayload: Record<string, unknown> | null,
-) {
-  if (!responsePayload) return '';
-  const decision = asString(responsePayload.decision);
-  if (!decision) return '';
-  const selectionMode = (asString(responsePayload.selection_mode) ?? '').toLowerCase();
-  const note = asString(responsePayload.message);
-  const findings = Array.isArray(requestPayload?.findings) ? requestPayload.findings : [];
-  const selectedFindingIDs = Array.isArray(responsePayload.selected_finding_ids)
-    ? responsePayload.selected_finding_ids.flatMap((value) => {
-      const id = asString(value);
-      return id ? [id] : [];
-    })
-    : [];
-
-  const normalizedFindings = findings.flatMap((rawFinding) => {
-    const finding = asRecord(rawFinding);
-    const id = asString(finding?.id);
-    const title = asString(finding?.title);
-    if (!id || !title) return [];
-    return [{
-      id,
-      title,
-      codeLocation: asString(finding?.code_location),
-    }];
-  });
-
-  const selectedFindings = selectionMode === 'selected'
-    ? normalizedFindings.filter((finding) => selectedFindingIDs.includes(finding.id))
-    : normalizedFindings;
-
-  const lines: string[] = [];
-  if (decision === 'approve') {
-    if (selectedFindings.length > 0) {
-      lines.push(selectionMode === 'selected'
-        ? 'Approved selected review findings for implementation:'
-        : 'Approved all review findings for implementation:');
-      lines.push(...selectedFindings.map((finding) => (
-        finding.codeLocation ? `- ${finding.title} \`${finding.codeLocation}\`` : `- ${finding.title}`
-      )));
-    } else {
-      lines.push('Approved the review checkpoint.');
-    }
-  } else {
-    if (selectedFindings.length > 0) {
-      lines.push(selectionMode === 'selected'
-        ? 'Requested changes on selected review findings:'
-        : 'Requested changes on the review findings:');
-      lines.push(...selectedFindings.map((finding) => (
-        finding.codeLocation ? `- ${finding.title} \`${finding.codeLocation}\`` : `- ${finding.title}`
-      )));
-    } else {
-      lines.push('Requested changes on the review checkpoint.');
-    }
-  }
-
   if (note) {
     lines.push('');
     lines.push(`Note: ${note}`);
