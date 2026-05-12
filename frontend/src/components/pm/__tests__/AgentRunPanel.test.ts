@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getTaskAgentRunPrimaryAction } from '../AgentRunPanel';
+import { getTaskAgentRunExecutionContextLockReason, getTaskAgentRunPrimaryAction } from '../AgentRunPanel';
 import type { AgentRun } from '@/lib/pmTypes';
 
 function run(overrides: Partial<AgentRun>): AgentRun {
@@ -91,5 +91,32 @@ describe('getTaskAgentRunPrimaryAction', () => {
       label: 'Run',
       status: 'Choose an agent to run on this task.',
     });
+  });
+});
+
+describe('getTaskAgentRunExecutionContextLockReason', () => {
+  it('locks repository and branch selection while a task run is active', () => {
+    expect(
+      getTaskAgentRunExecutionContextLockReason({
+        activeRun: run({ status: 'running' }),
+        activeRunAgentName: 'Forge',
+      }),
+    ).toBe('Forge is running. Repository and branch can be changed after this run finishes.');
+
+    expect(
+      getTaskAgentRunExecutionContextLockReason({
+        activeRun: run({ status: 'paused', pause_reason: 'human_approval' }),
+        activeRunAgentName: 'Lens',
+      }),
+    ).toBe('Lens is awaiting approval. Repository and branch can be changed after this run finishes.');
+  });
+
+  it('allows repository and branch selection when there is no active run', () => {
+    expect(
+      getTaskAgentRunExecutionContextLockReason({
+        activeRun: null,
+        activeRunAgentName: null,
+      }),
+    ).toBeNull();
   });
 });
