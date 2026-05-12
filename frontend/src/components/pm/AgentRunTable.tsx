@@ -19,7 +19,8 @@ interface Props {
   loading: boolean;
 }
 
-const BRANCH_MAX_CHARS = 28;
+const BRANCH_MAX_CHARS = 40;
+const TOKEN_COLUMN_WIDTH = 100;
 
 function truncateMiddle(value: string, max: number) {
   if (value.length <= max) return value;
@@ -68,9 +69,9 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
       <div className={`${TABLE_HEADER} flex`}>
         <div className={TABLE_HEADER_CELL} style={{ width: 120 }}>Status</div>
         <div className={TABLE_HEADER_CELL} style={{ width: 150 }}>Agent</div>
-        <div className={TABLE_HEADER_CELL} style={{ flex: '1 1 0%', minWidth: 100 }}>Branch</div>
+        <div className={TABLE_HEADER_CELL} style={{ flex: '1 1 0%', minWidth: 140 }}>Branch</div>
         <div className={TABLE_HEADER_CELL} style={{ width: 130 }}>Time</div>
-        <div className={`${TABLE_HEADER_CELL} text-right`} style={{ width: 180 }}>Tokens</div>
+        <div className={TABLE_HEADER_CELL} style={{ width: TOKEN_COLUMN_WIDTH }}>Tokens</div>
       </div>
 
       {/* Rows */}
@@ -83,7 +84,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
         const agent = agentsById.get(run.agent_id);
         const agentName = agent?.name ?? AGENT_RUNTIME_LABELS[run.runtime_kind] ?? run.runtime_kind;
         const totalTokens = formatRunTokenUsageTotal(run);
-        const tokenBreakdown = formatRunTokenUsageBreakdown(run);
+        const tokenBreakdown = formatRunTokenUsageBreakdown(run).filter((line) => !line.startsWith('Total:'));
 
         return (
           <button
@@ -119,7 +120,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
                 <span className="truncate">{agentName}</span>
               </div>
             </div>
-            <div className={`${TABLE_CELL} text-muted-foreground`} style={{ flex: '1 1 0%', minWidth: 100 }}>
+            <div className={`${TABLE_CELL} text-muted-foreground`} style={{ flex: '1 1 0%', minWidth: 140 }}>
               {branch ? (
                 <QuickTooltip label={branch}>
                   <span className="truncate font-mono text-[11px]">{branchDisplay}</span>
@@ -131,13 +132,13 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
             <div className={`${TABLE_CELL} text-muted-foreground`} style={{ width: 130 }}>
               {formatDistanceToNow(parseISO(run.created_at), { addSuffix: true })}
             </div>
-            <div className={`${TABLE_CELL} justify-end text-muted-foreground`} style={{ width: 180 }}>
-              {tokenBreakdown.length > 1 ? (
+            <div className={`${TABLE_CELL} text-muted-foreground`} style={{ width: TOKEN_COLUMN_WIDTH }}>
+              {tokenBreakdown.length > 0 ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="cursor-help tabular-nums">{totalTokens}</span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" align="end" className="space-y-1 px-3 py-2 text-xs">
+                  <TooltipContent side="top" align="start" className="space-y-1 px-3 py-2 text-xs">
                     {tokenBreakdown.map((line) => (
                       <div key={line}>{line}</div>
                     ))}
