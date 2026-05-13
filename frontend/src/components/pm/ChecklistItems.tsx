@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { Button } from '@/components/ui/button';
 import {
   DndContext,
   closestCenter,
@@ -79,7 +80,7 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-1.5 rounded-md border border-transparent px-2 py-1.5 transition-colors hover:border-border/60 hover:bg-muted/30 ${isDragging ? 'opacity-50 border-border/60 bg-muted/30' : ''}`}
+      className={`group flex items-center gap-1.5 px-2 py-1 ${isDragging ? 'opacity-50' : ''}`}
     >
       <button
         type="button"
@@ -96,7 +97,7 @@ function SortableItem({
         className="h-3.5 w-3.5 shrink-0 rounded border-border cursor-pointer accent-primary"
       />
       <span
-        className={`flex-1 text-sm ${
+        className={`min-w-0 flex-1 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-muted/30 ${
           item.completed ? 'line-through text-muted-foreground' : 'text-foreground'
         }`}
       >
@@ -332,14 +333,14 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
 
       {/* Add input */}
       <div className="relative">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
           <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             type="text"
             value={newText}
             placeholder="Add an item... (type @ to mention)"
-            className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
             disabled={adding}
             onChange={(e) => {
               setNewText(e.target.value);
@@ -378,6 +379,17 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
               setTimeout(() => setMentionQuery(null), 150);
             }}
           />
+          {newText.trim() && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 shrink-0 px-2 text-xs"
+              disabled={adding}
+              onClick={handleAdd}
+            >
+              Add
+            </Button>
+          )}
         </div>
         {/* Mention autocomplete dropdown */}
         {mentionQuery !== null && mentionResults.length > 0 && (

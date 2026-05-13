@@ -1704,6 +1704,7 @@ function TaskDetailPanelBody({
                       stateType={currentState.state_type}
                       label={currentState.name}
                       color={currentState.color}
+                      autoRunEnabled={automatedStateIds.has(currentState.id)}
                     />
                   ) : (
                     <span>Select</span>
@@ -1716,6 +1717,7 @@ function TaskDetailPanelBody({
                       stateType={s.state_type}
                       label={s.name}
                       color={s.color}
+                      autoRunEnabled={automatedStateIds.has(s.id)}
                     />
                   ) : null;
                 }}

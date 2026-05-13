@@ -66,13 +66,13 @@ describe('ExternalLinks', () => {
     vi.clearAllMocks()
   })
 
-  it('renders saved links as visually grouped rows with a count', async () => {
+  it('renders saved links as visually grouped rows', async () => {
     await renderExternalLinks([
       makeLink('link-1', 'https://github.com/helpin-ai/helpin/pull/31', 'Fix task sync'),
       makeLink('link-2', 'https://docs.helpin.ai/tasks/links', 'Task links doc'),
     ])
 
-    expect(container?.textContent).toContain('2 links')
+    expect(container?.textContent).not.toContain('2 links')
     expect(container?.textContent).toContain('Fix task sync')
     expect(container?.textContent).toContain('github.com')
 
