@@ -361,6 +361,7 @@ describe('CommentThread attachment uploads', () => {
 
   it('extends the collapse stem up to the parent comment avatar', () => {
     const parent = existingCommentByCurrentUser('parent-1')
+    parent.comment.body = '<p>line one</p><p>line two</p><p>line three</p><p>line four</p>'
     const reply = existingCommentFromUser('reply-1', 'user-2', '<p>reply</p>')
     reply.comment.parent_id = parent.comment.id
     parent.replies = [reply]
@@ -370,15 +371,16 @@ describe('CommentThread attachment uploads', () => {
 
     const topStem = container.querySelector<HTMLElement>('[data-comment-collapse-stem="top"]')
 
-    expect(topStem?.className).toContain('top-[-15px]')
-    expect(topStem?.className).toContain('h-[13px]')
+    expect(topStem?.className).toContain('top-6')
+    expect(topStem?.className).toContain('bottom-[-10px]')
     expect(topStem?.className).toContain('bg-border')
+    expect(topStem?.className).not.toContain('h-[')
     expect(topStem?.className).not.toContain('bg-border/60')
   })
 
-  it('makes reply connector rails more prominent without drawing below the collapse circle', () => {
+  it('makes reply connector rails height-independent without drawing below the last reply avatar', () => {
     const parent = existingCommentByCurrentUser('parent-1')
-    const firstReply = existingCommentFromUser('reply-1', 'user-2', '<p>first reply</p>')
+    const firstReply = existingCommentFromUser('reply-1', 'user-2', '<p>first reply line one</p><p>first reply line two</p><p>first reply line three</p>')
     const secondReply = existingCommentFromUser('reply-2', 'user-2', '<p>second reply</p>')
     firstReply.comment.parent_id = parent.comment.id
     secondReply.comment.parent_id = parent.comment.id
@@ -389,13 +391,18 @@ describe('CommentThread attachment uploads', () => {
 
     const topStem = container.querySelector<HTMLElement>('[data-comment-collapse-stem="top"]')
     const elbow = container.querySelector<HTMLElement>('[data-comment-collapse-stem="elbow"]')
-    const repliesRail = container.querySelector<HTMLElement>('[data-comment-replies-rail="true"]')
+    const repliesRail = Array.from(container.querySelectorAll<HTMLElement>('[data-comment-replies-rail="true"]'))
 
     expect(topStem?.className).toContain('bg-border')
     expect(elbow?.className).toContain('bg-border')
-    expect(repliesRail?.className).toContain('bg-border')
-    expect(repliesRail?.className).toContain('top-3.5')
-    expect(repliesRail?.className).toContain('bottom-3.5')
+    expect(repliesRail).toHaveLength(2)
+    expect(repliesRail[0].className).toContain('bg-border')
+    expect(repliesRail[0].className).toContain('top-3.5')
+    expect(repliesRail[0].className).toContain('bottom-[-12px]')
+    expect(repliesRail[1].className).toContain('bg-border')
+    expect(repliesRail[1].className).toContain('top-0')
+    expect(repliesRail[1].className).toContain('h-3.5')
+    expect(repliesRail[1].className).not.toContain('bottom-')
   })
 
   it('navigates between multiple image attachments in a comment preview', async () => {

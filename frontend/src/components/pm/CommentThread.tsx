@@ -12,6 +12,7 @@ import { formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import type { Comment, CommentWithAuthor, ReactionSummary, AttachmentResponse } from '@/lib/pmTypes';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 
@@ -886,6 +887,7 @@ export function CommentThread({
   const renderComment = (
     entry: CommentWithAuthor,
     isReply: boolean,
+    options: { showThreadConnector?: boolean } = {},
   ) => {
     const isOwn = currentUserId === entry.comment.author_id;
     const isEditing = editingCommentId === entry.comment.id;
@@ -895,9 +897,16 @@ export function CommentThread({
     const isResolved = Boolean(entry.comment.resolved_at);
     const authorName = entry.author.full_name || entry.author.email;
     const replyTargetId = isReply ? entry.comment.parent_id : entry.comment.id;
+    const showThreadConnector = Boolean(options.showThreadConnector && !isReply);
 
     return (
-      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''} flex gap-2`}>
+      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''} relative flex gap-2`}>
+        {showThreadConnector && (
+          <div
+            data-comment-collapse-stem="top"
+            className="absolute left-3.5 top-6 bottom-[-10px] w-px bg-border"
+          />
+        )}
         <UserAvatar
           name={authorName}
           avatarUrl={entry.author.avatar_url}
@@ -1073,7 +1082,7 @@ export function CommentThread({
                   isActive ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/20' : ''
                 }`}
               >
-                {renderComment(entry, false)}
+                {renderComment(entry, false, { showThreadConnector: hasVisibleReplies })}
 
                 {hasReplies && !isExpanded && (
                   <button
@@ -1093,10 +1102,6 @@ export function CommentThread({
                   <div className="relative mt-3 ml-0 pl-9">
                     {hasVisibleReplies && (
                       <>
-                        <div
-                          data-comment-collapse-stem="top"
-                          className="absolute left-[14.5px] top-[-15px] h-[13px] w-px bg-border"
-                        />
                         <div data-comment-collapse-stem="elbow" className="absolute left-[14.5px] top-2 h-px w-[21.5px] bg-border" />
                         <button
                           type="button"
@@ -1109,11 +1114,17 @@ export function CommentThread({
                       </>
                     )}
                     <div className="relative space-y-3">
-                      {hasVisibleReplies && (entry.replies?.length ?? 0) > 1 && (
-                        <div data-comment-replies-rail="true" className="absolute left-[13.5px] top-3.5 bottom-3.5 w-px bg-border" />
-                      )}
-                      {hasVisibleReplies && entry.replies?.map((reply) => (
+                      {hasVisibleReplies && entry.replies?.map((reply, replyIndex, replies) => (
                         <div key={reply.comment.id} className="relative">
+                          {replies.length > 1 && (
+                            <div
+                              data-comment-replies-rail="true"
+                              className={cn(
+                                'absolute left-[13.5px] w-px bg-border',
+                                replyIndex === replies.length - 1 ? 'top-0 h-3.5' : 'top-3.5 bottom-[-12px]',
+                              )}
+                            />
+                          )}
                           {renderComment(reply, true)}
                         </div>
                       ))}
