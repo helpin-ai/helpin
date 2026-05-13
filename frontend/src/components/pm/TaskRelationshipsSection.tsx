@@ -536,10 +536,10 @@ export function TaskRelationshipsSection({
   }
 
   return (
-    <section id="task-relationships-section" className={cn('mt-6', className)}>
+    <section id="task-relationships-section" className={className}>
       <div className="flex items-center gap-1.5">
         <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Task Relationships</h3>
+        <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Task Relationships</h3>
       </div>
 
       {associationsQuery.error ? (

@@ -370,8 +370,32 @@ describe('CommentThread attachment uploads', () => {
 
     const topStem = container.querySelector<HTMLElement>('[data-comment-collapse-stem="top"]')
 
-    expect(topStem?.className).toContain('top-[-13px]')
-    expect(topStem?.className).toContain('h-[11px]')
+    expect(topStem?.className).toContain('top-[-15px]')
+    expect(topStem?.className).toContain('h-[13px]')
+    expect(topStem?.className).toContain('bg-border')
+    expect(topStem?.className).not.toContain('bg-border/60')
+  })
+
+  it('makes reply connector rails more prominent without drawing below the collapse circle', () => {
+    const parent = existingCommentByCurrentUser('parent-1')
+    const firstReply = existingCommentFromUser('reply-1', 'user-2', '<p>first reply</p>')
+    const secondReply = existingCommentFromUser('reply-2', 'user-2', '<p>second reply</p>')
+    firstReply.comment.parent_id = parent.comment.id
+    secondReply.comment.parent_id = parent.comment.id
+    parent.replies = [firstReply, secondReply]
+    parent.reply_count = 2
+
+    const { container } = renderThread({ comments: [parent] })
+
+    const topStem = container.querySelector<HTMLElement>('[data-comment-collapse-stem="top"]')
+    const elbow = container.querySelector<HTMLElement>('[data-comment-collapse-stem="elbow"]')
+    const repliesRail = container.querySelector<HTMLElement>('[data-comment-replies-rail="true"]')
+
+    expect(topStem?.className).toContain('bg-border')
+    expect(elbow?.className).toContain('bg-border')
+    expect(repliesRail?.className).toContain('bg-border')
+    expect(repliesRail?.className).toContain('top-3.5')
+    expect(repliesRail?.className).toContain('bottom-3.5')
   })
 
   it('navigates between multiple image attachments in a comment preview', async () => {

@@ -637,6 +637,7 @@ function TaskDetailPanelBody({
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
   const relationshipsToggleActive = showRelationships || relationshipComposerOpen;
+  const hasOptionalTaskSections = relationshipsToggleActive || showChecklist || showExternalLinks;
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const memberNameMap = useMemo(
@@ -1426,7 +1427,7 @@ function TaskDetailPanelBody({
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
-                <div className="mt-2 flex justify-end">
+                <div className="mt-2 flex justify-start">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
                     Done
                   </Button>
@@ -1445,7 +1446,7 @@ function TaskDetailPanelBody({
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
                 )}
-                <div className="mt-2 flex justify-end opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
+                <div className="mt-2 flex justify-start opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
                   <button
                     type="button"
                     className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
@@ -1541,43 +1542,47 @@ function TaskDetailPanelBody({
             </button>
           ) : null}
 
-          <TaskRelationshipsSection
-            workspaceId={workspaceId}
-            taskId={taskDetail.task.id}
-            taskName={taskDetail.task.name}
-            taskDisplayId={taskDetail.task.display_id}
-            workflowId={taskDetail.task.workflow_id}
-            workflowStateId={taskDetail.task.workflow_state_id}
-            epicId={taskDetail.task.epic_id}
-            sprintId={taskDetail.task.sprint_id}
-            teamId={taskDetail.task.team_id}
-            taskType={taskDetail.task.task_type}
-            priority={taskDetail.task.priority}
-            severity={taskDetail.task.severity}
-            externalBlocker={form.blocker}
-            onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
-            composerOpen={relationshipComposerOpen}
-            onComposerOpenChange={setRelationshipComposerOpen}
-            visible={showRelationships}
-            externalTriggerRef={relationshipButtonRef}
-          />
-
-          {/* Checklist */}
-          {showChecklist && (
-            <div className="mt-6">
-              <ChecklistItems
+          {hasOptionalTaskSections && (
+            <div className="mt-8 space-y-8">
+              <TaskRelationshipsSection
                 workspaceId={workspaceId}
                 taskId={taskDetail.task.id}
-                members={assignableMembers}
-                teams={mentionTeams}
+                taskName={taskDetail.task.name}
+                taskDisplayId={taskDetail.task.display_id}
+                workflowId={taskDetail.task.workflow_id}
+                workflowStateId={taskDetail.task.workflow_state_id}
+                epicId={taskDetail.task.epic_id}
+                sprintId={taskDetail.task.sprint_id}
+                teamId={taskDetail.task.team_id}
+                taskType={taskDetail.task.task_type}
+                priority={taskDetail.task.priority}
+                severity={taskDetail.task.severity}
+                externalBlocker={form.blocker}
+                onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
+                composerOpen={relationshipComposerOpen}
+                onComposerOpenChange={setRelationshipComposerOpen}
+                visible={showRelationships}
+                externalTriggerRef={relationshipButtonRef}
               />
-            </div>
-          )}
 
-          {/* External Links */}
-          {showExternalLinks && (
-            <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
+              {/* Checklist */}
+              {showChecklist && (
+                <div>
+                  <ChecklistItems
+                    workspaceId={workspaceId}
+                    taskId={taskDetail.task.id}
+                    members={assignableMembers}
+                    teams={mentionTeams}
+                  />
+                </div>
+              )}
+
+              {/* External Links */}
+              {showExternalLinks && (
+                <div>
+                  <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
+                </div>
+              )}
             </div>
           )}
 
@@ -1628,7 +1633,7 @@ function TaskDetailPanelBody({
             ) : (
               <>
                 {comments.length > 0 && (
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comments</h3>
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Comments</h3>
                 )}
               <CommentThread
                 workspaceId={workspaceId}
@@ -1658,7 +1663,7 @@ function TaskDetailPanelBody({
             ) : null}
             {!activityLoading && activity.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activity</h3>
+                <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Activity</h3>
                 <div className="relative mt-3">
                   {/* Vertical timeline line */}
                   <div className="absolute left-[9px] top-3 bottom-3 w-px bg-border/60" />

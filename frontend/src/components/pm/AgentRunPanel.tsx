@@ -341,7 +341,7 @@ export function AgentRunPanel({ taskId, workspaceId, delivery, canEditDelivery =
       <div className="overflow-hidden rounded-md border border-border/60 bg-card">
         <div className="flex items-center gap-2 px-3 py-2">
           <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
             Agent Runs
           </span>
           {runs.length > 0 && (

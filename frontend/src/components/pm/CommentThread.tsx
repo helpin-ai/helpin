@@ -1095,9 +1095,9 @@ export function CommentThread({
                       <>
                         <div
                           data-comment-collapse-stem="top"
-                          className="absolute left-[14.5px] top-[-13px] h-[11px] w-px bg-border/60"
+                          className="absolute left-[14.5px] top-[-15px] h-[13px] w-px bg-border"
                         />
-                        <div className="absolute left-[14.5px] top-2 h-px w-[21.5px] bg-border/60" />
+                        <div data-comment-collapse-stem="elbow" className="absolute left-[14.5px] top-2 h-px w-[21.5px] bg-border" />
                         <button
                           type="button"
                           aria-label="Collapse replies"
@@ -1110,7 +1110,7 @@ export function CommentThread({
                     )}
                     <div className="relative space-y-3">
                       {hasVisibleReplies && (entry.replies?.length ?? 0) > 1 && (
-                        <div className="absolute left-[13.5px] top-3.5 bottom-3.5 w-px bg-border/60" />
+                        <div data-comment-replies-rail="true" className="absolute left-[13.5px] top-3.5 bottom-3.5 w-px bg-border" />
                       )}
                       {hasVisibleReplies && entry.replies?.map((reply) => (
                         <div key={reply.comment.id} className="relative">
