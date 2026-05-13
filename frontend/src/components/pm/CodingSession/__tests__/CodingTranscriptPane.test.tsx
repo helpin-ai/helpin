@@ -382,4 +382,40 @@ describe('CodingTranscriptPane', () => {
     expect(container.textContent).toContain('John Doe requested changes');
     expect(container.textContent).toContain('Split it into two tasks.');
   });
+
+  it('renders a visible expand control for long user transcript messages', () => {
+    const longUserMessage = Array.from({ length: 80 }, (_, index) => `Line ${index + 1}: Review this implementation detail carefully.`).join('\n');
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[
+            buildTranscriptMessage({
+              event_id: 'event-user-long-message',
+              message_id: 'message-user-long-message',
+              role: 'user',
+              content: longUserMessage,
+              user_id: 'user-1',
+            }),
+          ]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'completed', pause_reason: 'none' })}
+        />,
+      );
+    });
+
+    const expandButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Show more');
+    expect(expandButton).toBeTruthy();
+    expect(expandButton?.className).not.toContain('text-white/80');
+
+    act(() => {
+      expandButton?.click();
+    });
+
+    expect(expandButton?.textContent).toBe('Show less');
+  });
 });
