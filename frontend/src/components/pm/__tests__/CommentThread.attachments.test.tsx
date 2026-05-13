@@ -241,6 +241,31 @@ function existingCommentByCurrentUser(id: string): CommentWithAuthor {
   }
 }
 
+function existingCommentFromUser(id: string, userId: string, body: string): CommentWithAuthor {
+  return {
+    comment: {
+      id,
+      entity_type: 'task',
+      entity_id: 'task-1',
+      author_id: userId,
+      body,
+      parent_id: null,
+      created_at: '2026-05-03T00:00:00Z',
+      updated_at: '2026-05-03T00:00:00Z',
+    },
+    author: {
+      id: userId,
+      email: `${userId}@example.com`,
+      full_name: userId === 'user-1' ? 'Test User' : 'Reply User',
+      created_at: '2026-05-03T00:00:00Z',
+      updated_at: '2026-05-03T00:00:00Z',
+    },
+    reply_count: 0,
+    attachments: [],
+    reactions: [],
+  }
+}
+
 function createAttachment(id: string, fileName: string, contentType = 'image/png'): AttachmentResponse {
   return {
     attachment: {
@@ -509,5 +534,36 @@ describe('CommentThread attachment uploads', () => {
     expect(pmAttachmentService.remove).toHaveBeenCalledWith(workspaceId, 'att-edit-pending', {
       pendingOnly: true,
     })
+  })
+
+  it('shows existing replies expanded without opening a reply editor', async () => {
+    const parent = existingCommentFromUser('comment-parent', 'user-1', '<p>Parent comment</p>')
+    const reply = existingCommentFromUser('comment-reply', 'user-2', '<p>Visible reply</p>')
+    reply.comment.parent_id = parent.comment.id
+    parent.replies = [reply]
+    parent.reply_count = 1
+
+    const { container } = renderThread({ comments: [parent] })
+
+    expect(container.textContent).toContain('Visible reply')
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeNull()
+
+    const collapseButton = container.querySelector<HTMLButtonElement>('[aria-label="Collapse replies"]')
+    expect(collapseButton).toBeTruthy()
+    await act(async () => {
+      collapseButton?.click()
+    })
+
+    expect(container.textContent).not.toContain('Visible reply')
+    expect(container.textContent).toContain('1 reply')
+
+    const replyButton = container.querySelector<HTMLButtonElement>('[aria-label="Reply"]')
+    expect(replyButton).toBeTruthy()
+    await act(async () => {
+      replyButton?.click()
+    })
+
+    expect(container.textContent).toContain('Visible reply')
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeTruthy()
   })
 })
