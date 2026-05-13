@@ -1,9 +1,12 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { ResizableImageComponent } from './resizable-image-component';
+import { pickBlockNodeViewAttrs } from '@/components/docs/nodeViewAttrs';
 
 export interface ResizableImageOptions {
   HTMLAttributes: Record<string, unknown>;
+  enableCaption: boolean;
+  defaultAlignment: 'left' | 'center' | 'right';
 }
 
 declare module '@tiptap/core' {
@@ -32,6 +35,8 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
   addOptions() {
     return {
       HTMLAttributes: {},
+      enableCaption: true,
+      defaultAlignment: 'center',
     };
   },
 
@@ -45,7 +50,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
       aspectRatio: { default: null },
       attachmentId: { default: null },
       caption: { default: null },
-      alignment: { default: 'center' },
+      alignment: { default: this.options.defaultAlignment },
       linkUrl: { default: null },
       linkNewTab: { default: true },
     };
@@ -66,7 +71,7 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
             : null,
           attachmentId: dom.getAttribute('data-attachment-id'),
           caption: dom.getAttribute('data-caption'),
-          alignment: dom.getAttribute('data-alignment') || 'center',
+          alignment: dom.getAttribute('data-alignment') || this.options.defaultAlignment,
           linkUrl: dom.getAttribute('data-link-url') || null,
           linkNewTab: dom.getAttribute('data-link-new-tab') !== 'false',
         };
@@ -79,14 +84,14 @@ export const ResizableImageExtension = Node.create<ResizableImageOptions>({
     return ['img', mergeAttributes(this.options.HTMLAttributes, rest, {
       ...(aspectRatio ? { 'data-aspect-ratio': aspectRatio } : {}),
       ...(attachmentId ? { 'data-attachment-id': attachmentId } : {}),
-      ...(caption ? { 'data-caption': caption } : {}),
+      ...(this.options.enableCaption && caption ? { 'data-caption': caption } : {}),
       ...(alignment && alignment !== 'center' ? { 'data-alignment': alignment } : {}),
       ...(linkUrl ? { 'data-link-url': linkUrl, 'data-link-new-tab': String(linkNewTab ?? true) } : {}),
     })];
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(ResizableImageComponent);
+    return ReactNodeViewRenderer(ResizableImageComponent, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) });
   },
 
   addCommands() {

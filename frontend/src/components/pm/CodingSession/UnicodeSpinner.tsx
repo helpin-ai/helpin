@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type HTMLAttributes } from 'react';
 import spinners, { type BrailleSpinnerName } from 'unicode-animations';
 import { cn } from '@/lib/utils';
 
@@ -8,11 +8,12 @@ export function UnicodeSpinner({
   name = 'braille',
   className,
   children,
+  ...props
 }: {
   name?: SpinnerName;
   className?: string;
   children?: React.ReactNode;
-}) {
+} & HTMLAttributes<HTMLSpanElement>) {
   const [frame, setFrame] = useState(0);
   const spinner = spinners[name];
 
@@ -25,7 +26,7 @@ export function UnicodeSpinner({
   }, [name, spinner.frames.length, spinner.interval]);
 
   return (
-    <span className={cn('inline-flex items-center gap-1 font-mono', className)}>
+    <span {...props} className={cn('inline-flex items-center gap-1 font-mono', className)}>
       <span className="inline-block text-center">{spinner.frames[frame]}</span>
       {children}
     </span>

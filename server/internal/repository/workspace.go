@@ -722,6 +722,51 @@ func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID strin
 	return results, nil
 }
 
+// GetWorkspaceMFAPolicy returns the workspace MFA policy plus whether the user
+// has TOTP registered. Verified passkey sign-ins can still satisfy MFA at the
+// token level, but the setup gate needs TOTP state to know whether it can ask
+// for a code or must guide setup.
+func (r *WorkspaceRepository) GetWorkspaceMFAPolicy(ctx context.Context, workspaceID, userID string) (model.WorkspaceMFAPolicy, error) {
+	var row struct {
+		EnforceTwoFactor bool
+		TOTPVerified     bool
+	}
+	err := r.db.WithContext(ctx).
+		Table("workspaces w").
+		Select(`
+			COALESCE(ws.enforce_two_factor, false) AS enforce_two_factor,
+			COALESCE(u.totp_verified, false) AS totp_verified
+		`).
+		Joins("LEFT JOIN workspace_settings ws ON ws.workspace_id = w.id").
+		Joins("JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = ? AND wm.status = ?", userID, model.WorkspaceMemberStatusActive).
+		Joins("JOIN users u ON u.id = wm.user_id").
+		Where("w.id = ?", workspaceID).
+		Scan(&row).Error
+	if err != nil {
+		return model.WorkspaceMFAPolicy{}, fmt.Errorf("get workspace mfa policy: %w", err)
+	}
+	return model.WorkspaceMFAPolicy{
+		EnforceTwoFactor: row.EnforceTwoFactor,
+		MFARequired:      row.EnforceTwoFactor,
+		MFAEnabled:       row.TOTPVerified,
+	}, nil
+}
+
+// UserHasEnforcedWorkspace returns true when the user is an active member of at
+// least one workspace that currently requires MFA.
+func (r *WorkspaceRepository) UserHasEnforcedWorkspace(ctx context.Context, userID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Joins("JOIN workspace_settings ws ON ws.workspace_id = wm.workspace_id").
+		Where("wm.user_id = ? AND wm.status = ? AND ws.enforce_two_factor = true", userID, model.WorkspaceMemberStatusActive).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("check enforced workspace membership: %w", err)
+	}
+	return count > 0, nil
+}
+
 // ListSupportAccessibleUserIDs returns active linked user IDs that can access the support module.
 func (r *WorkspaceRepository) ListSupportAccessibleUserIDs(ctx context.Context, workspaceID string) ([]string, error) {
 	var userIDs []string

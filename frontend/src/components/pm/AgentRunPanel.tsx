@@ -20,6 +20,7 @@ import {
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { agentService } from '@/lib/services/agentService';
 import type { Agent, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
+import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
 
 interface Props {
   taskId: string;
@@ -43,6 +44,108 @@ export interface AgentRunDeliveryContext {
   handleRepoChange: (repoId: string) => Promise<void>;
   handleBaseBranchChange: (baseBranch: string) => Promise<boolean>;
   ensureDeliveryTargetSaved: (showSuccessToast: boolean) => Promise<boolean>;
+}
+
+type TaskAgentRunPrimaryActionKind = 'start' | 'open';
+
+interface TaskAgentRunPrimaryAction {
+  kind: TaskAgentRunPrimaryActionKind;
+  label: string;
+  status: string;
+  runId: string | null;
+}
+
+function displayAgentName(name: string | null | undefined) {
+  const trimmed = name?.trim();
+  return trimmed || 'agent';
+}
+
+export function getTaskAgentRunPrimaryAction({
+  selectedAgentName,
+  activeRun,
+  activeRunAgentName,
+  triggering,
+}: {
+  selectedAgentName: string | null | undefined;
+  activeRun: Pick<AgentRun, 'id' | 'status' | 'pause_reason' | 'approval_state'> | null | undefined;
+  activeRunAgentName?: string | null;
+  triggering: boolean;
+}): TaskAgentRunPrimaryAction {
+  const selectedName = displayAgentName(selectedAgentName);
+
+  if (triggering) {
+    return {
+      kind: 'start',
+      label: 'Starting...',
+      status: `${selectedName} is starting a task run.`,
+      runId: null,
+    };
+  }
+
+  if (activeRun) {
+    const activeName = displayAgentName(activeRunAgentName ?? selectedAgentName);
+    const displayStatus = getAgentRunDisplayStatus(activeRun);
+    if (displayStatus === 'awaiting_input') {
+      return {
+        kind: 'open',
+        label: `Reply to ${activeName}`,
+        status: `${activeName} is waiting for input.`,
+        runId: activeRun.id,
+      };
+    }
+    if (displayStatus === 'awaiting_approval') {
+      return {
+        kind: 'open',
+        label: `Review ${activeName} request`,
+        status: `${activeName} needs review before continuing.`,
+        runId: activeRun.id,
+      };
+    }
+    if (displayStatus === 'awaiting_auth') {
+      return {
+        kind: 'open',
+        label: `Complete ${activeName} sign-in`,
+        status: `${activeName} needs sign-in before continuing.`,
+        runId: activeRun.id,
+      };
+    }
+    const statusVerb = activeRun.status === 'queued' ? 'is queued' : 'is running';
+    return {
+      kind: 'open',
+      label: `Open ${activeName} run`,
+      status: `${activeName} ${statusVerb}.`,
+      runId: activeRun.id,
+    };
+  }
+
+  return {
+    kind: 'start',
+    label: 'Run',
+    status: 'Choose an agent to run on this task.',
+    runId: null,
+  };
+}
+
+export function getTaskAgentRunExecutionContextLockReason({
+  activeRun,
+  activeRunAgentName,
+}: {
+  activeRun: Pick<AgentRun, 'status' | 'pause_reason' | 'approval_state'> | null | undefined;
+  activeRunAgentName?: string | null;
+}) {
+  if (!activeRun) return null;
+  const activeName = displayAgentName(activeRunAgentName);
+  const displayStatus = getAgentRunDisplayStatus(activeRun);
+  const stateText = displayStatus === 'awaiting_input'
+    ? 'waiting for input'
+    : displayStatus === 'awaiting_approval'
+      ? 'awaiting approval'
+      : displayStatus === 'awaiting_auth'
+        ? 'waiting for sign-in'
+        : activeRun.status === 'queued'
+          ? 'queued'
+          : 'running';
+  return `${activeName} is ${stateText}. Repository and branch can be changed after this run finishes.`;
 }
 
 export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery, canEditDelivery = false }: Props) {
@@ -165,7 +268,37 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
     }
   }, [fetchRuns, setRunInUrl, taskId, workspaceId]);
 
+  const latestRun = runs[0];
+  const agentNameById = useMemo(
+    () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
+    [agents],
+  );
+  const activeRun = useMemo(
+    () => runs.find((run) => ACTIVE_RUN_STATUSES.has(run.status)) ?? null,
+    [runs],
+  );
+  const selectedAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedAgentId) ?? preferredAgent,
+    [agents, preferredAgent, selectedAgentId],
+  );
+  const activeRunAgentName = activeRun ? agentNameById[activeRun.agent_id] ?? null : null;
+  const primaryAction = getTaskAgentRunPrimaryAction({
+    selectedAgentName: selectedAgent?.name ?? null,
+    activeRun,
+    activeRunAgentName,
+    triggering,
+  });
+  const executionContextLockReason = getTaskAgentRunExecutionContextLockReason({
+    activeRun,
+    activeRunAgentName,
+  });
+  const agentSelectionDisabled = !!activeRun || triggering;
+
   const handleRunAgent = async () => {
+    if (primaryAction.kind === 'open' && primaryAction.runId) {
+      setRunInUrl(primaryAction.runId);
+      return;
+    }
     if (!selectedAgentId) return;
     setTriggering(true);
     try {
@@ -175,7 +308,6 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
     }
   };
 
-  const latestRun = runs[0];
   const latestCompletedAgent = useMemo(() => {
     if (!latestRun || latestRun.status !== 'completed') return null;
     return agents.find((agent) => agent.id === latestRun.agent_id) ?? null;
@@ -214,6 +346,7 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
             workspaceId={workspaceId}
             delivery={delivery}
             canEdit={canEditDelivery}
+            lockReason={executionContextLockReason}
           />
         ) : null}
 
@@ -223,6 +356,7 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
             <Select
               value={selectedAgentId || '__none__'}
               onValueChange={(value) => setSelectedAgentId(value === '__none__' ? '' : value)}
+              disabled={agentSelectionDisabled}
             >
               <SelectTrigger size="sm" className="h-7 w-auto min-w-0 gap-1.5 text-xs">
                 <SelectValue placeholder={loadingAgents ? 'Loading agents...' : 'Select agent'} />
@@ -244,11 +378,12 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
             size="sm"
             variant="outline"
             onClick={handleRunAgent}
-            disabled={triggering || loadingAgents || !selectedAgentId}
+            disabled={loadingAgents || (primaryAction.kind === 'start' && !selectedAgentId)}
+            title={primaryAction.status}
             className="h-7 gap-1 px-2.5 text-xs"
           >
             {triggering ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
-            Run
+            {primaryAction.label}
           </Button>
         </div>
 
@@ -292,10 +427,12 @@ function AgentRunExecutionContext({
   workspaceId,
   delivery,
   canEdit,
+  lockReason,
 }: {
   workspaceId: string;
   delivery: AgentRunDeliveryContext;
   canEdit: boolean;
+  lockReason?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const defaultRepository = useMemo(
@@ -308,7 +445,8 @@ function AgentRunExecutionContext({
   );
 
   const repositoryName = delivery.selectedRepository?.full_name ?? delivery.target?.repo_full_name ?? '';
-  const canUseDefaultRepository = canEdit && !delivery.repositoryId && Boolean(defaultRepository);
+  const contextLocked = Boolean(lockReason);
+  const canUseDefaultRepository = canEdit && !contextLocked && !delivery.repositoryId && Boolean(defaultRepository);
   const contextText = repositoryName
     ? `${repositoryName} · ${delivery.resolvedBaseBranch} -> ${delivery.branchPreview}`
     : 'Repository not configured';
@@ -349,6 +487,8 @@ function AgentRunExecutionContext({
                   type="button"
                   size="icon"
                   variant="ghost"
+                  disabled={contextLocked}
+                  title={lockReason ?? 'Edit execution context'}
                   className="h-6 w-6 shrink-0"
                   aria-label="Edit execution context"
                 >

@@ -1,6 +1,7 @@
 package docsimport
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
+
+var facebookBackgroundIDPattern = regexp.MustCompile(`\b\d{12,20}\b`)
 
 // ConvertHTML parses HTML and returns canonical Tiptap JSON.
 func ConvertHTML(rawHTML string) (*ConversionResult, error) {
@@ -26,6 +29,7 @@ func ConvertHTML(rawHTML string) (*ConversionResult, error) {
 	if len(nodes) == 0 {
 		nodes = []Node{Paragraph()}
 	}
+	addHeadingAnchorAliases(nodes)
 
 	return &ConversionResult{
 		Doc:      Doc(nodes...),
@@ -59,6 +63,25 @@ func (c *converter) convertChildren(parent *html.Node) []Node {
 	}
 
 	for child := parent.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.ElementNode && child.DataAtom == atom.Dt {
+			if dd := nextElementSibling(child, atom.Dd); dd != nil {
+				nodes := c.convertDefinitionPair(child, dd)
+				for _, node := range nodes {
+					if node.Type == "" {
+						continue
+					}
+					if isInlineNode(node) {
+						inlineBuffer = append(inlineBuffer, node)
+						continue
+					}
+					flushInline()
+					result = append(result, node)
+				}
+				child = dd
+				continue
+			}
+		}
+
 		nodes := c.convertNode(child)
 		for _, node := range nodes {
 			if node.Type == "" {
@@ -96,12 +119,37 @@ func (c *converter) convertNode(n *html.Node) []Node {
 
 // convertElement handles element nodes.
 func (c *converter) convertElement(n *html.Node) []Node {
+	if video, ok := parseWistiaEmbedContainer(n); ok {
+		return []Node{video}
+	}
+	if grid, ok := c.convertHelpScoutFacebookBackgroundGrid(n); ok {
+		return []Node{grid}
+	}
+	if n.Type == html.ElementNode && n.DataAtom == atom.Div && hasAttr(n, "data-html-block") {
+		if containsElement(n, atom.Details) {
+			return c.convertChildren(n)
+		}
+		raw := renderChildren(n)
+		if strings.TrimSpace(raw) != "" {
+			return []Node{SandboxedHTMLBlock(raw)}
+		}
+		return nil
+	}
+
 	// Check for Help Scout callout first
 	if variant, ok := isHelpScoutCallout(n); ok {
 		content := c.convertChildren(n)
 		content = ensureBlockContent(content)
 		c.warn(warnCalloutGuess(getAttr(n, "class"), variant))
 		return []Node{Callout(variant, content...)}
+	}
+	if isStyledCustomHTMLContainer(n) {
+		raw := renderNode(n)
+		if strings.TrimSpace(raw) != "" {
+			c.warn(warnHTMLBlockFallback())
+			return []Node{SandboxedHTMLBlock(raw)}
+		}
+		return nil
 	}
 
 	switch n.DataAtom {
@@ -160,6 +208,18 @@ func (c *converter) convertElement(n *html.Node) []Node {
 		content := c.convertChildren(n)
 		content = ensureBlockContent(content)
 		return []Node{ListItem(content...)}
+	case atom.Dl:
+		return c.convertDefinitionList(n)
+	case atom.Dt, atom.Dd:
+		content := c.convertChildren(n)
+		if len(content) > 0 {
+			return content
+		}
+		inline := trimInlineNodes(c.convertInline(n))
+		if len(inline) > 0 {
+			return []Node{Paragraph(inline...)}
+		}
+		return nil
 
 	case atom.Table:
 		return []Node{c.convertTable(n)}
@@ -177,6 +237,8 @@ func (c *converter) convertElement(n *html.Node) []Node {
 
 	case atom.Iframe:
 		return c.convertIframe(n)
+	case atom.Details:
+		return c.convertDetails(n)
 
 	// Inline elements stay inline; convertChildren is responsible for wrapping
 	// contiguous inline content into paragraphs when needed.
@@ -271,7 +333,11 @@ func (c *converter) convertHeading(level int, n *html.Node) []Node {
 	if len(content) == 0 {
 		return nil
 	}
-	return []Node{Heading(level, content...)}
+	attrs := map[string]any{}
+	if id := strings.TrimSpace(getAttr(n, "id")); id != "" {
+		attrs["id"] = id
+	}
+	return []Node{HeadingWithAttrs(level, attrs, content...)}
 }
 
 // convertInline walks children of an inline container and returns text nodes with marks.
@@ -325,7 +391,7 @@ func (c *converter) convertInlineElement(n *html.Node, parentMarks []Mark) []Nod
 		m := Mark{Type: "superscript"}
 		mark = &m
 	case atom.A:
-		href := getAttr(n, "href")
+		href := normalizeImportHref(getAttr(n, "href"))
 		// If the only child is an <img>, create a linked image node.
 		if img := onlyChildImg(n); img != nil {
 			src := getAttr(img, "src")
@@ -381,6 +447,76 @@ func (c *converter) convertListItems(list *html.Node) []Node {
 	return items
 }
 
+func (c *converter) convertDefinitionList(dl *html.Node) []Node {
+	var pairs []definitionPair
+	for child := dl.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type != html.ElementNode || child.DataAtom != atom.Dt {
+			continue
+		}
+		dd := nextElementSibling(child, atom.Dd)
+		if dd == nil {
+			continue
+		}
+		pairs = append(pairs, definitionPair{term: child, definition: dd})
+		child = dd
+	}
+	if len(pairs) == 0 {
+		return c.convertChildren(dl)
+	}
+
+	if start, ok := numericDefinitionStart(pairs); ok {
+		items := make([]Node, 0, len(pairs))
+		for _, pair := range pairs {
+			items = append(items, ListItem(ensureBlockContent(c.convertChildren(pair.definition))...))
+		}
+		return []Node{OrderedList(start, items...)}
+	}
+
+	items := make([]Node, 0, len(pairs))
+	for _, pair := range pairs {
+		itemContent := []Node{Paragraph(Text(trimImportSpace(extractText(pair.term)), BoldMark()))}
+		itemContent = append(itemContent, ensureBlockContent(c.convertChildren(pair.definition))...)
+		items = append(items, ListItem(compactBlockNodes(itemContent)...))
+	}
+	return []Node{BulletList(items...)}
+}
+
+func (c *converter) convertDefinitionPair(dt, dd *html.Node) []Node {
+	pair := definitionPair{term: dt, definition: dd}
+	if start, ok := numericDefinitionStart([]definitionPair{pair}); ok {
+		return []Node{OrderedList(start, ListItem(ensureBlockContent(c.convertChildren(dd))...))}
+	}
+	itemContent := []Node{Paragraph(Text(trimImportSpace(extractText(dt)), BoldMark()))}
+	itemContent = append(itemContent, ensureBlockContent(c.convertChildren(dd))...)
+	return []Node{BulletList(ListItem(compactBlockNodes(itemContent)...))}
+}
+
+type definitionPair struct {
+	term       *html.Node
+	definition *html.Node
+}
+
+func numericDefinitionStart(pairs []definitionPair) (int, bool) {
+	if len(pairs) == 0 {
+		return 1, false
+	}
+	start := 0
+	for i, pair := range pairs {
+		n, err := strconv.Atoi(trimImportSpace(extractText(pair.term)))
+		if err != nil || n <= 0 {
+			return 1, false
+		}
+		if i == 0 {
+			start = n
+			continue
+		}
+		if n != start+i {
+			return 1, false
+		}
+	}
+	return start, true
+}
+
 // convertTable converts an HTML table to Tiptap table nodes.
 func (c *converter) convertTable(table *html.Node) Node {
 	var rows []Node
@@ -416,25 +552,47 @@ func (c *converter) convertTable(table *html.Node) Node {
 	return Table(rows...)
 }
 
+func (c *converter) convertDetails(n *html.Node) []Node {
+	attrs := map[string]any{"title": "Details"}
+	if summary := findFirstChild(n, atom.Summary); summary != nil {
+		title, icon, badge := detailsSummaryParts(summary)
+		if title != "" {
+			attrs["title"] = title
+		}
+		if icon != "" {
+			attrs["icon"] = icon
+		}
+		if badge != "" {
+			attrs["badgeText"] = badge
+		}
+		if icon != "" || badge != "" {
+			attrs["sourceStyle"] = "helpScoutCard"
+		}
+	}
+	if hasAttr(n, "open") {
+		attrs["open"] = true
+	}
+
+	container := &html.Node{Type: html.ElementNode, DataAtom: atom.Div, Data: atom.Div.String()}
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == html.ElementNode && child.DataAtom == atom.Summary {
+			continue
+		}
+		container.AppendChild(cloneNodeTree(child))
+	}
+
+	content := c.convertChildren(container)
+	content = ensureBlockContent(content)
+	return []Node{ToggleSectionWithAttrs(attrs, content...)}
+}
+
 // convertIframe handles iframe elements.
 func (c *converter) convertIframe(n *html.Node) []Node {
-	src := getAttr(n, "src")
-	if src == "" {
+	raw := renderNode(n)
+	if strings.TrimSpace(raw) == "" {
 		return nil
 	}
-
-	// Check if it's a supported video provider
-	provider, sourceUrl, embedUrl, ok := parseVideoIframe(src)
-	if ok {
-		return []Node{VideoEmbed(provider, sourceUrl, embedUrl)}
-	}
-
-	// Unsupported iframe — convert to link if safe
-	c.warn(warnUnsupportedIframe(src))
-	if isSafeURL(src) {
-		return []Node{Paragraph(Text(src, LinkMark(src)))}
-	}
-	return []Node{Paragraph(Text(src))}
+	return []Node{SandboxedHTMLBlock(raw)}
 }
 
 // convertFigure handles <figure> elements (image + caption).
@@ -459,6 +617,139 @@ func (c *converter) convertFigure(n *html.Node) []Node {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+func parseWistiaEmbedContainer(n *html.Node) (Node, bool) {
+	if n.Type != html.ElementNode {
+		return Node{}, false
+	}
+	switch n.DataAtom {
+	case atom.Div, atom.Section:
+	default:
+		return Node{}, false
+	}
+
+	classes := strings.Fields(getAttr(n, "class"))
+	hasWistiaEmbed := false
+	videoID := ""
+	for _, cls := range classes {
+		if cls == "wistia_embed" {
+			hasWistiaEmbed = true
+			continue
+		}
+		if strings.HasPrefix(cls, "wistia_async_") {
+			videoID = strings.TrimPrefix(cls, "wistia_async_")
+		}
+	}
+	if !hasWistiaEmbed || !isSafeWistiaID(videoID) {
+		return Node{}, false
+	}
+
+	embedURL := "https://fast.wistia.net/embed/iframe/" + videoID
+	return VideoEmbed("wistia", embedURL, embedURL), true
+}
+
+func isSafeWistiaID(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func (c *converter) convertHelpScoutFacebookBackgroundGrid(n *html.Node) (Node, bool) {
+	if n.Type != html.ElementNode || n.DataAtom != atom.Div || !hasAttr(n, "data-html-block") {
+		return Node{}, false
+	}
+	swatches := extractFacebookBackgroundSwatches(n)
+	if len(swatches) < 2 {
+		return Node{}, false
+	}
+
+	var b strings.Builder
+	b.WriteString(`<div class="docs-fb-background-grid" data-fb-background-grid="">`)
+	for _, swatch := range swatches {
+		b.WriteString(`<div class="docs-fb-background-card"><img src="`)
+		b.WriteString(swatch.src)
+		b.WriteString(`" alt="" width="36" height="36" loading="lazy"><code>`)
+		b.WriteString(swatch.id)
+		b.WriteString(`</code></div>`)
+	}
+	b.WriteString(`</div>`)
+	return HTMLBlock(tiptap.SanitizeHTMLBlock(b.String())), true
+}
+
+type facebookBackgroundSwatch struct {
+	src string
+	id  string
+}
+
+func extractFacebookBackgroundSwatches(n *html.Node) []facebookBackgroundSwatch {
+	var swatches []facebookBackgroundSwatch
+	seen := map[string]bool{}
+	walkElements(n, func(candidate *html.Node) {
+		if candidate.DataAtom != atom.Table || countDescendantImages(candidate) != 1 {
+			return
+		}
+		img := firstDescendantImage(candidate)
+		if img == nil {
+			return
+		}
+		src := getAttr(img, "src")
+		if !isSafeDataImageSrc(src) {
+			return
+		}
+		id := facebookBackgroundIDPattern.FindString(extractText(candidate))
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		swatches = append(swatches, facebookBackgroundSwatch{src: src, id: id})
+	})
+	return swatches
+}
+
+func countDescendantImages(n *html.Node) int {
+	count := 0
+	walkElements(n, func(candidate *html.Node) {
+		if candidate.DataAtom == atom.Img {
+			count++
+		}
+	})
+	return count
+}
+
+func firstDescendantImage(n *html.Node) *html.Node {
+	var img *html.Node
+	walkElements(n, func(candidate *html.Node) {
+		if img == nil && candidate.DataAtom == atom.Img {
+			img = candidate
+		}
+	})
+	return img
+}
+
+func isSafeDataImageSrc(src string) bool {
+	lower := strings.ToLower(strings.TrimSpace(src))
+	switch {
+	case strings.HasPrefix(lower, "data:image/png;base64,"):
+		return true
+	case strings.HasPrefix(lower, "data:image/jpeg;base64,"):
+		return true
+	case strings.HasPrefix(lower, "data:image/jpg;base64,"):
+		return true
+	case strings.HasPrefix(lower, "data:image/gif;base64,"):
+		return true
+	case strings.HasPrefix(lower, "data:image/webp;base64,"):
+		return true
+	default:
+		return false
+	}
+}
 
 // findBody finds the <body> element, or returns the root if not found.
 func findBody(doc *html.Node) *html.Node {
@@ -493,6 +784,88 @@ func findFirstChild(parent *html.Node, tag atom.Atom) *html.Node {
 	return nil
 }
 
+func nextElementSibling(n *html.Node, tag atom.Atom) *html.Node {
+	for sibling := n.NextSibling; sibling != nil; sibling = sibling.NextSibling {
+		if sibling.Type == html.TextNode && strings.TrimSpace(sibling.Data) == "" {
+			continue
+		}
+		if sibling.Type != html.ElementNode {
+			return nil
+		}
+		if sibling.DataAtom == tag {
+			return sibling
+		}
+		return nil
+	}
+	return nil
+}
+
+func hasAttr(n *html.Node, key string) bool {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func detailsSummaryParts(summary *html.Node) (title string, icon string, badge string) {
+	var titleParts []string
+	for child := summary.FirstChild; child != nil; child = child.NextSibling {
+		text := trimImportSpace(extractText(child))
+		text = strings.Trim(text, "▼▾▴")
+		text = trimImportSpace(text)
+		if text == "" {
+			continue
+		}
+		if badge == "" && looksLikeDetailsBadge(text) {
+			badge = text
+			continue
+		}
+		if icon == "" && looksLikeSummaryIcon(text) {
+			icon = text
+			continue
+		}
+		titleParts = append(titleParts, text)
+	}
+	if len(titleParts) == 0 {
+		return trimImportSpace(strings.Trim(extractText(summary), "▼▾▴")), icon, badge
+	}
+	return strings.Join(titleParts, " "), icon, badge
+}
+
+func looksLikeDetailsBadge(text string) bool {
+	lower := strings.ToLower(text)
+	return strings.Contains(lower, "topic") || strings.Contains(lower, "article") || strings.Contains(lower, "item")
+}
+
+func looksLikeSummaryIcon(text string) bool {
+	runes := []rune(text)
+	if len(runes) == 0 || len(runes) > 3 {
+		return false
+	}
+	for _, r := range runes {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneNodeTree(n *html.Node) *html.Node {
+	clone := &html.Node{
+		Type:      n.Type,
+		DataAtom:  n.DataAtom,
+		Data:      n.Data,
+		Namespace: n.Namespace,
+		Attr:      append([]html.Attribute(nil), n.Attr...),
+	}
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		clone.AppendChild(cloneNodeTree(child))
+	}
+	return clone
+}
+
 // extractText recursively extracts all text content from a node.
 func extractText(n *html.Node) string {
 	var sb strings.Builder
@@ -519,10 +892,75 @@ func walkElements(n *html.Node, fn func(*html.Node)) {
 	}
 }
 
+func containsElement(n *html.Node, tag atom.Atom) bool {
+	found := false
+	walkElements(n, func(candidate *html.Node) {
+		if candidate.DataAtom == tag {
+			found = true
+		}
+	})
+	return found
+}
+
+func requiresSandboxedHTMLBlock(n *html.Node) bool {
+	if n == nil {
+		return false
+	}
+	if n.Type == html.ElementNode {
+		switch n.DataAtom {
+		case atom.Script, atom.Form, atom.Input, atom.Select, atom.Textarea, atom.Button, atom.Iframe:
+			return true
+		}
+		for _, attr := range n.Attr {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(attr.Key)), "on") {
+				return true
+			}
+		}
+	}
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		if requiresSandboxedHTMLBlock(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func isStyledCustomHTMLContainer(n *html.Node) bool {
+	if n == nil || n.Type != html.ElementNode {
+		return false
+	}
+	switch n.DataAtom {
+	case atom.Div, atom.Section, atom.Article, atom.Aside, atom.Header, atom.Footer, atom.Nav, atom.Main:
+	default:
+		return false
+	}
+	style := strings.ToLower(getAttr(n, "style"))
+	if strings.TrimSpace(style) == "" {
+		return false
+	}
+	for _, token := range []string{
+		"border", "border-radius", "background", "padding", "display:flex", "display: flex", "gap:",
+		"box-shadow", "align-items", "justify-content",
+	} {
+		if strings.Contains(style, token) {
+			return true
+		}
+	}
+	return false
+}
+
 // renderNode renders an HTML node back to string for htmlBlock fallback.
 func renderNode(n *html.Node) string {
 	var sb strings.Builder
 	html.Render(&sb, n)
+	return sb.String()
+}
+
+func renderChildren(n *html.Node) string {
+	var sb strings.Builder
+	for child := n.FirstChild; child != nil; child = child.NextSibling {
+		html.Render(&sb, child)
+	}
 	return sb.String()
 }
 
@@ -561,6 +999,127 @@ func isSafeURL(href string) bool {
 	}
 	// Everything else (javascript:, data:, vbscript:, etc.) is unsafe
 	return false
+}
+
+func normalizeImportHref(href string) string {
+	href = strings.TrimSpace(href)
+	if strings.HasPrefix(href, "#") {
+		if idx := strings.LastIndex(href, "#"); idx > 0 {
+			return "#" + href[idx+1:]
+		}
+	}
+	return href
+}
+
+func addHeadingAnchorAliases(nodes []Node) {
+	existing := map[string]bool{}
+	headingsByText := map[string][]*Node{}
+	var collect func(nodes []Node)
+	collect = func(nodes []Node) {
+		for i := range nodes {
+			node := &nodes[i]
+			if node.Type == "heading" {
+				if id := stringAttr(node.Attrs, "id"); id != "" {
+					existing[id] = true
+				}
+				key := normalizeAnchorText(nodeText(node))
+				if key != "" {
+					headingsByText[key] = append(headingsByText[key], node)
+				}
+			}
+			if len(node.Content) > 0 {
+				collect(node.Content)
+			}
+		}
+	}
+	collect(nodes)
+	if len(headingsByText) == 0 {
+		return
+	}
+
+	var apply func(nodes []Node)
+	apply = func(nodes []Node) {
+		for i := range nodes {
+			node := &nodes[i]
+			if node.Type == "text" {
+				for _, mark := range node.Marks {
+					if mark.Type != "link" {
+						continue
+					}
+					href := stringAttr(mark.Attrs, "href")
+					if !strings.HasPrefix(href, "#") || len(href) <= 1 {
+						continue
+					}
+					anchor := strings.TrimPrefix(href, "#")
+					if existing[anchor] {
+						continue
+					}
+					candidates := headingsByText[normalizeAnchorText(node.Text)]
+					if len(candidates) != 1 {
+						continue
+					}
+					addHeadingAlias(candidates[0], anchor)
+					existing[anchor] = true
+				}
+			}
+			if len(node.Content) > 0 {
+				apply(node.Content)
+			}
+		}
+	}
+	apply(nodes)
+}
+
+func addHeadingAlias(node *Node, anchor string) {
+	if node.Attrs == nil {
+		node.Attrs = map[string]any{}
+	}
+	aliases, _ := node.Attrs["anchorAliases"].([]string)
+	for _, alias := range aliases {
+		if alias == anchor {
+			return
+		}
+	}
+	node.Attrs["anchorAliases"] = append(aliases, anchor)
+}
+
+func nodeText(node *Node) string {
+	var b strings.Builder
+	var walk func(*Node)
+	walk = func(n *Node) {
+		if n.Text != "" {
+			b.WriteString(n.Text)
+		}
+		for i := range n.Content {
+			walk(&n.Content[i])
+		}
+	}
+	walk(node)
+	return b.String()
+}
+
+func normalizeAnchorText(text string) string {
+	text = strings.ToLower(trimImportSpace(text))
+	text = strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		if unicode.IsSpace(r) || r == '-' || r == '_' || r == '&' || r == '/' {
+			return ' '
+		}
+		return -1
+	}, text)
+	return strings.Join(strings.Fields(text), " ")
+}
+
+func stringAttr(attrs map[string]any, key string) string {
+	if attrs == nil {
+		return ""
+	}
+	if value, ok := attrs[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
 }
 
 // ensureBlockContent wraps inline-only content in a paragraph if needed.

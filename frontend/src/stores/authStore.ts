@@ -41,7 +41,7 @@ export function clearClientSession() {
   }
 }
 
-function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
+export function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
   void accessToken;
   void refreshToken;
   try {

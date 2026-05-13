@@ -330,7 +330,7 @@ func (r *SupportMailboxRepository) CountUnread(ctx context.Context, workspaceID 
 	} else {
 		query = query.Where("sc.mailbox_id = ?", *mailboxID)
 	}
-	query = query.Where("NOT (" + conversationResolvedByAICondition("sc") + ")")
+	query = query.Where(conversationHumanInboxCondition("sc"))
 
 	var count int64
 	if err := query.Where(`
@@ -352,8 +352,8 @@ func (r *SupportMailboxRepository) CountUnread(ctx context.Context, workspaceID 
 func (r *SupportMailboxRepository) CountWorkload(ctx context.Context, workspaceID string, mailboxID *string) (int, error) {
 	query := r.db.WithContext(ctx).
 		Table("support_conversations sc").
-		Where("sc.workspace_id = ? AND sc.status NOT IN ?", workspaceID, []string{model.SupportConversationStatusResolved, model.SupportConversationStatusSpam}).
-		Where("NOT (" + conversationResolvedByAICondition("sc") + ")")
+		Where("sc.workspace_id = ?", workspaceID).
+		Where(conversationHumanInboxCondition("sc"))
 	if mailboxID == nil {
 		query = query.Where("sc.mailbox_id IS NULL")
 	} else {

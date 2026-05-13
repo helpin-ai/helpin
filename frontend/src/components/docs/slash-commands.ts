@@ -10,7 +10,6 @@ import {
   SmileIcon,
   Image01Icon,
   File01Icon,
-  AiMagicIcon,
   BookOpen01Icon,
   Heading02Icon,
   Heading03Icon,
@@ -159,12 +158,6 @@ export const slashCommands: SlashCommand[] = [
     icon: Table01Icon,
     action: (editor) =>
       (editor.chain().focus() as any).insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run(),
-  },
-  {
-    title: getDocsBlockDefinition('aiSection').label,
-    description: getDocsBlockDefinition('aiSection').description,
-    icon: AiMagicIcon,
-    action: (editor) => editor.chain().focus().setAISection({ status: 'draft' }).run(),
   },
   {
     title: getDocsBlockDefinition('citationBlock').label,

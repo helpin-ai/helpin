@@ -20,9 +20,10 @@ const ALIGNMENT_OPTIONS = [
   { value: 'right', label: 'Right', icon: TextAlignRightIcon },
 ] as const;
 
-export function ResizableImageComponent({ node, updateAttributes, selected: _selected, deleteNode, editor }: NodeViewProps) {
+export function ResizableImageComponent({ node, updateAttributes, selected: _selected, deleteNode, editor, extension }: NodeViewProps) {
   const { src, darkSrc, alt, caption, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab } = node.attrs;
   const { copyImage, downloadImage, openInNewTab: _openInNewTab } = useImageActions();
+  const enableCaption = extension.options.enableCaption ?? true;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -433,7 +434,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
           />
         )}
       </div>
-      {(editable || captionText) && (
+      {enableCaption && (editable || captionText) && (
         <input
           value={captionText}
           onChange={(event) => {

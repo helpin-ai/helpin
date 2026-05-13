@@ -69,12 +69,24 @@ func (h *PMAttachmentHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, attachments)
 }
 
+// Content redirects to a fresh attachment download URL.
+func (h *PMAttachmentHandler) Content(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	downloadURL, err := h.attachmentService.ContentURL(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	http.Redirect(w, r, downloadURL, http.StatusFound)
+}
+
 // Delete handles DELETE /api/pm/attachments/{id}.
 func (h *PMAttachmentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	userID := middleware.GetUserID(r.Context())
+	pendingOnly := r.URL.Query().Get("pending_only") == "true"
 
-	if err := h.attachmentService.Delete(r.Context(), id, userID); err != nil {
+	if err := h.attachmentService.Delete(r.Context(), id, userID, pendingOnly); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

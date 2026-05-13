@@ -117,6 +117,7 @@ type AgentRunActivities struct {
 	docsContentRepo            *repository.DocsContentRepository
 	docsBlockRepo              *repository.DocsBlockRepository
 	docsAISectionCandidateRepo *repository.DocsAISectionCandidateRepository
+	docsChangeProposalRepo     *repository.DocsChangeProposalRepository
 	docsVersionRepo            *repository.DocsVersionRepository
 	docsLinkRepo               *repository.DocsLinkRepository
 	docsSearchRepo             *repository.DocsSearchRepository
@@ -165,6 +166,7 @@ func NewAgentRunActivities(
 	docsContentRepo *repository.DocsContentRepository,
 	docsBlockRepo *repository.DocsBlockRepository,
 	docsAISectionCandidateRepo *repository.DocsAISectionCandidateRepository,
+	docsChangeProposalRepo *repository.DocsChangeProposalRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsSearchRepo *repository.DocsSearchRepository,
@@ -211,6 +213,7 @@ func NewAgentRunActivities(
 		docsContentRepo:            docsContentRepo,
 		docsBlockRepo:              docsBlockRepo,
 		docsAISectionCandidateRepo: docsAISectionCandidateRepo,
+		docsChangeProposalRepo:     docsChangeProposalRepo,
 		docsVersionRepo:            docsVersionRepo,
 		docsLinkRepo:               docsLinkRepo,
 		docsSearchRepo:             docsSearchRepo,
@@ -634,6 +637,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			return ExecuteRunResult{}, nonRetryableRunError(unexpectedErr)
 		}
 		bgCtx := context.Background()
+		a.salvageFailedRuntimeStateFromSnapshotStore(bgCtx, state)
 		_ = a.failRun(bgCtx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
@@ -647,6 +651,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			if persistWorkspace {
 				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
 			}
+			a.salvageFailedRuntimeStateFromSnapshotStore(ctx, state)
 			_ = a.failRun(ctx, state, err.Error())
 			return ExecuteRunResult{}, nonRetryableRunError(err)
 		}
@@ -1304,19 +1309,7 @@ func (a *AgentRunActivities) latestLiveCodexUserMessage(ctx context.Context, run
 }
 
 func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage, _ planningRunInput) error {
-	if state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
-		return nil
-	}
-	switch state.run.TargetType {
-	case "epic":
-		if state.epic == nil {
-			return nil
-		}
-	case "story", "task":
-		if state.task == nil {
-			return nil
-		}
-	default:
+	if a == nil || a.artifactRepo == nil || state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
 	}
 
@@ -2453,18 +2446,18 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				TargetType:  "workspace",
 				TargetID:    workspaceID,
 			}, "pm.create_task", mustJSON(map[string]any{
-				"name":            req.Name,
-				"description":     req.Description,
-				"task_type":       req.TaskType,
-				"estimate":        req.Estimate,
-				"priority":        req.Priority,
-				"epic_id":         req.EpicID,
-				"team_id":         req.TeamID,
-				"workflow_id":     req.WorkflowID,
-				"state_id":        req.StateID,
-				"owner_member_id": req.OwnerMemberID,
-				"label_ids":       req.LabelIDs,
-				"deadline":        req.Deadline,
+				"name":             req.Name,
+				"description":      req.Description,
+				"task_type":        req.TaskType,
+				"estimate":         req.Estimate,
+				"priority":         req.Priority,
+				"epic_id":          req.EpicID,
+				"team_id":          req.TeamID,
+				"workflow_id":      req.WorkflowID,
+				"state_id":         req.StateID,
+				"owner_member_ids": req.OwnerMemberIDs,
+				"label_ids":        req.LabelIDs,
+				"deadline":         req.Deadline,
 			}))
 			if err != nil {
 				return nil, err
@@ -2567,6 +2560,38 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return a.docsAISectionCandidateRepo.Create(ctx, candidate)
 		},
+		PublishDocumentChangeProposal: func(ctx context.Context, workspaceID string, req model.CreateDocsChangeProposalRequest) (*model.DocsChangeProposal, error) {
+			if a.docsChangeProposalRepo == nil {
+				return nil, fmt.Errorf("docs change proposal repository is not available")
+			}
+			doc, err := a.docsDocRepo.GetByID(ctx, strings.TrimSpace(req.DocumentID))
+			if err != nil {
+				return nil, err
+			}
+			if doc == nil || doc.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("document not found")
+			}
+			sources := req.Sources
+			if len(sources) == 0 || strings.TrimSpace(string(sources)) == "" || strings.TrimSpace(string(sources)) == "null" {
+				sources = json.RawMessage(`[]`)
+			}
+			proposal := &model.DocsChangeProposal{
+				WorkspaceID:     workspaceID,
+				DocumentID:      strings.TrimSpace(req.DocumentID),
+				BlockID:         trimStringPtr(req.BlockID),
+				AgentID:         trimStringPtr(req.AgentID),
+				AgentRunID:      trimStringPtr(req.AgentRunID),
+				Scope:           strings.TrimSpace(req.Scope),
+				Status:          model.DocsChangeProposalStatusPending,
+				Revision:        req.Revision,
+				Summary:         strings.TrimSpace(req.Summary),
+				ContentMarkdown: strings.TrimSpace(req.ContentMarkdown),
+				Content:         append(json.RawMessage(nil), req.Content...),
+				Sources:         append(json.RawMessage(nil), sources...),
+				CreatedBy:       strings.TrimSpace(req.CreatedBy),
+			}
+			return a.docsChangeProposalRepo.Create(ctx, proposal)
+		},
 		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
 			if a.commandExecutor == nil {
 				return fmt.Errorf("document commands are not available")
@@ -2649,6 +2674,17 @@ func (a *AgentRunActivities) pushVisitorConversationRefresh(ctx context.Context,
 		WorkspaceID: workspaceID,
 		Data:        listJSON,
 	})
+}
+
+func trimStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunState, errMsg string) error {

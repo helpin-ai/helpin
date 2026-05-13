@@ -268,9 +268,14 @@ function parseReviewDecisionArtifact(raw: string | null | undefined): ReviewDeci
 }
 
 function reviewDecisionBadgeClass(decision: string) {
-  return decision.trim() === 'approve'
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
-    : 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-300';
+  switch (decision.trim()) {
+    case 'approve':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300';
+    case 'skip':
+      return 'border-muted bg-muted text-muted-foreground';
+    default:
+      return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-300';
+  }
 }
 
 function reviewFindingStatusBadgeClass(status: string) {
@@ -279,6 +284,8 @@ function reviewFindingStatusBadgeClass(status: string) {
       return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300';
     case 'requested_changes':
       return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-300';
+    case 'skipped':
+      return 'border-muted bg-muted text-muted-foreground';
     default:
       return 'border-muted bg-muted text-muted-foreground';
   }

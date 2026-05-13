@@ -378,6 +378,16 @@ func (s *WorkspaceService) ListMembers(ctx context.Context, workspaceID string) 
 	return s.workspaceRepo.ListMembers(ctx, workspaceID)
 }
 
+func (s *WorkspaceService) GetWorkspaceMFAPolicy(ctx context.Context, workspaceID, userID string, mfaSatisfied bool) (model.WorkspaceMFAPolicy, error) {
+	policy, err := s.workspaceRepo.GetWorkspaceMFAPolicy(ctx, workspaceID, userID)
+	if err != nil {
+		return model.WorkspaceMFAPolicy{}, err
+	}
+	policy.MFARequired = policy.EnforceTwoFactor && !mfaSatisfied
+	policy.MFASatisfied = mfaSatisfied
+	return policy, nil
+}
+
 // ListMemberPresence returns live presence for active workspace members.
 func (s *WorkspaceService) ListMemberPresence(ctx context.Context, workspaceID string) ([]model.WorkspaceMemberPresenceStatus, error) {
 	statuses, err := resolveSupportTeammatePresenceStatuses(

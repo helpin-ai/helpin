@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { AISectionNodeView, type AISectionStatus } from './AISectionNodeView';
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs';
 
 export interface AISectionOptions {
   workspaceId?: string;
@@ -91,7 +92,7 @@ export const AISectionExtension = Node.create<AISectionOptions>({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(AISectionNodeView);
+    return ReactNodeViewRenderer(AISectionNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) });
   },
 
   addCommands() {

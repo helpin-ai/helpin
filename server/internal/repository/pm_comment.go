@@ -20,6 +20,16 @@ func NewPMCommentRepository(db *gorm.DB) *PMCommentRepository {
 	return &PMCommentRepository{db: db}
 }
 
+// DB returns the underlying database handle for transaction orchestration.
+func (r *PMCommentRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a repository bound to the provided transaction.
+func (r *PMCommentRepository) WithTx(tx *gorm.DB) *PMCommentRepository {
+	return NewPMCommentRepository(tx)
+}
+
 // List returns top-level comments for an entity with author info, nested replies, reactions, and attachments.
 func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID string) ([]model.CommentWithAuthor, error) {
 	var comments []model.PMComment
@@ -235,6 +245,30 @@ func (r *PMCommentRepository) GetByID(ctx context.Context, id string) (*model.PM
 		return nil, fmt.Errorf("get comment: %w", err)
 	}
 	return &comment, nil
+}
+
+// GetWithAuthor returns one comment enriched with author, reactions, and attachments.
+func (r *PMCommentRepository) GetWithAuthor(ctx context.Context, id string) (*model.CommentWithAuthor, error) {
+	comment, err := r.GetByID(ctx, id)
+	if err != nil || comment == nil {
+		return nil, err
+	}
+
+	var author model.User
+	if err := r.db.WithContext(ctx).Where("id = ?", comment.AuthorID).First(&author).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("load comment author: %w", err)
+		}
+	}
+
+	reactionsMap := r.loadReactions(ctx, []string{comment.ID})
+	attachmentsMap := r.loadCommentAttachments(ctx, []string{comment.ID})
+	return &model.CommentWithAuthor{
+		Comment:     *comment,
+		Author:      author,
+		Reactions:   reactionsMap[comment.ID],
+		Attachments: attachmentsMap[comment.ID],
+	}, nil
 }
 
 // Create inserts a comment.

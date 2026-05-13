@@ -32,6 +32,7 @@ export function CodingSessionDrawer({
         side="right"
         className="z-[70] w-full border-l p-0 data-[side=right]:w-[78vw] data-[side=right]:sm:max-w-[78vw]"
         overlayClassName="z-[70]"
+        onOpenAutoFocus={(event) => event.preventDefault()}
         onPointerDownOutside={stopOutsideDismissPropagation}
         onInteractOutside={stopOutsideDismissPropagation}
       >

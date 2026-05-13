@@ -13,7 +13,7 @@ import { TaskItem } from '@tiptap/extension-task-item';
 import { Markdown } from 'tiptap-markdown';
 import { MentionHighlight } from '@/components/pm/mention-highlight';
 import { MentionSuggestionsList } from '@/components/pm/MentionSuggestionsList';
-import { diffRemovedInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
+import { diffRemovedInlineAttachmentIds, normalizeInlineAttachmentImageSrcs } from '@/components/pm/editorImageAttachments';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -52,6 +52,7 @@ import type { WorkspaceTeam, AssignableMember } from '@/lib/types';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { ResizableImageExtension } from './resizable-image-extension';
 import {
+  getMemberMentionHandle,
   getMentionSuggestions,
   type MentionSuggestionItem,
 } from '@/components/pm/mentionSuggestions';
@@ -107,6 +108,7 @@ interface TiptapEditorProps {
   className?: string;
   uploadConfig?: EditorUploadConfig;
   onUploadStateChange?: (pendingUploads: number) => void;
+  onUploadReady?: (upload: ((files: FileList | File[], insertPos?: number) => Promise<void>) | null) => void;
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   members?: AssignableMember[];
   onEditorReady?: (editor: Editor | null) => void;
@@ -145,14 +147,15 @@ function ToolbarButton({
   );
 }
 
-export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, teams = [], members = [], onEditorReady }: TiptapEditorProps) {
+export function TiptapEditor({ content, onChange, placeholder = "Start writing...", className, uploadConfig, onUploadStateChange, onUploadReady, teams = [], members = [], onEditorReady }: TiptapEditorProps) {
   const uploadConfigRef = useRef(uploadConfig);
   uploadConfigRef.current = uploadConfig;
   const onUploadStateChangeRef = useRef(onUploadStateChange);
   onUploadStateChangeRef.current = onUploadStateChange;
   const pendingUploadsRef = useRef(0);
-  const currentHtmlRef = useRef(content);
-  currentHtmlRef.current = content;
+  const normalizedContent = useMemo(() => normalizeInlineAttachmentImageSrcs(content), [content]);
+  const currentHtmlRef = useRef(normalizedContent);
+  currentHtmlRef.current = normalizedContent;
   const [mentionState, setMentionState] = useState<{
     from: number;
     to: number;
@@ -167,9 +170,17 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
   membersRef.current = members;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const uploadsEnabled = Boolean(uploadConfig);
+
+  const focusAtInsertPos = useCallback((editorInstance: Editor, insertPos?: number) => {
+    const chain = editorInstance.chain().focus();
+    if (typeof insertPos !== 'number') return chain;
+    const safePos = Math.max(0, Math.min(insertPos, editorInstance.state.doc.content.size));
+    return chain.setTextSelection(safePos);
+  }, []);
 
   const handleImageUpload = useCallback(
-    async (file: File, editorInstance: ReturnType<typeof useEditor>) => {
+    async (file: File, editorInstance: ReturnType<typeof useEditor>, insertPos?: number) => {
       if (!editorInstance || !uploadConfigRef.current) return;
       if (!file.type.startsWith('image/')) return;
 
@@ -183,9 +194,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       });
 
       // Insert resizable image with data URI immediately
-      editorInstance
-        .chain()
-        .focus()
+      focusAtInsertPos(editorInstance, insertPos)
         .setResizableImage({ src: dataUri, alt: file.name, title: uploadId })
         .run();
 
@@ -242,11 +251,11 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         onUploadStateChangeRef.current?.(pendingUploadsRef.current);
       }
     },
-    [],
+    [focusAtInsertPos],
   );
 
   const handleFileUpload = useCallback(
-    async (file: File, editorInstance: ReturnType<typeof useEditor>) => {
+    async (file: File, editorInstance: ReturnType<typeof useEditor>, insertPos?: number) => {
       if (!editorInstance || !uploadConfigRef.current) return;
       pendingUploadsRef.current += 1;
       onUploadStateChangeRef.current?.(pendingUploadsRef.current);
@@ -254,9 +263,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         const upload = await uploadEditorFile(file, uploadConfigRef.current);
         const fileName = escapeHTML(file.name || 'Attachment');
         const href = escapeHTML(upload.publicUrl);
-        editorInstance
-          .chain()
-          .focus()
+        focusAtInsertPos(editorInstance, insertPos)
           .insertContent(`<a href="${href}" target="_blank" rel="noopener noreferrer">${fileName}</a>`)
           .run();
       } catch {
@@ -266,7 +273,26 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         onUploadStateChangeRef.current?.(pendingUploadsRef.current);
       }
     },
-    [],
+    [focusAtInsertPos],
+  );
+
+  const handleFilesUpload = useCallback(
+    async (files: FileList | File[], insertPos?: number) => {
+      const editorInstance = editorRef.current;
+      if (!editorInstance || !uploadConfigRef.current) return;
+
+      if (typeof insertPos === 'number') {
+        focusAtInsertPos(editorInstance, insertPos).run();
+      }
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith('image/')) {
+          await handleImageUpload(file, editorInstance);
+        } else {
+          await handleFileUpload(file, editorInstance);
+        }
+      }
+    },
+    [focusAtInsertPos, handleFileUpload, handleImageUpload],
   );
 
   const extensions = useMemo(() => {
@@ -282,7 +308,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
       TextColor,
       Placeholder.configure({
         placeholder,
-        showOnlyCurrent: false,
+        showOnlyCurrent: true,
         emptyNodeClass: 'is-empty',
         emptyEditorClass: 'is-editor-empty',
       }),
@@ -299,10 +325,22 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         transformPastedText: true,
         transformCopiedText: false,
       }),
-      MentionHighlight,
+      MentionHighlight.configure({
+        validHandles: () => {
+          const handles = new Set<string>();
+          for (const m of membersRef.current) {
+            const handle = getMemberMentionHandle(m);
+            if (handle) handles.add(handle.toLowerCase());
+          }
+          for (const t of teamsRef.current) {
+            if (t.handle) handles.add(t.handle.toLowerCase());
+          }
+          return handles;
+        },
+      }),
     ];
     if (uploadConfig) {
-      exts.push(ResizableImageExtension as typeof exts[number]);
+      exts.push(ResizableImageExtension.configure({ enableCaption: false, defaultAlignment: 'left' }) as typeof exts[number]);
     }
     return exts;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -320,7 +358,7 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
 
   const editor = useEditor({
     extensions,
-    content,
+    content: normalizedContent,
     editorProps: {
       attributes: {
         class: 'tiptap prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[120px] px-4 py-3',
@@ -347,16 +385,13 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
         const files = event.dataTransfer?.files;
         if (!files?.length) return false;
 
-        for (const file of files) {
-          event.preventDefault();
-          if (file.type.startsWith('image/')) {
-            handleImageUpload(file, editorRef.current);
-          } else {
-            handleFileUpload(file, editorRef.current);
-          }
-          return true;
-        }
-        return false;
+        event.preventDefault();
+        const dropPos = editorRef.current?.view.posAtCoords({
+          left: event.clientX,
+          top: event.clientY,
+        })?.pos;
+        void handleFilesUpload(files, dropPos);
+        return true;
       },
       handleKeyDown: (_view, event) => {
         const currentMention = mentionStateRef.current;
@@ -463,16 +498,25 @@ export function TiptapEditor({ content, onChange, placeholder = "Start writing..
     return () => onEditorReady?.(null);
   }, [editor, onEditorReady]);
 
+  useEffect(() => {
+    if (!uploadsEnabled || !editor) {
+      onUploadReady?.(null);
+      return;
+    }
+    onUploadReady?.(handleFilesUpload);
+    return () => onUploadReady?.(null);
+  }, [editor, handleFilesUpload, onUploadReady, uploadsEnabled]);
+
   // Sync external content changes (e.g. form reset, template apply)
   useEffect(() => {
     if (!editor) return;
     const current = editor.getHTML();
-    if (content === '' && current !== '<p></p>' && current !== '') {
+    if (normalizedContent === '' && current !== '<p></p>' && current !== '') {
       editor.commands.clearContent();
-    } else if (content !== '' && content !== current) {
-      editor.commands.setContent(content);
+    } else if (normalizedContent !== '' && normalizedContent !== current) {
+      editor.commands.setContent(normalizedContent);
     }
-  }, [content, editor]);
+  }, [normalizedContent, editor]);
 
   if (!editor) return null;
 

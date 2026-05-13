@@ -2,14 +2,17 @@ import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
-import { storeRedirectAfterLogin } from '@/lib/authRedirect'
+import { currentPathForLoginRedirect, storeRedirectAfterLogin } from '@/lib/authRedirect'
 
 export const Route = createFileRoute('/_authenticated')({
-  beforeLoad: ({ context }) => {
+  beforeLoad: ({ context, location }) => {
     // Don't redirect to login if server is just unreachable — user may still have valid tokens
     if (!context.auth.loading && !context.auth.user && !context.auth.serverUnreachable) {
-      storeRedirectAfterLogin()
-      throw redirect({ to: '/login' })
+      storeRedirectAfterLogin(currentPathForLoginRedirect(location))
+      throw redirect({
+        to: '/login',
+        search: { redirect: currentPathForLoginRedirect(location) },
+      })
     }
   },
   component: AuthenticatedLayout,

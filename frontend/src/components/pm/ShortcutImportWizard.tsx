@@ -374,6 +374,7 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
   const [historyLoading, setHistoryLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const previewPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scanIdRef = useRef<string | null>(null);
   const { data: docsCollections = [] } = useDocsCollections(workspaceId, docsSpaceId);
 
@@ -381,6 +382,7 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (previewPollRef.current) clearInterval(previewPollRef.current);
     };
   }, []);
 
@@ -462,25 +464,7 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
 
   // ─── Step 0: API Preview ─────────────────────────────────────────
 
-  const handleAPIPreview = useCallback(async () => {
-    if (!apiToken.trim()) {
-      toast.error('Shortcut API token is required');
-      return;
-    }
-    const scanId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    scanIdRef.current = scanId;
-    setScanProgress({ message: 'Starting Shortcut scan', phase: 'starting', processed: 0, total: 0 });
-    setPreviewLoading(true);
-    setPreview(null);
-    const { data, error } = await pmImportService.previewShortcutAPI(workspaceId, apiToken.trim(), importOptions, scanId);
-    setPreviewLoading(false);
-    if (error || !data) {
-      toast.error(error || 'Failed to preview Shortcut API import');
-      setScanProgress(null);
-      return;
-    }
+  const applyPreview = useCallback(async (data: ShortcutImportPreviewResponse) => {
     setPreview(data);
     setTeamMappings(buildInitialTeamMappings(data, existingTeams));
     const wfRes = await pmWorkflowService.list(workspaceId);
@@ -505,8 +489,73 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
         invited: false,
       })),
     );
-    setScanProgress(null);
-  }, [apiToken, workspaceId, importOptions, existingTeams]);
+  }, [existingTeams, workspaceId]);
+
+  const stopPreviewPolling = useCallback(() => {
+    if (previewPollRef.current) {
+      clearInterval(previewPollRef.current);
+      previewPollRef.current = null;
+    }
+  }, []);
+
+  const startPreviewPolling = useCallback((scanId: string) => {
+    stopPreviewPolling();
+    const poll = async () => {
+      const { data, error } = await pmImportService.getShortcutAPIPreview(workspaceId, scanId);
+      if (error || !data) {
+        stopPreviewPolling();
+        setPreviewLoading(false);
+        setScanProgress(null);
+        toast.error(error || 'Failed to load Shortcut preview');
+        return;
+      }
+      setScanProgress({
+        message: data.status === 'ready' ? 'Shortcut preview is ready' : 'Scanning Shortcut workspace',
+        phase: data.progress.current_step || data.status,
+        processed: data.progress.entities_processed,
+        total: data.progress.entities_total,
+      });
+      if (data.status === 'ready' && data.preview) {
+        stopPreviewPolling();
+        await applyPreview(data.preview);
+        setPreviewLoading(false);
+        setScanProgress(null);
+        void loadImportHistory();
+        return;
+      }
+      if (data.status === 'failed' || data.status === 'canceled') {
+        stopPreviewPolling();
+        setPreviewLoading(false);
+        setScanProgress(null);
+        toast.error(data.error || 'Shortcut preview scan failed');
+      }
+    };
+    void poll();
+    previewPollRef.current = setInterval(poll, 1500);
+  }, [applyPreview, loadImportHistory, stopPreviewPolling, workspaceId]);
+
+  const handleAPIPreview = useCallback(async () => {
+    if (!apiToken.trim()) {
+      toast.error('Shortcut API token is required');
+      return;
+    }
+    const scanId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    scanIdRef.current = scanId;
+    setScanProgress({ message: 'Starting Shortcut scan', phase: 'starting', processed: 0, total: 0 });
+    setPreviewLoading(true);
+    setPreview(null);
+    const { data, error } = await pmImportService.previewShortcutAPI(workspaceId, apiToken.trim(), importOptions, scanId);
+    if (error || !data) {
+      toast.error(error || 'Failed to preview Shortcut API import');
+      setPreviewLoading(false);
+      setScanProgress(null);
+      return;
+    }
+    scanIdRef.current = data.scan_id;
+    startPreviewPolling(data.scan_id);
+  }, [apiToken, workspaceId, importOptions, startPreviewPolling]);
 
   // ─── Step 1: Team helpers ────────────────────────────────────────
 
@@ -760,6 +809,7 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
       teamMap,
       wfMappings,
       importOptions,
+      scanIdRef.current,
     );
 
     if (error || !data) {
@@ -876,6 +926,9 @@ export function ShortcutImportWizard({ workspaceId }: ShortcutImportWizardProps)
           onDocsLookbackMonths={setDocsLookbackMonths}
           onAPIPreview={handleAPIPreview}
           onClear={() => {
+            stopPreviewPolling();
+            scanIdRef.current = null;
+            setScanProgress(null);
             setPreview(null);
             setTeamMappings([]);
             setWorkflowMappings([]);
@@ -2066,12 +2119,12 @@ function ShortcutImportDetailPanel({
   onCancel: () => void;
   onRetry: () => void;
 }) {
-  const counts = detail.diagnostics.counts.filter((item) => item.count > 0);
-  const failedMedia = detail.diagnostics.failed_media;
+  const counts = (detail.diagnostics?.counts ?? []).filter((item) => item.count > 0);
+  const failedMedia = detail.diagnostics?.failed_media ?? [];
   const unmapped = [
-    ...detail.diagnostics.unmapped_members,
-    ...detail.diagnostics.unmapped_states,
-    ...detail.diagnostics.unmapped_teams,
+    ...(detail.diagnostics?.unmapped_members ?? []),
+    ...(detail.diagnostics?.unmapped_states ?? []),
+    ...(detail.diagnostics?.unmapped_teams ?? []),
   ];
   return (
     <div className="space-y-4">
@@ -2118,14 +2171,14 @@ function ShortcutImportDetailPanel({
       )}
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <DiagnosticList title="Warnings by type" items={detail.diagnostics.warning_groups.map((g) => `${formatDiagnosticLabel(g.type)}: ${g.count.toLocaleString()}`)} />
+        <DiagnosticList title="Warnings by type" items={(detail.diagnostics?.warning_groups ?? []).map((g) => `${formatDiagnosticLabel(g.type)}: ${g.count.toLocaleString()}`)} />
         <DiagnosticList title="Failed media" items={failedMedia.map((item) => item.key || item.message)} empty="No failed media recorded" />
         <DiagnosticList title="Unmapped data" items={unmapped.map((item) => item.message)} empty="No unmapped members, states, or teams recorded" />
         <DiagnosticList
           title="Failure retryability"
           items={[
-            `${detail.diagnostics.retryable_failures.length.toLocaleString()} retryable`,
-            `${detail.diagnostics.non_retryable_failures.length.toLocaleString()} non-retryable`,
+            `${(detail.diagnostics?.retryable_failures ?? []).length.toLocaleString()} retryable`,
+            `${(detail.diagnostics?.non_retryable_failures ?? []).length.toLocaleString()} non-retryable`,
           ]}
         />
       </div>

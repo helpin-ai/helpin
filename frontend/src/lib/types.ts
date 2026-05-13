@@ -180,6 +180,14 @@ export interface WorkspaceAccess {
     role: string;
   }[];
   modules: WorkspaceModule[];
+  security_policy?: WorkspaceMFAPolicy;
+}
+
+export interface WorkspaceMFAPolicy {
+  enforce_two_factor: boolean;
+  mfa_required: boolean;
+  mfa_enabled: boolean;
+  mfa_satisfied: boolean;
 }
 
 export interface MemberWithUser {
@@ -295,6 +303,7 @@ export interface WorkspaceConfig {
   sprint_duration_weeks: number;
   notifications_enabled: boolean;
   team_weight: number;
+  enforce_two_factor?: boolean;
 }
 
 export interface WorkspaceTeam {

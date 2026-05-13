@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -479,6 +480,59 @@ func (r *SupportConversationRepository) textPrefixExpr(column string, limit int)
 	return fmt.Sprintf("LEFT(%s, %d)", column, limit)
 }
 
+var (
+	mdAutolinkPattern       = regexp.MustCompile(`<((?:https?|mailto):[^>\s]+)>`)
+	mdImageInlinePattern    = regexp.MustCompile(`!\[([^\]]*)\]\([^)]*\)`)
+	mdLinkInlinePattern     = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
+	mdHTMLTagPattern        = regexp.MustCompile(`<[^>]+>`)
+	mdHeadingPattern        = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s+`)
+	mdBlockquotePattern     = regexp.MustCompile(`(?m)^\s{0,3}>\s?`)
+	mdListBulletPattern     = regexp.MustCompile(`(?m)^\s{0,3}(?:[-*+]|\d+[.)])\s+`)
+	mdTableSepPattern       = regexp.MustCompile(`(?m)^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$`)
+	mdHardBreakPattern      = regexp.MustCompile(`\\\r?\n`)
+	mdEmphasisPattern       = regexp.MustCompile("(\\*\\*|__|\\*|_|`)")
+	whitespacePattern       = regexp.MustCompile(`\s+`)
+	spaceBeforePunctPattern = regexp.MustCompile(`\s+([,.;:!?\)])`)
+)
+
+// cleanMessageSnippet renders a plain-text preview of a Markdown or HTML
+// message body for inbox row display. It unwraps autolinks, link/image
+// syntax, and table separators, strips emphasis markers, collapses
+// whitespace, and truncates to limit characters with an ellipsis.
+func cleanMessageSnippet(raw string, limit int) string {
+	const notePrefix = "Note: "
+	hasNote := strings.HasPrefix(raw, notePrefix)
+	if hasNote {
+		raw = strings.TrimPrefix(raw, notePrefix)
+	}
+
+	cleaned := raw
+	cleaned = mdAutolinkPattern.ReplaceAllString(cleaned, "$1")
+	cleaned = mdImageInlinePattern.ReplaceAllString(cleaned, "$1")
+	cleaned = mdLinkInlinePattern.ReplaceAllString(cleaned, "$1")
+	cleaned = mdTableSepPattern.ReplaceAllString(cleaned, " ")
+	cleaned = mdHardBreakPattern.ReplaceAllString(cleaned, "\n")
+	cleaned = mdHTMLTagPattern.ReplaceAllString(cleaned, " ")
+	cleaned = strings.NewReplacer("&nbsp;", " ", "&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`).Replace(cleaned)
+	cleaned = mdHeadingPattern.ReplaceAllString(cleaned, "")
+	cleaned = mdBlockquotePattern.ReplaceAllString(cleaned, "")
+	cleaned = mdListBulletPattern.ReplaceAllString(cleaned, "")
+	cleaned = strings.ReplaceAll(cleaned, "|", " ")
+	cleaned = mdEmphasisPattern.ReplaceAllString(cleaned, "")
+	cleaned = whitespacePattern.ReplaceAllString(cleaned, " ")
+	cleaned = spaceBeforePunctPattern.ReplaceAllString(cleaned, "$1")
+	cleaned = strings.TrimSpace(cleaned)
+
+	if limit > 0 && len([]rune(cleaned)) > limit {
+		runes := []rune(cleaned)
+		cleaned = strings.TrimRight(string(runes[:limit]), " ") + "…"
+	}
+	if hasNote {
+		cleaned = notePrefix + cleaned
+	}
+	return cleaned
+}
+
 func (r *SupportConversationRepository) latestSessionCountryExpr(column, alias string) string {
 	return fmt.Sprintf(`COALESCE(
 		(SELECT sws.%s
@@ -738,6 +792,12 @@ func applyConversationAIFilters(query *gorm.DB, alias string, aiFilters []string
 			conditions = append(conditions, conversationAIHandoffCondition(alias))
 		case model.SupportAIFilterResolved, model.SupportSystemTagAIResolved, "resolved_by_ai":
 			conditions = append(conditions, conversationResolvedByAICondition(alias))
+		case "none":
+			conditions = append(conditions, fmt.Sprintf("NOT (%s) AND NOT (%s) AND NOT (%s)",
+				conversationAIActiveCondition(alias),
+				conversationAIHandoffCondition(alias),
+				conversationResolvedByAICondition(alias),
+			))
 		}
 	}
 	if len(conditions) == 0 {
@@ -820,7 +880,7 @@ func (r *SupportConversationRepository) applyConversationAssignmentFilter(query 
 func (r *SupportConversationRepository) applyMailboxScopes(query *gorm.DB, alias string, mailboxID *string, mailboxIDs []string) *gorm.DB {
 	mailboxIDs = compactStrings(mailboxIDs)
 	if len(mailboxIDs) == 0 {
-		return r.applyMailboxScope(query, mailboxID)
+		return r.applyMailboxScope(query, alias, mailboxID)
 	}
 	ids := make([]string, 0, len(mailboxIDs))
 	includeShared := false
@@ -850,7 +910,7 @@ func (r *SupportConversationRepository) applyMailboxScopes(query *gorm.DB, alias
 }
 
 func (r *SupportConversationRepository) applyConversationListParams(query *gorm.DB, alias string, params ConversationRepositoryListParams) *gorm.DB {
-	query = r.applyMailboxAccess(query, params.WorkspaceMemberID, params.Role)
+	query = r.applyMailboxAccess(query, alias, params.WorkspaceMemberID, params.Role)
 	query = r.applyMailboxScopes(query, alias, params.MailboxID, params.MailboxIDs)
 	query = applyConversationFlowState(query, alias, params.FlowState)
 	query = r.applyConversationSearch(query, strings.TrimSpace(params.Search))
@@ -926,13 +986,23 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 			  AND sm.message_type = 'reply'
 			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
 		) AS unread_count,
+		COALESCE((
+			SELECT m.sender_type = 'customer'
+			FROM support_messages m
+			WHERE m.conversation_id = support_conversations.id
+			  AND m.deleted_at IS NULL
+			  AND m.is_internal = false
+			  AND m.message_type = 'reply'
+			ORDER BY m.created_at DESC
+			LIMIT 1
+		), false) AS awaiting_reply,
 		%s AS country_code,
 		%s AS country_name,
 		sm.name AS mailbox_name,
 		sm.handle AS mailbox_handle,
 		sm.icon AS mailbox_icon`,
-			r.textPrefixExpr("m.content", 100),
-			r.textPrefixExpr("m.content", 100),
+			r.textPrefixExpr("m.content", 500),
+			r.textPrefixExpr("m.content", 500),
 			r.epochExpr(),
 			r.latestSessionCountryExpr("country_code", "support_conversations"),
 			r.latestSessionCountryExpr("country_name", "support_conversations"),
@@ -940,7 +1010,47 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 		Order(conversationListOrder(params.Sort)).Offset(offset).Limit(perPage).Find(&conversations).Error; err != nil {
 		return nil, 0, fmt.Errorf("list conversations: %w", err)
 	}
+	for i := range conversations {
+		if conversations[i].LastMessage == nil {
+			continue
+		}
+		cleaned := cleanMessageSnippet(*conversations[i].LastMessage, 100)
+		conversations[i].LastMessage = &cleaned
+	}
 	return conversations, total, nil
+}
+
+// CountByParams returns total and unread counts for the same filter set used by List.
+func (r *SupportConversationRepository) CountByParams(ctx context.Context, params ConversationRepositoryListParams) (int, int, error) {
+	buildQuery := func() *gorm.DB {
+		query := r.db.WithContext(ctx).
+			Table("support_conversations AS sc").
+			Where("sc.workspace_id = ?", params.WorkspaceID)
+		return r.applyConversationListParams(query, "sc", params)
+	}
+
+	var total int64
+	if err := buildQuery().Count(&total).Error; err != nil {
+		return 0, 0, fmt.Errorf("count conversations: %w", err)
+	}
+
+	unreadCondition := fmt.Sprintf(`EXISTS (
+		SELECT 1
+		FROM support_messages sm
+		WHERE sm.conversation_id = sc.id
+		  AND sm.deleted_at IS NULL
+		  AND sm.is_internal = false
+		  AND sm.sender_type = 'customer'
+		  AND sm.message_type = 'reply'
+		  AND sm.created_at > COALESCE(sc.team_last_seen_at, %s)
+	)`, r.epochExpr())
+
+	var unread int64
+	if err := buildQuery().Where(unreadCondition).Count(&unread).Error; err != nil {
+		return 0, 0, fmt.Errorf("count unread conversations: %w", err)
+	}
+
+	return int(total), int(unread), nil
 }
 
 func (r *SupportConversationRepository) ListCoverageAnalysisCandidates(ctx context.Context, workspaceID string, windowStart, windowEnd time.Time, limit int) ([]model.SupportConversation, error) {
@@ -1020,7 +1130,7 @@ func (r *SupportConversationRepository) GetByID(ctx context.Context, workspaceID
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Where("support_conversations.workspace_id = ? AND support_conversations.id = ?", workspaceID, id)
-	query = r.applyMailboxAccess(query, workspaceMemberID, role)
+	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
 	if err := query.Select(fmt.Sprintf("support_conversations.*, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
 		r.latestSessionCountryExpr("country_code", "support_conversations"),
 		r.latestSessionCountryExpr("country_name", "support_conversations"),
@@ -1103,7 +1213,7 @@ func (r *SupportConversationRepository) ListByIDs(ctx context.Context, workspace
 		Table("support_conversations").
 		Joins("LEFT JOIN support_mailboxes sm ON sm.id = support_conversations.mailbox_id").
 		Where("support_conversations.workspace_id = ? AND support_conversations.id IN ?", workspaceID, ids)
-	query = r.applyMailboxAccess(query, workspaceMemberID, role)
+	query = r.applyMailboxAccess(query, "support_conversations", workspaceMemberID, role)
 	if err := query.
 		Select(fmt.Sprintf("support_conversations.*, %s AS country_code, %s AS country_name, sm.name AS mailbox_name, sm.handle AS mailbox_handle, sm.icon AS mailbox_icon",
 			r.latestSessionCountryExpr("country_code", "support_conversations"),
@@ -1178,6 +1288,13 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 		Order("updated_at DESC").
 		Find(&conversations).Error; err != nil {
 		return nil, fmt.Errorf("list conversations by anonymous_id: %w", err)
+	}
+	for i := range conversations {
+		if conversations[i].LastMessage == nil {
+			continue
+		}
+		cleaned := cleanMessageSnippet(*conversations[i].LastMessage, 100)
+		conversations[i].LastMessage = &cleaned
 	}
 	return conversations, nil
 }
@@ -1361,34 +1478,34 @@ func (r *SupportConversationRepository) GetUnreadStats(ctx context.Context, work
 	return stats, nil
 }
 
-func (r *SupportConversationRepository) applyMailboxScope(query *gorm.DB, mailboxID *string) *gorm.DB {
+func (r *SupportConversationRepository) applyMailboxScope(query *gorm.DB, alias string, mailboxID *string) *gorm.DB {
 	if mailboxID == nil {
 		return query
 	}
 	if strings.TrimSpace(*mailboxID) == "" {
-		return query.Where("support_conversations.mailbox_id IS NULL")
+		return query.Where(fmt.Sprintf("%s.mailbox_id IS NULL", alias))
 	}
-	return query.Where("support_conversations.mailbox_id = ?", strings.TrimSpace(*mailboxID))
+	return query.Where(fmt.Sprintf("%s.mailbox_id = ?", alias), strings.TrimSpace(*mailboxID))
 }
 
-func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, workspaceMemberID, role string) *gorm.DB {
+func (r *SupportConversationRepository) applyMailboxAccess(query *gorm.DB, alias, workspaceMemberID, role string) *gorm.DB {
 	if isElevatedSupportRole(role) {
 		return query
 	}
 	if strings.TrimSpace(workspaceMemberID) == "" {
 		return query.Where("1 = 0")
 	}
-	return query.Where(`
+	return query.Where(fmt.Sprintf(`
 		(
-			support_conversations.mailbox_id IS NULL
-			OR support_conversations.mailbox_id IN (
+			%s.mailbox_id IS NULL
+			OR %s.mailbox_id IN (
 				SELECT sm.id
 				FROM support_mailboxes sm
 				WHERE sm.active = true
 				  AND `+supportMailboxAccessCondition("sm")+`
 			)
 		)
-	`, workspaceMemberID, workspaceMemberID)
+	`, alias, alias), workspaceMemberID, workspaceMemberID)
 }
 
 // UpdateIdentityByAnonymousID batch-updates all anonymous conversations for a visitor

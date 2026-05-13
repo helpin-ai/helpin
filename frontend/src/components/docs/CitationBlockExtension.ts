@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { CitationBlockNodeView } from './CitationBlockNodeView'
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 export type CitationSourceType = 'docs_chunk' | 'support_conversation'
 export type CitationAccess = 'granted' | 'redacted' | 'unknown'
@@ -88,7 +89,7 @@ export const CitationBlockExtension = Node.create<CitationBlockOptions>({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(CitationBlockNodeView)
+    return ReactNodeViewRenderer(CitationBlockNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) })
   },
 
   addCommands() {

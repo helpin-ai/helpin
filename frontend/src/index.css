@@ -331,20 +331,13 @@
 .tiptap {
   outline: none;
 }
-/* Show placeholder only when the entire editor is empty (first child of empty editor) */
+/* Show placeholder only on the first empty paragraph of an empty editor. */
 .tiptap.is-editor-empty > p.is-empty:first-child::before,
-.tiptap p.is-editor-empty:first-child::before,
-.tiptap > .is-editor-empty::before,
-.ProseMirror.is-editor-empty > p.is-empty:first-child::before {
-  content: attr(data-placeholder);
-  float: left;
-  color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
-  pointer-events: none;
-  height: 0;
-}
-/* TipTap v3 fallback — placeholder on empty paragraph only when entire editor is empty */
-.tiptap.is-editor-empty p.is-empty::before,
-.ProseMirror.is-editor-empty p.is-empty::before {
+.ProseMirror.is-editor-empty > p.is-empty:first-child::before,
+.tiptap > p.is-editor-empty:first-child::before,
+.ProseMirror > p.is-editor-empty:first-child::before,
+.tiptap > .is-editor-empty:first-child::before,
+.ProseMirror > .is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
   color: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
@@ -460,6 +453,29 @@
   to { visibility: hidden; }
 }
 
+@keyframes agent-working-chroma {
+  0%, 100% {
+    color: var(--primary);
+  }
+  34% {
+    color: oklch(0.7 0.16 164);
+  }
+  68% {
+    color: oklch(0.76 0.17 73);
+  }
+}
+
+.agent-working-chroma {
+  animation: agent-working-chroma 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-working-chroma {
+    animation: none;
+    color: var(--primary);
+  }
+}
+
 .tiptap .slash-command-chip {
   background: var(--muted);
   color: var(--muted-foreground);
@@ -470,6 +486,73 @@
 }
 .tiptap .docs-callout {
   margin: 0.75rem 0;
+}
+
+/* Docs editor block hover handle (positioned by tiptap-extension-global-drag-handle).
+   The package writes style.left/top via getBoundingClientRect (viewport coords),
+   so the element needs position:fixed for those styles to take effect. */
+.drag-handle {
+  position: fixed;
+  z-index: 30;
+  width: 40px;
+  height: 28px;
+  opacity: 1;
+  /* Show direction: brief delay before fade-in so the handle doesn't
+     flicker as the cursor crosses blocks. */
+  transition: opacity 120ms ease 120ms;
+}
+.drag-handle.hide {
+  opacity: 0;
+  pointer-events: none;
+  /* Hide direction: no delay. */
+  transition: opacity 120ms ease 0ms;
+}
+
+/* Docs editor reading column: bounded width, centered by default, slides
+   left when inline comment cards are visible. */
+.docs-editor-wrapper .docs-editor-content-frame {
+  max-width: 56rem;
+  margin-left: max(1.5rem, calc((100% - 56rem) / 2));
+  margin-right: max(1.5rem, calc((100% - 56rem) / 2));
+  transition:
+    margin-left 240ms cubic-bezier(0.2, 0, 0, 1),
+    max-width 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+.docs-editor-wrapper .docs-editor-prose,
+.docs-editor-wrapper [data-docs-title-row] {
+  max-width: 100%;
+}
+@media (min-width: 1280px) {
+  .docs-editor-wrapper.has-side-comments .docs-editor-content-frame {
+    max-width: min(
+      56rem,
+      calc(100% - max(1.5rem, calc((100% - 56rem) / 2 - 8rem)) - 23.5rem)
+    );
+    margin-left: max(1.5rem, calc((100% - 56rem) / 2 - 8rem));
+    margin-right: auto;
+  }
+
+  .docs-comment-side-gutter {
+    left: calc(
+      max(1.5rem, calc((100% - 56rem) / 2 - 8rem)) +
+      min(
+        56rem,
+        calc(100% - max(1.5rem, calc((100% - 56rem) / 2 - 8rem)) - 23.5rem)
+      ) +
+      1.5rem
+    );
+    right: auto;
+  }
+}
+
+/* Brief amber-tinted highlight when arriving at a #block-<uuid> anchor. */
+@keyframes docs-block-anchor-pulse {
+  0% { background-color: var(--color-amber-500, oklch(70% 0.15 75)); }
+  100% { background-color: transparent; }
+}
+.docs-block-anchor-highlight {
+  animation: docs-block-anchor-pulse 1.6s ease-out;
+  border-radius: 4px;
 }
 
 /* Docs article rhythm: used by the docs editor and shared read-only documents. */
@@ -568,6 +651,14 @@
 }
 .docs-editor-prose table {
   margin: 1.5rem 0;
+  max-width: 100%;
+  table-layout: fixed;
+}
+.docs-editor-prose th,
+.docs-editor-prose td {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .docs-editor-prose hr {
   margin: 2.25rem 0;
@@ -584,6 +675,40 @@
 .docs-editor-prose .docs-callout > *:last-child,
 .docs-editor-prose .docs-html-block > *:last-child {
   margin-bottom: 0;
+}
+.docs-fb-background-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.875rem;
+  background: #eeeeff;
+}
+.docs-fb-background-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.5rem;
+  border: 1px solid #d4d4f5;
+  border-radius: 0.625rem;
+  background: #f8f8ff;
+}
+.docs-fb-background-card img {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  margin: 0;
+  border-radius: 0.4375rem;
+}
+.docs-fb-background-card code {
+  min-width: 0;
+  overflow-x: auto;
+  color: #1e1b4b;
+  font-size: 0.65625rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .docs-editor-prose [data-docs-stale="true"] {
   position: relative;

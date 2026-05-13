@@ -7,12 +7,13 @@ import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
-import { useArchiveMailbox, useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
+import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useSupportInboxViewCounts, useUnreadStats } from '@/hooks/queries/useSupport';
 import { useDeleteSupportInboxView, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
 import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
+import { supportInboxCountMailboxScope } from '@/lib/supportInboxFilters';
 import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
@@ -66,16 +67,19 @@ export function Sidebar() {
     activeCustomViewId,
     applyCustomView,
     searchQuery,
+    setBuiltinViewFilters,
     setTeamInboxDialogOpen,
     setEditMailboxId,
   } = useSupportInboxStore();
 
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '', hasSupportModule);
   const { data: customViews = [] } = useSupportInboxViews(workspaceId ?? '', hasSupportModule);
-  const unreadMailboxScope = selectedMailboxId === 'all' ? undefined : selectedMailboxId;
-  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', unreadMailboxScope, hasSupportModule);
-  const { data: workspaceUnreadStats } = useUnreadStats(workspaceId ?? '', undefined, hasSupportModule && !!unreadMailboxScope);
-  const globalUnreadStats = unreadMailboxScope ? workspaceUnreadStats : unreadStats;
+  const { data: customViewCounts = [] } = useSupportInboxViewCounts(workspaceId ?? '', hasSupportModule);
+  const { data: builtinViews } = useSupportBuiltinInboxViews(workspaceId ?? '', hasSupportModule);
+  const inboxUnreadMailboxScope = supportInboxCountMailboxScope('all');
+  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', undefined, hasSupportModule);
+  const { data: inboxUnreadStats } = useUnreadStats(workspaceId ?? '', inboxUnreadMailboxScope, hasSupportModule);
+  const globalUnreadStats = unreadStats;
   const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
   const updateSupportInboxView = useUpdateSupportInboxView(workspaceId ?? '');
   const deleteSupportInboxView = useDeleteSupportInboxView(workspaceId ?? '');
@@ -90,6 +94,23 @@ export function Sidebar() {
     () => [...customViews].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
     [customViews],
   );
+  const customViewCountMap = useMemo(
+    () => Object.fromEntries(customViewCounts.map((count) => [count.view_id, count])),
+    [customViewCounts],
+  );
+
+  const builtinViewFilterMap = useMemo(
+    () => Object.fromEntries(
+      (builtinViews ?? [])
+        .filter((view) => view.view_key)
+        .map((view) => [view.view_key as string, view.filters]),
+    ),
+    [builtinViews],
+  );
+
+  useEffect(() => {
+    setBuiltinViewFilters(builtinViewFilterMap);
+  }, [builtinViewFilterMap, setBuiltinViewFilters]);
 
   const { data: agentRunsData } = useQuery({
     queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
@@ -364,12 +385,14 @@ export function Sidebar() {
               <SupportRailNav
                 navFilter={navFilter}
                 unreadStats={unreadStats}
+                inboxUnreadStats={inboxUnreadStats}
                 globalUnreadStats={globalUnreadStats}
                 inboxScopes={inboxScopes}
                 selectedMailboxId={selectedMailboxId}
                 activeCustomViewId={activeCustomViewId}
                 currentUserId={user?.id}
                 customViews={sortedCustomViews}
+                customViewCounts={customViewCountMap}
                 canManageSettings={canManageSettings}
                 wsSlug={wsSlug}
                 pathname={location.pathname}
@@ -405,6 +428,7 @@ export function Sidebar() {
                       searchQuery: next.searchQuery,
                       activeCustomViewId: view.id,
                       listFilters: next.conversationListFilters,
+                      includeFilterParams: false,
                     }),
                   });
                 }}

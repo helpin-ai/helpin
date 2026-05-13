@@ -160,6 +160,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			notifications_enabled BOOLEAN NOT NULL DEFAULT 1,
 			auto_calculate_bonuses BOOLEAN NOT NULL DEFAULT 0,
 			team_weight INTEGER NOT NULL DEFAULT 50,
+			enforce_two_factor BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -380,6 +381,29 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE pm_task_templates (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			team_id TEXT,
+			name TEXT NOT NULL,
+			description TEXT,
+			task_type TEXT,
+			priority TEXT,
+			severity TEXT,
+			estimate INTEGER,
+			label_ids TEXT,
+			owner_member_id TEXT,
+			owner_member_ids TEXT,
+			epic_id TEXT,
+			sprint_id TEXT,
+			workflow_state_id TEXT,
+			deadline TEXT,
+			checklist_items TEXT,
+			external_links TEXT,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE pm_task_owners (
 			task_id TEXT NOT NULL,
 			user_id TEXT NOT NULL,
@@ -432,6 +456,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			block_id TEXT,
 			block_range TEXT,
 			anchor_text TEXT,
+			resolved_at DATETIME,
+			resolved_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -522,9 +548,12 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE pm_external_links (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-			task_id TEXT NOT NULL,
+			task_id TEXT,
+			entity_type TEXT NOT NULL DEFAULT 'task',
+			entity_id TEXT,
 			url TEXT NOT NULL,
 			title TEXT,
+			created_by_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -672,6 +701,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			name TEXT NOT NULL,
 			filters TEXT NOT NULL DEFAULT '{}',
 			is_shared BOOLEAN NOT NULL DEFAULT 0,
+			view_type TEXT NOT NULL DEFAULT 'custom',
+			view_key TEXT,
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME

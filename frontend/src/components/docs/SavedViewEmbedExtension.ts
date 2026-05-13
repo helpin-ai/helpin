@@ -1,6 +1,7 @@
 import { Node, mergeAttributes } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { SavedViewEmbedNodeView } from './SavedViewEmbedNodeView'
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs'
 
 export interface SavedViewEmbedAttrs {
   module?: 'pm' | 'crm' | 'support'
@@ -63,7 +64,7 @@ export const SavedViewEmbedExtension = Node.create<SavedViewEmbedOptions>({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(SavedViewEmbedNodeView)
+    return ReactNodeViewRenderer(SavedViewEmbedNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) })
   },
 
   addCommands() {

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -8,6 +9,14 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
 )
+
+func taskTemplateErrorStatus(err error) int {
+	var forbidden *model.ErrForbidden
+	if errors.As(err, &forbidden) {
+		return http.StatusForbidden
+	}
+	return http.StatusBadRequest
+}
 
 // PMTaskTemplateHandler handles PM task template HTTP endpoints.
 type PMTaskTemplateHandler struct {
@@ -52,7 +61,7 @@ func (h *PMTaskTemplateHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	tmpl, err := h.templateService.GetByID(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		writeError(w, taskTemplateErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -70,7 +79,7 @@ func (h *PMTaskTemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpl, err := h.templateService.Create(r.Context(), req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, taskTemplateErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, tmpl)
@@ -86,7 +95,7 @@ func (h *PMTaskTemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpl, err := h.templateService.Update(r.Context(), id, req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeError(w, taskTemplateErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, tmpl)
@@ -96,7 +105,7 @@ func (h *PMTaskTemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *PMTaskTemplateHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := h.templateService.Delete(r.Context(), id); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, taskTemplateErrorStatus(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "task template deleted"})

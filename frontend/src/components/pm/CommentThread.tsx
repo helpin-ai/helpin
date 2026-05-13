@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowReloadHorizontalIcon, ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon } from '@/lib/icons';
-import { Separator } from '@/components/ui/separator';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { ArrowReloadHorizontalIcon, ArrowRight01Icon, Message01Icon, PencilEdit01Icon, ArrowTurnBackwardIcon, SmilePlusIcon, Delete01Icon, Cancel01Icon, PlayCircleIcon, CheckmarkCircle02Icon, MoreHorizontalIcon, AttachmentIcon } from '@/lib/icons';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { CommentEditor } from '@/components/pm/CommentEditor';
 import { CommentBody } from '@/components/pm/CommentBody';
 import { ImageLightbox } from '@/components/pm/ImageLightbox';
 import { extractInlineAttachmentIds } from '@/components/pm/editorImageAttachments';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { formatDistanceToNow, parseISO } from 'date-fns';
+import { formatDistanceToNowStrict, parseISO } from 'date-fns';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
@@ -28,7 +28,19 @@ import defaultIcon from '@/assets/attachment/default-icon.png';
 
 function formatRelativeTime(dateStr: string): string {
   try {
-    return formatDistanceToNow(parseISO(dateStr), { addSuffix: true });
+    const date = parseISO(dateStr);
+    const diffMs = Date.now() - date.getTime();
+    if (diffMs < 5_000) return 'now';
+    // Tight format suitable for narrow rails: "11m", "2h", "3d", "1mo"
+    const raw = formatDistanceToNowStrict(date, { addSuffix: false });
+    return raw
+      .replace(/ seconds?/, 's')
+      .replace(/ minutes?/, 'm')
+      .replace(/ hours?/, 'h')
+      .replace(/ days?/, 'd')
+      .replace(/ weeks?/, 'w')
+      .replace(/ months?/, 'mo')
+      .replace(/ years?/, 'y');
   } catch {
     return dateStr;
   }
@@ -63,6 +75,10 @@ function getFileTypeIcon(ext: string): string {
 function isVideoAttachment(contentType: string, fileName: string): boolean {
   if (contentType.startsWith('video/')) return true;
   return ['mp4', 'mov', 'webm', 'mkv', 'wmv', 'avi', 'mpeg', 'mpg'].includes(getFileExtension(fileName));
+}
+
+function hasDraggedFiles(event: DragEvent) {
+  return event.dataTransfer.types.includes('Files');
 }
 
 // ── Reaction picker (shared between popover & inline) ──
@@ -151,7 +167,7 @@ function CommentAttachments({
   editable?: boolean;
   onDelete?: (attachmentId: string) => void;
 }) {
-  const [lightbox, setLightbox] = useState<{ src: string; name: string; kind: 'image' | 'video' } | null>(null);
+  const [lightboxAttachmentId, setLightboxAttachmentId] = useState<string | null>(null);
 
   if (!attachments || attachments.length === 0) return null;
 
@@ -165,6 +181,17 @@ function CommentAttachments({
   if (visibleAttachments.length === 0) return null;
 
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
+  const previewAttachments = visibleAttachments.filter((entry) => {
+    const { attachment } = entry;
+    return Boolean(resolveUrl(entry)) && (
+      (attachment.content_type.startsWith('image/') && !attachment.content_type.includes('svg')) ||
+      isVideoAttachment(attachment.content_type, attachment.file_name)
+    );
+  });
+  const activePreviewIndex = lightboxAttachmentId
+    ? previewAttachments.findIndex((entry) => entry.attachment.id === lightboxAttachmentId)
+    : -1;
+  const activePreview = activePreviewIndex >= 0 ? previewAttachments[activePreviewIndex] : null;
 
   return (
     <>
@@ -210,7 +237,7 @@ function CommentAttachments({
           const tile = (isImage || isVideo) && url ? (
             <button
               type="button"
-              onClick={() => setLightbox({ src: url, name: entry.attachment.file_name, kind: isVideo ? 'video' : 'image' })}
+              onClick={() => setLightboxAttachmentId(entry.attachment.id)}
               className="group block w-full overflow-hidden rounded-lg border border-border/60 transition-colors hover:border-border cursor-pointer text-left"
             >
               {inner}
@@ -250,8 +277,26 @@ function CommentAttachments({
           );
         })}
       </div>
-      {lightbox && (
-        <ImageLightbox src={lightbox.src} alt={lightbox.name} kind={lightbox.kind} onClose={() => setLightbox(null)} />
+      {activePreview && (
+        <ImageLightbox
+          src={resolveUrl(activePreview)}
+          alt={activePreview.attachment.file_name}
+          kind={isVideoAttachment(activePreview.attachment.content_type, activePreview.attachment.file_name) ? 'video' : 'image'}
+          onClose={() => setLightboxAttachmentId(null)}
+          hasPrevious={activePreviewIndex > 0}
+          hasNext={activePreviewIndex < previewAttachments.length - 1}
+          onPrevious={() => {
+            if (activePreviewIndex > 0) {
+              setLightboxAttachmentId(previewAttachments[activePreviewIndex - 1].attachment.id);
+            }
+          }}
+          onNext={() => {
+            if (activePreviewIndex < previewAttachments.length - 1) {
+              setLightboxAttachmentId(previewAttachments[activePreviewIndex + 1].attachment.id);
+            }
+          }}
+          positionLabel={previewAttachments.length > 1 ? `${activePreviewIndex + 1} / ${previewAttachments.length}` : undefined}
+        />
       )}
     </>
   );
@@ -276,6 +321,10 @@ interface CommentThreadProps {
   activeCommentId?: string | null;
   onCommentAnchorConsumed?: () => void;
   onCommentsChange: (comments: CommentWithAuthor[]) => void;
+  /** Hide the bottom-of-list "Add a comment…" composer (used when this thread is rendered inside an inline side card). */
+  hideTopLevelComposer?: boolean;
+  /** Hide all empty-state copy and the empty card itself (used when many threads render side-by-side). */
+  hideEmptyState?: boolean;
 }
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -294,6 +343,8 @@ export function CommentThread({
   activeCommentId = null,
   onCommentAnchorConsumed,
   onCommentsChange,
+  hideTopLevelComposer = false,
+  hideEmptyState = false,
 }: CommentThreadProps) {
   const [commentLoading, setCommentLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
@@ -301,19 +352,65 @@ export function CommentThread({
   const [editSaving, setEditSaving] = useState(false);
   const [replyLoading, setReplyLoading] = useState(false);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
+  const [topComposerOpen, setTopComposerOpen] = useState(() => comments.length === 0);
+  const [topComposerKey, setTopComposerKey] = useState(0);
+  const [replyAutoFocusFor, setReplyAutoFocusFor] = useState<string | null>(null);
+  const [replyAutoFocusKey, setReplyAutoFocusKey] = useState(0);
+
+  useEffect(() => {
+    if (commentAnchor) {
+      setTopComposerOpen(true);
+      setTopComposerKey((k) => k + 1);
+    }
+  }, [commentAnchor]);
+
+  const openTopComposer = useCallback(() => {
+    setTopComposerOpen(true);
+    setTopComposerKey((k) => k + 1);
+  }, []);
+
+  const openReply = useCallback((parentId: string) => {
+    setExpandedThreads((prev) => {
+      const next = new Set(prev);
+      next.add(parentId);
+      return next;
+    });
+    setReplyAutoFocusFor(parentId);
+    setReplyAutoFocusKey((k) => k + 1);
+  }, []);
 
   type PendingFile = { id: string; name: string; url?: string };
   // Uploaded attachment IDs for new comment, edit, and per-reply
   const [pendingAttachments, setPendingAttachments] = useState<PendingFile[]>([]);
   const [editPendingAttachments, setEditPendingAttachments] = useState<PendingFile[]>([]);
   const [replyPendingAttachments, setReplyPendingAttachments] = useState<Map<string, PendingFile[]>>(new Map());
+  const pendingAttachmentsRef = useRef(pendingAttachments);
+  const editPendingAttachmentsRef = useRef(editPendingAttachments);
+  const replyPendingAttachmentsRef = useRef(replyPendingAttachments);
+  const submittedAttachmentIdsRef = useRef<Set<string>>(new Set());
+  const composerDragCounterRef = useRef(0);
+  const [composerDragging, setComposerDragging] = useState(false);
 
   // Member name map for reaction tooltips
-  const memberNameMap = useRef(new Map<string, string>());
-  memberNameMap.current.clear();
-  for (const m of members) {
-    memberNameMap.current.set(m.user_id || m.id, m.display_name);
-  }
+  const memberNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of members) {
+      map.set(m.user_id || m.id, m.display_name);
+    }
+    return map;
+  }, [members]);
+
+  useEffect(() => {
+    pendingAttachmentsRef.current = pendingAttachments;
+  }, [pendingAttachments]);
+
+  useEffect(() => {
+    editPendingAttachmentsRef.current = editPendingAttachments;
+  }, [editPendingAttachments]);
+
+  useEffect(() => {
+    replyPendingAttachmentsRef.current = replyPendingAttachments;
+  }, [replyPendingAttachments]);
 
   // Upload a file immediately and return the attachment ID + public URL
   const uploadFileImmediately = useCallback(async (file: File): Promise<PendingFile | null> => {
@@ -338,47 +435,26 @@ export function CommentThread({
   useEffect(
     () => () => {
       const attachmentIds = [
-        ...pendingAttachments.map((attachment) => attachment.id),
-        ...Array.from(replyPendingAttachments.values()).flatMap((attachments) =>
+        ...pendingAttachmentsRef.current.map((attachment) => attachment.id),
+        ...editPendingAttachmentsRef.current.map((attachment) => attachment.id),
+        ...Array.from(replyPendingAttachmentsRef.current.values()).flatMap((attachments) =>
           attachments.map((attachment) => attachment.id),
         ),
-      ];
+      ].filter((attachmentId) => !submittedAttachmentIdsRef.current.has(attachmentId));
       if (attachmentIds.length === 0) {
         return;
       }
       void Promise.allSettled(
-        attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
+        attachmentIds.map((attachmentId) =>
+          pmAttachmentService.remove(workspaceId, attachmentId, { pendingOnly: true }),
+        ),
       );
     },
-    [pendingAttachments, replyPendingAttachments, workspaceId],
+    [workspaceId],
   );
 
-  const handleFileUpload = useCallback(async (parentId?: string) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.onchange = async () => {
-      const files = input.files;
-      if (!files?.length) return;
-      for (const file of Array.from(files)) {
-        const result = await uploadFileImmediately(file);
-        if (!result) continue;
-        if (parentId) {
-          setReplyPendingAttachments((prev) => {
-            const next = new Map(prev);
-            next.set(parentId, [...(prev.get(parentId) ?? []), result]);
-            return next;
-          });
-        } else {
-          setPendingAttachments((prev) => [...prev, result]);
-        }
-      }
-    };
-    input.click();
-  }, [uploadFileImmediately]);
-
-  const handleImageUpload = useCallback(async (files: File[], parentId?: string) => {
-    for (const file of files) {
+  const uploadFilesToDraft = useCallback(async (files: FileList | File[], parentId?: string) => {
+    for (const file of Array.from(files)) {
       const result = await uploadFileImmediately(file);
       if (!result) continue;
       if (parentId) {
@@ -393,9 +469,25 @@ export function CommentThread({
     }
   }, [uploadFileImmediately]);
 
+  const handleFileUpload = useCallback(async (parentId?: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.onchange = async () => {
+      const files = input.files;
+      if (!files?.length) return;
+      await uploadFilesToDraft(files, parentId);
+    };
+    input.click();
+  }, [uploadFilesToDraft]);
+
+  const handleImageUpload = useCallback(async (files: File[], parentId?: string) => {
+    await uploadFilesToDraft(files, parentId);
+  }, [uploadFilesToDraft]);
+
   const removePendingAttachment = useCallback(async (attachmentId: string, parentId?: string) => {
     // Delete from S3/DB
-    await pmAttachmentService.remove(workspaceId, attachmentId);
+    await pmAttachmentService.remove(workspaceId, attachmentId, { pendingOnly: true });
     if (parentId) {
       setReplyPendingAttachments((prev) => {
         const next = new Map(prev);
@@ -434,7 +526,7 @@ export function CommentThread({
   }, [uploadFileImmediately]);
 
   const removeEditPendingAttachment = useCallback(async (attachmentId: string) => {
-    await pmAttachmentService.remove(workspaceId, attachmentId);
+    await pmAttachmentService.remove(workspaceId, attachmentId, { pendingOnly: true });
     setEditPendingAttachments((prev) => prev.filter((f) => f.id !== attachmentId));
   }, [workspaceId]);
 
@@ -460,6 +552,7 @@ export function CommentThread({
     setCommentLoading(true);
 
     const attachmentIds = pendingAttachments.map((a) => a.id);
+    attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.add(id));
     const { data, error } = await commentService.create(workspaceId, {
       entity_type: entityType,
       entity_id: entityId,
@@ -470,6 +563,7 @@ export function CommentThread({
       attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
     });
     if (error || !data) {
+      attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.delete(id));
       setCommentLoading(false);
       return;
     }
@@ -482,13 +576,27 @@ export function CommentThread({
       if (refreshed) {
         onCommentsChange(refreshed);
         setCommentLoading(false);
+        setTopComposerOpen(false);
         return;
       }
     }
 
     onCommentsChange([...comments, data]);
     setCommentLoading(false);
+    setTopComposerOpen(false);
   };
+
+  const closeTopComposer = useCallback(async () => {
+    const orphanIds = pendingAttachmentsRef.current.map((a) => a.id);
+    if (orphanIds.length > 0) {
+      setPendingAttachments([]);
+      await Promise.allSettled(
+        orphanIds.map((id) => pmAttachmentService.remove(workspaceId, id, { pendingOnly: true })),
+      );
+    }
+    if (commentAnchor) onCommentAnchorConsumed?.();
+    setTopComposerOpen(false);
+  }, [commentAnchor, onCommentAnchorConsumed, workspaceId]);
 
   const addReply = async (parentId: string, body: string) => {
     const replyFiles = replyPendingAttachments.get(parentId) ?? [];
@@ -496,6 +604,7 @@ export function CommentThread({
     setReplyLoading(true);
 
     const attachmentIds = replyFiles.map((a) => a.id);
+    attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.add(id));
     const { data, error } = await commentService.create(workspaceId, {
       entity_type: entityType,
       entity_id: entityId,
@@ -504,6 +613,7 @@ export function CommentThread({
       attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
     });
     if (error || !data) {
+      attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.delete(id));
       setReplyLoading(false);
       return;
     }
@@ -548,7 +658,7 @@ export function CommentThread({
     setEditPendingAttachments([]);
     if (orphanIds.length > 0) {
       await Promise.allSettled(
-        orphanIds.map((id) => pmAttachmentService.remove(workspaceId, id)),
+        orphanIds.map((id) => pmAttachmentService.remove(workspaceId, id, { pendingOnly: true })),
       );
     }
   }, [editPendingAttachments, workspaceId]);
@@ -559,11 +669,13 @@ export function CommentThread({
     if (!body && editPendingAttachments.length === 0) return;
     setEditSaving(true);
     const attachmentIds = editPendingAttachments.map((a) => a.id);
+    attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.add(id));
     const { error } = await commentService.update(workspaceId, editingCommentId, {
       body: body || '(attachment)',
       attachment_ids: attachmentIds.length > 0 ? attachmentIds : undefined,
     });
     if (error) {
+      attachmentIds.forEach((id) => submittedAttachmentIdsRef.current.delete(id));
       setEditSaving(false);
       return;
     }
@@ -651,9 +763,82 @@ export function CommentThread({
     });
   };
 
+  const cancelReply = useCallback(async (parentId: string, hasReplies: boolean) => {
+    const pending = replyPendingAttachmentsRef.current.get(parentId) ?? [];
+    if (pending.length > 0) {
+      setReplyPendingAttachments((prev) => {
+        const next = new Map(prev);
+        next.delete(parentId);
+        return next;
+      });
+      await Promise.allSettled(
+        pending.map((file) => pmAttachmentService.remove(workspaceId, file.id, { pendingOnly: true })),
+      );
+    }
+    if (!hasReplies) {
+      setExpandedThreads((prev) => {
+        if (!prev.has(parentId)) return prev;
+        const next = new Set(prev);
+        next.delete(parentId);
+        return next;
+      });
+    }
+  }, [workspaceId]);
+
+  const resetComposerDrag = useCallback(() => {
+    composerDragCounterRef.current = 0;
+    setComposerDragging(false);
+  }, []);
+
+  const handleComposerDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    composerDragCounterRef.current++;
+    setComposerDragging(true);
+  }, [attachmentsEnabled]);
+
+  const handleComposerDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, [attachmentsEnabled]);
+
+  const handleComposerDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    composerDragCounterRef.current = Math.max(0, composerDragCounterRef.current - 1);
+    if (composerDragCounterRef.current === 0) {
+      setComposerDragging(false);
+    }
+  }, [attachmentsEnabled]);
+
+  const handleComposerDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
+    const alreadyHandled = event.defaultPrevented;
+    event.preventDefault();
+    event.stopPropagation();
+    resetComposerDrag();
+    if (alreadyHandled) return;
+    if (event.dataTransfer.files.length > 0) {
+      void uploadFilesToDraft(event.dataTransfer.files);
+    }
+  }, [attachmentsEnabled, resetComposerDrag, uploadFilesToDraft]);
+
   const renderEditForm = (indent: string) => (
     <div className={`mt-1.5 ${indent}`}>
-      <div className="rounded-lg border border-border/60">
+      <div className="relative rounded-lg border border-border/60">
+        <QuickTooltip label="Cancel">
+          <button
+            type="button"
+            onClick={() => void cancelEditComment()}
+            aria-label="Cancel edit"
+            className="absolute top-1.5 right-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+          >
+            <Cancel01Icon className="h-3.5 w-3.5" />
+          </button>
+        </QuickTooltip>
         <CommentEditor
           key={editingCommentId ?? 'edit'}
           onSubmit={(html) => { void saveEditComment(html); }}
@@ -666,7 +851,6 @@ export function CommentThread({
           uploadedFiles={editPendingAttachments}
           onRemoveUploadedFile={(id) => void removeEditPendingAttachment(id)}
           initialContent={editingCommentBody}
-          onCancel={() => void cancelEditComment()}
           autoFocus
         />
       </div>
@@ -680,207 +864,307 @@ export function CommentThread({
     const isOwn = currentUserId === entry.comment.author_id;
     const isEditing = editingCommentId === entry.comment.id;
     const hasReactions = (entry.reactions?.length ?? 0) > 0;
-    const indent = isReply ? 'pl-7' : 'pl-8';
-    const avatarSize = isReply ? 'h-5 w-5 text-[8px]' : 'h-6 w-6 text-[9px]';
+    const avatarSize = isReply ? 'h-6 w-6 text-[9px]' : 'h-7 w-7 text-[10px]';
     const groupClass = isReply ? 'group/reply' : 'group';
-    const hoverClass = isReply ? 'group-hover/reply:opacity-100' : 'group-hover:opacity-100';
-    const btnSize = isReply ? 'h-5 w-5' : 'h-6 w-6';
-    const iconSize = isReply ? 'h-2.5 w-2.5' : 'h-3 w-3';
     const isResolved = Boolean(entry.comment.resolved_at);
+    const authorName = entry.author.full_name || entry.author.email;
 
     return (
-      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''}`}>
-        <div className="flex items-center gap-2">
-          <UserAvatar
-            name={entry.author.full_name || entry.author.email}
-            avatarUrl={entry.author.avatar_url}
-            className={avatarSize}
-          />
-          <span className="text-xs font-semibold">{entry.author.full_name || entry.author.email}</span>
-          <span className="text-[11px] text-muted-foreground">{formatRelativeTime(entry.comment.created_at)}</span>
-          {isResolved && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-              <CheckmarkCircle02Icon className="h-3 w-3" />
-              Resolved
-            </span>
-          )}
-          <div className={`ml-auto flex items-center gap-0.5 opacity-0 ${hoverClass} transition-opacity`}>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
-                >
-                  <SmilePlusIcon className={iconSize} />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="top" align="end" className="w-auto p-1.5">
-                <ReactionPicker onPick={(emoji) => toggleReaction(entry.comment.id, emoji)} />
-              </PopoverContent>
-            </Popover>
-            {!isReply && (
-              <QuickTooltip label="Reply">
-                <button
-                  type="button"
-                  className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
-                  onClick={() => toggleThread(entry.comment.id)}
-                >
-                  <ArrowTurnBackwardIcon className={iconSize} />
-                </button>
-              </QuickTooltip>
-            )}
-            {!isReply && (
-              <QuickTooltip label={isResolved ? 'Reopen' : 'Resolve'}>
-                <button
-                  type="button"
-                  className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
-                  onClick={() => void setCommentResolved(entry.comment.id, !isResolved)}
-                >
-                  {isResolved ? <ArrowReloadHorizontalIcon className={iconSize} /> : <CheckmarkCircle02Icon className={iconSize} />}
-                </button>
-              </QuickTooltip>
-            )}
-            {isOwn && !isEditing && (
+      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''} flex gap-2`}>
+        <UserAvatar
+          name={authorName}
+          avatarUrl={entry.author.avatar_url}
+          avatarStyle={entry.author.avatar_style}
+          avatarSeed={entry.author.avatar_seed}
+          avatarBackgroundMode={entry.author.avatar_background_mode}
+          avatarBackgroundColor={entry.author.avatar_background_color}
+          className={`${avatarSize} shrink-0 -mt-1`}
+        />
+        <div className="min-w-0 flex-1 flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            {isEditing ? (
+              renderEditForm('')
+            ) : (
               <>
-                <QuickTooltip label="Edit">
-                  <button
-                    type="button"
-                    className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-foreground hover:bg-accent transition-colors cursor-pointer`}
-                    onClick={() => startEditComment(entry)}
-                  >
-                    <PencilEdit01Icon className={iconSize} />
-                  </button>
-                </QuickTooltip>
-                <QuickTooltip label="Delete">
-                  <button
-                    type="button"
-                    className={`${btnSize} flex items-center justify-center rounded text-foreground/50 hover:text-destructive hover:bg-accent transition-colors cursor-pointer`}
-                    onClick={() => deleteComment(entry.comment.id)}
-                  >
-                    <Delete01Icon className={iconSize} />
-                  </button>
-                </QuickTooltip>
+                {(entry.comment.anchor_text || entry.comment.block_id) && (
+                  <div className="mb-1 truncate border-l-2 border-border/60 pl-2 py-0.5 text-[11px] italic text-muted-foreground">
+                    {entry.comment.anchor_text
+                      ? `“${entry.comment.anchor_text}”`
+                      : `Block ${entry.comment.block_id}`}
+                  </div>
+                )}
+                <div className="text-[13px] leading-relaxed text-foreground/80">
+                  <span className="font-semibold text-foreground mr-1.5">{authorName}</span>
+                  <CommentBody
+                    body={entry.comment.body}
+                    members={members}
+                    teams={teams}
+                    className="inline [&_p:first-child]:inline [&_p:first-child]:m-0"
+                  />
+                </div>
               </>
             )}
-          </div>
-        </div>
-        {isEditing ? (
-          renderEditForm(indent)
-        ) : (
-          <>
-            {(entry.comment.anchor_text || entry.comment.block_id) && (
-              <div className={`mt-1.5 ${indent}`}>
-                <div className="rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
-                  {entry.comment.anchor_text ? (
-                    <span className="line-clamp-2">On: "{entry.comment.anchor_text}"</span>
-                  ) : (
-                    <span>On block {entry.comment.block_id}</span>
-                  )}
-                </div>
+            {/* Attachments */}
+            {entry.attachments && entry.attachments.length > 0 && (
+              <div className="mt-1.5">
+                <CommentAttachments
+                  attachments={entry.attachments}
+                  body={entry.comment.body}
+                  editable={isEditing}
+                  onDelete={(attachmentId) => void deleteExistingAttachment(entry.comment.id, attachmentId)}
+                />
               </div>
             )}
-            <CommentBody
-              body={entry.comment.body}
-              members={members}
-              teams={teams}
-              className={`mt-1.5 ${indent}`}
-            />
-          </>
-        )}
-        {/* Attachments */}
-        {entry.attachments && entry.attachments.length > 0 && (
-          <div className={indent}>
-            <CommentAttachments
-              attachments={entry.attachments}
-              body={entry.comment.body}
-              editable={isEditing}
-              onDelete={(attachmentId) => void deleteExistingAttachment(entry.comment.id, attachmentId)}
-            />
+            {/* Reactions */}
+            {hasReactions && (
+              <div className="mt-1.5">
+                <CommentReactions
+                  reactions={entry.reactions ?? []}
+                  currentUserId={currentUserId}
+                  memberNameMap={memberNameMap}
+                  onToggle={(emoji) => toggleReaction(entry.comment.id, emoji)}
+                />
+              </div>
+            )}
           </div>
-        )}
-        {/* Reactions */}
-        {hasReactions && (
-          <div className={indent}>
-            <CommentReactions
-              reactions={entry.reactions ?? []}
-              currentUserId={currentUserId}
-              memberNameMap={memberNameMap.current}
-              onToggle={(emoji) => toggleReaction(entry.comment.id, emoji)}
-            />
-          </div>
-        )}
+          {!isEditing && (
+            <div className="shrink-0 mt-0.5 grid">
+              <span className={`col-start-1 row-start-1 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground ${isReply ? 'group-hover/reply:invisible' : 'group-hover:invisible'}`}>
+                {isResolved && (
+                  <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                    <CheckmarkCircle02Icon className="h-3 w-3" />
+                    Resolved
+                  </span>
+                )}
+                {formatRelativeTime(entry.comment.created_at)}
+              </span>
+              <div className={`col-start-1 row-start-1 invisible flex items-center justify-end gap-0.5 ${isReply ? 'group-hover/reply:visible' : 'group-hover:visible'}`}>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      aria-label="React"
+                    >
+                      <SmilePlusIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="end" className="w-auto p-1">
+                    <ReactionPicker onPick={(emoji) => toggleReaction(entry.comment.id, emoji)} />
+                  </PopoverContent>
+                </Popover>
+                {!isReply && (
+                  <QuickTooltip label="Reply">
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      onClick={() => openReply(entry.comment.id)}
+                      aria-label="Reply"
+                    >
+                      <ArrowTurnBackwardIcon className="h-3.5 w-3.5 -scale-y-100" />
+                    </button>
+                  </QuickTooltip>
+                )}
+                {!isReply && (
+                  <QuickTooltip label={isResolved ? 'Reopen' : 'Resolve'}>
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      onClick={() => void setCommentResolved(entry.comment.id, !isResolved)}
+                      aria-label={isResolved ? 'Reopen' : 'Resolve'}
+                    >
+                      {isResolved ? (
+                        <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </QuickTooltip>
+                )}
+                {isOwn && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                        aria-label="More"
+                      >
+                        <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-36">
+                      <DropdownMenuItem onSelect={() => startEditComment(entry)}>
+                        <PencilEdit01Icon className="h-3.5 w-3.5" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() => deleteComment(entry.comment.id)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Delete01Icon className="h-3.5 w-3.5" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
 
   return (
-    <div className="rounded-lg border border-border/60">
-      {comments.map((entry, idx) => {
-        const hasReplies = (entry.reply_count ?? 0) > 0;
-        const isExpanded = expandedThreads.has(entry.comment.id);
-        const isActive = activeCommentId === entry.comment.id;
-        return (
-          <div key={entry.comment.id} data-comment-thread-id={entry.comment.id}>
-            {idx > 0 && <Separator />}
-            <div className={`group px-4 py-3 transition-colors ${isActive ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/20' : ''}`}>
-              {renderComment(entry, false)}
+    <div className="space-y-3">
+      {/* Empty state */}
+      {comments.length === 0 && !hideEmptyState && (
+        <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center">
+          <Message01Icon className="mx-auto mb-2 h-6 w-6 text-muted-foreground/40" />
+          <p className="text-sm font-medium text-foreground">No comments yet</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Highlight text in the document to comment on a specific passage.
+          </p>
+        </div>
+      )}
 
-              {/* Thread toggle */}
-              {hasReplies && (
-                <button
-                  type="button"
-                  className="mt-2 ml-8 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  onClick={() => toggleThread(entry.comment.id)}
-                >
-                  <Message01Icon className="h-3 w-3" />
-                  <span>
-                    {entry.reply_count} {entry.reply_count === 1 ? 'reply' : 'replies'}
-                  </span>
-                  <ArrowRight01Icon className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                </button>
-              )}
+      {/* Thread list */}
+      {comments.length > 0 && (
+        <div className="divide-y divide-border/50">
+          {comments.map((entry) => {
+            const hasReplies = (entry.reply_count ?? 0) > 0;
+            const isExpanded = expandedThreads.has(entry.comment.id);
+            const isActive = activeCommentId === entry.comment.id;
+            return (
+              <div
+                key={entry.comment.id}
+                data-comment-thread-id={entry.comment.id}
+                className={`rounded-lg px-3 py-3 transition-colors ${
+                  isActive ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/20' : ''
+                }`}
+              >
+                {renderComment(entry, false)}
 
-              {/* Nested replies */}
-              {isExpanded && (
-                <div className="mt-3 ml-8 border-l-2 border-border/40 pl-4 space-y-3">
-                  {entry.replies?.map((reply) => (
-                    <div key={reply.comment.id}>
-                      {renderComment(reply, true)}
+                {/* Thread toggle */}
+                {hasReplies && (
+                  <button
+                    type="button"
+                    className="mt-2 ml-9 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    onClick={() => toggleThread(entry.comment.id)}
+                  >
+                    <Message01Icon className="h-3 w-3" />
+                    <span>
+                      {entry.reply_count} {entry.reply_count === 1 ? 'reply' : 'replies'}
+                    </span>
+                    <ArrowRight01Icon className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                  </button>
+                )}
+
+                {/* Nested replies */}
+                {isExpanded && (
+                  <div className="mt-3 ml-4 border-l border-border/40 pl-3 space-y-3">
+                    {entry.replies?.map((reply) => (
+                      <div key={reply.comment.id}>
+                        {renderComment(reply, true)}
+                      </div>
+                    ))}
+                    {/* Inline reply editor */}
+                    <div className="pt-1 relative">
+                      <QuickTooltip label="Close">
+                        <button
+                          type="button"
+                          onClick={() => void cancelReply(entry.comment.id, hasReplies)}
+                          aria-label="Close reply"
+                          className="absolute top-1.5 right-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+                        >
+                          <Cancel01Icon className="h-3.5 w-3.5" />
+                        </button>
+                      </QuickTooltip>
+                      <CommentEditor
+                        key={`reply-${entry.comment.id}-${replyAutoFocusFor === entry.comment.id ? replyAutoFocusKey : 0}`}
+                        autoFocus={replyAutoFocusFor === entry.comment.id}
+                        onSubmit={(body) => addReply(entry.comment.id, body)}
+                        loading={replyLoading}
+                        placeholder="Reply…"
+                        variant="reply"
+                        teams={teams}
+                        members={members}
+                        onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files, entry.comment.id) : undefined}
+                        onFileSelect={attachmentsEnabled ? () => handleFileUpload(entry.comment.id) : undefined}
+                        uploadedFiles={replyPendingAttachments.get(entry.comment.id) ?? []}
+                        onRemoveUploadedFile={(id) => removePendingAttachment(id, entry.comment.id)}
+                      />
                     </div>
-                  ))}
-                  {/* Inline reply editor */}
-                  <div className="pt-1">
-                    <CommentEditor
-                      onSubmit={(body) => addReply(entry.comment.id, body)}
-                      loading={replyLoading}
-                      placeholder="Write a reply..."
-                      teams={teams}
-                      members={members}
-                      onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files, entry.comment.id) : undefined}
-                      onFileSelect={attachmentsEnabled ? () => handleFileUpload(entry.comment.id) : undefined}
-                      uploadedFiles={replyPendingAttachments.get(entry.comment.id) ?? []}
-                      onRemoveUploadedFile={(id) => removePendingAttachment(id, entry.comment.id)}
-                    />
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Comment input */}
-      {comments.length > 0 && <Separator />}
-      <div>
+      {/* Top-level composer (creates a new doc/entity-scoped comment) */}
+      {!hideTopLevelComposer && comments.length > 0 && !topComposerOpen && (
+        <button
+          type="button"
+          onClick={openTopComposer}
+          className="ml-9 inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+        >
+          <Message01Icon className="h-4 w-4" />
+          Add a comment
+        </button>
+      )}
+      {!hideTopLevelComposer && (comments.length === 0 || topComposerOpen) && (
+      <div
+        className={`relative rounded-lg ${composerDragging ? 'ring-1 ring-primary/50' : ''}`}
+        onDragEnter={handleComposerDragEnter}
+        onDragOver={handleComposerDragOver}
+        onDragLeave={handleComposerDragLeave}
+        onDrop={handleComposerDrop}
+      >
         {commentAnchor && (
-          <div className="border-b border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
-            Commenting on {commentAnchor.anchor_text ? `"${commentAnchor.anchor_text}"` : 'selected block'}
+          <div className="mb-1.5 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+            <span className="flex-1 truncate">
+              Commenting on {commentAnchor.anchor_text ? `“${commentAnchor.anchor_text}”` : 'selected block'}
+            </span>
+            <button
+              type="button"
+              className="shrink-0 rounded p-0.5 hover:bg-accent hover:text-foreground"
+              onClick={() => onCommentAnchorConsumed?.()}
+              aria-label="Clear anchor"
+            >
+              <Cancel01Icon className="h-3 w-3" />
+            </button>
           </div>
         )}
+        {composerDragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border border-dashed border-primary bg-background/80">
+            <div className="flex items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
+              <AttachmentIcon className="h-3.5 w-3.5 text-primary" />
+              Drop files to add to comment
+            </div>
+          </div>
+        )}
+        {comments.length > 0 && (
+          <QuickTooltip label="Close">
+            <button
+              type="button"
+              onClick={() => void closeTopComposer()}
+              aria-label="Close composer"
+              className="absolute top-1.5 right-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+            >
+              <Cancel01Icon className="h-3.5 w-3.5" />
+            </button>
+          </QuickTooltip>
+        )}
         <CommentEditor
+          key={`top-${topComposerKey}`}
+          autoFocus={topComposerKey > 0}
           onSubmit={addComment}
           loading={commentLoading}
-          placeholder="Leave a comment... (type @ to mention)"
+          placeholder="Add a comment…"
+          variant="primary"
           teams={teams}
           members={members}
           onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files) : undefined}
@@ -889,6 +1173,7 @@ export function CommentThread({
           onRemoveUploadedFile={(id) => removePendingAttachment(id)}
         />
       </div>
+      )}
     </div>
   );
 }

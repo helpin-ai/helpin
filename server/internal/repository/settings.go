@@ -1076,6 +1076,9 @@ func (r *SettingsRepository) UpdateSystem(ctx context.Context, workspaceID strin
 	if req.TeamWeight != nil {
 		updates["team_weight"] = *req.TeamWeight
 	}
+	if req.EnforceTwoFactor != nil {
+		updates["enforce_two_factor"] = *req.EnforceTwoFactor
+	}
 
 	if err := r.db.WithContext(ctx).Model(&model.WorkspaceSettings{}).Where("workspace_id = ?", workspaceID).Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("update system settings: %w", err)
@@ -1125,6 +1128,18 @@ func (r *SettingsRepository) RemoveInvitationTeamPreassignment(ctx context.Conte
 		Delete(&model.InvitationTeamPreassignment{})
 	if result.Error != nil {
 		return fmt.Errorf("remove invitation team preassignment: %w", result.Error)
+	}
+	return nil
+}
+
+// RemoveAllInvitationTeamPreassignmentsByInvitation deletes every preassignment for a given invitation.
+// Called when an invitation reaches a terminal state (accepted, revoked) so stale rows do not linger.
+func (r *SettingsRepository) RemoveAllInvitationTeamPreassignmentsByInvitation(ctx context.Context, invitationID string) error {
+	result := r.db.WithContext(ctx).
+		Where("invitation_id = ?", invitationID).
+		Delete(&model.InvitationTeamPreassignment{})
+	if result.Error != nil {
+		return fmt.Errorf("remove invitation team preassignments by invitation: %w", result.Error)
 	}
 	return nil
 }

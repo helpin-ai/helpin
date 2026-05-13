@@ -740,7 +740,7 @@ describe('CodingInterruptionPanel', () => {
       );
     });
 
-    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 120 }));
 
     act(() => {
       root.unmount();

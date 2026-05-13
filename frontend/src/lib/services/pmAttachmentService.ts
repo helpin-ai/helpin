@@ -1,9 +1,13 @@
-import { api } from '../api';
+import { API_BASE, api } from '../api';
 import type { AttachmentResponse, CreateAttachmentRequest } from '../pmTypes';
 
 const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const pmAttachmentService = {
+  /** Stable app URL for rendering inline attachment content. */
+  contentUrl: (id: string) =>
+    `${API_BASE}/pm/attachments/${encodeURIComponent(id)}/content`,
+
   /** Initiate an upload — returns the attachment record + presigned PUT URL. */
   initiateUpload: (workspaceId: string, payload: CreateAttachmentRequest) =>
     api.post<AttachmentResponse>(`/pm/attachments?${qs(workspaceId)}`, payload),
@@ -19,6 +23,8 @@ export const pmAttachmentService = {
     ),
 
   /** Delete an attachment. */
-  remove: (workspaceId: string, id: string) =>
-    api.del(`/pm/attachments/${id}?${qs(workspaceId)}`),
+  remove: (workspaceId: string, id: string, options?: { pendingOnly?: boolean }) => {
+    const pendingOnly = options?.pendingOnly ? '&pending_only=true' : '';
+    return api.del(`/pm/attachments/${id}?${qs(workspaceId)}${pendingOnly}`);
+  },
 };

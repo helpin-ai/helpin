@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -6,8 +6,11 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
   ArchiveIcon,
   ArrowLeftRightIcon,
+  ArrowUpRight01Icon,
   BotIcon,
+  Copy01Icon,
   DashboardSpeed01Icon,
+  File01Icon,
   HashtagIcon,
   HexagonIcon,
   Layers01Icon,
@@ -17,7 +20,6 @@ import {
   GitBranchIcon,
   Link01Icon,
   Loading01Icon,
-  Maximize01Icon,
   Message01Icon,
   MoreVerticalIcon,
   AttachmentIcon,
@@ -26,7 +28,6 @@ import {
   Shield02Icon,
   Tag01Icon,
   Target01Icon,
-  Upload01Icon,
   UserIcon,
   UserGroupIcon,
   Cancel01Icon,
@@ -46,6 +47,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -87,7 +89,8 @@ import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import { DatePicker } from '@/components/ui/date-picker';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
-import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { MemberPickerPopover, MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -110,12 +113,19 @@ import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-detail/taskOverlayDismiss';
 import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
+import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
+import { queryKeys } from '@/lib/queryKeys';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
   isEpicSelectableForTaskTeam,
   isSprintSelectableForTaskTeam,
 } from '@/components/pm/task-detail/taskPlanningScope';
 import { syncTaskLabelsWithFeedback } from '@/components/pm/task-detail/taskLabelSync';
+import {
+  getAgentAutoRunStateChangeMessage,
+  getAgentAutoRunStateChangeToastId,
+  shouldNotifyAgentAutoRunStateChange,
+} from '@/components/pm/agentAutoRunNotification';
 import type {
   ActivityLogEntry,
   CommentWithAuthor,
@@ -146,6 +156,7 @@ interface TaskDetailPanelProps {
   states: WorkflowState[];
   initialRecurringSummary?: TaskRecurringSummary | null;
   onTaskUpdated: (task: TaskDetail) => void;
+  onTaskOpened: (task: TaskDetail) => void;
   onTaskArchived: (taskId: string) => void;
 }
 
@@ -161,9 +172,13 @@ interface FormState {
   epic_id: string;
   sprint_id: string;
   team_id: string;
-  owner_member_id: string;
+  owner_member_ids: string[];
   requester_member_id: string;
   blocker: string;
+}
+
+interface DuplicateNoticeState {
+  taskDetail: TaskDetail;
 }
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -187,10 +202,14 @@ const buildFormState = (detail: TaskDetail): FormState => ({
   epic_id: detail.task.epic_id ?? '',
   sprint_id: detail.task.sprint_id ?? '',
   team_id: detail.task.team_id ?? '',
-  owner_member_id: detail.task.owner_member_id ?? '',
+  owner_member_ids: detail.task.owner_member_ids ?? [],
   requester_member_id: detail.task.requester_member_id ?? '',
   blocker: detail.task.blocker ?? '',
 });
+
+const isInsideSonnerToast = (target: EventTarget | null) => (
+  target instanceof HTMLElement && Boolean(target.closest('[data-sonner-toast], [data-sonner-toaster]'))
+);
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -200,6 +219,10 @@ function formatRelativeTime(iso: string) {
   } catch {
     return iso;
   }
+}
+
+function hasDraggedFiles(event: DragEvent) {
+  return event.dataTransfer.types.includes('Files');
 }
 
 // ── Metadata Row ───────────────────────────────────────────────────
@@ -232,6 +255,7 @@ type TimelineItem =
 const ACTIVITY_ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
   workflow_state_id: { icon: HashtagIcon, color: 'text-blue-500' },
   owner_member_id: { icon: UserIcon, color: 'text-violet-500' },
+  owner_member_ids: { icon: UserIcon, color: 'text-violet-500' },
   team_id: { icon: UserGroupIcon, color: 'text-teal-500' },
   priority: { icon: DashboardSpeed01Icon, color: 'text-orange-500' },
   sprint_id: { icon: HexagonIcon, color: 'text-green-500' },
@@ -452,6 +476,7 @@ function TaskDetailPanelBody({
   initialRecurringSummary,
   onOpenChange,
   onTaskUpdated,
+  onTaskOpened,
   onTaskArchived,
 }: {
   workspaceId: string;
@@ -460,6 +485,7 @@ function TaskDetailPanelBody({
   initialRecurringSummary: TaskRecurringSummary | null;
   onOpenChange: (open: boolean) => void;
   onTaskUpdated: (task: TaskDetail) => void;
+  onTaskOpened: (task: TaskDetail) => void;
   onTaskArchived: (taskId: string) => void;
 }) {
   const confirm = useConfirm();
@@ -474,22 +500,33 @@ function TaskDetailPanelBody({
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const pendingPatchRef = useRef<UpdateTaskRequest>({});
   const descriptionPendingUploadsRef = useRef(0);
+  const blockedAutosavePatchSignatureRef = useRef<string | null>(null);
   const { copied: linkCopied, copy: copyText } = useCopyToClipboard();
+  const { copied: duplicateKeyCopied, copy: copyDuplicateKey } = useCopyToClipboard();
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
+  const [duplicateNotice, setDuplicateNotice] = useState<DuplicateNoticeState | null>(null);
+  const [duplicating, setDuplicating] = useState(false);
   const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDragging, setDescriptionDragging] = useState(false);
   const [hasGitIntegration, setHasGitIntegration] = useState(false);
   const [recurringSummary, setRecurringSummary] = useState<TaskRecurringSummary | null>(initialRecurringSummary);
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
-  const [panelDragging, setPanelDragging] = useState(false);
   const openFilePickerRef = useRef<(() => void) | null>(null);
-  const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
-  const dragCounterRef = useRef(0);
+  const descriptionUploadRef = useRef<((files: FileList | File[], insertPos?: number) => Promise<void>) | null>(null);
+  const queuedDescriptionDropRef = useRef<File[] | null>(null);
+  const descriptionDragCounterRef = useRef(0);
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, form.team_id);
   const { data: workspaceAccess } = useWorkspaceAccess(workspaceId);
-  const { canEdit } = usePermissions(workspaceAccess);
+  const permissions = usePermissions(workspaceAccess);
+  const { canEdit } = permissions;
   const taskId = taskDetail.task.id;
+  const canSaveAsTemplate = permissions.isAdmin || (!!taskDetail.task.team_id && permissions.isTeamManager(taskDetail.task.team_id));
+  const [saveTemplateDialogOpen, setSaveTemplateDialogOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState(taskDetail.task.name);
+  const [saveTemplateSaving, setSaveTemplateSaving] = useState(false);
 
   useEffect(() => {
     pendingPatchRef.current = pendingPatch;
@@ -524,6 +561,26 @@ function TaskDetailPanelBody({
     }
     setRecurringDialogOpen(true);
   }, [workspaceId, recurringSummary?.template_id]);
+
+  const openSaveTemplateDialog = useCallback(() => {
+    setSaveTemplateName(taskDetail.task.name);
+    setSaveTemplateDialogOpen(true);
+  }, [taskDetail.task.name]);
+
+  const handleSaveAsTemplate = useCallback(async () => {
+    const name = saveTemplateName.trim();
+    if (!name || saveTemplateSaving) return;
+    setSaveTemplateSaving(true);
+    const { error } = await pmTaskService.saveAsTemplate(workspaceId, taskDetail.task.id, { name });
+    setSaveTemplateSaving(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setSaveTemplateDialogOpen(false);
+    toast.success('Template created');
+    queryClient.invalidateQueries({ queryKey: queryKeys.pm.templates(workspaceId) });
+  }, [queryClient, saveTemplateName, saveTemplateSaving, taskDetail.task.id, workspaceId]);
 
   const handleRecurringSubmit = useCallback(async (value: RecurringTemplateFormValue) => {
     setRecurringSaving(true);
@@ -560,6 +617,7 @@ function TaskDetailPanelBody({
   // Re-sync form when taskDetail changes externally (e.g. real-time WS update)
   const lastSyncedAt = useRef(taskDetail.task.updated_at);
   const savedDescriptionRef = useRef(taskDetail.task.description ?? '');
+  const savedWorkflowStateIdRef = useRef(taskDetail.task.workflow_state_id);
 
   const [comments, setComments] = useState<CommentWithAuthor[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
@@ -621,6 +679,7 @@ function TaskDetailPanelBody({
     if (taskDetail.task.updated_at !== lastSyncedAt.current) {
       lastSyncedAt.current = taskDetail.task.updated_at;
       savedDescriptionRef.current = taskDetail.task.description ?? '';
+      savedWorkflowStateIdRef.current = taskDetail.task.workflow_state_id;
       void reloadActivity();
       // Only reset form if no unsaved edits
       if (Object.keys(pendingPatchRef.current).length === 0) {
@@ -667,13 +726,102 @@ function TaskDetailPanelBody({
   }, [workspaceId]);
 
   const queuePatch = (patch: UpdateTaskRequest) => {
-    setPendingPatch((current) => ({ ...current, ...patch }));
+    setPendingPatch((current) => {
+      const next = { ...current, ...patch };
+      if (!isBlockedTaskPatch(next, blockedAutosavePatchSignatureRef.current)) {
+        blockedAutosavePatchSignatureRef.current = null;
+      }
+      return next;
+    });
   };
+
+  // ── Pipeline automation rules ──────────────────────────────────
+  const workflowId = states[0]?.workflow_id;
+  const { data: pipelineRules } = useAutomationRulesByWorkflow(workspaceId, workflowId);
+  const automatedStateIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!pipelineRules) return ids;
+    for (const rule of pipelineRules) {
+      if (
+        rule.enabled &&
+        rule.trigger_type === 'task.state_entered' &&
+        rule.action_type === 'start_agent_run'
+      ) {
+        const stateId = rule.trigger_config?.state_id;
+        if (stateId) ids.add(stateId);
+      }
+    }
+    return ids;
+  }, [pipelineRules]);
+  const hasPipeline = automatedStateIds.size > 0;
+
+  const notifyAgentAutoRunStateChange = useCallback((fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
+    if (!shouldNotifyAgentAutoRunStateChange({ fromStateId, toStateId, automatedStateIds })) return;
+    if (!toStateId) return;
+    const stateName = states.find((state) => state.id === toStateId)?.name ?? 'this state';
+    toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(toStateId) });
+  }, [automatedStateIds, states]);
 
   const updateField = <K extends keyof FormState>(key: K, value: FormState[K], patch: UpdateTaskRequest) => {
     setForm((current) => ({ ...current, [key]: value }));
     queuePatch(patch);
   };
+
+  const resetDescriptionDrag = useCallback(() => {
+    descriptionDragCounterRef.current = 0;
+    setDescriptionDragging(false);
+  }, []);
+
+  const handleDescriptionUploadReady = useCallback((upload: ((files: FileList | File[], insertPos?: number) => Promise<void>) | null) => {
+    descriptionUploadRef.current = upload;
+    const queuedFiles = queuedDescriptionDropRef.current;
+    if (!upload || !queuedFiles?.length) return;
+    queuedDescriptionDropRef.current = null;
+    void upload(queuedFiles);
+  }, []);
+
+  const handleDescriptionDragEnter = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    descriptionDragCounterRef.current++;
+    setDescriptionDragging(true);
+  }, []);
+
+  const handleDescriptionDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
+  const handleDescriptionDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    descriptionDragCounterRef.current = Math.max(0, descriptionDragCounterRef.current - 1);
+    if (descriptionDragCounterRef.current === 0) {
+      setDescriptionDragging(false);
+    }
+  }, []);
+
+  const handleDescriptionDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (!hasDraggedFiles(event)) return;
+    const alreadyHandled = event.defaultPrevented;
+    event.preventDefault();
+    event.stopPropagation();
+    resetDescriptionDrag();
+    if (alreadyHandled) return;
+
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length === 0) return;
+    if (descriptionUploadRef.current) {
+      void descriptionUploadRef.current(files);
+      return;
+    }
+
+    queuedDescriptionDropRef.current = files;
+    setEditingDescription(true);
+  }, [resetDescriptionDrag]);
 
   const availableEpics = useMemo(
     () =>
@@ -691,25 +839,73 @@ function TaskDetailPanelBody({
     [form.team_id, sprints],
   );
 
-  useEffect(() => {
-    if (!form.epic_id) return;
-    const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
-    if (!selectedEpic) return;
-    if (isEpicSelectableForTaskTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) {
-      return;
+  // Group epics by lifecycle: not started → in progress → completed.
+  // Order within each group matches `availableEpics` (server-supplied order).
+  const epicGroups = useMemo(() => {
+    const notStarted: typeof availableEpics = [];
+    const inProgress: typeof availableEpics = [];
+    const completed: typeof availableEpics = [];
+    for (const entry of availableEpics) {
+      if (entry.epic.completed) completed.push(entry);
+      else if (entry.epic.started) inProgress.push(entry);
+      else notStarted.push(entry);
     }
-    updateField('epic_id', '', { epic_id: '' });
-  }, [epics, form.epic_id, form.team_id]);
+    return [
+      { label: undefined as string | undefined, options: [{ value: '__none__', label: 'None' }] },
+      { label: 'Not started', options: notStarted.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: 'In progress', options: inProgress.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: 'Completed', options: completed.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+    ];
+  }, [availableEpics]);
+
+  // Group sprints by lifecycle status: unstarted → started → done.
+  const sprintGroups = useMemo(() => {
+    const unstarted: typeof availableSprints = [];
+    const started: typeof availableSprints = [];
+    const done: typeof availableSprints = [];
+    for (const entry of availableSprints) {
+      if (entry.sprint.status === 'done') done.push(entry);
+      else if (entry.sprint.status === 'started') started.push(entry);
+      else unstarted.push(entry);
+    }
+    return [
+      { label: undefined as string | undefined, options: [{ value: '__none__', label: 'None' }] },
+      { label: 'Not started', options: unstarted.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+      { label: 'In progress', options: started.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+      { label: 'Completed', options: done.map((s) => ({ value: s.sprint.id, label: s.sprint.name })) },
+    ];
+  }, [availableSprints]);
+
+  // Track the team_id we've already validated against so the planning-link
+  // cleanup only fires when the user actually changes the team — not on initial
+  // mount or when the epics/sprints lists finish loading. Without this, a task
+  // imported with a sprint/epic whose team scope doesn't match the task's team
+  // (e.g. workspace-level sprint on a team task, or vice versa) would silently
+  // unset its sprint/epic the first time the panel renders.
+  const validatedTeamIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!form.sprint_id) return;
-    const selectedSprint = sprints.find((entry) => entry.sprint.id === form.sprint_id);
-    if (!selectedSprint) return;
-    if (isSprintSelectableForTaskTeam(selectedSprint.sprint.team_id ?? null, form.team_id || null)) {
+    if (validatedTeamIdRef.current === null) {
+      validatedTeamIdRef.current = form.team_id;
       return;
     }
-    updateField('sprint_id', '', { sprint_id: '' });
-  }, [form.sprint_id, form.team_id, sprints]);
+    if (validatedTeamIdRef.current === form.team_id) return;
+    validatedTeamIdRef.current = form.team_id;
+
+    if (form.epic_id) {
+      const selectedEpic = epics.find((entry) => entry.epic.id === form.epic_id);
+      if (selectedEpic && !isEpicSelectableForTaskTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) {
+        updateField('epic_id', '', { epic_id: '' });
+      }
+    }
+
+    if (form.sprint_id) {
+      const selectedSprint = sprints.find((entry) => entry.sprint.id === form.sprint_id);
+      if (selectedSprint && !isSprintSelectableForTaskTeam(selectedSprint.sprint.team_id ?? null, form.team_id || null)) {
+        updateField('sprint_id', '', { sprint_id: '' });
+      }
+    }
+  }, [form.team_id, form.epic_id, form.sprint_id, epics, sprints]);
 
   // ── Auto-show checklist / external links if items exist ────────
   useEffect(() => {
@@ -725,22 +921,30 @@ function TaskDetailPanelBody({
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
+    const flushablePatch = getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads);
     if (
       saving ||
-      !getFlushablePendingTaskPatch(pendingPatch, descriptionPendingUploads)
+      !flushablePatch ||
+      isBlockedTaskPatch(flushablePatch, blockedAutosavePatchSignatureRef.current)
     ) return;
     const timer = window.setTimeout(async () => {
-      const patch = pendingPatch;
+      const patch = flushablePatch;
       const previousDescription = savedDescriptionRef.current;
       setPendingPatch({});
       setSaving(true);
       const { data, error } = await pmTaskService.update(workspaceId, taskId, patch);
       if (error || !data) {
         setSaveError(error ?? 'Failed to save changes');
+        blockedAutosavePatchSignatureRef.current = getTaskPatchSignature(patch);
         setPendingPatch((current) => ({ ...patch, ...current }));
       } else {
+        blockedAutosavePatchSignatureRef.current = null;
         setSaveError(null);
         onTaskUpdated(data);
+        if (patch.workflow_state_id !== undefined) {
+          notifyAgentAutoRunStateChange(savedWorkflowStateIdRef.current, data.task.workflow_state_id);
+          savedWorkflowStateIdRef.current = data.task.workflow_state_id;
+        }
         void reloadActivity();
         // Invalidate sprint planning if sprint/state/estimate changed
         if (patch.sprint_id !== undefined || patch.workflow_state_id !== undefined || patch.estimate !== undefined) {
@@ -764,6 +968,7 @@ function TaskDetailPanelBody({
   }, [
     descriptionPendingUploads,
     onTaskUpdated,
+    notifyAgentAutoRunStateChange,
     pendingPatch,
     queryClient,
     reloadActivity,
@@ -781,6 +986,9 @@ function TaskDetailPanelBody({
       if (!patch) {
         return;
       }
+      if (isBlockedTaskPatch(patch, blockedAutosavePatchSignatureRef.current)) {
+        return;
+      }
 
       void pmTaskService.update(workspaceId, taskId, patch).then(({ data }) => {
         if (!data) {
@@ -788,6 +996,10 @@ function TaskDetailPanelBody({
         }
 
         onTaskUpdated(data);
+        if (patch.workflow_state_id !== undefined) {
+          notifyAgentAutoRunStateChange(savedWorkflowStateIdRef.current, data.task.workflow_state_id);
+          savedWorkflowStateIdRef.current = data.task.workflow_state_id;
+        }
         if (
           patch.sprint_id !== undefined ||
           patch.workflow_state_id !== undefined ||
@@ -797,7 +1009,7 @@ function TaskDetailPanelBody({
         }
       });
     };
-  }, [onTaskUpdated, queryClient, taskId, workspaceId]);
+  }, [notifyAgentAutoRunStateChange, onTaskUpdated, queryClient, taskId, workspaceId]);
 
   const handleDescriptionAttachmentDelete = useCallback(
     async (entry: AttachmentResponse) => {
@@ -855,6 +1067,28 @@ function TaskDetailPanelBody({
     onOpenChange(false);
   };
 
+  const duplicateTask = async () => {
+    if (duplicating) return;
+    setDuplicateConfirmOpen(false);
+    setDuplicating(true);
+    const { data, error } = await pmTaskService.duplicate(workspaceId, taskId);
+    setDuplicating(false);
+    if (error || !data) {
+      toast.error(error ?? 'Failed to duplicate task');
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('task-created', { detail: { task: data.task } }));
+    setDuplicateNotice({ taskDetail: data });
+  };
+
+  const requestDuplicateTask = () => {
+    if (automatedStateIds.has(taskDetail.task.workflow_state_id)) {
+      setDuplicateConfirmOpen(true);
+      return;
+    }
+    void duplicateTask();
+  };
+
   // ── Copy link ──────────────────────────────────────────────────
   const copyLink = () =>
     copyText(
@@ -867,26 +1101,6 @@ function TaskDetailPanelBody({
         taskId: taskDetail.task.id,
       }),
     );
-
-  // ── Pipeline automation rules ──────────────────────────────────
-  const workflowId = states[0]?.workflow_id;
-  const { data: pipelineRules } = useAutomationRulesByWorkflow(workspaceId, workflowId);
-  const automatedStateIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (!pipelineRules) return ids;
-    for (const rule of pipelineRules) {
-      if (
-        rule.enabled &&
-        rule.trigger_type === 'task.state_entered' &&
-        rule.action_type === 'start_agent_run'
-      ) {
-        const stateId = rule.trigger_config?.state_id;
-        if (stateId) ids.add(stateId);
-      }
-    }
-    return ids;
-  }, [pipelineRules]);
-  const hasPipeline = automatedStateIds.size > 0;
 
   // ── Derived data ───────────────────────────────────────────────
   const currentState = useMemo(
@@ -910,9 +1124,11 @@ function TaskDetailPanelBody({
   }, [form.team_id, teams]);
 
   const currentOwnerName = useMemo(() => {
-    if (!form.owner_member_id) return 'No owner';
-    return memberNameMap.get(form.owner_member_id) ?? 'No owner';
-  }, [form.owner_member_id, memberNameMap]);
+    if (form.owner_member_ids.length === 0) return 'No owner';
+    return form.owner_member_ids
+      .map((ownerId) => memberNameMap.get(ownerId) ?? 'Unknown')
+      .join(', ');
+  }, [form.owner_member_ids, memberNameMap]);
 
   const currentRequesterName = useMemo(() => {
     if (!form.requester_member_id) return 'No requester';
@@ -1029,6 +1245,16 @@ function TaskDetailPanelBody({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={requestDuplicateTask} disabled={duplicating}>
+                <Copy01Icon className="mr-2 h-4 w-4" />
+                Duplicate
+              </DropdownMenuItem>
+              {canSaveAsTemplate && (
+                <DropdownMenuItem onSelect={openSaveTemplateDialog}>
+                  <File01Icon className="mr-2 h-4 w-4" />
+                  Save as template
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={() => { void openRecurringDialog(); }}>
                 <ArrowReloadHorizontalIcon className="mr-2 h-4 w-4" />
                 {recurringSummary ? 'Edit recurring' : 'Make recurring'}
@@ -1053,7 +1279,7 @@ function TaskDetailPanelBody({
                   );
                 }}
               >
-                <Maximize01Icon className="h-3.5 w-3.5" />
+                <ArrowUpRight01Icon className="h-3.5 w-3.5" />
               </Button>
             </QuickTooltip>
           )}
@@ -1063,37 +1289,61 @@ function TaskDetailPanelBody({
         </div>
       </div>
 
-      {/* ── Two-column grid ─────────────────────────────────────── */}
-      <div
-        className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden"
-        onDragEnter={(e) => {
-          e.preventDefault();
-          dragCounterRef.current++;
-          if (e.dataTransfer.types.includes('Files')) setPanelDragging(true);
-        }}
-        onDragOver={(e) => e.preventDefault()}
-        onDragLeave={() => {
-          dragCounterRef.current--;
-          if (dragCounterRef.current === 0) setPanelDragging(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          dragCounterRef.current = 0;
-          setPanelDragging(false);
-          if (e.dataTransfer.files.length > 0) {
-            uploadFilesRef.current?.(e.dataTransfer.files);
-          }
-        }}
-      >
-        {panelDragging && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
-              <Upload01Icon className="h-8 w-8 text-primary" />
-              <p className="text-sm font-medium text-foreground">Drop files to attach</p>
-              <p className="text-xs text-muted-foreground">Max 50MB per file</p>
+      {duplicateNotice ? (
+        <div className="border-b border-border/70 bg-primary/5 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Task duplicated
+              </p>
+              <p className="mt-0.5 truncate text-sm font-medium text-foreground">
+                {[duplicateNotice.taskDetail.task.task_key, duplicateNotice.taskDetail.task.name].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {duplicateNotice.taskDetail.task.task_key ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-8 rounded-full px-3 text-xs"
+                  onClick={() => copyDuplicateKey(duplicateNotice.taskDetail.task.task_key!)}
+                >
+                  {duplicateKeyCopied ? <Tick01Icon className="mr-1.5 h-3.5 w-3.5" /> : <Copy01Icon className="mr-1.5 h-3.5 w-3.5" />}
+                  {duplicateKeyCopied ? 'Story ID copied' : 'Copy Story ID'}
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 rounded-full px-3 text-xs"
+                onClick={() => {
+                  if (!workspace?.slug) return;
+                  const duplicatedTask = duplicateNotice.taskDetail;
+                  setDuplicateNotice(null);
+                  onTaskOpened(duplicatedTask);
+                }}
+              >
+                <ArrowUpRight01Icon className="mr-1.5 h-3.5 w-3.5" />
+                Open duplicate
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full"
+                onClick={() => setDuplicateNotice(null)}
+              >
+                <Cancel01Icon className="h-4 w-4" />
+                <span className="sr-only">Dismiss duplicate notification</span>
+              </Button>
             </div>
           </div>
-        )}
+        </div>
+      ) : null}
+
+      {/* ── Two-column grid ─────────────────────────────────────── */}
+      <div className="relative grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
         {/* ── Left column (main content) ────────────────────────── */}
         <div className="min-h-0 overflow-y-auto px-10 py-5 pb-40">
           {/* Pipeline step indicator */}
@@ -1143,7 +1393,24 @@ function TaskDetailPanelBody({
           />
 
           {/* Description */}
-          <div className="mt-4">
+          <div
+            className={cn(
+              'relative mt-4 rounded-lg transition-[box-shadow,background-color]',
+              descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
+            )}
+            onDragEnter={handleDescriptionDragEnter}
+            onDragOver={handleDescriptionDragOver}
+            onDragLeave={handleDescriptionDragLeave}
+            onDrop={handleDescriptionDrop}
+          >
+            {descriptionDragging && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border border-dashed border-primary bg-background/80">
+                <div className="flex items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
+                  <AttachmentIcon className="h-3.5 w-3.5 text-primary" />
+                  Drop to insert here
+                </div>
+              </div>
+            )}
             {editingDescription ? (
               <div>
                 <TiptapEditor
@@ -1153,6 +1420,7 @@ function TaskDetailPanelBody({
                   className="border-transparent shadow-none [&_.ProseMirror]:text-sm"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
+                  onUploadReady={handleDescriptionUploadReady}
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
@@ -1307,7 +1575,6 @@ function TaskDetailPanelBody({
               memberNameMap={memberNameMap}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
               onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
-              onUploadReady={(fn) => { uploadFilesRef.current = fn; }}
             />
           </div>
 
@@ -1344,6 +1611,10 @@ function TaskDetailPanelBody({
                 ))}
               </div>
             ) : (
+              <>
+                {comments.length > 0 && (
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comments</h3>
+                )}
               <CommentThread
                 workspaceId={workspaceId}
                 entityType="task"
@@ -1353,7 +1624,9 @@ function TaskDetailPanelBody({
                 teams={mentionTeams}
                 members={assignableMembers}
                 onCommentsChange={setComments}
+                hideEmptyState
               />
+              </>
             )}
 
             {/* Activity section */}
@@ -1449,32 +1722,29 @@ function TaskDetailPanelBody({
             <div className="col-span-3 h-px bg-border/40 my-1" />
 
             {/* Owner */}
-            <MetadataRow icon={UserIcon} label="Owner">
-              <MemberPickerPopover
-                value={form.owner_member_id || '__none__'}
+            <MetadataRow icon={UserIcon} label="Owners">
+              <MultiMemberPickerPopover
+                values={form.owner_member_ids}
                 members={assignableMembers}
-                noneLabel="No owner"
-                onChange={(v) => {
-                  const val = v === '__none__' ? '' : v;
-                  updateField('owner_member_id', val, { owner_member_id: val });
+                onChange={(nextOwnerIds) => {
+                  updateField('owner_member_ids', nextOwnerIds, { owner_member_ids: nextOwnerIds });
                 }}
                 renderTrigger={() => {
-                  const selectedMember = findAssignableMember(assignableMembers, form.owner_member_id);
                   return (
                     <>
-                      {selectedMember ? (
-                        <UserAvatar
-                          name={selectedMember.display_name || selectedMember.email}
-                          avatarUrl={selectedMember.avatar_url}
-                          avatarStyle={selectedMember.avatar_style}
-                          avatarSeed={selectedMember.avatar_seed}
-                          avatarBackgroundMode={selectedMember.avatar_background_mode}
-                          avatarBackgroundColor={selectedMember.avatar_background_color}
-                          className="h-4 w-4"
-                          fallbackClassName="text-[7px]"
+                      {form.owner_member_ids.length > 0 ? (
+                        <OwnerAvatarStack
+                          memberIds={form.owner_member_ids}
+                          nameMap={memberNameMap}
+                          members={assignableMembers}
+                          size="sm"
+                          max={3}
+                          singleAvatarClassName="h-4 w-4"
+                          singleFallbackClassName="text-[7px]"
                         />
-                      ) : null}
-                      <span>{currentOwnerName}</span>
+                      ) : (
+                        <span>{currentOwnerName}</span>
+                      )}
                     </>
                   );
                 }}
@@ -1606,10 +1876,7 @@ function TaskDetailPanelBody({
             <MetadataRow icon={Layers01Icon} label="Epic">
               <SidebarPopoverSelect
                 value={form.epic_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'None' },
-                  ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
-                ]}
+                groups={epicGroups}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('epic_id', val, { epic_id: val });
@@ -1624,10 +1891,7 @@ function TaskDetailPanelBody({
             <MetadataRow icon={SprintIcon} label="Sprint">
               <SidebarPopoverSelect
                 value={form.sprint_id || '__none__'}
-                options={[
-                  { value: '__none__', label: 'None' },
-                  ...availableSprints.map((i) => ({ value: i.sprint.id, label: i.sprint.name })),
-                ]}
+                groups={sprintGroups}
                 onChange={(v) => {
                   const val = v === '__none__' ? '' : v;
                   updateField('sprint_id', val, { sprint_id: val });
@@ -1766,6 +2030,33 @@ function TaskDetailPanelBody({
         </aside>
       </div>
 
+      <Dialog open={saveTemplateDialogOpen} onOpenChange={setSaveTemplateDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Save as template</DialogTitle>
+            <DialogDescription>
+              Create a reusable task template from the current task.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              value={saveTemplateName}
+              onChange={(event) => setSaveTemplateName(event.target.value)}
+              placeholder="Template title"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setSaveTemplateDialogOpen(false)} disabled={saveTemplateSaving}>
+                Cancel
+              </Button>
+              <Button onClick={() => void handleSaveAsTemplate()} disabled={!saveTemplateName.trim() || saveTemplateSaving}>
+                {saveTemplateSaving ? 'Saving...' : 'Save template'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1806,6 +2097,16 @@ function TaskDetailPanelBody({
         variant="default"
         onConfirm={archiveTask}
       />
+
+      <ConfirmDialog
+        open={duplicateConfirmOpen}
+        onOpenChange={setDuplicateConfirmOpen}
+        title="Duplicate task and start agent?"
+        description="This task is in an auto-run state. Duplicating it will create a copy in the same state and start the assigned agent automatically."
+        confirmLabel="Duplicate and start agent"
+        variant="default"
+        onConfirm={duplicateTask}
+      />
     </div>
   );
 }
@@ -1821,6 +2122,7 @@ export function TaskDetailPanel({
   states,
   initialRecurringSummary,
   onTaskUpdated,
+  onTaskOpened,
   onTaskArchived,
 }: TaskDetailPanelProps) {
   const openedAtRef = useRef<number | null>(null);
@@ -1845,6 +2147,10 @@ export function TaskDetailPanel({
         showCloseButton={false}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(event) => {
+          if (isInsideSonnerToast(event.target)) {
+            event.preventDefault();
+            return;
+          }
           if (isInsideAskAgentsDock(event.target)) {
             event.preventDefault();
             return;
@@ -1854,6 +2160,10 @@ export function TaskDetailPanel({
           }
         }}
         onInteractOutside={(event) => {
+          if (isInsideSonnerToast(event.target)) {
+            event.preventDefault();
+            return;
+          }
           if (isInsideAskAgentsDock(event.target)) {
             event.preventDefault();
             return;
@@ -1873,6 +2183,7 @@ export function TaskDetailPanel({
             initialRecurringSummary={initialRecurringSummary ?? null}
             onOpenChange={onOpenChange}
             onTaskUpdated={onTaskUpdated}
+            onTaskOpened={onTaskOpened}
             onTaskArchived={onTaskArchived}
           />
         ) : loading ? (

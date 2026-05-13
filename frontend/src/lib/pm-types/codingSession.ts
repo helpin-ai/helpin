@@ -45,9 +45,9 @@ export interface CodingSessionReviewCheckpointRequestPayload {
 
 export interface CodingSessionReviewCheckpointResponsePayload {
   [key: string]: unknown;
-  decision: 'approve' | 'request_changes';
+  decision: 'approve' | 'request_changes' | 'skip';
   message?: string;
-  selection_mode?: 'all' | 'selected';
+  selection_mode?: 'all' | 'selected' | 'none';
   selected_finding_ids?: string[];
 }
 
@@ -121,6 +121,9 @@ export interface CodingSession {
   status: AgentRunStatus;
   pause_reason: AgentRunPauseReason;
   error_message?: string;
+  execution_stage?: string;
+  last_heartbeat_at?: string;
+  started_at?: string;
   title: string;
   summary?: string;
   system_prompt?: string;

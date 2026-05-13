@@ -377,7 +377,6 @@ export function LinkedTasksPanel(props: LinkedTasksPanelProps) {
                 <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                   <span>{task.task_key}</span>
                   {task.state_name && <span>· {task.state_name}</span>}
-                  {task.owner_name && <span>· {task.owner_name}</span>}
                 </div>
               </div>
             </button>

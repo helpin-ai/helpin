@@ -30,7 +30,7 @@ describe('createDebouncedBoardFetchScheduler', () => {
     const run = vi.fn()
     const scheduler = createDebouncedBoardFetchScheduler(250, run)
 
-    scheduler.schedule({ filters: { owner_member_id: 'member-1' } })
+    scheduler.schedule({ filters: { owner_member_ids: 'member-1' } })
     scheduler.cancel()
     vi.advanceTimersByTime(250)
 

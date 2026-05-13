@@ -613,8 +613,8 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("get unread stats: %v", err)
 		}
 
-		if got := stats.Inbox - baseStats.Inbox; got != 2 {
-			t.Fatalf("expected inbox unread count delta 2, got %d", got)
+		if got := stats.Inbox - baseStats.Inbox; got != 3 {
+			t.Fatalf("expected inbox unread count delta 3, got %d", got)
 		}
 		if got := stats.Mine - baseStats.Mine; got != 1 {
 			t.Fatalf("expected mine unread count delta 1, got %d", got)
@@ -622,20 +622,20 @@ func TestSupportConversationRepository(t *testing.T) {
 		if got := stats.Waiting - baseStats.Waiting; got != 1 {
 			t.Fatalf("expected waiting unread count delta 1, got %d", got)
 		}
-		if got := stats.Total - baseStats.Total; got != 2 {
-			t.Fatalf("expected total unread human inbox count delta 2, got %d", got)
+		if got := stats.Total - baseStats.Total; got != 3 {
+			t.Fatalf("expected total unread human inbox count delta 3, got %d", got)
 		}
 		if got := stats.MyInbox - baseStats.MyInbox; got != 1 {
 			t.Fatalf("expected my inbox count delta 1, got %d", got)
 		}
-		if got := stats.Unassigned - baseStats.Unassigned; got != 1 {
-			t.Fatalf("expected unassigned count delta 1, got %d", got)
+		if got := stats.Unassigned - baseStats.Unassigned; got != 2 {
+			t.Fatalf("expected unassigned count delta 2, got %d", got)
 		}
 		if got := stats.AIActive - baseStats.AIActive; got != 1 {
 			t.Fatalf("expected AI active unread count delta 1, got %d", got)
 		}
-		if got := stats.InboxTotal - baseStats.InboxTotal; got != 2 {
-			t.Fatalf("expected inbox workload count delta 2, got %d", got)
+		if got := stats.InboxTotal - baseStats.InboxTotal; got != 3 {
+			t.Fatalf("expected inbox workload count delta 3, got %d", got)
 		}
 		if got := stats.MineTotal - baseStats.MineTotal; got != 1 {
 			t.Fatalf("expected mine workload count delta 1, got %d", got)
@@ -648,7 +648,7 @@ func TestSupportConversationRepository(t *testing.T) {
 		}
 	})
 
-	t.Run("Mailbox unread counts include active AI conversations but exclude AI-resolved ones", func(t *testing.T) {
+	t.Run("Mailbox workload counts match human inbox list scope", func(t *testing.T) {
 		ctx := context.Background()
 		now := time.Now()
 		customerMessageAt := now.Add(-time.Minute)
@@ -770,8 +770,16 @@ func TestSupportConversationRepository(t *testing.T) {
 		if err != nil {
 			t.Fatalf("count billing mailbox unread: %v", err)
 		}
-		if count != 3 {
-			t.Fatalf("expected billing mailbox unread count 3, got %d", count)
+		if count != 2 {
+			t.Fatalf("expected billing mailbox unread count 2, got %d", count)
+		}
+
+		workloadCount, err := mailboxRepo.CountWorkload(ctx, workspaceID, &billingMailbox.ID)
+		if err != nil {
+			t.Fatalf("count billing mailbox workload: %v", err)
+		}
+		if workloadCount != 2 {
+			t.Fatalf("expected billing mailbox workload count 2, got %d", workloadCount)
 		}
 	})
 }
@@ -1553,6 +1561,60 @@ func TestAssignConversationUserAcceptsSupportAccessibleUserOutsideMailboxMembers
 	}
 
 	_ = ownerMember
+}
+
+func TestSupportInboxServiceListContactConversationsReturnsUnpagedTotal(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-contact-conversation-total"
+	contactID := "contact-conversation-total"
+	userID := "owner-contact-total"
+	seedWorkspace(t, db, workspaceID, "Contact Conversation Total", "contact-conversation-total", userID)
+	seedWorkspaceMember(t, db, "member-contact-total", workspaceID, userID, "owner-contact-total@example.com", "Owner Contact Total", model.RoleOwner)
+
+	repo := repository.NewSupportConversationRepository(db)
+	svc := NewSupportInboxService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	ctx = authorization.WithActor(ctx, &authorization.Actor{
+		UserID:            userID,
+		WorkspaceID:       workspaceID,
+		WorkspaceMemberID: "member-contact-total",
+		Role:              model.RoleOwner,
+	})
+	now := time.Now().UTC()
+
+	for i := 0; i < 3; i++ {
+		conversation := &model.SupportConversation{
+			WorkspaceID:   workspaceID,
+			Subject:       fmt.Sprintf("Linked conversation %d", i+1),
+			Status:        model.SupportConversationStatusOpen,
+			Priority:      "medium",
+			Channel:       "widget",
+			CRMContactID:  strPtr(contactID),
+			CustomerEmail: strPtr(fmt.Sprintf("customer-%d@example.com", i+1)),
+		}
+		if err := repo.Create(ctx, conversation); err != nil {
+			t.Fatalf("create linked conversation %d: %v", i+1, err)
+		}
+		if err := db.Model(&model.SupportConversation{}).
+			Where("id = ?", conversation.ID).
+			Updates(map[string]any{
+				"created_at": now.Add(-time.Duration(i) * time.Minute),
+				"updated_at": now.Add(-time.Duration(i) * time.Minute),
+			}).Error; err != nil {
+			t.Fatalf("timestamp linked conversation %d: %v", i+1, err)
+		}
+	}
+
+	conversations, total, err := svc.ListContactConversations(ctx, workspaceID, contactID, model.PMPagination{Page: 1, PerPage: 2})
+	if err != nil {
+		t.Fatalf("list contact conversations: %v", err)
+	}
+	if len(conversations) != 2 {
+		t.Fatalf("len(conversations) = %d, want 2", len(conversations))
+	}
+	if total != 3 {
+		t.Fatalf("total = %d, want 3", total)
+	}
 }
 
 func TestSupportInboxServiceUpdateConversationStatus_KeepsResolvedEventsInternal(t *testing.T) {

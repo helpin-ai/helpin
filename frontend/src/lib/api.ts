@@ -1,4 +1,4 @@
-import { storeRedirectAfterLogin } from '@/lib/authRedirect';
+import { buildLoginPathForCurrentLocation, storeRedirectAfterLogin } from '@/lib/authRedirect';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -54,7 +54,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       localStorage.removeItem('remember_me');
       stopTokenRefreshTimer();
       storeRedirectAfterLogin();
-      window.location.href = '/login';
+      window.location.href = buildLoginPathForCurrentLocation();
       return { data: null, error: 'Session expired' };
     }
 

@@ -1,18 +1,93 @@
 export const REDIRECT_AFTER_LOGIN_KEY = 'helpin_redirect_after_login';
 
-function isInternalRedirect(path: string): boolean {
-  if (!path.startsWith('/') || path.startsWith('//')) return false;
-  return path !== '/login' && path !== '/logout' && !path.startsWith('/login?');
+type RouterLocationLike = {
+  pathname?: string
+  searchStr?: string
+  search?: unknown
+  hash?: string
+  href?: string
 }
 
-export function currentRedirectPath(): string {
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+const AUTH_REDIRECT_BLOCKLIST = new Set([
+  '/login',
+  '/logout',
+  '/register',
+  '/forgot-password',
+  '/reset-password',
+])
+
+function appOrigin(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin
+  }
+  return 'https://app.helpin.ai'
 }
 
-export function storeRedirectAfterLogin(path = currentRedirectPath()): void {
-  if (!isInternalRedirect(path)) return;
+function normalizePathname(pathname: string): string {
+  const normalized = pathname.replace(/\/+$/, '')
+  return normalized === '' ? '/' : normalized
+}
+
+export function normalizeSafeAppRedirect(value: string | null | undefined): string | null {
+  const raw = value?.trim()
+  if (!raw) return null
+  if (raw.startsWith('//') || raw.startsWith('\\')) return null
+
+  let url: URL
   try {
-    sessionStorage.setItem(REDIRECT_AFTER_LOGIN_KEY, path);
+    url = new URL(raw, appOrigin())
+  } catch {
+    return null
+  }
+
+  if (url.origin !== appOrigin()) return null
+  const pathname = normalizePathname(url.pathname)
+  if (AUTH_REDIRECT_BLOCKLIST.has(pathname)) return null
+  return `${url.pathname}${url.search}${url.hash}`
+}
+
+export function currentPathForLoginRedirect(location?: RouterLocationLike): string {
+  if (location?.href) {
+    const normalized = normalizeSafeAppRedirect(location.href)
+    if (normalized) return normalized
+  }
+
+  const pathname = location?.pathname
+    ?? (typeof window !== 'undefined' ? window.location.pathname : '/')
+  const search = typeof location?.searchStr === 'string'
+    ? location.searchStr
+    : typeof window !== 'undefined'
+      ? window.location.search
+      : ''
+  const hash = typeof location?.hash === 'string'
+    ? location.hash
+    : typeof window !== 'undefined'
+      ? window.location.hash
+      : ''
+
+  return `${pathname || '/'}${search || ''}${hash || ''}`
+}
+
+export function loginRedirectFromSearch(search = typeof window !== 'undefined' ? window.location.search : ''): string | null {
+  return normalizeSafeAppRedirect(new URLSearchParams(search).get('redirect'))
+}
+
+export function buildLoginPathForRedirect(redirect: string | null | undefined): string {
+  const normalized = normalizeSafeAppRedirect(redirect)
+  if (!normalized) return '/login'
+  return `/login?redirect=${encodeURIComponent(normalized)}`
+}
+
+export function buildLoginPathForCurrentLocation(location?: RouterLocationLike): string {
+  return buildLoginPathForRedirect(currentPathForLoginRedirect(location))
+}
+
+export function storeRedirectAfterLogin(path = currentPathForLoginRedirect()): void {
+  const normalized = normalizeSafeAppRedirect(path)
+  if (!normalized) return
+
+  try {
+    sessionStorage.setItem(REDIRECT_AFTER_LOGIN_KEY, normalized)
   } catch {
     // Ignore storage access failures; login can still fall back normally.
   }
@@ -20,12 +95,12 @@ export function storeRedirectAfterLogin(path = currentRedirectPath()): void {
 
 export function consumeRedirectAfterLogin(): string | null {
   try {
-    const path = sessionStorage.getItem(REDIRECT_AFTER_LOGIN_KEY);
+    const path = sessionStorage.getItem(REDIRECT_AFTER_LOGIN_KEY)
     if (path) {
-      sessionStorage.removeItem(REDIRECT_AFTER_LOGIN_KEY);
+      sessionStorage.removeItem(REDIRECT_AFTER_LOGIN_KEY)
     }
-    return path && isInternalRedirect(path) ? path : null;
+    return normalizeSafeAppRedirect(path)
   } catch {
-    return null;
+    return null
   }
 }

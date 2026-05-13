@@ -8,7 +8,7 @@ import { MentionText } from '../MentionText'
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('MentionText', () => {
-  it('renders team mentions with distinct styling while keeping person mentions and unresolved handles safe', () => {
+  it('renders team and person mentions with chip styling but leaves unresolved handles as plain text', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -55,7 +55,10 @@ describe('MentionText', () => {
 
     expect(unresolvedMention?.textContent).toContain('@ghost')
     expect(unresolvedMention?.closest('[data-mention-type="unresolved"]')).toBeTruthy()
-    expect(unresolvedMention?.querySelector('span')?.className).toContain('text-blue-600')
+    // Unresolved handles must not be styled as mentions — they could be CSS at-rules,
+    // package names, or other arbitrary @tokens in code/prose.
+    expect(unresolvedMention?.className ?? '').not.toContain('text-blue-600')
+    expect(unresolvedMention?.querySelector('span')).toBeNull()
 
     act(() => {
       root.unmount()

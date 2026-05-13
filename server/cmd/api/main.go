@@ -258,6 +258,7 @@ func main() {
 			&model.DocsContent{},
 			&model.DocsBlock{},
 			&model.DocsAISectionCandidate{},
+			&model.DocsChangeProposal{},
 			&model.DocsVersion{},
 			&model.DocsLink{},
 			&model.DocsHelpcenterConfig{},
@@ -589,6 +590,7 @@ func main() {
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsBlockRepo := repository.NewDocsBlockRepository(db)
 	docsAISectionCandidateRepo := repository.NewDocsAISectionCandidateRepository(db)
+	docsChangeProposalRepo := repository.NewDocsChangeProposalRepository(db)
 	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
@@ -641,11 +643,12 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize webauthn", err)
 	}
-	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
+	authService := service.NewAuthService(userRepo, passwordResetRepo, orgRepo, workspaceRepo, jwtManager, s3Client, appEmailClient, cfg.AppBaseURL, resolveTOTPEncryptionKey(cfg))
 	passkeyService := service.NewPasskeyService(userRepo, passkeyRepo, jwtManager, passkeyWebAuthnClient, resolveTOTPEncryptionKey(cfg))
 	pmActivityService := service.NewPMActivityService(pmActivityRepo)
 	pmLabelService := service.NewPMLabelService(pmLabelRepo, wsPublisher)
 	pmTaskTemplateService := service.NewPMTaskTemplateService(pmTaskTemplateRepo, wsPublisher)
+	pmTaskTemplateService.SetAttachmentRepository(pmAttachmentRepo)
 	pmRecurringTemplateService := service.NewPMRecurringTemplateService(pmRecurringTemplateRepo, pmTaskRepo, pmWorkflowRepo, pmSprintRepo, workspaceRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmActivityService, wsPublisher)
 	pmWorkflowService := service.NewPMWorkflowService(pmWorkflowRepo, pmTaskRepo, pmLabelRepo, wsPublisher)
 	pmAutomationService := service.NewPMAutomationService(pmAutomationRepo, pmEpicRepo, pmTaskRepo, pmSprintRepo, pmWorkflowRepo, pmActivityService, wsPublisher, pmSprintCloseoutRepo)
@@ -655,6 +658,7 @@ func main() {
 	userNotifSettingsService := service.NewUserNotificationSettingsService(userNotifSettingsRepo)
 	followerService := service.NewFollowerService(followerRepo)
 	pmTaskService := service.NewPMTaskService(pmTaskRepo, workspaceRepo, pmWorkflowRepo, pmEpicRepo, pmSprintRepo, pmLabelRepo, pmChecklistItemRepo, pmExternalLinkRepo, pmAttachmentRepo, pmActivityService, wsPublisher, pmAutomationService, notificationService, followerService)
+	pmTaskService.SetTaskTemplateRepository(pmTaskTemplateRepo)
 	pmRoadmapRepo := repository.NewPMRoadmapRepository(db)
 	pmEpicService := service.NewPMEpicService(pmEpicRepo, pmTaskRepo, pmLabelRepo, gitRepositoryRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmRoadmapService := service.NewPMRoadmapService(pmEpicService, pmRoadmapRepo)
@@ -670,7 +674,7 @@ func main() {
 	searchService := service.NewSearchService(searchRepo, workspaceRepo)
 	cannedResponseRepo := repository.NewSupportCannedResponseRepository(db)
 	supportTeammateStatusOverrideRepo := repository.NewSupportTeammateStatusOverrideRepository(db)
-	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, wsPublisher)
+	supportInboxViewService := service.NewSupportInboxViewService(supportInboxViewRepo, supportConversationRepo, wsPublisher)
 	supportTagService := service.NewSupportTagService(supportTagRepo, supportConversationRepo, wsPublisher)
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)
@@ -913,6 +917,7 @@ func main() {
 	docsAISectionService := service.NewDocsAISectionService(docsAISectionCandidateRepo, docsBlockRepo, docsBlockService, docsDocumentRepo, docsSearchService, supportConversationRepo, agentService, llmProvider, cfg.CrawlerProxyURLs)
 	docsAISectionService.SetRuleEngine(ruleEngine)
 	docsAISectionService.SetActivityService(pmActivityService)
+	docsChangeProposalService := service.NewDocsChangeProposalService(docsChangeProposalRepo, docsDocumentRepo, docsContentService, docsBlockService, wsPublisher)
 	docsReferencesService := service.NewDocsReferencesService(docsLinkRepo, docsBlockRepo, docsDocumentRepo, pmCommentService, agentService)
 	var docsEntityReferenceResolverService *service.DocsEntityReferenceResolverService
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
@@ -1126,6 +1131,7 @@ func main() {
 	// Initialize authorization service.
 	authzMemberRepo := authorization.NewGORMMemberRepository(db)
 	authzService := authorization.NewAuthzService(db, authzMemberRepo, moduleGrantRepo)
+	authzService.SetWorkspaceMFARepository(workspaceRepo)
 	supportInboxService.SetAuthzService(authzService)
 	docsEntityReferenceResolverService = service.NewDocsEntityReferenceResolverService(pmTaskService, pmEpicService, supportInboxService, crmDealService, crmContactService, crmCompanyService, docsDocumentService, authzService)
 	docsReferencesService.SetEntityReferenceResolver(docsEntityReferenceResolverService)
@@ -1238,6 +1244,7 @@ func main() {
 			docsContentService,
 			docsBlockService,
 			docsAISectionService,
+			docsChangeProposalService,
 			docsReferencesService,
 			docsVersionService,
 			docsLinkService,

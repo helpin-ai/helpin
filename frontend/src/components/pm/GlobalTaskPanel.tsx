@@ -21,7 +21,7 @@ import { parseTaskKey } from '@/lib/taskKeyUtils';
 import type { TaskDetail, TaskRecurringSummary } from '@/lib/pmTypes';
 import { useTaskPanelStore } from '@/stores/taskPanelStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { useRegisterPageContext } from '@/components/command-bar/pageContext';
+import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext';
 
 interface GlobalTaskPanelProps {
   workspaceId: string;
@@ -31,7 +31,8 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const overlayLocation = location as TaskOverlayLocationLike;
-  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const workspaceSlug = workspace?.slug ?? '';
   const contextualTaskId = useTaskPanelStore((s) => s.taskId);
   const requestKey = useTaskPanelStore((s) => s.requestKey);
   const closeContextualTask = useTaskPanelStore((s) => s.close);
@@ -53,7 +54,36 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
       related_ids: detail.task.epic_id ? { epicIds: [detail.task.epic_id] } : undefined,
     };
   }, [presentation.open, presentation.taskDetail]);
-  useRegisterPageContext(commandBarContext, 30);
+  const commandBarContextOptions = useMemo<PageContextScopeOption[]>(() => {
+    if (!commandBarContext) return [];
+    return [
+      {
+        key: 'task',
+        label: 'Task',
+        description: 'Use the selected task as context.',
+        context: commandBarContext,
+      },
+      {
+        key: 'all_tasks',
+        label: 'All tasks',
+        description: 'Use all workspace tasks as context.',
+        context: {
+          entity_type: 'workspace' as const,
+          entity_id: workspaceId,
+          display_title: 'All tasks',
+          metadata: {
+            module: 'pm',
+            context_scope: 'all_tasks',
+            workspace_name: workspace?.name,
+          },
+        },
+      },
+    ];
+  }, [commandBarContext, workspace?.name, workspaceId]);
+  useRegisterPageContext(commandBarContext, 30, {
+    scopeOptions: commandBarContextOptions,
+    defaultScopeKey: 'task',
+  });
 
   // Use refs for close handler to avoid re-triggering task load effect
   const locationRef = useRef(overlayLocation);
@@ -233,6 +263,22 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     );
   }, []);
 
+  const handleTaskOpened = useCallback((detail: TaskDetail) => {
+    setLoadedTask((current) => ({
+      taskId: detail.task.id,
+      taskDetail: detail,
+      states: current?.states ?? [],
+      recurringSummary: null,
+    }));
+    if (!workspaceSlug) return;
+    openTaskRoute(
+      navigateRef.current as never,
+      locationRef.current,
+      workspaceSlug,
+      detail.task.id,
+    );
+  }, [workspaceSlug]);
+
   const handleStoryArchived = useCallback(
     (archivedTaskId: string) => {
       handleClose();
@@ -257,6 +303,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
         if (!isOpen) handleClose();
       }}
       onTaskUpdated={handleStoryUpdated}
+      onTaskOpened={handleTaskOpened}
       onTaskArchived={handleStoryArchived}
     />
   );

@@ -328,18 +328,18 @@ func (s *InternalCommandService) registerDefaults() {
 		Tool:                 mustCommandToolMetadata("pm.create_task"),
 		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
 			var req struct {
-				Name          string   `json:"name"`
-				Description   *string  `json:"description"`
-				TaskType      string   `json:"task_type"`
-				Estimate      *int     `json:"estimate"`
-				Priority      *string  `json:"priority"`
-				EpicID        *string  `json:"epic_id"`
-				TeamID        string   `json:"team_id"`
-				WorkflowID    *string  `json:"workflow_id"`
-				StateID       *string  `json:"state_id"`
-				OwnerMemberID *string  `json:"owner_member_id"`
-				LabelIDs      []string `json:"label_ids"`
-				Deadline      *string  `json:"deadline"`
+				Name           string   `json:"name"`
+				Description    *string  `json:"description"`
+				TaskType       string   `json:"task_type"`
+				Estimate       *int     `json:"estimate"`
+				Priority       *string  `json:"priority"`
+				EpicID         *string  `json:"epic_id"`
+				TeamID         string   `json:"team_id"`
+				WorkflowID     *string  `json:"workflow_id"`
+				StateID        *string  `json:"state_id"`
+				OwnerMemberIDs []string `json:"owner_member_ids"`
+				LabelIDs       []string `json:"label_ids"`
+				Deadline       *string  `json:"deadline"`
 			}
 			if err := json.Unmarshal(input, &req); err != nil {
 				return nil, fmt.Errorf("parse create task input: %w", err)
@@ -359,7 +359,7 @@ func (s *InternalCommandService) registerDefaults() {
 			req.Priority = stringPtrOrNil(commandDerefString(req.Priority))
 			req.WorkflowID = stringPtrOrNil(commandDerefString(req.WorkflowID))
 			req.StateID = stringPtrOrNil(commandDerefString(req.StateID))
-			req.OwnerMemberID = stringPtrOrNil(commandDerefString(req.OwnerMemberID))
+			req.OwnerMemberIDs = commandTrimStringSlice(req.OwnerMemberIDs)
 
 			var deadline *time.Time
 			if req.Deadline != nil {
@@ -384,7 +384,7 @@ func (s *InternalCommandService) registerDefaults() {
 				WorkflowStateID: stateID,
 				EpicID:          req.EpicID,
 				TeamID:          stringPtrOrNil(req.TeamID),
-				OwnerMemberID:   req.OwnerMemberID,
+				OwnerMemberIDs:  req.OwnerMemberIDs,
 				Estimate:        req.Estimate,
 				Priority:        req.Priority,
 				Deadline:        deadline,
@@ -1408,6 +1408,21 @@ func commandDerefString(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func commandTrimStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	trimmed := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		trimmed = append(trimmed, value)
+	}
+	return trimmed
 }
 
 func compactTaskComments(comments []model.CommentWithAuthor, limit int) []map[string]any {

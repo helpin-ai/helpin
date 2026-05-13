@@ -575,9 +575,10 @@ func createTaskSchema() map[string]any {
 				"type":        "string",
 				"description": "Optional workflow state ID override. Defaults to the resolved workflow default state.",
 			},
-			"owner_member_id": map[string]any{
-				"type":        "string",
-				"description": "Optional workspace member ID to assign as owner",
+			"owner_member_ids": map[string]any{
+				"type":        "array",
+				"description": "Optional workspace member IDs to assign as owners",
+				"items":       map[string]any{"type": "string"},
 			},
 			"label_ids": map[string]any{
 				"type":        "array",

@@ -239,6 +239,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
 
+		// Public attachment content. Inline editor images cannot send bearer auth headers,
+		// so this keeps the durable attachment ID as the app-controlled image URL.
+		r.Get("/pm/attachments/{id}/content", h.PMAttachment.Content)
+
 		// ---- Help Center domain verification (Caddy on_demand_tls) ----
 		r.Get("/hc/verify-domain", h.Docs.VerifyDomain)
 
@@ -373,6 +377,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/auth/2fa/status", h.Auth.Get2FAStatus)
 			r.Post("/auth/2fa/setup", h.Auth.Setup2FA)
 			r.Post("/auth/2fa/verify", h.Auth.Verify2FA)
+			r.Post("/auth/2fa/step-up", h.Auth.StepUp2FA)
 			r.Delete("/auth/2fa", h.Auth.Disable2FA)
 			r.Post("/auth/2fa/regenerate-recovery-codes", h.Auth.RegenerateRecoveryCodes)
 
@@ -425,6 +430,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/preview", h.PMImport.PreviewShortcut)
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/execute", h.PMImport.ExecuteShortcut)
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/api/preview", h.PMImport.PreviewShortcutAPI)
+				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/api/preview/{scanId}", h.PMImport.GetShortcutAPIPreview)
 				r.With(requirePerm(authorization.PermPMImport)).Post("/import/shortcut/api/execute", h.PMImport.ExecuteShortcutAPI)
 				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status", h.PMImport.ListShortcutStatuses)
 				r.With(requirePerm(authorization.PermPMImport)).Get("/import/shortcut/status/{importId}", h.PMImport.ShortcutStatus)
@@ -627,7 +633,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				// New /inbox/conversations routes
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/unread-stats", h.SupportInbox.GetUnreadStats)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/views", h.SupportInboxView.List)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/views/builtin", h.SupportInboxView.ListBuiltin)
+				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/views/counts", h.SupportInboxView.ListCounts)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/views", h.SupportInboxView.Create)
+				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/views/builtin/{viewKey}", h.SupportInboxView.UpdateBuiltin)
 				r.With(requirePerm(authorization.PermSupportEdit)).Put("/inbox/views/{viewId}", h.SupportInboxView.Update)
 				r.With(requirePerm(authorization.PermSupportEdit)).Delete("/inbox/views/{viewId}", h.SupportInboxView.Delete)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/tags", h.SupportTag.List)
@@ -827,6 +836,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/counts", h.PMTask.CountByState)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/save-as-template", h.PMTask.SaveAsTemplate)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/duplicate", h.PMTask.Duplicate)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}", h.PMTask.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}", h.PMTask.Delete)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/move", h.PMTask.Move)
@@ -860,6 +871,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/attachments", h.PMAttachment.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Patch("/attachments/{id}/confirm", h.PMAttachment.ConfirmUpload)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/attachments", h.PMAttachment.List)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/attachments/{id}/content", h.PMAttachment.Content)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/attachments/{id}", h.PMAttachment.Delete)
 
 				// Objectives — pm.read / pm.edit
@@ -1071,6 +1083,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/regenerate", h.Docs.RegenerateAISection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/approve", h.Docs.ApproveAISection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/reject", h.Docs.RejectAISection)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/change-proposals", h.Docs.ListChangeProposals)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/change-proposals/{proposalId}/apply", h.Docs.ApplyChangeProposal)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/change-proposals/{proposalId}/discard", h.Docs.DiscardChangeProposal)
 
 				// Comments — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/comments", h.Docs.ListComments)
