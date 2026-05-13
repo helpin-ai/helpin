@@ -13,6 +13,7 @@ vi.mock('@/lib/services/pmExternalLinkService', () => ({
 
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService'
 import { ExternalLinks } from '../ExternalLinks'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { ExternalLink } from '@/lib/pmTypes'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -43,7 +44,11 @@ async function renderExternalLinks(links: ExternalLink[]) {
   root = createRoot(container)
 
   await act(async () => {
-    root?.render(<ExternalLinks workspaceId="ws-1" entityType="task" entityId="task-1" />)
+    root?.render(
+      <TooltipProvider>
+        <ExternalLinks workspaceId="ws-1" entityType="task" entityId="task-1" />
+      </TooltipProvider>,
+    )
   })
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))

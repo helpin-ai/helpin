@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import type { ExternalLink } from '@/lib/pmTypes';
 
@@ -99,26 +100,32 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
                   {link.title || getHostname(link.url)}
                 </span>
                 <span className="text-[11px] text-muted-foreground truncate block">
-                  {getHostname(link.url)} - {link.url}
+                  {link.url}
                 </span>
               </div>
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Open ${link.title || getHostname(link.url)}`}
-                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-              >
-                <LinkSquare01Icon className="h-3.5 w-3.5" />
-              </a>
-              <button
-                type="button"
-                aria-label={`Remove ${link.title || getHostname(link.url)}`}
-                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground opacity-70 transition-colors hover:bg-background hover:text-destructive group-hover:opacity-100 cursor-pointer"
-                onClick={() => handleDelete(link.id)}
-              >
-                <Delete01Icon className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                <QuickTooltip label="Open link">
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Open ${link.title || getHostname(link.url)}`}
+                    className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                  >
+                    <LinkSquare01Icon className="h-3.5 w-3.5" />
+                  </a>
+                </QuickTooltip>
+                <QuickTooltip label="Remove link">
+                  <button
+                    type="button"
+                    aria-label={`Remove ${link.title || getHostname(link.url)}`}
+                    className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-destructive cursor-pointer"
+                    onClick={() => handleDelete(link.id)}
+                  >
+                    <Delete01Icon className="h-3.5 w-3.5" />
+                  </button>
+                </QuickTooltip>
+              </div>
             </div>
           ))}
         </div>

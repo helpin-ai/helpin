@@ -1395,7 +1395,7 @@ function TaskDetailPanelBody({
           {/* Description */}
           <div
             className={cn(
-              'relative mt-4 rounded-lg transition-[box-shadow,background-color]',
+              'group/desc relative mt-4 rounded-lg pb-3 transition-[box-shadow,background-color]',
               descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
             )}
             onDragEnter={handleDescriptionDragEnter}
@@ -1431,7 +1431,7 @@ function TaskDetailPanelBody({
                 </div>
               </div>
             ) : (
-              <div className="group/desc relative">
+              <div className="relative">
                 {form.description ? (
                   <RichTextMentionContent
                     html={form.description}
@@ -1443,7 +1443,7 @@ function TaskDetailPanelBody({
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
                 )}
-                <div className="mt-2 flex justify-end">
+                <div className="mt-2 flex justify-end opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
                   <button
                     type="button"
                     className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
@@ -1458,7 +1458,7 @@ function TaskDetailPanelBody({
           </div>
 
           {/* Action bar — "Add to Task" */}
-          <div className="mt-3 border-t border-border/60 pt-3">
+          <div className="border-t border-border/60 pt-3">
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"

@@ -105,34 +105,36 @@ function SortableItem({
 
       {/* Assignee avatar / picker */}
       <div className="flex items-center gap-1.5">
-        <MemberPickerPopover
-          value={item.assignee_id || '__none__'}
-          members={members}
-          noneLabel="Unassigned"
-          getMemberValue={(member) => member.user_id || member.id}
-          onChange={(value) => {
-            onAssigneeChange(item.id, value === '__none__' ? null : value);
-          }}
-          align="end"
-          triggerClassName={assignee
-            ? 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-80'
-            : 'h-5 w-5 shrink-0 flex items-center justify-center rounded-full border border-dashed border-border/60 opacity-0 group-hover:opacity-100 transition-opacity text-foreground/50 hover:text-foreground hover:border-foreground/40'
-          }
-          contentClassName="w-[220px]"
-          renderTrigger={() => assignee ? (
-            <UserAvatar
-              name={assignee.display_name}
-              avatarUrl={assignee.avatar_url}
-              avatarStyle={assignee.avatar_style}
-              avatarSeed={assignee.avatar_seed}
-              avatarBackgroundMode={assignee.avatar_background_mode}
-              avatarBackgroundColor={assignee.avatar_background_color}
-              className="h-5 w-5 text-[8px]"
-            />
-          ) : (
-            <PlusSignIcon className="h-2.5 w-2.5" />
-          )}
-        />
+        <QuickTooltip label={assignee ? `Assigned to ${assignee.display_name}` : 'Assign checklist item'}>
+          <MemberPickerPopover
+            value={item.assignee_id || '__none__'}
+            members={members}
+            noneLabel="Unassigned"
+            getMemberValue={(member) => member.user_id || member.id}
+            onChange={(value) => {
+              onAssigneeChange(item.id, value === '__none__' ? null : value);
+            }}
+            align="end"
+            triggerClassName={assignee
+              ? 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-80'
+              : 'h-5 w-5 shrink-0 flex items-center justify-center rounded-full border border-dashed border-border/70 bg-background text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-accent hover:text-foreground'
+            }
+            contentClassName="w-[220px]"
+            renderTrigger={() => assignee ? (
+              <UserAvatar
+                name={assignee.display_name}
+                avatarUrl={assignee.avatar_url}
+                avatarStyle={assignee.avatar_style}
+                avatarSeed={assignee.avatar_seed}
+                avatarBackgroundMode={assignee.avatar_background_mode}
+                avatarBackgroundColor={assignee.avatar_background_color}
+                className="h-5 w-5 text-[8px]"
+              />
+            ) : (
+              <PlusSignIcon className="h-2.5 w-2.5" />
+            )}
+          />
+        </QuickTooltip>
         {assignee ? (
           <QuickTooltip label="Unassign">
             <button
