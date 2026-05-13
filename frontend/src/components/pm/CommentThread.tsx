@@ -1064,6 +1064,7 @@ export function CommentThread({
             const isExpanded = expandedThreads.has(entry.comment.id);
             const isActive = activeCommentId === entry.comment.id;
             const replyComposerOpen = replyComposerOpenFor === entry.comment.id;
+            const hasVisibleReplies = isExpanded && (entry.replies?.length ?? 0) > 0;
             return (
               <div
                 key={entry.comment.id}
@@ -1088,9 +1089,9 @@ export function CommentThread({
                   </button>
                 )}
 
-                {(isExpanded || replyComposerOpen) && (
+                {(hasVisibleReplies || replyComposerOpen) && (
                   <div className="relative mt-3 ml-3 pl-7">
-                    {isExpanded && (
+                    {hasVisibleReplies && (
                       <>
                         <button
                           type="button"
@@ -1100,11 +1101,11 @@ export function CommentThread({
                         >
                           <MinusSignIcon className="h-3 w-3" />
                         </button>
-                        <div className="absolute left-2.5 top-5 bottom-0 w-px bg-border/60" />
+                        <div className="absolute left-2.5 -top-3 bottom-0 w-px bg-border/60" />
                       </>
                     )}
                     <div className="space-y-3">
-                      {isExpanded && entry.replies?.map((reply) => (
+                      {hasVisibleReplies && entry.replies?.map((reply) => (
                         <div key={reply.comment.id}>
                           {renderComment(reply, true)}
                         </div>

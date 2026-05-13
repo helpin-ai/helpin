@@ -587,4 +587,78 @@ describe('CommentThread attachment uploads', () => {
 
     expect(container.querySelector('[data-testid="comment-editor"]')).toBeTruthy()
   })
+
+  it('does not show thread collapse chrome when only a reply editor is open', async () => {
+    const parent = existingCommentFromUser('comment-parent', 'user-1', '<p>Parent comment</p>')
+
+    const { container } = renderThread({ comments: [parent] })
+
+    const replyButton = container.querySelector<HTMLButtonElement>('[aria-label="Reply"]')
+    expect(replyButton).toBeTruthy()
+    await act(async () => {
+      replyButton?.click()
+    })
+
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="Collapse replies"]')).toBeNull()
+  })
+
+  it('removes thread collapse chrome after the last visible reply is deleted', async () => {
+    const parent = existingCommentFromUser('comment-parent', 'user-1', '<p>Parent comment</p>')
+    const reply = existingCommentFromUser('comment-reply', 'user-1', '<p>Visible reply</p>')
+    reply.comment.parent_id = parent.comment.id
+    parent.replies = [reply]
+    parent.reply_count = 1
+    const onCommentsChange = vi.fn()
+    const commentService = createCommentService()
+    commentService.remove.mockResolvedValue({ data: null, error: null, status: 200 })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <CommentThread
+          workspaceId={workspaceId}
+          entityType="task"
+          entityId="task-1"
+          comments={[parent]}
+          currentUserId="user-1"
+          commentService={commentService}
+          onCommentsChange={onCommentsChange}
+        />,
+      )
+    })
+
+    expect(container.querySelector('[aria-label="Collapse replies"]')).toBeTruthy()
+
+    const deleteButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).findLast(
+      (button) => button.textContent?.trim() === 'Delete',
+    )
+    expect(deleteButton).toBeTruthy()
+    await act(async () => {
+      deleteButton?.click()
+    })
+
+    const nextComments = onCommentsChange.mock.calls.at(-1)?.[0] as CommentWithAuthor[]
+    expect(nextComments[0].reply_count).toBe(0)
+
+    await act(async () => {
+      root.render(
+        <CommentThread
+          workspaceId={workspaceId}
+          entityType="task"
+          entityId="task-1"
+          comments={nextComments}
+          currentUserId="user-1"
+          commentService={commentService}
+          onCommentsChange={onCommentsChange}
+        />,
+      )
+    })
+
+    expect(container.querySelector('[aria-label="Collapse replies"]')).toBeNull()
+    act(() => root.unmount())
+  })
 })
