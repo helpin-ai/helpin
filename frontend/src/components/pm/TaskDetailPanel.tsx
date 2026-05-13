@@ -1446,7 +1446,7 @@ function TaskDetailPanelBody({
                 <div className="mt-2 flex justify-end">
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
                     onClick={() => setEditingDescription(true)}
                   >
                     <PencilEdit01Icon className="h-3 w-3" />
@@ -1458,7 +1458,7 @@ function TaskDetailPanelBody({
           </div>
 
           {/* Action bar — "Add to Task" */}
-          <div className="mt-6 border-t border-border/60 pt-3">
+          <div className="mt-3 border-t border-border/60 pt-3">
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -1597,7 +1597,7 @@ function TaskDetailPanelBody({
           )}
 
           {/* Separator */}
-          <Separator className="my-6 bg-border/60" />
+          {(commentsLoading || comments.length > 0) && <Separator className="my-6 bg-border/60" />}
 
           {/* Comments + Activity */}
           <div>

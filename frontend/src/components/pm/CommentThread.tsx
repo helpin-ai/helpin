@@ -1074,7 +1074,7 @@ export function CommentThread({
                 }`}
               >
                 {hasVisibleReplies && (
-                  <div className="absolute left-[26px] top-9 bottom-3 w-px bg-border/60" />
+                  <div className="absolute left-[26.5px] top-9 bottom-3 w-px bg-border/60" />
                 )}
                 {renderComment(entry, false)}
 
@@ -1095,14 +1095,17 @@ export function CommentThread({
                 {(hasVisibleReplies || replyComposerOpen) && (
                   <div className="relative mt-3 ml-0 pl-9">
                     {hasVisibleReplies && (
-                      <button
-                        type="button"
-                        aria-label="Collapse replies"
-                        className="absolute left-1 top-[-2px] z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
-                        onClick={() => toggleThread(entry.comment.id)}
-                      >
-                        <MinusSignIcon className="h-3 w-3" />
-                      </button>
+                      <>
+                        <div className="absolute left-[14.5px] top-2 h-px w-[21.5px] bg-border/60" />
+                        <button
+                          type="button"
+                          aria-label="Collapse replies"
+                          className="absolute left-[4.5px] top-[-2px] z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
+                          onClick={() => toggleThread(entry.comment.id)}
+                        >
+                          <MinusSignIcon className="h-3 w-3" />
+                        </button>
+                      </>
                     )}
                     <div className="space-y-3">
                       {hasVisibleReplies && entry.replies?.map((reply) => (
