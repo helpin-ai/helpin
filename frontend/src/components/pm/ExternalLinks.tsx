@@ -130,12 +130,6 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
           ))}
         </div>
       )}
-      {links.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          No external links yet.
-        </div>
-      )}
-
       <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
         <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
