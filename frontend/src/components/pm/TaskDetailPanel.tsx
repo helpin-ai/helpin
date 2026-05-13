@@ -1595,7 +1595,7 @@ function TaskDetailPanelBody({
           )}
 
           {/* Separator */}
-          <Separator className="my-6" />
+          <Separator className="my-6 bg-border/60" />
 
           {/* Comments + Activity */}
           <div>
