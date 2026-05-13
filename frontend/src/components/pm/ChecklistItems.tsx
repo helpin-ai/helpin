@@ -79,7 +79,7 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-1.5 rounded-md px-1 py-1 hover:bg-accent/50 transition-colors ${isDragging ? 'opacity-50 bg-accent/50' : ''}`}
+      className={`group flex items-center gap-1.5 rounded-md border border-transparent px-2 py-1.5 transition-colors hover:border-border/60 hover:bg-muted/30 ${isDragging ? 'opacity-50 border-border/60 bg-muted/30' : ''}`}
     >
       <button
         type="button"
