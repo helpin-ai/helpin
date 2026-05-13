@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
+import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Button } from '@/components/ui/button';
 import {
@@ -70,6 +70,7 @@ function SortableItem({
     () => members.find((m) => (m.user_id || m.id) === item.assignee_id),
     [members, item.assignee_id],
   );
+  const assigneeLabel = assignee ? `Assigned to ${assignee.display_name}` : 'Assign checklist item';
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -80,16 +81,8 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-1.5 px-2 py-1 ${isDragging ? 'opacity-50' : ''}`}
+      className={`group flex items-center gap-2 py-1 ${isDragging ? 'opacity-50' : ''}`}
     >
-      <button
-        type="button"
-        className="h-5 w-5 shrink-0 flex items-center justify-center cursor-grab text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
-        {...attributes}
-        {...listeners}
-      >
-        <DragDropVerticalIcon className="h-3 w-3" />
-      </button>
       <input
         type="checkbox"
         checked={item.completed}
@@ -105,23 +98,25 @@ function SortableItem({
       </span>
 
       {/* Assignee avatar / picker */}
-      <div className="flex items-center gap-1.5">
-        <QuickTooltip label={assignee ? `Assigned to ${assignee.display_name}` : 'Assign checklist item'}>
-          <MemberPickerPopover
-            value={item.assignee_id || '__none__'}
-            members={members}
-            noneLabel="Unassigned"
-            getMemberValue={(member) => member.user_id || member.id}
-            onChange={(value) => {
-              onAssigneeChange(item.id, value === '__none__' ? null : value);
-            }}
-            align="end"
-            triggerClassName={assignee
-              ? 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-80'
-              : 'h-5 w-5 shrink-0 flex items-center justify-center rounded-full border border-dashed border-border/70 bg-background text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-accent hover:text-foreground'
-            }
-            contentClassName="w-[220px]"
-            renderTrigger={() => assignee ? (
+      <div className="ml-auto flex items-center gap-1">
+        <MemberPickerPopover
+          value={item.assignee_id || '__none__'}
+          members={members}
+          noneLabel="Unassigned"
+          triggerLabel={assigneeLabel}
+          getMemberValue={(member) => member.user_id || member.id}
+          onChange={(value) => {
+            onAssigneeChange(item.id, value === '__none__' ? null : value);
+          }}
+          align="end"
+          triggerClassName={assignee
+            ? 'h-7 w-7 shrink-0 justify-center overflow-visible rounded-full px-0 py-0 hover:bg-accent'
+            : 'h-7 w-7 shrink-0 justify-center rounded-full border border-dashed border-border/80 bg-muted/40 px-0 py-0 text-muted-foreground hover:border-foreground/40 hover:bg-accent hover:text-foreground'
+          }
+          contentClassName="w-[220px]"
+          renderTrigger={() => assignee ? (
+            <>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-visible rounded-full">
               <UserAvatar
                 name={assignee.display_name}
                 avatarUrl={assignee.avatar_url}
@@ -130,37 +125,36 @@ function SortableItem({
                 avatarBackgroundMode={assignee.avatar_background_mode}
                 avatarBackgroundColor={assignee.avatar_background_color}
                 className="h-5 w-5 text-[8px]"
+                fallbackClassName="text-[8px]"
               />
-            ) : (
-              <PlusSignIcon className="h-2.5 w-2.5" />
-            )}
-          />
+              </span>
+              <span className="sr-only">{assigneeLabel}</span>
+            </>
+          ) : (
+            <PlusSignIcon className="h-3.5 w-3.5" />
+          )}
+        />
+        <QuickTooltip label="Delete">
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:bg-accent hover:text-destructive cursor-pointer"
+            onClick={() => onDelete(item.id)}
+          >
+            <Delete01Icon className="h-3.5 w-3.5" />
+          </button>
         </QuickTooltip>
-        {assignee ? (
-          <QuickTooltip label="Unassign">
-            <button
-              type="button"
-              className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-              onClick={(event) => {
-                event.stopPropagation();
-                onAssigneeChange(item.id, null);
-              }}
-            >
-              <Cancel01Icon className="h-2.5 w-2.5" />
-            </button>
-          </QuickTooltip>
-        ) : null}
-      </div>
 
-      <QuickTooltip label="Delete">
-        <button
-          type="button"
-          className="h-5 w-5 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-foreground/50 hover:text-destructive cursor-pointer"
-          onClick={() => onDelete(item.id)}
-        >
-          <Delete01Icon className="h-3 w-3" />
-        </button>
-      </QuickTooltip>
+        <QuickTooltip label="Move item">
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md cursor-grab text-muted-foreground/60 opacity-0 transition-opacity hover:bg-accent hover:text-muted-foreground group-hover:opacity-100 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <DragDropVerticalIcon className="h-3.5 w-3.5" />
+          </button>
+        </QuickTooltip>
+      </div>
     </div>
   );
 }
@@ -297,8 +291,8 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
 
       {/* Progress bar */}
       {items.length > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
+        <div className="mt-3 flex items-center gap-2">
+          <span className="w-8 text-left text-xs tabular-nums text-muted-foreground">
             {Math.round((completedCount / items.length) * 100)}%
           </span>
           <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">

@@ -1073,9 +1073,6 @@ export function CommentThread({
                   isActive ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/20' : ''
                 }`}
               >
-                {hasVisibleReplies && (
-                  <div className="absolute left-[26.5px] top-9 bottom-3 w-px bg-border/60" />
-                )}
                 {renderComment(entry, false)}
 
                 {hasReplies && !isExpanded && (
@@ -1107,9 +1104,12 @@ export function CommentThread({
                         </button>
                       </>
                     )}
-                    <div className="space-y-3">
+                    <div className="relative space-y-3">
+                      {hasVisibleReplies && (entry.replies?.length ?? 0) > 1 && (
+                        <div className="absolute left-[13.5px] top-3.5 bottom-3.5 w-px bg-border/60" />
+                      )}
                       {hasVisibleReplies && entry.replies?.map((reply) => (
-                        <div key={reply.comment.id}>
+                        <div key={reply.comment.id} className="relative">
                           {renderComment(reply, true)}
                         </div>
                       ))}
