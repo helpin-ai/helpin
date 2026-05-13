@@ -1058,7 +1058,7 @@ export function CommentThread({
 
       {/* Thread list */}
       {comments.length > 0 && (
-        <div className="divide-y divide-border/50">
+        <div className="space-y-2">
           {comments.map((entry) => {
             const hasReplies = (entry.reply_count ?? 0) > 0;
             const isExpanded = expandedThreads.has(entry.comment.id);
@@ -1089,16 +1089,20 @@ export function CommentThread({
                 )}
 
                 {(isExpanded || replyComposerOpen) && (
-                  <div className="relative mt-3 ml-3 pl-5">
-                    <button
-                      type="button"
-                      aria-label="Collapse replies"
-                      className="absolute left-0 top-0 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
-                      onClick={() => toggleThread(entry.comment.id)}
-                    >
-                      <MinusSignIcon className="h-3 w-3" />
-                    </button>
-                    <div className="absolute left-2.5 top-5 bottom-0 w-px bg-border/60" />
+                  <div className="relative mt-3 ml-3 pl-7">
+                    {isExpanded && (
+                      <>
+                        <button
+                          type="button"
+                          aria-label="Collapse replies"
+                          className="absolute left-0 top-0 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
+                          onClick={() => toggleThread(entry.comment.id)}
+                        >
+                          <MinusSignIcon className="h-3 w-3" />
+                        </button>
+                        <div className="absolute left-2.5 top-5 bottom-0 w-px bg-border/60" />
+                      </>
+                    )}
                     <div className="space-y-3">
                       {isExpanded && entry.replies?.map((reply) => (
                         <div key={reply.comment.id}>
