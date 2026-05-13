@@ -547,6 +547,7 @@ describe('CommentThread attachment uploads', () => {
 
     expect(container.textContent).toContain('Visible reply')
     expect(container.querySelector('[data-testid="comment-editor"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Reply in thread"]')).toBeTruthy()
 
     const collapseButton = container.querySelector<HTMLButtonElement>('[aria-label="Collapse replies"]')
     expect(collapseButton).toBeTruthy()
@@ -564,6 +565,26 @@ describe('CommentThread attachment uploads', () => {
     })
 
     expect(container.textContent).toContain('Visible reply')
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeTruthy()
+  })
+
+  it('opens the parent thread reply editor from a nested reply action', async () => {
+    const parent = existingCommentFromUser('comment-parent', 'user-1', '<p>Parent comment</p>')
+    const reply = existingCommentFromUser('comment-reply', 'user-2', '<p>Visible reply</p>')
+    reply.comment.parent_id = parent.comment.id
+    parent.replies = [reply]
+    parent.reply_count = 1
+
+    const { container } = renderThread({ comments: [parent] })
+
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeNull()
+
+    const replyInThreadButton = container.querySelector<HTMLButtonElement>('[aria-label="Reply in thread"]')
+    expect(replyInThreadButton).toBeTruthy()
+    await act(async () => {
+      replyInThreadButton?.click()
+    })
+
     expect(container.querySelector('[data-testid="comment-editor"]')).toBeTruthy()
   })
 })

@@ -894,6 +894,7 @@ export function CommentThread({
     const groupClass = isReply ? 'group/reply' : 'group';
     const isResolved = Boolean(entry.comment.resolved_at);
     const authorName = entry.author.full_name || entry.author.email;
+    const replyTargetId = isReply ? entry.comment.parent_id : entry.comment.id;
 
     return (
       <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''} flex gap-2`}>
@@ -954,40 +955,31 @@ export function CommentThread({
             )}
           </div>
           {!isEditing && (
-            <div className="shrink-0 mt-0.5 grid">
-              <span className={`col-start-1 row-start-1 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground ${isReply ? 'group-hover/reply:invisible' : 'group-hover:invisible'}`}>
-                {isResolved && (
-                  <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-                    <CheckmarkCircle02Icon className="h-3 w-3" />
-                    Resolved
-                  </span>
-                )}
-                {formatRelativeTime(entry.comment.created_at)}
-              </span>
-              <div className={`col-start-1 row-start-1 invisible flex items-center justify-end gap-0.5 ${isReply ? 'group-hover/reply:visible' : 'group-hover:visible'}`}>
+            <div className="shrink-0 mt-0.5 flex items-center justify-end gap-1.5">
+              <div className={`flex items-center justify-end gap-0.5 opacity-0 transition-opacity ${isReply ? 'group-hover/reply:opacity-100 group-focus-within/reply:opacity-100' : 'group-hover:opacity-100 group-focus-within:opacity-100'}`}>
                 <Popover>
                   <PopoverTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      className="flex h-7 w-7 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
                       aria-label="React"
                     >
-                      <SmilePlusIcon className="h-3.5 w-3.5" />
+                      <SmilePlusIcon className="h-4 w-4" />
                     </button>
                   </PopoverTrigger>
                   <PopoverContent side="top" align="end" className="w-auto p-1">
                     <ReactionPicker onPick={(emoji) => toggleReaction(entry.comment.id, emoji)} />
                   </PopoverContent>
                 </Popover>
-                {!isReply && (
-                  <QuickTooltip label="Reply">
+                {replyTargetId && (
+                  <QuickTooltip label={isReply ? 'Reply in thread' : 'Reply'}>
                     <button
                       type="button"
-                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
-                      onClick={() => openReply(entry.comment.id)}
-                      aria-label="Reply"
+                      className="flex h-7 w-7 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      onClick={() => openReply(replyTargetId)}
+                      aria-label={isReply ? 'Reply in thread' : 'Reply'}
                     >
-                      <ArrowTurnBackwardIcon className="h-3.5 w-3.5 -scale-y-100" />
+                      <ArrowTurnBackwardIcon className="h-4 w-4 -scale-y-100" />
                     </button>
                   </QuickTooltip>
                 )}
@@ -995,14 +987,14 @@ export function CommentThread({
                   <QuickTooltip label={isResolved ? 'Reopen' : 'Resolve'}>
                     <button
                       type="button"
-                      className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                      className="flex h-7 w-7 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
                       onClick={() => void setCommentResolved(entry.comment.id, !isResolved)}
                       aria-label={isResolved ? 'Reopen' : 'Resolve'}
                     >
                       {isResolved ? (
-                        <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />
+                        <ArrowReloadHorizontalIcon className="h-4 w-4" />
                       ) : (
-                        <CheckmarkCircle02Icon className="h-3.5 w-3.5" />
+                        <CheckmarkCircle02Icon className="h-4 w-4" />
                       )}
                     </button>
                   </QuickTooltip>
@@ -1012,10 +1004,10 @@ export function CommentThread({
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="flex h-6 w-6 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
+                        className="flex h-7 w-7 items-center justify-center rounded text-foreground/60 hover:bg-accent hover:text-foreground"
                         aria-label="More"
                       >
-                        <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                        <MoreHorizontalIcon className="h-4 w-4" />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-36">
@@ -1035,6 +1027,15 @@ export function CommentThread({
                   </DropdownMenu>
                 )}
               </div>
+              <span className="flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+                {isResolved && (
+                  <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
+                    <CheckmarkCircle02Icon className="h-3 w-3" />
+                    Resolved
+                  </span>
+                )}
+                {formatRelativeTime(entry.comment.created_at)}
+              </span>
             </div>
           )}
         </div>
@@ -1092,12 +1093,12 @@ export function CommentThread({
                     <button
                       type="button"
                       aria-label="Collapse replies"
-                      className="absolute left-0 top-0 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-background text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                      className="absolute left-0 top-0 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
                       onClick={() => toggleThread(entry.comment.id)}
                     >
                       <MinusSignIcon className="h-3 w-3" />
                     </button>
-                    <div className="absolute left-2 top-4 bottom-0 w-px bg-border/60" />
+                    <div className="absolute left-2.5 top-5 bottom-0 w-px bg-border/60" />
                     <div className="space-y-3">
                       {isExpanded && entry.replies?.map((reply) => (
                         <div key={reply.comment.id}>
