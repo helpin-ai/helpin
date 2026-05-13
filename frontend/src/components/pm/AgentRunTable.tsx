@@ -87,13 +87,14 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
         const tokenBreakdown = formatRunTokenUsageBreakdown(run).filter((line) => !line.startsWith('Total:'));
 
         return (
-          <button
-            key={run.id}
-            onClick={() => onSelectRun(run)}
-            className={`${TABLE_ROW} w-full cursor-pointer text-left text-xs ${
-              isSelected ? 'border-l-2 border-l-primary bg-accent/30' : 'border-l-2 border-l-transparent'
-            }`}
-          >
+          <QuickTooltip key={run.id} label="View run">
+            <button
+              onClick={() => onSelectRun(run)}
+              title="View run"
+              className={`${TABLE_ROW} w-full cursor-pointer text-left text-xs ${
+                isSelected ? 'border-l-2 border-l-primary bg-accent/30' : 'border-l-2 border-l-transparent'
+              }`}
+            >
             <div className={TABLE_CELL} style={{ width: 120 }}>
               {run.error_message ? (
                 <Tooltip>
@@ -148,7 +149,8 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
                 <span className="tabular-nums">{totalTokens}</span>
               )}
             </div>
-          </button>
+            </button>
+          </QuickTooltip>
         );
       })}
     </div>
