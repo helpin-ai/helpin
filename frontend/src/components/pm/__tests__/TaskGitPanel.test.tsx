@@ -7,13 +7,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/services/gitService', () => ({
   gitService: {
     getTaskGitLinks: vi.fn(),
+    getTaskDeliveryTarget: vi.fn(),
   },
 }))
 
 import { gitService } from '@/lib/services/gitService'
 import { queryKeys } from '@/lib/queryKeys'
 import { TaskGitPanel } from '../TaskGitPanel'
-import type { TaskGitLink } from '@/lib/pmTypes'
+import type { TaskDeliveryTarget, TaskGitLink } from '@/lib/pmTypes'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -38,9 +39,32 @@ function makeLink(prStatus: string): TaskGitLink {
   }
 }
 
-async function renderPanel(links: TaskGitLink[]) {
+function makeDeliveryTarget(overrides: Partial<TaskDeliveryTarget> = {}): TaskDeliveryTarget {
+  return {
+    id: 'delivery-1',
+    workspace_id: 'ws-1',
+    task_id: 'task-1',
+    repo_full_name: 'helpin-ai/helpin',
+    base_branch: 'main',
+    working_branch: 'feature/task-1',
+    delivery_state: 'active',
+    active_pr_number: 31,
+    active_pr_title: 'Fix task status sync',
+    active_pr_url: 'https://github.com/helpin-ai/helpin/pull/31',
+    active_pr_status: 'open',
+    last_commit_sha: 'abcdef1234567890',
+    last_synced_at: '2026-04-23T08:00:00Z',
+    created_at: '2026-04-23T08:00:00Z',
+    updated_at: '2026-04-23T08:00:00Z',
+    ...overrides,
+  }
+}
+
+async function renderPanel(links: TaskGitLink[], deliveryTarget: TaskDeliveryTarget | null = makeDeliveryTarget()) {
   vi.mocked(gitService.getTaskGitLinks)
     .mockResolvedValueOnce({ data: links, error: null, status: 200 })
+  vi.mocked(gitService.getTaskDeliveryTarget)
+    .mockResolvedValueOnce({ data: deliveryTarget, error: null, status: deliveryTarget ? 200 : 404 })
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   container = document.createElement('div')
@@ -76,6 +100,8 @@ describe('TaskGitPanel', () => {
     vi.mocked(gitService.getTaskGitLinks)
       .mockResolvedValueOnce({ data: [makeLink('open')], error: null, status: 200 })
       .mockResolvedValueOnce({ data: [makeLink('merged')], error: null, status: 200 })
+    vi.mocked(gitService.getTaskDeliveryTarget)
+      .mockResolvedValue({ data: makeDeliveryTarget(), error: null, status: 200 })
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     container = document.createElement('div')
@@ -149,5 +175,24 @@ describe('TaskGitPanel', () => {
     expect(branchLink).toBeTruthy()
     const prLink = container.querySelector('a[href="https://github.com/helpin-ai/helpin/pull/31"]')
     expect(prLink).toBeTruthy()
+  })
+
+  it('shows the working branch flowing into the base branch when delivery target data exists', async () => {
+    await renderPanel([
+      {
+        ...makeLink('open'),
+        branch: 'chore/hel-46-frequent-logouts-session-not-shared-across-tabs',
+        commit_sha: 'd9ff653abcdef123',
+      },
+    ], makeDeliveryTarget({
+      base_branch: 'main',
+      working_branch: 'chore/hel-46-frequent-logouts-session-not-shared-across-tabs',
+    }))
+
+    expect(gitService.getTaskDeliveryTarget).toHaveBeenCalledWith('ws-1', 'task-1')
+    expect(container.textContent).toContain('chore/hel-46-frequent-logouts-session-not-shared-across-tabs')
+    expect(container.textContent).toContain('main')
+    expect(container.textContent).toContain('→')
+    expect(container.textContent).toContain('d9ff653')
   })
 })

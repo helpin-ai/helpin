@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { gitService } from '@/lib/services/gitService';
 import { queryKeys } from '@/lib/queryKeys';
-import type { TaskGitLink } from '@/lib/pmTypes';
+import type { TaskDeliveryTarget, TaskGitLink } from '@/lib/pmTypes';
 
 const PR_STATUS_COLORS: Record<string, string> = {
   open: 'bg-green-100 text-green-700 border-green-500/30 dark:bg-green-900/30 dark:text-green-400',
@@ -29,6 +29,12 @@ function shortSha(sha?: string) {
   return sha ? sha.slice(0, 7) : '';
 }
 
+function branchFlow(link: TaskGitLink, deliveryTarget?: TaskDeliveryTarget | null) {
+  const workingBranch = link.branch ?? deliveryTarget?.working_branch;
+  const baseBranch = deliveryTarget?.base_branch;
+  return { workingBranch, baseBranch };
+}
+
 export function TaskGitPanel({
   taskId,
   workspaceId,
@@ -41,6 +47,13 @@ export function TaskGitPanel({
     queryFn: async () => {
       const res = await gitService.getTaskGitLinks(workspaceId, taskId);
       return res.data ?? [];
+    },
+  });
+  const { data: deliveryTarget } = useQuery({
+    queryKey: queryKeys.git.taskDeliveryTarget(workspaceId, taskId),
+    queryFn: async () => {
+      const res = await gitService.getTaskDeliveryTarget(workspaceId, taskId);
+      return res.data ?? null;
     },
   });
 
@@ -70,6 +83,9 @@ export function TaskGitPanel({
             const kind = gitLinkKind(link);
             const Icon = gitLinkIcon(link);
             const updatedLabel = formatDistanceToNow(parseISO(link.updated_at), { addSuffix: true });
+            const { workingBranch, baseBranch } = branchFlow(link, deliveryTarget);
+            const commitSha = link.commit_sha ?? deliveryTarget?.last_commit_sha;
+            const commitLabel = shortSha(commitSha);
             return (
               <div key={link.id} className="group relative flex gap-3 px-3 py-3 text-xs hover:bg-muted/30">
                 <div className="relative flex shrink-0 justify-center">
@@ -92,13 +108,21 @@ export function TaskGitPanel({
                         {link.pr_status}
                       </Badge>
                     ) : null}
-                    {link.commit_sha ? (
-                      <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                        {shortSha(link.commit_sha)}
-                      </code>
-                    ) : null}
                     <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">{updatedLabel}</span>
                   </div>
+
+                  {link.pr_url ? (
+                    <a
+                      href={link.pr_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex max-w-full items-center gap-1 font-medium text-foreground transition-colors hover:text-primary"
+                    >
+                      {link.pr_number ? <span className="shrink-0">#{link.pr_number}</span> : null}
+                      <span className="truncate">{link.pr_title ?? 'Pull request'}</span>
+                      <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
+                    </a>
+                  ) : null}
 
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
                     <a
@@ -110,31 +134,37 @@ export function TaskGitPanel({
                       <span className="truncate">{link.repo}</span>
                       <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
                     </a>
-                    {link.branch ? (
+                    {workingBranch ? (
                       <>
-                        <span className="text-border">/</span>
+                        <span className="text-border">·</span>
                         <a
-                          href={`https://github.com/${link.repo}/tree/${link.branch}`}
+                          href={`https://github.com/${link.repo}/tree/${workingBranch}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex min-w-0 items-center gap-1 transition-colors hover:text-primary"
                         >
-                          <span className="truncate font-mono text-[11px]">{link.branch}</span>
+                          <span className="truncate font-mono text-[11px]">{workingBranch}</span>
                           <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
                         </a>
+                        {baseBranch ? (
+                          <>
+                            <span className="text-muted-foreground/60">→</span>
+                            <span className="font-mono text-[11px] text-muted-foreground">{baseBranch}</span>
+                          </>
+                        ) : null}
                       </>
                     ) : null}
                   </div>
 
-                  {link.pr_url ? (
+                  {commitSha ? (
                     <a
-                      href={link.pr_url}
+                      href={`https://github.com/${link.repo}/commit/${commitSha}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex max-w-full items-center gap-1 text-primary hover:underline"
+                      className="inline-flex max-w-full items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-primary"
                     >
-                      <span className="shrink-0">#{link.pr_number}</span>
-                      <span className="truncate">{link.pr_title ?? 'Pull request'}</span>
+                      <GitCommitIcon className="h-3 w-3 shrink-0" />
+                      <code className="font-mono">{commitLabel}</code>
                       <LinkSquare01Icon className="h-2.5 w-2.5 shrink-0" />
                     </a>
                   ) : null}
