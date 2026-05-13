@@ -122,9 +122,11 @@ const workspaceId = 'ws-1'
 function renderThread({
   comments = [],
   commentService = createCommentService(),
+  hideEmptyState = false,
 }: {
   comments?: CommentWithAuthor[]
   commentService?: ReturnType<typeof createCommentService>
+  hideEmptyState?: boolean
 } = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -139,6 +141,7 @@ function renderThread({
         comments={comments}
         currentUserId="user-1"
         commentService={commentService}
+        hideEmptyState={hideEmptyState}
         onCommentsChange={vi.fn()}
       />,
     )
@@ -345,6 +348,30 @@ describe('CommentThread attachment uploads', () => {
       expect.objectContaining({ attachment_ids: ['att-1', 'att-2'] }),
     )
     expect(pmAttachmentService.remove).not.toHaveBeenCalled()
+  })
+
+  it('keeps top spacing above the empty top-level composer when the empty state is hidden', () => {
+    const { container } = renderThread({ comments: [], hideEmptyState: true })
+
+    const composer = container.querySelector<HTMLElement>('[data-testid="comment-editor"]')
+    const composerFrame = composer?.parentElement
+
+    expect(composerFrame?.className).toContain('mt-6')
+  })
+
+  it('extends the collapse stem up to the parent comment avatar', () => {
+    const parent = existingCommentByCurrentUser('parent-1')
+    const reply = existingCommentFromUser('reply-1', 'user-2', '<p>reply</p>')
+    reply.comment.parent_id = parent.comment.id
+    parent.replies = [reply]
+    parent.reply_count = 1
+
+    const { container } = renderThread({ comments: [parent] })
+
+    const topStem = container.querySelector<HTMLElement>('[data-comment-collapse-stem="top"]')
+
+    expect(topStem?.className).toContain('top-[-13px]')
+    expect(topStem?.className).toContain('h-[11px]')
   })
 
   it('navigates between multiple image attachments in a comment preview', async () => {

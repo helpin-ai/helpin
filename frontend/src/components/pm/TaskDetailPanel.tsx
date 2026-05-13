@@ -633,8 +633,10 @@ function TaskDetailPanelBody({
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [showRelationships, setShowRelationships] = useState(false);
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
+  const relationshipsToggleActive = showRelationships || relationshipComposerOpen;
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const memberNameMap = useMemo(
@@ -1476,11 +1478,19 @@ function TaskDetailPanelBody({
                 ref={relationshipButtonRef}
                 type="button"
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                  relationshipComposerOpen
+                  relationshipsToggleActive
                     ? 'border-primary/30 bg-primary/10 text-primary'
                     : 'border-border/60 text-muted-foreground hover:bg-accent'
                 }`}
-                onClick={() => setRelationshipComposerOpen(true)}
+                onClick={() => {
+                  setShowRelationships((open) => {
+                    const nextOpen = !open;
+                    if (!nextOpen) {
+                      setRelationshipComposerOpen(false);
+                    }
+                    return nextOpen;
+                  });
+                }}
               >
                 <ArrowLeftRightIcon className="h-3 w-3" />
                 Relationships
@@ -1548,6 +1558,7 @@ function TaskDetailPanelBody({
             onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
             composerOpen={relationshipComposerOpen}
             onComposerOpenChange={setRelationshipComposerOpen}
+            visible={showRelationships}
             externalTriggerRef={relationshipButtonRef}
           />
 

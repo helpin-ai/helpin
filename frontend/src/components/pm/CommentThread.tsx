@@ -1095,7 +1095,7 @@ export function CommentThread({
                       <>
                         <div
                           data-comment-collapse-stem="top"
-                          className="absolute left-[14.5px] top-[-12px] h-[10px] w-px bg-border/60"
+                          className="absolute left-[14.5px] top-[-13px] h-[11px] w-px bg-border/60"
                         />
                         <div className="absolute left-[14.5px] top-2 h-px w-[21.5px] bg-border/60" />
                         <button
@@ -1167,7 +1167,7 @@ export function CommentThread({
       )}
       {!hideTopLevelComposer && (comments.length === 0 || topComposerOpen) && (
       <div
-        className={`relative rounded-lg ${composerDragging ? 'ring-1 ring-primary/50' : ''}`}
+        className={`relative rounded-lg ${comments.length === 0 && hideEmptyState ? 'mt-6' : ''} ${composerDragging ? 'ring-1 ring-primary/50' : ''}`}
         onDragEnter={handleComposerDragEnter}
         onDragOver={handleComposerDragOver}
         onDragLeave={handleComposerDragLeave}
