@@ -219,6 +219,18 @@ describe('ChecklistItems', () => {
       unassignedOption?.click()
     })
 
-    expect(pmChecklistService.update).toHaveBeenCalledWith('ws-1', 'item-1', { assignee_id: undefined })
+    expect(pmChecklistService.update).toHaveBeenCalledWith('ws-1', 'item-1', { assignee_id: '' })
+  })
+
+  it('keeps the unassigned picker as a far-right hover action labeled Assign', async () => {
+    await renderChecklist([
+      makeChecklistItem(),
+    ])
+
+    const trigger = container?.querySelector<HTMLButtonElement>('button[aria-label="Assign"]')
+    expect(trigger).toBeTruthy()
+    expect(trigger?.className).toContain('ml-auto')
+    expect(trigger?.className).toContain('opacity-0')
+    expect(trigger?.className).toContain('group-hover:opacity-100')
   })
 })

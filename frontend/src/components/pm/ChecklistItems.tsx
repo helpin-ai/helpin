@@ -70,7 +70,7 @@ function SortableItem({
     () => members.find((m) => (m.user_id || m.id) === item.assignee_id),
     [members, item.assignee_id],
   );
-  const assigneeLabel = assignee ? `Assigned to ${assignee.display_name}` : 'Assign checklist item';
+  const assigneeLabel = assignee ? `Assigned to ${assignee.display_name}` : 'Assign';
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -97,8 +97,28 @@ function SortableItem({
         <MentionText text={item.text} members={members} teams={teams} />
       </span>
 
-      {/* Assignee avatar / picker */}
       <div className="ml-auto flex items-center gap-1">
+        <QuickTooltip label="Delete">
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:bg-accent hover:text-destructive cursor-pointer"
+            onClick={() => onDelete(item.id)}
+          >
+            <Delete01Icon className="h-3.5 w-3.5" />
+          </button>
+        </QuickTooltip>
+
+        <QuickTooltip label="Move item">
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md cursor-grab text-muted-foreground/60 opacity-0 transition-opacity hover:bg-accent hover:text-muted-foreground group-hover:opacity-100 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <DragDropVerticalIcon className="h-3.5 w-3.5" />
+          </button>
+        </QuickTooltip>
+
         <MemberPickerPopover
           value={item.assignee_id || '__none__'}
           members={members}
@@ -111,7 +131,7 @@ function SortableItem({
           align="end"
           triggerClassName={assignee
             ? 'h-7 w-7 shrink-0 justify-center overflow-visible rounded-full px-0 py-0 hover:bg-accent'
-            : 'h-7 w-7 shrink-0 justify-center rounded-full border border-dashed border-border/80 bg-muted/40 px-0 py-0 text-muted-foreground hover:border-foreground/40 hover:bg-accent hover:text-foreground'
+            : 'ml-auto h-7 w-7 shrink-0 justify-center rounded-full border border-dashed border-border/80 bg-muted/40 px-0 py-0 text-muted-foreground opacity-0 transition-opacity hover:border-foreground/40 hover:bg-accent hover:text-foreground group-hover:opacity-100'
           }
           contentClassName="w-[220px]"
           renderTrigger={() => assignee ? (
@@ -134,26 +154,6 @@ function SortableItem({
             <PlusSignIcon className="h-3.5 w-3.5" />
           )}
         />
-        <QuickTooltip label="Delete">
-          <button
-            type="button"
-            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:bg-accent hover:text-destructive cursor-pointer"
-            onClick={() => onDelete(item.id)}
-          >
-            <Delete01Icon className="h-3.5 w-3.5" />
-          </button>
-        </QuickTooltip>
-
-        <QuickTooltip label="Move item">
-          <button
-            type="button"
-            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md cursor-grab text-muted-foreground/60 opacity-0 transition-opacity hover:bg-accent hover:text-muted-foreground group-hover:opacity-100 active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <DragDropVerticalIcon className="h-3.5 w-3.5" />
-          </button>
-        </QuickTooltip>
       </div>
     </div>
   );
@@ -252,7 +252,7 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
     setItems((prev) =>
       prev.map((i) => (i.id === id ? { ...i, assignee_id: assigneeId ?? undefined } : i)),
     );
-    await pmChecklistService.update(workspaceId, id, { assignee_id: assigneeId ?? undefined });
+    await pmChecklistService.update(workspaceId, id, { assignee_id: assigneeId ?? '' });
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {

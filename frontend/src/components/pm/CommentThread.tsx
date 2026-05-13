@@ -1093,6 +1093,10 @@ export function CommentThread({
                   <div className="relative mt-3 ml-0 pl-9">
                     {hasVisibleReplies && (
                       <>
+                        <div
+                          data-comment-collapse-stem="top"
+                          className="absolute left-[14.5px] top-[-12px] h-[10px] w-px bg-border/60"
+                        />
                         <div className="absolute left-[14.5px] top-2 h-px w-[21.5px] bg-border/60" />
                         <button
                           type="button"

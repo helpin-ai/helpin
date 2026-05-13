@@ -551,12 +551,14 @@ describe('CommentThread attachment uploads', () => {
 
     const collapseButton = container.querySelector<HTMLButtonElement>('[aria-label="Collapse replies"]')
     expect(collapseButton).toBeTruthy()
+    expect(container.querySelector('[data-comment-collapse-stem="top"]')).toBeTruthy()
     await act(async () => {
       collapseButton?.click()
     })
 
     expect(container.textContent).not.toContain('Visible reply')
     expect(container.textContent).toContain('1 reply')
+    expect(container.querySelector('[data-comment-collapse-stem="top"]')).toBeNull()
 
     const replyButton = container.querySelector<HTMLButtonElement>('[aria-label="Reply"]')
     expect(replyButton).toBeTruthy()
