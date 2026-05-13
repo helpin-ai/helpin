@@ -1456,52 +1456,54 @@ function TaskDetailPanelBody({
           </div>
 
           {/* Action bar — "Add to Task" */}
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                showChecklist
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setShowChecklist((v) => !v)}
-            >
-              <CheckmarkSquare02Icon className="h-3 w-3" />
-              Checklist
-            </button>
-            <button
-              ref={relationshipButtonRef}
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                relationshipComposerOpen
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setRelationshipComposerOpen(true)}
-            >
-              <ArrowLeftRightIcon className="h-3 w-3" />
-              Relationships
-            </button>
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                showExternalLinks
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setShowExternalLinks((v) => !v)}
-            >
-              <Link01Icon className="h-3 w-3" />
-              External Links
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
-              onClick={() => openFilePickerRef.current?.()}
-            >
-              <AttachmentIcon className="h-3 w-3" />
-              Attach Files
-            </button>
+          <div className="mt-6 border-t border-border/60 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showChecklist
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setShowChecklist((v) => !v)}
+              >
+                <CheckmarkSquare02Icon className="h-3 w-3" />
+                Checklist
+              </button>
+              <button
+                ref={relationshipButtonRef}
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  relationshipComposerOpen
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setRelationshipComposerOpen(true)}
+              >
+                <ArrowLeftRightIcon className="h-3 w-3" />
+                Relationships
+              </button>
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showExternalLinks
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setShowExternalLinks((v) => !v)}
+              >
+                <Link01Icon className="h-3 w-3" />
+                External Links
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                onClick={() => openFilePickerRef.current?.()}
+              >
+                <AttachmentIcon className="h-3 w-3" />
+                Attach Files
+              </button>
+            </div>
           </div>
 
           {/* Recurring info card */}
