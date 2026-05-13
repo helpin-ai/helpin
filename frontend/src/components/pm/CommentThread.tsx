@@ -1069,10 +1069,13 @@ export function CommentThread({
               <div
                 key={entry.comment.id}
                 data-comment-thread-id={entry.comment.id}
-                className={`rounded-lg px-3 py-3 transition-colors ${
+                className={`relative rounded-lg px-3 py-3 transition-colors ${
                   isActive ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-500/20' : ''
                 }`}
               >
+                {hasVisibleReplies && (
+                  <div className="absolute left-[26px] top-9 bottom-3 w-px bg-border/60" />
+                )}
                 {renderComment(entry, false)}
 
                 {hasReplies && !isExpanded && (
@@ -1090,19 +1093,16 @@ export function CommentThread({
                 )}
 
                 {(hasVisibleReplies || replyComposerOpen) && (
-                  <div className="relative mt-3 ml-3 pl-7">
+                  <div className="relative mt-3 ml-0 pl-9">
                     {hasVisibleReplies && (
-                      <>
-                        <button
-                          type="button"
-                          aria-label="Collapse replies"
-                          className="absolute left-0 top-0 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
-                          onClick={() => toggleThread(entry.comment.id)}
-                        >
-                          <MinusSignIcon className="h-3 w-3" />
-                        </button>
-                        <div className="absolute left-2.5 -top-3 bottom-0 w-px bg-border/60" />
-                      </>
+                      <button
+                        type="button"
+                        aria-label="Collapse replies"
+                        className="absolute left-1 top-[-2px] z-10 flex h-5 w-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground cursor-pointer"
+                        onClick={() => toggleThread(entry.comment.id)}
+                      >
+                        <MinusSignIcon className="h-3 w-3" />
+                      </button>
                     )}
                     <div className="space-y-3">
                       {hasVisibleReplies && entry.replies?.map((reply) => (
