@@ -279,7 +279,7 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
         <CheckmarkSquare02Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
           Checklist
           {items.length > 0 && (
             <span className="ml-1 font-normal">
@@ -297,9 +297,7 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
           </span>
           <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-300 ${
-                completedCount === items.length ? 'bg-green-500' : 'bg-primary'
-              }`}
+              className="h-full rounded-full bg-green-500 transition-all duration-300"
               style={{ width: `${(completedCount / items.length) * 100}%` }}
             />
           </div>

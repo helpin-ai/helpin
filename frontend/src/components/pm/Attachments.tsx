@@ -250,7 +250,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       {hasAttachments && (
         <div className="flex items-center gap-1.5">
           <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</h3>
+          <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Attachments</h3>
         </div>
       )}
 

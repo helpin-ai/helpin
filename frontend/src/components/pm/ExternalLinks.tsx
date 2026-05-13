@@ -71,7 +71,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
     <div className="space-y-3">
       <div className="flex items-center gap-1.5">
         <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">External Links</h3>
+        <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">External Links</h3>
       </div>
 
       {links.length > 0 && (

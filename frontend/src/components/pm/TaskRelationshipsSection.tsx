@@ -63,6 +63,7 @@ interface TaskRelationshipsSectionProps {
   onExternalBlockerChange: (value: string) => void;
   composerOpen: boolean;
   onComposerOpenChange: (open: boolean) => void;
+  visible?: boolean;
   /** Ref to an external trigger (e.g. the action-bar "Relationships" button).
    *  When set, clicking that element opens the popover anchored there instead of inline. */
   externalTriggerRef?: RefObject<HTMLElement | null>;
@@ -234,6 +235,7 @@ export function TaskRelationshipsSection({
   onExternalBlockerChange,
   composerOpen,
   onComposerOpenChange,
+  visible = false,
   externalTriggerRef,
   className,
 }: TaskRelationshipsSectionProps) {
@@ -314,7 +316,6 @@ export function TaskRelationshipsSection({
   }, [data]);
 
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
-  const hasContent = allRelationships.length > 0 || linkedDocs.length > 0 || !!externalBlocker;
 
   const handleOpenTask = (targetTaskId: string) => {
     if (!workspace?.slug) return;
@@ -529,16 +530,16 @@ export function TaskRelationshipsSection({
     </>
   );
 
-  // Hide entire section when no relationships and composer is closed
-  if (!hasContent && !composerOpen && !associationsQuery.isLoading) {
+  // The action-bar toggle controls section visibility; the inline button controls the composer.
+  if (!visible && !composerOpen) {
     return null;
   }
 
   return (
-    <section id="task-relationships-section" className={cn('mt-6', className)}>
+    <section id="task-relationships-section" className={className}>
       <div className="flex items-center gap-1.5">
         <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Task Relationships</h3>
+        <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Task Relationships</h3>
       </div>
 
       {associationsQuery.error ? (
@@ -673,16 +674,16 @@ export function TaskRelationshipsSection({
         <Button
           ref={inlineAddRef}
           type="button"
-          variant="outline"
           size="sm"
-          className="h-7 gap-1 text-xs"
+          variant="ghost"
+          className="inline-flex h-auto items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
           onClick={() => {
             setAnchorSource('inline');
             onComposerOpenChange(true);
           }}
         >
-          <PlusSignIcon className="h-3.5 w-3.5" />
-          Add Relationship
+          <PlusSignIcon className="h-4 w-4" />
+          Add relationship
         </Button>
 
         {busy ? (

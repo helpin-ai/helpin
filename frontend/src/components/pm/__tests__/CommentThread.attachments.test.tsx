@@ -122,9 +122,11 @@ const workspaceId = 'ws-1'
 function renderThread({
   comments = [],
   commentService = createCommentService(),
+  hideEmptyState = false,
 }: {
   comments?: CommentWithAuthor[]
   commentService?: ReturnType<typeof createCommentService>
+  hideEmptyState?: boolean
 } = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -139,6 +141,7 @@ function renderThread({
         comments={comments}
         currentUserId="user-1"
         commentService={commentService}
+        hideEmptyState={hideEmptyState}
         onCommentsChange={vi.fn()}
       />,
     )
@@ -345,6 +348,61 @@ describe('CommentThread attachment uploads', () => {
       expect.objectContaining({ attachment_ids: ['att-1', 'att-2'] }),
     )
     expect(pmAttachmentService.remove).not.toHaveBeenCalled()
+  })
+
+  it('keeps top spacing above the empty top-level composer when the empty state is hidden', () => {
+    const { container } = renderThread({ comments: [], hideEmptyState: true })
+
+    const composer = container.querySelector<HTMLElement>('[data-testid="comment-editor"]')
+    const composerFrame = composer?.parentElement
+
+    expect(composerFrame?.className).toContain('mt-6')
+  })
+
+  it('extends the collapse stem up to the parent comment avatar', () => {
+    const parent = existingCommentByCurrentUser('parent-1')
+    parent.comment.body = '<p>line one</p><p>line two</p><p>line three</p><p>line four</p>'
+    const reply = existingCommentFromUser('reply-1', 'user-2', '<p>reply</p>')
+    reply.comment.parent_id = parent.comment.id
+    parent.replies = [reply]
+    parent.reply_count = 1
+
+    const { container } = renderThread({ comments: [parent] })
+
+    const topStem = container.querySelector<HTMLElement>('[data-comment-collapse-stem="top"]')
+
+    expect(topStem?.className).toContain('top-6')
+    expect(topStem?.className).toContain('bottom-[-10px]')
+    expect(topStem?.className).toContain('bg-border')
+    expect(topStem?.className).not.toContain('h-[')
+    expect(topStem?.className).not.toContain('bg-border/60')
+  })
+
+  it('makes reply connector rails height-independent without drawing below the last reply avatar', () => {
+    const parent = existingCommentByCurrentUser('parent-1')
+    const firstReply = existingCommentFromUser('reply-1', 'user-2', '<p>first reply line one</p><p>first reply line two</p><p>first reply line three</p>')
+    const secondReply = existingCommentFromUser('reply-2', 'user-2', '<p>second reply</p>')
+    firstReply.comment.parent_id = parent.comment.id
+    secondReply.comment.parent_id = parent.comment.id
+    parent.replies = [firstReply, secondReply]
+    parent.reply_count = 2
+
+    const { container } = renderThread({ comments: [parent] })
+
+    const topStem = container.querySelector<HTMLElement>('[data-comment-collapse-stem="top"]')
+    const elbow = container.querySelector<HTMLElement>('[data-comment-collapse-stem="elbow"]')
+    const repliesRail = Array.from(container.querySelectorAll<HTMLElement>('[data-comment-replies-rail="true"]'))
+
+    expect(topStem?.className).toContain('bg-border')
+    expect(elbow?.className).toContain('bg-border')
+    expect(repliesRail).toHaveLength(2)
+    expect(repliesRail[0].className).toContain('bg-border')
+    expect(repliesRail[0].className).toContain('top-3.5')
+    expect(repliesRail[0].className).toContain('bottom-[-12px]')
+    expect(repliesRail[1].className).toContain('bg-border')
+    expect(repliesRail[1].className).toContain('top-0')
+    expect(repliesRail[1].className).toContain('h-3.5')
+    expect(repliesRail[1].className).not.toContain('bottom-')
   })
 
   it('navigates between multiple image attachments in a comment preview', async () => {

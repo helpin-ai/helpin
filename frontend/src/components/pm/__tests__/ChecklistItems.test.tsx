@@ -233,4 +233,17 @@ describe('ChecklistItems', () => {
     expect(trigger?.className).toContain('opacity-0')
     expect(trigger?.className).toContain('group-hover:opacity-100')
   })
+
+  it('uses green for in-progress checklist progress', async () => {
+    await renderChecklist([
+      makeChecklistItem({ id: 'item-1', completed: true, position: 0 }),
+      makeChecklistItem({ id: 'item-2', completed: false, position: 1 }),
+    ])
+
+    const progressFill = container?.querySelector<HTMLElement>('[style*="width: 50%"]')
+
+    expect(progressFill).toBeTruthy()
+    expect(progressFill?.className).toContain('bg-green-500')
+    expect(progressFill?.className).not.toContain('bg-primary')
+  })
 })
