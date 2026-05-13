@@ -1395,7 +1395,7 @@ function TaskDetailPanelBody({
           {/* Description */}
           <div
             className={cn(
-              'relative mt-4 rounded-lg transition-[box-shadow,background-color]',
+              'group/desc relative mt-4 rounded-lg pb-3 transition-[box-shadow,background-color]',
               descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
             )}
             onDragEnter={handleDescriptionDragEnter}
@@ -1431,77 +1431,81 @@ function TaskDetailPanelBody({
                 </div>
               </div>
             ) : (
-              <div className="group/desc relative">
+              <div className="relative">
                 {form.description ? (
                   <RichTextMentionContent
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p:empty]:h-1 [&_p:empty]:my-0"
+                    className="prose prose-sm dark:prose-invert max-w-none text-sm text-foreground/80 prose-p:text-foreground/80 prose-li:text-foreground/80 prose-strong:text-foreground/90 [&_p:empty]:h-1 [&_p:empty]:my-0"
                     onHtmlChange={(html) => updateField('description', html, { description: html })}
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
                 )}
-                <button
-                  type="button"
-                  className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                  onClick={() => setEditingDescription(true)}
-                >
-                  <PencilEdit01Icon className="h-3 w-3" />
-                  Edit description
-                </button>
+                <div className="mt-2 flex justify-end opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                    onClick={() => setEditingDescription(true)}
+                  >
+                    <PencilEdit01Icon className="h-3 w-3" />
+                    Edit description
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
           {/* Action bar — "Add to Task" */}
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                showChecklist
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setShowChecklist((v) => !v)}
-            >
-              <CheckmarkSquare02Icon className="h-3 w-3" />
-              Checklist
-            </button>
-            <button
-              ref={relationshipButtonRef}
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                relationshipComposerOpen
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setRelationshipComposerOpen(true)}
-            >
-              <ArrowLeftRightIcon className="h-3 w-3" />
-              Relationships
-            </button>
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                showExternalLinks
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setShowExternalLinks((v) => !v)}
-            >
-              <Link01Icon className="h-3 w-3" />
-              External Links
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
-              onClick={() => openFilePickerRef.current?.()}
-            >
-              <AttachmentIcon className="h-3 w-3" />
-              Attach Files
-            </button>
+          <div className="border-t border-border/60 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showChecklist
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setShowChecklist((v) => !v)}
+              >
+                <CheckmarkSquare02Icon className="h-3 w-3" />
+                Checklist
+              </button>
+              <button
+                ref={relationshipButtonRef}
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  relationshipComposerOpen
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setRelationshipComposerOpen(true)}
+              >
+                <ArrowLeftRightIcon className="h-3 w-3" />
+                Relationships
+              </button>
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showExternalLinks
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setShowExternalLinks((v) => !v)}
+              >
+                <Link01Icon className="h-3 w-3" />
+                External Links
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                onClick={() => openFilePickerRef.current?.()}
+              >
+                <AttachmentIcon className="h-3 w-3" />
+                Attach Files
+              </button>
+            </div>
           </div>
 
           {/* Recurring info card */}
@@ -1593,7 +1597,7 @@ function TaskDetailPanelBody({
           )}
 
           {/* Separator */}
-          <Separator className="my-6" />
+          {(commentsLoading || comments.length > 0) && <Separator className="my-6 bg-border/60" />}
 
           {/* Comments + Activity */}
           <div>
@@ -1700,6 +1704,7 @@ function TaskDetailPanelBody({
                       stateType={currentState.state_type}
                       label={currentState.name}
                       color={currentState.color}
+                      autoRunEnabled={automatedStateIds.has(currentState.id)}
                     />
                   ) : (
                     <span>Select</span>
@@ -1712,6 +1717,7 @@ function TaskDetailPanelBody({
                       stateType={s.state_type}
                       label={s.name}
                       color={s.color}
+                      autoRunEnabled={automatedStateIds.has(s.id)}
                     />
                   ) : null;
                 }}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
+import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { Button } from '@/components/ui/button';
 import {
   DndContext,
   closestCenter,
@@ -69,6 +70,7 @@ function SortableItem({
     () => members.find((m) => (m.user_id || m.id) === item.assignee_id),
     [members, item.assignee_id],
   );
+  const assigneeLabel = assignee ? `Assigned to ${assignee.display_name}` : 'Assign';
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -79,16 +81,8 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-1.5 rounded-md px-1 py-1 hover:bg-accent/50 transition-colors ${isDragging ? 'opacity-50 bg-accent/50' : ''}`}
+      className={`group flex items-center gap-2 py-1 ${isDragging ? 'opacity-50' : ''}`}
     >
-      <button
-        type="button"
-        className="h-5 w-5 shrink-0 flex items-center justify-center cursor-grab text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
-        {...attributes}
-        {...listeners}
-      >
-        <DragDropVerticalIcon className="h-3 w-3" />
-      </button>
       <input
         type="checkbox"
         checked={item.completed}
@@ -96,68 +90,71 @@ function SortableItem({
         className="h-3.5 w-3.5 shrink-0 rounded border-border cursor-pointer accent-primary"
       />
       <span
-        className={`flex-1 text-sm ${
+        className={`min-w-0 flex-1 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-muted/30 ${
           item.completed ? 'line-through text-muted-foreground' : 'text-foreground'
         }`}
       >
         <MentionText text={item.text} members={members} teams={teams} />
       </span>
 
-      {/* Assignee avatar / picker */}
-      <div className="flex items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-1">
+        <QuickTooltip label="Delete">
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:bg-accent hover:text-destructive cursor-pointer"
+            onClick={() => onDelete(item.id)}
+          >
+            <Delete01Icon className="h-3.5 w-3.5" />
+          </button>
+        </QuickTooltip>
+
+        <QuickTooltip label="Move item">
+          <button
+            type="button"
+            className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md cursor-grab text-muted-foreground/60 opacity-0 transition-opacity hover:bg-accent hover:text-muted-foreground group-hover:opacity-100 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <DragDropVerticalIcon className="h-3.5 w-3.5" />
+          </button>
+        </QuickTooltip>
+
         <MemberPickerPopover
           value={item.assignee_id || '__none__'}
           members={members}
           noneLabel="Unassigned"
+          triggerLabel={assigneeLabel}
           getMemberValue={(member) => member.user_id || member.id}
           onChange={(value) => {
             onAssigneeChange(item.id, value === '__none__' ? null : value);
           }}
           align="end"
           triggerClassName={assignee
-            ? 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-opacity hover:opacity-80'
-            : 'h-5 w-5 shrink-0 flex items-center justify-center rounded-full border border-dashed border-border/60 opacity-0 group-hover:opacity-100 transition-opacity text-foreground/50 hover:text-foreground hover:border-foreground/40'
+            ? 'h-7 w-7 shrink-0 justify-center overflow-visible rounded-full px-0 py-0 hover:bg-accent'
+            : 'ml-auto h-7 w-7 shrink-0 justify-center rounded-full border border-dashed border-border/80 bg-muted/40 px-0 py-0 text-muted-foreground opacity-0 transition-opacity hover:border-foreground/40 hover:bg-accent hover:text-foreground group-hover:opacity-100'
           }
           contentClassName="w-[220px]"
           renderTrigger={() => assignee ? (
-            <UserAvatar
-              name={assignee.display_name}
-              avatarUrl={assignee.avatar_url}
-              avatarStyle={assignee.avatar_style}
-              avatarSeed={assignee.avatar_seed}
-              avatarBackgroundMode={assignee.avatar_background_mode}
-              avatarBackgroundColor={assignee.avatar_background_color}
-              className="h-5 w-5 text-[8px]"
-            />
+            <>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-visible rounded-full">
+              <UserAvatar
+                name={assignee.display_name}
+                avatarUrl={assignee.avatar_url}
+                avatarStyle={assignee.avatar_style}
+                avatarSeed={assignee.avatar_seed}
+                avatarBackgroundMode={assignee.avatar_background_mode}
+                avatarBackgroundColor={assignee.avatar_background_color}
+                className="h-5 w-5 text-[8px]"
+                fallbackClassName="text-[8px]"
+              />
+              </span>
+              <span className="sr-only">{assigneeLabel}</span>
+            </>
           ) : (
-            <PlusSignIcon className="h-2.5 w-2.5" />
+            <PlusSignIcon className="h-3.5 w-3.5" />
           )}
         />
-        {assignee ? (
-          <QuickTooltip label="Unassign">
-            <button
-              type="button"
-              className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-              onClick={(event) => {
-                event.stopPropagation();
-                onAssigneeChange(item.id, null);
-              }}
-            >
-              <Cancel01Icon className="h-2.5 w-2.5" />
-            </button>
-          </QuickTooltip>
-        ) : null}
       </div>
-
-      <QuickTooltip label="Delete">
-        <button
-          type="button"
-          className="h-5 w-5 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-foreground/50 hover:text-destructive cursor-pointer"
-          onClick={() => onDelete(item.id)}
-        >
-          <Delete01Icon className="h-3 w-3" />
-        </button>
-      </QuickTooltip>
     </div>
   );
 }
@@ -255,7 +252,7 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
     setItems((prev) =>
       prev.map((i) => (i.id === id ? { ...i, assignee_id: assigneeId ?? undefined } : i)),
     );
-    await pmChecklistService.update(workspaceId, id, { assignee_id: assigneeId ?? undefined });
+    await pmChecklistService.update(workspaceId, id, { assignee_id: assigneeId ?? '' });
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -294,8 +291,8 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
 
       {/* Progress bar */}
       {items.length > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">
+        <div className="mt-3 flex items-center gap-2">
+          <span className="w-8 text-left text-xs tabular-nums text-muted-foreground">
             {Math.round((completedCount / items.length) * 100)}%
           </span>
           <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
@@ -330,14 +327,14 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
 
       {/* Add input */}
       <div className="relative">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
           <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <input
             ref={inputRef}
             type="text"
             value={newText}
             placeholder="Add an item... (type @ to mention)"
-            className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
             disabled={adding}
             onChange={(e) => {
               setNewText(e.target.value);
@@ -376,6 +373,17 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
               setTimeout(() => setMentionQuery(null), 150);
             }}
           />
+          {newText.trim() && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 shrink-0 px-2 text-xs"
+              disabled={adding}
+              onClick={handleAdd}
+            >
+              Add
+            </Button>
+          )}
         </div>
         {/* Mention autocomplete dropdown */}
         {mentionQuery !== null && mentionResults.length > 0 && (

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import type { ExternalLink } from '@/lib/pmTypes';
 
@@ -67,62 +68,70 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
   );
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center gap-1.5">
         <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">External Links</h3>
       </div>
 
-      {/* Link list */}
       {links.length > 0 && (
-        <div className="space-y-0.5">
+        <div className="space-y-1.5">
           {links.map((link) => (
             <div
               key={link.id}
-              className="group flex items-center gap-2 rounded-md px-1 py-1.5 hover:bg-accent/50 transition-colors"
+              data-testid="external-link-row"
+              className="group flex items-center gap-2 rounded-lg border border-border/50 bg-muted/35 px-2.5 py-2 transition-colors hover:border-border hover:bg-muted/55"
             >
               <Favicon
                 url={link.url}
                 name={link.title || getHostname(link.url)}
                 size={16}
-                className="h-4 w-4 rounded-sm border-none bg-transparent"
+                className="h-4 w-4 shrink-0 rounded-sm border-none bg-transparent"
                 fallbackClassName="text-[8px]"
               />
               <div className="min-w-0 flex-1">
                 <span className="text-sm font-medium text-foreground truncate block">
                   {link.title || getHostname(link.url)}
                 </span>
-                <span className="text-[11px] text-muted-foreground truncate block">{link.url}</span>
+                <span className="text-[11px] text-muted-foreground truncate block">
+                  {link.url}
+                </span>
               </div>
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="h-5 w-5 shrink-0 flex items-center justify-center rounded text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <LinkSquare01Icon className="h-3 w-3" />
-              </a>
-              <button
-                type="button"
-                className="h-5 w-5 shrink-0 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive cursor-pointer"
-                onClick={() => handleDelete(link.id)}
-              >
-                <Delete01Icon className="h-3 w-3" />
-              </button>
+              <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                <QuickTooltip label="Open link">
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Open ${link.title || getHostname(link.url)}`}
+                    className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                  >
+                    <LinkSquare01Icon className="h-3.5 w-3.5" />
+                  </a>
+                </QuickTooltip>
+                <QuickTooltip label="Remove link">
+                  <button
+                    type="button"
+                    aria-label={`Remove ${link.title || getHostname(link.url)}`}
+                    className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-destructive cursor-pointer"
+                    onClick={() => handleDelete(link.id)}
+                  >
+                    <Delete01Icon className="h-3.5 w-3.5" />
+                  </button>
+                </QuickTooltip>
+              </div>
             </div>
           ))}
         </div>
       )}
-
-      {/* Add input */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
         <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <input
           ref={inputRef}
           type="url"
           value={newUrl}
           placeholder="Paste a URL..."
-          className="flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
           disabled={adding}
           onChange={(e) => setNewUrl(e.target.value)}
           onKeyDown={(e) => {
@@ -136,7 +145,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs"
+            className="h-6 shrink-0 px-2 text-xs"
             disabled={adding}
             onClick={handleAdd}
           >

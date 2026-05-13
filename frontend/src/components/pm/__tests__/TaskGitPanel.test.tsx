@@ -17,6 +17,9 @@ import type { TaskGitLink } from '@/lib/pmTypes'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
+let root: Root | null = null
+let container: HTMLDivElement | null = null
+
 function makeLink(prStatus: string): TaskGitLink {
   return {
     id: 'link-1',
@@ -35,10 +38,30 @@ function makeLink(prStatus: string): TaskGitLink {
   }
 }
 
-describe('TaskGitPanel', () => {
-  let root: Root | null = null
-  let container: HTMLDivElement | null = null
+async function renderPanel(links: TaskGitLink[]) {
+  vi.mocked(gitService.getTaskGitLinks)
+    .mockResolvedValueOnce({ data: links, error: null, status: 200 })
 
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  container = document.createElement('div')
+  document.body.appendChild(container)
+  root = createRoot(container)
+
+  await act(async () => {
+    root?.render(
+      <QueryClientProvider client={client}>
+        <TaskGitPanel workspaceId="ws-1" taskId="task-1" />
+      </QueryClientProvider>,
+    )
+  })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  return client
+}
+
+describe('TaskGitPanel', () => {
   afterEach(() => {
     if (root) {
       act(() => root?.unmount())
@@ -84,5 +107,47 @@ describe('TaskGitPanel', () => {
     expect(gitService.getTaskGitLinks).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('merged')
     expect(container.textContent).not.toContain('open')
+  })
+
+  it('renders linked git work as compact inferred timeline rows', async () => {
+    await renderPanel([
+      {
+        ...makeLink('open'),
+        id: 'link-pr',
+        commit_sha: 'abcdef1234567890',
+      },
+      {
+        ...makeLink('open'),
+        id: 'link-commit',
+        pr_number: undefined,
+        pr_title: undefined,
+        pr_url: undefined,
+        pr_status: undefined,
+        commit_sha: '1234567890abcdef',
+      },
+      {
+        ...makeLink('open'),
+        id: 'link-branch',
+        pr_number: undefined,
+        pr_title: undefined,
+        pr_url: undefined,
+        pr_status: undefined,
+        commit_sha: undefined,
+      },
+    ])
+
+    expect(container.textContent).toContain('Pull request')
+    expect(container.textContent).toContain('Commit')
+    expect(container.textContent).toContain('Branch')
+    expect(container.textContent).toContain('helpin-ai/helpin')
+    expect(container.textContent).toContain('feature/task-1')
+    expect(container.textContent).toContain('#31')
+    expect(container.textContent).toContain('abcdef1')
+    expect(container.textContent).toContain('1234567')
+
+    const branchLink = container.querySelector('a[href="https://github.com/helpin-ai/helpin/tree/feature/task-1"]')
+    expect(branchLink).toBeTruthy()
+    const prLink = container.querySelector('a[href="https://github.com/helpin-ai/helpin/pull/31"]')
+    expect(prLink).toBeTruthy()
   })
 })

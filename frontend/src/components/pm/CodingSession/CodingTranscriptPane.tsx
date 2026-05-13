@@ -1089,7 +1089,7 @@ function AssistantMessageBubble({
             type="button"
             className={cn(
               'mt-1 text-[11px] font-medium hover:underline',
-              isAssistant ? 'text-primary' : 'text-white/80',
+              isAssistant ? 'text-primary' : 'text-blue-700 dark:text-blue-200',
             )}
             onClick={() => setExpanded((prev) => !prev)}
           >

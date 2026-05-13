@@ -241,6 +241,31 @@ function existingCommentByCurrentUser(id: string): CommentWithAuthor {
   }
 }
 
+function existingCommentFromUser(id: string, userId: string, body: string): CommentWithAuthor {
+  return {
+    comment: {
+      id,
+      entity_type: 'task',
+      entity_id: 'task-1',
+      author_id: userId,
+      body,
+      parent_id: null,
+      created_at: '2026-05-03T00:00:00Z',
+      updated_at: '2026-05-03T00:00:00Z',
+    },
+    author: {
+      id: userId,
+      email: `${userId}@example.com`,
+      full_name: userId === 'user-1' ? 'Test User' : 'Reply User',
+      created_at: '2026-05-03T00:00:00Z',
+      updated_at: '2026-05-03T00:00:00Z',
+    },
+    reply_count: 0,
+    attachments: [],
+    reactions: [],
+  }
+}
+
 function createAttachment(id: string, fileName: string, contentType = 'image/png'): AttachmentResponse {
   return {
     attachment: {
@@ -509,5 +534,133 @@ describe('CommentThread attachment uploads', () => {
     expect(pmAttachmentService.remove).toHaveBeenCalledWith(workspaceId, 'att-edit-pending', {
       pendingOnly: true,
     })
+  })
+
+  it('shows existing replies expanded without opening a reply editor', async () => {
+    const parent = existingCommentFromUser('comment-parent', 'user-1', '<p>Parent comment</p>')
+    const reply = existingCommentFromUser('comment-reply', 'user-2', '<p>Visible reply</p>')
+    reply.comment.parent_id = parent.comment.id
+    parent.replies = [reply]
+    parent.reply_count = 1
+
+    const { container } = renderThread({ comments: [parent] })
+
+    expect(container.textContent).toContain('Visible reply')
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Reply in thread"]')).toBeTruthy()
+
+    const collapseButton = container.querySelector<HTMLButtonElement>('[aria-label="Collapse replies"]')
+    expect(collapseButton).toBeTruthy()
+    expect(container.querySelector('[data-comment-collapse-stem="top"]')).toBeTruthy()
+    await act(async () => {
+      collapseButton?.click()
+    })
+
+    expect(container.textContent).not.toContain('Visible reply')
+    expect(container.textContent).toContain('1 reply')
+    expect(container.querySelector('[data-comment-collapse-stem="top"]')).toBeNull()
+
+    const replyButton = container.querySelector<HTMLButtonElement>('[aria-label="Reply"]')
+    expect(replyButton).toBeTruthy()
+    await act(async () => {
+      replyButton?.click()
+    })
+
+    expect(container.textContent).toContain('Visible reply')
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeTruthy()
+  })
+
+  it('opens the parent thread reply editor from a nested reply action', async () => {
+    const parent = existingCommentFromUser('comment-parent', 'user-1', '<p>Parent comment</p>')
+    const reply = existingCommentFromUser('comment-reply', 'user-2', '<p>Visible reply</p>')
+    reply.comment.parent_id = parent.comment.id
+    parent.replies = [reply]
+    parent.reply_count = 1
+
+    const { container } = renderThread({ comments: [parent] })
+
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeNull()
+
+    const replyInThreadButton = container.querySelector<HTMLButtonElement>('[aria-label="Reply in thread"]')
+    expect(replyInThreadButton).toBeTruthy()
+    await act(async () => {
+      replyInThreadButton?.click()
+    })
+
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeTruthy()
+  })
+
+  it('does not show thread collapse chrome when only a reply editor is open', async () => {
+    const parent = existingCommentFromUser('comment-parent', 'user-1', '<p>Parent comment</p>')
+
+    const { container } = renderThread({ comments: [parent] })
+
+    const replyButton = container.querySelector<HTMLButtonElement>('[aria-label="Reply"]')
+    expect(replyButton).toBeTruthy()
+    await act(async () => {
+      replyButton?.click()
+    })
+
+    expect(container.querySelector('[data-testid="comment-editor"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="Collapse replies"]')).toBeNull()
+  })
+
+  it('removes thread collapse chrome after the last visible reply is deleted', async () => {
+    const parent = existingCommentFromUser('comment-parent', 'user-1', '<p>Parent comment</p>')
+    const reply = existingCommentFromUser('comment-reply', 'user-1', '<p>Visible reply</p>')
+    reply.comment.parent_id = parent.comment.id
+    parent.replies = [reply]
+    parent.reply_count = 1
+    const onCommentsChange = vi.fn()
+    const commentService = createCommentService()
+    commentService.remove.mockResolvedValue({ data: null, error: null, status: 200 })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <CommentThread
+          workspaceId={workspaceId}
+          entityType="task"
+          entityId="task-1"
+          comments={[parent]}
+          currentUserId="user-1"
+          commentService={commentService}
+          onCommentsChange={onCommentsChange}
+        />,
+      )
+    })
+
+    expect(container.querySelector('[aria-label="Collapse replies"]')).toBeTruthy()
+
+    const deleteButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).findLast(
+      (button) => button.textContent?.trim() === 'Delete',
+    )
+    expect(deleteButton).toBeTruthy()
+    await act(async () => {
+      deleteButton?.click()
+    })
+
+    const nextComments = onCommentsChange.mock.calls.at(-1)?.[0] as CommentWithAuthor[]
+    expect(nextComments[0].reply_count).toBe(0)
+
+    await act(async () => {
+      root.render(
+        <CommentThread
+          workspaceId={workspaceId}
+          entityType="task"
+          entityId="task-1"
+          comments={nextComments}
+          currentUserId="user-1"
+          commentService={commentService}
+          onCommentsChange={onCommentsChange}
+        />,
+      )
+    })
+
+    expect(container.querySelector('[aria-label="Collapse replies"]')).toBeNull()
+    act(() => root.unmount())
   })
 })
