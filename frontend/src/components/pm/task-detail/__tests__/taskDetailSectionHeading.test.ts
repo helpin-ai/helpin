@@ -31,19 +31,35 @@ describe('TaskDetailSectionHeading', () => {
   it('keeps the add relationship action compact', () => {
     const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
 
-    expect(relationshipsSource).toContain('px-2 py-1.5 text-[11px]');
-    expect(relationshipsSource).toContain('<PlusSignIcon className="h-3 w-3" />');
+    expect(relationshipsSource).toContain('variant="outline"');
+    expect(relationshipsSource).toContain('size="xs"');
+    expect(relationshipsSource).toContain('<PlusSignIcon />');
+  });
+
+  it('opens related task rows in a new tab', () => {
+    const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
+
+    expect(relationshipsSource).toContain('to="/w/$slug/pm/tasks/$taskId"');
+    expect(relationshipsSource).toContain('target="_blank"');
+    expect(relationshipsSource).toContain('rel="noopener noreferrer"');
   });
 
   it('keeps checklist and external link add actions visually aligned with relationship add', () => {
     const checklistSource = readFileSync(resolve(__dirname, '../../ChecklistItems.tsx'), 'utf8');
     const externalLinksSource = readFileSync(resolve(__dirname, '../../ExternalLinks.tsx'), 'utf8');
 
+    expect(checklistSource).toContain('const [addingItem, setAddingItem] = useState(false);');
     expect(checklistSource).toContain('Add item');
-    expect(checklistSource).toContain('h-6 shrink-0 gap-1 px-2 text-[11px]');
-    expect(checklistSource).toContain('<PlusSignIcon className="h-3 w-3" />');
+    expect(checklistSource).toContain('setAddingItem(true)');
+    expect(checklistSource).toContain('group flex items-center gap-2 py-0.5');
+    expect(checklistSource).toContain('variant="outline"');
+    expect(checklistSource).toContain('size="xs"');
+    expect(checklistSource).toContain('<PlusSignIcon />');
+    expect(externalLinksSource).toContain('const [addingLink, setAddingLink] = useState(false);');
     expect(externalLinksSource).toContain('Add link');
-    expect(externalLinksSource).toContain('h-6 shrink-0 gap-1 px-2 text-[11px]');
-    expect(externalLinksSource).toContain('<PlusSignIcon className="h-3 w-3" />');
+    expect(externalLinksSource).toContain('setAddingLink(true)');
+    expect(externalLinksSource).toContain('variant="outline"');
+    expect(externalLinksSource).toContain('size="xs"');
+    expect(externalLinksSource).toContain('<PlusSignIcon />');
   });
 });

@@ -1,5 +1,5 @@
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import {
   ArrowLeftRightIcon,
   Tick01Icon,
@@ -44,7 +44,6 @@ import type {
 import { TaskTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 
 interface TaskRelationshipsSectionProps {
@@ -240,8 +239,6 @@ export function TaskRelationshipsSection({
   externalTriggerRef,
   className,
 }: TaskRelationshipsSectionProps) {
-  const navigate = useNavigate();
-  const location = useLocation();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const inlineAddRef = useRef<HTMLButtonElement>(null);
   const [anchorSource, setAnchorSource] = useState<'external' | 'inline'>('inline');
@@ -317,11 +314,6 @@ export function TaskRelationshipsSection({
   }, [data]);
 
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
-
-  const handleOpenTask = (targetTaskId: string) => {
-    if (!workspace?.slug) return;
-    openTaskRoute(navigate as never, location as never, workspace.slug, targetTaskId);
-  };
 
   const handleCreateRelationship = async (otherTaskId: string) => {
     await createRelationship.mutateAsync({
@@ -567,13 +559,22 @@ export function TaskRelationshipsSection({
               <div className="flex min-w-0 flex-1 items-center gap-1.5">
                 <Icon className={cn('h-3.5 w-3.5 shrink-0', meta.color)} />
                 <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium', meta.bg, meta.color)}>{meta.label}</span>
-                <button
-                  type="button"
-                  onClick={() => handleOpenTask(relatedTask.object_id)}
-                  className="min-w-0 truncate text-ui font-medium text-left transition-colors hover:text-primary"
-                >
-                  {relatedTask.title}
-                </button>
+                {workspace?.slug ? (
+                  <Link
+                    to="/w/$slug/pm/tasks/$taskId"
+                    params={{ slug: workspace.slug, taskId: relatedTask.object_id }}
+                    search={{ team: undefined, run: undefined }}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 truncate text-ui font-medium text-foreground transition-colors hover:text-primary"
+                  >
+                    {relatedTask.title}
+                  </Link>
+                ) : (
+                  <span className="min-w-0 truncate text-ui font-medium text-foreground">
+                    {relatedTask.title}
+                  </span>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 {(relatedTask.task_key || relatedTask.display_id) ? (
@@ -672,15 +673,14 @@ export function TaskRelationshipsSection({
         <Button
           ref={inlineAddRef}
           type="button"
-          size="sm"
-          variant="ghost"
-          className="inline-flex h-auto items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+          size="xs"
+          variant="outline"
           onClick={() => {
             setAnchorSource('inline');
             onComposerOpenChange(true);
           }}
         >
-          <PlusSignIcon className="h-3 w-3" />
+          <PlusSignIcon />
           Add relationship
         </Button>
 

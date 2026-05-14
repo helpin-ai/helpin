@@ -25,6 +25,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
   const [links, setLinks] = useState<ExternalLink[]>([]);
   const [newUrl, setNewUrl] = useState('');
   const [adding, setAdding] = useState(false);
+  const [addingLink, setAddingLink] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
@@ -33,6 +34,10 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
   }, [workspaceId, entityType, entityId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    if (addingLink) inputRef.current?.focus();
+  }, [addingLink]);
 
   // Re-fetch when another client changes external links
   useEffect(() => {
@@ -57,7 +62,7 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
     if (error || !data) return;
     setLinks((prev) => [...prev, data]);
     setNewUrl('');
-    inputRef.current?.focus();
+    setAddingLink(false);
   }, [workspaceId, entityType, entityId, newUrl]);
 
   const handleDelete = useCallback(
@@ -122,36 +127,51 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
-        <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <input
-          ref={inputRef}
-          type="url"
-          value={newUrl}
-          placeholder="Paste a URL..."
-          className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
-          disabled={adding}
-          onChange={(e) => setNewUrl(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleAdd();
-            }
-          }}
-        />
-        {newUrl.trim() && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 shrink-0 gap-1 px-2 text-[11px]"
+      {addingLink ? (
+        <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
+          <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <input
+            ref={inputRef}
+            type="url"
+            value={newUrl}
+            placeholder="Paste a URL..."
+            className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
             disabled={adding}
-            onClick={handleAdd}
-          >
-            <PlusSignIcon className="h-3 w-3" />
-            Add link
-          </Button>
-        )}
-      </div>
+            onChange={(e) => setNewUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setAddingLink(false);
+                setNewUrl('');
+              }
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleAdd();
+              }
+            }}
+          />
+          {newUrl.trim() && (
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={adding}
+              onClick={handleAdd}
+            >
+              <PlusSignIcon />
+              Add link
+            </Button>
+          )}
+        </div>
+      ) : (
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() => setAddingLink(true)}
+        >
+          <PlusSignIcon />
+          Add link
+        </Button>
+      )}
     </div>
   );
 }

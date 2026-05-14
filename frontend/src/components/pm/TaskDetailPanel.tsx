@@ -1549,6 +1549,18 @@ function TaskDetailPanelBody({
 
           {hasOptionalTaskSections && (
             <div className="mt-8 space-y-8">
+              {/* Checklist */}
+              {showChecklist && (
+                <div>
+                  <ChecklistItems
+                    workspaceId={workspaceId}
+                    taskId={taskDetail.task.id}
+                    members={assignableMembers}
+                    teams={mentionTeams}
+                  />
+                </div>
+              )}
+
               <TaskRelationshipsSection
                 workspaceId={workspaceId}
                 taskId={taskDetail.task.id}
@@ -1569,18 +1581,6 @@ function TaskDetailPanelBody({
                 visible={showRelationships}
                 externalTriggerRef={relationshipButtonRef}
               />
-
-              {/* Checklist */}
-              {showChecklist && (
-                <div>
-                  <ChecklistItems
-                    workspaceId={workspaceId}
-                    taskId={taskDetail.task.id}
-                    members={assignableMembers}
-                    teams={mentionTeams}
-                  />
-                </div>
-              )}
 
               {/* External Links */}
               {showExternalLinks && (
