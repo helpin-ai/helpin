@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft01Icon, ArrowRight01Icon, Download04Icon, Loading01Icon, AttachmentIcon, Delete01Icon, Upload01Icon, Cancel01Icon, PlayCircleIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { LoadingImage } from '@/components/ui/loading-image';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
 import type { AttachmentResponse } from '@/lib/pmTypes';
@@ -248,10 +249,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       onDrop={onDrop}
     >
       {hasAttachments && (
-        <div className="flex items-center gap-1.5">
-          <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Attachments</h3>
-        </div>
+        <TaskDetailSectionHeading title="Attachments" icon={AttachmentIcon} />
       )}
 
       <input

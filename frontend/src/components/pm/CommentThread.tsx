@@ -1158,6 +1158,7 @@ export function CommentThread({
                             loading={replyLoading}
                             placeholder="Reply..."
                             variant="reply"
+                            enableEmojiPicker
                             teams={teams}
                             members={members}
                             onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files, entry.comment.id) : undefined}
@@ -1190,7 +1191,7 @@ export function CommentThread({
             avatarSeed={currentMember?.avatar_seed}
             avatarBackgroundMode={currentMember?.avatar_background_mode}
             avatarBackgroundColor={currentMember?.avatar_background_color}
-            className="h-7 w-7 text-[10px] shrink-0 mt-1"
+            className="h-7 w-7 text-[10px] shrink-0 mt-0.5"
           />
           <span className="flex min-h-9 flex-1 items-center rounded-md border border-border/70 bg-background px-3 text-sm text-muted-foreground transition-colors group-hover/comment-composer:border-primary/30 group-hover/comment-composer:bg-accent/30 group-hover/comment-composer:text-foreground">
             Add a comment...
@@ -1207,7 +1208,7 @@ export function CommentThread({
               avatarSeed={currentMember?.avatar_seed}
               avatarBackgroundMode={currentMember?.avatar_background_mode}
               avatarBackgroundColor={currentMember?.avatar_background_color}
-              className="h-7 w-7 text-[10px] shrink-0 mt-1"
+              className="h-7 w-7 text-[10px] shrink-0 mt-0.5"
             />
           )}
           <div

@@ -7,6 +7,7 @@ import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Loading01Icon, SentIcon, Image01Icon, AttachmentIcon, Cancel01Icon } from '@/lib/icons'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { ImageLightbox } from '@/components/pm/ImageLightbox'
+import { EmojiPicker } from '@/components/support/EmojiPicker'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import {
   getMemberMentionHandle,
@@ -27,6 +28,7 @@ interface CommentEditorProps {
   initialContent?: string
   onCancel?: () => void
   autoFocus?: boolean
+  enableEmojiPicker?: boolean
   /** Visual variant — 'primary' for top-level composers, 'reply' for nested reply composers, 'legacy' (default) keeps the existing filled style. */
   variant?: 'primary' | 'reply' | 'legacy'
 }
@@ -83,6 +85,7 @@ export function CommentEditor({
   onCancel,
   variant = 'legacy',
   autoFocus = false,
+  enableEmojiPicker = false,
 }: CommentEditorProps) {
   const [mentionState, setMentionState] = useState<{
     from: number
@@ -129,6 +132,10 @@ export function CommentEditor({
 
   const handleSubmitRef = useRef(handleSubmit)
   handleSubmitRef.current = handleSubmit
+
+  const insertEmoji = useCallback((emoji: string) => {
+    editorRef.current?.chain().focus().insertContent(emoji).run()
+  }, [])
 
   const extensions = useMemo(() => [
     StarterKit.configure({
@@ -419,6 +426,13 @@ export function CommentEditor({
                 <AttachmentIcon className="h-4 w-4" />
               </button>
             </QuickTooltip>
+          )}
+          {enableEmojiPicker && (
+            <EmojiPicker
+              align="start"
+              side="top"
+              onEmojiSelect={insertEmoji}
+            />
           )}
         </div>
         <div className="flex items-center gap-1.5">
