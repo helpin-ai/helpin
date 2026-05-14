@@ -158,6 +158,23 @@ func (s *S3Client) GeneratePresignedGetURL(key, filename string) (string, error)
 	return result.URL, nil
 }
 
+// GeneratePresignedInlineGetURL generates a presigned GET URL suitable for inline rendering.
+func (s *S3Client) GeneratePresignedInlineGetURL(key string) (string, error) {
+	input := &s3.GetObjectInput{
+		Bucket:                     aws.String(s.bucket),
+		Key:                        aws.String(key),
+		ResponseContentDisposition: aws.String("inline"),
+	}
+
+	result, err := s.presignClient.PresignGetObject(context.Background(), input, func(o *s3.PresignOptions) {
+		o.Expires = 1 * time.Hour
+	})
+	if err != nil {
+		return "", fmt.Errorf("generate presigned inline GET URL: %w", err)
+	}
+	return result.URL, nil
+}
+
 // GetObject downloads an object from S3 and returns its contents.
 func (s *S3Client) GetObject(ctx context.Context, key string) ([]byte, error) {
 	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{

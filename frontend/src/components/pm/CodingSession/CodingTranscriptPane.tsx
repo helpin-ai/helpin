@@ -39,7 +39,6 @@ import {
 } from './codingSessionPresentation';
 import type { CodingSessionComposerState } from './codingSessionComposer';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
-import { AgentRunArtifactView } from '@/components/pm/AgentRunArtifactView';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import { CodingInteractionCard } from './CodingInteractionCard';
 import { MarkdownContent } from './MarkdownContent';
@@ -90,7 +89,6 @@ function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): Segmen
 
 export function CodingTranscriptPane({
   promptArtifact,
-  reviewArtifacts = [],
   transcriptMessages,
   liveAssistantMessage,
   liveReasoningMessage,
@@ -182,7 +180,6 @@ export function CodingTranscriptPane({
     | { kind: 'context'; message: CodingSessionTranscriptMessage }
     | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
     | { kind: 'status'; message: CodingSessionTranscriptMessage }
-    | { kind: 'review-artifact'; artifact: AgentRunArtifact; decisionArtifact?: AgentRunArtifact | null }
     | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
     | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
@@ -202,13 +199,6 @@ export function CodingTranscriptPane({
       } else {
         list.push({ kind: 'transcript', message });
       }
-    }
-    for (const reviewArtifact of reviewArtifacts) {
-      list.push({
-        kind: 'review-artifact',
-        artifact: reviewArtifact.artifact,
-        decisionArtifact: reviewArtifact.decisionArtifact,
-      });
     }
     if (liveReasoningMessage) {
       list.push({ kind: 'thinking', reasoning: liveReasoningMessage });
@@ -238,7 +228,6 @@ export function CodingTranscriptPane({
   }, [
     promptMessage,
     transcriptMessages,
-    reviewArtifacts,
     liveReasoningMessage,
     visibleLiveSegments,
     showLivePlaceholder,
@@ -362,8 +351,6 @@ export function CodingTranscriptPane({
         return <StatusTimelineRow message={item.message} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
-      case 'review-artifact':
-        return <ReviewArtifactEntry artifact={item.artifact} decisionArtifact={item.decisionArtifact} />;
       case 'live-message': {
         const seg = item.segment;
         if (seg.kind !== 'assistant_message') return null;
@@ -490,28 +477,6 @@ export function CodingTranscriptPane({
         />
       ) : null}
     </section>
-  );
-}
-
-function ReviewArtifactEntry({
-  artifact,
-  decisionArtifact,
-}: {
-  artifact: AgentRunArtifact;
-  decisionArtifact?: AgentRunArtifact | null;
-}) {
-  return (
-    <div className="ml-auto w-full max-w-[90%] rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Review history
-        </div>
-        <div className="text-[11px] text-muted-foreground">
-          {formatCodingSessionRelative(artifact.created_at)}
-        </div>
-      </div>
-      <AgentRunArtifactView artifact={artifact} reviewDecisionArtifact={decisionArtifact} maxContentHeight="max-h-96" />
-    </div>
   );
 }
 
@@ -1124,7 +1089,7 @@ function AssistantMessageBubble({
             type="button"
             className={cn(
               'mt-1 text-[11px] font-medium hover:underline',
-              isAssistant ? 'text-primary' : 'text-white/80',
+              isAssistant ? 'text-primary' : 'text-blue-700 dark:text-blue-200',
             )}
             onClick={() => setExpanded((prev) => !prev)}
           >
@@ -1159,20 +1124,44 @@ function useElapsedMs(since: string): number {
   return Math.max(0, now - origin);
 }
 
+function RunningEllipsis() {
+  const [dotCount, setDotCount] = useState(1);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setDotCount((current) => current === 3 ? 1 : current + 1);
+    }, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <span aria-hidden className="inline-block w-[1.25em] text-left" data-agent-running-ellipsis>
+      {'.'.repeat(dotCount)}
+    </span>
+  );
+}
+
 function RunningActivityRow({ since }: { since: string }) {
   const elapsed = useElapsedMs(since);
   return (
     <div className="flex gap-3" data-coding-session-running-activity>
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/5">
+      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 shadow-sm">
+        <span
+          aria-hidden
+          className="absolute inset-0 animate-ping rounded-full bg-primary/20"
+          data-agent-running-halo
+        />
         <UnicodeSpinner
           name="braille"
-          className="agent-working-chroma text-xs"
+          className="agent-working-chroma relative text-base leading-none"
           data-agent-working-spinner
         />
       </div>
       <div className="min-w-0 flex-1 pb-4">
         <div className="flex min-h-7 items-center gap-2">
-          <span className="text-xs font-medium text-foreground/80">Agent running</span>
+          <span className="text-xs font-medium text-foreground/80">
+            Agent running<RunningEllipsis />
+          </span>
           <span className="text-[11px] tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
         </div>
       </div>

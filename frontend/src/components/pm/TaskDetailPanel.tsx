@@ -633,8 +633,11 @@ function TaskDetailPanelBody({
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [showRelationships, setShowRelationships] = useState(false);
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
+  const relationshipsToggleActive = showRelationships || relationshipComposerOpen;
+  const hasOptionalTaskSections = relationshipsToggleActive || showChecklist || showExternalLinks;
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const memberNameMap = useMemo(
@@ -1395,7 +1398,7 @@ function TaskDetailPanelBody({
           {/* Description */}
           <div
             className={cn(
-              'relative mt-4 rounded-lg transition-[box-shadow,background-color]',
+              'group/desc relative mt-4 rounded-lg pb-3 transition-[box-shadow,background-color]',
               descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
             )}
             onDragEnter={handleDescriptionDragEnter}
@@ -1424,84 +1427,96 @@ function TaskDetailPanelBody({
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
-                <div className="mt-2 flex justify-end">
+                <div className="mt-2 flex justify-start">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
                     Done
                   </Button>
                 </div>
               </div>
             ) : (
-              <div className="group/desc relative">
+              <div className="relative">
                 {form.description ? (
                   <RichTextMentionContent
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p:empty]:h-1 [&_p:empty]:my-0"
+                    className="prose prose-sm dark:prose-invert max-w-none text-sm text-foreground/80 prose-p:text-foreground/80 prose-li:text-foreground/80 prose-strong:text-foreground/90 [&_p:empty]:h-1 [&_p:empty]:my-0"
                     onHtmlChange={(html) => updateField('description', html, { description: html })}
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
                 )}
-                <button
-                  type="button"
-                  className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                  onClick={() => setEditingDescription(true)}
-                >
-                  <PencilEdit01Icon className="h-3 w-3" />
-                  Edit description
-                </button>
+                <div className="mt-2 flex justify-start opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                    onClick={() => setEditingDescription(true)}
+                  >
+                    <PencilEdit01Icon className="h-3 w-3" />
+                    Edit description
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
           {/* Action bar — "Add to Task" */}
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                showChecklist
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setShowChecklist((v) => !v)}
-            >
-              <CheckmarkSquare02Icon className="h-3 w-3" />
-              Checklist
-            </button>
-            <button
-              ref={relationshipButtonRef}
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                relationshipComposerOpen
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setRelationshipComposerOpen(true)}
-            >
-              <ArrowLeftRightIcon className="h-3 w-3" />
-              Relationships
-            </button>
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                showExternalLinks
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setShowExternalLinks((v) => !v)}
-            >
-              <Link01Icon className="h-3 w-3" />
-              External Links
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
-              onClick={() => openFilePickerRef.current?.()}
-            >
-              <AttachmentIcon className="h-3 w-3" />
-              Attach Files
-            </button>
+          <div className="border-t border-border/60 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showChecklist
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setShowChecklist((v) => !v)}
+              >
+                <CheckmarkSquare02Icon className="h-3 w-3" />
+                Checklist
+              </button>
+              <button
+                ref={relationshipButtonRef}
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  relationshipsToggleActive
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => {
+                  setShowRelationships((open) => {
+                    const nextOpen = !open;
+                    if (!nextOpen) {
+                      setRelationshipComposerOpen(false);
+                    }
+                    return nextOpen;
+                  });
+                }}
+              >
+                <ArrowLeftRightIcon className="h-3 w-3" />
+                Relationships
+              </button>
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showExternalLinks
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setShowExternalLinks((v) => !v)}
+              >
+                <Link01Icon className="h-3 w-3" />
+                External Links
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                onClick={() => openFilePickerRef.current?.()}
+              >
+                <AttachmentIcon className="h-3 w-3" />
+                Attach Files
+              </button>
+            </div>
           </div>
 
           {/* Recurring info card */}
@@ -1527,42 +1542,47 @@ function TaskDetailPanelBody({
             </button>
           ) : null}
 
-          <TaskRelationshipsSection
-            workspaceId={workspaceId}
-            taskId={taskDetail.task.id}
-            taskName={taskDetail.task.name}
-            taskDisplayId={taskDetail.task.display_id}
-            workflowId={taskDetail.task.workflow_id}
-            workflowStateId={taskDetail.task.workflow_state_id}
-            epicId={taskDetail.task.epic_id}
-            sprintId={taskDetail.task.sprint_id}
-            teamId={taskDetail.task.team_id}
-            taskType={taskDetail.task.task_type}
-            priority={taskDetail.task.priority}
-            severity={taskDetail.task.severity}
-            externalBlocker={form.blocker}
-            onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
-            composerOpen={relationshipComposerOpen}
-            onComposerOpenChange={setRelationshipComposerOpen}
-            externalTriggerRef={relationshipButtonRef}
-          />
-
-          {/* Checklist */}
-          {showChecklist && (
-            <div className="mt-6">
-              <ChecklistItems
+          {hasOptionalTaskSections && (
+            <div className="mt-8 space-y-8">
+              <TaskRelationshipsSection
                 workspaceId={workspaceId}
                 taskId={taskDetail.task.id}
-                members={assignableMembers}
-                teams={mentionTeams}
+                taskName={taskDetail.task.name}
+                taskDisplayId={taskDetail.task.display_id}
+                workflowId={taskDetail.task.workflow_id}
+                workflowStateId={taskDetail.task.workflow_state_id}
+                epicId={taskDetail.task.epic_id}
+                sprintId={taskDetail.task.sprint_id}
+                teamId={taskDetail.task.team_id}
+                taskType={taskDetail.task.task_type}
+                priority={taskDetail.task.priority}
+                severity={taskDetail.task.severity}
+                externalBlocker={form.blocker}
+                onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
+                composerOpen={relationshipComposerOpen}
+                onComposerOpenChange={setRelationshipComposerOpen}
+                visible={showRelationships}
+                externalTriggerRef={relationshipButtonRef}
               />
-            </div>
-          )}
 
-          {/* External Links */}
-          {showExternalLinks && (
-            <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
+              {/* Checklist */}
+              {showChecklist && (
+                <div>
+                  <ChecklistItems
+                    workspaceId={workspaceId}
+                    taskId={taskDetail.task.id}
+                    members={assignableMembers}
+                    teams={mentionTeams}
+                  />
+                </div>
+              )}
+
+              {/* External Links */}
+              {showExternalLinks && (
+                <div>
+                  <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
+                </div>
+              )}
             </div>
           )}
 
@@ -1594,7 +1614,7 @@ function TaskDetailPanelBody({
           )}
 
           {/* Separator */}
-          <Separator className="my-6" />
+          {(commentsLoading || comments.length > 0) && <Separator className="my-6 bg-border/60" />}
 
           {/* Comments + Activity */}
           <div>
@@ -1614,7 +1634,7 @@ function TaskDetailPanelBody({
             ) : (
               <>
                 {comments.length > 0 && (
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comments</h3>
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Comments</h3>
                 )}
               <CommentThread
                 workspaceId={workspaceId}
@@ -1644,7 +1664,7 @@ function TaskDetailPanelBody({
             ) : null}
             {!activityLoading && activity.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activity</h3>
+                <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Activity</h3>
                 <div className="relative mt-3">
                   {/* Vertical timeline line */}
                   <div className="absolute left-[9px] top-3 bottom-3 w-px bg-border/60" />
@@ -1701,6 +1721,7 @@ function TaskDetailPanelBody({
                       stateType={currentState.state_type}
                       label={currentState.name}
                       color={currentState.color}
+                      autoRunEnabled={automatedStateIds.has(currentState.id)}
                     />
                   ) : (
                     <span>Select</span>
@@ -1713,6 +1734,7 @@ function TaskDetailPanelBody({
                       stateType={s.state_type}
                       label={s.name}
                       color={s.color}
+                      autoRunEnabled={automatedStateIds.has(s.id)}
                     />
                   ) : null;
                 }}

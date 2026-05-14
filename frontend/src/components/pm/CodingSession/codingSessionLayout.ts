@@ -7,8 +7,9 @@ export function shouldShowCodingSessionPlanPanel(plan: RunPlanArtifact | null | 
 export function shouldShowCodingSessionSidePanel(
   plan: RunPlanArtifact | null | undefined,
   previewCount: number,
+  reviewHistoryCount = 0,
 ): boolean {
-  return shouldShowCodingSessionPlanPanel(plan) || previewCount > 0;
+  return shouldShowCodingSessionPlanPanel(plan) || previewCount > 0 || reviewHistoryCount > 0;
 }
 
 export function shouldShowFailedCodingSessionRecoveryNotice(

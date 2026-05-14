@@ -50,10 +50,10 @@ function TooltipWrappedTrigger({
   popoverOpen: boolean;
   children: ReactElement;
 }) {
-  if (!label) return children;
+  if (!label || popoverOpen) return children;
 
   return (
-    <Tooltip open={popoverOpen ? false : undefined}>
+    <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent side="top">{label}</TooltipContent>
     </Tooltip>

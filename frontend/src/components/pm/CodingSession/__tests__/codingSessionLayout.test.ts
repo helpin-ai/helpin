@@ -27,6 +27,10 @@ describe('coding session layout decisions', () => {
     expect(shouldShowCodingSessionSidePanel(null, 1)).toBe(true);
   });
 
+  it('shows the side panel for review history', () => {
+    expect(shouldShowCodingSessionSidePanel(null, 0, 1)).toBe(true);
+  });
+
   it('shows failed-run recovery copy only when partial output is visible', () => {
     expect(shouldShowFailedCodingSessionRecoveryNotice('failed', populatedPlan, 0)).toBe(true);
     expect(shouldShowFailedCodingSessionRecoveryNotice('failed', null, 1)).toBe(true);

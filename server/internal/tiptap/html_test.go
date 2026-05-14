@@ -239,7 +239,7 @@ func TestRenderHTML_HtmlBlockAllowsSafeDataImage(t *testing.T) {
 }
 
 func TestRenderHTML_HtmlBlockAllowsSafePresentationStyles(t *testing.T) {
-	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<div style=\"border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom:16px; display:flex; align-items:flex-start; position:absolute\"><ol style=\"list-style:none; padding:0; margin:0\"><li style=\"margin-bottom:12px\"><span style=\"background: #007BFF;color:#fff;width:24px;height:24px;line-height:24px;text-align:center;display: inline-block;border-radius:50%;font-weight:bold; flex-shrink:0; background-image:url(javascript:alert(1))\">2</span> Click on <strong>Generate API Key</strong>.</li></ol><script>alert(1)</script></div>"}}]}`
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<div style=\"border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-bottom:16px; display:flex; align-items:flex-start; position:absolute\"><ol style=\"list-style:none; padding:0; margin:0\"><li style=\"margin-bottom:12px\"><span style=\"background: #007BFF;color:#fff;width:24px;height:24px;line-height:24px;text-align:center;display: inline-block;border-radius:50%;font-weight:bold; flex-shrink:0; background-image:url(javascript:alert(1))\">2</span> Click on <strong>Generate API Key</strong>.</li></ol></div>"}}]}`
 	got, err := RenderHTML(json.RawMessage(input))
 	if err != nil {
 		t.Fatal(err)
@@ -262,14 +262,14 @@ func TestRenderHTML_RawHtmlBlockRendersInlineWithoutIframe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`<div class="docs-html-block docs-html-block--raw">`, `<script>document`, `models-body`, `Kling`} {
+	for _, want := range []string{`<div class="docs-html-block docs-html-block--isolated">`, `<iframe class="docs-html-block-frame"`, `sandbox="allow-scripts allow-popups allow-forms allow-presentation"`, `&lt;script&gt;document`, `models-body`, `Kling`} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("expected raw inline HTML block output %q, got: %s", want, got)
+			t.Fatalf("expected isolated HTML block output %q, got: %s", want, got)
 		}
 	}
-	for _, notWant := range []string{`<iframe`, `srcdoc=`, `&lt;script&gt;`} {
+	for _, notWant := range []string{`<script>document`, `docs-html-block--raw`} {
 		if strings.Contains(got, notWant) {
-			t.Fatalf("expected raw inline HTML block to avoid iframe artifact %q, got: %s", notWant, got)
+			t.Fatalf("expected isolated HTML block not to leak raw parent content %q, got: %s", notWant, got)
 		}
 	}
 }
@@ -282,11 +282,11 @@ func TestRenderHTML_RawHtmlBlockDoesNotInjectFontWrapper(t *testing.T) {
 	}
 	for _, want := range []string{`Keep source font`, `font-family: Georgia, serif`, `Fallback text`} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("expected raw inline HTML block to contain %q, got: %s", want, got)
+			t.Fatalf("expected isolated HTML block srcdoc to contain %q, got: %s", want, got)
 		}
 	}
 	if strings.Contains(got, `font-family: ui-sans-serif`) {
-		t.Fatalf("expected raw inline HTML block not to inject an iframe font wrapper, got: %s", got)
+		t.Fatalf("expected isolated HTML block not to inject a font wrapper, got: %s", got)
 	}
 }
 
@@ -296,14 +296,32 @@ func TestRenderHTML_RawHtmlBlockKeepsSourceIframe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`<div class="docs-html-block docs-html-block--raw">`, `<iframe src="https://www.youtube.com/embed/abc123" width="560" height="315"></iframe>`} {
+	for _, want := range []string{`<div class="docs-html-block docs-html-block--isolated">`, `<iframe class="docs-html-block-frame"`, `&lt;iframe src=&#34;https://www.youtube.com/embed/abc123&#34; width=&#34;560&#34; height=&#34;315&#34;&gt;&lt;/iframe&gt;`} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("expected raw inline HTML block to keep source iframe %q, got: %s", want, got)
+			t.Fatalf("expected isolated HTML block srcdoc to keep source iframe %q, got: %s", want, got)
 		}
 	}
-	for _, notWant := range []string{`docs-html-block-frame`, `srcdoc=`} {
+	for _, notWant := range []string{`<iframe src="https://www.youtube.com/embed/abc123"`} {
 		if strings.Contains(got, notWant) {
-			t.Fatalf("expected no generated iframe wrapper artifact %q, got: %s", notWant, got)
+			t.Fatalf("expected source iframe not to render in parent document %q, got: %s", notWant, got)
+		}
+	}
+}
+
+func TestRenderHTML_FullHTMLBlockRendersIsolatedEvenWhenInline(t *testing.T) {
+	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<!DOCTYPE html><html><head><style>.box{color:red}</style></head><body><div class=\"box\">Diagram</div><script>window.ok=true</script></body></html>"}}]}`
+	got, err := RenderHTML(json.RawMessage(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`docs-html-block--isolated`, `docs-html-block-frame`, `&lt;style&gt;.box{color:red}&lt;/style&gt;`, `&lt;script&gt;window.ok=true&lt;/script&gt;`, `Diagram`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected isolated full HTML output %q, got: %s", want, got)
+		}
+	}
+	for _, notWant := range []string{`<style>.box{color:red}</style>`, `<script>window.ok=true</script>`} {
+		if strings.Contains(got, notWant) {
+			t.Fatalf("expected full HTML source to stay inside srcdoc attribute, got raw %q in: %s", notWant, got)
 		}
 	}
 }
@@ -475,17 +493,19 @@ func TestRenderHTML_HTMLBlock(t *testing.T) {
 	}
 }
 
-func TestRenderHTML_HTMLBlockSanitizesScript(t *testing.T) {
+func TestRenderHTML_HTMLBlockIsolatesScript(t *testing.T) {
 	input := `{"type":"doc","content":[{"type":"htmlBlock","attrs":{"html":"<p>Hello</p><script>alert('xss')</script>"}}]}`
 	got, err := RenderHTML(json.RawMessage(input))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(got, "script") {
-		t.Errorf("expected script stripped, got: %s", got)
+	for _, want := range []string{`docs-html-block--isolated`, `docs-html-block-frame`, `Hello`, `&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected script-containing HTML block to render isolated with %q, got: %s", want, got)
+		}
 	}
-	if !strings.Contains(got, "Hello") {
-		t.Errorf("expected safe text preserved, got: %s", got)
+	if strings.Contains(got, "<script>") {
+		t.Errorf("expected script not to render in parent document, got: %s", got)
 	}
 }
 

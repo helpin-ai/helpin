@@ -49,13 +49,15 @@ export function DocumentPreviewDialog({
       <DialogContent className="flex h-[90vh] max-h-[90vh] min-h-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
         <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-4 pr-16">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 space-y-1">
-              <DialogTitle className="truncate text-base">
+            <div className="min-w-0 flex-1 space-y-1">
+              <DialogTitle className="truncate text-base" title={doc?.title || undefined}>
                 {doc?.title || (isLoading ? 'Loading document...' : 'Document preview')}
               </DialogTitle>
-              <DialogDescription className="line-clamp-2">
-                {doc?.excerpt || 'Preview this document without leaving the current panel.'}
-              </DialogDescription>
+              {doc?.excerpt ? (
+                <DialogDescription className="line-clamp-2">
+                  {doc.excerpt}
+                </DialogDescription>
+              ) : null}
             </div>
             <Button
               type="button"
