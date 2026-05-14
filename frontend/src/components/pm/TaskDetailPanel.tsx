@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
+  Activity01Icon,
   ArchiveIcon,
   ArrowLeftRightIcon,
   ArrowUpRight01Icon,
@@ -1634,7 +1635,7 @@ function TaskDetailPanelBody({
             ) : (
               <>
                 {comments.length > 0 && (
-                  <TaskDetailSectionHeading title="Comments" className="mb-3" />
+                  <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3" />
                 )}
               <CommentThread
                 workspaceId={workspaceId}
@@ -1664,7 +1665,7 @@ function TaskDetailPanelBody({
             ) : null}
             {!activityLoading && activity.length > 0 && (
               <div className="mt-6">
-                <TaskDetailSectionHeading title="Activity" />
+                <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} />
                 <div className="relative mt-3">
                   {/* Vertical timeline line */}
                   <div className="absolute left-[9px] top-3 bottom-3 w-px bg-border/60" />

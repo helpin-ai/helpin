@@ -18,8 +18,8 @@ export function TaskDetailSectionHeading({
   return (
     <div className={cn('border-b border-border/50 pb-2', className)}>
       <div className="flex items-center gap-1.5">
-        {Icon ? <Icon className="h-3.5 w-3.5 text-muted-foreground" /> : null}
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
+        {Icon ? <Icon className="h-3.5 w-3.5 text-primary/80" /> : null}
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/75">
           {title}
         </h3>
         {meta}
