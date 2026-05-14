@@ -590,7 +590,7 @@ export function EpicDetailPage() {
       ) : (
         <PlusSignIcon className="h-3.5 w-3.5" />
       )}
-      Add task
+      Create task
     </Button>
   );
 
@@ -853,7 +853,7 @@ export function EpicDetailPage() {
 
           {/* Tasks */}
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Tasks ({tasks.length})
               </h3>
@@ -882,9 +882,6 @@ export function EpicDetailPage() {
                   epicId={epicId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
-                  footer={renderGhostAddTaskRow(
-                    'flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
-                  )}
                 />
               </div>
             ) : (

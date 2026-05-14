@@ -183,7 +183,7 @@ const TASK_LIST_ROW =
 const TASK_LIST_CELL =
   'flex shrink-0 items-center self-stretch border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
 const TASK_LIST_GROUP_ROW =
-  'flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
+  'sticky left-0 z-[4] flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
 
 interface TaskListViewProps {
   workspaceId: string;
