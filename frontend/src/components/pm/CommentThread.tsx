@@ -47,6 +47,11 @@ function formatRelativeTime(dateStr: string): string {
   }
 }
 
+function formatRelativeTimeAgo(dateStr: string): string {
+  const relative = formatRelativeTime(dateStr);
+  return relative === 'now' ? relative : `${relative} ago`;
+}
+
 // ── Curated emoji set ──
 const REACTION_EMOJIS = [
   { emoji: '👍', label: 'Thumbs up' },
@@ -897,6 +902,7 @@ export function CommentThread({
     const isEditing = editingCommentId === entry.comment.id;
     const hasReactions = (entry.reactions?.length ?? 0) > 0;
     const avatarSize = isReply ? 'h-6 w-6 text-[9px]' : 'h-7 w-7 text-[10px]';
+    const avatarOffset = isReply ? 'mt-0.5' : 'mt-0';
     const groupClass = isReply ? 'group/reply' : 'group';
     const isResolved = Boolean(entry.comment.resolved_at);
     const authorName = entry.author.full_name || entry.author.email;
@@ -904,7 +910,7 @@ export function CommentThread({
     const showThreadConnector = Boolean(options.showThreadConnector && !isReply);
 
     return (
-      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''} relative flex gap-2`}>
+      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''} relative grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2`}>
         {showThreadConnector && (
           <div
             data-comment-collapse-stem="top"
@@ -918,7 +924,7 @@ export function CommentThread({
           avatarSeed={entry.author.avatar_seed}
           avatarBackgroundMode={entry.author.avatar_background_mode}
           avatarBackgroundColor={entry.author.avatar_background_color}
-          className={`${avatarSize} shrink-0 -mt-1`}
+          className={`${avatarSize} shrink-0 ${avatarOffset}`}
         />
         <div className="min-w-0 flex-1 flex items-start gap-2">
           <div className="min-w-0 flex-1">
@@ -934,7 +940,10 @@ export function CommentThread({
                   </div>
                 )}
                 <div className="text-[13px] leading-relaxed text-foreground/80">
-                  <span className="font-semibold text-foreground mr-1.5">{authorName}</span>
+                  <span className="mr-1.5 inline-flex items-baseline gap-1.5">
+                    <span className="font-semibold text-foreground">{authorName}</span>
+                    <span className="text-[11px] text-muted-foreground">{formatRelativeTimeAgo(entry.comment.created_at)}</span>
+                  </span>
                   <CommentBody
                     body={entry.comment.body}
                     members={members}
@@ -1040,15 +1049,12 @@ export function CommentThread({
                   </DropdownMenu>
                 )}
               </div>
-              <span className="flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
-                {isResolved && (
-                  <span className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400">
-                    <CheckmarkCircle02Icon className="h-3 w-3" />
-                    Resolved
-                  </span>
-                )}
-                {formatRelativeTime(entry.comment.created_at)}
-              </span>
+              {isResolved && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <CheckmarkCircle02Icon className="h-3 w-3" />
+                  Resolved
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -1174,7 +1180,7 @@ export function CommentThread({
         <button
           type="button"
           onClick={openTopComposer}
-          className="flex w-full items-start gap-2 rounded-md py-1 text-left transition-colors cursor-pointer group/comment-composer"
+          className="flex w-full items-start gap-2 rounded-md px-3 py-1 text-left transition-colors cursor-pointer group/comment-composer"
         >
           <UserAvatar
             name={currentMember?.display_name ?? currentMember?.email ?? 'You'}
@@ -1183,7 +1189,7 @@ export function CommentThread({
             avatarSeed={currentMember?.avatar_seed}
             avatarBackgroundMode={currentMember?.avatar_background_mode}
             avatarBackgroundColor={currentMember?.avatar_background_color}
-            className="h-7 w-7 text-[10px] shrink-0 -mt-0.5"
+            className="h-7 w-7 text-[10px] shrink-0 mt-1"
           />
           <span className="flex min-h-9 flex-1 items-center rounded-md border border-border/70 bg-background px-3 text-sm text-muted-foreground transition-colors group-hover/comment-composer:border-primary/30 group-hover/comment-composer:bg-accent/30 group-hover/comment-composer:text-foreground">
             Add a comment...
@@ -1191,7 +1197,7 @@ export function CommentThread({
         </button>
       )}
       {!hideTopLevelComposer && (comments.length === 0 || topComposerOpen) && (
-        <div className="flex items-start gap-2">
+        <div className={cn('flex items-start gap-2', comments.length > 0 && 'px-3')}>
           {comments.length > 0 && (
             <UserAvatar
               name={currentMember?.display_name ?? currentMember?.email ?? 'You'}
@@ -1200,7 +1206,7 @@ export function CommentThread({
               avatarSeed={currentMember?.avatar_seed}
               avatarBackgroundMode={currentMember?.avatar_background_mode}
               avatarBackgroundColor={currentMember?.avatar_background_color}
-              className="h-7 w-7 text-[10px] shrink-0 -mt-0.5"
+              className="h-7 w-7 text-[10px] shrink-0 mt-1"
             />
           )}
           <div

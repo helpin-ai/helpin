@@ -97,11 +97,16 @@ interface CreateTaskModalProps {
   workspaceId: string;
   workflow?: WorkflowWithStates;
   initialStateId?: string;
+  initialName?: string;
+  initialTaskType?: TaskType;
+  initialPriority?: Priority;
+  initialSeverity?: Severity;
   initialTeamId?: string;
   initialEpicId?: string;
   initialOwnerMemberId?: string;
   initialSprintId?: string;
   onCreate?: (payload: CreateTaskRequest) => Promise<CreatedTaskResult | void>;
+  stackedOverDrawer?: boolean;
   mode?: 'task' | 'template';
   editingTemplate?: TaskTemplate | null;
   onSaveTemplate?: (template: TaskTemplate) => void;
@@ -375,11 +380,16 @@ export function CreateTaskModal({
   workspaceId,
   workflow,
   initialStateId,
+  initialName,
+  initialTaskType,
+  initialPriority,
+  initialSeverity,
   initialTeamId,
   initialEpicId,
   initialOwnerMemberId,
   initialSprintId,
   onCreate,
+  stackedOverDrawer = false,
   mode = 'task',
   editingTemplate,
   onSaveTemplate,
@@ -486,7 +496,10 @@ export function CreateTaskModal({
       const initialTeam = teamsRef.current.find((team) => team.id === effectiveTeamId);
       const nextForm: CreateTaskFormState = {
         ...defaultState,
-        task_type: (initialTeam?.default_task_type as TaskType | undefined) ?? 'feature',
+        name: initialName ?? '',
+        task_type: initialTaskType ?? (initialTeam?.default_task_type as TaskType | undefined) ?? 'feature',
+        priority: initialPriority ?? defaultState.priority,
+        severity: initialSeverity ?? defaultState.severity,
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
         epic_id: initialEpicId ?? '',
@@ -496,7 +509,7 @@ export function CreateTaskModal({
       setForm(nextForm);
       initialFormRef.current = null;
       initialStateIdRef.current = initialStateId ?? '';
-      setTaskTypeDirty(false);
+      setTaskTypeDirty(Boolean(initialTaskType));
       initialDescRef.current = '';
       setStateId(initialStateId ?? '');
     }
@@ -513,7 +526,7 @@ export function CreateTaskModal({
     setRecurringDraft(null);
     setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial task type; including it causes form reset on background refetch
-  }, [open, initialStateId, initialTeamId, initialEpicId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
+  }, [open, initialStateId, initialName, initialTaskType, initialPriority, initialSeverity, initialTeamId, initialEpicId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
 
   useEffect(() => {
     if (!open || !isTemplateMode) return;
@@ -1023,14 +1036,17 @@ export function CreateTaskModal({
           setSourceMarkdown('');
           setForm({
             ...defaultState,
-            task_type: (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
+            name: initialName ?? '',
+            task_type: initialTaskType ?? (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
+            priority: initialPriority ?? defaultState.priority,
+            severity: initialSeverity ?? defaultState.severity,
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
             epic_id: initialEpicId ?? '',
             owner_member_ids: initialOwnerMemberId ? [initialOwnerMemberId] : [],
             sprint_id: initialSprintId ?? '',
           });
-          setTaskTypeDirty(false);
+          setTaskTypeDirty(Boolean(initialTaskType));
           setStateId(initialStateId ?? '');
           setPendingFiles([]);
           setRecurringDraft(null);
@@ -1057,6 +1073,10 @@ export function CreateTaskModal({
     uploadPendingFilesForEntity,
     resolveSubmitWorkflow,
     initialStateId,
+    initialName,
+    initialTaskType,
+    initialPriority,
+    initialSeverity,
     currentMemberId,
     initialTeamId,
     initialEpicId,
@@ -1105,9 +1125,15 @@ export function CreateTaskModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="max-w-6xl sm:max-w-6xl gap-0 overflow-hidden p-0"
+        className="max-w-6xl sm:max-w-6xl gap-0 overflow-visible p-0"
         showCloseButton={false}
       >
+        {stackedOverDrawer ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -left-2 top-3 h-14 w-2 rounded-l-md border-y border-l border-border/70 bg-background shadow-sm"
+          />
+        ) : null}
         <div className="flex h-[85vh] max-h-[960px] flex-col">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">

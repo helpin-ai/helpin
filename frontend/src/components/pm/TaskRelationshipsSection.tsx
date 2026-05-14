@@ -17,6 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
+import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,11 +35,13 @@ import {
   useDeleteDocAssociation,
   useDeleteTaskRelationship,
   useTaskAssociations,
+  useWorkflows,
 } from '@/hooks/queries';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import type {
   CreateTaskRequest,
   GroupedAssociations,
+  Task,
   TaskRelationshipAction,
 } from '@/lib/pmTypes';
 import { TaskTypeIcon } from '@/lib/pmConstants';
@@ -252,8 +255,11 @@ export function TaskRelationshipsSection({
   const [taskResults, setTaskResults] = useState<SearchResult[]>([]);
   const [docResults, setDocResults] = useState<SearchResult[]>([]);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const [createRelatedTaskOpen, setCreateRelatedTaskOpen] = useState(false);
+  const [createRelatedTaskInitialName, setCreateRelatedTaskInitialName] = useState('');
 
   const associationsQuery = useTaskAssociations(workspaceId, taskId);
+  const workflowsQuery = useWorkflows(workspaceId);
   const data = associationsQuery.data as GroupedAssociations | undefined;
   const createRelationship = useCreateTaskRelationship(workspaceId, taskId);
   const deleteRelationship = useDeleteTaskRelationship(workspaceId, taskId);
@@ -334,28 +340,21 @@ export function TaskRelationshipsSection({
   };
 
   const handleCreateRelatedTask = async () => {
-    const name = query.trim();
-    if (!name) return;
+    setCreateRelatedTaskInitialName(query.trim());
+    onComposerOpenChange(false);
+    setCreateRelatedTaskOpen(true);
+  };
 
-    const payload: CreateTaskRequest = {
-      workspace_id: workspaceId,
-      name,
-      workflow_id: workflowId,
-      workflow_state_id: workflowStateId,
-      epic_id: epicId,
-      sprint_id: sprintId,
-      team_id: teamId,
-      task_type: taskType,
-      priority,
-      severity,
-    };
-
+  const handleCreateAndRelateTask = async (payload: CreateTaskRequest) => {
     const created = await createTask.mutateAsync(payload);
     await createRelationship.mutateAsync({
       relationship_type: relationshipType,
       other_task_id: created.task.id,
     });
-    onComposerOpenChange(false);
+    return {
+      id: created.task.id,
+      task: created.task as Pick<Task, 'id' | 'name' | 'display_id' | 'task_key'>,
+    };
   };
 
   const handleLinkDoc = async (documentId: string) => {
@@ -394,6 +393,10 @@ export function TaskRelationshipsSection({
     anchorSource === 'external' && externalTriggerRef?.current
       ? externalTriggerRef.current
       : inlineAddRef.current;
+  const createWorkflow = useMemo(
+    () => workflowsQuery.data?.find((item) => item.workflow.id === workflowId),
+    [workflowId, workflowsQuery.data],
+  );
 
   const popoverBody: ReactNode = (
     <>
@@ -521,11 +524,13 @@ export function TaskRelationshipsSection({
               type="button"
               variant="outline"
               className="h-7 gap-1 rounded-lg border-border/60 px-2.5 text-xs font-medium transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
-              disabled={query.trim().length === 0}
+              disabled={!createWorkflow}
               onClick={handleCreateRelatedTask}
             >
               <PlusSignIcon className="h-3 w-3" />
-              Create Related Task
+              <span className="max-w-44 truncate">
+                {query.trim() ? `Create "${query.trim()}"` : 'Create related task'}
+              </span>
             </Button>
           </div>
         ) : null}
@@ -717,6 +722,25 @@ export function TaskRelationshipsSection({
       <FloatingPopover open={composerOpen} onOpenChange={onComposerOpenChange} anchorEl={anchorEl}>
         {popoverBody}
       </FloatingPopover>
+
+      {createWorkflow ? (
+        <CreateTaskModal
+          open={createRelatedTaskOpen}
+          onOpenChange={setCreateRelatedTaskOpen}
+          workspaceId={workspaceId}
+          workflow={createWorkflow}
+          initialStateId={workflowStateId ?? createWorkflow.workflow.default_state_id ?? createWorkflow.states[0]?.id ?? ''}
+          initialName={createRelatedTaskInitialName}
+          initialTaskType={taskType}
+          initialPriority={priority}
+          initialSeverity={severity}
+          initialTeamId={teamId}
+          initialEpicId={epicId}
+          initialSprintId={sprintId}
+          onCreate={handleCreateAndRelateTask}
+          stackedOverDrawer
+        />
+      ) : null}
 
       <DocumentPreviewDialog
         workspaceId={workspaceId}
