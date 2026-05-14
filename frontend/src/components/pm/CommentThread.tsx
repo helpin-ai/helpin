@@ -397,29 +397,6 @@ export function CommentThread({
     });
   }, [comments]);
 
-  useEffect(() => {
-    if (commentAnchor) {
-      setTopComposerOpen(true);
-      setTopComposerKey((k) => k + 1);
-    }
-  }, [commentAnchor]);
-
-  const openTopComposer = useCallback(() => {
-    setTopComposerOpen(true);
-    setTopComposerKey((k) => k + 1);
-  }, []);
-
-  const openReply = useCallback((parentId: string) => {
-    setExpandedThreads((prev) => {
-      const next = new Set(prev);
-      next.add(parentId);
-      return next;
-    });
-    setReplyComposerOpenFor(parentId);
-    setReplyAutoFocusFor(parentId);
-    setReplyAutoFocusKey((k) => k + 1);
-  }, []);
-
   type PendingFile = { id: string; name: string; url?: string };
   // Uploaded attachment IDs for new comment, edit, and per-reply
   const [pendingAttachments, setPendingAttachments] = useState<PendingFile[]>([]);
@@ -821,6 +798,42 @@ export function CommentThread({
     setReplyComposerOpenFor((current) => (current === parentId ? null : current));
   }, [workspaceId]);
 
+  const openTopComposer = useCallback(() => {
+    void (async () => {
+      if (replyComposerOpenFor) {
+        await cancelReply(replyComposerOpenFor);
+      }
+      setTopComposerOpen(true);
+      setTopComposerKey((k) => k + 1);
+    })();
+  }, [cancelReply, replyComposerOpenFor]);
+
+  const openReply = useCallback((parentId: string) => {
+    void (async () => {
+      if (topComposerOpen) {
+        await closeTopComposer();
+      }
+      setExpandedThreads((prev) => {
+        const next = new Set(prev);
+        next.add(parentId);
+        return next;
+      });
+      setReplyComposerOpenFor(parentId);
+      setReplyAutoFocusFor(parentId);
+      setReplyAutoFocusKey((k) => k + 1);
+    })();
+  }, [closeTopComposer, topComposerOpen]);
+
+  useEffect(() => {
+    if (commentAnchor) {
+      if (replyComposerOpenFor) {
+        void cancelReply(replyComposerOpenFor);
+      }
+      setTopComposerOpen(true);
+      setTopComposerKey((k) => k + 1);
+    }
+  }, [cancelReply, commentAnchor, replyComposerOpenFor]);
+
   const resetComposerDrag = useCallback(() => {
     composerDragCounterRef.current = 0;
     setComposerDragging(false);
@@ -850,7 +863,7 @@ export function CommentThread({
     }
   }, [attachmentsEnabled]);
 
-  const handleComposerDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+  const handleComposerDrop = useCallback((event: DragEvent<HTMLDivElement>, parentId?: string) => {
     if (!attachmentsEnabled || !hasDraggedFiles(event)) return;
     const alreadyHandled = event.defaultPrevented;
     event.preventDefault();
@@ -858,7 +871,7 @@ export function CommentThread({
     resetComposerDrag();
     if (alreadyHandled) return;
     if (event.dataTransfer.files.length > 0) {
-      void uploadFilesToDraft(event.dataTransfer.files);
+      void uploadFilesToDraft(event.dataTransfer.files, parentId);
     }
   }, [attachmentsEnabled, resetComposerDrag, uploadFilesToDraft]);
 
@@ -888,6 +901,113 @@ export function CommentThread({
           onRemoveUploadedFile={(id) => void removeEditPendingAttachment(id)}
           initialContent={editingCommentBody}
           autoFocus
+        />
+      </div>
+    </div>
+  );
+
+  const renderCommentComposer = ({
+    parentId,
+    editorKey,
+    autoFocus,
+    onSubmit,
+    loading,
+    placeholder,
+    variant,
+    uploadedFiles,
+    onClose,
+    showAnchor = false,
+    showAvatar = true,
+    className,
+    editorClassName,
+  }: {
+    parentId?: string;
+    editorKey: string;
+    autoFocus: boolean;
+    onSubmit: (body: string) => void | Promise<void>;
+    loading: boolean;
+    placeholder: string;
+    variant: 'primary' | 'reply';
+    uploadedFiles: PendingFile[];
+    onClose?: () => void | Promise<void>;
+    showAnchor?: boolean;
+    showAvatar?: boolean;
+    className?: string;
+    editorClassName?: string;
+  }) => (
+    <div className={cn('flex items-start gap-2', className)}>
+      {showAvatar && (
+        <UserAvatar
+          name={currentMember?.display_name ?? currentMember?.email ?? 'You'}
+          avatarUrl={currentMember?.avatar_url}
+          avatarStyle={currentMember?.avatar_style}
+          avatarSeed={currentMember?.avatar_seed}
+          avatarBackgroundMode={currentMember?.avatar_background_mode}
+          avatarBackgroundColor={currentMember?.avatar_background_color}
+          className="h-7 w-7 text-[10px] shrink-0 mt-0.5"
+        />
+      )}
+      <div
+        className={cn(
+          'relative min-w-0 flex-1 rounded-lg',
+          comments.length === 0 && hideEmptyState ? 'mt-6' : '',
+          composerDragging ? 'ring-1 ring-primary/50' : '',
+          editorClassName,
+        )}
+        onDragEnter={handleComposerDragEnter}
+        onDragOver={handleComposerDragOver}
+        onDragLeave={handleComposerDragLeave}
+        onDrop={(event) => handleComposerDrop(event, parentId)}
+      >
+        {showAnchor && commentAnchor && (
+          <div className="mb-1.5 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+            <span className="flex-1 truncate">
+              Commenting on {commentAnchor.anchor_text ? `“${commentAnchor.anchor_text}”` : 'selected block'}
+            </span>
+            <button
+              type="button"
+              className="shrink-0 rounded p-0.5 hover:bg-accent hover:text-foreground"
+              onClick={() => onCommentAnchorConsumed?.()}
+              aria-label="Clear anchor"
+            >
+              <Cancel01Icon className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+        {composerDragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border border-dashed border-primary bg-background/80">
+            <div className="flex items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
+              <AttachmentIcon className="h-3.5 w-3.5 text-primary" />
+              Drop files to add to comment
+            </div>
+          </div>
+        )}
+        {onClose && (
+          <QuickTooltip label="Close">
+            <button
+              type="button"
+              onClick={() => void onClose()}
+              aria-label="Close composer"
+              className="absolute top-1.5 right-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+            >
+              <Cancel01Icon className="h-3.5 w-3.5" />
+            </button>
+          </QuickTooltip>
+        )}
+        <CommentEditor
+          key={editorKey}
+          autoFocus={autoFocus}
+          onSubmit={onSubmit}
+          loading={loading}
+          placeholder={placeholder}
+          variant={variant}
+          enableEmojiPicker
+          teams={teams}
+          members={members}
+          onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files, parentId) : undefined}
+          onFileSelect={attachmentsEnabled ? () => handleFileUpload(parentId) : undefined}
+          uploadedFiles={uploadedFiles}
+          onRemoveUploadedFile={(id) => removePendingAttachment(id, parentId)}
         />
       </div>
     </div>
@@ -1140,33 +1260,18 @@ export function CommentThread({
                         </div>
                       ))}
                       {replyComposerOpen && (
-                        <div className="pt-1 relative">
-                          <QuickTooltip label="Close">
-                            <button
-                              type="button"
-                              onClick={() => void cancelReply(entry.comment.id)}
-                              aria-label="Close reply"
-                              className="absolute top-1.5 right-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                            >
-                              <Cancel01Icon className="h-3.5 w-3.5" />
-                            </button>
-                          </QuickTooltip>
-                          <CommentEditor
-                            key={`reply-${entry.comment.id}-${replyAutoFocusFor === entry.comment.id ? replyAutoFocusKey : 0}`}
-                            autoFocus={replyAutoFocusFor === entry.comment.id}
-                            onSubmit={(body) => addReply(entry.comment.id, body)}
-                            loading={replyLoading}
-                            placeholder="Reply..."
-                            variant="reply"
-                            enableEmojiPicker
-                            teams={teams}
-                            members={members}
-                            onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files, entry.comment.id) : undefined}
-                            onFileSelect={attachmentsEnabled ? () => handleFileUpload(entry.comment.id) : undefined}
-                            uploadedFiles={replyPendingAttachments.get(entry.comment.id) ?? []}
-                            onRemoveUploadedFile={(id) => removePendingAttachment(id, entry.comment.id)}
-                          />
-                        </div>
+                        renderCommentComposer({
+                          parentId: entry.comment.id,
+                          editorKey: `reply-${entry.comment.id}-${replyAutoFocusFor === entry.comment.id ? replyAutoFocusKey : 0}`,
+                          autoFocus: replyAutoFocusFor === entry.comment.id,
+                          onSubmit: (body) => addReply(entry.comment.id, body),
+                          loading: replyLoading,
+                          placeholder: 'Reply...',
+                          variant: 'reply',
+                          uploadedFiles: replyPendingAttachments.get(entry.comment.id) ?? [],
+                          onClose: () => cancelReply(entry.comment.id),
+                          className: 'pt-1',
+                        })
                       )}
                     </div>
                   </div>
@@ -1199,76 +1304,19 @@ export function CommentThread({
         </button>
       )}
       {!hideTopLevelComposer && (comments.length === 0 || topComposerOpen) && (
-        <div className={cn('flex items-start gap-2', comments.length > 0 && 'px-3')}>
-          {comments.length > 0 && (
-            <UserAvatar
-              name={currentMember?.display_name ?? currentMember?.email ?? 'You'}
-              avatarUrl={currentMember?.avatar_url}
-              avatarStyle={currentMember?.avatar_style}
-              avatarSeed={currentMember?.avatar_seed}
-              avatarBackgroundMode={currentMember?.avatar_background_mode}
-              avatarBackgroundColor={currentMember?.avatar_background_color}
-              className="h-7 w-7 text-[10px] shrink-0 mt-0.5"
-            />
-          )}
-          <div
-            className={`relative min-w-0 flex-1 rounded-lg ${comments.length === 0 && hideEmptyState ? 'mt-6' : ''} ${composerDragging ? 'ring-1 ring-primary/50' : ''}`}
-            onDragEnter={handleComposerDragEnter}
-            onDragOver={handleComposerDragOver}
-            onDragLeave={handleComposerDragLeave}
-            onDrop={handleComposerDrop}
-          >
-            {commentAnchor && (
-              <div className="mb-1.5 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
-                <span className="flex-1 truncate">
-                  Commenting on {commentAnchor.anchor_text ? `“${commentAnchor.anchor_text}”` : 'selected block'}
-                </span>
-                <button
-                  type="button"
-                  className="shrink-0 rounded p-0.5 hover:bg-accent hover:text-foreground"
-                  onClick={() => onCommentAnchorConsumed?.()}
-                  aria-label="Clear anchor"
-                >
-                  <Cancel01Icon className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-            {composerDragging && (
-              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border border-dashed border-primary bg-background/80">
-                <div className="flex items-center gap-2 rounded-md bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm">
-                  <AttachmentIcon className="h-3.5 w-3.5 text-primary" />
-                  Drop files to add to comment
-                </div>
-              </div>
-            )}
-            {comments.length > 0 && (
-              <QuickTooltip label="Close">
-                <button
-                  type="button"
-                  onClick={() => void closeTopComposer()}
-                  aria-label="Close composer"
-                  className="absolute top-1.5 right-1.5 z-10 inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <Cancel01Icon className="h-3.5 w-3.5" />
-                </button>
-              </QuickTooltip>
-            )}
-            <CommentEditor
-              key={`top-${topComposerKey}`}
-              autoFocus={topComposerKey > 0}
-              onSubmit={addComment}
-              loading={commentLoading}
-              placeholder="Add a comment…"
-              variant="primary"
-              teams={teams}
-              members={members}
-              onImageSelect={attachmentsEnabled ? (files) => handleImageUpload(files) : undefined}
-              onFileSelect={attachmentsEnabled ? () => handleFileUpload() : undefined}
-              uploadedFiles={pendingAttachments}
-              onRemoveUploadedFile={(id) => removePendingAttachment(id)}
-            />
-          </div>
-        </div>
+        renderCommentComposer({
+          editorKey: `top-${topComposerKey}`,
+          autoFocus: topComposerKey > 0,
+          onSubmit: addComment,
+          loading: commentLoading,
+          placeholder: 'Add a comment…',
+          variant: 'primary',
+          uploadedFiles: pendingAttachments,
+          onClose: comments.length > 0 ? closeTopComposer : undefined,
+          showAnchor: true,
+          showAvatar: comments.length > 0,
+          className: comments.length > 0 ? 'px-3' : undefined,
+        })
       )}
     </div>
   );
