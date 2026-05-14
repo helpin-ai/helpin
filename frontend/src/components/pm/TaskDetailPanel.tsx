@@ -106,6 +106,7 @@ import { buildTaskCopyUrl, buildTaskPath } from '@/lib/pmTaskLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { TaskRelationshipsSection } from '@/components/pm/TaskRelationshipsSection';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -1633,7 +1634,7 @@ function TaskDetailPanelBody({
             ) : (
               <>
                 {comments.length > 0 && (
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70">Comments</h3>
+                  <TaskDetailSectionHeading title="Comments" className="mb-3" />
                 )}
               <CommentThread
                 workspaceId={workspaceId}
@@ -1663,7 +1664,7 @@ function TaskDetailPanelBody({
             ) : null}
             {!activityLoading && activity.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Activity</h3>
+                <TaskDetailSectionHeading title="Activity" />
                 <div className="relative mt-3">
                   {/* Vertical timeline line */}
                   <div className="absolute left-[9px] top-3 bottom-3 w-px bg-border/60" />

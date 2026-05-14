@@ -27,6 +27,7 @@ import {
   getMentionSuggestions,
   type MentionSuggestionItem,
 } from '@/components/pm/mentionSuggestions';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import type { ChecklistItem } from '@/lib/pmTypes';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 
@@ -277,17 +278,15 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5">
-        <CheckmarkSquare02Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
-          Checklist
-          {items.length > 0 && (
-            <span className="ml-1 font-normal">
-              {completedCount}/{items.length}
-            </span>
-          )}
-        </h3>
-      </div>
+      <TaskDetailSectionHeading
+        title="Checklist"
+        icon={CheckmarkSquare02Icon}
+        meta={items.length > 0 ? (
+          <span className="text-xs font-normal text-foreground/70">
+            {completedCount}/{items.length}
+          </span>
+        ) : null}
+      />
 
       {/* Progress bar */}
       {items.length > 0 && (

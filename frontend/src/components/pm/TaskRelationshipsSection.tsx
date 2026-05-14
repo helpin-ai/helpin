@@ -45,6 +45,7 @@ import { TaskTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 
 interface TaskRelationshipsSectionProps {
   workspaceId: string;
@@ -537,10 +538,7 @@ export function TaskRelationshipsSection({
 
   return (
     <section id="task-relationships-section" className={className}>
-      <div className="flex items-center gap-1.5">
-        <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Task Relationships</h3>
-      </div>
+      <TaskDetailSectionHeading title="Task Relationships" icon={ArrowLeftRightIcon} />
 
       {associationsQuery.error ? (
         <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
@@ -549,7 +547,7 @@ export function TaskRelationshipsSection({
       ) : null}
 
       {/* Flat relationship list — no borders */}
-      <div className="mt-1">
+      <div className="mt-3">
         {allRelationships.map((item) => {
           const meta = getRelationshipMeta(item.link_type);
           const Icon = meta.icon;
@@ -670,7 +668,7 @@ export function TaskRelationshipsSection({
       </div>
 
       {/* + Add Relationship */}
-      <div className="mt-1 flex items-center gap-2">
+      <div className="mt-2 flex items-center gap-2">
         <Button
           ref={inlineAddRef}
           type="button"
