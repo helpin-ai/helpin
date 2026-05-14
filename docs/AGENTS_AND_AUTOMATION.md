@@ -210,6 +210,7 @@ Important fields:
 - `allowed_tools`
 - `allowed_commands`
 - `allowed_targets`
+- `team_ids`
 - `schedule`
 - `approval_mode`
 - `default_invocation_mode`
@@ -270,6 +271,7 @@ Common target types:
 - `task`
 - `epic`
 - `support_conversation`
+- `support_coverage_gap`
 - `repository`
 - `crm_deal`
 - `document`
@@ -279,6 +281,7 @@ Important current behavior:
 - manual launches can start directly against an explicit target
 - rule-driven `start_agent_run` can use either an event-derived target or an explicit fixed target
 - GitHub-triggered `start_agent_run` should be treated as fixed-target rules in practice unless the event resolves cleanly to an existing linked task
+- `support_coverage_gap` is a product-owned support/docs target used by the Documentation system agent to act on support coverage analysis through the normal `agent_run` path
 
 ## Launch path comparison
 
@@ -316,6 +319,7 @@ Examples:
 
 - `epic_planner`
 - `task_planner`
+- `documentation_agent`
 - `crm_operator`
 - `support_agent`
 - `code_builder`
@@ -328,12 +332,12 @@ Characteristics:
 - backend-owned defaults and guardrails
 - may still have some product-specific launch or context-loading behavior
 
-Native system planner behavior:
+Native system selective behavior:
 
-- `epic_planner` on epic targets and `task_planner` on task targets use selective native skill activation by default when running on `native_sdk`
-- planner phase guidance, active skill contracts, repair instructions, and active skill policy are assembled per execution turn from durable run state
+- `epic_planner` on epic targets, `task_planner` on task targets, and `documentation_agent` on supported documentation targets use selective native skill activation by default when running on `native_sdk`
+- planner or documentation phase guidance, active skill contracts, repair instructions, and active skill policy are assembled per execution turn from durable run state
 - canonical mutations such as approved PRD persistence, task creation, task-plan-doc persistence, and replay protection remain backend-owned
-- Codex/OpenCode staged-skill behavior is unchanged by native planner selective activation
+- Codex/OpenCode staged-skill behavior is unchanged by native system selective activation
 
 ### Custom agents
 
@@ -344,14 +348,37 @@ Current truth:
 - `is_system = false`
 - not preset-backed
 - generic executor model
-- not on the system-planner selective activation path
+- not on the system selective activation path
+
+Simplified creation behavior:
+
+- draft generation and the custom-agent creation UI are helpers for producing a normal custom agent record
+- created custom agents still use the existing `/automation/agents` persistence path
+- execution still creates normal `agent_run` records
+- no separate custom-agent runtime, trigger model, or persistence model exists
 
 Direction:
 
 - keep custom execution generic
 - prefer minimal trigger payloads
 - let agents gather additional context through tools instead of bespoke backend orchestration
-- if custom agents later need selective skill activation, add explicit skill applicability metadata instead of reusing planner-specific routing rules
+- if custom agents later need selective skill activation, add explicit skill applicability metadata instead of reusing system-agent routing rules
+
+### Agent team access
+
+Agents can be limited to one or more teams through `team_ids`.
+
+Current intended semantics:
+
+- team-scoped agents are visible and usable only by actors whose workspace membership includes one of those teams
+- workspace-scoped agents have no `team_ids` and are available across the workspace subject to normal permissions
+- team access is an agent access boundary, not a new agent category
+- direct run, update, and delete paths should enforce the same team boundary as list and create/update UI paths
+
+Target interaction:
+
+- team-scoped agents should only run against targets that resolve to an allowed team
+- workspace-level targets such as `support_coverage_gap` should generally be handled by workspace-scoped agents or product-owned system agents unless explicit team semantics are added
 
 ## Runtime kinds
 
