@@ -224,7 +224,7 @@ export function EpicDetailPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
-  const { teams, getTeamMembers, findTeamName } = useAccessibleTeams(workspaceId ?? '');
+  const { teams, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const assignableMemberNames = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
@@ -505,34 +505,39 @@ export function EpicDetailPage() {
     return teams[0]?.id ?? '';
   }, [epic?.epic.team_id, form?.team_id, teams]);
 
-  // Resources: unique people from task owners + epic team members
+  // Resources: task owner workload summary.
   const resources = useMemo(() => {
-    const personMap = new Map<string, { id: string; name: string; email: string }>();
+    const personMap = new Map<string, { id: string; name: string; email: string; taskCount: number; percentage: number }>();
+    const totalTasks = tasks.length;
 
     for (const task of tasks) {
-      const ownerKey = task.owner_member_ids?.[0];
-      if (ownerKey) {
+      const ownerIds = task.owner_member_ids ?? [];
+      for (const ownerKey of ownerIds) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
-          personMap.set(assignable.id, {
-            id: assignable.id,
-            name: assignableMemberNames.get(assignable.id) ?? assignable.display_name,
-            email: assignable.email,
-          });
+          const existing = personMap.get(assignable.id);
+          if (existing) {
+            existing.taskCount += 1;
+          } else {
+            personMap.set(assignable.id, {
+              id: assignable.id,
+              name: assignableMemberNames.get(assignable.id) ?? assignable.display_name,
+              email: assignable.email,
+              taskCount: 1,
+              percentage: 0,
+            });
+          }
         }
       }
     }
 
-    if (form?.team_id) {
-      for (const member of getTeamMembers(form.team_id)) {
-        if (!personMap.has(member.id)) {
-          personMap.set(member.id, { id: member.id, name: member.name, email: member.email });
-        }
-      }
-    }
-
-    return Array.from(personMap.values());
-  }, [tasks, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
+    return Array.from(personMap.values())
+      .map((person) => ({
+        ...person,
+        percentage: totalTasks > 0 ? Math.round((person.taskCount / totalTasks) * 100) : 0,
+      }))
+      .sort((a, b) => b.taskCount - a.taskCount || (a.name || a.email).localeCompare(b.name || b.email));
+  }, [tasks, assignableMembers, assignableMemberNames]);
 
   const openTask = useCallback(
     ( task: Task) => {
@@ -937,11 +942,16 @@ export function EpicDetailPage() {
             {resources.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No people assigned yet.</p>
             ) : (
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {resources.map((person) => (
-                  <div key={person.id} className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-1.5">
+                  <div key={person.id} className="flex min-w-0 items-center gap-2 rounded-md border border-border/60 px-3 py-2">
                     <UserAvatar name={person.name || person.email} className="h-6 w-6 border-border/60" />
-                    <span className="text-xs font-medium">{person.name || person.email}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium">{person.name || person.email}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {person.taskCount} {person.taskCount === 1 ? 'task' : 'tasks'} · {person.percentage}%
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1090,17 +1100,18 @@ export function EpicDetailPage() {
                   value={form.health}
                   options={healthOptions.map((h) => ({ value: h, label: healthConfig[h].label, className: healthConfig[h].color }))}
                   onChange={(v) => updateField('health', v as EpicHealth, { health: v as EpicHealth })}
-                  renderTrigger={() => (
-                    <span className={healthConfig[form.health]?.color}>{healthConfig[form.health]?.label}</span>
-                  )}
+                  renderTrigger={() => {
+                    const healthLabel = (
+                      <span className={healthConfig[form.health]?.color}>{healthConfig[form.health]?.label}</span>
+                    );
+                    return noHealthSuggestionMessage ? (
+                      <QuickTooltip label={noHealthSuggestionMessage}>
+                        {healthLabel}
+                      </QuickTooltip>
+                    ) : healthLabel;
+                  }}
                 />
-                {noHealthSuggestionMessage ? (
-                  <QuickTooltip label={noHealthSuggestionMessage}>
-                    <p className="text-[10px] text-muted-foreground">
-                      {noHealthSuggestionMessage}
-                    </p>
-                  </QuickTooltip>
-                ) : epic?.suggested_health && epic.suggested_health !== form.health && (
+                {!noHealthSuggestionMessage && epic?.suggested_health && epic.suggested_health !== form.health && (
                   <button
                     type="button"
                     className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
