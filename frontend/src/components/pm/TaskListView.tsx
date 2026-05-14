@@ -183,7 +183,7 @@ const TASK_LIST_ROW =
 const TASK_LIST_CELL =
   'flex shrink-0 items-center self-stretch border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
 const TASK_LIST_GROUP_ROW =
-  'sticky left-0 z-[4] flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
+  'flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
 
 interface TaskListViewProps {
   workspaceId: string;
@@ -292,7 +292,9 @@ export function TaskListView({
   const setGroupBy = onGroupByChange ?? setUncontrolledGroupBy;
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
+  const horizontalScrollLeftRef = useRef(0);
   const headerRef = useRef<HTMLDivElement>(null);
+  const [horizontalScrollLeft, setHorizontalScrollLeft] = useState(0);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
@@ -1203,6 +1205,12 @@ export function TaskListView({
         onScroll={(e) => {
           const el = e.currentTarget;
           const scrollTop = el.scrollTop;
+          const scrollLeft = el.scrollLeft;
+
+          if (scrollLeft !== horizontalScrollLeftRef.current) {
+            horizontalScrollLeftRef.current = scrollLeft;
+            setHorizontalScrollLeft(scrollLeft);
+          }
 
           // Infinite loading (only for flat/global pagination, not per-group mode)
           if (!isExternal && !isPerGroupMode && hasMore && !loadingMore) {
@@ -1279,6 +1287,7 @@ export function TaskListView({
                 rows={rows}
                 virtualizer={virtualizer}
                 groupSummaries={groupSummaries}
+                horizontalScrollLeft={horizontalScrollLeft}
               />
             ) : null}
             {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -1309,7 +1318,9 @@ export function TaskListView({
                     top: 0,
                     left: 0,
                     width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
+                    transform: isGrouped
+                      ? `translate(${horizontalScrollLeft}px, ${virtualRow.start}px)`
+                      : `translateY(${virtualRow.start}px)`,
                   }}
                 >
                   {isGrouped ? (
@@ -1430,11 +1441,13 @@ function StickyPinnedGroupOverlay({
   rows,
   virtualizer,
   groupSummaries,
+  horizontalScrollLeft,
 }: {
   parentRef: RefObject<HTMLDivElement | null>;
   rows: Row<Task>[];
   virtualizer: TaskListVirtualizerLike;
   groupSummaries: Map<string, PMGroupSummary>;
+  horizontalScrollLeft: number;
 }) {
   const pinnedGroupRef = useRef<number | null>(null);
   const pinnedGroupRafRef = useRef<number | null>(null);
@@ -1506,7 +1519,10 @@ function StickyPinnedGroupOverlay({
 
   return (
     <div className="sticky z-[5]" style={{ top: 'var(--task-list-header-height, 0px)', height: 0, overflow: 'visible' }}>
-      <div className="border-b border-border/60 bg-background">
+      <div
+        className="border-b border-border/60 bg-background"
+        style={{ transform: `translateX(${horizontalScrollLeft}px)` }}
+      >
         <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
       </div>
     </div>
