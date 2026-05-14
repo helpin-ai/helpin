@@ -9,7 +9,7 @@ describe('TaskDetailSectionHeading', () => {
   it('uses a subtle separator and one icon accent for task detail section labels', () => {
     const source = readFileSync(resolve(__dirname, '../TaskDetailSectionHeading.tsx'), 'utf8');
 
-    expect(source).toContain('border-b border-border/50 pb-2');
+    expect(source).toContain('border-b border-border/50 pb-2 pt-1.5');
     expect(source).toContain('text-primary/80');
     expect(source).toContain('text-xs font-semibold uppercase tracking-wide text-foreground/75');
   });
