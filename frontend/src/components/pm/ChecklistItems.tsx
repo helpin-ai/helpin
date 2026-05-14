@@ -316,51 +316,56 @@ export function ChecklistItems({
         ) : null}
       />
 
-      {/* Progress bar */}
-      {items.length > 0 && (
-        <div className="mt-3 flex items-center gap-2">
-          <span className="w-8 text-left text-xs tabular-nums text-muted-foreground">
-            {Math.round((completedCount / items.length) * 100)}%
-          </span>
-          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full bg-green-500 transition-all duration-300"
-              style={{ width: `${(completedCount / items.length) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Items */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-0.5">
-            {items.map((item) => (
-              <SortableItem
-                key={item.id}
-                item={item}
-                onToggle={handleToggle}
-                onDelete={handleDelete}
-                onAssigneeChange={handleAssigneeChange}
-                members={members}
-                teams={teams}
+      <div className="rounded-lg border border-border/60 bg-card">
+        {/* Progress bar */}
+        {items.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
+            <span className="w-8 text-left text-xs tabular-nums text-muted-foreground">
+              {Math.round((completedCount / items.length) * 100)}%
+            </span>
+            <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-green-500 transition-all duration-300"
+                style={{ width: `${(completedCount / items.length) * 100}%` }}
               />
-            ))}
+            </div>
           </div>
-        </SortableContext>
-      </DndContext>
+        )}
 
-      {/* Add input */}
-      <div className="relative">
-        {addingItem ? (
-          <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
-            <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        {/* Items */}
+        {items.length > 0 && (
+          <div className="px-3 py-1.5">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-0.5">
+                  {items.map((item) => (
+                    <SortableItem
+                      key={item.id}
+                      item={item}
+                      onToggle={handleToggle}
+                      onDelete={handleDelete}
+                      onAssigneeChange={handleAssigneeChange}
+                      members={members}
+                      teams={teams}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </div>
+        )}
+
+        {/* Add input */}
+        <div className="relative border-t border-border/40 px-3 py-2 first:border-t-0">
+          {addingItem ? (
+          <div className="flex items-center gap-2">
+            <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
             <input
               ref={inputRef}
               type="text"
               value={newText}
               placeholder="Add an item... (type @ to mention)"
-              className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
+              className="min-w-0 flex-1 bg-transparent py-1 text-sm placeholder:text-muted-foreground/50 focus:outline-none"
               disabled={adding}
               onChange={(e) => {
                 setNewText(e.target.value);
@@ -429,14 +434,14 @@ export function ChecklistItems({
             )}
           </div>
         ) : (
-          <Button
-            variant="outline"
-            size="xs"
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
             onClick={() => setAddingItem(true)}
           >
-            <PlusSignIcon />
+            <PlusSignIcon className="h-3 w-3" />
             Add item
-          </Button>
+          </button>
         )}
         {/* Mention autocomplete dropdown */}
         {mentionQuery !== null && mentionResults.length > 0 && (
@@ -451,6 +456,7 @@ export function ChecklistItems({
             />
           </div>
         )}
+        </div>
       </div>
     </div>
   );

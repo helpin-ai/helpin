@@ -549,8 +549,9 @@ export function TaskRelationshipsSection({
         </div>
       ) : null}
 
-      {/* Flat relationship list — no borders */}
-      <div className="mt-3">
+      <div className="mt-3 rounded-lg border border-border/60 bg-card">
+        {relationshipContentCount > 0 ? (
+          <div className="divide-y divide-border/40">
         {allRelationships.map((item) => {
           const meta = getRelationshipMeta(item.link_type);
           const Icon = meta.icon;
@@ -563,7 +564,7 @@ export function TaskRelationshipsSection({
             <div
               key={item.relationship_id}
               className={cn(
-                'group flex items-center gap-1.5 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-accent/40',
+                'group flex items-center gap-1.5 px-3 py-2 transition-colors hover:bg-muted/30',
                 resolved && 'opacity-50',
               )}
             >
@@ -641,7 +642,7 @@ export function TaskRelationshipsSection({
         {linkedDocs.map((doc) => (
           <div
             key={`doc-${doc.object_id}-${doc.association_id ?? 'f'}`}
-            className="group flex items-center gap-1.5 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-accent/40"
+            className="group flex items-center gap-1.5 px-3 py-2 transition-colors hover:bg-muted/30"
           >
             <button
               type="button"
@@ -677,10 +678,11 @@ export function TaskRelationshipsSection({
             ) : null}
           </div>
         ))}
-      </div>
+          </div>
+        ) : null}
 
       {/* + Add Relationship */}
-      <div className="mt-2 flex items-center gap-2">
+      <div className="flex items-center gap-2 border-t border-border/40 px-3 py-2 first:border-t-0">
         <Button
           ref={inlineAddRef}
           type="button"
@@ -700,6 +702,7 @@ export function TaskRelationshipsSection({
             <Loading01Icon className="h-3 w-3 animate-spin" />
           </span>
         ) : null}
+      </div>
       </div>
 
       {/* Floating popover — anchored to whichever trigger was clicked */}
