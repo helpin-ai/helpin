@@ -40,6 +40,16 @@ interface AttachmentsProps {
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
 
+export function getAttachmentGridDensityClasses(count: number): string {
+  if (count >= 9) {
+    return 'grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-1.5';
+  }
+  if (count >= 5) {
+    return 'grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2';
+  }
+  return 'grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2';
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -291,7 +301,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
 
       {/* Unified attachment grid — images + files as consistent cards */}
       {attachments.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        <div className={getAttachmentGridDensityClasses(attachments.length)}>
           {attachments.map((entry) => {
             const isImage = isImageType(entry.attachment.content_type);
             const isVideo = isVideoType(entry.attachment.content_type, entry.attachment.file_name);

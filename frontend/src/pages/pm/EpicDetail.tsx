@@ -9,6 +9,7 @@ import {
   Calendar03Icon,
   ArrowRight01Icon,
   AttachmentIcon,
+  ChartColumnIcon,
   FavouriteIcon,
   Link01Icon,
   Loading01Icon,
@@ -56,7 +57,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
 import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
-import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
+import { getEpicTaskCount } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
@@ -454,12 +455,18 @@ export function EpicDetailPage() {
   );
 
   // Derived data
-  const progress = useMemo(() => {
-    if (!epic) return 0;
-    const totalTasks = getEpicTaskCount(epic.stats);
-    if (totalTasks === 0) return 0;
-    return Math.round((getEpicDoneTaskCount(epic.stats) / totalTasks) * 100);
-  }, [epic]);
+  const progressSummary = useMemo(() => {
+    const totalTasks = tasks.length;
+    const doneTasks = tasks.filter((task) => task.completed).length;
+    const progress = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
+    return {
+      progress,
+      doneTasks,
+      totalTasks,
+      remainingTasks: Math.max(totalTasks - doneTasks, 0),
+    };
+  }, [tasks]);
+  const { progress, doneTasks, totalTasks, remainingTasks } = progressSummary;
 
   const defaultEpicState = epicStates.find((s) => s.is_default) ?? epicStates[0];
   const currentEpicState = useMemo(
@@ -974,6 +981,7 @@ export function EpicDetailPage() {
                   teamId={epic.epic.team_id ?? null}
                   epicId={epicId}
                   externalTasks={tasks}
+                  onExternalTasksChange={setTasks}
                   onOpenTask={openTask}
                   groupBy={taskListGroupBy}
                   onGroupByChange={setTaskListGroupBy}
@@ -1064,7 +1072,29 @@ export function EpicDetailPage() {
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
+          <section className="rounded-lg border border-emerald-500/15 bg-emerald-500/[0.035] p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600">
+                  <ChartColumnIcon className="h-3.5 w-3.5" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-xs font-semibold text-foreground">Progress</h3>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {totalTasks > 0 ? `${doneTasks}/${totalTasks} tasks complete` : 'No tasks yet'}
+                  </p>
+                </div>
+              </div>
+              <span className="text-lg font-semibold tabular-nums leading-none text-foreground">{progress}%</span>
+            </div>
+            <Progress value={progress} className="mt-3 h-2 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+              <span className="tabular-nums">{doneTasks} done</span>
+              <span className="tabular-nums">{remainingTasks} remaining</span>
+            </div>
+          </section>
+
+          <div className="mt-5 grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
             {/* State */}
             <MetadataRow icon={HashtagIcon} label="State">
               <SidebarPopoverSelect
@@ -1075,19 +1105,6 @@ export function EpicDetailPage() {
                 }}
                 renderTrigger={() => <span className={currentStateColor}>{currentStateName}</span>}
               />
-            </MetadataRow>
-
-            {/* Progress */}
-            <MetadataRow icon={ViewIcon} label="Progress">
-              <div className="min-w-0 space-y-1.5">
-                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                  <span className="truncate">
-                    {getEpicDoneTaskCount(epic.stats)}/{getEpicTaskCount(epic.stats)} tasks
-                  </span>
-                  <span className="shrink-0">{progress}%</span>
-                </div>
-                <Progress value={progress} className="h-1.5" />
-              </div>
             </MetadataRow>
 
             {/* Health */}

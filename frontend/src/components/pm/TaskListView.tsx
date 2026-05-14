@@ -203,6 +203,8 @@ interface TaskListViewProps {
   sprintId?: string | null;
   /** When provided, use these tasks instead of fetching internally. */
   externalTasks?: Task[];
+  /** Keeps an external owner of task state in sync with inline table edits. */
+  onExternalTasksChange?: (tasks: Task[]) => void;
   onOpenTask: (task: Task) => void;
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
@@ -246,6 +248,7 @@ export function TaskListView({
   epicId,
   sprintId,
   externalTasks,
+  onExternalTasksChange,
   onOpenTask,
   groupBy: controlledGroupBy,
   onGroupByChange,
@@ -653,16 +656,24 @@ export function TaskListView({
   // Optimistic inline update with rollback on failure
   const updateTaskField = useCallback(
     async (taskId: string, patch: Partial<Task>) => {
-      let snapshot: Task[] = [];
-      setTasks((current) => {
-        snapshot = current;
-        return current.map((s) => (s.id === taskId ? { ...s, ...patch } : s));
-      });
+      const snapshot = tasks;
+      const optimisticTasks = tasks.map((s) => (s.id === taskId ? { ...s, ...patch } : s));
+      setTasks(optimisticTasks);
+      onExternalTasksChange?.(optimisticTasks);
       const apiPatch = { ...patch };
       delete apiPatch.epic_name;
       delete apiPatch.labels;
-      const { error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
-      if (error) setTasks(snapshot);
+      const { data, error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
+      if (error) {
+        setTasks(snapshot);
+        onExternalTasksChange?.(snapshot);
+      } else if (data?.task) {
+        const confirmedTasks = optimisticTasks.map((task) => (
+          task.id === taskId ? { ...task, ...data.task } : task
+        ));
+        setTasks(confirmedTasks);
+        onExternalTasksChange?.(confirmedTasks);
+      }
       if (!error && patch.workflow_state_id !== undefined) {
         const previousStateId = snapshot.find((task) => task.id === taskId)?.workflow_state_id;
         if (shouldNotifyAgentAutoRunStateChange({
@@ -675,7 +686,7 @@ export function TaskListView({
         }
       }
     },
-    [workspaceId, ownerNameMap, automatedStateIds, workflow.states],
+    [workspaceId, automatedStateIds, workflow.states, onExternalTasksChange, tasks],
   );
 
   // Listen for task events (only for self-fetching mode)
