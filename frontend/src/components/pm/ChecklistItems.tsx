@@ -374,11 +374,12 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 shrink-0 px-2 text-xs"
+              className="h-6 shrink-0 gap-1 px-2 text-[11px]"
               disabled={adding}
               onClick={handleAdd}
             >
-              Add
+              <PlusSignIcon className="h-3 w-3" />
+              Add item
             </Button>
           )}
         </div>

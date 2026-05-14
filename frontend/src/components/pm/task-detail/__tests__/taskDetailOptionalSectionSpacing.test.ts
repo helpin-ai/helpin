@@ -17,10 +17,22 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('const hasOptionalTaskSections = relationshipsToggleActive || showChecklist || showExternalLinks;');
     expect(panelSource).toContain('{hasOptionalTaskSections && (');
     expect(panelSource).toContain('className="mt-8 space-y-8"');
+    expect(panelSource).toContain('associationsService.listByTask(workspaceId, taskDetail.task.id)');
+    expect(panelSource).toContain('if (hasVisibleTaskAssociations(associationsRes.data)) setShowRelationships(true);');
     expect(relationshipsSource).toContain('className={className}');
     expect(checklistBlock).not.toContain('className="mt-8"');
     expect(checklistBlock).not.toContain('className="mt-6"');
     expect(externalLinksBlock).not.toContain('className="mt-8"');
     expect(externalLinksBlock).not.toContain('className="mt-6"');
+  });
+
+  it('keeps comments separated after removing the standalone comments divider', () => {
+    const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
+    const commentsIndex = panelSource.indexOf('{/* Comments + Activity */}');
+    const commentsBlock = panelSource.slice(commentsIndex, panelSource.indexOf('{/* Comments card */}', commentsIndex));
+
+    expect(commentsIndex).toBeGreaterThan(-1);
+    expect(panelSource).not.toContain('<Separator className="my-6 bg-border/60" />');
+    expect(commentsBlock).toContain('className="mt-6"');
   });
 });

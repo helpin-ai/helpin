@@ -31,7 +31,19 @@ describe('TaskDetailSectionHeading', () => {
   it('keeps the add relationship action compact', () => {
     const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
 
-    expect(relationshipsSource).toContain('px-2.5 py-1.5 text-xs');
-    expect(relationshipsSource).toContain('<PlusSignIcon className="h-3.5 w-3.5" />');
+    expect(relationshipsSource).toContain('px-2 py-1.5 text-[11px]');
+    expect(relationshipsSource).toContain('<PlusSignIcon className="h-3 w-3" />');
+  });
+
+  it('keeps checklist and external link add actions visually aligned with relationship add', () => {
+    const checklistSource = readFileSync(resolve(__dirname, '../../ChecklistItems.tsx'), 'utf8');
+    const externalLinksSource = readFileSync(resolve(__dirname, '../../ExternalLinks.tsx'), 'utf8');
+
+    expect(checklistSource).toContain('Add item');
+    expect(checklistSource).toContain('h-6 shrink-0 gap-1 px-2 text-[11px]');
+    expect(checklistSource).toContain('<PlusSignIcon className="h-3 w-3" />');
+    expect(externalLinksSource).toContain('Add link');
+    expect(externalLinksSource).toContain('h-6 shrink-0 gap-1 px-2 text-[11px]');
+    expect(externalLinksSource).toContain('<PlusSignIcon className="h-3 w-3" />');
   });
 });

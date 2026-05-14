@@ -75,6 +75,7 @@ import { cn } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
+import { associationsService } from '@/lib/services/associationsService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
@@ -115,6 +116,7 @@ import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-de
 import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
 import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
+import { hasVisibleTaskAssociations } from '@/components/pm/task-detail/taskRelationshipVisibility';
 import { queryKeys } from '@/lib/queryKeys';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
@@ -911,15 +913,17 @@ function TaskDetailPanelBody({
     }
   }, [form.team_id, form.epic_id, form.sprint_id, epics, sprints]);
 
-  // ── Auto-show checklist / external links if items exist ────────
+  // ── Auto-show optional sections if items exist ────────
   useEffect(() => {
     (async () => {
-      const [clRes, elRes] = await Promise.all([
+      const [clRes, elRes, associationsRes] = await Promise.all([
         pmChecklistService.list(workspaceId, taskDetail.task.id),
         pmExternalLinkService.list(workspaceId, taskDetail.task.id),
+        associationsService.listByTask(workspaceId, taskDetail.task.id),
       ]);
       if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
       if (elRes.data && elRes.data.length > 0) setShowExternalLinks(true);
+      if (hasVisibleTaskAssociations(associationsRes.data)) setShowRelationships(true);
     })();
   }, [workspaceId, taskDetail]);
 
@@ -1614,7 +1618,7 @@ function TaskDetailPanelBody({
           )}
 
           {/* Comments + Activity */}
-          <div>
+          <div className="mt-6">
             {/* Comments card */}
             {commentsLoading ? (
               <div className="space-y-3 rounded-lg border border-border/60 p-4">
