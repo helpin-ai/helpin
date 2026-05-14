@@ -146,17 +146,11 @@ export function getTaskAgentRunSuggestedAgent({
     ?? null;
 }
 
-export function getTaskAgentRunPickerLabel({
-  activeRun,
-  suggestedAgent,
-}: {
+export function getTaskAgentRunPickerLabel(_args: {
   activeRun: Pick<AgentRun, 'status' | 'pause_reason' | 'approval_state'> | null | undefined;
   suggestedAgent: Pick<Agent, 'preset_key'> | null | undefined;
 }) {
-  if (activeRun) return 'Current agent';
-  if (suggestedAgent?.preset_key === 'task_planner') return 'First agent';
-  if (suggestedAgent?.preset_key === 'review_agent') return 'Review agent';
-  return 'Next agent';
+  return 'Agent';
 }
 
 export function getTaskAgentRunExecutionContextLockReason({
@@ -322,6 +316,11 @@ export function AgentRunPanel({ taskId, workspaceId, delivery, canEditDelivery =
     activeRunAgentName,
   });
   const agentSelectionDisabled = !!activeRun || triggering;
+  const actionDisabledReason = loadingAgents
+    ? 'Loading agents...'
+    : !selectedAgentId
+      ? 'Choose an agent to run.'
+      : launchState.disabledReason;
 
   const handleRunAgent = async () => {
     if (launchState.disabled) return;
@@ -384,6 +383,11 @@ export function AgentRunPanel({ taskId, workspaceId, delivery, canEditDelivery =
               </SelectContent>
             </Select>
           </div>
+          {actionDisabledReason ? (
+            <p className="ml-auto min-w-0 truncate text-right text-[11px] text-muted-foreground">
+              {actionDisabledReason}
+            </p>
+          ) : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <span>
@@ -399,8 +403,8 @@ export function AgentRunPanel({ taskId, workspaceId, delivery, canEditDelivery =
                 </Button>
               </span>
             </TooltipTrigger>
-            {launchState.disabledReason ? (
-              <TooltipContent side="top">{launchState.disabledReason}</TooltipContent>
+            {actionDisabledReason ? (
+              <TooltipContent side="top">{actionDisabledReason}</TooltipContent>
             ) : null}
           </Tooltip>
         </div>

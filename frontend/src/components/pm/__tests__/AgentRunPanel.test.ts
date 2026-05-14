@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getTaskAgentRunExecutionContextLockReason,
   getTaskAgentRunLaunchState,
+  getTaskAgentRunPickerLabel,
   getTaskAgentRunSuggestedAgent,
 } from '../AgentRunPanel';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
@@ -114,6 +115,15 @@ describe('getTaskAgentRunLaunchState', () => {
       disabled: false,
       disabledReason: null,
     });
+  });
+});
+
+describe('getTaskAgentRunPickerLabel', () => {
+  it('uses one generic picker label regardless of pipeline or active run state', () => {
+    expect(getTaskAgentRunPickerLabel({ activeRun: null, suggestedAgent: null })).toBe('Agent');
+    expect(getTaskAgentRunPickerLabel({ activeRun: null, suggestedAgent: agent({ preset_key: 'task_planner' }) })).toBe('Agent');
+    expect(getTaskAgentRunPickerLabel({ activeRun: null, suggestedAgent: agent({ preset_key: 'review_agent' }) })).toBe('Agent');
+    expect(getTaskAgentRunPickerLabel({ activeRun: run({ status: 'running' }), suggestedAgent: agent({ preset_key: 'code_builder' }) })).toBe('Agent');
   });
 });
 
