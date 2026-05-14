@@ -414,7 +414,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   content={description}
                   onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
                   placeholder="Add a description (optional)..."
-                  className="border-transparent shadow-none"
+                  className="border-transparent shadow-none [&_.tiptap]:min-h-[180px]"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
@@ -1032,7 +1032,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
-                  className="border-transparent shadow-none"
+                  className="border-transparent shadow-none [&_.tiptap]:min-h-[180px]"
                   teams={mentionTeams}
                   members={assignableMembers}
                 />

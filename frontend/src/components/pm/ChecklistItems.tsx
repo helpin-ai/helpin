@@ -27,7 +27,6 @@ import {
   getMentionSuggestions,
   type MentionSuggestionItem,
 } from '@/components/pm/mentionSuggestions';
-import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import type { ChecklistItem } from '@/lib/pmTypes';
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types';
 
@@ -306,17 +305,19 @@ export function ChecklistItems({
 
   return (
     <div className="space-y-2">
-      <TaskDetailSectionHeading
-        title="Checklist"
-        icon={CheckmarkSquare02Icon}
-        meta={items.length > 0 ? (
-          <span className="text-xs font-normal text-foreground/70">
-            {completedCount}/{items.length}
-          </span>
-        ) : null}
-      />
-
       <div className="rounded-lg border border-border/60 bg-card">
+        <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
+          <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <CheckmarkSquare02Icon className="h-3.5 w-3.5 text-muted-foreground" />
+            Checklist
+            {items.length > 0 ? (
+              <span className="text-xs font-normal text-muted-foreground">
+                ({completedCount}/{items.length})
+              </span>
+            ) : null}
+          </div>
+        </div>
+
         {/* Progress bar */}
         {items.length > 0 && (
           <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
@@ -356,106 +357,106 @@ export function ChecklistItems({
         )}
 
         {/* Add input */}
-        <div className="relative border-t border-border/40 px-3 py-2 first:border-t-0">
+        <div className="relative border-t border-border/40 px-3 py-2">
           {addingItem ? (
-          <div className="flex items-center gap-2">
-            <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-            <input
-              ref={inputRef}
-              type="text"
-              value={newText}
-              placeholder="Add an item... (type @ to mention)"
-              className="min-w-0 flex-1 bg-transparent py-1 text-sm placeholder:text-muted-foreground/50 focus:outline-none"
-              disabled={adding}
-              onChange={(e) => {
-                setNewText(e.target.value);
-                detectMention(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (mentionQuery !== null && mentionResults.length > 0) {
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setMentionIndex((prev) => (prev + 1) % mentionResults.length);
-                    return;
-                  }
-                  if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setMentionIndex((prev) => (prev - 1 + mentionResults.length) % mentionResults.length);
-                    return;
-                  }
-                  if (e.key === 'Enter' || e.key === 'Tab') {
-                    e.preventDefault();
-                    insertMention(mentionResults[mentionIndex]);
-                    return;
+            <div className="flex items-center gap-2">
+              <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={newText}
+                placeholder="Add an item... (type @ to mention)"
+                className="min-w-0 flex-1 bg-transparent py-1 text-sm placeholder:text-muted-foreground/50 focus:outline-none"
+                disabled={adding}
+                onChange={(e) => {
+                  setNewText(e.target.value);
+                  detectMention(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (mentionQuery !== null && mentionResults.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setMentionIndex((prev) => (prev + 1) % mentionResults.length);
+                      return;
+                    }
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setMentionIndex((prev) => (prev - 1 + mentionResults.length) % mentionResults.length);
+                      return;
+                    }
+                    if (e.key === 'Enter' || e.key === 'Tab') {
+                      e.preventDefault();
+                      insertMention(mentionResults[mentionIndex]);
+                      return;
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMentionQuery(null);
+                      return;
+                    }
                   }
                   if (e.key === 'Escape') {
                     e.preventDefault();
                     e.stopPropagation();
-                    setMentionQuery(null);
-                    return;
+                    closeAddItemInput();
                   }
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  closeAddItemInput();
-                }
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAdd();
-                }
-              }}
-              onBlur={() => {
-                // Small delay to allow click on mention item.
-                setTimeout(() => setMentionQuery(null), 150);
-              }}
-            />
-            <QuickTooltip label="Close">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Close checklist item input"
-                onClick={closeAddItemInput}
-              >
-                <Cancel01Icon />
-              </Button>
-            </QuickTooltip>
-            {newText.trim() && (
-              <Button
-                variant="outline"
-                size="xs"
-                disabled={adding}
-                onClick={handleAdd}
-              >
-                <PlusSignIcon />
-                Add item
-              </Button>
-            )}
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
-            onClick={() => setAddingItem(true)}
-          >
-            <PlusSignIcon className="h-3 w-3" />
-            Add item
-          </button>
-        )}
-        {/* Mention autocomplete dropdown */}
-        {mentionQuery !== null && mentionResults.length > 0 && (
-          <div className="absolute left-6 bottom-full z-50 mb-1.5 w-56 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
-            <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
-              Suggestions
-            </p>
-            <MentionSuggestionsList
-              items={mentionResults}
-              selectedIndex={mentionIndex}
-              onSelect={insertMention}
-            />
-          </div>
-        )}
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAdd();
+                  }
+                }}
+                onBlur={() => {
+                  // Small delay to allow click on mention item.
+                  setTimeout(() => setMentionQuery(null), 150);
+                }}
+              />
+              <QuickTooltip label="Close">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Close checklist item input"
+                  onClick={closeAddItemInput}
+                >
+                  <Cancel01Icon />
+                </Button>
+              </QuickTooltip>
+              {newText.trim() && (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  disabled={adding}
+                  onClick={handleAdd}
+                >
+                  <PlusSignIcon />
+                  Add item
+                </Button>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+              onClick={() => setAddingItem(true)}
+            >
+              <PlusSignIcon className="h-3 w-3" />
+              Add item
+            </button>
+          )}
+          {/* Mention autocomplete dropdown */}
+          {mentionQuery !== null && mentionResults.length > 0 && (
+            <div className="absolute left-6 bottom-full z-50 mb-1.5 w-56 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
+              <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+                Suggestions
+              </p>
+              <MentionSuggestionsList
+                items={mentionResults}
+                selectedIndex={mentionIndex}
+                onSelect={insertMention}
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

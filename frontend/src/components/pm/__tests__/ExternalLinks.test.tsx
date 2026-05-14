@@ -72,11 +72,11 @@ describe('ExternalLinks', () => {
       makeLink('link-2', 'https://docs.helpin.ai/tasks/links', 'Task links doc'),
     ])
 
-    expect(container?.textContent).not.toContain('2 links')
+    expect(container?.textContent).toContain('(2)')
     expect(container?.textContent).toContain('Fix task sync')
     expect(container?.textContent).toContain('github.com')
 
     const row = container?.querySelector('[data-testid="external-link-row"]')
-    expect(row?.className).toContain('bg-muted/35')
+    expect(row?.className).toContain('hover:bg-muted/30')
   })
 })

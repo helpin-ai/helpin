@@ -14,7 +14,7 @@ describe('TaskDetailSectionHeading', () => {
     expect(source).toContain('text-xs font-semibold uppercase tracking-wide text-foreground/75');
   });
 
-  it('is used for dense task detail sections', () => {
+  it('is used for comments and activity while compact optional sections use block headers', () => {
     const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
     const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
     const checklistSource = readFileSync(resolve(__dirname, '../../ChecklistItems.tsx'), 'utf8');
@@ -22,18 +22,20 @@ describe('TaskDetailSectionHeading', () => {
 
     expect(panelSource).toContain('<TaskDetailSectionHeading title="Comments" icon={Message01Icon}');
     expect(panelSource).toContain('<TaskDetailSectionHeading title="Activity" icon={Activity01Icon}');
-    expect(relationshipsSource).toContain('<TaskDetailSectionHeading title="Task Relationships"');
-    expect(checklistSource).toContain('<TaskDetailSectionHeading');
-    expect(checklistSource).toContain('title="Checklist"');
-    expect(externalLinksSource).toContain('<TaskDetailSectionHeading title="External Links"');
+    expect(relationshipsSource).toContain('Task Relationships');
+    expect(checklistSource).toContain('Checklist');
+    expect(externalLinksSource).toContain('External Links');
+    expect(relationshipsSource).toContain('rounded-lg border border-border/60 bg-card');
+    expect(checklistSource).toContain('rounded-lg border border-border/60 bg-card');
+    expect(externalLinksSource).toContain('rounded-lg border border-border/60 bg-card');
   });
 
-  it('keeps the add relationship action compact', () => {
+  it('keeps the add relationship action inline', () => {
     const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
 
-    expect(relationshipsSource).toContain('variant="outline"');
-    expect(relationshipsSource).toContain('size="xs"');
-    expect(relationshipsSource).toContain('<PlusSignIcon />');
+    expect(relationshipsSource).toContain('Add relationship');
+    expect(relationshipsSource).toContain('text-xs text-muted-foreground transition-colors hover:text-foreground');
+    expect(relationshipsSource).toContain('<PlusSignIcon className="h-3 w-3" />');
   });
 
   it('opens related task rows in a new tab', () => {
@@ -52,14 +54,12 @@ describe('TaskDetailSectionHeading', () => {
     expect(checklistSource).toContain('Add item');
     expect(checklistSource).toContain('setAddingItem(true)');
     expect(checklistSource).toContain('group flex items-center gap-2 py-0.5');
-    expect(checklistSource).toContain('variant="outline"');
-    expect(checklistSource).toContain('size="xs"');
-    expect(checklistSource).toContain('<PlusSignIcon />');
+    expect(checklistSource).toContain('text-xs text-muted-foreground transition-colors hover:text-foreground');
+    expect(checklistSource).toContain('<PlusSignIcon className="h-3 w-3" />');
     expect(externalLinksSource).toContain('const [addingLink, setAddingLink] = useState(false);');
     expect(externalLinksSource).toContain('Add link');
     expect(externalLinksSource).toContain('setAddingLink(true)');
-    expect(externalLinksSource).toContain('variant="outline"');
-    expect(externalLinksSource).toContain('size="xs"');
-    expect(externalLinksSource).toContain('<PlusSignIcon />');
+    expect(externalLinksSource).toContain('text-xs text-muted-foreground transition-colors hover:text-foreground');
+    expect(externalLinksSource).toContain('<PlusSignIcon className="h-3 w-3" />');
   });
 });

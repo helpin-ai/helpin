@@ -44,7 +44,6 @@ import type {
 import { TaskTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 
 interface TaskRelationshipsSectionProps {
   workspaceId: string;
@@ -541,15 +540,25 @@ export function TaskRelationshipsSection({
 
   return (
     <section id="task-relationships-section" className={className}>
-      <TaskDetailSectionHeading title="Task Relationships" icon={ArrowLeftRightIcon} />
-
-      {associationsQuery.error ? (
-        <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
-          {(associationsQuery.error as Error).message}
+      <div className="rounded-lg border border-border/60 bg-card">
+        <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
+          <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            Task Relationships
+            {relationshipContentCount > 0 ? (
+              <span className="text-xs font-normal text-muted-foreground">
+                ({relationshipContentCount})
+              </span>
+            ) : null}
+          </div>
         </div>
-      ) : null}
 
-      <div className="mt-3 rounded-lg border border-border/60 bg-card">
+        {associationsQuery.error ? (
+          <div className="border-b border-border/40 px-3 py-2.5 text-sm text-destructive">
+            {(associationsQuery.error as Error).message}
+          </div>
+        ) : null}
+
         {relationshipContentCount > 0 ? (
           <div className="divide-y divide-border/40">
         {allRelationships.map((item) => {
@@ -682,20 +691,19 @@ export function TaskRelationshipsSection({
         ) : null}
 
       {/* + Add Relationship */}
-      <div className="flex items-center gap-2 border-t border-border/40 px-3 py-2 first:border-t-0">
-        <Button
+      <div className="flex items-center gap-2 border-t border-border/40 px-3 py-2">
+        <button
           ref={inlineAddRef}
           type="button"
-          size="xs"
-          variant="outline"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
           onClick={() => {
             setAnchorSource('inline');
             onComposerOpenChange(true);
           }}
         >
-          <PlusSignIcon />
+          <PlusSignIcon className="h-3 w-3" />
           Add relationship
-        </Button>
+        </button>
 
         {busy ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
