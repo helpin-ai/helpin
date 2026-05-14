@@ -69,6 +69,7 @@ interface TaskRelationshipsSectionProps {
   externalTriggerRef?: RefObject<HTMLElement | null>;
   className?: string;
   onContentChange?: (hasContent: boolean) => void;
+  onCountChange?: (count: number) => void;
 }
 
 const RELATIONSHIP_OPTIONS: Array<{
@@ -240,6 +241,7 @@ export function TaskRelationshipsSection({
   externalTriggerRef,
   className,
   onContentChange,
+  onCountChange,
 }: TaskRelationshipsSectionProps) {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const inlineAddRef = useRef<HTMLButtonElement>(null);
@@ -316,11 +318,13 @@ export function TaskRelationshipsSection({
   }, [data]);
 
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
-  const hasRelationshipContent = allRelationships.length > 0 || linkedDocs.length > 0;
+  const relationshipContentCount = allRelationships.length + linkedDocs.length;
+  const hasRelationshipContent = relationshipContentCount > 0;
 
   useEffect(() => {
     onContentChange?.(hasRelationshipContent);
-  }, [hasRelationshipContent, onContentChange]);
+    onCountChange?.(relationshipContentCount);
+  }, [hasRelationshipContent, relationshipContentCount, onContentChange, onCountChange]);
 
   const handleCreateRelationship = async (otherTaskId: string) => {
     await createRelationship.mutateAsync({

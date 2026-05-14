@@ -12,6 +12,7 @@ interface ExternalLinksProps {
   entityType: 'task' | 'epic';
   entityId: string;
   onContentChange?: (hasContent: boolean) => void;
+  onCountChange?: (count: number) => void;
 }
 
 function getHostname(url: string): string {
@@ -22,7 +23,7 @@ function getHostname(url: string): string {
   }
 }
 
-export function ExternalLinks({ workspaceId, entityType, entityId, onContentChange }: ExternalLinksProps) {
+export function ExternalLinks({ workspaceId, entityType, entityId, onContentChange, onCountChange }: ExternalLinksProps) {
   const [links, setLinks] = useState<ExternalLink[]>([]);
   const [newUrl, setNewUrl] = useState('');
   const [adding, setAdding] = useState(false);
@@ -38,7 +39,8 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
 
   useEffect(() => {
     onContentChange?.(links.length > 0);
-  }, [links.length, onContentChange]);
+    onCountChange?.(links.length);
+  }, [links.length, onContentChange, onCountChange]);
 
   useEffect(() => {
     if (addingLink) inputRef.current?.focus();
@@ -106,9 +108,14 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
                 <span className="text-sm font-medium text-foreground truncate block">
                   {link.title || getHostname(link.url)}
                 </span>
-                <span className="text-[11px] text-muted-foreground truncate block">
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block truncate text-[11px] text-muted-foreground transition-colors hover:text-primary hover:underline"
+                >
                   {link.url}
-                </span>
+                </a>
               </div>
               <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                 <QuickTooltip label="Open link">

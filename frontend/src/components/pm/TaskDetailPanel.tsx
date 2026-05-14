@@ -641,6 +641,9 @@ function TaskDetailPanelBody({
   const [hasChecklistItems, setHasChecklistItems] = useState(false);
   const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
   const [hasRelationshipItems, setHasRelationshipItems] = useState(false);
+  const [checklistSummary, setChecklistSummary] = useState({ completed: 0, total: 0 });
+  const [externalLinkCount, setExternalLinkCount] = useState(0);
+  const [relationshipCount, setRelationshipCount] = useState(0);
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
   const relationshipsToggleActive = showRelationships || relationshipComposerOpen;
@@ -926,11 +929,23 @@ function TaskDetailPanelBody({
 
     const hasChecklistContent = (clRes.data?.length ?? 0) > 0;
     const hasExternalLinkContent = (elRes.data?.length ?? 0) > 0;
+    const taskRelationships = associationsRes.data?.task_relationships;
+    const relationshipItemCount = (
+      taskRelationships
+        ? Object.values(taskRelationships).reduce((total, group) => total + group.length, 0)
+        : 0
+    ) + (associationsRes.data?.docs.length ?? 0);
     const hasRelationshipContent = hasVisibleTaskAssociations(associationsRes.data);
 
     setHasChecklistItems(hasChecklistContent);
     setHasExternalLinkItems(hasExternalLinkContent);
     setHasRelationshipItems(hasRelationshipContent);
+    setChecklistSummary({
+      completed: (clRes.data ?? []).filter((item) => item.completed).length,
+      total: clRes.data?.length ?? 0,
+    });
+    setExternalLinkCount(elRes.data?.length ?? 0);
+    setRelationshipCount(relationshipItemCount);
 
     if (hasChecklistContent) setShowChecklist(true);
     if (hasExternalLinkContent) setShowExternalLinks(true);
@@ -947,14 +962,26 @@ function TaskDetailPanelBody({
     if (hasContent) setShowChecklist(true);
   }, []);
 
+  const handleChecklistStatsChange = useCallback((stats: { completed: number; total: number }) => {
+    setChecklistSummary(stats);
+  }, []);
+
   const handleRelationshipContentChange = useCallback((hasContent: boolean) => {
     setHasRelationshipItems(hasContent);
     if (hasContent) setShowRelationships(true);
   }, []);
 
+  const handleRelationshipCountChange = useCallback((count: number) => {
+    setRelationshipCount(count);
+  }, []);
+
   const handleExternalLinkContentChange = useCallback((hasContent: boolean) => {
     setHasExternalLinkItems(hasContent);
     if (hasContent) setShowExternalLinks(true);
+  }, []);
+
+  const handleExternalLinkCountChange = useCallback((count: number) => {
+    setExternalLinkCount(count);
   }, []);
 
   // ── Auto-save debounce ─────────────────────────────────────────
@@ -1506,6 +1533,11 @@ function TaskDetailPanelBody({
               >
                 <CheckmarkSquare02Icon className="h-3 w-3" />
                 Checklist
+                {hasChecklistItems ? (
+                  <span className="text-[10px] opacity-70">
+                    {checklistSummary.completed}/{checklistSummary.total}
+                  </span>
+                ) : null}
               </button>
               <button
                 ref={relationshipButtonRef}
@@ -1524,6 +1556,9 @@ function TaskDetailPanelBody({
               >
                 <ArrowLeftRightIcon className="h-3 w-3" />
                 Relationships
+                {hasRelationshipItems ? (
+                  <span className="text-[10px] opacity-70">{relationshipCount}</span>
+                ) : null}
               </button>
               <button
                 type="button"
@@ -1533,6 +1568,9 @@ function TaskDetailPanelBody({
               >
                 <Link01Icon className="h-3 w-3" />
                 External Links
+                {hasExternalLinkItems ? (
+                  <span className="text-[10px] opacity-70">{externalLinkCount}</span>
+                ) : null}
               </button>
               <button
                 type="button"
@@ -1579,6 +1617,7 @@ function TaskDetailPanelBody({
                     members={assignableMembers}
                     teams={mentionTeams}
                     onContentChange={handleChecklistContentChange}
+                    onStatsChange={handleChecklistStatsChange}
                   />
                 </div>
               )}
@@ -1603,6 +1642,7 @@ function TaskDetailPanelBody({
                 visible={showRelationships}
                 externalTriggerRef={relationshipButtonRef}
                 onContentChange={handleRelationshipContentChange}
+                onCountChange={handleRelationshipCountChange}
               />
 
               {/* External Links */}
@@ -1613,6 +1653,7 @@ function TaskDetailPanelBody({
                     entityType="task"
                     entityId={taskDetail.task.id}
                     onContentChange={handleExternalLinkContentChange}
+                    onCountChange={handleExternalLinkCountChange}
                   />
                 </div>
               )}

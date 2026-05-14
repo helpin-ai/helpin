@@ -37,6 +37,7 @@ interface ChecklistItemsProps {
   members?: AssignableMember[];
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
   onContentChange?: (hasContent: boolean) => void;
+  onStatsChange?: (stats: { completed: number; total: number }) => void;
 }
 
 export type ChecklistMentionOption = MentionSuggestionItem;
@@ -161,7 +162,14 @@ function SortableItem({
   );
 }
 
-export function ChecklistItems({ workspaceId, taskId, members = [], teams = [], onContentChange }: ChecklistItemsProps) {
+export function ChecklistItems({
+  workspaceId,
+  taskId,
+  members = [],
+  teams = [],
+  onContentChange,
+  onStatsChange,
+}: ChecklistItemsProps) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [newText, setNewText] = useState('');
   const [adding, setAdding] = useState(false);
@@ -193,7 +201,11 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [], 
 
   useEffect(() => {
     onContentChange?.(items.length > 0);
-  }, [items.length, onContentChange]);
+    onStatsChange?.({
+      completed: items.filter((item) => item.completed).length,
+      total: items.length,
+    });
+  }, [items, onContentChange, onStatsChange]);
 
   useEffect(() => {
     if (addingItem) inputRef.current?.focus();

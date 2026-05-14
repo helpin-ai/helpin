@@ -67,6 +67,7 @@ import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
+import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -193,6 +194,8 @@ export function EpicDetailPage() {
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [editingDescription, setEditingDescription] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
+  const [externalLinkCount, setExternalLinkCount] = useState(0);
   const [panelDragging, setPanelDragging] = useState(false);
   const savedDescriptionRef = useRef('');
   const openFilePickerRef = useRef<(() => void) | null>(null);
@@ -266,9 +269,21 @@ export function EpicDetailPage() {
   useEffect(() => {
     if (!workspaceId || !epic?.epic?.id) return;
     pmExternalLinkService.listByEntity(workspaceId, 'epic', epic.epic.id).then(({ data }) => {
-      if (data && data.length > 0) setShowExternalLinks(true);
+      const count = data?.length ?? 0;
+      setHasExternalLinkItems(count > 0);
+      setExternalLinkCount(count);
+      if (count > 0) setShowExternalLinks(true);
     });
   }, [workspaceId, epic?.epic?.id]);
+
+  const handleExternalLinkContentChange = useCallback((hasContent: boolean) => {
+    setHasExternalLinkItems(hasContent);
+    if (hasContent) setShowExternalLinks(true);
+  }, []);
+
+  const handleExternalLinkCountChange = useCallback((count: number) => {
+    setExternalLinkCount(count);
+  }, []);
 
   // Auto-save debounce
   useEffect(() => {
@@ -756,19 +771,19 @@ export function EpicDetailPage() {
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                  showExternalLinks
-                    ? 'border-primary/30 bg-primary/10 text-primary'
-                    : 'border-border/60 text-muted-foreground hover:bg-accent'
-                }`}
+                className={getOptionalSectionActionClass(hasExternalLinkItems ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                disabled={hasExternalLinkItems}
                 onClick={() => setShowExternalLinks((v) => !v)}
               >
                 <Link01Icon className="h-3 w-3" />
                 External Links
+                {hasExternalLinkItems ? (
+                  <span className="text-[10px] opacity-70">{externalLinkCount}</span>
+                ) : null}
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                className={getOptionalSectionActionClass('available')}
                 onClick={() => openFilePickerRef.current?.()}
               >
                 <AttachmentIcon className="h-3 w-3" />
@@ -779,7 +794,13 @@ export function EpicDetailPage() {
 
           {showExternalLinks && (
             <div className="mt-4">
-              <ExternalLinks workspaceId={workspaceId!} entityType="epic" entityId={epic.epic.id} />
+              <ExternalLinks
+                workspaceId={workspaceId!}
+                entityType="epic"
+                entityId={epic.epic.id}
+                onContentChange={handleExternalLinkContentChange}
+                onCountChange={handleExternalLinkCountChange}
+              />
             </div>
           )}
 
