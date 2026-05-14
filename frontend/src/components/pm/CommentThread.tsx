@@ -902,7 +902,8 @@ export function CommentThread({
     const isEditing = editingCommentId === entry.comment.id;
     const hasReactions = (entry.reactions?.length ?? 0) > 0;
     const avatarSize = isReply ? 'h-6 w-6 text-[9px]' : 'h-7 w-7 text-[10px]';
-    const avatarOffset = isReply ? 'mt-0.5' : 'mt-0';
+    const avatarOffset = isReply ? '-mt-0.5' : '-mt-[3px]';
+    const commentGridClass = isReply ? 'grid-cols-[1.5rem_minmax(0,1fr)]' : 'grid-cols-[1.75rem_minmax(0,1fr)]';
     const groupClass = isReply ? 'group/reply' : 'group';
     const isResolved = Boolean(entry.comment.resolved_at);
     const authorName = entry.author.full_name || entry.author.email;
@@ -910,7 +911,7 @@ export function CommentThread({
     const showThreadConnector = Boolean(options.showThreadConnector && !isReply);
 
     return (
-      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''} relative grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2`}>
+      <div className={`${groupClass} ${isResolved ? 'opacity-75' : ''} relative grid ${commentGridClass} gap-2`}>
         {showThreadConnector && (
           <div
             data-comment-collapse-stem="top"
@@ -939,16 +940,16 @@ export function CommentThread({
                       : `Block ${entry.comment.block_id}`}
                   </div>
                 )}
-                <div className="text-[13px] leading-relaxed text-foreground/80">
-                  <span className="mr-1.5 inline-flex items-baseline gap-1.5">
-                    <span className="font-semibold text-foreground">{authorName}</span>
-                    <span className="text-[11px] text-muted-foreground">{formatRelativeTimeAgo(entry.comment.created_at)}</span>
-                  </span>
+                <div className="flex items-baseline gap-1.5 text-[13px] leading-tight">
+                  <span className="font-semibold text-foreground">{authorName}</span>
+                  <span className="text-[11px] text-muted-foreground">{formatRelativeTimeAgo(entry.comment.created_at)}</span>
+                </div>
+                <div className="mt-0.5 text-[13px] leading-relaxed text-foreground/80">
                   <CommentBody
                     body={entry.comment.body}
                     members={members}
                     teams={teams}
-                    className="inline [&_p:first-child]:inline [&_p:first-child]:m-0"
+                    className="[&_p:first-child]:mt-0 [&_p:last-child]:mb-0"
                   />
                 </div>
               </>
@@ -977,7 +978,7 @@ export function CommentThread({
             )}
           </div>
           {!isEditing && (
-            <div className="shrink-0 mt-0.5 flex items-center justify-end gap-1.5">
+            <div className="shrink-0 -mt-1 flex items-center justify-end gap-1.5">
               <div className={`flex items-center justify-end gap-0.5 opacity-0 transition-opacity ${isReply ? 'group-hover/reply:opacity-100 group-focus-within/reply:opacity-100' : 'group-hover:opacity-100 group-focus-within:opacity-100'}`}>
                 <Popover>
                   <PopoverTrigger asChild>
