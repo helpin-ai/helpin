@@ -674,13 +674,13 @@ export function TaskRelationshipsSection({
           type="button"
           size="sm"
           variant="ghost"
-          className="inline-flex h-auto items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+          className="inline-flex h-auto items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
           onClick={() => {
             setAnchorSource('inline');
             onComposerOpenChange(true);
           }}
         >
-          <PlusSignIcon className="h-4 w-4" />
+          <PlusSignIcon className="h-3.5 w-3.5" />
           Add relationship
         </Button>
 

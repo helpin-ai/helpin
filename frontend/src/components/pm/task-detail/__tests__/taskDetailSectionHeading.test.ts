@@ -27,4 +27,11 @@ describe('TaskDetailSectionHeading', () => {
     expect(checklistSource).toContain('title="Checklist"');
     expect(externalLinksSource).toContain('<TaskDetailSectionHeading title="External Links"');
   });
+
+  it('keeps the add relationship action compact', () => {
+    const relationshipsSource = readFileSync(resolve(__dirname, '../../TaskRelationshipsSection.tsx'), 'utf8');
+
+    expect(relationshipsSource).toContain('px-2.5 py-1.5 text-xs');
+    expect(relationshipsSource).toContain('<PlusSignIcon className="h-3.5 w-3.5" />');
+  });
 });
