@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
+import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +36,7 @@ interface ChecklistItemsProps {
   taskId: string;
   members?: AssignableMember[];
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
+  onContentChange?: (hasContent: boolean) => void;
 }
 
 export type ChecklistMentionOption = MentionSuggestionItem;
@@ -160,7 +161,7 @@ function SortableItem({
   );
 }
 
-export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }: ChecklistItemsProps) {
+export function ChecklistItems({ workspaceId, taskId, members = [], teams = [], onContentChange }: ChecklistItemsProps) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [newText, setNewText] = useState('');
   const [adding, setAdding] = useState(false);
@@ -189,6 +190,10 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
   }, [workspaceId, taskId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    onContentChange?.(items.length > 0);
+  }, [items.length, onContentChange]);
 
   useEffect(() => {
     if (addingItem) inputRef.current?.focus();
@@ -238,6 +243,12 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
     await reload();
     setNewText('');
     inputRef.current?.focus();
+  };
+
+  const closeAddItemInput = () => {
+    setAddingItem(false);
+    setNewText('');
+    setMentionQuery(null);
   };
 
   const handleToggle = async (item: ChecklistItem) => {
@@ -362,15 +373,15 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
                   }
                   if (e.key === 'Escape') {
                     e.preventDefault();
+                    e.stopPropagation();
                     setMentionQuery(null);
                     return;
                   }
                 }
                 if (e.key === 'Escape') {
                   e.preventDefault();
-                  setAddingItem(false);
-                  setNewText('');
-                  setMentionQuery(null);
+                  e.stopPropagation();
+                  closeAddItemInput();
                 }
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -382,6 +393,17 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
                 setTimeout(() => setMentionQuery(null), 150);
               }}
             />
+            <QuickTooltip label="Close">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Close checklist item input"
+                onClick={closeAddItemInput}
+              >
+                <Cancel01Icon />
+              </Button>
+            </QuickTooltip>
             {newText.trim() && (
               <Button
                 variant="outline"

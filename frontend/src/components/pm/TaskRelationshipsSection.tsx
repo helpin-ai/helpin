@@ -68,6 +68,7 @@ interface TaskRelationshipsSectionProps {
    *  When set, clicking that element opens the popover anchored there instead of inline. */
   externalTriggerRef?: RefObject<HTMLElement | null>;
   className?: string;
+  onContentChange?: (hasContent: boolean) => void;
 }
 
 const RELATIONSHIP_OPTIONS: Array<{
@@ -238,6 +239,7 @@ export function TaskRelationshipsSection({
   visible = false,
   externalTriggerRef,
   className,
+  onContentChange,
 }: TaskRelationshipsSectionProps) {
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const inlineAddRef = useRef<HTMLButtonElement>(null);
@@ -314,6 +316,11 @@ export function TaskRelationshipsSection({
   }, [data]);
 
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
+  const hasRelationshipContent = allRelationships.length > 0 || linkedDocs.length > 0;
+
+  useEffect(() => {
+    onContentChange?.(hasRelationshipContent);
+  }, [hasRelationshipContent, onContentChange]);
 
   const handleCreateRelationship = async (otherTaskId: string) => {
     await createRelationship.mutateAsync({

@@ -87,7 +87,7 @@ describe('TaskRelationshipsSection', () => {
     expect(container.querySelector('#task-relationships-section')).toBeNull();
   });
 
-  it('uses the comment action color treatment for the add relationship button', () => {
+  it('uses the compact outline treatment for the add relationship button', () => {
     renderSection();
 
     const addButton = Array.from(container.querySelectorAll('button')).find(
@@ -95,9 +95,8 @@ describe('TaskRelationshipsSection', () => {
     );
 
     expect(addButton).toBeTruthy();
-    expect(addButton?.className).toContain('text-muted-foreground');
-    expect(addButton?.className).toContain('hover:bg-accent');
-    expect(addButton?.className).toContain('hover:text-foreground');
+    expect(addButton?.getAttribute('data-variant')).toBe('outline');
+    expect(addButton?.getAttribute('data-size')).toBe('xs');
     expect(addButton?.querySelector('svg')?.className.baseVal).not.toContain('text-primary');
   });
 

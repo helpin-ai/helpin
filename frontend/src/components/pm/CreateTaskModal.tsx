@@ -89,6 +89,7 @@ import { showEntityCreatedToast } from "@/components/ui/entity-created-toast";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { WorkspaceTeam } from "@/lib/types";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
+import { getOptionalSectionActionClass } from "@/components/pm/optionalSectionActionPill";
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -1240,11 +1241,8 @@ export function CreateTaskModal({
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                      showChecklist
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:bg-accent'
-                    }`}
+                    className={getOptionalSectionActionClass(form.checklist_items.length > 0 ? 'locked' : showChecklist ? 'open' : 'available')}
+                    disabled={form.checklist_items.length > 0}
                     onClick={() => setShowChecklist((v) => !v)}
                   >
                     <CheckListIcon className="h-3 w-3" />
@@ -1255,11 +1253,8 @@ export function CreateTaskModal({
                   </button>
                   <button
                     type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                      showExternalLinks
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:bg-accent'
-                    }`}
+                    className={getOptionalSectionActionClass(form.external_links.length > 0 ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                    disabled={form.external_links.length > 0}
                     onClick={() => setShowExternalLinks((v) => !v)}
                   >
                     <Link01Icon className="h-3 w-3" />
@@ -1270,11 +1265,8 @@ export function CreateTaskModal({
                   </button>
                   <button
                     type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                      showAttachments
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:bg-accent'
-                    }`}
+                    className={getOptionalSectionActionClass((pendingFiles.length + templateAttachments.length) > 0 ? 'locked' : showAttachments ? 'open' : 'available')}
+                    disabled={(pendingFiles.length + templateAttachments.length) > 0}
                     onClick={() => setShowAttachments((v) => !v)}
                   >
                     <AttachmentIcon className="h-3 w-3" />

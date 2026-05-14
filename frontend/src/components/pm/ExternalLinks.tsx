@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
+import { LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -11,6 +11,7 @@ interface ExternalLinksProps {
   workspaceId: string;
   entityType: 'task' | 'epic';
   entityId: string;
+  onContentChange?: (hasContent: boolean) => void;
 }
 
 function getHostname(url: string): string {
@@ -21,7 +22,7 @@ function getHostname(url: string): string {
   }
 }
 
-export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLinksProps) {
+export function ExternalLinks({ workspaceId, entityType, entityId, onContentChange }: ExternalLinksProps) {
   const [links, setLinks] = useState<ExternalLink[]>([]);
   const [newUrl, setNewUrl] = useState('');
   const [adding, setAdding] = useState(false);
@@ -34,6 +35,10 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
   }, [workspaceId, entityType, entityId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    onContentChange?.(links.length > 0);
+  }, [links.length, onContentChange]);
 
   useEffect(() => {
     if (addingLink) inputRef.current?.focus();
@@ -64,6 +69,11 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
     setNewUrl('');
     setAddingLink(false);
   }, [workspaceId, entityType, entityId, newUrl]);
+
+  const closeAddLinkInput = useCallback(() => {
+    setAddingLink(false);
+    setNewUrl('');
+  }, []);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -141,8 +151,8 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 e.preventDefault();
-                setAddingLink(false);
-                setNewUrl('');
+                e.stopPropagation();
+                closeAddLinkInput();
               }
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -150,6 +160,17 @@ export function ExternalLinks({ workspaceId, entityType, entityId }: ExternalLin
               }
             }}
           />
+          <QuickTooltip label="Close">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Close external link input"
+              onClick={closeAddLinkInput}
+            >
+              <Cancel01Icon />
+            </Button>
+          </QuickTooltip>
           {newUrl.trim() && (
             <Button
               variant="outline"

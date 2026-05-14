@@ -19,7 +19,8 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(panelSource).toContain('{hasOptionalTaskSections && (');
     expect(panelSource).toContain('className="mt-8 space-y-8"');
     expect(panelSource).toContain('associationsService.listByTask(workspaceId, taskDetail.task.id)');
-    expect(panelSource).toContain('if (hasVisibleTaskAssociations(associationsRes.data)) setShowRelationships(true);');
+    expect(panelSource).toContain('const hasRelationshipContent = hasVisibleTaskAssociations(associationsRes.data);');
+    expect(panelSource).toContain('if (hasRelationshipContent) setShowRelationships(true);');
     expect(relationshipsSource).toContain('className={className}');
     expect(checklistIndex).toBeGreaterThan(-1);
     expect(relationshipsIndex).toBeGreaterThan(checklistIndex);
@@ -27,6 +28,24 @@ describe('TaskDetailPanel optional section spacing', () => {
     expect(checklistBlock).not.toContain('className="mt-6"');
     expect(externalLinksBlock).not.toContain('className="mt-8"');
     expect(externalLinksBlock).not.toContain('className="mt-6"');
+  });
+
+  it('uses shared subtle action pills and locks populated optional sections', () => {
+    const panelSource = readFileSync(resolve(__dirname, '../../TaskDetailPanel.tsx'), 'utf8');
+    const createTaskSource = readFileSync(resolve(__dirname, '../../CreateTaskModal.tsx'), 'utf8');
+    const globalCreateSource = readFileSync(resolve(__dirname, '../../GlobalCreateModals.tsx'), 'utf8');
+    const pillSource = readFileSync(resolve(__dirname, '../../optionalSectionActionPill.ts'), 'utf8');
+
+    expect(pillSource).toContain("export type OptionalSectionActionState = 'available' | 'open' | 'locked';");
+    expect(pillSource).toContain('border-primary/20 bg-primary/[0.025] text-primary/75');
+    expect(pillSource).toContain('cursor-default border-border/60 bg-muted/35 text-muted-foreground/80');
+    expect(panelSource).toContain('disabled={hasChecklistItems}');
+    expect(panelSource).toContain('disabled={hasRelationshipItems}');
+    expect(panelSource).toContain('disabled={hasExternalLinkItems}');
+    expect(createTaskSource).toContain('getOptionalSectionActionClass(form.checklist_items.length > 0 ?');
+    expect(createTaskSource).toContain('disabled={form.external_links.length > 0}');
+    expect(globalCreateSource).toContain('getOptionalSectionActionClass(epicExternalLinks.length > 0 ?');
+    expect(globalCreateSource).toContain('disabled={pendingFiles.length > 0}');
   });
 
   it('keeps comments separated after removing the standalone comments divider', () => {

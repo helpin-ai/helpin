@@ -108,6 +108,7 @@ import { CommentThread } from '@/components/pm/CommentThread';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { TaskRelationshipsSection } from '@/components/pm/TaskRelationshipsSection';
 import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
+import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -637,6 +638,9 @@ function TaskDetailPanelBody({
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const [showRelationships, setShowRelationships] = useState(false);
+  const [hasChecklistItems, setHasChecklistItems] = useState(false);
+  const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
+  const [hasRelationshipItems, setHasRelationshipItems] = useState(false);
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
   const relationshipsToggleActive = showRelationships || relationshipComposerOpen;
@@ -913,19 +917,45 @@ function TaskDetailPanelBody({
     }
   }, [form.team_id, form.epic_id, form.sprint_id, epics, sprints]);
 
+  const syncOptionalSectionContent = useCallback(async () => {
+    const [clRes, elRes, associationsRes] = await Promise.all([
+      pmChecklistService.list(workspaceId, taskDetail.task.id),
+      pmExternalLinkService.list(workspaceId, taskDetail.task.id),
+      associationsService.listByTask(workspaceId, taskDetail.task.id),
+    ]);
+
+    const hasChecklistContent = (clRes.data?.length ?? 0) > 0;
+    const hasExternalLinkContent = (elRes.data?.length ?? 0) > 0;
+    const hasRelationshipContent = hasVisibleTaskAssociations(associationsRes.data);
+
+    setHasChecklistItems(hasChecklistContent);
+    setHasExternalLinkItems(hasExternalLinkContent);
+    setHasRelationshipItems(hasRelationshipContent);
+
+    if (hasChecklistContent) setShowChecklist(true);
+    if (hasExternalLinkContent) setShowExternalLinks(true);
+    if (hasRelationshipContent) setShowRelationships(true);
+  }, [workspaceId, taskDetail.task.id]);
+
   // ── Auto-show optional sections if items exist ────────
   useEffect(() => {
-    (async () => {
-      const [clRes, elRes, associationsRes] = await Promise.all([
-        pmChecklistService.list(workspaceId, taskDetail.task.id),
-        pmExternalLinkService.list(workspaceId, taskDetail.task.id),
-        associationsService.listByTask(workspaceId, taskDetail.task.id),
-      ]);
-      if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
-      if (elRes.data && elRes.data.length > 0) setShowExternalLinks(true);
-      if (hasVisibleTaskAssociations(associationsRes.data)) setShowRelationships(true);
-    })();
-  }, [workspaceId, taskDetail]);
+    void syncOptionalSectionContent();
+  }, [syncOptionalSectionContent]);
+
+  const handleChecklistContentChange = useCallback((hasContent: boolean) => {
+    setHasChecklistItems(hasContent);
+    if (hasContent) setShowChecklist(true);
+  }, []);
+
+  const handleRelationshipContentChange = useCallback((hasContent: boolean) => {
+    setHasRelationshipItems(hasContent);
+    if (hasContent) setShowRelationships(true);
+  }, []);
+
+  const handleExternalLinkContentChange = useCallback((hasContent: boolean) => {
+    setHasExternalLinkItems(hasContent);
+    if (hasContent) setShowExternalLinks(true);
+  }, []);
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
@@ -1470,11 +1500,8 @@ function TaskDetailPanelBody({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                  showChecklist
-                    ? 'border-primary/30 bg-primary/10 text-primary'
-                    : 'border-border/60 text-muted-foreground hover:bg-accent'
-                }`}
+                className={getOptionalSectionActionClass(hasChecklistItems ? 'locked' : showChecklist ? 'open' : 'available')}
+                disabled={hasChecklistItems}
                 onClick={() => setShowChecklist((v) => !v)}
               >
                 <CheckmarkSquare02Icon className="h-3 w-3" />
@@ -1483,11 +1510,8 @@ function TaskDetailPanelBody({
               <button
                 ref={relationshipButtonRef}
                 type="button"
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                  relationshipsToggleActive
-                    ? 'border-primary/30 bg-primary/10 text-primary'
-                    : 'border-border/60 text-muted-foreground hover:bg-accent'
-                }`}
+                className={getOptionalSectionActionClass(hasRelationshipItems ? 'locked' : relationshipsToggleActive ? 'open' : 'available')}
+                disabled={hasRelationshipItems}
                 onClick={() => {
                   setShowRelationships((open) => {
                     const nextOpen = !open;
@@ -1503,11 +1527,8 @@ function TaskDetailPanelBody({
               </button>
               <button
                 type="button"
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                  showExternalLinks
-                    ? 'border-primary/30 bg-primary/10 text-primary'
-                    : 'border-border/60 text-muted-foreground hover:bg-accent'
-                }`}
+                className={getOptionalSectionActionClass(hasExternalLinkItems ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                disabled={hasExternalLinkItems}
                 onClick={() => setShowExternalLinks((v) => !v)}
               >
                 <Link01Icon className="h-3 w-3" />
@@ -1515,7 +1536,7 @@ function TaskDetailPanelBody({
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                className={getOptionalSectionActionClass('available')}
                 onClick={() => openFilePickerRef.current?.()}
               >
                 <AttachmentIcon className="h-3 w-3" />
@@ -1557,6 +1578,7 @@ function TaskDetailPanelBody({
                     taskId={taskDetail.task.id}
                     members={assignableMembers}
                     teams={mentionTeams}
+                    onContentChange={handleChecklistContentChange}
                   />
                 </div>
               )}
@@ -1580,12 +1602,18 @@ function TaskDetailPanelBody({
                 onComposerOpenChange={setRelationshipComposerOpen}
                 visible={showRelationships}
                 externalTriggerRef={relationshipButtonRef}
+                onContentChange={handleRelationshipContentChange}
               />
 
               {/* External Links */}
               {showExternalLinks && (
                 <div>
-                  <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
+                  <ExternalLinks
+                    workspaceId={workspaceId}
+                    entityType="task"
+                    entityId={taskDetail.task.id}
+                    onContentChange={handleExternalLinkContentChange}
+                  />
                 </div>
               )}
             </div>
