@@ -1473,9 +1473,7 @@ function TaskDetailPanelBody({
               </div>
             ) : (
               <>
-                {comments.length > 0 && (
-                  <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3" />
-                )}
+                <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3" />
               <CommentThread
                 workspaceId={workspaceId}
                 entityType="task"
