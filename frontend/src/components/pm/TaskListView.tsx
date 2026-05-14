@@ -301,7 +301,6 @@ export function TaskListView({
   const parentRef = useRef<HTMLDivElement>(null);
   const horizontalScrollLeftRef = useRef(0);
   const headerRef = useRef<HTMLDivElement>(null);
-  const [horizontalScrollLeft, setHorizontalScrollLeft] = useState(0);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
@@ -1288,12 +1287,12 @@ export function TaskListView({
         <div className="flex flex-col gap-2 px-3 pt-2">
           <div className="flex flex-wrap items-center gap-2">
             {showLocalTaskControls ? (
-              <div className="relative min-w-[220px] flex-1 sm:max-w-[320px]">
+              <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
                 <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={taskSearchQuery}
                   onChange={(event) => setTaskSearchQuery(event.target.value)}
-                  placeholder="Filter tasks..."
+                  placeholder="Search"
                   className="h-8 pl-8 pr-8 text-sm"
                 />
                 {taskSearchQuery ? (
@@ -1301,7 +1300,7 @@ export function TaskListView({
                     type="button"
                     className="absolute right-2 top-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                     onClick={() => setTaskSearchQuery('')}
-                    aria-label="Clear task search"
+                    aria-label="Clear search"
                   >
                     <Cancel01Icon className="h-3.5 w-3.5" />
                   </button>
@@ -1427,7 +1426,7 @@ export function TaskListView({
 
           if (scrollLeft !== horizontalScrollLeftRef.current) {
             horizontalScrollLeftRef.current = scrollLeft;
-            setHorizontalScrollLeft(scrollLeft);
+            el.style.setProperty('--task-list-scroll-left', `${scrollLeft}px`);
           }
 
           // Infinite loading (only for flat/global pagination, not per-group mode)
@@ -1510,7 +1509,6 @@ export function TaskListView({
                 rows={rows}
                 virtualizer={virtualizer}
                 groupSummaries={groupSummaries}
-                horizontalScrollLeft={horizontalScrollLeft}
               />
             ) : null}
             {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -1542,8 +1540,9 @@ export function TaskListView({
                     left: 0,
                     width: '100%',
                     transform: isGrouped
-                      ? `translate(${horizontalScrollLeft}px, ${virtualRow.start}px)`
+                      ? `translateX(var(--task-list-scroll-left, 0px)) translateY(${virtualRow.start}px)`
                       : `translateY(${virtualRow.start}px)`,
+                    willChange: isGrouped ? 'transform' : undefined,
                   }}
                 >
                   {isGrouped ? (
@@ -1665,13 +1664,11 @@ function StickyPinnedGroupOverlay({
   rows,
   virtualizer,
   groupSummaries,
-  horizontalScrollLeft,
 }: {
   parentRef: RefObject<HTMLDivElement | null>;
   rows: Row<Task>[];
   virtualizer: TaskListVirtualizerLike;
   groupSummaries: Map<string, PMGroupSummary>;
-  horizontalScrollLeft: number;
 }) {
   const pinnedGroupRef = useRef<number | null>(null);
   const pinnedGroupRafRef = useRef<number | null>(null);
@@ -1745,7 +1742,10 @@ function StickyPinnedGroupOverlay({
     <div className="sticky z-[5]" style={{ top: 'var(--task-list-header-height, 0px)', height: 0, overflow: 'visible' }}>
       <div
         className="border-b border-border/60 bg-background"
-        style={{ transform: `translateX(${horizontalScrollLeft}px)` }}
+        style={{
+          transform: 'translateX(var(--task-list-scroll-left, 0px))',
+          willChange: 'transform',
+        }}
       >
         <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
       </div>
