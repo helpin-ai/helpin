@@ -1687,7 +1687,7 @@ function TaskDetailPanelBody({
           )}
 
           {/* Comments + Activity */}
-          <div className="mt-6">
+          <div className={comments.length > 0 ? 'mt-10' : 'mt-6'}>
             {/* Comments card */}
             {commentsLoading ? (
               <div className="space-y-3 rounded-lg border border-border/60 p-4">
