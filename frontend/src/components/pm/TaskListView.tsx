@@ -436,7 +436,7 @@ export function TaskListView({
         const state = stateMap.get(id);
         return {
           id,
-          name: state?.groupLabel ?? state?.name ?? 'Unknown state',
+          name: state?.name ?? 'Unknown state',
           position: state?.position ?? Number.MAX_SAFE_INTEGER,
         };
       })

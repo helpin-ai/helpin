@@ -3,6 +3,7 @@ import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useTitle } from '@/hooks/useTitle';
 import {
+  Activity01Icon,
   ArchiveIcon,
   ArrowLeft02Icon,
   Calendar03Icon,
@@ -11,6 +12,7 @@ import {
   FavouriteIcon,
   Link01Icon,
   Loading01Icon,
+  Message01Icon,
   PencilEdit01Icon,
   PlusSignIcon,
   Target01Icon,
@@ -29,6 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
@@ -43,20 +46,25 @@ import { TaskListView } from '@/components/pm/TaskListView';
 import type { TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
+import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
+import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
+import { ActivityTimeline } from '@/components/pm/ActivityTimeline';
+import { CommentThread } from '@/components/pm/CommentThread';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
@@ -70,6 +78,7 @@ import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -80,6 +89,7 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   at_risk: { label: 'At risk', color: 'text-yellow-600' },
   off_track: { label: 'Off track', color: 'text-red-600' },
 };
+const NO_HEALTH_DATES_TOOLTIP = 'No suggestion yet: set a start date and deadline.';
 
 // ── Metadata Row ───────────────────────────────────────────────────
 
@@ -141,7 +151,7 @@ function getNoHealthSuggestionMessage(epic: EpicWithStats | null): string | null
   const today = startOfDayUTC(new Date());
 
   if (!start || !end) {
-    return 'No suggestion yet: set a start date and deadline.';
+    return NO_HEALTH_DATES_TOOLTIP;
   }
   if (end < start) {
     return 'No suggestion yet: fix the schedule dates.';
@@ -162,6 +172,7 @@ export function EpicDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const currentUser = useAuthStore((s) => s.user);
 
   const workspaceId = workspace?.id;
 
@@ -198,6 +209,11 @@ export function EpicDetailPage() {
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
   const [externalLinkCount, setExternalLinkCount] = useState(0);
+  const [comments, setComments] = useState<CommentWithAuthor[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(true);
+  const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [showAllActivity, setShowAllActivity] = useState(false);
   const [taskListGroupBy, setTaskListGroupBy] = useState<TaskListGroupByOption>('none');
   const [panelDragging, setPanelDragging] = useState(false);
   const savedDescriptionRef = useRef('');
@@ -267,6 +283,61 @@ export function EpicDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const reloadComments = useCallback(async () => {
+    if (!workspaceId) {
+      setComments([]);
+      setCommentsLoading(false);
+      return;
+    }
+    const res = await pmCommentService.list(workspaceId, 'epic', epicId);
+    setComments(res.data ?? []);
+    setCommentsLoading(false);
+  }, [workspaceId, epicId]);
+
+  const reloadActivity = useCallback(async () => {
+    if (!workspaceId) {
+      setActivity([]);
+      setActivityLoading(false);
+      return;
+    }
+    const res = await pmEpicService.listActivity(workspaceId, epicId, 1, 30);
+    setActivity(res.data?.data ?? []);
+    setActivityLoading(false);
+  }, [workspaceId, epicId]);
+
+  useEffect(() => {
+    setCommentsLoading(true);
+    setActivityLoading(true);
+    setShowAllActivity(false);
+    void reloadComments();
+    void reloadActivity();
+  }, [reloadComments, reloadActivity]);
+
+  useEffect(() => {
+    const handleEpicChildUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { entity?: string; parent_id?: string } | undefined;
+      if (detail?.parent_id !== epicId) return;
+      if (detail.entity === 'comment') {
+        void reloadComments();
+      }
+      void reloadActivity();
+    };
+
+    const handleEpicUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { entity_id?: string } | undefined;
+      if (detail?.entity_id === epicId) {
+        void reloadActivity();
+      }
+    };
+
+    window.addEventListener('epic-child-updated', handleEpicChildUpdated);
+    window.addEventListener('epic-updated', handleEpicUpdated);
+    return () => {
+      window.removeEventListener('epic-child-updated', handleEpicChildUpdated);
+      window.removeEventListener('epic-updated', handleEpicUpdated);
+    };
+  }, [epicId, reloadComments, reloadActivity]);
 
   // Auto-show external links if they exist
   useEffect(() => {
@@ -939,6 +1010,64 @@ export function EpicDetailPage() {
             </div>
           </div>
 
+          <div className={comments.length > 0 ? 'mt-10' : 'mt-8'}>
+            {commentsLoading ? (
+              <div className="space-y-3 rounded-lg border border-border/60 p-4">
+                {[1, 2].map((i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-3 w-32" />
+                      <Skeleton className="h-3 w-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
+                {comments.length > 0 && (
+                  <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3" />
+                )}
+                {workspaceId ? (
+                  <CommentThread
+                    workspaceId={workspaceId}
+                    entityType="epic"
+                    entityId={epicId}
+                    comments={comments}
+                    currentUserId={currentUser?.id}
+                    teams={mentionTeams}
+                    members={assignableMembers}
+                    onCommentsChange={setComments}
+                    hideEmptyState
+                  />
+                ) : null}
+              </>
+            )}
+
+            {activityLoading ? (
+              <div className="mt-6 space-y-3">
+                <Skeleton className="h-3 w-20" />
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-4 w-4 rounded-full shrink-0" />
+                    <Skeleton className="h-3 w-48" />
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {!activityLoading && activity.length > 0 && (
+              <div className="mt-6">
+                <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} />
+                <ActivityTimeline
+                  activity={activity}
+                  showAll={showAllActivity}
+                  onShowAll={() => setShowAllActivity(true)}
+                  entityLabel="epic"
+                />
+              </div>
+            )}
+          </div>
+
         </div>
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
@@ -968,9 +1097,11 @@ export function EpicDetailPage() {
                   )}
                 />
                 {noHealthSuggestionMessage ? (
-                  <p className="text-[10px] text-muted-foreground">
-                    {noHealthSuggestionMessage}
-                  </p>
+                  <QuickTooltip label={noHealthSuggestionMessage}>
+                    <p className="text-[10px] text-muted-foreground">
+                      {noHealthSuggestionMessage}
+                    </p>
+                  </QuickTooltip>
                 ) : epic?.suggested_health && epic.suggested_health !== form.health && (
                   <button
                     type="button"
