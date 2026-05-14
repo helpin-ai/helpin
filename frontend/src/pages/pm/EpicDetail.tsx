@@ -920,24 +920,8 @@ export function EpicDetailPage() {
             />
           </div>
 
-          <Separator className="my-6" />
-
-          {/* Progress */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Progress</h3>
-              <span className="text-xs text-muted-foreground">{progress}%</span>
-            </div>
-            <Progress value={progress} />
-            <p className="text-xs text-muted-foreground">
-              {getEpicDoneTaskCount(epic.stats)}/{getEpicTaskCount(epic.stats)} tasks done · {epic.stats.done_points}/{epic.stats.total_points} points
-            </p>
-          </div>
-
-          <Separator className="my-6" />
-
           {/* Resources */}
-          <div>
+          <div className="mt-6">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resources</h3>
             {resources.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No people assigned yet.</p>
@@ -1091,6 +1075,19 @@ export function EpicDetailPage() {
                 }}
                 renderTrigger={() => <span className={currentStateColor}>{currentStateName}</span>}
               />
+            </MetadataRow>
+
+            {/* Progress */}
+            <MetadataRow icon={ViewIcon} label="Progress">
+              <div className="min-w-0 space-y-1.5">
+                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span className="truncate">
+                    {getEpicDoneTaskCount(epic.stats)}/{getEpicTaskCount(epic.stats)} tasks
+                  </span>
+                  <span className="shrink-0">{progress}%</span>
+                </div>
+                <Progress value={progress} className="h-1.5" />
+              </div>
             </MetadataRow>
 
             {/* Health */}
