@@ -93,6 +93,10 @@ function clickButton(label: string) {
   });
 }
 
+function findButton(label: string) {
+  return Array.from(container.querySelectorAll('button')).find((candidate) => candidate.textContent?.trim() === label);
+}
+
 function typeTextarea(value: string) {
   const textarea = container.querySelector('textarea');
   expect(textarea).toBeTruthy();
@@ -104,7 +108,7 @@ function typeTextarea(value: string) {
 }
 
 describe('CodingInteractionCard', () => {
-  it('renders structured review findings and approves all by default', () => {
+  it('renders structured review findings and enables one approve action after findings are selected', () => {
     const onResolve = vi.fn();
     renderCard(onResolve);
 
@@ -112,20 +116,32 @@ describe('CodingInteractionCard', () => {
     expect(container.textContent).toContain('Missing nil guard');
     expect(container.textContent).toContain('Missing regression test');
     expect(container.textContent).toContain('93% confidence');
+    expect(findButton('Approve all')).toBeUndefined();
+    expect(findButton('Approve selected')).toBeUndefined();
+    expect(findButton('Approve')).toBeTruthy();
+    expect(findButton('Approve')?.hasAttribute('disabled')).toBe(true);
 
-    clickButton('Approve all');
+    const checkboxes = Array.from(container.querySelectorAll('[data-slot="checkbox"]'));
+    expect(checkboxes).toHaveLength(3);
+    act(() => {
+      checkboxes[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(findButton('Approve')?.hasAttribute('disabled')).toBe(false);
+    clickButton('Approve');
 
     expect(onResolve).toHaveBeenCalledWith(
       'interaction-1',
       {
         decision: 'approve',
-        selection_mode: 'all',
+        selection_mode: 'selected',
+        selected_finding_ids: ['finding_1', 'finding_2'],
       },
       undefined,
     );
   });
 
-  it('sends selected finding ids when approving a subset', () => {
+  it('sends selected finding ids when approving any selected subset', () => {
     const onResolve = vi.fn();
     renderCard(onResolve);
 
@@ -136,7 +152,7 @@ describe('CodingInteractionCard', () => {
       checkboxes[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    clickButton('Approve selected');
+    clickButton('Approve');
 
     expect(onResolve).toHaveBeenCalledWith(
       'interaction-1',
@@ -146,6 +162,49 @@ describe('CodingInteractionCard', () => {
         selected_finding_ids: ['finding_1'],
       },
       undefined,
+    );
+  });
+
+  it('sends the optional note when approving selected findings', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve);
+
+    const checkboxes = Array.from(container.querySelectorAll('[data-slot="checkbox"]'));
+    act(() => {
+      checkboxes[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    typeTextarea('Use the smaller patch.');
+
+    clickButton('Approve');
+
+    expect(onResolve).toHaveBeenCalledWith(
+      'interaction-1',
+      {
+        decision: 'approve',
+        message: 'Use the smaller patch.',
+        selection_mode: 'selected',
+        selected_finding_ids: ['finding_1'],
+      },
+      'Use the smaller patch.',
+    );
+  });
+
+  it('sends a skip decision with the optional note', () => {
+    const onResolve = vi.fn();
+    renderCard(onResolve);
+
+    typeTextarea('Not worth changing for this run.');
+    clickButton('Skip');
+
+    expect(onResolve).toHaveBeenCalledWith(
+      'interaction-1',
+      {
+        decision: 'skip',
+        message: 'Not worth changing for this run.',
+        selection_mode: 'none',
+        selected_finding_ids: [],
+      },
+      'Not worth changing for this run.',
     );
   });
 
@@ -182,7 +241,7 @@ describe('CodingInteractionCard', () => {
       checkboxes[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    clickButton('Approve selected');
+    clickButton('Approve');
 
     expect(onResolve).toHaveBeenCalledWith(
       'interaction-1',

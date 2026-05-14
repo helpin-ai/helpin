@@ -52,13 +52,11 @@ export async function uploadEditorFile(
   // 3. Confirm upload
   await pmAttachmentService.confirmUpload(config.workspaceId, initData.attachment.id);
 
-  // 4. Return the permanent public URL
-  if (!initData.public_url) {
-    throw new Error('Server did not return a public URL');
-  }
+  // 4. Return the stable app-controlled content URL. The backend resolves it
+  // to a fresh object-store download URL when the image is requested.
   return {
     attachmentId: initData.attachment.id,
-    publicUrl: initData.public_url,
+    publicUrl: pmAttachmentService.contentUrl(initData.attachment.id),
   };
 }
 

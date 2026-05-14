@@ -131,6 +131,7 @@ export const queryKeys = {
     integrations: (wsId: string) => ['git', wsId, 'integrations'] as const,
     repositories: (wsId: string) => ['git', wsId, 'repositories'] as const,
     taskLinks: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'links'] as const,
+    taskDeliveryTarget: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'delivery-target'] as const,
   },
 
   support: {

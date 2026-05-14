@@ -45,9 +45,9 @@ export interface CodingSessionReviewCheckpointRequestPayload {
 
 export interface CodingSessionReviewCheckpointResponsePayload {
   [key: string]: unknown;
-  decision: 'approve' | 'request_changes';
+  decision: 'approve' | 'request_changes' | 'skip';
   message?: string;
-  selection_mode?: 'all' | 'selected';
+  selection_mode?: 'all' | 'selected' | 'none';
   selected_finding_ids?: string[];
 }
 
