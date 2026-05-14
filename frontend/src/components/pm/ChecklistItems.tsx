@@ -83,7 +83,7 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-2 py-0.5 ${isDragging ? 'opacity-50' : ''}`}
+      className={`group flex items-center gap-2 py-px ${isDragging ? 'opacity-50' : ''}`}
     >
       <input
         type="checkbox"
@@ -92,7 +92,7 @@ function SortableItem({
         className="h-3.5 w-3.5 shrink-0 rounded border-border cursor-pointer accent-primary"
       />
       <span
-        className={`min-w-0 flex-1 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-muted/30 ${
+        className={`min-w-0 flex-1 rounded-md px-1.5 py-0.5 text-sm transition-colors hover:bg-muted/30 ${
           item.completed ? 'line-through text-muted-foreground' : 'text-foreground'
         }`}
       >
@@ -335,10 +335,10 @@ export function ChecklistItems({
 
         {/* Items */}
         {items.length > 0 && (
-          <div className="px-3 py-1.5">
+          <div className="px-3 py-1">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-                <div className="space-y-0.5">
+                <div className="space-y-px">
                   {items.map((item) => (
                     <SortableItem
                       key={item.id}
