@@ -15,13 +15,15 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Copy01Icon, Loading01Icon } from '@/lib/icons';
+import { Cancel01Icon, Copy01Icon, Loading01Icon, Search01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
@@ -205,6 +207,8 @@ interface TaskListViewProps {
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
   showToolbar?: boolean;
+  showLocalTaskControls?: boolean;
+  toolbarActions?: React.ReactNode;
   footer?: React.ReactNode;
 }
 
@@ -225,6 +229,7 @@ const LIST_PAGE_SIZE = 50;
 const GROUP_LOAD_SENTINEL_HEIGHT = 28;
 const GROUPED_OVERSCAN = 4;
 const FLAT_OVERSCAN = 6;
+const TASK_LIST_FILTER_ALL = '__all__';
 
 const columnHelper = createColumnHelper<Task>();
 
@@ -245,6 +250,8 @@ export function TaskListView({
   groupBy: controlledGroupBy,
   onGroupByChange,
   showToolbar = true,
+  showLocalTaskControls = false,
+  toolbarActions,
   footer,
 }: TaskListViewProps) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
@@ -299,6 +306,11 @@ export function TaskListView({
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
+  const [taskSearchQuery, setTaskSearchQuery] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [stateFilter, setStateFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [typeFilter, setTypeFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [sprintFilter, setSprintFilter] = useState(TASK_LIST_FILTER_ALL);
   const { data: agents = [] } = useAgents(workspaceId);
 
   // Per-group pagination state (for workflow_state grouping)
@@ -405,6 +417,103 @@ export function TaskListView({
     }
     return map;
   }, [sprints]);
+
+  const taskListOwnerOptions = useMemo(() => {
+    const ownerIds = new Set<string>();
+    for (const task of tasks) {
+      for (const ownerId of task.owner_member_ids ?? []) {
+        ownerIds.add(ownerId);
+      }
+    }
+    return Array.from(ownerIds)
+      .map((id) => ({ id, name: ownerNameMap.get(id) ?? 'Unknown member' }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [ownerNameMap, tasks]);
+
+  const taskListStateOptions = useMemo(() => {
+    const stateIds = new Set(tasks.map((task) => task.workflow_state_id).filter(Boolean));
+    return Array.from(stateIds)
+      .map((id) => {
+        const state = stateMap.get(id);
+        return {
+          id,
+          name: state?.groupLabel ?? state?.name ?? 'Unknown state',
+          position: state?.position ?? Number.MAX_SAFE_INTEGER,
+        };
+      })
+      .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+  }, [stateMap, tasks]);
+
+  const taskListTypeOptions = useMemo(() => {
+    const taskTypes = new Set(tasks.map((task) => task.task_type).filter(Boolean));
+    return Array.from(taskTypes)
+      .map((type) => ({ value: type, label: TASK_TYPE_CONFIG[type]?.label ?? type }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [tasks]);
+
+  const taskListSprintOptions = useMemo(() => {
+    const sprintIds = new Set(tasks.map((task) => task.sprint_id).filter(Boolean) as string[]);
+    return Array.from(sprintIds)
+      .map((id) => ({ id, name: sprintMap.get(id) ?? 'Unknown sprint' }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [sprintMap, tasks]);
+
+  const hasLocalTaskFilters =
+    taskSearchQuery.trim() !== '' ||
+    ownerFilter !== TASK_LIST_FILTER_ALL ||
+    stateFilter !== TASK_LIST_FILTER_ALL ||
+    typeFilter !== TASK_LIST_FILTER_ALL ||
+    sprintFilter !== TASK_LIST_FILTER_ALL;
+
+  const filteredTasks = useMemo(() => {
+    if (!showLocalTaskControls || !hasLocalTaskFilters) return tasks;
+
+    const query = taskSearchQuery.trim().toLowerCase();
+    return tasks.filter((task) => {
+      if (ownerFilter !== TASK_LIST_FILTER_ALL && !(task.owner_member_ids ?? []).includes(ownerFilter)) return false;
+      if (stateFilter !== TASK_LIST_FILTER_ALL && task.workflow_state_id !== stateFilter) return false;
+      if (typeFilter !== TASK_LIST_FILTER_ALL && task.task_type !== typeFilter) return false;
+      if (sprintFilter !== TASK_LIST_FILTER_ALL && task.sprint_id !== sprintFilter) return false;
+
+      if (!query) return true;
+
+      const ownerNames = (task.owner_member_ids ?? []).map((id) => ownerNameMap.get(id) ?? '');
+      const labels = task.labels?.map((label) => label.name) ?? [];
+      const searchableText = [
+        task.display_id,
+        task.task_key,
+        task.name,
+        TASK_TYPE_CONFIG[task.task_type]?.label,
+        stateMap.get(task.workflow_state_id)?.name,
+        stateMap.get(task.workflow_state_id)?.groupLabel,
+        task.sprint_id ? sprintMap.get(task.sprint_id) : '',
+        ...ownerNames,
+        ...labels,
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }, [
+    hasLocalTaskFilters,
+    ownerFilter,
+    ownerNameMap,
+    showLocalTaskControls,
+    sprintFilter,
+    sprintMap,
+    stateFilter,
+    stateMap,
+    taskSearchQuery,
+    tasks,
+    typeFilter,
+  ]);
+
+  const clearLocalTaskFilters = useCallback(() => {
+    setTaskSearchQuery('');
+    setOwnerFilter(TASK_LIST_FILTER_ALL);
+    setStateFilter(TASK_LIST_FILTER_ALL);
+    setTypeFilter(TASK_LIST_FILTER_ALL);
+    setSprintFilter(TASK_LIST_FILTER_ALL);
+  }, []);
 
   const estimateSettingsByTeamId = useMemo(() => {
     const map = new Map<string, TeamEstimateSettings>();
@@ -975,7 +1084,7 @@ export function TaskListView({
     if (visibleGroupOptions.some((option) => option.value === groupBy)) {
       return;
     }
-    setGroupBy('workflow_state');
+    setGroupBy(visibleGroupOptions[0]?.value ?? 'none');
   }, [groupBy, setGroupBy, visibleGroupOptions]);
 
   const columnVisibility = useMemo(() => {
@@ -1021,7 +1130,7 @@ export function TaskListView({
   const hasGroupedRows = grouping.length > 0;
 
   const table = useReactTable({
-    data: tasks,
+    data: filteredTasks,
     columns: tableColumns,
     state: {
       grouping,
@@ -1159,9 +1268,10 @@ export function TaskListView({
   }, []);
 
   // Compute total task count (including unloaded) for per-group mode
-  const displayTaskCount = isPerGroupMode && groupHasMore.size > 0
+  const totalTaskCount = isPerGroupMode && groupHasMore.size > 0
     ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
     : tasks.length;
+  const displayTaskCount = showLocalTaskControls && hasLocalTaskFilters ? filteredTasks.length : totalTaskCount;
 
   if (loading) {
     return (
@@ -1175,25 +1285,133 @@ export function TaskListView({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {showToolbar ? (
-        <div className="flex items-center gap-2 px-3 pt-2">
-          <span className="text-xs text-muted-foreground">Group by:</span>
-          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
-            <SelectTrigger className="h-7 w-[160px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {visibleGroupOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-xs text-muted-foreground">
-            {displayTaskCount} {displayTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
-          </span>
-          <div className="ml-auto">
-            <ListDisplayMenu disabledKeys={teamDisabledKeys} />
+        <div className="flex flex-col gap-2 px-3 pt-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {showLocalTaskControls ? (
+              <div className="relative min-w-[220px] flex-1 sm:max-w-[320px]">
+                <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={taskSearchQuery}
+                  onChange={(event) => setTaskSearchQuery(event.target.value)}
+                  placeholder="Filter tasks..."
+                  className="h-8 pl-8 pr-8 text-sm"
+                />
+                {taskSearchQuery ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    onClick={() => setTaskSearchQuery('')}
+                    aria-label="Clear task search"
+                  >
+                    <Cancel01Icon className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            <span className="text-xs text-muted-foreground">
+              {displayTaskCount}{showLocalTaskControls && hasLocalTaskFilters ? ` of ${totalTaskCount}` : ''}{' '}
+              {totalTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
+            </span>
+            <div className="ml-auto flex items-center gap-1.5">
+              {toolbarActions}
+              <ListDisplayMenu disabledKeys={teamDisabledKeys} />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {showLocalTaskControls ? (
+              <>
+                <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+                  <SelectTrigger className="h-7 w-auto min-w-[124px] max-w-[180px] gap-1 text-xs">
+                    <span className="shrink-0 text-muted-foreground">Owner</span>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TASK_LIST_FILTER_ALL}>All</SelectItem>
+                    {taskListOwnerOptions.map((owner) => (
+                      <SelectItem key={owner.id} value={owner.id}>
+                        {owner.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={stateFilter} onValueChange={setStateFilter}>
+                  <SelectTrigger className="h-7 w-auto min-w-[124px] max-w-[180px] gap-1 text-xs">
+                    <span className="shrink-0 text-muted-foreground">State</span>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TASK_LIST_FILTER_ALL}>All</SelectItem>
+                    {taskListStateOptions.map((state) => (
+                      <SelectItem key={state.id} value={state.id}>
+                        {state.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {fieldVis.task_type ? (
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="h-7 w-auto min-w-[116px] max-w-[170px] gap-1 text-xs">
+                      <span className="shrink-0 text-muted-foreground">Type</span>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={TASK_LIST_FILTER_ALL}>All</SelectItem>
+                      {taskListTypeOptions.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+
+                {fieldVis.sprint && !sprintId ? (
+                  <Select value={sprintFilter} onValueChange={setSprintFilter}>
+                    <SelectTrigger className="h-7 w-auto min-w-[124px] max-w-[190px] gap-1 text-xs">
+                      <span className="shrink-0 text-muted-foreground">Sprint</span>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={TASK_LIST_FILTER_ALL}>All</SelectItem>
+                      {taskListSprintOptions.map((sprint) => (
+                        <SelectItem key={sprint.id} value={sprint.id}>
+                          {sprint.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+              </>
+            ) : null}
+
+            <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
+              <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] gap-1 text-xs">
+                <span className="shrink-0 text-muted-foreground">Group by</span>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {visibleGroupOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {showLocalTaskControls && hasLocalTaskFilters ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={clearLocalTaskFilters}
+              >
+                Clear
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1280,6 +1498,11 @@ export function TaskListView({
         </div>
 
         {/* Virtualized body */}
+        {rows.length === 0 ? (
+          <div className="flex h-24 items-center justify-center border-b border-border/60 text-sm text-muted-foreground">
+            {tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the current filters.'}
+          </div>
+        ) : (
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             {hasGroupedRows ? (
               <StickyPinnedGroupOverlay
@@ -1346,6 +1569,7 @@ export function TaskListView({
               );
             })}
           </div>
+        )}
           {loadingMore && !isPerGroupMode && (
             <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
               <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />

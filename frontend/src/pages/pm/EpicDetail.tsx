@@ -17,6 +17,7 @@ import {
   Upload01Icon,
   UserIcon,
   UserGroupIcon,
+  ViewIcon,
   ArchiveRestoreIcon,
   HashtagIcon,
   Layers01Icon,
@@ -39,6 +40,7 @@ import {
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
 import { TaskListView } from '@/components/pm/TaskListView';
+import type { TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
@@ -196,6 +198,7 @@ export function EpicDetailPage() {
   const [showExternalLinks, setShowExternalLinks] = useState(false);
   const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
   const [externalLinkCount, setExternalLinkCount] = useState(0);
+  const [taskListGroupBy, setTaskListGroupBy] = useState<TaskListGroupByOption>('none');
   const [panelDragging, setPanelDragging] = useState(false);
   const savedDescriptionRef = useRef('');
   const openFilePickerRef = useRef<(() => void) | null>(null);
@@ -576,6 +579,18 @@ export function EpicDetailPage() {
     search: epic?.epic.team_id ? { team: epic.epic.team_id } : {},
   });
 
+  const viewEpicTasksPage = () => {
+    if (!epic) return;
+    navigate({
+      to: '/w/$slug/pm/tasks',
+      params: { slug },
+      search: {
+        epic: epic.epic.id,
+        ...(epic.epic.team_id ? { team: epic.epic.team_id } : {}),
+      },
+    });
+  };
+
   const renderTaskHeaderAddButton = () => (
     <Button
       variant="ghost"
@@ -591,6 +606,19 @@ export function EpicDetailPage() {
         <PlusSignIcon className="h-3.5 w-3.5" />
       )}
       Create task
+    </Button>
+  );
+
+  const renderTaskListActions = () => (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-7 gap-1.5 px-2 text-xs"
+      onClick={viewEpicTasksPage}
+    >
+      <ViewIcon className="h-3.5 w-3.5" />
+      View on Tasks page
     </Button>
   );
 
@@ -882,6 +910,10 @@ export function EpicDetailPage() {
                   epicId={epicId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
+                  groupBy={taskListGroupBy}
+                  onGroupByChange={setTaskListGroupBy}
+                  showLocalTaskControls
+                  toolbarActions={renderTaskListActions()}
                 />
               </div>
             ) : (

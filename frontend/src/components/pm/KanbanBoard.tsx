@@ -19,7 +19,7 @@ import { ChartColumnIcon, StickyNote01Icon } from '@/lib/pmIcons';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { usePMBoardStore } from '@/stores/pmBoardStore';
+import { usePMBoardStore, type BoardFilters } from '@/stores/pmBoardStore';
 import type { CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -63,6 +63,7 @@ import {
 interface KanbanBoardProps {
   workspaceId: string;
   teamId?: string;
+  initialFilters?: BoardFilters;
 }
 
 interface ColumnProps {
@@ -539,7 +540,7 @@ const DragOverlayCard = memo(function DragOverlayCard({
 });
 DragOverlayCard.displayName = 'DragOverlayCard';
 
-export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
+export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoardProps) {
   const navigate = useNavigate();
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const workflow = usePMBoardStore((state) => state.workflow);
@@ -579,6 +580,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const groupBy = useBoardDisplayStore((s) => s.groupBy);
   const setGroupBy = useBoardDisplayStore((s) => s.setGroupBy);
   const initDisplay = useBoardDisplayStore((s) => s.init);
+  const initialFiltersKey = useMemo(() => JSON.stringify(initialFilters ?? {}), [initialFilters]);
+  const appliedInitialFiltersRef = useRef<string | null>(null);
 
   useEffect(() => { initDisplay(workspaceId); }, [workspaceId, initDisplay]);
 
@@ -620,6 +623,14 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   useEffect(() => {
     setTeamFilter(teamId ?? null);
   }, [teamId, setTeamFilter]);
+
+  useEffect(() => {
+    if (!initialFilters || Object.keys(initialFilters).length === 0) return;
+    if (appliedInitialFiltersRef.current === initialFiltersKey) return;
+
+    appliedInitialFiltersRef.current = initialFiltersKey;
+    void setFilters(initialFilters);
+  }, [initialFilters, initialFiltersKey, setFilters]);
 
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
