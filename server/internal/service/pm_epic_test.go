@@ -102,6 +102,21 @@ func TestPMEpicService_Create(t *testing.T) {
 		}
 	})
 
+	t.Run("create stores assigned agent", func(t *testing.T) {
+		agentID := "agent-epic-planner-001"
+		epic, err := svc.Create(ctx, model.CreateEpicRequest{
+			WorkspaceID:     wsID,
+			Name:            "Agent-backed Epic",
+			AssignedAgentID: &agentID,
+		}, userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if epic.Epic.AssignedAgentID == nil || *epic.Epic.AssignedAgentID != agentID {
+			t.Fatalf("assigned_agent_id = %v, want %q", epic.Epic.AssignedAgentID, agentID)
+		}
+	})
+
 	t.Run("create with description and color", func(t *testing.T) {
 		desc := "Epic description"
 		color := "#ff0000"
@@ -462,6 +477,19 @@ func TestPMEpicService_Update(t *testing.T) {
 		}
 		if epic.Epic.Color == nil || *epic.Epic.Color != color {
 			t.Errorf("color = %v, want %q", epic.Epic.Color, color)
+		}
+	})
+
+	t.Run("update assigned agent", func(t *testing.T) {
+		agentID := "agent-epic-planner-002"
+		epic, err := svc.Update(ctx, created.Epic.ID, model.UpdateEpicRequest{
+			AssignedAgentID: &agentID,
+		}, userID)
+		if err != nil {
+			t.Fatalf("Update assigned agent: %v", err)
+		}
+		if epic.Epic.AssignedAgentID == nil || *epic.Epic.AssignedAgentID != agentID {
+			t.Fatalf("assigned_agent_id = %v, want %q", epic.Epic.AssignedAgentID, agentID)
 		}
 	})
 

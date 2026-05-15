@@ -4301,6 +4301,19 @@ func (s *AgentService) ValidateTemplateAgent(ctx context.Context, agent *model.A
 	return nil
 }
 
+// ValidateRunnableTargetAgent validates that an agent can run for the target type and team.
+func (s *AgentService) ValidateRunnableTargetAgent(ctx context.Context, workspaceID, agentID, targetType string, targetTeamID *string) error {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return fmt.Errorf("agent_id is required")
+	}
+	agent, err := s.requireRunnableAgent(ctx, workspaceID, agentID, targetType)
+	if err != nil {
+		return err
+	}
+	return validateAgentTeamScope(agent, targetType, targetTeamID)
+}
+
 func (s *AgentService) markAgentIdle(ctx context.Context, workspaceID, agentID string) error {
 	agent, err := s.agentRepo.GetByID(ctx, workspaceID, agentID)
 	if err != nil || agent == nil {
@@ -4826,6 +4839,21 @@ func validateTriggerMode(triggerMode string) error {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func validateAgentTeamScope(agent *model.Agent, targetType string, targetTeamID *string) error {
+	teamIDs := agentTeamIDsForScope(agent)
+	if len(teamIDs) == 0 {
+		return nil
+	}
+	actualTargetTeamID := strings.TrimSpace(derefString(targetTeamID))
+	if actualTargetTeamID == "" {
+		return fmt.Errorf("agent is restricted to team %s and cannot run on workspace-scoped %s targets", strings.Join(teamIDs, ","), targetType)
+	}
+	if !slices.Contains(teamIDs, actualTargetTeamID) {
+		return fmt.Errorf("agent is restricted to team %s and cannot run on %s targets for team %s", strings.Join(teamIDs, ","), targetType, actualTargetTeamID)
+	}
+	return nil
 }
 
 func resolveCreateAgentTeamIDs(req model.CreateAgentRequest) []string {

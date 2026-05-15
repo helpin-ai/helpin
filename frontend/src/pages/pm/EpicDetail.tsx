@@ -49,6 +49,7 @@ import { TaskListView } from '@/components/pm/TaskListView';
 import type { TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
+import { agentService } from '@/lib/services/agentService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
@@ -72,6 +73,7 @@ import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
+import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
@@ -126,6 +128,7 @@ interface EpicFormState {
   health: EpicHealth;
   planned_start_date: string;
   deadline: string;
+  assigned_agent_id: string;
 }
 
 const buildForm = (epic: EpicWithStats): EpicFormState => ({
@@ -138,6 +141,7 @@ const buildForm = (epic: EpicWithStats): EpicFormState => ({
   health: epic.epic.health,
   planned_start_date: epic.epic.planned_start_date ?? '',
   deadline: epic.epic.deadline ? epic.epic.deadline.slice(0, 10) : '',
+  assigned_agent_id: epic.epic.assigned_agent_id ?? '',
 });
 
 function startOfDayUTC(value: string | Date): Date | null {
@@ -221,6 +225,7 @@ export function EpicDetailPage() {
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [taskListGroupBy, setTaskListGroupBy] = useState<TaskListGroupByOption>('none');
   const [panelDragging, setPanelDragging] = useState(false);
+  const [startingAgentRun, setStartingAgentRun] = useState(false);
   const savedDescriptionRef = useRef('');
   const openFilePickerRef = useRef<(() => void) | null>(null);
   const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
@@ -409,6 +414,21 @@ export function EpicDetailPage() {
     setForm((current) => current ? { ...current, [key]: value } : current);
     queuePatch(patch);
   };
+
+  const handleRunAssignedAgent = useCallback(async () => {
+    if (!workspaceId || !epic || !form?.assigned_agent_id || startingAgentRun) return;
+    setStartingAgentRun(true);
+    try {
+      const { error } = await agentService.runEpic(workspaceId, epic.epic.id, { agent_id: form.assigned_agent_id });
+      if (error) throw new Error(error);
+      toast.success('Agent run started');
+      await fetchData(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start agent');
+    } finally {
+      setStartingAgentRun(false);
+    }
+  }, [epic, fetchData, form?.assigned_agent_id, startingAgentRun, workspaceId]);
 
   const handleDescriptionAttachmentDelete = useCallback(
     async (entry: AttachmentResponse) => {
@@ -607,14 +627,16 @@ export function EpicDetailPage() {
       throw new Error(err ?? 'Failed to create task');
     }
     await fetchData(false);
-    return data.task
+    const createdTask = data.task.task;
+    return createdTask
       ? {
-          id: data.task.id,
+          id: createdTask.id,
+          agent_run_error: data.agent_run_error,
           task: {
-            id: data.task.id,
-            name: data.task.name,
-            display_id: data.task.display_id,
-            task_key: data.task.task_key,
+            id: createdTask.id,
+            name: createdTask.name,
+            display_id: createdTask.display_id,
+            task_key: createdTask.task_key,
           },
         }
       : undefined;
@@ -1019,15 +1041,29 @@ export function EpicDetailPage() {
           <div className="mt-6">
             <TaskDetailSectionHeading title="AI Agents" icon={BotIcon} />
             <div className="mt-3">
-              {workspaceId ? (
-                <EpicPlannerPanel
+              {workspaceId && form ? (
+                <AgentPickerCard
                   workspaceId={workspaceId}
-                  epicId={epicId}
-                  epicTeamId={epic.epic.team_id}
-                  lastRunId={epic.epic.last_planning_run_id}
-                  canEdit={canEdit}
-                  onRunCompleted={handlePlannerRunCompleted}
+                  runnableTarget="epic"
+                  targetTeamId={form.team_id || null}
+                  value={form.assigned_agent_id || undefined}
+                  onChange={(agentId) => updateField('assigned_agent_id', agentId ?? '', { assigned_agent_id: agentId ?? '' })}
+                  hasRepoContext={Boolean(form.planning_repository_id)}
+                  disabled={!canEdit}
+                  onRun={handleRunAssignedAgent}
+                  running={startingAgentRun}
                 />
+              ) : null}
+              {workspaceId ? (
+                <div className="mt-3">
+                  <EpicPlannerPanel
+                    workspaceId={workspaceId}
+                    epicId={epicId}
+                    lastRunId={epic.epic.last_planning_run_id}
+                    canEdit={canEdit}
+                    onRunCompleted={handlePlannerRunCompleted}
+                  />
+                </div>
               ) : null}
             </div>
           </div>

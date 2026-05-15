@@ -174,6 +174,8 @@ type CreateTaskRequest struct {
 	Blocker           *string                      `json:"blocker"`
 	TemplateID        *string                      `json:"template_id"`
 	ExternalID        *string                      `json:"external_id"`
+	AssignedAgentID   *string                      `json:"assigned_agent_id"`
+	RunOnCreate       bool                         `json:"run_on_create"`
 	OwnerIDs          []string                     `json:"owner_ids"`
 	FollowerIDs       []string                     `json:"follower_ids"`
 	LabelIDs          []string                     `json:"label_ids"`
@@ -216,6 +218,7 @@ type UpdateTaskRequest struct {
 	Archived          *bool      `json:"archived"`
 	TemplateID        *string    `json:"template_id"`
 	ExternalID        *string    `json:"external_id"`
+	AssignedAgentID   *string    `json:"assigned_agent_id"`
 	OwnerIDs          []string   `json:"owner_ids"`
 	FollowerIDs       []string   `json:"follower_ids"`
 	LabelIDs          []string   `json:"label_ids"`
@@ -257,6 +260,13 @@ type TaskDetail struct {
 	ObjectiveName   *string           `json:"objective_name"`
 	ObjectiveID     *string           `json:"objective_id"`
 	State           *PMWorkflowState  `json:"state"`
+}
+
+// CreateTaskResponse returns the created task and any best-effort run result.
+type CreateTaskResponse struct {
+	Task          TaskDetail `json:"task"`
+	AgentRun      *AgentRun  `json:"agent_run"`
+	AgentRunError *string    `json:"agent_run_error,omitempty"`
 }
 
 // TaskDependencyTask is the lightweight task payload used in dependency read models.

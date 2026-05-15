@@ -869,6 +869,7 @@ func main() {
 	gitService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetAgentService(agentService)
+	pmEpicService.SetAgentService(agentService)
 	pmTaskService.SetRecurringService(pmRecurringTemplateService)
 	pmRecurringTemplateService.SetTaskService(pmTaskService)
 	agentService.SetRuleEngine(ruleEngine)

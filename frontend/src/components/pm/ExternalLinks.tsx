@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowUpRight01Icon, LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 import type { ExternalLink } from '@/lib/pmTypes';
 
@@ -22,6 +23,17 @@ function getHostname(url: string): string {
   }
 }
 
+function ExternalLinkTooltip({ children }: { children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top" sideOffset={4} className="z-[1000]">
+        Opens in a new tab
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function ExternalLinks({ workspaceId, entityType, entityId, onContentChange, onCountChange }: ExternalLinksProps) {
   const [links, setLinks] = useState<ExternalLink[]>([]);
   const [newUrl, setNewUrl] = useState('');
@@ -34,7 +46,19 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
     setLinks(data ?? []);
   }, [workspaceId, entityType, entityId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    let cancelled = false;
+
+    pmExternalLinkService.listByEntity(workspaceId, entityType, entityId).then(({ data }) => {
+      if (!cancelled) {
+        setLinks(data ?? []);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, entityType, entityId]);
 
   useEffect(() => {
     onContentChange?.(links.length > 0);
@@ -115,17 +139,18 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
                   fallbackClassName="text-[7px]"
                 />
                 <div className="min-w-0 flex-1">
-                  <a
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={link.url}
-                    aria-label={`Open ${link.title || getHostname(link.url)} in a new tab`}
-                    className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-foreground transition-colors hover:text-primary hover:underline"
-                  >
-                    <span className="min-w-0 truncate">{link.title || getHostname(link.url)}</span>
-                    <ArrowUpRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-                  </a>
+                  <ExternalLinkTooltip>
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Open ${link.title || getHostname(link.url)} in a new tab`}
+                      className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-foreground/80 transition-colors hover:text-foreground hover:underline hover:decoration-muted-foreground/60 hover:underline-offset-2"
+                    >
+                      <span className="min-w-0 truncate">{link.title || getHostname(link.url)}</span>
+                      <ArrowUpRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+                    </a>
+                  </ExternalLinkTooltip>
                 </div>
                 <QuickTooltip label="Remove link">
                   <button

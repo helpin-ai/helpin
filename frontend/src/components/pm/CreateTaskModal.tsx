@@ -90,6 +90,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { WorkspaceTeam } from "@/lib/types";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { getOptionalSectionActionClass } from "@/components/pm/optionalSectionActionPill";
+import { AgentPickerCard } from "@/components/pm/AgentPickerCard";
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -115,6 +116,7 @@ interface CreateTaskModalProps {
 interface CreatedTaskResult {
   id: string;
   task?: Pick<Task, 'id' | 'name' | 'display_id' | 'task_key'>;
+  agent_run_error?: string;
 }
 
 function FooterToggleHelp({ label, tooltip }: { label: string; tooltip: string }) {
@@ -424,6 +426,7 @@ export function CreateTaskModal({
   const [templateWorkflow, setTemplateWorkflow] = useState<WorkflowWithStates | null>(null);
   const [taskWorkflowOverride, setTaskWorkflowOverride] = useState<WorkflowWithStates | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [assignedAgentId, setAssignedAgentId] = useState<string | undefined>();
   const [templateAttachments, setTemplateAttachments] = useState<AttachmentResponse[]>([]);
   const descriptionEditorRef = useRef<Editor | null>(null);
   const initialFormRef = useRef<CreateTaskFormState | null>(null);
@@ -967,6 +970,8 @@ export function CreateTaskModal({
           label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
           checklist_items: (() => { const f = form.checklist_items.filter((i) => i.text.trim()); return f.length > 0 ? f : undefined; })(),
           external_links: (() => { const f = form.external_links.filter((l) => l.url.trim()); return f.length > 0 ? f : undefined; })(),
+          assigned_agent_id: assignedAgentId,
+          run_on_create: Boolean(assignedAgentId),
         });
 
         if (result?.id) await uploadPendingFilesForEntity('task', result.id);
@@ -998,6 +1003,7 @@ export function CreateTaskModal({
         const postCreateErrors = [
           templateSaveError ? `template save failed: ${templateSaveError}` : null,
           recurringSetupError ? `recurring setup failed: ${recurringSetupError}` : null,
+          result?.agent_run_error ? `agent run did not start: ${result.agent_run_error}` : null,
         ].filter(Boolean);
 
         if (postCreateErrors.length > 0) {
@@ -1051,6 +1057,7 @@ export function CreateTaskModal({
           setPendingFiles([]);
           setRecurringDraft(null);
           setSaveTaskAsTemplate(false);
+          setAssignedAgentId(undefined);
         } else {
           onOpenChange(false);
         }
@@ -1091,6 +1098,7 @@ export function CreateTaskModal({
     recurringDraft,
     sourceMarkdown,
     teams,
+    assignedAgentId,
   ]);
 
   const currentDescriptionForCompare =
@@ -1840,6 +1848,22 @@ export function CreateTaskModal({
                     </MetadataRow>
                   </>
                 )}
+
+                {!isTemplateMode && (
+                  <>
+                    <div className="col-span-3 h-px bg-border/40 my-1" />
+                    <div className="col-span-3">
+                      <AgentPickerCard
+                        workspaceId={workspaceId}
+                        runnableTarget="task"
+                        targetTeamId={form.team_id || null}
+                        value={assignedAgentId}
+                        onChange={setAssignedAgentId}
+                        autoSelectDefault
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </aside>
           </div>
@@ -1874,7 +1898,7 @@ export function CreateTaskModal({
               disabled={!canSubmit || submitting}
             >
               {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
-              {submitting ? "Saving..." : "Save"}
+              {submitting ? "Saving..." : assignedAgentId && !isTemplateMode ? "Save & run agent" : "Save"}
             </Button>
           </div>
         </div>

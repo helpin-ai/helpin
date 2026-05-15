@@ -1,5 +1,5 @@
 import type { AssignableMember } from '../types';
-import type { AgentRunPauseReason, TaskImplementationBrief } from './agents';
+import type { AgentRun, AgentRunPauseReason, TaskImplementationBrief } from './agents';
 import type { Objective } from './objectives';
 
 export type TaskType = 'feature' | 'bug' | 'chore';
@@ -93,6 +93,7 @@ export interface Epic {
   health: EpicHealth;
   health_comment?: string;
   archived: boolean;
+  assigned_agent_id?: string;
   spec_document_id?: string;
   planning_repository_id?: string;
   planning_state: string;
@@ -146,6 +147,12 @@ export interface EpicWithStats {
   objectives: RoadmapObjectiveRef[];
   stats: EpicStats;
   suggested_health: EpicHealth;
+}
+
+export interface CreateEpicResponse {
+  epic: EpicWithStats;
+  agent_run: AgentRun | null;
+  agent_run_error?: string;
 }
 
 export type RoadmapEpic = EpicWithStats;
@@ -313,6 +320,7 @@ export interface Task {
   latest_run_status?: string | null;
   latest_run_pause_reason?: AgentRunPauseReason | null;
   latest_run_at?: string | null;
+  assigned_agent_id?: string;
   template_id?: string;
   recurring_template_id?: string;
   recurring_run_id?: string;
@@ -853,6 +861,8 @@ export interface CreateEpicRequest {
   health_comment?: string;
   label_ids?: string[];
   planning_repository_id?: string;
+  assigned_agent_id?: string;
+  run_on_create?: boolean;
 }
 
 export interface UpdateEpicRequest {
@@ -870,6 +880,7 @@ export interface UpdateEpicRequest {
   health_comment?: string;
   label_ids?: string[];
   planning_repository_id?: string;
+  assigned_agent_id?: string;
 }
 
 export interface UpdateEpicHealthRequest {
@@ -930,6 +941,14 @@ export interface CreateTaskRequest {
   label_ids?: string[];
   checklist_items?: { text: string; position?: number }[];
   external_links?: { url: string; title?: string }[];
+  assigned_agent_id?: string;
+  run_on_create?: boolean;
+}
+
+export interface CreateTaskResponse {
+  task: TaskDetail;
+  agent_run: AgentRun | null;
+  agent_run_error?: string;
 }
 
 export interface SeedPMTasksRequest {
@@ -966,6 +985,7 @@ export interface UpdateTaskRequest {
   owner_ids?: string[];
   follower_ids?: string[];
   label_ids?: string[];
+  assigned_agent_id?: string;
 }
 
 

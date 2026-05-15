@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
 import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog';
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
@@ -165,17 +166,19 @@ function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClo
         // Invalidate TanStack Query caches
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] });
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
+        const createdTask = data?.task?.task;
         window.dispatchEvent(new CustomEvent('task-created', {
-          detail: { ownerMemberIds: data?.task?.owner_member_ids ?? [], teamId: data?.task?.team_id },
+          detail: { ownerMemberIds: createdTask?.owner_member_ids ?? [], teamId: createdTask?.team_id },
         }));
-        return data?.task
+        return createdTask
           ? {
-              id: data.task.id,
+              id: createdTask.id,
+              agent_run_error: data?.agent_run_error,
               task: {
-                id: data.task.id,
-                name: data.task.name,
-                display_id: data.task.display_id,
-                task_key: data.task.task_key,
+                id: createdTask.id,
+                name: createdTask.name,
+                display_id: createdTask.display_id,
+                task_key: createdTask.task_key,
               },
             }
           : undefined;
@@ -207,6 +210,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     targetDate: '',
   });
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
+  const [assignedAgentId, setAssignedAgentId] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -290,6 +294,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
         planned_start_date: meta.startDate || undefined,
         deadline: meta.targetDate || undefined,
         planning_repository_id: showPlanningRepository ? (meta.planningRepositoryId || undefined) : undefined,
+        assigned_agent_id: assignedAgentId,
+        run_on_create: Boolean(assignedAgentId),
       });
 
       if (createError) {
@@ -297,12 +303,14 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
         return;
       }
 
-      if (data?.epic && pendingFiles.length > 0) {
+      const createdEpic = data?.epic?.epic;
+
+      if (createdEpic && pendingFiles.length > 0) {
         for (const file of pendingFiles) {
           try {
             const { data: initData } = await pmAttachmentService.initiateUpload(workspaceId, {
               entity_type: 'epic',
-              entity_id: data.epic.id,
+              entity_id: createdEpic.id,
               file_name: file.name,
               file_size: file.size,
               content_type: file.type || 'application/octet-stream',
@@ -319,27 +327,31 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       }
 
       // Create external links after epic creation
-      if (data?.epic) {
+      if (createdEpic) {
         const validLinks = epicExternalLinks.filter((l) => l.url.trim());
         for (const el of validLinks) {
           try {
-            await pmExternalLinkService.createForEntity(workspaceId, 'epic', data.epic.id, { url: el.url.trim() });
+            await pmExternalLinkService.createForEntity(workspaceId, 'epic', createdEpic.id, { url: el.url.trim() });
           } catch {
             // Non-blocking — epic already created
           }
         }
       }
 
-      if (data?.epic) {
+      if (data?.agent_run_error) {
+        toast.warning(`Epic created, but the agent did not start: ${data.agent_run_error}`);
+      }
+
+      if (createdEpic) {
         showEntityCreatedToast({
           entityLabel: 'Epic',
-          title: data.epic.name,
+          title: createdEpic.name,
           tone: 'pm',
           icon: entityCreatedToastIcons.epic,
           onOpen: currentWorkspace?.slug
             ? () => navigate({
                 to: '/w/$slug/pm/epics/$epicId',
-                params: { slug: currentWorkspace.slug, epicId: data.epic.id },
+                params: { slug: currentWorkspace.slug, epicId: createdEpic.id },
               })
             : undefined,
         });
@@ -703,6 +715,18 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     </Select>
                   </>
                 ) : null}
+                <Separator className="col-span-3 my-1" />
+                <div className="col-span-3">
+                  <AgentPickerCard
+                    workspaceId={workspaceId}
+                    runnableTarget="epic"
+                    targetTeamId={meta.teamId || null}
+                    value={assignedAgentId}
+                    onChange={setAssignedAgentId}
+                    hasRepoContext={Boolean(meta.planningRepositoryId)}
+                    autoSelectDefault
+                  />
+                </div>
               </div>
             </aside>
           </div>
@@ -714,7 +738,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             </Button>
             <Button size="sm" onClick={create} disabled={!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              {submitting ? 'Creating...' : 'Create Epic'}
+              {submitting ? 'Creating...' : assignedAgentId ? 'Create & run agent' : 'Create Epic'}
             </Button>
           </div>
         </div>

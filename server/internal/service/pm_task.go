@@ -384,8 +384,14 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 		Deadline:          req.Deadline,
 		Blocked:           blocked,
 		Blocker:           req.Blocker,
+		AssignedAgentID:   nullableString(req.AssignedAgentID),
 		TemplateID:        req.TemplateID,
 		ExternalID:        req.ExternalID,
+	}
+	if newTask.AssignedAgentID != nil && s.agentService != nil {
+		if err := s.agentService.ValidateRunnableTargetAgent(ctx, req.WorkspaceID, *newTask.AssignedAgentID, "task", newTask.TeamID); err != nil {
+			return nil, err
+		}
 	}
 	if err := validateEpicScope(ctx, s.epicRepo, req.WorkspaceID, newTask.EpicID, newTask.TeamID); err != nil {
 		return nil, err
@@ -606,6 +612,35 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 	}
 	s.populateTaskDetail(ctx, detail)
 	return detail, nil
+}
+
+// CreateWithAgentRun creates a task and optionally starts the assigned agent.
+func (s *PMTaskService) CreateWithAgentRun(ctx context.Context, req model.CreateTaskRequest, actorID string) (*model.CreateTaskResponse, error) {
+	detail, err := s.Create(ctx, req, actorID)
+	if err != nil {
+		return nil, err
+	}
+	resp := &model.CreateTaskResponse{Task: *detail}
+
+	assignedAgentID := nullableString(req.AssignedAgentID)
+	if !req.RunOnCreate || assignedAgentID == nil {
+		return resp, nil
+	}
+	if s.agentService == nil {
+		msg := "agent service is not configured"
+		resp.AgentRunError = &msg
+		return resp, nil
+	}
+	run, err := s.agentService.RunTaskAgent(ctx, detail.Task.WorkspaceID, detail.Task.ID, actorID, model.StartAgentRunRequest{
+		AgentID: *assignedAgentID,
+	})
+	if err != nil {
+		msg := err.Error()
+		resp.AgentRunError = &msg
+		return resp, nil
+	}
+	resp.AgentRun = run
+	return resp, nil
 }
 
 type taskTemplateChecklistItem struct {
@@ -1424,6 +1459,15 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	}
 	if req.ExternalID != nil {
 		current.ExternalID = req.ExternalID
+	}
+	if req.AssignedAgentID != nil {
+		nextAgentID := nullableString(req.AssignedAgentID)
+		if nextAgentID != nil && s.agentService != nil {
+			if err := s.agentService.ValidateRunnableTargetAgent(ctx, current.WorkspaceID, *nextAgentID, "task", current.TeamID); err != nil {
+				return nil, err
+			}
+		}
+		current.AssignedAgentID = nextAgentID
 	}
 
 	if req.RequesterID != nil || req.RequesterMemberID != nil {

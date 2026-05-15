@@ -78,10 +78,9 @@ describe('ExternalLinks', () => {
 
     const row = container?.querySelector('[data-testid="external-link-row"]')
     expect(row?.className).toContain('hover:bg-muted/30')
-    const titleLink = row?.querySelector<HTMLAnchorElement>('a[title="https://github.com/helpin-ai/helpin/pull/31"]')
-    expect(titleLink?.textContent).toBe('Fix task sync')
-    expect(titleLink?.href).toBe('https://github.com/helpin-ai/helpin/pull/31')
     const newTabLink = row?.querySelector<HTMLAnchorElement>('a[aria-label="Open Fix task sync in a new tab"]')
+    expect(newTabLink?.textContent).toBe('Fix task sync')
     expect(newTabLink?.href).toBe('https://github.com/helpin-ai/helpin/pull/31')
+    expect(container?.querySelector('[data-slot="tooltip-trigger"]')).toBeTruthy()
   })
 })
