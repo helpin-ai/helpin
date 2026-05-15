@@ -776,11 +776,6 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
     setCreateStateId(stateId);
     setCreateOpen(true);
   }, []);
-  const handleCreateDefault = useCallback(() => {
-    setCreateOwnerMemberId(undefined);
-    setCreateStateId(workflow?.states[0]?.id || '');
-    setCreateOpen(true);
-  }, [workflow]);
   const handleCreateForMember = useCallback((memberId: string | null) => {
     setCreateOwnerMemberId(memberId ?? undefined);
     setCreateStateId(workflow?.states[0]?.id || '');
@@ -1278,31 +1273,28 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
       <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <TaskFilterTrigger />
-          <TaskOwnerAvatarFilterRow />
+        <TaskFilterTrigger />
+        <TaskOwnerAvatarFilterRow />
 
-          {/* Team selector — only shown when no team is pre-selected via URL */}
-          {!teamId && teams.length > 0 && (
-            <Select
-              value={storeTeamId ?? '__all__'}
-              onValueChange={(value) => setTeamFilter(value === '__all__' ? null : value)}
-            >
-              <SelectTrigger className="h-7 w-auto gap-1.5 px-2.5 text-xs">
-                <span className="text-muted-foreground">Team:</span>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All teams</SelectItem>
-                {teams.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-
-        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {/* Team selector — only shown when no team is pre-selected via URL */}
+        {!teamId && teams.length > 0 && (
+          <Select
+            value={storeTeamId ?? '__all__'}
+            onValueChange={(value) => setTeamFilter(value === '__all__' ? null : value)}
+          >
+            <SelectTrigger className="h-7 w-auto gap-1.5 text-xs px-2.5">
+              <span className="text-muted-foreground">Team:</span>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All teams</SelectItem>
+              {teams.map((t) => (
+                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <div className="ml-auto flex items-center gap-1 self-center">
           <BoardToolbarSlot>
             {viewMode === 'board' ? (
               <div className="inline-flex h-7 items-center rounded-md border border-input bg-muted/40 p-0.5 text-xs">
@@ -1321,7 +1313,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
               </div>
             ) : (
               <Select value={listGroupBy} onValueChange={(value) => setListGroupBy(value as TaskListGroupByOption)}>
-                <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[190px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:border-transparent focus-visible:ring-0">
+                <SelectTrigger className="h-7 w-auto min-w-[150px] max-w-[190px] gap-1 border-0 bg-transparent px-1.5 text-xs shadow-none hover:bg-accent focus-visible:ring-0 focus-visible:border-transparent">
                   <span className="shrink-0 text-muted-foreground">Group by:</span>
                   <SelectValue />
                 </SelectTrigger>
@@ -1338,8 +1330,8 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
           <BoardToolbarSlot>
             {viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}
           </BoardToolbarSlot>
-          {showSeedButton ? (
-            <BoardToolbarSlot>
+          <BoardToolbarSlot className="gap-1">
+            {showSeedButton ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -1354,33 +1346,25 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
                 )}
                 Seed 500
               </Button>
-            </BoardToolbarSlot>
-          ) : null}
-          <BoardToolbarSlot>
-            <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={handleCreateDefault}>
-              <PlusSignIcon className="h-3.5 w-3.5" />
-              Create task
-            </Button>
-          </BoardToolbarSlot>
-          <BoardToolbarSlot className="gap-1 rounded-md border border-input bg-muted/40 p-0.5">
+            ) : null}
             <QuickTooltip label="Board view">
               <Button
-                variant={viewMode === 'board' ? 'secondary' : 'ghost'}
+                variant={viewMode === 'board' ? 'default' : 'ghost'}
                 size="icon"
-                className="h-6 w-6"
+                className="h-7 w-7"
                 onClick={() => setViewMode('board')}
               >
-                <LayoutTwoColumnIcon className="h-3.5 w-3.5" />
+                <LayoutTwoColumnIcon className="h-4 w-4" />
               </Button>
             </QuickTooltip>
             <QuickTooltip label="List view">
               <Button
-                variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
                 size="icon"
-                className="h-6 w-6"
+                className="h-7 w-7"
                 onClick={() => setViewMode('list')}
               >
-                <LayoutTable01Icon className="h-3.5 w-3.5" />
+                <LayoutTable01Icon className="h-4 w-4" />
               </Button>
             </QuickTooltip>
           </BoardToolbarSlot>
