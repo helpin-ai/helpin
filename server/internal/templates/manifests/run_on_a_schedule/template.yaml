@@ -1,0 +1,30 @@
+key: run_on_a_schedule
+version: 1
+name: Run on a schedule
+icon: clock
+short_description: Runs an existing agent on a recurring schedule.
+agent:
+  pick_existing:
+    required: true
+    constraints:
+      targets: [workspace]
+trigger:
+  type: cron
+inputs:
+  - key: agent_id
+    type: agent
+    required: true
+    label: Agent
+    section: What should run?
+    help_text: Select a workspace-capable agent. Scheduled runs do not have a task, repo, or doc target unless a template asks for one explicitly.
+  - key: schedule
+    type: cron
+    required: true
+    label: Run schedule
+    section: When should it run
+    help_text: How often the selected agent should run.
+flow:
+  action: start_agent_run
+  parameters:
+    agent_id:
+      from_input: agent_id

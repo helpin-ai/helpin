@@ -26,6 +26,7 @@ import {
   SecurityCheckIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -63,7 +64,6 @@ import type {
   GitRepository,
   UpdateWorkspaceAgentPresetVersionRequest,
   SkillCatalogResponse,
-  ToolCatalogEntry,
   ToolCatalogResponse,
   UpdateAgentRequest,
   WorkflowWithStates,
@@ -764,7 +764,33 @@ function buildUpdatePayload(
     : 'native_sdk';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
   const teamIds = form.teamAccessMode === 'specific_teams' ? normalizeTeamIdList(form.team_ids) : [];
-  const payload: UpdateAgentRequest = {
+  const advancedPayload: UpdateAgentRequest = advancedOpen
+    ? {
+        runtime_kind: form.runtime_kind,
+        monthly_token_budget: form.monthly_token_budget.trim()
+          ? Number.parseInt(form.monthly_token_budget, 10)
+          : 0,
+      }
+    : form.runtime_kind !== defaultRuntimeKind
+      ? { runtime_kind: form.runtime_kind }
+      : {};
+
+  if (agent?.is_system) {
+    return {
+      name: form.name.trim(),
+      preset_key: form.preset_key,
+      preset_version_key: form.preset_version_key,
+      provider: provider || undefined,
+      model: form.model.trim(),
+      execution_config: buildExecutionConfigPayload(form),
+      monthly_token_budget: form.monthly_token_budget.trim()
+        ? Number.parseInt(form.monthly_token_budget, 10)
+        : 0,
+      ...advancedPayload,
+    };
+  }
+
+  return {
     name: form.name.trim(),
     trigger_mode: 'manual',
     provider: provider || undefined,
@@ -773,31 +799,13 @@ function buildUpdatePayload(
     system_prompt: form.system_prompt.trim() || undefined,
     team_ids: teamIds,
     allowed_tools: normalizeToolList(form.allowed_tools),
+    allowed_targets: normalizeTargetList(form.allowed_targets),
+    skills: form.skills,
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
     default_invocation_mode: form.default_invocation_mode,
-    ...(advancedOpen
-      ? {
-          runtime_kind: form.runtime_kind,
-          monthly_token_budget: form.monthly_token_budget.trim()
-            ? Number.parseInt(form.monthly_token_budget, 10)
-            : 0,
-        }
-      : form.runtime_kind !== defaultRuntimeKind
-        ? { runtime_kind: form.runtime_kind }
-        : {}),
+    ...advancedPayload,
   };
-  if (agent?.is_system) {
-    payload.preset_key = form.preset_key;
-    payload.preset_version_key = form.preset_version_key;
-    payload.monthly_token_budget = form.monthly_token_budget.trim()
-      ? Number.parseInt(form.monthly_token_budget, 10)
-      : 0;
-  } else {
-    payload.allowed_targets = normalizeTargetList(form.allowed_targets);
-    payload.skills = form.skills;
-  }
-  return payload;
 }
 
 function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): AgentFormData {
@@ -1139,108 +1147,6 @@ function DrawerConfigSection({
   );
 }
 
-function ToolMultiSelectPopover({
-  open,
-  onOpenChange,
-  tools,
-  selectedTools,
-  disabled,
-  onToggleTool,
-  onClearTools,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  tools: ToolCatalogEntry[];
-  selectedTools: string[];
-  disabled?: boolean;
-  onToggleTool: (toolName: string) => void;
-  onClearTools: () => void;
-}) {
-  const selectedSet = new Set(selectedTools);
-
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 px-2 text-[11px]"
-          disabled={tools.length === 0 || disabled}
-        >
-          <PlusSignIcon className="h-3.5 w-3.5" />
-          Select tools
-          {selectedTools.length > 0 && (
-            <span className="rounded-full bg-muted px-1.5 py-0 text-[10px] text-muted-foreground">
-              {selectedTools.length}
-            </span>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-[28rem] overflow-hidden p-0"
-        onWheelCapture={(event) => event.stopPropagation()}
-      >
-        <Command>
-          <CommandInput placeholder="Search tools..." />
-          <CommandList className="max-h-72 overscroll-contain">
-            <CommandEmpty>
-              {tools.length === 0 ? 'Tool catalog unavailable.' : 'No tools match.'}
-            </CommandEmpty>
-            <CommandGroup heading={`${selectedTools.length} selected`}>
-              {tools.map((tool) => {
-                const selected = selectedSet.has(tool.name);
-                return (
-                  <CommandItem
-                    key={tool.name}
-                    value={`${tool.name} ${tool.category} ${tool.description}`}
-                    onSelect={() => onToggleTool(tool.name)}
-                    data-checked={selected ? 'true' : undefined}
-                    aria-label={`${selected ? 'Remove' : 'Add'} ${tool.name}`}
-                    className="cursor-pointer items-start py-2"
-                  >
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-foreground">{tool.name}</span>
-                        <Badge variant="outline" className="text-[10px]">
-                          {tool.category}
-                        </Badge>
-                      </div>
-                      <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
-                    </div>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-        <div className="flex items-center justify-between border-t border-border/60 px-2 py-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-[11px] text-muted-foreground"
-            onClick={onClearTools}
-            disabled={selectedTools.length === 0}
-          >
-            Clear
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            onClick={() => onOpenChange(false)}
-          >
-            Done
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 function resolveManagePath(path: string | undefined, workspaceSlug?: string) {
   if (!path) return undefined;
   if (!workspaceSlug) return path.replace('$slug', '<workspace>');
@@ -1447,11 +1353,7 @@ function agentRoleLabel(agent: Agent, presets: AgentPresetDefinition[]) {
   if (agent.is_system) {
     return presetLabel(fallbackPresetKey(agent), presets);
   }
-  if (agent.source_template_key === 'release_notes_writer') {
-    return 'Release Notes Writer';
-  }
-  const role = agent.role?.trim();
-  return role || 'Custom agent';
+  return 'Custom agent';
 }
 
 function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
@@ -1466,10 +1368,7 @@ function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
       'Built-in workspace agent.',
     );
   }
-  return trimSummaryText(
-    agent.planning_notes || agent.system_prompt || agent.role,
-    'Custom agent for workspace-specific execution.',
-  );
+  return 'Custom agent';
 }
 
 // An empty model resolves to "Auto" (the runtime picks a default). That is a
@@ -1688,6 +1587,10 @@ function FlowRefs({
   );
 }
 
+function agentFlowUsages(usage?: AgentTriggerUsageSummary | null) {
+  return (usage?.items ?? []).filter((item) => item.reference_type === 'automation_rule' && item.reference_id);
+}
+
 function RunBars5({ statuses }: { statuses: AgentRun['status'][] }) {
   const values = statuses.length > 0 ? statuses : ['queued', 'queued', 'queued', 'queued', 'queued'];
   return (
@@ -1719,7 +1622,9 @@ function AgentCard({
   onOpen,
   onOpenRun,
   onRunNow,
+  onDelete,
   canEdit,
+  workspaceSlug,
 }: {
   agent: Agent;
   stats?: AgentRunStats;
@@ -1728,7 +1633,9 @@ function AgentCard({
   onOpen: (agent: Agent) => void;
   onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
+  onDelete: (agent: Agent) => void;
   canEdit: boolean;
+  workspaceSlug?: string;
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
@@ -1750,11 +1657,47 @@ function AgentCard({
               <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
               <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
-              {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
           </div>
+          {canEdit ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground"
+                  aria-label="More agent actions"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <MoreHorizontalIcon className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                <DropdownMenuItem asChild>
+                  <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, agent_id: agent.id })}>View runs</a>
+                </DropdownMenuItem>
+                {stats?.lastRun ? (
+                  <DropdownMenuItem onClick={() => onOpenRun(stats.lastRun!.id)}>
+                    Open latest run
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onClick={() => onOpen(agent)}>
+                  Edit
+                </DropdownMenuItem>
+                {!agent.is_system ? (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDelete(agent)}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
@@ -1865,15 +1808,19 @@ export function AgentActions({
   agent,
   stats,
   workspaceSlug,
+  onOpen,
   onOpenRun,
   onRunNow,
+  onDelete,
   canEdit,
 }: {
   agent: Agent;
   stats?: AgentRunStats;
   workspaceSlug?: string;
+  onOpen: (agent: Agent) => void;
   onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
+  onDelete: (agent: Agent) => void;
   canEdit: boolean;
 }) {
   const canRunNow = !agent.is_system && canEdit;
@@ -1914,14 +1861,27 @@ export function AgentActions({
           align="end"
           onClick={(event) => event.stopPropagation()}
         >
+          <DropdownMenuItem asChild>
+            <a href={runsPath}>View runs</a>
+          </DropdownMenuItem>
+          {canEdit ? (
+            <DropdownMenuItem onClick={() => onOpen(agent)}>
+              Edit
+            </DropdownMenuItem>
+          ) : null}
           {stats?.lastRun ? (
             <DropdownMenuItem onClick={() => onOpenRun(stats.lastRun!.id)}>
               Open latest run
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuItem asChild>
-            <a href={runsPath}>View runs</a>
-          </DropdownMenuItem>
+          {canEdit && !agent.is_system ? (
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => onDelete(agent)}
+            >
+              Delete
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -1936,6 +1896,7 @@ function AgentRow({
   onOpen,
   onOpenRun,
   onRunNow,
+  onDelete,
   canEdit,
   workspaceSlug,
 }: {
@@ -1946,6 +1907,7 @@ function AgentRow({
   onOpen: (agent: Agent) => void;
   onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
+  onDelete: (agent: Agent) => void;
   canEdit: boolean;
   workspaceSlug?: string;
 }) {
@@ -1974,7 +1936,6 @@ function AgentRow({
             <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
               <span className="truncate text-xs text-muted-foreground">{role}</span>
               {agent.is_system ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">System</Badge> : null}
-              {agent.source_template_key ? <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Template</Badge> : null}
             </div>
           </div>
         </div>
@@ -2019,8 +1980,10 @@ function AgentRow({
         agent={agent}
         stats={stats}
         workspaceSlug={workspaceSlug}
+        onOpen={onOpen}
         onOpenRun={onOpenRun}
         onRunNow={onRunNow}
+        onDelete={onDelete}
         canEdit={canEdit}
       />
     </div>
@@ -2059,7 +2022,7 @@ export function AgentsPage() {
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
   const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
-  const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
+  const agentTemplates: AgentTemplate[] = [];
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [templateSetupDialogOpen, setTemplateSetupDialogOpen] = useState(false);
   const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
@@ -2119,6 +2082,7 @@ export function AgentsPage() {
   const [systemPromptEditorOpen, setSystemPromptEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [discardCustomEditConfirmOpen, setDiscardCustomEditConfirmOpen] = useState(false);
   const [versionDraftOpen, setVersionDraftOpen] = useState(false);
   const [versionLabelDraft, setVersionLabelDraft] = useState('');
   const [versionDescriptionDraft, setVersionDescriptionDraft] = useState('');
@@ -2180,14 +2144,6 @@ export function AgentsPage() {
     const res = await automationService.listSkillCatalog(workspaceId);
     if (!res.error && res.data) {
       setSkillCatalog(res.data);
-    }
-  }, [workspaceId]);
-
-  const loadAgentTemplates = useCallback(async () => {
-    if (!workspaceId) return;
-    const res = await automationService.listAgentTemplates(workspaceId);
-    if (!res.error) {
-      setAgentTemplates(res.data ?? []);
     }
   }, [workspaceId]);
 
@@ -2359,8 +2315,7 @@ export function AgentsPage() {
     loadPresets();
     loadToolCatalog();
     loadSkillCatalog();
-    loadAgentTemplates();
-  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog, loadAgentTemplates]);
+  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
 
   const loadFleetData = useCallback(async () => {
     if (!workspaceId || agents.length === 0) {
@@ -2456,13 +2411,6 @@ export function AgentsPage() {
     setTemplateSetupDialogOpen(false);
     setForm(createEmptyCustomForm());
     setDialogOpen(true);
-  };
-
-  const openTemplateLibrary = async () => {
-    setTemplateDialogOpen(true);
-    if (agentTemplates.length === 0) {
-      await loadAgentTemplates();
-    }
   };
 
   const openCreateFromTemplateDrawer = async (template: AgentTemplate) => {
@@ -2674,6 +2622,12 @@ export function AgentsPage() {
     }
     setForm(buildCustomAgentForm(agent));
     setDialogOpen(true);
+  };
+
+  const openDeleteDialog = (agent: Agent) => {
+    if (agent.is_system) return;
+    setEditingAgent(agent);
+    setDeleteConfirmOpen(true);
   };
 
   const handleSave = async () => {
@@ -3015,10 +2969,25 @@ export function AgentsPage() {
   const handleDelete = async () => {
     if (!workspaceId || !editingAgent) return;
     setSaving(true);
+    const flows = agentFlowUsages(agentUsageMap[editingAgent.id]);
+    for (const flow of flows) {
+      if (!flow.reference_id) continue;
+      const flowRes = await automationService.deleteFlow(workspaceId, flow.reference_id);
+      if (flowRes.error) {
+        toast.error('Failed to delete linked flow', { description: flowRes.error });
+        setSaving(false);
+        return;
+      }
+    }
     const res = await automationService.deleteAgent(workspaceId, editingAgent.id);
     if (!res.error) {
       setDialogOpen(false);
+      setDeleteConfirmOpen(false);
+      setEditingAgent(null);
       await loadAgents();
+      toast.success(flows.length > 0 ? 'Agent and flows deleted' : 'Agent deleted');
+    } else {
+      toast.error('Failed to delete agent', { description: res.error });
     }
     setSaving(false);
   };
@@ -3040,6 +3009,8 @@ export function AgentsPage() {
     if (leftAttention !== rightAttention) return rightAttention - leftAttention;
     return left.name.localeCompare(right.name);
   });
+  const deleteAgentFlows = editingAgent ? agentFlowUsages(agentUsageMap[editingAgent.id]) : [];
+  const deleteAgentFlowCount = deleteAgentFlows.length;
   const runNowTargets = runNowTargetOptions(runNowAgent);
   const runnableRepositories = repositories.filter((repo) => repo.selected && repo.active && !repo.archived);
   const selectedRunNowRepository = repositories.find((repo) => repo.id === runNowTargetId);
@@ -3086,6 +3057,7 @@ export function AgentsPage() {
   const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
   const codexUsesPresetCapabilities = form.runtime_kind === 'codex';
   const isBlankCustomCreate = !editingAgent && !templateDraft;
+  const isCustomEdit = Boolean(editingAgent && !editingAgent.is_system && !templateDraft);
   const isTemplateCreate = Boolean(templateDraft && !editingAgent);
   const createDrawerTitle = editingAgent
     ? 'Edit Custom Agent'
@@ -3142,6 +3114,22 @@ export function AgentsPage() {
     return customAgentFormDirtyKey(form) !== customAgentFormDirtyKey(buildCustomAgentForm(editingAgent));
   }, [editingAgent, form]);
   const createDrawerCanSave = createDrawerReady && (!editingAgent || editingAgent.is_system || customEditHasChanges);
+  const closeCustomAgentDrawer = useCallback(() => {
+    setDialogOpen(false);
+    setToolPickerOpen(false);
+    setSkillPickerOpen(false);
+    setSystemPromptEditorOpen(false);
+    setTemplateSetupDialogOpen(false);
+    setTemplateDraft(null);
+    setDocsCollections([]);
+  }, []);
+  const requestCloseCustomAgentDrawer = useCallback(() => {
+    if (editingAgent && !editingAgent.is_system && customEditHasChanges) {
+      setDiscardCustomEditConfirmOpen(true);
+      return;
+    }
+    closeCustomAgentDrawer();
+  }, [closeCustomAgentDrawer, customEditHasChanges, editingAgent]);
   const createDrawerStatus = createDrawerReady
     ? editingAgent
       ? customEditHasChanges || editingAgent.is_system
@@ -3176,12 +3164,6 @@ export function AgentsPage() {
     setForm((current) => ({
       ...current,
       allowed_tools: current.allowed_tools.filter((tool) => tool !== toolName),
-    }));
-  };
-  const clearTools = () => {
-    setForm((current) => ({
-      ...current,
-      allowed_tools: [],
     }));
   };
   const skillCatalogEntries = skillCatalog?.skills ?? [];
@@ -3275,16 +3257,10 @@ export function AgentsPage() {
               </button>
             </div>
             {canEdit && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => void openTemplateLibrary()}>
-                  <BookOpen01Icon className="mr-1.5 h-4 w-4" />
-                  Use Template
-                </Button>
-                <Button size="sm" onClick={openCreateDialog}>
-                  <PlusSignIcon className="mr-1.5 h-4 w-4" />
-                  New Custom Agent
-                </Button>
-              </>
+              <Button size="sm" onClick={openCreateDialog}>
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
+                New Custom Agent
+              </Button>
             )}
           </div>
         )}
@@ -3305,10 +3281,6 @@ export function AgentsPage() {
           </p>
           {canEdit && (
             <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
-              <Button variant="outline" className="gap-2" onClick={() => void openTemplateLibrary()}>
-                <BookOpen01Icon className="h-4 w-4" />
-                Use Template
-              </Button>
               <Button className="gap-2" onClick={openCreateDialog}>
                 <PlusSignIcon className="h-4 w-4" />
                 New Custom Agent
@@ -3341,6 +3313,7 @@ export function AgentsPage() {
               onOpen={openEditDialog}
               onOpenRun={openRunDetails}
               onRunNow={openRunNowDialog}
+              onDelete={openDeleteDialog}
               canEdit={canEdit}
               workspaceSlug={workspace?.slug}
             />
@@ -3360,7 +3333,9 @@ export function AgentsPage() {
               onOpen={openEditDialog}
               onOpenRun={openRunDetails}
               onRunNow={openRunNowDialog}
+              onDelete={openDeleteDialog}
               canEdit={canEdit}
+              workspaceSlug={workspace?.slug}
             />
           ))}
         </div>
@@ -4123,7 +4098,6 @@ export function AgentsPage() {
                             selectedTools={form.allowed_tools}
                             disabled={codexUsesPresetCapabilities || systemVersionReadOnly}
                             onToggleTool={toggleTool}
-                            onClearTools={clearTools}
                           />
                       </div>
                       {form.allowed_tools.length > 0 ? (
@@ -5167,15 +5141,11 @@ export function AgentsPage() {
       <Sheet
         open={dialogOpen}
         onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) {
-            setToolPickerOpen(false);
-            setSkillPickerOpen(false);
-            setSystemPromptEditorOpen(false);
-            setTemplateSetupDialogOpen(false);
-            setTemplateDraft(null);
-            setDocsCollections([]);
+          if (open) {
+            setDialogOpen(true);
+            return;
           }
+          requestCloseCustomAgentDrawer();
         }}
       >
         <SheetContent
@@ -5187,7 +5157,7 @@ export function AgentsPage() {
               : 'data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]',
           )}
         >
-          {isBlankCustomCreate ? (
+          {isBlankCustomCreate || isCustomEdit ? (
             <CustomAgentCreatePanel
               workspaceId={workspaceId ?? ''}
               form={form}
@@ -5200,6 +5170,9 @@ export function AgentsPage() {
               onAdvancedOpenChange={setAdvancedOpen}
               onCreate={handleSave}
               saving={saving}
+              mode={isCustomEdit ? 'edit' : 'create'}
+              canSave={isCustomEdit ? customEditHasChanges : undefined}
+              statusText={isCustomEdit ? (customEditHasChanges ? 'Unsaved changes' : 'No changes to save') : undefined}
             />
           ) : (
             <>
@@ -5939,7 +5912,6 @@ export function AgentsPage() {
                         selectedTools={form.allowed_tools}
                         disabled={codexUsesPresetCapabilities}
                         onToggleTool={toggleTool}
-                        onClearTools={clearTools}
                       />
                     </div>
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
@@ -6190,10 +6162,38 @@ export function AgentsPage() {
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         title="Delete agent"
-        description="This will permanently remove this agent and its direct configuration. This action cannot be undone."
-        confirmLabel="Delete"
+        description={
+          deleteAgentFlowCount > 0 ? (
+            <span className="space-y-2">
+              <span className="block">
+                This agent is used by{' '}
+                <span className="font-medium text-destructive">
+                  {deleteAgentFlowCount} {deleteAgentFlowCount === 1 ? 'flow' : 'flows'}
+                </span>
+                . Deleting it will also delete those flows.
+              </span>
+              <span className="block">This action cannot be undone.</span>
+            </span>
+          ) : (
+            'This will permanently remove this agent and its direct configuration. This action cannot be undone.'
+          )
+        }
+        confirmLabel={deleteAgentFlowCount > 0 ? 'Delete agent and flows' : 'Delete'}
         variant="destructive"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={discardCustomEditConfirmOpen}
+        onOpenChange={setDiscardCustomEditConfirmOpen}
+        title="Discard unsaved changes?"
+        description="You have unsaved changes to this agent. Closing now will discard them."
+        confirmLabel="Discard changes"
+        variant="destructive"
+        onConfirm={() => {
+          setDiscardCustomEditConfirmOpen(false);
+          closeCustomAgentDrawer();
+        }}
       />
 
       <ConfirmDialog

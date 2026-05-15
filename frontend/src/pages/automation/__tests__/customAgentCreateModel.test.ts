@@ -132,10 +132,28 @@ describe('custom agent create model', () => {
   it('validates only fields required by the custom create path', () => {
     const form = createDefaultCustomAgentForm();
 
-    expect(validateCustomAgentCreateForm(form)).toEqual(['agent name']);
-    expect(validateCustomAgentCreateForm({ ...form, name: 'Planner', allowed_targets: [] })).toEqual(['working area']);
-    expect(validateCustomAgentCreateForm({ ...form, name: 'Planner', teamAccessMode: 'specific_teams', team_ids: [] })).toEqual(['team access']);
-    expect(validateCustomAgentCreateForm({ ...form, name: 'Planner' })).toEqual([]);
+    expect(validateCustomAgentCreateForm(form)).toEqual(['agent name', 'instructions', 'tool or skill']);
+    expect(validateCustomAgentCreateForm({
+      ...form,
+      name: 'Planner',
+      system_prompt: 'Plan work clearly.',
+      allowed_tools: ['list_tasks'],
+      allowed_targets: [],
+    })).toEqual(['working area']);
+    expect(validateCustomAgentCreateForm({
+      ...form,
+      name: 'Planner',
+      system_prompt: 'Plan work clearly.',
+      allowed_tools: ['list_tasks'],
+      teamAccessMode: 'specific_teams',
+      team_ids: [],
+    })).toEqual(['team access']);
+    expect(validateCustomAgentCreateForm({
+      ...form,
+      name: 'Planner',
+      system_prompt: 'Plan work clearly.',
+      allowed_tools: ['list_tasks'],
+    })).toEqual([]);
   });
 
   it('summarizes without runtime provider model or manual trigger jargon', () => {

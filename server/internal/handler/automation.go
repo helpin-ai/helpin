@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -10,13 +11,17 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
+	flowtemplates "github.com/helpin-ai/helpin/server/internal/templates"
 )
 
 // AutomationHandler exposes the product-level Automation API facade.
 type AutomationHandler struct {
-	automationService *service.AutomationInventoryService
-	ruleEngine        *service.AutomationRuleEngine
-	agentService      *service.AgentService
+	automationService   *service.AutomationInventoryService
+	ruleEngine          *service.AutomationRuleEngine
+	agentService        *service.AgentService
+	templateRegistry    *flowtemplates.Registry
+	templateInstaller   *flowtemplates.Installer
+	templateUninstaller *flowtemplates.Uninstaller
 }
 
 // NewAutomationHandler creates a new AutomationHandler.
@@ -24,11 +29,17 @@ func NewAutomationHandler(
 	automationService *service.AutomationInventoryService,
 	ruleEngine *service.AutomationRuleEngine,
 	agentService *service.AgentService,
+	templateRegistry *flowtemplates.Registry,
+	templateInstaller *flowtemplates.Installer,
+	templateUninstaller *flowtemplates.Uninstaller,
 ) *AutomationHandler {
 	return &AutomationHandler{
-		automationService: automationService,
-		ruleEngine:        ruleEngine,
-		agentService:      agentService,
+		automationService:   automationService,
+		ruleEngine:          ruleEngine,
+		agentService:        agentService,
+		templateRegistry:    templateRegistry,
+		templateInstaller:   templateInstaller,
+		templateUninstaller: templateUninstaller,
 	}
 }
 
@@ -166,6 +177,135 @@ func (h *AutomationHandler) DeleteFlow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "flow deleted"})
+}
+
+// ListFlowTemplates handles GET /api/automation/templates.
+func (h *AutomationHandler) ListFlowTemplates(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id is required")
+		return
+	}
+	if h.templateRegistry == nil {
+		writeError(w, http.StatusServiceUnavailable, "flow templates are unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, h.templateRegistry.List())
+}
+
+// GetFlowTemplate handles GET /api/automation/templates/{key}.
+func (h *AutomationHandler) GetFlowTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	templateKey := chi.URLParam(r, "key")
+	if workspaceID == "" || templateKey == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and template_key are required")
+		return
+	}
+	if h.templateRegistry == nil {
+		writeError(w, http.StatusServiceUnavailable, "flow templates are unavailable")
+		return
+	}
+	tmpl, ok := h.templateRegistry.Get(templateKey)
+	if !ok {
+		writeError(w, http.StatusNotFound, "flow template not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, tmpl)
+}
+
+type installFlowTemplateRequest struct {
+	Name           string                                  `json:"name"`
+	AgentName      string                                  `json:"agent_name,omitempty"`
+	Inputs         map[string]any                          `json:"inputs"`
+	AgentOverrides *model.CreateAgentFromTemplateOverrides `json:"agent_overrides,omitempty"`
+}
+
+// InstallFlowTemplate handles POST /api/automation/templates/{key}/install.
+func (h *AutomationHandler) InstallFlowTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	templateKey := chi.URLParam(r, "key")
+	if workspaceID == "" || templateKey == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and template_key are required")
+		return
+	}
+	if h.templateInstaller == nil {
+		writeError(w, http.StatusServiceUnavailable, "flow templates are unavailable")
+		return
+	}
+
+	var req installFlowTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.templateInstaller.Install(r.Context(), flowtemplates.InstallRequest{
+		WorkspaceID:    workspaceID,
+		TemplateKey:    templateKey,
+		ActorID:        middleware.GetUserID(r.Context()),
+		Name:           req.Name,
+		AgentName:      req.AgentName,
+		Inputs:         req.Inputs,
+		AgentOverrides: req.AgentOverrides,
+	})
+	if err != nil {
+		writeFlowTemplateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
+type uninstallFlowTemplateRequest struct {
+	DeleteCreatedAgent bool `json:"delete_created_agent"`
+}
+
+// UninstallFlowTemplate handles POST /api/automation/template-instances/{instanceID}/uninstall.
+func (h *AutomationHandler) UninstallFlowTemplate(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	instanceID := chi.URLParam(r, "instanceID")
+	if workspaceID == "" || instanceID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and template_instance_id are required")
+		return
+	}
+	if h.templateUninstaller == nil {
+		writeError(w, http.StatusServiceUnavailable, "flow templates are unavailable")
+		return
+	}
+
+	var req uninstallFlowTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.templateUninstaller.Uninstall(r.Context(), flowtemplates.UninstallRequest{
+		WorkspaceID:        workspaceID,
+		TemplateInstanceID: instanceID,
+		ActorID:            middleware.GetUserID(r.Context()),
+		DeleteCreatedAgent: req.DeleteCreatedAgent,
+	})
+	if err != nil {
+		writeFlowTemplateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func writeFlowTemplateError(w http.ResponseWriter, r *http.Request, err error) {
+	if templateErr, ok := flowtemplates.ClassifyError(err); ok {
+		switch templateErr.Kind {
+		case flowtemplates.ErrorKindValidation:
+			writeError(w, http.StatusBadRequest, templateErr.Error())
+		case flowtemplates.ErrorKindNotFound:
+			writeError(w, http.StatusNotFound, templateErr.Error())
+		case flowtemplates.ErrorKindConflict:
+			writeError(w, http.StatusConflict, templateErr.Error())
+		default:
+			slog.ErrorContext(r.Context(), "flow template operation failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "flow template operation failed")
+		}
+		return
+	}
+	slog.ErrorContext(r.Context(), "flow template operation failed", "error", err)
+	writeError(w, http.StatusInternalServerError, "flow template operation failed")
 }
 
 // ListActivity handles GET /api/automation/activity.
@@ -466,6 +606,10 @@ func (h *AutomationHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	agent, err := h.agentService.GetAgent(r.Context(), workspaceID, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -485,6 +629,10 @@ func (h *AutomationHandler) UpdateAgent(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 
 	agent, err := h.agentService.UpdateAgent(r.Context(), workspaceID, id, req, actorID)
 	if err != nil {
@@ -500,6 +648,10 @@ func (h *AutomationHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) 
 	id := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	if err := h.agentService.DeleteAgent(r.Context(), workspaceID, id, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -512,6 +664,10 @@ func (h *AutomationHandler) GetAgentUsage(w http.ResponseWriter, r *http.Request
 	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	summary, err := h.agentService.GetAgentUsageSummary(r.Context(), workspaceID, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -570,6 +726,10 @@ func (h *AutomationHandler) StartRun(w http.ResponseWriter, r *http.Request) {
 	var req model.StartTargetAgentRunRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, req.AgentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 

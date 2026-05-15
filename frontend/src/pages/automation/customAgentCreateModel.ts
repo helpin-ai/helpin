@@ -146,8 +146,14 @@ export function validateCustomAgentCreateForm(form: CustomAgentFormData): string
   if (!form.name.trim()) {
     missing.push('agent name');
   }
+  if (!form.system_prompt.trim()) {
+    missing.push('instructions');
+  }
   if (form.allowed_targets.length === 0) {
     missing.push('working area');
+  }
+  if (form.allowed_tools.length === 0 && form.skills.length === 0) {
+    missing.push('tool or skill');
   }
   if (form.teamAccessMode === 'specific_teams' && normalizeStringList(form.team_ids).length === 0) {
     missing.push('team access');

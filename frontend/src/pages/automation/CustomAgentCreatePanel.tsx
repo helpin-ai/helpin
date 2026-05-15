@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { WorkspaceTeam } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
@@ -103,6 +103,10 @@ function FieldLabel({ children, tooltip }: { children: ReactNode; tooltip?: stri
   );
 }
 
+function RequiredMark() {
+  return <span aria-hidden="true" className="text-destructive">*</span>;
+}
+
 export interface CustomAgentCreatePanelProps {
   workspaceId: string;
   form: CustomAgentFormData;
@@ -115,6 +119,11 @@ export interface CustomAgentCreatePanelProps {
   onAdvancedOpenChange: (open: boolean) => void;
   onCreate: () => void;
   saving: boolean;
+  mode?: 'create' | 'edit';
+  canSave?: boolean;
+  onCancel?: () => void;
+  onDelete?: () => void;
+  statusText?: string;
 }
 
 export function CustomAgentCreatePanel({
@@ -125,12 +134,19 @@ export function CustomAgentCreatePanel({
   tools,
   skills,
   providerOptions,
+  advancedOpen,
+  onAdvancedOpenChange,
   onCreate,
   saving,
+  mode = 'create',
+  canSave,
+  onCancel,
+  onDelete,
+  statusText,
 }: CustomAgentCreatePanelProps) {
-  const [started, setStarted] = useState(false);
+  const isEditMode = mode === 'edit';
+  const [started, setStarted] = useState(isEditMode);
   const [approvalOpen, setApprovalOpen] = useState(false);
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [draftDescription, setDraftDescription] = useState('');
   const [drafting, setDrafting] = useState(false);
   const [draftProgressStep, setDraftProgressStep] = useState(0);
@@ -140,7 +156,27 @@ export function CustomAgentCreatePanel({
   const [toolSearch, setToolSearch] = useState('');
   const [toolCategory, setToolCategory] = useState('All');
   const [toolRemovalMessage, setToolRemovalMessage] = useState('');
+  const latestFormRef = useRef(form);
+  const draftRequestRef = useRef(0);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const missing = validateCustomAgentCreateForm(form);
+
+  useEffect(() => {
+    latestFormRef.current = form;
+  }, [form]);
+
+  useEffect(() => {
+    if (isEditMode) {
+      setStarted(true);
+      window.requestAnimationFrame(() => {
+        nameInputRef.current?.focus({ preventScroll: true });
+      });
+    }
+  }, [isEditMode]);
+
+  useEffect(() => () => {
+    draftRequestRef.current += 1;
+  }, []);
 
   useEffect(() => {
     if (!drafting) {
@@ -190,13 +226,18 @@ export function CustomAgentCreatePanel({
     setDrafting(true);
     setDraftProgressStep(0);
     setDraftError('');
+    const requestId = draftRequestRef.current + 1;
+    draftRequestRef.current = requestId;
     const res = await automationService.draftCustomAgent(workspaceId, { description });
+    if (requestId !== draftRequestRef.current) {
+      return;
+    }
     setDrafting(false);
     if (res.error || !res.data) {
       setDraftError(res.error || 'Could not draft this agent. You can still start blank.');
       return;
     }
-    onChange(applyCustomAgentDraftToForm(form, res.data.draft));
+    onChange(applyCustomAgentDraftToForm(latestFormRef.current, res.data.draft));
     setStarted(true);
   };
 
@@ -271,6 +312,11 @@ export function CustomAgentCreatePanel({
     setToolRemovalMessage('');
     update({ allowed_tools: form.allowed_tools.filter((value) => value !== toolName) });
   };
+  const saveDisabled = saving || missing.length > 0 || canSave === false;
+  const primaryLabel = saving ? (isEditMode ? 'Saving...' : 'Creating...') : isEditMode ? 'Save changes' : 'Create agent';
+  const validationStatus = missing.length > 0 ? `Missing: ${missing.join(', ')}` : '';
+  const actionStatus = missing.length > 0 ? '' : statusText;
+  const actionTooltip = saveDisabled && actionStatus ? actionStatus : '';
 
   return (
     <TooltipProvider>
@@ -278,7 +324,7 @@ export function CustomAgentCreatePanel({
       <div className="border-b border-border/60 px-6 py-4">
         <div>
           <div>
-            <h2 className="text-lg font-semibold">Create Custom Agent</h2>
+            <h2 className="text-lg font-semibold">{isEditMode ? 'Edit Custom Agent' : 'Create Custom Agent'}</h2>
           </div>
         </div>
       </div>
@@ -333,28 +379,63 @@ export function CustomAgentCreatePanel({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold">Agent settings</h3>
-              <p className="mt-1 max-w-xl text-sm text-muted-foreground">Set the name, instructions, access, capabilities, and runtime options on one page.</p>
-              {missing.length > 0 ? (
-                <p className="mt-1 text-xs text-amber-700">Missing: {missing.join(', ')}</p>
-              ) : null}
             </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-                disabled={saving || missing.length > 0}
-                onClick={onCreate}
-              >
-                {saving ? 'Creating...' : 'Create agent'}
-              </button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {actionStatus ? (
+                <p className="max-w-72 text-right text-xs text-muted-foreground">
+                  {actionStatus}
+                </p>
+              ) : null}
+              {onDelete ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-destructive/40 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                  disabled={saving}
+                  onClick={onDelete}
+                >
+                  Delete
+                </button>
+              ) : null}
+              {onCancel ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-muted/60 disabled:opacity-50"
+                  disabled={saving}
+                  onClick={onCancel}
+                >
+                  Cancel
+                </button>
+              ) : null}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <button
+                      type="button"
+                      className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+                      disabled={saveDisabled}
+                      onClick={onCreate}
+                    >
+                      {primaryLabel}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                {actionTooltip || validationStatus ? (
+                  <TooltipContent side="bottom" className="max-w-64 text-xs">
+                    {validationStatus || actionTooltip}
+                  </TooltipContent>
+                ) : null}
+              </Tooltip>
             </div>
           </div>
 
           <section className="space-y-5 rounded-lg border border-border bg-card p-4">
             <div className="space-y-5">
               <label className="block space-y-2">
-                <FieldLabel tooltip="This is the name people will see when choosing or running the agent.">Agent name</FieldLabel>
+                <FieldLabel tooltip="This is the name people will see when choosing or running the agent.">
+                  Agent name <RequiredMark />
+                </FieldLabel>
                 <input
+                  ref={nameInputRef}
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={form.name}
                   onChange={(event) => update({ name: event.target.value })}
@@ -362,7 +443,9 @@ export function CustomAgentCreatePanel({
                 />
               </label>
               <label className="block space-y-2">
-                <FieldLabel tooltip="Tell the agent how to behave, what good output looks like, and when it should ask for help.">Instructions</FieldLabel>
+                <FieldLabel tooltip="Tell the agent how to behave, what good output looks like, and when it should ask for help.">
+                  Instructions <RequiredMark />
+                </FieldLabel>
                 <textarea
                   className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={form.system_prompt}
@@ -375,8 +458,8 @@ export function CustomAgentCreatePanel({
 
           <section className="space-y-5 rounded-lg border border-border bg-card p-4">
             <div>
-              <h4 className="text-sm font-semibold">Capabilities</h4>
-              <p className="mt-1 text-xs text-muted-foreground">Pick the tools and skills this agent can use.</p>
+              <h4 className="flex items-center gap-1 text-sm font-semibold">Capabilities <RequiredMark /></h4>
+              <p className="mt-1 text-xs text-muted-foreground">Pick at least one tool or skill this agent can use.</p>
             </div>
             <div className="space-y-5">
               <label className="block space-y-3">
@@ -390,10 +473,9 @@ export function CustomAgentCreatePanel({
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-left text-sm"
+                          className="flex h-9 w-full max-w-sm items-center rounded-md border border-input bg-background px-3 text-left text-sm"
                         >
                           <span>{form.allowed_tools.length > 0 ? `${form.allowed_tools.length} tool${form.allowed_tools.length === 1 ? '' : 's'} selected` : 'Select tools'}</span>
-                          <span className="text-xs text-muted-foreground">Search</span>
                         </button>
                       </PopoverTrigger>
                       <PopoverContent
@@ -500,10 +582,9 @@ export function CustomAgentCreatePanel({
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-left text-sm"
+                          className="flex h-9 w-full max-w-sm items-center rounded-md border border-input bg-background px-3 text-left text-sm"
                         >
                           <span>{form.skills.length > 0 ? `${form.skills.length} skill${form.skills.length === 1 ? '' : 's'} selected` : 'Select skills'}</span>
-                          <span className="text-xs text-muted-foreground">Search</span>
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" className="w-[min(32rem,calc(100vw-3rem))] overflow-hidden p-0">
@@ -567,27 +648,32 @@ export function CustomAgentCreatePanel({
               <p className="mt-1 text-xs text-muted-foreground">Choose where this agent can be started and who can use it.</p>
             </div>
             <div className="space-y-5">
-              <div className="grid gap-2 md:grid-cols-2">
-                {TARGET_OPTIONS.map((target) => {
-                  const active = form.allowed_targets.includes(target.value);
-                  return (
-                    <button
-                      key={target.value}
-                      type="button"
-                      className={[
-                        'rounded-md border px-3 py-2 text-left text-sm',
-                        active ? 'border-primary bg-primary/10' : 'border-border bg-card',
-                      ].join(' ')}
-                      onClick={() => toggleTarget(target.value)}
-                    >
-                      {target.label}
-                    </button>
-                  );
-                })}
+              <div className="space-y-2">
+                <FieldLabel tooltip="Working areas control where this agent appears as a runnable option.">
+                  Working areas <RequiredMark />
+                </FieldLabel>
+                <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                  {TARGET_OPTIONS.map((target) => {
+                    const active = form.allowed_targets.includes(target.value);
+                    return (
+                      <button
+                        key={target.value}
+                        type="button"
+                        className={[
+                          'rounded-md border px-3 py-2 text-left text-sm',
+                          active ? 'border-primary bg-primary/10' : 'border-border bg-card',
+                        ].join(' ')}
+                        onClick={() => toggleTarget(target.value)}
+                      >
+                        {target.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div className="space-y-3">
-                <FieldLabel tooltip="Workspace-wide agents can work across the workspace. Specific teams narrows who can see and run the agent.">Team access</FieldLabel>
-                <div className="grid gap-2 md:grid-cols-2">
+                <FieldLabel tooltip="Choose who can see this agent in pickers and start runs. The agent's tools and skills control what it can do after it starts.">Who can use this agent</FieldLabel>
+                <div className="grid gap-2 sm:grid-cols-2 sm:max-w-md">
                   <button
                     type="button"
                     className={[
@@ -671,15 +757,15 @@ export function CustomAgentCreatePanel({
             <button
               type="button"
               className="flex w-full items-center justify-between text-left"
-              onClick={() => setAdvancedSettingsOpen((open) => !open)}
+              onClick={() => onAdvancedOpenChange(!advancedOpen)}
             >
               <span>
                 <span className="block text-sm font-semibold">Advanced settings</span>
                 <span className="mt-1 block text-xs text-muted-foreground">Runtime, model, parallel tasks, and token limits.</span>
               </span>
-              <span className="text-xs text-muted-foreground">{advancedSettingsOpen ? 'Hide' : 'Show'}</span>
+              <span className="text-xs text-muted-foreground">{advancedOpen ? 'Hide' : 'Show'}</span>
             </button>
-            {advancedSettingsOpen ? (
+            {advancedOpen ? (
               <div className="grid gap-3 border-t border-border pt-3 md:grid-cols-2">
                     <label className="block space-y-2">
                       <FieldLabel tooltip="Execution engine for this agent. These options match the original custom-agent form.">Runtime</FieldLabel>

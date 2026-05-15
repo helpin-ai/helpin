@@ -49,6 +49,9 @@ type Agent struct {
 	SourcePresetVersionKey     string          `json:"source_preset_version_key"`
 	SourceTemplateID           *string         `json:"source_template_id" gorm:"type:uuid;index"`
 	SourceTemplateKey          string          `json:"source_template_key"`
+	TemplateKey                *string         `json:"template_key,omitempty" gorm:"index"`
+	TemplateInstanceID         *string         `json:"template_instance_id,omitempty" gorm:"type:uuid;index"`
+	TemplateVersion            *int            `json:"template_version,omitempty"`
 	Role                       string          `json:"role"`
 	Status                     string          `json:"status" gorm:"not null;default:'idle'"`
 	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`

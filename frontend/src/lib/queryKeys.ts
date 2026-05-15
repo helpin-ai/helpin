@@ -28,6 +28,8 @@ export const queryKeys = {
       filters ? (['automation', wsId, 'activity', filters] as const) : (['automation', wsId, 'activity'] as const),
     flows: (wsId: string) => ['automation', wsId, 'flows'] as const,
     flowsByWorkflow: (wsId: string, workflowId: string) => ['automation', wsId, 'flows', 'workflow', workflowId] as const,
+    flowTemplates: (wsId: string) => ['automation', wsId, 'templates'] as const,
+    flowTemplate: (wsId: string, key: string) => ['automation', wsId, 'templates', key] as const,
     triggerCatalog: (wsId: string) => ['automation', wsId, 'library', 'triggers'] as const,
     toolCatalog: (wsId: string) => ['automation', wsId, 'library', 'tools'] as const,
     skillCatalog: (wsId: string) => ['automation', wsId, 'library', 'skills'] as const,
