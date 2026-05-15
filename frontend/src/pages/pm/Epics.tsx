@@ -49,6 +49,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -103,6 +104,7 @@ const DEFAULT_VISIBLE = [
   'points',
   'owner',
   'target_date',
+  'updated',
 ];
 
 const columnHelper = createColumnHelper<EpicWithStats>();
@@ -237,12 +239,10 @@ function epicMatchesFilters(entry: EpicWithStats, filters: EpicFilterState) {
   return true;
 }
 
-function sortEntries(entries: EpicWithStats[], epicStates: EpicWorkflowState[]) {
-  const positionByStateId = new Map(epicStates.map((state) => [state.id, state.position]));
+function sortEntries(entries: EpicWithStats[]) {
   return [...entries].sort((a, b) => {
-    const aPos = a.epic.epic_state_id ? (positionByStateId.get(a.epic.epic_state_id) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-    const bPos = b.epic.epic_state_id ? (positionByStateId.get(b.epic.epic_state_id) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-    if (aPos !== bPos) return aPos - bPos;
+    const updatedCmp = b.epic.updated_at.localeCompare(a.epic.updated_at);
+    if (updatedCmp !== 0) return updatedCmp;
     return a.epic.name.localeCompare(b.epic.name);
   });
 }
@@ -310,7 +310,7 @@ function sortEntriesForTable(
   ownerNameMap: Map<string, string>,
   teamMap: Map<string, string>,
 ) {
-  if (sorting.length === 0) return sortEntries(entries, epicStates);
+  if (sorting.length === 0) return sortEntries(entries);
 
   return [...entries].sort((a, b) => {
     for (const sort of sorting) {
@@ -392,7 +392,7 @@ function buildEpicGroups(
 
   const groups = Array.from(grouped.values()).map((group) => ({
     ...group,
-    entries: preserveEntryOrder ? group.entries : sortEntries(group.entries, epicStates),
+    entries: preserveEntryOrder ? group.entries : sortEntries(group.entries),
   }));
 
   return groups.sort((a, b) => {
@@ -417,18 +417,18 @@ function buildEpicGroups(
 
 function loadEpicViewState(storageKey: string | null): { groupBy: EpicGroupBy; filters: EpicFilterState } {
   if (!storageKey) {
-    return { groupBy: 'state', filters: {} };
+    return { groupBy: 'none', filters: {} };
   }
   try {
     const raw = localStorage.getItem(storageKey);
-    if (!raw) return { groupBy: 'state', filters: {} };
+    if (!raw) return { groupBy: 'none', filters: {} };
     const parsed = JSON.parse(raw) as { groupBy?: EpicGroupBy; filters?: EpicFilterState };
     return {
-      groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'state',
+      groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'none',
       filters: parsed.filters ?? {},
     };
   } catch {
-    return { groupBy: 'state', filters: {} };
+    return { groupBy: 'none', filters: {} };
   }
 }
 
@@ -532,28 +532,40 @@ function EpicFilterTrigger({
   activeCount: number;
 }) {
   const [open, setOpen] = useState(false);
+  const availableDefinitions = definitions.filter((definition) => !activeKeys.has(definition.key));
+  const canChooseFilter = availableDefinitions.length > 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-          <FilterHorizontalIcon className="h-3.5 w-3.5" />
-          Filters
-          {activeCount > 0 ? <span className="rounded-full bg-muted px-1.5 py-0 text-[10px]">{activeCount}</span> : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground"
+          disabled={!canChooseFilter}
+        >
+          <span className="inline-flex items-center gap-1">
+            <FilterHorizontalIcon className="h-3.5 w-3.5" />
+            Filters
+          </span>
+          <Badge
+            variant="secondary"
+            className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
+          >
+            {activeCount || 0}
+          </Badge>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-60 p-0" align="start">
+      <PopoverContent className="w-48 p-0" align="start">
         <Command>
-          <CommandInput placeholder="Add filter..." className="h-8 text-xs" />
+          <CommandInput placeholder="Filter by..." />
           <CommandList>
-            <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No filters</CommandEmpty>
+            <CommandEmpty>No filters.</CommandEmpty>
             <CommandGroup>
-              {definitions.map((definition) => (
+              {availableDefinitions.map((definition) => (
                 <CommandItem
                   key={definition.key}
                   value={definition.label}
-                  disabled={activeKeys.has(definition.key)}
-                  className="text-xs"
                   onSelect={() => {
                     onAdd(definition.key);
                     setOpen(false);
@@ -1261,7 +1273,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [groupBy, setGroupBy] = useState<EpicGroupBy>('state');
+  const [groupBy, setGroupBy] = useState<EpicGroupBy>('none');
   const [filters, setFilters] = useState<EpicFilterState>({});
   const [tableSorting, setTableSorting] = useState<SortingState>([]);
   const [tableColumnSizing, setTableColumnSizing] = useState<ColumnSizingState>({});
@@ -1491,7 +1503,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       columnHelper.accessor((row) => ALL_HEALTH_OPTIONS.indexOf(row.epic.health), {
         id: 'health',
         header: 'Health',
-        size: 120,
+        size: 96,
         cell: (info) => (
           canEdit ? (
             <InlineEpicHealthCell entry={info.row.original} onUpdate={updateEpicField} />
@@ -1536,7 +1548,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       columnHelper.accessor((row) => (row.epic.owner_member_id ? ownerNameMap.get(row.epic.owner_member_id) ?? '' : ''), {
         id: 'owner',
         header: 'Owner',
-        size: 180,
+        size: 140,
         cell: (info) => {
           if (canEdit) {
             return (
@@ -1908,7 +1920,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       {showHeaderActions ? (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2">
           <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
-            <Search01Icon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search"
               value={search}
