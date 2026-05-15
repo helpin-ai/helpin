@@ -142,8 +142,8 @@ export function AgentPickerCard({
               if (optionValue === '__none__') {
                 return (
                   <>
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-muted text-[10px] text-muted-foreground">-</span>
-                    <span className="min-w-0 flex-1">
+                    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-muted text-[10px] text-muted-foreground">-</span>
+                    <span className="min-w-0 flex-1 text-left">
                       <span className="block truncate">No agent</span>
                       <span className="block truncate text-[11px] font-normal text-muted-foreground">{manualTargetLabel}</span>
                     </span>
@@ -157,8 +157,8 @@ export function AgentPickerCard({
 
               return (
                 <>
-                  <AgentAvatar agent={agent} className="h-5 w-5 rounded-md" />
-                  <span className="min-w-0 flex-1">
+                  <AgentAvatar agent={agent} className="h-5 w-5 shrink-0 rounded-md" />
+                  <span className="min-w-0 flex-1 text-left">
                     <span className="block truncate">{formatAgentOptionLabel(agent)}</span>
                     <span className="block truncate text-[11px] font-normal text-muted-foreground">{meta.role}</span>
                   </span>
