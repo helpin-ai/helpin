@@ -1270,18 +1270,6 @@ export function CreateTaskModal({
                 )}
               </div>
 
-              {!isTemplateMode && (
-                <div className="mt-4">
-                  <AgentPickerCard
-                    workspaceId={workspaceId}
-                    runnableTarget="task"
-                    targetTeamId={form.team_id || null}
-                    value={assignedAgentId}
-                    onChange={setAssignedAgentId}
-                  />
-                </div>
-              )}
-
               {/* ── Action bar — toggle pills ─────────────────────── */}
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1566,6 +1554,18 @@ export function CreateTaskModal({
                       />
                     </label>
                   </div>
+                </div>
+              )}
+
+              {!isTemplateMode && (
+                <div className="mt-3">
+                  <AgentPickerCard
+                    workspaceId={workspaceId}
+                    runnableTarget="task"
+                    targetTeamId={form.team_id || null}
+                    value={assignedAgentId}
+                    onChange={setAssignedAgentId}
+                  />
                 </div>
               )}
 

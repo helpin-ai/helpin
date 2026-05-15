@@ -432,16 +432,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
-                <div className="mt-3">
-                  <AgentPickerCard
-                    workspaceId={workspaceId}
-                    runnableTarget="epic"
-                    targetTeamId={meta.teamId || null}
-                    value={assignedAgentId}
-                    onChange={setAssignedAgentId}
-                    hasRepoContext={Boolean(meta.planningRepositoryId)}
-                  />
-                </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -599,6 +589,16 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     </div>
                   </div>
                 )}
+                <div className="mt-3">
+                  <AgentPickerCard
+                    workspaceId={workspaceId}
+                    runnableTarget="epic"
+                    targetTeamId={meta.teamId || null}
+                    value={assignedAgentId}
+                    onChange={setAssignedAgentId}
+                    hasRepoContext={Boolean(meta.planningRepositoryId)}
+                  />
+                </div>
               </div>
             </div>
 
