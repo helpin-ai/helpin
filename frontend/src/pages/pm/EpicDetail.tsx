@@ -702,18 +702,18 @@ export function EpicDetailPage() {
     <div className="flex items-center gap-1.5">
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="sm"
-        className="h-7 gap-1.5 px-2 text-xs"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
         onClick={viewEpicTasksPage}
       >
         <ViewIcon className="h-3.5 w-3.5" />
         View on Tasks page
       </Button>
       <Button
-        variant="ghost"
+        variant="default"
         size="sm"
-        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+        className="h-7 gap-1.5 px-2.5 text-xs shadow-sm"
         onClick={() => void handleStartCreateTask()}
         disabled={!canCreateTask || openingCreateTask}
         title={createTaskDisabledReason ?? undefined}

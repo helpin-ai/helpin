@@ -689,7 +689,7 @@ function EpicVirtualTable({
   });
 
   return (
-    <div className="min-h-0 flex-1 rounded-lg border border-border">
+    <div className="-mt-2 min-h-0 flex-1 rounded-lg border border-border">
       <div
         ref={parentRef}
         className={TABLE_CONTAINER}
@@ -1867,17 +1867,11 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     ),
     [epicStates, filters, groupBy, objectiveNameMap, ownerNameMap, sortedEpics, tableSorting.length, teamMap],
   );
-  const areAllGroupsCollapsed = groupedEpics.length > 0 && groupedEpics.every((group) => collapsedGroupKeys.has(group.key));
-
   useEffect(() => {
     setCollapsedGroupKeys((current) => {
       const validKeys = new Set(groupedEpics.map((group) => group.key));
       return new Set([...current].filter((key) => validKeys.has(key)));
     });
-  }, [groupedEpics]);
-
-  const handleSetAllGroupsCollapsed = useCallback((collapsed: boolean) => {
-    setCollapsedGroupKeys(collapsed ? new Set(groupedEpics.map((group) => group.key)) : new Set());
   }, [groupedEpics]);
 
   const teamLabel = teamId ? findTeamName(teamId) : null;
@@ -1912,36 +1906,25 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       ) : null}
 
       {showHeaderActions ? (
-        <div
-          className="relative flex items-center gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          ref={(el) => {
-            if (!el) return;
-            const update = () => {
-              const sl = el.scrollLeft;
-              const sr = el.scrollWidth - el.clientWidth - sl;
-              el.style.maskImage =
-                sl > 2 && sr > 2
-                  ? 'linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)'
-                  : sl > 2
-                    ? 'linear-gradient(to right, transparent, black 24px)'
-                    : sr > 2
-                      ? 'linear-gradient(to left, transparent, black 24px)'
-                      : 'none';
-            };
-            el.addEventListener('scroll', update, { passive: true });
-            const ro = new ResizeObserver(update);
-            ro.observe(el);
-            update();
-          }}
-        >
-          <div className="relative shrink-0">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+          <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
             <Search01Icon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search epics..."
+              placeholder="Search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-7 w-48 pl-8 text-xs"
+              className="h-8 pl-8 pr-8 text-sm"
             />
+            {search ? (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+              >
+                <Cancel01Icon className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
           </div>
           <EpicFilterTrigger
             definitions={filterDefinitions}
@@ -1949,8 +1932,32 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             activeCount={activeFilterKeys.size}
             onAdd={handleAddFilter}
           />
+          <span className="text-xs text-muted-foreground">
+            {sortedEpics.length} {sortedEpics.length === 1 ? 'epic' : 'epics'}
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Select value={groupBy} onValueChange={(value) => setGroupBy(value as EpicGroupBy)}>
+              <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] gap-1 text-xs">
+                <span className="shrink-0 text-muted-foreground">Group by</span>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EPIC_GROUP_BY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <DisplayPropertiesPopover
+              allProperties={ALL_PROPERTIES}
+              visible={visibleColumns}
+              onChange={setVisibleColumns}
+              iconOnly
+            />
+          </div>
           {activeFilterKeys.size > 0 ? (
-            <>
+            <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
               {filterDefinitions
                 .filter((definition) => activeFilterKeys.has(definition.key))
                 .map((definition) => (
@@ -1962,46 +1969,11 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
                     onRemove={() => handleRemoveFilter(definition.key)}
                   />
                 ))}
-              <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={handleClearFilters}>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-muted-foreground" onClick={handleClearFilters}>
                 Clear all
               </Button>
-              <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />
-            </>
+            </div>
           ) : null}
-          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as EpicGroupBy)}>
-            <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] shrink-0 gap-1 text-xs">
-              <span className="shrink-0 text-muted-foreground">Group by</span>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {EPIC_GROUP_BY_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {groupBy !== 'none' && groupedEpics.length > 0 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 px-2 text-xs"
-              onClick={() => handleSetAllGroupsCollapsed(!areAllGroupsCollapsed)}
-            >
-              {areAllGroupsCollapsed ? 'Expand all' : 'Collapse all'}
-            </Button>
-          ) : null}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {sortedEpics.length} {sortedEpics.length === 1 ? 'epic' : 'epics'}
-          </span>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <DisplayPropertiesPopover
-              allProperties={ALL_PROPERTIES}
-              visible={visibleColumns}
-              onChange={setVisibleColumns}
-              iconOnly
-            />
-          </div>
         </div>
       ) : null}
 

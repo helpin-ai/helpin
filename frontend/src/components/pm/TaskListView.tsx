@@ -383,7 +383,7 @@ function LocalTaskFilterControls({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="contents">
       {canChooseFilter ? (
         <Popover open={open} onOpenChange={handleOpenChange}>
           <PopoverTrigger asChild>
@@ -480,24 +480,25 @@ function LocalTaskFilterControls({
         </Button>
       )}
 
-      {activeDefinitions.map((definition) => (
-        <LocalTaskFilterPill
-          key={definition.key}
-          definition={definition}
-          value={values[definition.key]}
-          onChange={onChange}
-        />
-      ))}
-
       {activeCount > 0 ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-[10px] text-muted-foreground"
-          onClick={onClear}
-        >
-          Clear all
-        </Button>
+        <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
+          {activeDefinitions.map((definition) => (
+            <LocalTaskFilterPill
+              key={definition.key}
+              definition={definition}
+              value={values[definition.key]}
+              onChange={onChange}
+            />
+          ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px] text-muted-foreground"
+            onClick={onClear}
+          >
+            Clear all
+          </Button>
+        </div>
       ) : null}
     </div>
   );
@@ -1732,6 +1733,8 @@ export function TaskListView({
     ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
     : tasks.length;
   const displayTaskCount = showLocalTaskControls && hasLocalTaskFilters ? filteredTasks.length : totalTaskCount;
+  const hasLocalSearchQuery = showLocalTaskControls && taskSearchQuery.trim() !== '';
+  const showTaskCount = !showLocalTaskControls || hasLocalSearchQuery;
 
   if (loading) {
     return (
@@ -1758,7 +1761,7 @@ export function TaskListView({
               {taskSearchQuery ? (
                 <button
                   type="button"
-                  className="absolute right-2 top-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   onClick={() => setTaskSearchQuery('')}
                   aria-label="Clear search"
                 >
@@ -1767,10 +1770,12 @@ export function TaskListView({
               ) : null}
             </div>
           ) : null}
-          <span className="text-xs text-muted-foreground">
-            {displayTaskCount}{showLocalTaskControls && hasLocalTaskFilters ? ` of ${totalTaskCount}` : ''}{' '}
-            {totalTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
-          </span>
+          {showTaskCount ? (
+            <span className="text-xs text-muted-foreground">
+              {displayTaskCount}{showLocalTaskControls && hasLocalTaskFilters ? ` of ${totalTaskCount}` : ''}{' '}
+              {totalTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
+            </span>
+          ) : null}
           {showLocalTaskControls ? (
             <LocalTaskFilterControls
               definitions={localTaskFilterDefinitions}
