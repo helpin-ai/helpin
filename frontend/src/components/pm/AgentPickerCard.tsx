@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { AgentAvatar, getAgentPersonaMeta } from '@/components/agents/AgentAvatar';
 import { Button } from '@/components/ui/button';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAgents } from '@/hooks/queries/useAgents';
-import { BotIcon, CheckmarkCircle02Icon, Loading01Icon, PlayIcon } from '@/lib/icons';
+import { BotIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import type { Agent, AgentPresetKey } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
+import { SidebarPopoverSelect } from './SidebarPopoverSelect';
 
 type RunnableTarget = 'task' | 'epic';
 
@@ -68,7 +67,6 @@ export function AgentPickerCard({
   onChange,
   runnableTarget,
   targetTeamId,
-  hasRepoContext = false,
   disabled = false,
   autoSelectDefault = false,
   onRun,
@@ -77,7 +75,6 @@ export function AgentPickerCard({
   className,
 }: AgentPickerCardProps) {
   const { data: agents = [], isLoading } = useAgents(workspaceId);
-  const [open, setOpen] = useState(false);
 
   const runnableAgents = useMemo(
     () => agents.filter((agent) => isRunnableAgentForTarget(agent, runnableTarget) && isAgentInTargetTeamScope(agent, targetTeamId)),
@@ -90,6 +87,21 @@ export function AgentPickerCard({
   const selectedAgent = runnableAgents.find((agent) => agent.id === value);
   const helper = 'Use AI agents with business and repo context for coding, planning, marketing, support, and more.';
   const manualTargetLabel = runnableTarget === 'epic' ? 'Manual epic' : 'Manual task';
+  const selectedValue = value ?? '__none__';
+  const options = useMemo(
+    () => [
+      { value: '__none__', label: 'No agent' },
+      ...runnableAgents.map((agent) => ({
+        value: agent.id,
+        label: formatAgentOptionLabel(agent),
+      })),
+    ],
+    [runnableAgents],
+  );
+  const agentById = useMemo(
+    () => new Map(runnableAgents.map((agent) => [agent.id, agent])),
+    [runnableAgents],
+  );
 
   useEffect(() => {
     if (!autoSelectDefault || value || !defaultAgent || disabled) return;
@@ -108,70 +120,57 @@ export function AgentPickerCard({
         </div>
 
         <div className="flex min-w-0 items-center gap-2 sm:w-[260px] sm:shrink-0">
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 min-w-0 flex-1 justify-start gap-2 px-2 text-xs"
-                disabled={disabled || isLoading}
-              >
+          <SidebarPopoverSelect
+            value={selectedValue}
+            options={options}
+            onChange={(nextValue) => onChange(nextValue === '__none__' ? undefined : nextValue)}
+            width="w-72"
+            searchPlaceholder="Search agents..."
+            disabled={disabled || isLoading}
+            showChevron
+            triggerClassName="h-7 flex-1 justify-start text-xs"
+            emptyContent={<div className="px-2 py-3 text-xs text-muted-foreground">No runnable agents found.</div>}
+            renderTrigger={() => (
+              <>
                 {selectedAgent ? <AgentAvatar agent={selectedAgent} className="h-5 w-5 rounded-md" /> : null}
                 <span className="min-w-0 flex-1 truncate text-left">
-                  {selectedAgent ? formatAgentOptionLabel(selectedAgent) : isLoading ? 'Loading agents...' : 'No agent'}
+                  {selectedAgent ? formatAgentOptionLabel(selectedAgent) : isLoading ? 'Loading agents...' : 'No agent selected'}
                 </span>
-                {selectedAgent ? <CheckmarkCircle02Icon className="h-3.5 w-3.5 shrink-0 text-primary" /> : null}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-72 p-0">
-              <Command>
-                <CommandInput placeholder="Search agents..." />
-                <CommandList>
-                  <CommandEmpty>No runnable agents found.</CommandEmpty>
-                  <CommandGroup>
-                    <CommandItem
-                      value="No agent"
-                      onSelect={() => {
-                        onChange(undefined);
-                        setOpen(false);
-                      }}
-                    >
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">-</span>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm">No agent</div>
-                        <div className="truncate text-xs text-muted-foreground">{manualTargetLabel}</div>
-                      </div>
-                    </CommandItem>
-                    {runnableAgents.map((agent) => {
-                      const meta = getAgentPersonaMeta({ agent });
-                      return (
-                        <CommandItem
-                          key={agent.id}
-                          value={`${agent.name} ${agent.preset_key ?? ''}`}
-                          onSelect={() => {
-                            onChange(agent.id);
-                            setOpen(false);
-                          }}
-                        >
-                          <AgentAvatar agent={agent} className="h-7 w-7 rounded-lg" />
-                          <div className="min-w-0">
-                            <div className="truncate text-sm">{formatAgentOptionLabel(agent)}</div>
-                            <div className="truncate text-xs text-muted-foreground">{meta.role}</div>
-                          </div>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+              </>
+            )}
+            renderOption={(optionValue) => {
+              if (optionValue === '__none__') {
+                return (
+                  <>
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-muted text-[10px] text-muted-foreground">-</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">No agent</span>
+                      <span className="block truncate text-[11px] font-normal text-muted-foreground">{manualTargetLabel}</span>
+                    </span>
+                  </>
+                );
+              }
+
+              const agent = agentById.get(optionValue);
+              if (!agent) return null;
+              const meta = getAgentPersonaMeta({ agent });
+
+              return (
+                <>
+                  <AgentAvatar agent={agent} className="h-5 w-5 rounded-md" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{formatAgentOptionLabel(agent)}</span>
+                    <span className="block truncate text-[11px] font-normal text-muted-foreground">{meta.role}</span>
+                  </span>
+                </>
+              );
+            }}
+          />
           {onRun ? (
             <Button
               type="button"
               size="sm"
-              className="h-8 shrink-0 text-xs"
+              className="h-7 shrink-0 text-xs"
               onClick={onRun}
               disabled={disabled || runDisabled || running || !selectedAgent}
             >
