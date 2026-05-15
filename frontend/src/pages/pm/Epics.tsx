@@ -117,7 +117,7 @@ const EPIC_GROUP_BY_OPTIONS = [
   { value: 'objective', label: 'Objective' },
   { value: 'target_date', label: 'Target date' },
   { value: 'start_date', label: 'Start date' },
-  { value: 'none', label: 'No grouping' },
+  { value: 'none', label: 'None' },
 ] as const;
 const FILTER_POPOVER_WIDTH = 'w-[220px]';
 

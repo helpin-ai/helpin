@@ -711,9 +711,9 @@ export function EpicDetailPage() {
         View on Tasks page
       </Button>
       <Button
-        variant="default"
+        variant="ghost"
         size="sm"
-        className="h-7 gap-1.5 px-2.5 text-xs shadow-sm"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
         onClick={() => void handleStartCreateTask()}
         disabled={!canCreateTask || openingCreateTask}
         title={createTaskDisabledReason ?? undefined}
