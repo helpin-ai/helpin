@@ -114,6 +114,52 @@ func TestCreateTaskCommandMetadataAndTargets(t *testing.T) {
 	}
 }
 
+func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now()
+	handle := "eng"
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"team-1", "ws-1", "Engineering", handle, "engineering", "feature", now, now)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"team-2", "ws-1", "Growth", "growth", "task", now, now)
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSettingsRepository(repository.NewSettingsRepository(db))
+	def, ok := svc.Definition("workspace.list_teams")
+	if !ok {
+		t.Fatal("expected workspace.list_teams definition")
+	}
+	if !def.ExposesTool() {
+		t.Fatal("expected workspace.list_teams to expose a runtime tool")
+	}
+	if def.Tool == nil || def.Tool.Alias != "list_workspace_teams" || def.Tool.Category != "Workspace" {
+		t.Fatalf("unexpected tool metadata %#v", def.Tool)
+	}
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "workspace.list_teams", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("workspace.list_teams returned error: %v", err)
+	}
+	var teams []struct {
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		Handle          string `json:"handle"`
+		TeamType        string `json:"team_type"`
+		DefaultTaskType string `json:"default_task_type"`
+	}
+	if err := json.Unmarshal(output, &teams); err != nil {
+		t.Fatalf("unmarshal output: %v\n%s", err, string(output))
+	}
+	if len(teams) != 2 || teams[0].ID != "team-1" || teams[0].Handle != "eng" || teams[1].Name != "Growth" {
+		t.Fatalf("unexpected teams output %#v", teams)
+	}
+}
+
 func TestNormalizeTaskDescriptionRichTextConvertsMarkdownToHTML(t *testing.T) {
 	input := `<!-- sentinel:root_cause=test finding_ids=["sentinel:v1:test"] -->` + "\n\n## Summary\n\n- first\n- second"
 

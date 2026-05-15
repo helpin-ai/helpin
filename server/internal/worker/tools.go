@@ -663,11 +663,6 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"properties": map[string]interface{}{},
 	}, toolListTaskChecklist)
 
-	r.register("list_workspace_teams", "List workspace teams that the agent can use for team selection or planning context.", map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}, toolListWorkspaceTeams)
-
 	r.register("list_team_workflows_with_stages", "List the resolved workflow and ordered stages for one team or all workspace teams. Use this to choose a valid workflow stage before creating a task.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -1014,6 +1009,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 	}, toolListEpicTasks)
 
 	r.registerSharedCommandTools(map[string]ToolFunc{
+		"list_workspace_teams":       toolListWorkspaceTeams,
 		"update_task_state":          toolUpdateTaskState,
 		"ensure_task_label":          toolEnsureTaskLabel,
 		"list_tasks":                 toolListTasks,

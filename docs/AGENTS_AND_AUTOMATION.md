@@ -237,6 +237,7 @@ Important boundaries:
 
 - Ask Agents is not a new runtime and not a super-agent with every tool enabled
 - inline answers must stay read-only, must not create `agent_run` records, and must fall back to a one-shot Command Agent run when the requested data needs broader tool execution
+- inline answers and runtime tools should share command-backed product reads where a tool already exists, for example `workspace.list_teams` backing the `list_workspace_teams` runtime alias
 - durable work still creates `agent_run` records, grouped by `command_bar_plans` when orchestration is needed
 - one-shot ad hoc work still uses the system `Command Agent`
 - saved custom agents still persist through the normal `agents` creation path

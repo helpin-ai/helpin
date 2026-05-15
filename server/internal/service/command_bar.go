@@ -38,6 +38,14 @@ type CommandBarChatAccess struct {
 	CanReadCRM  bool
 }
 
+type commandBarInlineTeamSummary struct {
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Handle          *string `json:"handle"`
+	TeamType        string  `json:"team_type"`
+	DefaultTaskType string  `json:"default_task_type"`
+}
+
 type CommandBarService struct {
 	agentService              *AgentService
 	planRepo                  *repository.CommandBarPlanRepository
@@ -422,6 +430,13 @@ func (s *CommandBarService) inlineTaskListAnswer(ctx context.Context, workspaceI
 	if containsAny(lower, "open", "todo", "pending", "unfinished", "active") {
 		input["open_only"] = true
 	}
+	var teamLabel string
+	if team, ok, err := s.resolveInlineTaskTeamFilter(ctx, workspaceID, actorID, lower, pageContext); err != nil {
+		slog.WarnContext(ctx, "ask agents inline task team lookup failed", "error", err, "workspace_id", workspaceID)
+	} else if ok {
+		input["team_id"] = team.ID
+		teamLabel = team.Name
+	}
 	rawInput, _ := json.Marshal(input)
 	output, err := s.commandService.Execute(ctx, model.InternalCommandContext{
 		WorkspaceID: workspaceID,
@@ -434,7 +449,7 @@ func (s *CommandBarService) inlineTaskListAnswer(ctx context.Context, workspaceI
 	}
 	var parsed struct {
 		Tasks []struct {
-			DisplayID string `json:"display_id"`
+			DisplayID any    `json:"display_id"`
 			TaskKey   string `json:"task_key"`
 			Name      string `json:"name"`
 			StateName string `json:"state_name"`
@@ -446,12 +461,25 @@ func (s *CommandBarService) inlineTaskListAnswer(ctx context.Context, workspaceI
 	if err := json.Unmarshal(output, &parsed); err != nil {
 		return "", err
 	}
+	scope := "matching"
+	if teamLabel != "" {
+		scope = fmt.Sprintf("matching %s", teamLabel)
+	}
+	if commandBarLooksLikeCountQuestion(lower) {
+		if input["open_only"] == true {
+			return fmt.Sprintf("There %s %d open %s task%s.", countVerb(parsed.Total), parsed.Total, scope, pluralSuffix(int(parsed.Total))), nil
+		}
+		return fmt.Sprintf("There %s %d %s task%s.", countVerb(parsed.Total), parsed.Total, scope, pluralSuffix(int(parsed.Total))), nil
+	}
 	if parsed.Total == 0 || len(parsed.Tasks) == 0 {
+		if teamLabel != "" {
+			return fmt.Sprintf("I did not find any matching tasks for %s.", teamLabel), nil
+		}
 		return "I did not find any matching tasks in this workspace.", nil
 	}
-	lines := []string{fmt.Sprintf("I found %d matching task%s. Top results:", parsed.Total, pluralSuffix(int(parsed.Total)))}
+	lines := []string{fmt.Sprintf("I found %d %s task%s. Top results:", parsed.Total, scope, pluralSuffix(int(parsed.Total)))}
 	for _, task := range parsed.Tasks {
-		label := firstNonEmptyString(task.TaskKey, task.DisplayID)
+		label := firstNonEmptyString(task.TaskKey, commandBarDisplayIDLabel(task.DisplayID))
 		status := firstNonEmptyString(task.StateName, "unknown state")
 		if label != "" {
 			lines = append(lines, fmt.Sprintf("- %s: %s (%s)", label, task.Name, status))
@@ -460,6 +488,119 @@ func (s *CommandBarService) inlineTaskListAnswer(ctx context.Context, workspaceI
 		}
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func commandBarDisplayIDLabel(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case float64:
+		if v == float64(int64(v)) {
+			return strconv.FormatInt(int64(v), 10)
+		}
+		return strings.TrimRight(strings.TrimRight(strconv.FormatFloat(v, 'f', 2, 64), "0"), ".")
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case json.Number:
+		return v.String()
+	default:
+		return ""
+	}
+}
+
+func (s *CommandBarService) resolveInlineTaskTeamFilter(ctx context.Context, workspaceID, actorID, lower string, pageContext model.CommandBarPageContext) (commandBarInlineTeamSummary, bool, error) {
+	if s == nil || s.commandService == nil {
+		return commandBarInlineTeamSummary{}, false, nil
+	}
+	output, err := s.commandService.Execute(ctx, model.InternalCommandContext{
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		TargetType:  firstNonEmptyString(strings.TrimSpace(pageContext.EntityType), "workspace"),
+		TargetID:    pageContext.EntityID,
+	}, "workspace.list_teams", json.RawMessage(`{}`))
+	if err != nil {
+		return commandBarInlineTeamSummary{}, false, err
+	}
+	var teams []commandBarInlineTeamSummary
+	if err := json.Unmarshal(output, &teams); err != nil {
+		return commandBarInlineTeamSummary{}, false, err
+	}
+	return matchCommandBarInlineTeam(lower, teams)
+}
+
+func matchCommandBarInlineTeam(lower string, teams []commandBarInlineTeamSummary) (commandBarInlineTeamSummary, bool, error) {
+	matches := map[string]commandBarInlineTeamSummary{}
+	for _, team := range teams {
+		for _, candidate := range commandBarInlineTeamCandidates(team) {
+			if commandBarContainsPhrase(lower, candidate) {
+				matches[team.ID] = team
+				break
+			}
+		}
+	}
+	if len(matches) == 0 {
+		return commandBarInlineTeamSummary{}, false, nil
+	}
+	if len(matches) > 1 {
+		names := make([]string, 0, len(matches))
+		for _, team := range matches {
+			names = append(names, team.Name)
+		}
+		slices.Sort(names)
+		return commandBarInlineTeamSummary{}, false, fmt.Errorf("team reference is ambiguous: %s", strings.Join(names, ", "))
+	}
+	for _, team := range matches {
+		return team, true, nil
+	}
+	return commandBarInlineTeamSummary{}, false, nil
+}
+
+func commandBarInlineTeamCandidates(team commandBarInlineTeamSummary) []string {
+	candidates := []string{team.Name, team.TeamType}
+	if team.Handle != nil {
+		candidates = append(candidates, *team.Handle)
+	}
+	return candidates
+}
+
+func commandBarContainsPhrase(text, phrase string) bool {
+	normalizedText := " " + commandBarNormalizePhrase(text) + " "
+	normalizedPhrase := commandBarNormalizePhrase(phrase)
+	if normalizedPhrase == "" {
+		return false
+	}
+	return strings.Contains(normalizedText, " "+normalizedPhrase+" ")
+}
+
+func commandBarNormalizePhrase(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastSpace := true
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastSpace = false
+			continue
+		}
+		if !lastSpace {
+			b.WriteByte(' ')
+			lastSpace = true
+		}
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+func commandBarLooksLikeCountQuestion(lower string) bool {
+	return containsAny(lower, "how many", "count", "number of", "total")
+}
+
+func countVerb(count int64) string {
+	if count == 1 {
+		return "is"
+	}
+	return "are"
 }
 
 func (s *CommandBarService) inlineDocumentListAnswer(ctx context.Context, workspaceID, actorID string) (string, error) {

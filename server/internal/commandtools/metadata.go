@@ -40,6 +40,18 @@ func AllRuntimeToolMetadata() []RuntimeToolMetadata {
 
 var sharedRuntimeTools = []RuntimeToolMetadata{
 	{
+		CommandName: "workspace.list_teams",
+		Alias:       "list_workspace_teams",
+		Category:    "Workspace",
+		Description: "List workspace teams that the agent can use for team selection, task filtering, or planning context.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+	},
+	{
 		CommandName: "docs.ensure_spec_doc",
 		Alias:       "ensure_epic_spec_doc",
 		Category:    "Docs",

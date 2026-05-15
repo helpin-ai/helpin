@@ -616,6 +616,58 @@ func TestChatTurnInlineReadOnlyDeniesUnavailableDomainAccess(t *testing.T) {
 	}
 }
 
+func TestInlineTaskCountResolvesWorkspaceTeamThroughCommandTool(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-1"
+	now := time.Now()
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedWorkspace(t, db, workspaceID, "Workspace", "workspace", "actor-1")
+	seedWorkflow(t, db, "wf-1", workspaceID, "state-1")
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"team-eng", workspaceID, "Engineering", "eng", "engineering", "feature", now, now)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"team-growth", workspaceID, "Growth", "growth", "growth", "task", now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-open-eng", workspaceID, 1, "Build API", model.PMTaskTypeFeature, "wf-1", "state-1", "team-eng", "medium", "normal", false, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-done-eng", workspaceID, 2, "Ship API", model.PMTaskTypeFeature, "wf-1", "state-1", "team-eng", "medium", "normal", true, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-open-growth", workspaceID, 3, "Launch campaign", model.PMTaskTypeChore, "wf-1", "state-1", "team-growth", "medium", "normal", false, false, now, now)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	commandService := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+	commandService.SetSettingsRepository(repository.NewSettingsRepository(db))
+	service := &CommandBarService{commandService: commandService}
+
+	answer, err := service.inlineTaskListAnswer(ctx, workspaceID, "actor-1", "how many open tasks do we have in engineering", model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID})
+	if err != nil {
+		t.Fatalf("inline task answer: %v", err)
+	}
+	if !strings.Contains(answer, "1 open matching Engineering task") {
+		t.Fatalf("expected Engineering open task count, got %q", answer)
+	}
+	if strings.Contains(answer, "Growth") || strings.Contains(answer, "2 open") {
+		t.Fatalf("expected team-filtered answer, got %q", answer)
+	}
+}
+
 func TestListChatThreadsReturnsMostRecentMessages(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	ctx := context.Background()

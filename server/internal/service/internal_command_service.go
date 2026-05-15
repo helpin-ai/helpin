@@ -38,6 +38,7 @@ type InternalCommandService struct {
 	docsLinkService      *DocsLinkService
 	pmAutomationService  *PMAutomationService
 	gitService           *GitService
+	settingsRepo         *repository.SettingsRepository
 	taskRepo             *repository.PMTaskRepository
 	taskLinkRepo         *repository.PMTaskLinkRepository
 	definitions          map[string]InternalCommandDefinition
@@ -61,6 +62,14 @@ func (s *InternalCommandService) SetPMCommentService(svc *PMCommentService) {
 // SetGitService sets the git service for delivery commands.
 func (s *InternalCommandService) SetGitService(svc *GitService) {
 	s.gitService = svc
+}
+
+// SetSettingsRepository wires workspace settings reads used by command-backed workspace tools.
+func (s *InternalCommandService) SetSettingsRepository(repo *repository.SettingsRepository) {
+	if s == nil {
+		return
+	}
+	s.settingsRepo = repo
 }
 
 // SetCRMEnrichmentService sets guarded CRM enrichment dependencies.
@@ -170,6 +179,45 @@ func (s *InternalCommandService) register(def InternalCommandDefinition) {
 }
 
 func (s *InternalCommandService) registerDefaults() {
+	s.register(InternalCommandDefinition{
+		Name:                 "workspace.list_teams",
+		Module:               "workspace",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "epic", "task", "story", "document", "deal", "contact", "company", "conversation"},
+		Tool:                 mustCommandToolMetadata("workspace.list_teams"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.settingsRepo == nil {
+				return nil, fmt.Errorf("settings repository is not configured")
+			}
+			var req struct{}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse list workspace teams input: %w", err)
+				}
+			}
+			teams, err := s.settingsRepo.ListTeams(ctx, meta.WorkspaceID)
+			if err != nil {
+				return nil, err
+			}
+			results := make([]map[string]any, 0, len(teams))
+			for _, team := range teams {
+				item := map[string]any{
+					"id":                team.ID,
+					"name":              team.Name,
+					"team_type":         team.TeamType,
+					"default_task_type": team.DefaultStoryType,
+				}
+				if team.Handle != nil && strings.TrimSpace(*team.Handle) != "" {
+					item["handle"] = strings.TrimSpace(*team.Handle)
+				}
+				if team.Description != nil && strings.TrimSpace(*team.Description) != "" {
+					item["description"] = strings.TrimSpace(*team.Description)
+				}
+				results = append(results, item)
+			}
+			return mustJSON(results), nil
+		},
+	})
 	s.register(InternalCommandDefinition{
 		Name:                 "docs.ensure_spec_doc",
 		Module:               "docs",
