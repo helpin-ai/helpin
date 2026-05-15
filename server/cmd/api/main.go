@@ -204,6 +204,8 @@ func main() {
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},
+			&model.CommandBarThread{},
+			&model.CommandBarMessage{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -560,6 +562,7 @@ func main() {
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
 	commandBarUnmetIntentRepo := repository.NewCommandBarUnmetIntentRepository(db)
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
+	commandBarChatRepo := repository.NewCommandBarChatRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
@@ -833,6 +836,7 @@ func main() {
 		cfg.CodexChatGPTAccountID,
 	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMRouter)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMRouter).
+		SetChatRepository(commandBarChatRepo).
 		SetLLMRouterConfig(
 			cfg.CommandRouterLLMProvider,
 			cfg.CommandRouterLLMModel,
@@ -1069,6 +1073,8 @@ func main() {
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	commandService.SetDocsBlockService(docsBlockService)
+	commandBarService.SetInternalCommandService(commandService).
+		SetReadOnlyDataServices(docsDocumentService, crmDealService, crmContactService, crmCompanyService)
 	ruleEngine.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
@@ -1197,7 +1203,7 @@ func main() {
 		PMExternalLink:      handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:              handler.NewPMViewHandler(pmViewService),
 		Search:              handler.NewSearchHandler(searchService),
-		CommandBar:          handler.NewCommandBarHandler(commandBarService),
+		CommandBar:          handler.NewCommandBarHandler(commandBarService, authzService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),

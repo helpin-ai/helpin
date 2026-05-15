@@ -557,6 +557,173 @@ func TestParseIntentFallsBackToOneShotAfterLLMNoMatch(t *testing.T) {
 	}
 }
 
+func TestChatTurnInlineReadOnlyPersistsMessagesWithoutRunPlan(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	fakeLLM := &scriptedCommandBarLLM{response: "Open Settings, then choose Teams to manage team configuration."}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "How do I configure teams in Helpin settings?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if resp.Proposal.Plan != nil {
+		t.Fatalf("inline answer should not include a run plan")
+	}
+	if !strings.Contains(resp.AssistantMessage.Content, "Settings") {
+		t.Fatalf("expected assistant answer content, got %q", resp.AssistantMessage.Content)
+	}
+	var messageCount int64
+	if err := db.Table("command_bar_messages").Count(&messageCount).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if messageCount != 2 {
+		t.Fatalf("expected user and assistant messages, got %d", messageCount)
+	}
+}
+
+func TestChatTurnInlineReadOnlyDeniesUnavailableDomainAccess(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	fakeLLM := &scriptedCommandBarLLM{response: "Leaked CRM data"}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurnWithAccess(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "list CRM contacts",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	}, CommandBarChatAccess{CanReadPM: true, CanReadDocs: true, CanReadCRM: false})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if strings.Contains(resp.AssistantMessage.Content, "Leaked") || !strings.Contains(resp.AssistantMessage.Content, "cannot access CRM") {
+		t.Fatalf("expected denied CRM answer without llm fallback, got %q", resp.AssistantMessage.Content)
+	}
+	if len(fakeLLM.requests) != 0 {
+		t.Fatalf("expected no llm call for denied domain access, got %d", len(fakeLLM.requests))
+	}
+}
+
+func TestListChatThreadsReturnsMostRecentMessages(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, &scriptedCommandBarLLM{response: "Use Settings."}).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	first, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "How do I manage settings?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("first chat turn: %v", err)
+	}
+	second, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		ThreadID:    &first.Thread.ID,
+		Text:        "How do I manage teams?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("second chat turn: %v", err)
+	}
+
+	resp, err := service.ListChatThreads(ctx, workspaceID, "actor-1", 1)
+	if err != nil {
+		t.Fatalf("list chat threads: %v", err)
+	}
+	if len(resp.Threads) != 1 {
+		t.Fatalf("expected one thread, got %d", len(resp.Threads))
+	}
+	if resp.Threads[0].Thread.ID != first.Thread.ID || second.Thread.ID != first.Thread.ID {
+		t.Fatalf("expected same thread to be returned")
+	}
+	if got := len(resp.Threads[0].Messages); got != 4 {
+		t.Fatalf("expected four persisted messages, got %d", got)
+	}
+	if resp.Threads[0].Messages[0].Content != "How do I manage settings?" {
+		t.Fatalf("expected chronological message order, got %#v", resp.Threads[0].Messages)
+	}
+}
+
+func TestConfirmChatCreateAgentRejectsDifferentActor(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	repo := repository.NewCommandBarChatRepository(db)
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, nil).SetChatRepository(repo)
+	messageID := seedCommandBarCreateAgentProposal(t, ctx, repo, workspaceID, "actor-1")
+
+	if _, err := service.ConfirmChatCreateAgent(ctx, workspaceID, "actor-2", messageID, model.ConfirmCommandBarChatProposalRequest{}); err == nil {
+		t.Fatalf("expected different actor confirmation to fail")
+	}
+}
+
+func TestConfirmChatCreateAgentRejectsToolTargetOverrides(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	repo := repository.NewCommandBarChatRepository(db)
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, nil).SetChatRepository(repo)
+	messageID := seedCommandBarCreateAgentProposal(t, ctx, repo, workspaceID, "actor-1")
+
+	_, err := service.ConfirmChatCreateAgent(ctx, workspaceID, "actor-1", messageID, model.ConfirmCommandBarChatProposalRequest{
+		AllowedTools:   []string{"create_task"},
+		AllowedTargets: []string{"workspace"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "overrides are not supported") {
+		t.Fatalf("expected override rejection, got %v", err)
+	}
+}
+
+func TestChatTurnRunPlanProposalUsesExistingParser(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+		allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, 1, 'Atlas', ?, 'idle', 'native_sdk', ?, ?, ?, 'never', 1, 'interactive', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"22222222-2222-2222-2222-222222222222",
+		workspaceID,
+		model.AgentPresetTaskPlanner,
+		[]byte(`["update_plan"]`),
+		[]byte(`[]`),
+		[]byte(`["workspace"]`),
+	).Error; err != nil {
+		t.Fatalf("seed task planner: %v", err)
+	}
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo}, nil, nil, nil, nil).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "break down this initiative into tasks",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalRunPlan || resp.Proposal.Plan == nil {
+		t.Fatalf("expected run plan proposal, got %#v", resp.Proposal)
+	}
+	if got := resp.Proposal.Plan.Steps[0].AgentName; got != "Atlas" {
+		t.Fatalf("expected Atlas plan step, got %q", got)
+	}
+}
+
 func TestCRMResearchUpdatePrefersOneShotCommandAgent(t *testing.T) {
 	pageContext := model.CommandBarPageContext{
 		EntityType:   "crm_contact",
@@ -1049,6 +1216,52 @@ func TestDecodeCommandBarPlanRunIDsUsesStringKeys(t *testing.T) {
 	}
 }
 
+func seedCommandBarCreateAgentProposal(t *testing.T, ctx context.Context, repo *repository.CommandBarChatRepository, workspaceID, actorID string) string {
+	t.Helper()
+	thread := &model.CommandBarThread{
+		ID:          "33333333-3333-3333-3333-333333333333",
+		WorkspaceID: workspaceID,
+		ActorID:     &actorID,
+		Title:       "Create agent",
+		Status:      model.CommandBarThreadStatusOpen,
+	}
+	if err := repo.CreateThread(ctx, thread); err != nil {
+		t.Fatalf("create chat thread: %v", err)
+	}
+	proposal := model.CommandBarProposal{
+		Type: model.CommandBarProposalCreateAgent,
+		Draft: &model.CustomAgentDraft{
+			Name:                  "Doc Reviewer",
+			Role:                  "Review docs",
+			RuntimeKind:           "native_sdk",
+			AllowedTools:          []string{"read_document"},
+			AllowedTargets:        []string{"document"},
+			ApprovalMode:          "always",
+			DefaultInvocationMode: "interactive",
+			MaxConcurrentRuns:     1,
+			SystemPrompt:          "Review docs.",
+		},
+	}
+	rawProposal, err := json.Marshal(proposal)
+	if err != nil {
+		t.Fatalf("marshal proposal: %v", err)
+	}
+	messageID := "44444444-4444-4444-4444-444444444444"
+	message := &model.CommandBarMessage{
+		ID:           messageID,
+		ThreadID:     thread.ID,
+		WorkspaceID:  workspaceID,
+		ActorID:      &actorID,
+		Role:         model.CommandBarMessageRoleAssistant,
+		Content:      "Review the draft before approving.",
+		ProposalJSON: rawProposal,
+	}
+	if err := repo.CreateMessage(ctx, message); err != nil {
+		t.Fatalf("create proposal message: %v", err)
+	}
+	return messageID
+}
+
 func TestCommandBarPlanOwnedByActor(t *testing.T) {
 	actorID := "11111111-1111-1111-1111-111111111111"
 	otherID := "22222222-2222-2222-2222-222222222222"
@@ -1162,6 +1375,26 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			completed_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE command_bar_threads (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			actor_id TEXT,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'open',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE command_bar_messages (
+			id TEXT PRIMARY KEY,
+			thread_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			actor_id TEXT,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			page_context TEXT,
+			proposal_json TEXT,
+			created_at DATETIME
 		)`,
 		`CREATE TABLE agents (
 			id TEXT PRIMARY KEY,

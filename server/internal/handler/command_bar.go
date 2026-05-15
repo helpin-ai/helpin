@@ -16,12 +16,13 @@ import (
 
 type CommandBarHandler struct {
 	commandBarService *service.CommandBarService
+	authz             *authorization.AuthzService
 }
 
 var commandBarRBAC = authorization.NewRBACEngine()
 
-func NewCommandBarHandler(commandBarService *service.CommandBarService) *CommandBarHandler {
-	return &CommandBarHandler{commandBarService: commandBarService}
+func NewCommandBarHandler(commandBarService *service.CommandBarService, authz *authorization.AuthzService) *CommandBarHandler {
+	return &CommandBarHandler{commandBarService: commandBarService, authz: authz}
 }
 
 func (h *CommandBarHandler) ParseIntent(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +83,75 @@ func (h *CommandBarHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *CommandBarHandler) ChatTurn(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	var req model.CommandBarChatTurnRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	access, err := h.commandBarChatAccess(r)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	resp, err := h.commandBarService.ChatTurnWithAccess(r.Context(), workspaceID, actorID, req, access)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *CommandBarHandler) ListChatThreads(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	resp, err := h.commandBarService.ListChatThreads(r.Context(), workspaceID, actorID, limit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *CommandBarHandler) ConfirmChatCreateAgent(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	messageID := chi.URLParam(r, "messageID")
+	var req model.ConfirmCommandBarChatProposalRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	resp, err := h.commandBarService.ConfirmChatCreateAgent(r.Context(), workspaceID, actorID, messageID, req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *CommandBarHandler) commandBarChatAccess(r *http.Request) (service.CommandBarChatAccess, error) {
+	actor := authorization.GetActor(r.Context())
+	if actor == nil || h.authz == nil {
+		return service.CommandBarChatAccess{}, fmt.Errorf("authorization context missing")
+	}
+	canAccess := func(perm authorization.Permission, module model.ModuleID) bool {
+		if !h.authz.Can(actor, perm) {
+			return false
+		}
+		ok, err := h.authz.CanAccessModule(r.Context(), actor, module)
+		return err == nil && ok
+	}
+	return service.CommandBarChatAccess{
+		CanReadPM:   canAccess(authorization.PermPMRead, model.ModulePM),
+		CanReadDocs: canAccess(authorization.PermDocsRead, model.ModuleDocs),
+		CanReadCRM:  canAccess(authorization.PermCRMRead, model.ModuleCRM),
+	}, nil
 }
 
 func authorizeCommandBarDispatch(r *http.Request, req model.CommandBarDispatchRequest) error {

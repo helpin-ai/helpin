@@ -221,6 +221,26 @@ The product surfaces are:
 - `Runs` for execution details
 - `Activity` for automation-layer history involving those agents
 
+## Ask Agents
+
+Ask Agents is the orchestration chat layer over the agent system.
+
+It can:
+
+- answer simple read-only questions inline with non-mutating context/tool access
+- load bounded live read-only context for common task, docs, and CRM list/count questions
+- propose a normal command-bar run plan for saved agents, one-shot Command Agent runs, fan-out, or DAGs
+- propose reusable custom-agent drafts
+- create reusable custom agents only after explicit approval
+
+Important boundaries:
+
+- Ask Agents is not a new runtime and not a super-agent with every tool enabled
+- inline answers must stay read-only, must not create `agent_run` records, and must fall back to a one-shot Command Agent run when the requested data needs broader tool execution
+- durable work still creates `agent_run` records, grouped by `command_bar_plans` when orchestration is needed
+- one-shot ad hoc work still uses the system `Command Agent`
+- saved custom agents still persist through the normal `agents` creation path
+
 ## Agent runs
 
 Every real execution becomes an `agent_run`.

@@ -32,11 +32,23 @@ type commandBarTriggerContextPayload struct {
 	StepIndex   int                         `json:"step_index"`
 }
 
+type CommandBarChatAccess struct {
+	CanReadPM   bool
+	CanReadDocs bool
+	CanReadCRM  bool
+}
+
 type CommandBarService struct {
 	agentService              *AgentService
 	planRepo                  *repository.CommandBarPlanRepository
 	unmetRepo                 *repository.CommandBarUnmetIntentRepository
 	dismissalRepo             *repository.CommandBarPlanDismissalRepository
+	chatRepo                  *repository.CommandBarChatRepository
+	commandService            *InternalCommandService
+	docsDocumentService       *DocsDocumentService
+	crmDealService            *CRMDealService
+	crmContactService         *CRMContactService
+	crmCompanyService         *CRMCompanyService
 	llmProvider               llm.Provider
 	commandRouterLLMProvider  string
 	commandRouterLLMModel     string
@@ -69,6 +81,684 @@ func (s *CommandBarService) SetLLMRouterConfig(provider, modelName string, maxTo
 		s.commandRouterLLMTimeout = timeout
 	}
 	return s
+}
+
+func (s *CommandBarService) SetChatRepository(repo *repository.CommandBarChatRepository) *CommandBarService {
+	if s != nil {
+		s.chatRepo = repo
+	}
+	return s
+}
+
+func (s *CommandBarService) SetInternalCommandService(commandService *InternalCommandService) *CommandBarService {
+	if s != nil {
+		s.commandService = commandService
+	}
+	return s
+}
+
+func (s *CommandBarService) SetReadOnlyDataServices(docs *DocsDocumentService, deals *CRMDealService, contacts *CRMContactService, companies *CRMCompanyService) *CommandBarService {
+	if s != nil {
+		s.docsDocumentService = docs
+		s.crmDealService = deals
+		s.crmContactService = contacts
+		s.crmCompanyService = companies
+	}
+	return s
+}
+
+func (s *CommandBarService) ChatTurn(ctx context.Context, workspaceID, actorID string, req model.CommandBarChatTurnRequest) (*model.CommandBarChatTurnResponse, error) {
+	return s.ChatTurnWithAccess(ctx, workspaceID, actorID, req, fullCommandBarChatAccess())
+}
+
+func (s *CommandBarService) ChatTurnWithAccess(ctx context.Context, workspaceID, actorID string, req model.CommandBarChatTurnRequest, access CommandBarChatAccess) (*model.CommandBarChatTurnResponse, error) {
+	if s == nil || s.chatRepo == nil {
+		return nil, fmt.Errorf("command bar chat service is not configured")
+	}
+	text := strings.TrimSpace(req.Text)
+	if text == "" {
+		return nil, fmt.Errorf("text is required")
+	}
+	pageContext := normalizeCommandBarPageContext(req.PageContext, workspaceID)
+	if err := validateCommandBarSupportedTarget(pageContext.EntityType); err != nil {
+		return nil, err
+	}
+
+	thread, err := s.commandBarThreadForTurn(ctx, workspaceID, actorID, req.ThreadID, text)
+	if err != nil {
+		return nil, err
+	}
+	pageContextJSON, _ := json.Marshal(pageContext)
+	userMessage := model.CommandBarMessage{
+		ID:          uuid.NewString(),
+		ThreadID:    thread.ID,
+		WorkspaceID: workspaceID,
+		ActorID:     optionalActorID(actorID),
+		Role:        model.CommandBarMessageRoleUser,
+		Content:     text,
+		PageContext: pageContextJSON,
+	}
+	if err := s.chatRepo.CreateMessage(ctx, &userMessage); err != nil {
+		return nil, err
+	}
+
+	proposal, content, err := s.commandBarChatProposal(ctx, workspaceID, actorID, text, pageContext, access)
+	if err != nil {
+		return nil, err
+	}
+	proposalJSON, _ := json.Marshal(proposal)
+	assistantMessage := model.CommandBarMessage{
+		ID:           uuid.NewString(),
+		ThreadID:     thread.ID,
+		WorkspaceID:  workspaceID,
+		ActorID:      optionalActorID(actorID),
+		Role:         model.CommandBarMessageRoleAssistant,
+		Content:      content,
+		PageContext:  pageContextJSON,
+		ProposalJSON: proposalJSON,
+	}
+	if err := s.chatRepo.CreateMessage(ctx, &assistantMessage); err != nil {
+		return nil, err
+	}
+
+	return &model.CommandBarChatTurnResponse{
+		Thread:           commandBarThreadSummary(*thread),
+		UserMessage:      commandBarMessageSummary(userMessage),
+		AssistantMessage: commandBarMessageSummary(assistantMessage),
+		Proposal:         proposal,
+	}, nil
+}
+
+func (s *CommandBarService) ListChatThreads(ctx context.Context, workspaceID, actorID string, limit int) (*model.ListCommandBarChatThreadsResponse, error) {
+	if s == nil || s.chatRepo == nil {
+		return nil, fmt.Errorf("command bar chat service is not configured")
+	}
+	threads, err := s.chatRepo.ListRecentThreads(ctx, workspaceID, actorID, limit)
+	if err != nil {
+		return nil, err
+	}
+	resp := &model.ListCommandBarChatThreadsResponse{
+		Threads: make([]model.CommandBarThreadDetail, 0, len(threads)),
+	}
+	for _, thread := range threads {
+		messages, err := s.chatRepo.ListRecentMessages(ctx, workspaceID, thread.ID, 30)
+		if err != nil {
+			return nil, err
+		}
+		detail := model.CommandBarThreadDetail{
+			Thread:   commandBarThreadSummary(thread),
+			Messages: make([]model.CommandBarMessageSummary, 0, len(messages)),
+		}
+		for _, message := range messages {
+			detail.Messages = append(detail.Messages, commandBarMessageSummary(message))
+		}
+		resp.Threads = append(resp.Threads, detail)
+	}
+	return resp, nil
+}
+
+func (s *CommandBarService) ConfirmChatCreateAgent(ctx context.Context, workspaceID, actorID, messageID string, req model.ConfirmCommandBarChatProposalRequest) (*model.ConfirmCommandBarChatCreateAgentResponse, error) {
+	if s == nil || s.chatRepo == nil || s.agentService == nil {
+		return nil, fmt.Errorf("command bar chat service is not configured")
+	}
+	message, err := s.chatRepo.GetMessage(ctx, workspaceID, strings.TrimSpace(messageID))
+	if err != nil {
+		return nil, err
+	}
+	if message == nil {
+		return nil, fmt.Errorf("chat proposal not found")
+	}
+	thread, err := s.chatRepo.GetThread(ctx, workspaceID, message.ThreadID)
+	if err != nil {
+		return nil, err
+	}
+	if thread == nil || thread.Status != model.CommandBarThreadStatusOpen || !commandBarThreadOwnedByActor(thread, actorID) {
+		return nil, fmt.Errorf("chat proposal not found")
+	}
+	proposal, err := decodeCommandBarProposal(message.ProposalJSON)
+	if err != nil {
+		return nil, err
+	}
+	if proposal == nil || (proposal.Type != model.CommandBarProposalCreateAgent && proposal.Type != model.CommandBarProposalCreateAgentAndRun) || proposal.Draft == nil {
+		return nil, fmt.Errorf("chat message does not contain an agent creation proposal")
+	}
+	if len(req.AllowedTools) > 0 || len(req.AllowedTargets) > 0 {
+		return nil, fmt.Errorf("agent proposal tool and target overrides are not supported")
+	}
+	agent, err := s.agentService.CreateAgent(ctx, commandBarCreateAgentRequestFromDraft(workspaceID, *proposal.Draft, req), actorID)
+	if err != nil {
+		return nil, err
+	}
+	resp := &model.ConfirmCommandBarChatCreateAgentResponse{Agent: *agent}
+	if proposal.Type == model.CommandBarProposalCreateAgentAndRun {
+		target := proposal.RunTarget
+		if target == nil {
+			return nil, fmt.Errorf("create-and-run proposal is missing a run target")
+		}
+		instructions := strings.TrimSpace(proposal.RunInstructions)
+		if instructions == "" {
+			instructions = "Run the newly created agent for the approved chat proposal."
+		}
+		run, err := s.agentService.StartTargetRun(ctx, workspaceID, target.EntityType, target.EntityID, model.StartAgentRunRequest{
+			AgentID:           agent.ID,
+			AdditionalContext: &instructions,
+		}, actorID)
+		if err != nil {
+			return nil, err
+		}
+		resp.Run = run
+	}
+	return resp, nil
+}
+
+func (s *CommandBarService) commandBarThreadForTurn(ctx context.Context, workspaceID, actorID string, threadID *string, text string) (*model.CommandBarThread, error) {
+	if threadID != nil && strings.TrimSpace(*threadID) != "" {
+		thread, err := s.chatRepo.GetThread(ctx, workspaceID, strings.TrimSpace(*threadID))
+		if err != nil {
+			return nil, err
+		}
+		if thread == nil || !commandBarThreadOwnedByActor(thread, actorID) {
+			return nil, fmt.Errorf("command bar chat thread not found")
+		}
+		return thread, nil
+	}
+	title := strings.TrimSpace(text)
+	if len(title) > 80 {
+		title = strings.TrimSpace(title[:80])
+	}
+	if title == "" {
+		title = "Ask Agents"
+	}
+	thread := &model.CommandBarThread{
+		ID:          uuid.NewString(),
+		WorkspaceID: workspaceID,
+		ActorID:     optionalActorID(actorID),
+		Title:       title,
+		Status:      model.CommandBarThreadStatusOpen,
+	}
+	if err := s.chatRepo.CreateThread(ctx, thread); err != nil {
+		return nil, err
+	}
+	return thread, nil
+}
+
+func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspaceID, actorID, text string, pageContext model.CommandBarPageContext, access CommandBarChatAccess) (*model.CommandBarProposal, string, error) {
+	if shouldCreateReusableAgentFromChat(text) {
+		draft, err := s.agentService.DraftCustomAgent(ctx, model.CustomAgentDraftRequest{Description: text})
+		if err != nil {
+			return nil, "", err
+		}
+		proposalType := model.CommandBarProposalCreateAgent
+		if shouldCreateAndRunReusableAgentFromChat(text) {
+			proposalType = model.CommandBarProposalCreateAgentAndRun
+		}
+		proposal := &model.CommandBarProposal{
+			Type:            proposalType,
+			Draft:           &draft.Draft,
+			Reasons:         draft.Reasons,
+			Warnings:        draft.Warnings,
+			RunTarget:       &pageContext,
+			RunInstructions: text,
+			Guardrails: []model.CommandBarGuardrail{{
+				Type:     "custom_agent_creation",
+				Severity: "info",
+				Message:  "This creates a reusable custom agent only after you approve it.",
+			}},
+		}
+		action := "create a reusable agent"
+		if proposalType == model.CommandBarProposalCreateAgentAndRun {
+			action = "create a reusable agent and run it once"
+		}
+		return proposal, fmt.Sprintf("I can %s for this. Review the draft before approving.", action), nil
+	}
+
+	if shouldAnswerInlineReadOnly(text) {
+		answer := s.inlineReadOnlyAnswer(ctx, workspaceID, actorID, text, pageContext, access)
+		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: answer}, answer, nil
+	}
+
+	parsed, err := s.ParseIntent(ctx, workspaceID, actorID, model.CommandBarParseRequest{
+		Text:        text,
+		PageContext: pageContext,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if parsed.Status == model.CommandBarParseStatusPlan && parsed.Plan != nil {
+		proposal := &model.CommandBarProposal{
+			Type:       model.CommandBarProposalRunPlan,
+			Plan:       parsed.Plan,
+			Guardrails: parsed.Plan.Guardrails,
+		}
+		return proposal, commandBarPlanProposalContent(*parsed.Plan), nil
+	}
+	proposal := &model.CommandBarProposal{
+		Type:        model.CommandBarProposalNoMatch,
+		Reason:      parsed.Reason,
+		Suggestions: parsed.Suggestions,
+	}
+	return proposal, firstNonEmptyString(strings.TrimSpace(parsed.Reason), "No available agent matched this request."), nil
+}
+
+func (s *CommandBarService) inlineReadOnlyAnswer(ctx context.Context, workspaceID, actorID, text string, pageContext model.CommandBarPageContext, access CommandBarChatAccess) string {
+	if answer, ok := s.inlineLiveReadOnlyAnswer(ctx, workspaceID, actorID, text, pageContext, access); ok {
+		return answer
+	}
+	if s.llmProvider == nil {
+		return fallbackInlineReadOnlyAnswer(text, pageContext)
+	}
+	tools := s.readOnlyToolCards()
+	contextJSON, _ := json.Marshal(pageContext)
+	toolJSON, _ := json.Marshal(tools)
+	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
+		Provider:     s.commandRouterLLMProvider,
+		Model:        s.commandRouterLLMModel,
+		SystemPrompt: `You are Helpin's Ask Agents chat assistant. Answer concise read-only questions about using Helpin or interpreting workspace context. You may use the supplied read-only tool catalog as capability context, but do not claim that you executed a tool unless tool output is present. If live workspace data is required and not present, say that you can run a one-shot read-only command to fetch it.`,
+		Messages: []llm.Message{{
+			Role:    "user",
+			Content: fmt.Sprintf("Question: %s\nPage context: %s\nAvailable read-only tools: %s", text, string(contextJSON), string(toolJSON)),
+		}},
+		Temperature: 0.1,
+		MaxTokens:   600,
+	})
+	if err != nil || resp == nil || strings.TrimSpace(resp.Content) == "" {
+		return fallbackInlineReadOnlyAnswer(text, pageContext)
+	}
+	return strings.TrimSpace(resp.Content)
+}
+
+func (s *CommandBarService) inlineLiveReadOnlyAnswer(ctx context.Context, workspaceID, actorID, text string, pageContext model.CommandBarPageContext, access CommandBarChatAccess) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	switch {
+	case containsAny(lower, "task", "tasks", "story", "stories"):
+		if !access.CanReadPM {
+			return "I cannot access PM task data for this workspace with your current permissions.", true
+		}
+		if s.commandService == nil {
+			return "", false
+		}
+		answer, err := s.inlineTaskListAnswer(ctx, workspaceID, actorID, lower, pageContext)
+		if err != nil {
+			slog.WarnContext(ctx, "ask agents inline task answer failed", "error", err, "workspace_id", workspaceID)
+			return "", false
+		}
+		return answer, true
+	case containsAny(lower, "doc", "docs", "document", "documents", "knowledge"):
+		if !access.CanReadDocs {
+			return "I cannot access Docs data for this workspace with your current permissions.", true
+		}
+		if s.docsDocumentService == nil {
+			return "", false
+		}
+		answer, err := s.inlineDocumentListAnswer(ctx, workspaceID, actorID)
+		if err != nil {
+			slog.WarnContext(ctx, "ask agents inline document answer failed", "error", err, "workspace_id", workspaceID)
+			return "", false
+		}
+		return answer, true
+	case containsAny(lower, "crm", "deal", "deals", "contact", "contacts", "company", "companies"):
+		if !access.CanReadCRM {
+			return "I cannot access CRM data for this workspace with your current permissions.", true
+		}
+		if s.crmDealService == nil && s.crmContactService == nil && s.crmCompanyService == nil {
+			return "", false
+		}
+		answer, err := s.inlineCRMListAnswer(ctx, workspaceID, lower)
+		if err != nil {
+			slog.WarnContext(ctx, "ask agents inline crm answer failed", "error", err, "workspace_id", workspaceID)
+			return "", false
+		}
+		return answer, true
+	default:
+		return "", false
+	}
+}
+
+func (s *CommandBarService) inlineTaskListAnswer(ctx context.Context, workspaceID, actorID, lower string, pageContext model.CommandBarPageContext) (string, error) {
+	input := map[string]any{
+		"limit":        5,
+		"detail_level": "summary",
+	}
+	if containsAny(lower, "open", "todo", "pending", "unfinished", "active") {
+		input["open_only"] = true
+	}
+	rawInput, _ := json.Marshal(input)
+	output, err := s.commandService.Execute(ctx, model.InternalCommandContext{
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		TargetType:  firstNonEmptyString(strings.TrimSpace(pageContext.EntityType), "workspace"),
+		TargetID:    pageContext.EntityID,
+	}, "pm.list_tasks", rawInput)
+	if err != nil {
+		return "", err
+	}
+	var parsed struct {
+		Tasks []struct {
+			DisplayID string `json:"display_id"`
+			TaskKey   string `json:"task_key"`
+			Name      string `json:"name"`
+			StateName string `json:"state_name"`
+			Completed bool   `json:"completed"`
+			Priority  string `json:"priority"`
+		} `json:"tasks"`
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(output, &parsed); err != nil {
+		return "", err
+	}
+	if parsed.Total == 0 || len(parsed.Tasks) == 0 {
+		return "I did not find any matching tasks in this workspace.", nil
+	}
+	lines := []string{fmt.Sprintf("I found %d matching task%s. Top results:", parsed.Total, pluralSuffix(int(parsed.Total)))}
+	for _, task := range parsed.Tasks {
+		label := firstNonEmptyString(task.TaskKey, task.DisplayID)
+		status := firstNonEmptyString(task.StateName, "unknown state")
+		if label != "" {
+			lines = append(lines, fmt.Sprintf("- %s: %s (%s)", label, task.Name, status))
+		} else {
+			lines = append(lines, fmt.Sprintf("- %s (%s)", task.Name, status))
+		}
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func (s *CommandBarService) inlineDocumentListAnswer(ctx context.Context, workspaceID, actorID string) (string, error) {
+	docs, err := s.docsDocumentService.List(ctx, workspaceID, nil, nil, nil, nil, actorID, "member", false)
+	if err != nil {
+		return "", err
+	}
+	if len(docs) == 0 {
+		return "I did not find any visible documents in this workspace.", nil
+	}
+	limit := minInt(len(docs), 5)
+	lines := []string{fmt.Sprintf("I found %d visible document%s. Recent or prominent results:", len(docs), pluralSuffix(len(docs)))}
+	for i := 0; i < limit; i++ {
+		doc := docs[i]
+		status := strings.TrimSpace(doc.Status)
+		if status == "" {
+			status = "unknown status"
+		}
+		pinned := ""
+		if doc.IsPinned {
+			pinned = ", pinned"
+		}
+		lines = append(lines, fmt.Sprintf("- %s (%s%s)", doc.Title, status, pinned))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func (s *CommandBarService) inlineCRMListAnswer(ctx context.Context, workspaceID, lower string) (string, error) {
+	if containsAny(lower, "contact", "contacts") && s.crmContactService != nil {
+		contacts, total, err := s.crmContactService.List(ctx, workspaceID, model.CRMContactListFilters{}, model.PMPagination{Page: 1, PerPage: 5})
+		if err != nil {
+			return "", err
+		}
+		lines := []string{fmt.Sprintf("I found %d CRM contact%s.", total, pluralSuffix(int(total)))}
+		for _, contact := range contacts {
+			name := strings.TrimSpace(contact.FirstName)
+			if contact.LastName != nil && strings.TrimSpace(*contact.LastName) != "" {
+				name = strings.TrimSpace(name + " " + strings.TrimSpace(*contact.LastName))
+			}
+			if contact.Email != nil && strings.TrimSpace(*contact.Email) != "" {
+				lines = append(lines, fmt.Sprintf("- %s <%s> (%s)", firstNonEmptyString(name, contact.DisplayID), strings.TrimSpace(*contact.Email), contact.LifecycleStage))
+			} else {
+				lines = append(lines, fmt.Sprintf("- %s (%s)", firstNonEmptyString(name, contact.DisplayID), contact.LifecycleStage))
+			}
+		}
+		return strings.Join(lines, "\n"), nil
+	}
+	if containsAny(lower, "company", "companies") && s.crmCompanyService != nil {
+		companies, total, err := s.crmCompanyService.List(ctx, workspaceID, model.CRMCompanyListFilters{}, model.PMPagination{Page: 1, PerPage: 5})
+		if err != nil {
+			return "", err
+		}
+		lines := []string{fmt.Sprintf("I found %d CRM compan%s.", total, companyPluralSuffix(total))}
+		for _, company := range companies {
+			domain := ""
+			if company.Domain != nil && strings.TrimSpace(*company.Domain) != "" {
+				domain = " - " + strings.TrimSpace(*company.Domain)
+			}
+			lines = append(lines, fmt.Sprintf("- %s%s", company.Name, domain))
+		}
+		return strings.Join(lines, "\n"), nil
+	}
+	if s.crmDealService == nil {
+		return "", fmt.Errorf("crm deal service is not configured")
+	}
+	deals, total, err := s.crmDealService.List(ctx, workspaceID, model.CRMDealListFilters{}, model.PMPagination{Page: 1, PerPage: 5})
+	if err != nil {
+		return "", err
+	}
+	lines := []string{fmt.Sprintf("I found %d CRM deal%s.", total, pluralSuffix(int(total)))}
+	for _, deal := range deals {
+		amount := ""
+		if deal.Amount != nil {
+			amount = fmt.Sprintf(", %.0f %s", *deal.Amount, firstNonEmptyString(deal.Currency, "USD"))
+		}
+		lines = append(lines, fmt.Sprintf("- %s%s", deal.Name, amount))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func (s *CommandBarService) readOnlyToolCards() []commandBarPlannerToolCard {
+	if s == nil || s.agentService == nil {
+		return nil
+	}
+	catalog := s.agentService.ListToolCatalog()
+	cards := make([]commandBarPlannerToolCard, 0)
+	for _, tool := range catalog.Tools {
+		if commandBarToolIsMutation(tool.Name) {
+			continue
+		}
+		cards = append(cards, commandBarPlannerToolCard{
+			Name:        tool.Name,
+			Category:    tool.Category,
+			Description: tool.Description,
+			Mutation:    false,
+		})
+	}
+	return cards
+}
+
+func fallbackInlineReadOnlyAnswer(text string, pageContext model.CommandBarPageContext) string {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if containsAny(lower, "setting", "settings", "configure", "configuration") {
+		return "You can usually manage this from workspace Settings. Use the sidebar to open Settings, then choose the relevant section such as General, Members, Teams, Workflows, Project Delivery, Support, CRM, or Automations. If you want me to inspect live workspace data, I can prepare a read-only one-shot run."
+	}
+	if containsAny(lower, "doc", "document", "article", "knowledge") {
+		return "I can help with docs questions from this chat. For live ranking or searching across documents, I should run a read-only Command Agent step with document search tools so the answer is based on current workspace data."
+	}
+	if containsAny(lower, "crm", "deal", "contact", "company") {
+		return "I can answer general CRM workflow questions inline. For live deal/contact counts, ranking, or buyer-signal analysis, I should run a read-only Command Agent step against the current CRM data."
+	}
+	target := strings.TrimSpace(pageContext.DisplayTitle)
+	if target == "" {
+		target = strings.TrimSpace(pageContext.EntityType)
+	}
+	return fmt.Sprintf("I can answer simple read-only questions here. For this request%s, live workspace data may be needed; I can prepare a read-only one-shot plan if you want a data-backed answer.", inlineTargetPhrase(target))
+}
+
+func inlineTargetPhrase(target string) string {
+	if strings.TrimSpace(target) == "" {
+		return ""
+	}
+	return " on " + strings.TrimSpace(target)
+}
+
+func companyPluralSuffix(count int64) string {
+	if count == 1 {
+		return "y"
+	}
+	return "ies"
+}
+
+func fullCommandBarChatAccess() CommandBarChatAccess {
+	return CommandBarChatAccess{
+		CanReadPM:   true,
+		CanReadDocs: true,
+		CanReadCRM:  true,
+	}
+}
+
+func shouldAnswerInlineReadOnly(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	if commandBarUnsafeOneShotPrompt(lower) || commandBarIntentAllowsMutation(lower) || containsAny(lower, "run ", "execute", "start ", "create agent", "make an agent", "save agent", "chain", "dag", "fan out") {
+		return false
+	}
+	return containsAny(lower,
+		"how do i",
+		"how to",
+		"where do i",
+		"where is",
+		"what is",
+		"what are",
+		"which",
+		"list",
+		"show",
+		"how many",
+		"count",
+		"explain",
+		"help me understand",
+	)
+}
+
+func shouldCreateReusableAgentFromChat(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	return containsAny(lower,
+		"create an agent",
+		"create agent",
+		"make an agent",
+		"make agent",
+		"build an agent",
+		"save an agent",
+		"reusable agent",
+		"agent that",
+		"agent to",
+	)
+}
+
+func shouldCreateAndRunReusableAgentFromChat(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	return shouldCreateReusableAgentFromChat(text) && containsAny(lower, "and run", "then run", "run it", "start it")
+}
+
+func commandBarPlanProposalContent(plan model.CommandBarPlan) string {
+	count := len(plan.Steps)
+	if count == 1 {
+		step := plan.Steps[0]
+		return fmt.Sprintf("I found a plan: run %s on %s. Review it before starting.", firstNonEmptyString(step.AgentName, "this agent"), firstNonEmptyString(step.Target.DisplayTitle, step.Target.EntityType))
+	}
+	return fmt.Sprintf("I found a %d-step plan. Review the chain before starting.", count)
+}
+
+func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.CustomAgentDraft, req model.ConfirmCommandBarChatProposalRequest) model.CreateAgentRequest {
+	name := strings.TrimSpace(draft.Name)
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+		name = strings.TrimSpace(*req.Name)
+	}
+	role := strings.TrimSpace(draft.Role)
+	if req.Description != nil && strings.TrimSpace(*req.Description) != "" {
+		role = strings.TrimSpace(*req.Description)
+	}
+	if role == "" {
+		role = "Custom agent created from Ask Agents."
+	}
+	allowedTools := append([]string(nil), draft.AllowedTools...)
+	if len(req.AllowedTools) > 0 {
+		allowedTools = normalizeStringSlice(req.AllowedTools)
+	}
+	allowedTargets := append([]string(nil), draft.AllowedTargets...)
+	if len(req.AllowedTargets) > 0 {
+		allowedTargets = normalizeStringSlice(req.AllowedTargets)
+	}
+	runtimeKind := firstNonEmptyString(strings.TrimSpace(draft.RuntimeKind), "native_sdk")
+	provider := strings.TrimSpace(draft.Provider)
+	modelName := strings.TrimSpace(draft.Model)
+	approvalMode := firstNonEmptyString(strings.TrimSpace(draft.ApprovalMode), "always")
+	invocationMode := firstNonEmptyString(strings.TrimSpace(draft.DefaultInvocationMode), "interactive")
+	maxRuns := draft.MaxConcurrentRuns
+	if maxRuns <= 0 {
+		maxRuns = 1
+	}
+	systemPrompt := strings.TrimSpace(draft.SystemPrompt)
+	triggerMode := "manual"
+	return model.CreateAgentRequest{
+		WorkspaceID:           workspaceID,
+		Name:                  firstNonEmptyString(name, "Custom Agent"),
+		Role:                  role,
+		RuntimeKind:           &runtimeKind,
+		Provider:              &provider,
+		Model:                 &modelName,
+		SystemPrompt:          &systemPrompt,
+		Skills:                draft.Skills,
+		TriggerMode:           &triggerMode,
+		AllowedTools:          mustJSONStringSlice(allowedTools),
+		AllowedTargets:        mustJSONStringSlice(allowedTargets),
+		ApprovalMode:          &approvalMode,
+		MaxConcurrentRuns:     &maxRuns,
+		DefaultInvocationMode: &invocationMode,
+	}
+}
+
+func optionalActorID(actorID string) *string {
+	if strings.TrimSpace(actorID) == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(actorID)
+	return &trimmed
+}
+
+func commandBarThreadOwnedByActor(thread *model.CommandBarThread, actorID string) bool {
+	if thread == nil {
+		return false
+	}
+	if strings.TrimSpace(actorID) == "" {
+		return thread.ActorID == nil
+	}
+	return thread.ActorID != nil && strings.TrimSpace(*thread.ActorID) == strings.TrimSpace(actorID)
+}
+
+func commandBarThreadSummary(thread model.CommandBarThread) model.CommandBarThreadSummary {
+	return model.CommandBarThreadSummary{
+		ID:          thread.ID,
+		WorkspaceID: thread.WorkspaceID,
+		ActorID:     thread.ActorID,
+		Title:       thread.Title,
+		Status:      thread.Status,
+		CreatedAt:   thread.CreatedAt,
+		UpdatedAt:   thread.UpdatedAt,
+	}
+}
+
+func commandBarMessageSummary(message model.CommandBarMessage) model.CommandBarMessageSummary {
+	var pageContext model.CommandBarPageContext
+	if len(message.PageContext) > 0 {
+		_ = json.Unmarshal(message.PageContext, &pageContext)
+	}
+	proposal, _ := decodeCommandBarProposal(message.ProposalJSON)
+	return model.CommandBarMessageSummary{
+		ID:          message.ID,
+		ThreadID:    message.ThreadID,
+		Role:        message.Role,
+		Content:     message.Content,
+		PageContext: pageContext,
+		Proposal:    proposal,
+		CreatedAt:   message.CreatedAt,
+	}
+}
+
+func decodeCommandBarProposal(raw json.RawMessage) (*model.CommandBarProposal, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var proposal model.CommandBarProposal
+	if err := json.Unmarshal(raw, &proposal); err != nil {
+		return nil, fmt.Errorf("decode command bar proposal: %w", err)
+	}
+	return &proposal, nil
 }
 
 func (s *CommandBarService) ParseIntent(ctx context.Context, workspaceID, actorID string, req model.CommandBarParseRequest) (*model.CommandBarParseResponse, error) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { AiMagicIcon, BotIcon, Loading01Icon, PauseIcon } from '@/lib/icons';
+import { AiMagicIcon, BotIcon, Loading01Icon, PauseIcon, Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { usePageContextState } from '@/components/command-bar/pageContext';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -13,6 +13,8 @@ import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import type {
   AgentRun,
+  CommandBarMessageSummary,
+  CommandBarProposal,
   CommandBarPlanStep,
   CommandBarParseResponse,
 } from '@/lib/pmTypes';
@@ -26,13 +28,29 @@ import { outputSummaryText } from './dock/utils';
 
 const COLLAPSED_KEY = 'helpin:ask-agents-dock-collapsed';
 
-type ThreadMessage = { kind: 'user'; id: string; text: string; ts: number };
+type ThreadMessage = {
+  kind: 'user' | 'assistant';
+  id: string;
+  text: string;
+  ts: number;
+  proposal?: CommandBarProposal;
+};
 
 type AskAgentsEventDetail = {
   query?: string;
   mode?: 'compose' | 'runs';
   runId?: string;
 };
+
+function threadMessageFromSummary(message: CommandBarMessageSummary): ThreadMessage {
+  return {
+    kind: message.role,
+    id: message.id,
+    text: message.content,
+    ts: Date.parse(message.created_at) || Date.now(),
+    proposal: message.proposal,
+  };
+}
 
 export function AskAgentsDock() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
@@ -63,6 +81,7 @@ export function AskAgentsDock() {
   const [dispatching, setDispatching] = useState(false);
   const [intentResult, setIntentResult] = useState<CommandBarParseResponse | null>(null);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [chatThreadId, setChatThreadId] = useState<string | null>(null);
   const [sessionPlanIds, setSessionPlanIds] = useState<Set<string>>(() => new Set());
   const [sessionRunIds, setSessionRunIds] = useState<Set<string>>(() => new Set());
   const [busyRunId, setBusyRunId] = useState<string | null>(null);
@@ -198,6 +217,12 @@ export function AskAgentsDock() {
     setIntentResult(null);
   }, [value]);
 
+  useEffect(() => {
+    setChatThreadId(null);
+    setMessages([]);
+    setIntentResult(null);
+  }, [workspace?.id]);
+
   // Auto-scroll on new content.
   useEffect(() => {
     const el = responseRef.current;
@@ -240,6 +265,15 @@ export function AskAgentsDock() {
           return next;
         });
       }
+    });
+    void commandBarService.listChatThreads(workspace.id, 1).then((res) => {
+      if (cancelled || !res.data?.threads?.length) return;
+      const [latest] = res.data.threads;
+      setChatThreadId((current) => current ?? latest.thread.id);
+      setMessages((current) => {
+        if (current.length > 0) return current;
+        return latest.messages.map(threadMessageFromSummary);
+      });
     });
     return () => {
       cancelled = true;
@@ -410,29 +444,54 @@ export function AskAgentsDock() {
       setParsing(true);
       setIntentResult(null);
       try {
-        const res = await commandBarService.parseIntent(workspace.id, {
+        const res = await commandBarService.chatTurn(workspace.id, {
+          thread_id: chatThreadId ?? undefined,
           text,
           page_context: pageContext,
         });
         if (res.error || !res.data) {
-          toast.error(res.error ?? 'Failed to parse command');
+          toast.error(res.error ?? 'Failed to ask agents');
           return;
         }
-        setIntentResult(res.data);
+        setChatThreadId(res.data.thread.id);
+        const userTs = Date.parse(res.data.user_message.created_at) || Date.now();
+        const assistantTs = Date.parse(res.data.assistant_message.created_at) || userTs + 1;
+        setMessages((prev) => [
+          ...prev,
+          { kind: 'user', id: res.data!.user_message.id, text, ts: userTs },
+          {
+            kind: 'assistant',
+            id: res.data!.assistant_message.id,
+            text: res.data!.assistant_message.content,
+            ts: assistantTs,
+            proposal: res.data!.proposal ?? res.data!.assistant_message.proposal,
+          },
+        ]);
+        const proposal = res.data.proposal ?? res.data.assistant_message.proposal;
+        if (proposal?.type === 'run_plan' && proposal.plan) {
+          setIntentResult({
+            status: 'plan',
+            plan: proposal.plan,
+            rationale: res.data.assistant_message.content,
+          });
+        } else if (proposal?.type === 'no_match') {
+          setIntentResult({
+            status: 'no_matching_agent',
+            reason: proposal.reason ?? res.data.assistant_message.content,
+            suggestions: proposal.suggestions,
+          });
+        } else {
+          setIntentResult(null);
+        }
       } finally {
         setParsing(false);
       }
     },
-    [pageContext, value, viewMode, setViewMode, workspace?.id],
+    [chatThreadId, pageContext, value, viewMode, setViewMode, workspace?.id],
   );
 
   const confirmPlan = useCallback(async () => {
     if (!workspace?.id || !pageContext || !intentResult || intentResult.status !== 'plan') return;
-    const submittedAt = Date.now();
-    setMessages((prev) => [
-      ...prev,
-      { kind: 'user', id: `user-${submittedAt}`, text: trimmed, ts: submittedAt },
-    ]);
     setDispatching(true);
     try {
       const res = await commandBarService.dispatchPlan(workspace.id, {
@@ -673,6 +732,7 @@ export function AskAgentsDock() {
 
   const onNew = useCallback(() => {
     setMessages([]);
+    setChatThreadId(null);
     setSessionPlanIds(new Set());
     setSessionRunIds(new Set());
     setIntentResult(null);
@@ -786,12 +846,39 @@ export function AskAgentsDock() {
           >
             {timeline.map((item) => {
               if (item.kind === 'msg') {
-                return (
+                return item.msg.kind === 'user' ? (
                   <div key={item.id} className="flex justify-end">
                     <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-primary/10 px-3 py-1.5 text-sm text-foreground">
                       {item.msg.text}
                     </div>
                   </div>
+                ) : (
+                  <AssistantMessageBlock
+                    key={item.id}
+                    message={item.msg}
+                    busy={busyRunId === item.msg.id}
+                    onCreateAgent={async (message, mode) => {
+                      setBusyRunId(message.id);
+                      try {
+                        const res = await commandBarService.confirmChatCreateAgent(workspace.id, message.id);
+                        if (res.error || !res.data) {
+                          toast.error(res.error ?? 'Failed to create agent');
+                          return;
+                        }
+                        toast.success(mode === 'create_agent_and_run' ? 'Agent created and run started' : 'Agent created');
+                        if (res.data.run) {
+                          addRuns([res.data.run]);
+                          setSessionRunIds((prev) => {
+                            const next = new Set(prev);
+                            next.add(res.data!.run!.id);
+                            return next;
+                          });
+                        }
+                      } finally {
+                        setBusyRunId(null);
+                      }
+                    }}
+                  />
                 );
               }
               if (item.kind === 'plan') {
@@ -917,6 +1004,87 @@ export function AskAgentsDock() {
   );
 }
 
+
+function AssistantMessageBlock({
+  message,
+  busy,
+  onCreateAgent,
+}: {
+  message: ThreadMessage;
+  busy: boolean;
+  onCreateAgent: (message: ThreadMessage, mode: 'create_agent' | 'create_agent_and_run') => Promise<void>;
+}) {
+  const proposal = message.proposal;
+  const showText = message.text && proposal?.type !== 'run_plan';
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[86%] rounded-2xl rounded-tl-sm border border-border/60 bg-muted/35 px-3 py-2 text-sm text-foreground">
+        {showText ? <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p> : null}
+        {proposal?.type === 'create_agent' || proposal?.type === 'create_agent_and_run' ? (
+          <AgentDraftProposalCard
+            proposal={proposal}
+            busy={busy}
+            onConfirm={() => {
+              const mode = proposal.type === 'create_agent_and_run' ? 'create_agent_and_run' : 'create_agent';
+              void onCreateAgent(message, mode);
+            }}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AgentDraftProposalCard({
+  proposal,
+  busy,
+  onConfirm,
+}: {
+  proposal: CommandBarProposal;
+  busy: boolean;
+  onConfirm: () => void;
+}) {
+  const draft = proposal.draft;
+  if (!draft) return null;
+  const targets = draft.allowed_targets?.length ? draft.allowed_targets.join(', ') : 'tasks';
+  const tools = draft.allowed_tools?.length ?? 0;
+  const action = proposal.type === 'create_agent_and_run' ? 'Create agent & run' : 'Create agent';
+  return (
+    <div className="mt-2 rounded-md border border-border/70 bg-background/80 p-2.5">
+      <div className="flex items-center gap-2">
+        <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="truncate text-sm font-medium">{draft.name || 'Custom Agent'}</span>
+      </div>
+      {draft.role ? (
+        <p className="mt-1 line-clamp-3 text-xs leading-snug text-muted-foreground">{draft.role}</p>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+        <span className="rounded border border-border/70 px-1.5 py-0.5">{targets}</span>
+        <span className="rounded border border-border/70 px-1.5 py-0.5">{tools} tools</span>
+        <span className="rounded border border-border/70 px-1.5 py-0.5">{draft.default_invocation_mode}</span>
+      </div>
+      {proposal.warnings?.length ? (
+        <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+          {proposal.warnings[0]}
+        </p>
+      ) : null}
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition',
+            busy ? 'cursor-not-allowed bg-muted text-muted-foreground' : 'bg-orange-500 text-white hover:bg-orange-500/90',
+          )}
+        >
+          {busy ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <Tick01Icon className="h-3 w-3" />}
+          {busy ? 'Creating...' : action}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function NoMatchBlock({
   reason,

@@ -1,0 +1,251 @@
+// @vitest-environment jsdom
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { AskAgentsDock } from '../AskAgentsDock';
+import { PageContextProvider } from '@/components/command-bar/pageContext';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const mocks = vi.hoisted(() => ({
+  listPlans: vi.fn(),
+  getPlan: vi.fn(),
+  chatTurn: vi.fn(),
+  listChatThreads: vi.fn(),
+  dispatchPlan: vi.fn(),
+  cancelPlan: vi.fn(),
+  retryPlan: vi.fn(),
+  confirmChatCreateAgent: vi.fn(),
+  listRecentRuns: vi.fn(),
+  getRun: vi.fn(),
+  approveRun: vi.fn(),
+  cancelRun: vi.fn(),
+}));
+
+vi.mock('@/lib/services/commandBarService', () => ({
+  commandBarService: {
+    listPlans: mocks.listPlans,
+    getPlan: mocks.getPlan,
+    chatTurn: mocks.chatTurn,
+    listChatThreads: mocks.listChatThreads,
+    dispatchPlan: mocks.dispatchPlan,
+    cancelPlan: mocks.cancelPlan,
+    retryPlan: mocks.retryPlan,
+    confirmChatCreateAgent: mocks.confirmChatCreateAgent,
+  },
+}));
+
+vi.mock('@/lib/services/agentService', () => ({
+  agentService: {
+    listRecentRuns: mocks.listRecentRuns,
+    getRun: mocks.getRun,
+    approveRun: mocks.approveRun,
+    cancelRun: mocks.cancelRun,
+  },
+}));
+
+vi.mock('@/components/command-bar/PromotionDialog', () => ({
+  PromotionDialog: () => null,
+}));
+
+vi.mock('@/components/pm/CodingSession/CodingSessionDrawer', () => ({
+  CodingSessionDrawer: () => null,
+}));
+
+let container: HTMLDivElement;
+let root: Root;
+
+beforeEach(() => {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  localStorage.clear();
+  useWorkspaceStore.setState({
+    currentWorkspace: { id: 'ws-1', name: 'Acme' } as never,
+  });
+  mocks.listPlans.mockResolvedValue({ data: { plans: [] }, error: null });
+  mocks.listRecentRuns.mockResolvedValue({ data: { runs: [] }, error: null });
+  mocks.listChatThreads.mockResolvedValue({ data: { threads: [] }, error: null });
+  mocks.chatTurn.mockResolvedValue({ data: null, error: null });
+  mocks.dispatchPlan.mockResolvedValue({ data: null, error: null });
+  mocks.confirmChatCreateAgent.mockResolvedValue({ data: { agent: { id: 'agent-1' } }, error: null });
+});
+
+afterEach(() => {
+  act(() => {
+    root.unmount();
+  });
+  container.remove();
+  document.body.innerHTML = '';
+  useWorkspaceStore.setState({ currentWorkspace: null });
+  vi.clearAllMocks();
+});
+
+async function renderDock() {
+  await act(async () => {
+    root.render(
+      <TooltipProvider>
+        <PageContextProvider>
+          <AskAgentsDock />
+        </PageContextProvider>
+      </TooltipProvider>,
+    );
+  });
+  await flush();
+}
+
+async function flush() {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+async function waitForText(text: string) {
+  for (let i = 0; i < 10; i += 1) {
+    if (document.body.textContent?.includes(text)) return;
+    await flush();
+  }
+  throw new Error(`Missing text: ${text}`);
+}
+
+function setTextareaValue(value: string) {
+  const textarea = document.body.querySelector('textarea');
+  if (!textarea) throw new Error('textarea not found');
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+  setter?.call(textarea, value);
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+async function clickSend() {
+  const button = document.body.querySelector<HTMLButtonElement>('button[title="Send"]');
+  if (!button) throw new Error('send button not found');
+  await act(async () => {
+    button.click();
+  });
+}
+
+describe('AskAgentsDock chat', () => {
+  it('hydrates the latest chat thread', async () => {
+    mocks.listChatThreads.mockResolvedValue({
+      data: {
+        threads: [{
+          thread: {
+            id: 'thread-1',
+            workspace_id: 'ws-1',
+            title: 'Last chat',
+            status: 'open',
+            created_at: '2026-05-15T00:00:00Z',
+            updated_at: '2026-05-15T00:00:01Z',
+          },
+          messages: [{
+            id: 'msg-1',
+            thread_id: 'thread-1',
+            role: 'assistant',
+            content: 'Hydrated answer',
+            created_at: '2026-05-15T00:00:01Z',
+          }],
+        }],
+      },
+      error: null,
+    });
+
+    await renderDock();
+
+    await waitForText('Hydrated answer');
+  });
+
+  it('renders inline answers without dispatching a plan', async () => {
+    mocks.chatTurn.mockResolvedValue({
+      data: {
+        thread: {
+          id: 'thread-1',
+          workspace_id: 'ws-1',
+          title: 'Docs',
+          status: 'open',
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:01Z',
+        },
+        user_message: {
+          id: 'user-msg',
+          thread_id: 'thread-1',
+          role: 'user',
+          content: 'list docs',
+          created_at: '2026-05-15T00:00:00Z',
+        },
+        assistant_message: {
+          id: 'assistant-msg',
+          thread_id: 'thread-1',
+          role: 'assistant',
+          content: 'I found 2 visible documents.',
+          proposal: { type: 'inline_answer', answer: 'I found 2 visible documents.' },
+          created_at: '2026-05-15T00:00:01Z',
+        },
+        proposal: { type: 'inline_answer', answer: 'I found 2 visible documents.' },
+      },
+      error: null,
+    });
+    await renderDock();
+
+    await act(async () => {
+      setTextareaValue('list docs');
+    });
+    await clickSend();
+    await waitForText('I found 2 visible documents.');
+
+    expect(mocks.dispatchPlan).not.toHaveBeenCalled();
+  });
+
+  it('renders and confirms a custom agent proposal', async () => {
+    mocks.listChatThreads.mockResolvedValue({
+      data: {
+        threads: [{
+          thread: {
+            id: 'thread-1',
+            workspace_id: 'ws-1',
+            title: 'Agent',
+            status: 'open',
+            created_at: '2026-05-15T00:00:00Z',
+            updated_at: '2026-05-15T00:00:01Z',
+          },
+          messages: [{
+            id: 'proposal-msg',
+            thread_id: 'thread-1',
+            role: 'assistant',
+            content: 'Review the draft before approving.',
+            proposal: {
+              type: 'create_agent',
+              draft: {
+                name: 'Doc Reviewer',
+                role: 'Review documentation for gaps.',
+                runtime_kind: 'native_sdk',
+                allowed_tools: ['read_document'],
+                allowed_targets: ['document'],
+                approval_mode: 'always',
+                default_invocation_mode: 'interactive',
+                max_concurrent_runs: 1,
+                system_prompt: 'Review docs.',
+                skills: [],
+              },
+            },
+            created_at: '2026-05-15T00:00:01Z',
+          }],
+        }],
+      },
+      error: null,
+    });
+    await renderDock();
+    await waitForText('Doc Reviewer');
+
+    const button = [...document.body.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.includes('Create agent'));
+    expect(button).toBeTruthy();
+    await act(async () => {
+      button?.click();
+    });
+
+    expect(mocks.confirmChatCreateAgent).toHaveBeenCalledWith('ws-1', 'proposal-msg');
+  });
+});

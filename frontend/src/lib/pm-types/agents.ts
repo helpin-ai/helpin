@@ -239,6 +239,12 @@ export interface CommandBarParseRequest {
   page_context: CommandBarPageContext;
 }
 
+export interface CommandBarChatTurnRequest {
+  thread_id?: string;
+  text: string;
+  page_context: CommandBarPageContext;
+}
+
 export type CommandBarParseResponse =
   | {
       status: 'plan';
@@ -264,6 +270,76 @@ export interface CommandBarDispatchResponse {
   steps?: CommandBarPlanStep[];
   run_count?: number;
   runs: AgentRun[];
+}
+
+export type CommandBarProposalType =
+  | 'inline_answer'
+  | 'run_plan'
+  | 'create_agent'
+  | 'create_agent_and_run'
+  | 'clarification'
+  | 'no_match';
+
+export interface CommandBarProposal {
+  type: CommandBarProposalType;
+  answer?: string;
+  plan?: CommandBarPlan;
+  draft?: CustomAgentDraft;
+  run_target?: CommandBarPageContext;
+  run_instructions?: string;
+  reasons?: CustomAgentDraftReason[];
+  warnings?: string[];
+  reason?: string;
+  suggestions?: string[];
+  guardrails?: Array<{ type: string; severity: string; message: string }>;
+}
+
+export interface CommandBarThreadSummary {
+  id: string;
+  workspace_id: string;
+  actor_id?: string;
+  title: string;
+  status: 'open' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommandBarMessageSummary {
+  id: string;
+  thread_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  page_context?: CommandBarPageContext;
+  proposal?: CommandBarProposal;
+  created_at: string;
+}
+
+export interface CommandBarChatTurnResponse {
+  thread: CommandBarThreadSummary;
+  user_message: CommandBarMessageSummary;
+  assistant_message: CommandBarMessageSummary;
+  proposal?: CommandBarProposal;
+}
+
+export interface CommandBarThreadDetail {
+  thread: CommandBarThreadSummary;
+  messages: CommandBarMessageSummary[];
+}
+
+export interface CommandBarThreadListResponse {
+  threads: CommandBarThreadDetail[];
+}
+
+export interface ConfirmCommandBarChatProposalRequest {
+  name?: string;
+  description?: string;
+  allowed_tools?: string[];
+  allowed_targets?: string[];
+}
+
+export interface ConfirmCommandBarChatCreateAgentResponse {
+  agent: Agent;
+  run?: AgentRun;
 }
 
 export interface CommandBarPlanSummary {

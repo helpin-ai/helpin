@@ -3,6 +3,9 @@ import type {
   CommandBarDispatchRequest,
   CommandBarDispatchResponse,
   CommandBarCancelPlanResponse,
+  CommandBarChatTurnRequest,
+  CommandBarChatTurnResponse,
+  CommandBarThreadListResponse,
   CommandBarPlanDetailResponse,
   CommandBarPlanListResponse,
   CommandBarParseRequest,
@@ -12,6 +15,8 @@ import type {
   CommandBarUnmetIntent,
   CommandBarUnmetIntentListResponse,
   CommandBarUnmetIntentStatus,
+  ConfirmCommandBarChatCreateAgentResponse,
+  ConfirmCommandBarChatProposalRequest,
   PromoteCommandBarRunRequest,
   PromoteCommandBarRunResponse,
   ReviewCommandBarUnmetIntentRequest,
@@ -22,6 +27,10 @@ const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspac
 export const commandBarService = {
   parseIntent: (workspaceId: string, payload: CommandBarParseRequest) =>
     api.post<CommandBarParseResponse>(`/command-bar/intents/parse${qs(workspaceId)}`, payload),
+  chatTurn: (workspaceId: string, payload: CommandBarChatTurnRequest) =>
+    api.post<CommandBarChatTurnResponse>(`/command-bar/chat/turns${qs(workspaceId)}`, payload),
+  listChatThreads: (workspaceId: string, limit = 1) =>
+    api.get<CommandBarThreadListResponse>(`/command-bar/chat/threads${qs(workspaceId)}&limit=${encodeURIComponent(limit)}`),
   listPlans: (workspaceId: string, limit = 20) =>
     api.get<CommandBarPlanListResponse>(`/command-bar/plans${qs(workspaceId)}&limit=${encodeURIComponent(limit)}`),
   getPlan: (workspaceId: string, planId: string) =>
@@ -42,6 +51,8 @@ export const commandBarService = {
     api.post<void>(`/command-bar/plans/${encodeURIComponent(planId)}/dismiss${qs(workspaceId)}`),
   promoteRunToAgent: (workspaceId: string, runId: string, payload: PromoteCommandBarRunRequest) =>
     api.post<PromoteCommandBarRunResponse>(`/command-bar/runs/${encodeURIComponent(runId)}/promote-agent${qs(workspaceId)}`, payload),
+  confirmChatCreateAgent: (workspaceId: string, messageId: string, payload: ConfirmCommandBarChatProposalRequest = {}) =>
+    api.post<ConfirmCommandBarChatCreateAgentResponse>(`/command-bar/chat/proposals/${encodeURIComponent(messageId)}/create-agent${qs(workspaceId)}`, payload),
   listUnmetIntents: (workspaceId: string, opts?: { status?: CommandBarUnmetIntentStatus | 'all'; limit?: number; includeSensitive?: boolean }) => {
     const status = opts?.status && opts.status !== 'all' ? `&status=${encodeURIComponent(opts.status)}` : '';
     const limit = opts?.limit ? `&limit=${encodeURIComponent(opts.limit)}` : '';
