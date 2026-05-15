@@ -69,7 +69,6 @@ import {
 import { TaskGitPanel } from '@/components/pm/TaskGitPanel';
 import { useTaskDelivery } from '@/components/pm/TaskDeliveryPanel';
 import { AgentRunPanel } from '@/components/pm/AgentRunPanel';
-import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
 import { cn } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
@@ -82,7 +81,6 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
-import { agentService } from '@/lib/services/agentService';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { useAuthStore } from '@/stores/authStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -292,7 +290,6 @@ function TaskDetailPanelBody({
   const [recurringDetail, setRecurringDetail] = useState<RecurringTemplateDetail | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
-  const [startingAgentRun, setStartingAgentRun] = useState(false);
   const openFilePickerRef = useRef<(() => void) | null>(null);
   const descriptionUploadRef = useRef<((files: FileList | File[], insertPos?: number) => Promise<void>) | null>(null);
   const queuedDescriptionDropRef = useRef<File[] | null>(null);
@@ -554,21 +551,6 @@ function TaskDetailPanelBody({
     setForm((current) => ({ ...current, [key]: value }));
     queuePatch(patch);
   };
-
-  const handleRunAssignedAgent = useCallback(async () => {
-    if (!form.assigned_agent_id || startingAgentRun) return;
-    setStartingAgentRun(true);
-    try {
-      const { error } = await agentService.runTask(workspaceId, taskDetail.task.id, { agent_id: form.assigned_agent_id });
-      if (error) throw new Error(error);
-      toast.success('Agent run started');
-      queryClient.invalidateQueries({ queryKey: queryKeys.automation.targetRuns(workspaceId, 'task', taskDetail.task.id) });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to start agent');
-    } finally {
-      setStartingAgentRun(false);
-    }
-  }, [form.assigned_agent_id, queryClient, startingAgentRun, taskDetail.task.id, workspaceId]);
 
   const resetDescriptionDrag = useCallback(() => {
     descriptionDragCounterRef.current = 0;
@@ -1806,22 +1788,6 @@ function TaskDetailPanelBody({
               />
             </MetadataRow>
             )}
-
-            <div className="col-span-3 h-px bg-border/40 my-1" />
-            <div className="col-span-3">
-              <AgentPickerCard
-                workspaceId={workspaceId}
-                runnableTarget="task"
-                targetTeamId={form.team_id || null}
-                value={form.assigned_agent_id || undefined}
-                onChange={(agentId) => updateField('assigned_agent_id', agentId ?? '', { assigned_agent_id: agentId ?? '' })}
-                hasRepoContext={hasGitIntegration}
-                disabled={!canEdit}
-                onRun={handleRunAssignedAgent}
-                running={startingAgentRun}
-                runDisabled={['queued', 'running', 'paused'].includes(taskDetail.task.latest_run_status ?? '')}
-              />
-            </div>
 
             {/* ── Delivery ── */}
             {hasGitIntegration && fieldVis.delivery && !delivery.hidden && !delivery.loading && (
