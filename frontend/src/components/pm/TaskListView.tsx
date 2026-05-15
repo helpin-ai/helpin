@@ -94,7 +94,7 @@ import {
   pinnedStyle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
-import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { getTaskListPinnedOffsets, type TaskListPinnedOffsets } from '@/components/pm/task-detail/taskListPinnedOffsets';
 import {
   getVisibleTaskListGroupOptions,
@@ -114,7 +114,17 @@ const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 const LIST_AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
 const TASK_LIST_FILTER_ALL = '__all__';
 
-type LocalTaskFilterKey = 'owner' | 'state' | 'task_type' | 'priority' | 'severity' | 'label' | 'sprint';
+type LocalTaskFilterKey =
+  | 'owner'
+  | 'requester'
+  | 'state'
+  | 'task_type'
+  | 'priority'
+  | 'severity'
+  | 'label'
+  | 'sprint'
+  | 'blocked'
+  | 'blocking';
 
 interface LocalTaskFilterOption {
   value: string;
@@ -569,12 +579,15 @@ export function TaskListView({
   const [allLabels, setAllLabels] = useState<Label[]>([]);
   const [taskSearchQuery, setTaskSearchQuery] = useState('');
   const [ownerFilter, setOwnerFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [requesterFilter, setRequesterFilter] = useState(TASK_LIST_FILTER_ALL);
   const [stateFilter, setStateFilter] = useState(TASK_LIST_FILTER_ALL);
   const [typeFilter, setTypeFilter] = useState(TASK_LIST_FILTER_ALL);
   const [priorityFilter, setPriorityFilter] = useState(TASK_LIST_FILTER_ALL);
   const [severityFilter, setSeverityFilter] = useState(TASK_LIST_FILTER_ALL);
   const [labelFilter, setLabelFilter] = useState(TASK_LIST_FILTER_ALL);
   const [sprintFilter, setSprintFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [blockedFilter, setBlockedFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [blockingFilter, setBlockingFilter] = useState(TASK_LIST_FILTER_ALL);
   const { data: agents = [] } = useAgents(workspaceId);
 
   // Per-group pagination state (for workflow_state grouping)
@@ -707,76 +720,64 @@ export function TaskListView({
   }, [sprints]);
 
   const taskListOwnerOptions = useMemo(() => {
-    const ownerIds = new Set<string>();
-    for (const task of tasks) {
-      for (const ownerId of task.owner_member_ids ?? []) {
-        ownerIds.add(ownerId);
-      }
-    }
-    return Array.from(ownerIds)
-      .map((id) => ({ id, name: ownerNameMap.get(id) ?? 'Unknown member' }))
+    return buildAssignableMemberOptions(assignableMembers)
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [ownerNameMap, tasks]);
+  }, [assignableMembers]);
+
+  const taskListRequesterOptions = useMemo(() => {
+    return buildAssignableMemberOptions(assignableMembers)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [assignableMembers]);
 
   const taskListStateOptions = useMemo(() => {
-    const stateIds = new Set(tasks.map((task) => task.workflow_state_id).filter(Boolean));
-    return Array.from(stateIds)
-      .map((id) => {
-        const state = stateMap.get(id);
-        return {
-          id,
-          name: state?.name ?? 'Unknown state',
-          position: state?.position ?? Number.MAX_SAFE_INTEGER,
-        };
-      })
+    return workflow.states
+      .map((state) => ({
+        id: state.id,
+        name: state.name,
+        position: state.position,
+      }))
       .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
-  }, [stateMap, tasks]);
+  }, [workflow.states]);
 
   const taskListTypeOptions = useMemo(() => {
-    const taskTypes = new Set(tasks.map((task) => task.task_type).filter(Boolean));
-    return Array.from(taskTypes)
-      .map((type) => ({ value: type, label: TASK_TYPE_CONFIG[type]?.label ?? type }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [tasks]);
+    return (['feature', 'bug', 'chore'] as const)
+      .map((type) => ({ value: type, label: TASK_TYPE_CONFIG[type].label }));
+  }, []);
 
   const taskListPriorityOptions = useMemo(() => {
-    const priorities = new Set(tasks.map((task) => task.priority).filter(Boolean) as Priority[]);
     return ALL_PRIORITIES
-      .filter((priority) => priorities.has(priority))
       .map((priority) => ({ value: priority, label: PRIORITY_CONFIG[priority].label }));
-  }, [tasks]);
+  }, []);
 
   const taskListSeverityOptions = useMemo(() => {
-    const severities = new Set(tasks.map((task) => task.severity).filter(Boolean) as Severity[]);
     return ALL_SEVERITIES
-      .filter((severity) => severities.has(severity))
       .map((severity) => ({ value: severity, label: SEVERITY_CONFIG[severity].label }));
-  }, [tasks]);
+  }, []);
 
   const taskListLabelOptions = useMemo(() => {
-    const labelMap = new Map<string, string>();
-    for (const task of tasks) {
-      for (const label of task.labels ?? []) {
-        labelMap.set(label.id, label.name);
-      }
-    }
-    return Array.from(labelMap, ([value, label]) => ({ value, label }))
+    return allLabels
+      .map((label) => ({ value: label.id, label: label.name }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [tasks]);
+  }, [allLabels]);
 
   const taskListSprintOptions = useMemo(() => {
-    const sprintIds = new Set(tasks.map((task) => task.sprint_id).filter(Boolean) as string[]);
-    return Array.from(sprintIds)
-      .map((id) => ({ id, name: sprintMap.get(id) ?? 'Unknown sprint' }))
+    return getVisibleSprintsForTaskScope(sprints, { listTeamId: teamId })
+      .map((item) => ({ id: item.sprint.id, name: item.sprint.name }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [sprintMap, tasks]);
+  }, [sprints, teamId]);
 
   const localTaskFilterDefinitions = useMemo<LocalTaskFilterDefinition[]>(() => {
-    const definitions: LocalTaskFilterDefinition[] = [
+    return [
       {
         key: 'owner',
         label: 'Owner',
         options: taskListOwnerOptions.map((owner) => ({ value: owner.id, label: owner.name })),
+        searchableValues: true,
+      },
+      {
+        key: 'requester',
+        label: 'Requester',
+        options: taskListRequesterOptions.map((requester) => ({ value: requester.id, label: requester.name })),
         searchableValues: true,
       },
       {
@@ -785,61 +786,55 @@ export function TaskListView({
         options: taskListStateOptions.map((state) => ({ value: state.id, label: state.name })),
         searchableValues: true,
       },
-    ];
-
-    if (fieldVis.task_type) {
-      definitions.push({
+      {
         key: 'task_type',
         label: 'Type',
         options: taskListTypeOptions,
-      });
-    }
-
-    if (fieldVis.priority) {
-      definitions.push({
+      },
+      {
         key: 'priority',
         label: 'Priority',
         options: taskListPriorityOptions,
-      });
-    }
-
-    if (fieldVis.severity) {
-      definitions.push({
+      },
+      {
         key: 'severity',
         label: 'Severity',
         options: taskListSeverityOptions,
-      });
-    }
-
-    if (fieldVis.labels) {
-      definitions.push({
+      },
+      {
         key: 'label',
         label: 'Label',
         options: taskListLabelOptions,
         searchableValues: true,
-      });
-    }
-
-    if (fieldVis.sprint && !sprintId) {
-      definitions.push({
+      },
+      {
         key: 'sprint',
         label: 'Sprint',
         options: taskListSprintOptions.map((sprint) => ({ value: sprint.id, label: sprint.name })),
         searchableValues: true,
-      });
-    }
-
-    return definitions;
+      },
+      {
+        key: 'blocked',
+        label: 'Blocked',
+        options: [
+          { value: 'true', label: 'Blocked' },
+          { value: 'false', label: 'Not blocked' },
+        ],
+      },
+      {
+        key: 'blocking',
+        label: 'Blocking',
+        options: [
+          { value: 'true', label: 'Blocking others' },
+          { value: 'false', label: 'Not blocking others' },
+        ],
+      },
+    ];
   }, [
-    fieldVis.labels,
-    fieldVis.priority,
-    fieldVis.severity,
-    fieldVis.sprint,
-    fieldVis.task_type,
-    sprintId,
     taskListLabelOptions,
     taskListOwnerOptions,
     taskListPriorityOptions,
+    taskListRequesterOptions,
     taskListSeverityOptions,
     taskListSprintOptions,
     taskListStateOptions,
@@ -849,55 +844,44 @@ export function TaskListView({
   const localTaskFilterValues = useMemo<LocalTaskFilterValues>(
     () => ({
       owner: ownerFilter,
+      requester: requesterFilter,
       state: stateFilter,
       task_type: typeFilter,
       priority: priorityFilter,
       severity: severityFilter,
       label: labelFilter,
       sprint: sprintFilter,
+      blocked: blockedFilter,
+      blocking: blockingFilter,
     }),
-    [labelFilter, ownerFilter, priorityFilter, severityFilter, sprintFilter, stateFilter, typeFilter],
+    [blockedFilter, blockingFilter, labelFilter, ownerFilter, priorityFilter, requesterFilter, severityFilter, sprintFilter, stateFilter, typeFilter],
   );
 
   const handleLocalTaskFilterChange = useCallback((key: LocalTaskFilterKey, value: string) => {
     if (key === 'owner') setOwnerFilter(value);
+    if (key === 'requester') setRequesterFilter(value);
     if (key === 'state') setStateFilter(value);
     if (key === 'task_type') setTypeFilter(value);
     if (key === 'priority') setPriorityFilter(value);
     if (key === 'severity') setSeverityFilter(value);
     if (key === 'label') setLabelFilter(value);
     if (key === 'sprint') setSprintFilter(value);
+    if (key === 'blocked') setBlockedFilter(value);
+    if (key === 'blocking') setBlockingFilter(value);
   }, []);
-
-  useEffect(() => {
-    if (!fieldVis.task_type && typeFilter !== TASK_LIST_FILTER_ALL) setTypeFilter(TASK_LIST_FILTER_ALL);
-    if (!fieldVis.priority && priorityFilter !== TASK_LIST_FILTER_ALL) setPriorityFilter(TASK_LIST_FILTER_ALL);
-    if (!fieldVis.severity && severityFilter !== TASK_LIST_FILTER_ALL) setSeverityFilter(TASK_LIST_FILTER_ALL);
-    if (!fieldVis.labels && labelFilter !== TASK_LIST_FILTER_ALL) setLabelFilter(TASK_LIST_FILTER_ALL);
-    if ((!fieldVis.sprint || sprintId) && sprintFilter !== TASK_LIST_FILTER_ALL) setSprintFilter(TASK_LIST_FILTER_ALL);
-  }, [
-    fieldVis.labels,
-    fieldVis.priority,
-    fieldVis.severity,
-    fieldVis.sprint,
-    fieldVis.task_type,
-    labelFilter,
-    priorityFilter,
-    severityFilter,
-    sprintFilter,
-    sprintId,
-    typeFilter,
-  ]);
 
   const hasLocalTaskFilters =
     taskSearchQuery.trim() !== '' ||
     ownerFilter !== TASK_LIST_FILTER_ALL ||
+    requesterFilter !== TASK_LIST_FILTER_ALL ||
     stateFilter !== TASK_LIST_FILTER_ALL ||
     typeFilter !== TASK_LIST_FILTER_ALL ||
     priorityFilter !== TASK_LIST_FILTER_ALL ||
     severityFilter !== TASK_LIST_FILTER_ALL ||
     labelFilter !== TASK_LIST_FILTER_ALL ||
-    sprintFilter !== TASK_LIST_FILTER_ALL;
+    sprintFilter !== TASK_LIST_FILTER_ALL ||
+    blockedFilter !== TASK_LIST_FILTER_ALL ||
+    blockingFilter !== TASK_LIST_FILTER_ALL;
 
   const filteredTasks = useMemo(() => {
     if (!showLocalTaskControls || !hasLocalTaskFilters) return tasks;
@@ -905,12 +889,15 @@ export function TaskListView({
     const query = taskSearchQuery.trim().toLowerCase();
     return tasks.filter((task) => {
       if (ownerFilter !== TASK_LIST_FILTER_ALL && !(task.owner_member_ids ?? []).includes(ownerFilter)) return false;
+      if (requesterFilter !== TASK_LIST_FILTER_ALL && task.requester_member_id !== requesterFilter) return false;
       if (stateFilter !== TASK_LIST_FILTER_ALL && task.workflow_state_id !== stateFilter) return false;
       if (typeFilter !== TASK_LIST_FILTER_ALL && task.task_type !== typeFilter) return false;
       if (priorityFilter !== TASK_LIST_FILTER_ALL && task.priority !== priorityFilter) return false;
       if (severityFilter !== TASK_LIST_FILTER_ALL && task.severity !== severityFilter) return false;
       if (labelFilter !== TASK_LIST_FILTER_ALL && !(task.labels ?? []).some((label) => label.id === labelFilter)) return false;
       if (sprintFilter !== TASK_LIST_FILTER_ALL && task.sprint_id !== sprintFilter) return false;
+      if (blockedFilter !== TASK_LIST_FILTER_ALL && String(task.blocked || task.is_blocked_by_task) !== blockedFilter) return false;
+      if (blockingFilter !== TASK_LIST_FILTER_ALL && String(task.is_blocking_other_task) !== blockingFilter) return false;
 
       if (!query) return true;
 
@@ -932,10 +919,13 @@ export function TaskListView({
     });
   }, [
     hasLocalTaskFilters,
+    blockedFilter,
+    blockingFilter,
     labelFilter,
     ownerFilter,
     ownerNameMap,
     priorityFilter,
+    requesterFilter,
     severityFilter,
     showLocalTaskControls,
     sprintFilter,
@@ -949,12 +939,15 @@ export function TaskListView({
 
   const clearLocalTaskFieldFilters = useCallback(() => {
     setOwnerFilter(TASK_LIST_FILTER_ALL);
+    setRequesterFilter(TASK_LIST_FILTER_ALL);
     setStateFilter(TASK_LIST_FILTER_ALL);
     setTypeFilter(TASK_LIST_FILTER_ALL);
     setPriorityFilter(TASK_LIST_FILTER_ALL);
     setSeverityFilter(TASK_LIST_FILTER_ALL);
     setLabelFilter(TASK_LIST_FILTER_ALL);
     setSprintFilter(TASK_LIST_FILTER_ALL);
+    setBlockedFilter(TASK_LIST_FILTER_ALL);
+    setBlockingFilter(TASK_LIST_FILTER_ALL);
   }, []);
 
   const estimateSettingsByTeamId = useMemo(() => {
