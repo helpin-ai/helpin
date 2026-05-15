@@ -43,6 +43,7 @@ import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIco
 import type {
   AttachmentResponse,
   CreateTaskRequest,
+  GitRepository,
   Label,
   SprintWithStats,
   Priority,
@@ -58,6 +59,7 @@ import { pmLabelService } from "@/lib/services/pmLabelService";
 import { pmTaskService } from "@/lib/services/pmTaskService";
 import { pmTaskTemplateService } from "@/lib/services/pmTaskTemplateService";
 import { pmWorkflowService } from "@/lib/services/pmWorkflowService";
+import { gitService } from "@/lib/services/gitService";
 import type { TaskTemplate } from "@/lib/pmTypes";
 import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
@@ -87,7 +89,9 @@ import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUti
 import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
 import { showEntityCreatedToast } from "@/components/ui/entity-created-toast";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import type { WorkspaceTeam } from "@/lib/types";
+import type { TeamRepoDefault, WorkspaceTeam } from "@/lib/types";
+import { settingsService } from "@/lib/services/settingsService";
+import { normalizeTeamType } from "@/lib/teamPresets";
 import { QuickTooltip } from "@/components/ui/quick-tooltip";
 import { getOptionalSectionActionClass } from "@/components/pm/optionalSectionActionPill";
 import { AgentPickerCard } from "@/components/pm/AgentPickerCard";
@@ -425,6 +429,8 @@ export function CreateTaskModal({
   const [templatesLoaded, setTemplatesLoaded] = useState(false);
   const [templateWorkflow, setTemplateWorkflow] = useState<WorkflowWithStates | null>(null);
   const [taskWorkflowOverride, setTaskWorkflowOverride] = useState<WorkflowWithStates | null>(null);
+  const [repositories, setRepositories] = useState<GitRepository[]>([]);
+  const [teamRepoDefault, setTeamRepoDefault] = useState<TeamRepoDefault | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [assignedAgentId, setAssignedAgentId] = useState<string | undefined>();
   const [templateAttachments, setTemplateAttachments] = useState<AttachmentResponse[]>([]);
@@ -443,6 +449,11 @@ export function CreateTaskModal({
     [assignableMembers],
   );
   const selectedTeam = useMemo(() => teams.find((team) => team.id === form.team_id), [teams, form.team_id]);
+  const showPlanningRepository = !isTemplateMode && normalizeTeamType(selectedTeam?.team_type) === 'engineering';
+  const currentPlanningRepositoryName = useMemo(() => {
+    if (!teamRepoDefault?.repository_id) return 'Not configured';
+    return repositories.find((repo) => repo.id === teamRepoDefault.repository_id)?.full_name ?? 'Repo selected';
+  }, [repositories, teamRepoDefault?.repository_id]);
   const teamSprintsEnabled = selectedTeam?.sprints_enabled !== false;
   const activeWorkflow = isTemplateMode ? templateWorkflow : (taskWorkflowOverride ?? workflow);
   const selectedTeamDefaultTaskType = useMemo(
@@ -460,6 +471,30 @@ export function CreateTaskModal({
       attachmentIds.map((attachmentId) => pmAttachmentService.remove(workspaceId, attachmentId)),
     );
   }, [form.description, workspaceId]);
+
+  useEffect(() => {
+    if (!open || !showPlanningRepository || !form.team_id) {
+      setTeamRepoDefault(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadPlanRepo() {
+      const [repositoriesRes, repoDefaultRes] = await Promise.all([
+        gitService.listRepositories(workspaceId),
+        settingsService.getTeamRepoDefault(workspaceId, form.team_id),
+      ]);
+      if (cancelled) return;
+      setRepositories(repositoriesRes.data ?? []);
+      setTeamRepoDefault(repoDefaultRes.data ?? null);
+    }
+
+    void loadPlanRepo();
+    return () => {
+      cancelled = true;
+    };
+  }, [form.team_id, open, showPlanningRepository, workspaceId]);
 
   useEffect(() => {
     if (!open) return;
@@ -1565,6 +1600,7 @@ export function CreateTaskModal({
                     targetTeamId={form.team_id || null}
                     value={assignedAgentId}
                     onChange={setAssignedAgentId}
+                    hasRepoContext={!showPlanningRepository || Boolean(teamRepoDefault?.repository_id)}
                   />
                 </div>
               )}
@@ -1773,7 +1809,7 @@ export function CreateTaskModal({
                 )}
 
                 {/* ── Planning ── */}
-                {(fieldVis.epic || (fieldVis.sprint && teamSprintsEnabled)) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+                {(fieldVis.epic || (fieldVis.sprint && teamSprintsEnabled) || showPlanningRepository) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Epic */}
                 {fieldVis.epic && (
@@ -1808,6 +1844,25 @@ export function CreateTaskModal({
                     searchPlaceholder="Search sprints..."
                     emptyLabel="No sprints"
                     renderTrigger={() => <span>{currentSprintName}</span>}
+                  />
+                </MetadataRow>
+                )}
+
+                {showPlanningRepository && (
+                <MetadataRow icon={Layers01Icon} label="Plan repo">
+                  <SidebarPopoverSelect
+                    value={teamRepoDefault?.repository_id || "__none__"}
+                    options={[
+                      { value: "__none__", label: "Not configured" },
+                      ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
+                    ]}
+                    onChange={() => undefined}
+                    disabled
+                    renderTrigger={() => (
+                      <span className="block whitespace-normal break-words text-left leading-tight">
+                        {currentPlanningRepositoryName}
+                      </span>
+                    )}
                   />
                 </MetadataRow>
                 )}

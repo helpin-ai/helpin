@@ -27,6 +27,7 @@ import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog';
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
@@ -225,6 +226,10 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     [teams, meta.teamId],
   );
   const showPlanningRepository = normalizeTeamType(selectedTeam?.team_type) === 'engineering';
+  const currentPlanningRepositoryName = useMemo(() => {
+    if (!meta.planningRepositoryId) return 'Not configured';
+    return repositories.find((repo) => repo.id === meta.planningRepositoryId)?.full_name ?? 'Not configured';
+  }, [meta.planningRepositoryId, repositories]);
   const mentionTeams = useMemo(
     () => filterMentionTeams(teams, meta.teamId ? [meta.teamId] : []),
     [teams, meta.teamId],
@@ -596,7 +601,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     targetTeamId={meta.teamId || null}
                     value={assignedAgentId}
                     onChange={setAssignedAgentId}
-                    hasRepoContext={Boolean(meta.planningRepositoryId)}
+                    hasRepoContext={!showPlanningRepository || Boolean(meta.planningRepositoryId)}
                   />
                 </div>
               </div>
@@ -709,20 +714,19 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
                     <Layers01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
                     <span className="text-xs text-muted-foreground self-center">Plan repo</span>
-                    <Select
+                    <SidebarPopoverSelect
                       value={meta.planningRepositoryId || '__none__'}
-                      onValueChange={(v) => setMeta((m) => ({ ...m, planningRepositoryId: v === '__none__' ? '' : v }))}
-                    >
-                      <SelectTrigger className="min-h-8 h-auto border-0 bg-transparent px-1.5 py-1 shadow-none text-xs hover:bg-accent [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:whitespace-normal [&_[data-slot=select-value]]:break-words [&_[data-slot=select-value]]:text-left [&_[data-slot=select-value]]:leading-tight">
-                        <SelectValue placeholder="Not configured" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Not configured</SelectItem>
-                        {repositories.map((repo) => (
-                          <SelectItem key={repo.id} value={repo.id}>{repo.full_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      options={[
+                        { value: '__none__', label: 'Not configured' },
+                        ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
+                      ]}
+                      onChange={(v) => setMeta((m) => ({ ...m, planningRepositoryId: v === '__none__' ? '' : v }))}
+                      renderTrigger={() => (
+                        <span className="block whitespace-normal break-words text-left leading-tight">
+                          {currentPlanningRepositoryName}
+                        </span>
+                      )}
+                    />
                   </>
                 ) : null}
               </div>
