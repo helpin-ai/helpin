@@ -204,7 +204,9 @@ interface TaskListViewProps {
   /** When provided, use these tasks instead of fetching internally. */
   externalTasks?: Task[];
   /** Keeps an external owner of task state in sync with inline table edits. */
-  onExternalTasksChange?: (tasks: Task[]) => void;
+  onExternalTasksChange?: (updater: TaskListTasksUpdater) => void;
+  onInlineUpdateSavingChange?: (saving: boolean) => void;
+  onInlineUpdateError?: (error: string | null) => void;
   onOpenTask: (task: Task) => void;
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
@@ -235,6 +237,16 @@ const TASK_LIST_FILTER_ALL = '__all__';
 
 const columnHelper = createColumnHelper<Task>();
 
+type TaskListTasksUpdater = Task[] | ((tasks: Task[]) => Task[]);
+
+export function applyTaskListInlinePatch(tasks: Task[], taskId: string, patch: Partial<Task>): Task[] {
+  return tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task));
+}
+
+export function mergeTaskListInlineUpdate(tasks: Task[], updatedTask: Task): Task[] {
+  return tasks.map((task) => (task.id === updatedTask.id ? { ...task, ...updatedTask } : task));
+}
+
 export function TaskListView({
   workspaceId,
   workflow,
@@ -249,6 +261,8 @@ export function TaskListView({
   sprintId,
   externalTasks,
   onExternalTasksChange,
+  onInlineUpdateSavingChange,
+  onInlineUpdateError,
   onOpenTask,
   groupBy: controlledGroupBy,
   onGroupByChange,
@@ -321,6 +335,7 @@ export function TaskListView({
   const groupLoadingRef = useRef(false);
   const isPerGroupMode = groupBy === 'workflow_state' && !isExternal;
   const onOpenTaskRef = useRef(onOpenTask);
+  const pendingInlineUpdatesRef = useRef(0);
 
   useEffect(() => {
     onOpenTaskRef.current = onOpenTask;
@@ -329,6 +344,29 @@ export function TaskListView({
   const handleOpenTask = useCallback((task: Task) => {
     onOpenTaskRef.current(task);
   }, []);
+
+  const applyTasksUpdate = useCallback(
+    (updater: TaskListTasksUpdater) => {
+      setTasks(updater);
+      onExternalTasksChange?.(updater);
+    },
+    [onExternalTasksChange],
+  );
+
+  const beginInlineUpdate = useCallback(() => {
+    pendingInlineUpdatesRef.current += 1;
+    if (pendingInlineUpdatesRef.current === 1) {
+      onInlineUpdateSavingChange?.(true);
+    }
+    onInlineUpdateError?.(null);
+  }, [onInlineUpdateError, onInlineUpdateSavingChange]);
+
+  const endInlineUpdate = useCallback(() => {
+    pendingInlineUpdatesRef.current = Math.max(pendingInlineUpdatesRef.current - 1, 0);
+    if (pendingInlineUpdatesRef.current === 0) {
+      onInlineUpdateSavingChange?.(false);
+    }
+  }, [onInlineUpdateSavingChange]);
 
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
@@ -656,37 +694,47 @@ export function TaskListView({
   // Optimistic inline update with rollback on failure
   const updateTaskField = useCallback(
     async (taskId: string, patch: Partial<Task>) => {
-      const snapshot = tasks;
-      const optimisticTasks = tasks.map((s) => (s.id === taskId ? { ...s, ...patch } : s));
-      setTasks(optimisticTasks);
-      onExternalTasksChange?.(optimisticTasks);
+      const previousTask = tasks.find((task) => task.id === taskId) ?? null;
+      applyTasksUpdate((current) => applyTaskListInlinePatch(current, taskId, patch));
       const apiPatch = { ...patch };
       delete apiPatch.epic_name;
       delete apiPatch.labels;
-      const { data, error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
-      if (error) {
-        setTasks(snapshot);
-        onExternalTasksChange?.(snapshot);
-      } else if (data?.task) {
-        const confirmedTasks = optimisticTasks.map((task) => (
-          task.id === taskId ? { ...task, ...data.task } : task
-        ));
-        setTasks(confirmedTasks);
-        onExternalTasksChange?.(confirmedTasks);
-      }
-      if (!error && patch.workflow_state_id !== undefined) {
-        const previousStateId = snapshot.find((task) => task.id === taskId)?.workflow_state_id;
-        if (shouldNotifyAgentAutoRunStateChange({
-          fromStateId: previousStateId,
-          toStateId: patch.workflow_state_id,
-          automatedStateIds,
-        })) {
-          const stateName = workflow.states.find((state) => state.id === patch.workflow_state_id)?.name ?? 'this state';
-          toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(patch.workflow_state_id) });
+      beginInlineUpdate();
+      try {
+        const { data, error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
+        if (error) {
+          if (previousTask) {
+            applyTasksUpdate((current) => mergeTaskListInlineUpdate(current, previousTask));
+          }
+          onInlineUpdateError?.(error);
+        } else if (data?.task) {
+          applyTasksUpdate((current) => mergeTaskListInlineUpdate(current, data.task));
         }
+        if (!error && patch.workflow_state_id !== undefined) {
+          const previousStateId = previousTask?.workflow_state_id;
+          if (shouldNotifyAgentAutoRunStateChange({
+            fromStateId: previousStateId,
+            toStateId: patch.workflow_state_id,
+            automatedStateIds,
+          })) {
+            const stateName = workflow.states.find((state) => state.id === patch.workflow_state_id)?.name ?? 'this state';
+            toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(patch.workflow_state_id) });
+          }
+        }
+      } finally {
+        endInlineUpdate();
       }
     },
-    [workspaceId, automatedStateIds, workflow.states, onExternalTasksChange, tasks],
+    [
+      workspaceId,
+      automatedStateIds,
+      workflow.states,
+      applyTasksUpdate,
+      beginInlineUpdate,
+      endInlineUpdate,
+      onInlineUpdateError,
+      tasks,
+    ],
   );
 
   // Listen for task events (only for self-fetching mode)

@@ -195,6 +195,8 @@ export function EpicDetailPage() {
   const [pendingPatch, setPendingPatch] = useState<UpdateEpicRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [taskTableSaving, setTaskTableSaving] = useState(false);
+  const [taskTableSaveError, setTaskTableSaveError] = useState<string | null>(null);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [createTaskWorkflow, setCreateTaskWorkflow] = useState<WorkflowWithStates | null>(null);
@@ -762,7 +764,7 @@ export function EpicDetailPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-1">
-          <SaveIndicator saving={saving} error={saveError} />
+          <SaveIndicator saving={saving || taskTableSaving} error={saveError || taskTableSaveError} />
           <FollowButton entityType="epic" entityId={epic.epic.id} />
           <Button
             variant="ghost"
@@ -951,10 +953,8 @@ export function EpicDetailPage() {
             )}
           </div>
 
-          <Separator className="my-6" />
-
           {/* Tasks */}
-          <div>
+          <div className="mt-6">
             <TaskDetailSectionHeading
               title={`Tasks (${tasks.length})`}
               icon={CheckListIcon}
@@ -983,6 +983,8 @@ export function EpicDetailPage() {
                   epicId={epicId}
                   externalTasks={tasks}
                   onExternalTasksChange={setTasks}
+                  onInlineUpdateSavingChange={setTaskTableSaving}
+                  onInlineUpdateError={setTaskTableSaveError}
                   onOpenTask={openTask}
                   groupBy={taskListGroupBy}
                   onGroupByChange={setTaskListGroupBy}
@@ -995,10 +997,8 @@ export function EpicDetailPage() {
             )}
           </div>
 
-          <Separator className="my-6" />
-
           {/* AI Planning */}
-          <div>
+          <div className="mt-6">
             <TaskDetailSectionHeading title="AI Agents" icon={BotIcon} />
             <div className="mt-3">
               {workspaceId ? (

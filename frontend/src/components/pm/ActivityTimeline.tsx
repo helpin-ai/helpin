@@ -74,6 +74,22 @@ const ACTION_LABELS: Record<string, string> = {
   health_updated: 'updated health',
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  workflow_state_id: 'state',
+  epic_state_id: 'state',
+  owner_member_id: 'owner',
+  owner_member_ids: 'owners',
+  requester_member_id: 'requester',
+  team_id: 'team',
+  sprint_id: 'sprint',
+  epic_id: 'epic',
+  planned_start_date: 'start date',
+  deadline: 'due date',
+  planning_repository_id: 'planning repository',
+  task_type: 'type',
+  health_comment: 'health comment',
+};
+
 function formatRelativeTime(iso: string) {
   try {
     return formatDistanceToNow(parseISO(iso), { addSuffix: true });
@@ -82,11 +98,24 @@ function formatRelativeTime(iso: string) {
   }
 }
 
-function formatAction(action: string | undefined, entityLabel: string): string {
+function formatFieldLabel(fieldName: string): string {
+  return FIELD_LABELS[fieldName] ?? fieldName.replace(/_id$/, '').replace(/_/g, ' ');
+}
+
+export function formatActivityAction(action: string | undefined, entityLabel: string, fieldName?: string): string {
   if (!action) return '';
   if (action === 'created') return `created this ${entityLabel}`;
   if (action === 'archived') return `archived this ${entityLabel}`;
+  if (action === 'updated') return fieldName ? `updated ${formatFieldLabel(fieldName)}` : `updated this ${entityLabel}`;
+  if (action === 'auto-started by automation') return `started this ${entityLabel}`;
+  if (action === 'auto-completed by automation') return `completed this ${entityLabel}`;
   return ACTION_LABELS[action] ?? action.replace(/_/g, ' ');
+}
+
+export function getActivityActorLabel(action: string | undefined, actor?: ActivityLogEntry['actor']): string {
+  if (actor) return actor.full_name || actor.email;
+  if (action?.includes('by automation')) return 'Automation';
+  return 'System';
 }
 
 function getActivityIcon(action?: string, fieldName?: string): { icon: React.ElementType; color: string } {
@@ -122,7 +151,8 @@ function ActivityTimelineEntry({
   const { activity, actor } = entry;
   const iconConfig = getActivityIcon(activity.action, activity.field_name);
   const ActivityIconEl = iconConfig.icon;
-  const label = formatAction(activity.action, entityLabel);
+  const label = formatActivityAction(activity.action, entityLabel, activity.field_name);
+  const actorLabel = getActivityActorLabel(activity.action, actor);
 
   const stateMatch = activity.action?.match(/moved this (?:task|story|epic) to (.+)/);
   const targetStateName = stateMatch?.[1] ?? null;
@@ -230,7 +260,7 @@ function ActivityTimelineEntry({
       {marker}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium shrink-0">{actor?.full_name || actor?.email || 'System'}</span>
+          <span className="text-xs font-medium shrink-0">{actorLabel}</span>
           {richLabel ?? <span className="text-[11px] text-muted-foreground truncate">{label}</span>}
           <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{formatRelativeTime(activity.created_at)}</span>
         </div>
