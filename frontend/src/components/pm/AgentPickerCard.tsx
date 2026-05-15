@@ -97,33 +97,31 @@ export function AgentPickerCard({
   }, [autoSelectDefault, defaultAgent, disabled, onChange, value]);
 
   return (
-    <section className={cn('rounded-md border border-border/50 bg-muted/20 px-3 py-2.5', className)}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="grid min-w-0 flex-1 grid-cols-[1.5rem_minmax(0,1fr)] gap-x-2">
-          <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[linear-gradient(135deg,hsl(var(--primary)/0.14),hsl(var(--accent)/0.75))] text-primary">
-            <BotIcon className="h-3.5 w-3.5 text-primary" />
-          </span>
+    <section className={cn('py-2', className)}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <BotIcon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <div className="min-w-0">
             <p className="text-sm font-medium leading-tight">Assign agent</p>
+            <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{helper}</p>
           </div>
-          <p className="col-start-2 mt-0.5 text-xs leading-snug text-muted-foreground">{helper}</p>
         </div>
 
-        <div className="flex min-w-0 items-center gap-2 sm:w-[280px] sm:shrink-0">
+        <div className="flex min-w-0 items-center gap-2 sm:w-[260px] sm:shrink-0">
           <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-10 min-w-0 flex-1 justify-start gap-2 px-2"
+                className="h-8 min-w-0 flex-1 justify-start gap-2 px-2 text-xs"
                 disabled={disabled || isLoading}
               >
-                {selectedAgent ? <AgentAvatar agent={selectedAgent} className="h-6 w-6 rounded-lg" /> : null}
+                {selectedAgent ? <AgentAvatar agent={selectedAgent} className="h-5 w-5 rounded-md" /> : null}
                 <span className="min-w-0 flex-1 truncate text-left">
                   {selectedAgent ? formatAgentOptionLabel(selectedAgent) : isLoading ? 'Loading agents...' : 'No agent'}
                 </span>
-                {selectedAgent ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0 text-primary" /> : null}
+                {selectedAgent ? <CheckmarkCircle02Icon className="h-3.5 w-3.5 shrink-0 text-primary" /> : null}
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-72 p-0">
@@ -173,11 +171,11 @@ export function AgentPickerCard({
             <Button
               type="button"
               size="sm"
-              className="h-10 shrink-0"
+              className="h-8 shrink-0 text-xs"
               onClick={onRun}
               disabled={disabled || runDisabled || running || !selectedAgent}
             >
-              {running ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlayIcon className="h-4 w-4" />}
+              {running ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <PlayIcon className="h-3.5 w-3.5" />}
               Run
             </Button>
           ) : null}
