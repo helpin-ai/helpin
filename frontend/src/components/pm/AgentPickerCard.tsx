@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAgents } from '@/hooks/queries/useAgents';
-import { BotIcon, CheckmarkCircle02Icon, Loading01Icon, PlayIcon, StarIcon } from '@/lib/icons';
+import { BotIcon, CheckmarkCircle02Icon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import type { Agent, AgentPresetKey } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
@@ -102,7 +102,6 @@ export function AgentPickerCard({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <span className="relative inline-flex h-6 w-6 items-center justify-center rounded-md bg-[linear-gradient(135deg,hsl(var(--primary)/0.14),hsl(var(--accent)/0.75))] text-primary">
             <BotIcon className="h-3.5 w-3.5 text-primary" />
-            <StarIcon className="absolute -right-1 -top-1 h-3 w-3 fill-current text-primary" />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-medium leading-tight">Assign agent</p>
