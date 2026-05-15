@@ -74,9 +74,14 @@ describe('ExternalLinks', () => {
 
     expect(container?.textContent).toContain('(2)')
     expect(container?.textContent).toContain('Fix task sync')
-    expect(container?.textContent).toContain('github.com')
+    expect(container?.textContent).not.toContain('github.com/helpin-ai/helpin/pull/31')
 
     const row = container?.querySelector('[data-testid="external-link-row"]')
     expect(row?.className).toContain('hover:bg-muted/30')
+    const titleLink = row?.querySelector<HTMLAnchorElement>('a[title="https://github.com/helpin-ai/helpin/pull/31"]')
+    expect(titleLink?.textContent).toBe('Fix task sync')
+    expect(titleLink?.href).toBe('https://github.com/helpin-ai/helpin/pull/31')
+    const newTabLink = row?.querySelector<HTMLAnchorElement>('a[aria-label="Open Fix task sync in a new tab"]')
+    expect(newTabLink?.href).toBe('https://github.com/helpin-ai/helpin/pull/31')
   })
 })

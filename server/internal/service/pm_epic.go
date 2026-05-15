@@ -482,9 +482,9 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	return nil
 }
 
-// ListTasks returns tasks that belong to an epic, with TaskKey populated.
-func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.PMTask, error) {
-	tasks, err := s.epicRepo.ListTasks(ctx, epicID)
+// ListTasks returns tasks that belong to an epic, with TaskKey and table-facing computed fields populated.
+func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.BoardTask, error) {
+	tasks, err := s.epicRepo.ListEnrichedTasks(ctx, epicID)
 	if err != nil {
 		return nil, err
 	}
@@ -497,6 +497,7 @@ func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.P
 	}
 	for i := range tasks {
 		tasks[i].TaskKey = model.FormatTaskKey(ws.WorkspaceKey, tasks[i].DisplayID)
+		tasks[i].PMTask.TaskKey = tasks[i].TaskKey
 	}
 	return tasks, nil
 }

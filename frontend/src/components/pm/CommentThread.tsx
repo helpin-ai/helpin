@@ -950,7 +950,7 @@ export function CommentThread({
       <div
         className={cn(
           'relative min-w-0 flex-1 rounded-lg',
-          comments.length === 0 && hideEmptyState ? 'mt-6' : '',
+          comments.length === 0 && hideEmptyState ? 'mt-1' : '',
           composerDragging ? 'ring-1 ring-primary/50' : '',
           editorClassName,
         )}

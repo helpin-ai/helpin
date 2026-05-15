@@ -1913,7 +1913,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
       {showHeaderActions ? (
         <div
-          className="ui-divider-bottom-fade relative flex items-center gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="relative flex items-center gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           ref={(el) => {
             if (!el) return;
             const update = () => {
@@ -1934,6 +1934,15 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             update();
           }}
         >
+          <div className="relative shrink-0">
+            <Search01Icon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search epics..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-7 w-48 pl-8 text-xs"
+            />
+          </div>
           <EpicFilterTrigger
             definitions={filterDefinitions}
             activeKeys={activeFilterKeys}
@@ -1959,9 +1968,9 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />
             </>
           ) : null}
-          <span className="shrink-0 text-xs text-muted-foreground">Group by:</span>
           <Select value={groupBy} onValueChange={(value) => setGroupBy(value as EpicGroupBy)}>
-            <SelectTrigger className="h-7 w-[160px] shrink-0 text-xs">
+            <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] shrink-0 gap-1 text-xs">
+              <span className="shrink-0 text-muted-foreground">Group by</span>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1986,15 +1995,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
             {sortedEpics.length} {sortedEpics.length === 1 ? 'epic' : 'epics'}
           </span>
           <div className="ml-auto flex shrink-0 items-center gap-2">
-            <div className="relative">
-              <Search01Icon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search epics…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-7 w-48 pl-8 text-xs"
-              />
-            </div>
             <DisplayPropertiesPopover
               allProperties={ALL_PROPERTIES}
               visible={visibleColumns}

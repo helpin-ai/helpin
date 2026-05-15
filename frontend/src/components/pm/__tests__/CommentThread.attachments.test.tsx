@@ -350,13 +350,13 @@ describe('CommentThread attachment uploads', () => {
     expect(pmAttachmentService.remove).not.toHaveBeenCalled()
   })
 
-  it('keeps top spacing above the empty top-level composer when the empty state is hidden', () => {
+  it('keeps compact top spacing above the empty top-level composer when the empty state is hidden', () => {
     const { container } = renderThread({ comments: [], hideEmptyState: true })
 
     const composer = container.querySelector<HTMLElement>('[data-testid="comment-editor"]')
     const composerFrame = composer?.parentElement
 
-    expect(composerFrame?.className).toContain('mt-6')
+    expect(composerFrame?.className).toContain('mt-1')
   })
 
   it('extends the collapse stem up to the parent comment avatar', () => {

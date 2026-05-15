@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
+import { ArrowUpRight01Icon, LinkSquare01Icon, Link01Icon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
@@ -117,19 +117,23 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
                     href={link.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block truncate text-sm font-medium text-foreground transition-colors hover:text-primary"
+                    title={link.url}
+                    className="block truncate text-sm font-medium text-foreground transition-colors hover:text-primary hover:underline"
                   >
                     {link.title || getHostname(link.url)}
                   </a>
+                </div>
+                <QuickTooltip label="Opens in a new tab">
                   <a
                     href={link.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block truncate text-[11px] text-muted-foreground transition-colors hover:text-primary hover:underline"
+                    aria-label={`Open ${link.title || getHostname(link.url)} in a new tab`}
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
                   >
-                    {link.url}
+                    <ArrowUpRight01Icon className="h-3.5 w-3.5" />
                   </a>
-                </div>
+                </QuickTooltip>
                 <QuickTooltip label="Remove link">
                   <button
                     type="button"

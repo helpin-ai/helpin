@@ -117,7 +117,7 @@ func (h *PMEpicHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tasks == nil {
-		tasks = []model.PMTask{}
+		tasks = []model.BoardTask{}
 	}
 	writeJSON(w, http.StatusOK, tasks)
 }
