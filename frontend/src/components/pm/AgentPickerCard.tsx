@@ -109,7 +109,7 @@ export function AgentPickerCard({
   }, [autoSelectDefault, defaultAgent, disabled, onChange, value]);
 
   return (
-    <section className={cn('py-2', className)}>
+    <section className={cn('rounded-lg border border-border/60 bg-background px-3 py-2.5', className)}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-2">
           <BotIcon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -128,7 +128,7 @@ export function AgentPickerCard({
             searchPlaceholder="Search agents..."
             disabled={disabled || isLoading}
             showChevron
-            triggerClassName="h-7 flex-1 justify-start text-xs"
+            triggerClassName="h-9 flex-1 justify-start border border-input bg-background px-2 text-xs hover:bg-accent"
             emptyContent={<div className="px-2 py-3 text-xs text-muted-foreground">No runnable agents found.</div>}
             renderTrigger={() => (
               <>
