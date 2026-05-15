@@ -83,7 +83,7 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-2 py-px ${isDragging ? 'opacity-50' : ''}`}
+      className={`group flex items-center gap-2 py-0.5 ${isDragging ? 'opacity-50' : ''}`}
     >
       <input
         type="checkbox"
@@ -307,9 +307,11 @@ export function ChecklistItems({
     <div className="space-y-2">
       <div className="rounded-lg border border-border/60 bg-card">
         <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
-          <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <div className="flex items-center gap-1.5">
             <CheckmarkSquare02Icon className="h-3.5 w-3.5 text-muted-foreground" />
-            Checklist
+            <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
+              Checklist
+            </span>
             {items.length > 0 ? (
               <span className="text-xs font-normal text-muted-foreground">
                 ({completedCount}/{items.length})
