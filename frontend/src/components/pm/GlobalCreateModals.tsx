@@ -426,12 +426,22 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   content={description}
                   onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
                   placeholder="Add a description (optional)..."
-                  className="border-transparent shadow-none [&_.tiptap]:min-h-[180px]"
+                  className="border-transparent shadow-none [&_.tiptap]:min-h-[220px]"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
+                <div className="mt-3">
+                  <AgentPickerCard
+                    workspaceId={workspaceId}
+                    runnableTarget="epic"
+                    targetTeamId={meta.teamId || null}
+                    value={assignedAgentId}
+                    onChange={setAssignedAgentId}
+                    hasRepoContext={Boolean(meta.planningRepositoryId)}
+                  />
+                </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -715,18 +725,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                     </Select>
                   </>
                 ) : null}
-                <Separator className="col-span-3 my-1" />
-                <div className="col-span-3">
-                  <AgentPickerCard
-                    workspaceId={workspaceId}
-                    runnableTarget="epic"
-                    targetTeamId={meta.teamId || null}
-                    value={assignedAgentId}
-                    onChange={setAssignedAgentId}
-                    hasRepoContext={Boolean(meta.planningRepositoryId)}
-                    autoSelectDefault
-                  />
-                </div>
               </div>
             </aside>
           </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { pickDefaultAgentForTarget } from '../AgentPickerCard';
+import { formatAgentOptionLabel, pickDefaultAgentForTarget } from '../AgentPickerCard';
 import type { Agent } from '@/lib/pmTypes';
 
 const agent = (overrides: Partial<Agent>): Agent => ({
@@ -50,5 +50,15 @@ describe('pickDefaultAgentForTarget', () => {
     );
 
     expect(selected?.id).toBe('scribe');
+  });
+});
+
+describe('formatAgentOptionLabel', () => {
+  it('shows the agent name with the role when the role is available', () => {
+    expect(formatAgentOptionLabel(agent({ name: 'Scribe', role: 'Task Planner' }))).toBe('Scribe - Task Planner');
+  });
+
+  it('falls back to just the agent name without duplicating blank roles', () => {
+    expect(formatAgentOptionLabel(agent({ name: 'Atlas', role: ' ' }))).toBe('Atlas');
   });
 });

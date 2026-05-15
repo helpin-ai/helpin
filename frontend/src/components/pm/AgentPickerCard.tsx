@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAgents } from '@/hooks/queries/useAgents';
-import { BotIcon, Cancel01Icon, CheckmarkCircle02Icon, Loading01Icon, PlayIcon } from '@/lib/icons';
+import { BotIcon, CheckmarkCircle02Icon, Loading01Icon, PlayIcon } from '@/lib/icons';
 import type { Agent, AgentPresetKey } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 
@@ -53,6 +53,15 @@ export function pickDefaultAgentForTarget(agents: Agent[], target: RunnableTarge
   );
 }
 
+export function formatAgentOptionLabel(agent: Agent) {
+  const name = agent.name.trim();
+  const role = agent.role.trim();
+  if (!role || role.toLowerCase() === name.toLowerCase()) {
+    return name;
+  }
+  return `${name} - ${role}`;
+}
+
 export function AgentPickerCard({
   workspaceId,
   value,
@@ -80,8 +89,8 @@ export function AgentPickerCard({
   );
   const selectedAgent = runnableAgents.find((agent) => agent.id === value);
   const helper = hasRepoContext
-    ? 'Agents can use your connected repo to refine and extend this story.'
-    : 'Agents can help refine this story. Connect a repo to give them code context.';
+    ? 'Optionally run an AI agent after creation. Agents can use your connected repo to refine and extend this story.'
+    : 'Optionally run an AI agent after creation. Connect a repo to give agents code context.';
 
   useEffect(() => {
     if (!autoSelectDefault || value || !defaultAgent || disabled) return;
@@ -90,88 +99,90 @@ export function AgentPickerCard({
 
   return (
     <section className={cn('rounded-lg border border-border/70 bg-background p-3 shadow-sm', className)}>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-accent text-muted-foreground">
-            <BotIcon className="h-4 w-4" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[linear-gradient(135deg,hsl(var(--primary)/0.16),hsl(var(--accent)),hsl(var(--primary)/0.08))] text-primary ring-1 ring-primary/15">
+            <BotIcon className="h-4 w-4 text-primary" />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-medium leading-tight">Agent</p>
-            <p className="truncate text-xs text-muted-foreground">{helper}</p>
+            <p className="text-xs leading-snug text-muted-foreground">{helper}</p>
           </div>
         </div>
-        {selectedAgent ? (
-          <button
-            type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-            onClick={() => onChange(undefined)}
-            disabled={disabled}
-            aria-label="Remove agent"
-          >
-            <Cancel01Icon className="h-4 w-4" />
-          </button>
-        ) : null}
-      </div>
 
-      <div className="flex items-center gap-2">
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
+        <div className="flex min-w-0 items-center gap-2 sm:w-[280px] sm:shrink-0">
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10 min-w-0 flex-1 justify-start gap-2 px-2"
+                disabled={disabled || isLoading}
+              >
+                {selectedAgent ? <AgentAvatar agent={selectedAgent} className="h-6 w-6 rounded-lg" /> : null}
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {selectedAgent ? formatAgentOptionLabel(selectedAgent) : isLoading ? 'Loading agents...' : 'No agent'}
+                </span>
+                {selectedAgent ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0 text-primary" /> : null}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 p-0">
+              <Command>
+                <CommandInput placeholder="Search agents..." />
+                <CommandList>
+                  <CommandEmpty>No runnable agents found.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      value="No agent"
+                      onSelect={() => {
+                        onChange(undefined);
+                        setOpen(false);
+                      }}
+                    >
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">-</span>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm">No agent</div>
+                        <div className="truncate text-xs text-muted-foreground">Create manually</div>
+                      </div>
+                    </CommandItem>
+                    {runnableAgents.map((agent) => {
+                      const meta = getAgentPersonaMeta({ agent });
+                      return (
+                        <CommandItem
+                          key={agent.id}
+                          value={`${agent.name} ${agent.preset_key ?? ''}`}
+                          onSelect={() => {
+                            onChange(agent.id);
+                            setOpen(false);
+                          }}
+                        >
+                          <AgentAvatar agent={agent} className="h-7 w-7 rounded-lg" />
+                          <div className="min-w-0">
+                            <div className="truncate text-sm">{formatAgentOptionLabel(agent)}</div>
+                            <div className="truncate text-xs text-muted-foreground">{meta.role}</div>
+                          </div>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          {onRun ? (
             <Button
               type="button"
-              variant="outline"
               size="sm"
-              className="h-10 min-w-0 flex-1 justify-start gap-2 px-2"
-              disabled={disabled || isLoading}
+              className="h-10 shrink-0"
+              onClick={onRun}
+              disabled={disabled || runDisabled || running || !selectedAgent}
             >
-              {selectedAgent ? <AgentAvatar agent={selectedAgent} className="h-6 w-6 rounded-lg" /> : null}
-              <span className="min-w-0 flex-1 truncate text-left">
-                {selectedAgent ? selectedAgent.name : isLoading ? 'Loading agents...' : `Assign ${DEFAULT_NAME[runnableTarget]}`}
-              </span>
-              {selectedAgent ? <CheckmarkCircle02Icon className="h-4 w-4 shrink-0 text-primary" /> : null}
+              {running ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlayIcon className="h-4 w-4" />}
+              Run
             </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-72 p-0">
-            <Command>
-              <CommandInput placeholder="Search agents..." />
-              <CommandList>
-                <CommandEmpty>No runnable agents found.</CommandEmpty>
-                <CommandGroup>
-                  {runnableAgents.map((agent) => {
-                    const meta = getAgentPersonaMeta({ agent });
-                    return (
-                      <CommandItem
-                        key={agent.id}
-                        value={`${agent.name} ${agent.preset_key ?? ''}`}
-                        onSelect={() => {
-                          onChange(agent.id);
-                          setOpen(false);
-                        }}
-                      >
-                        <AgentAvatar agent={agent} className="h-7 w-7 rounded-lg" />
-                        <div className="min-w-0">
-                          <div className="truncate text-sm">{agent.name}</div>
-                          <div className="truncate text-xs text-muted-foreground">{meta.role}</div>
-                        </div>
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-        {onRun ? (
-          <Button
-            type="button"
-            size="sm"
-            className="h-10 shrink-0"
-            onClick={onRun}
-            disabled={disabled || runDisabled || running || !selectedAgent}
-          >
-            {running ? <Loading01Icon className="h-4 w-4 animate-spin" /> : <PlayIcon className="h-4 w-4" />}
-            Run
-          </Button>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </section>
   );

@@ -1191,7 +1191,7 @@ export function CreateTaskModal({
           {/* Two-column grid */}
           <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
             {/* Left column — title + description */}
-            <div className="min-h-0 flex-1 flex flex-col overflow-y-auto px-6 py-3 gap-4">
+            <div className="min-h-0 overflow-y-auto px-6 py-3">
 
               {/* Title */}
               <Input
@@ -1213,9 +1213,9 @@ export function CreateTaskModal({
               />
 
               {/* Description — Tiptap rich text editor */}
-              <div className="relative flex flex-col min-h-0 flex-1">
+              <div className="relative mt-4 min-h-[320px]">
                 {descriptionMode === 'markdown' ? (
-                  <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-transparent bg-input/50">
+                  <div className="flex min-h-[320px] flex-col rounded-2xl border border-transparent bg-input/50">
                     <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
                       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Markdown Source
@@ -1258,7 +1258,7 @@ export function CreateTaskModal({
                       setForm((prev) => ({ ...prev, description: html }))
                     }
                     placeholder="Add a description..."
-                    className="min-h-0 flex-1 flex flex-col"
+                    className="min-h-[320px]"
                     uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                     onUploadStateChange={setDescriptionPendingUploads}
                     teams={mentionTeams}
@@ -1270,8 +1270,20 @@ export function CreateTaskModal({
                 )}
               </div>
 
+              {!isTemplateMode && (
+                <div className="mt-4">
+                  <AgentPickerCard
+                    workspaceId={workspaceId}
+                    runnableTarget="task"
+                    targetTeamId={form.team_id || null}
+                    value={assignedAgentId}
+                    onChange={setAssignedAgentId}
+                  />
+                </div>
+              )}
+
               {/* ── Action bar — toggle pills ─────────────────────── */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
@@ -1344,7 +1356,7 @@ export function CreateTaskModal({
 
               {/* Checklist */}
               {showChecklist && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
+                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <CheckListIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1401,7 +1413,7 @@ export function CreateTaskModal({
 
               {/* External Links */}
               {showExternalLinks && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
+                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1457,7 +1469,7 @@ export function CreateTaskModal({
               )}
 
               {showAttachments && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
+                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1849,21 +1861,6 @@ export function CreateTaskModal({
                   </>
                 )}
 
-                {!isTemplateMode && (
-                  <>
-                    <div className="col-span-3 h-px bg-border/40 my-1" />
-                    <div className="col-span-3">
-                      <AgentPickerCard
-                        workspaceId={workspaceId}
-                        runnableTarget="task"
-                        targetTeamId={form.team_id || null}
-                        value={assignedAgentId}
-                        onChange={setAssignedAgentId}
-                        autoSelectDefault
-                      />
-                    </div>
-                  </>
-                )}
               </div>
             </aside>
           </div>
