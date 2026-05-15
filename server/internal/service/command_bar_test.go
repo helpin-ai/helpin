@@ -2422,6 +2422,9 @@ func setupCommandBarTargetResolutionTest(t *testing.T) (*CommandBarService, *gor
 		source_preset_version_key TEXT,
 		source_template_id TEXT,
 		source_template_key TEXT,
+		template_key TEXT,
+		template_instance_id TEXT,
+		template_version INTEGER,
 		role TEXT,
 		status TEXT NOT NULL DEFAULT 'idle',
 		runtime_kind TEXT NOT NULL DEFAULT 'opencode',
@@ -2445,6 +2448,12 @@ func setupCommandBarTargetResolutionTest(t *testing.T) (*CommandBarService, *gor
 		default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 		created_at DATETIME,
 		updated_at DATETIME
+	)`)
+	mustExec(t, db, `CREATE TABLE agent_team_access (
+		agent_id TEXT NOT NULL,
+		team_id TEXT NOT NULL,
+		created_at DATETIME,
+		PRIMARY KEY (agent_id, team_id)
 	)`)
 
 	agentRepo := repository.NewAgentRepository(db)
