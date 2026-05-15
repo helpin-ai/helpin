@@ -89,6 +89,7 @@ export function AgentPickerCard({
   );
   const selectedAgent = runnableAgents.find((agent) => agent.id === value);
   const helper = 'Use AI agents with business and repo context for coding, planning, marketing, support, and more.';
+  const manualTargetLabel = runnableTarget === 'epic' ? 'Manual epic' : 'Manual task';
 
   useEffect(() => {
     if (!autoSelectDefault || value || !defaultAgent || disabled) return;
@@ -103,7 +104,7 @@ export function AgentPickerCard({
             <BotIcon className="h-4 w-4 text-primary" />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-medium leading-tight">Agent</p>
+            <p className="text-sm font-medium leading-tight">Assign agent</p>
             <p className="text-xs leading-snug text-muted-foreground">{helper}</p>
           </div>
         </div>
@@ -141,7 +142,7 @@ export function AgentPickerCard({
                       <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">-</span>
                       <div className="min-w-0">
                         <div className="truncate text-sm">No agent</div>
-                        <div className="truncate text-xs text-muted-foreground">Create manually</div>
+                        <div className="truncate text-xs text-muted-foreground">{manualTargetLabel}</div>
                       </div>
                     </CommandItem>
                     {runnableAgents.map((agent) => {
