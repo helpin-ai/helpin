@@ -15,7 +15,7 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Cancel01Icon, Copy01Icon, Loading01Icon, Search01Icon } from '@/lib/icons';
+import { ArrowLeft02Icon, Cancel01Icon, Copy01Icon, FilterHorizontalIcon, Loading01Icon, Search01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -23,6 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
@@ -111,6 +112,23 @@ import {
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 const LIST_AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
+const TASK_LIST_FILTER_ALL = '__all__';
+
+type LocalTaskFilterKey = 'owner' | 'state' | 'task_type' | 'priority' | 'severity' | 'label' | 'sprint';
+
+interface LocalTaskFilterOption {
+  value: string;
+  label: string;
+}
+
+interface LocalTaskFilterDefinition {
+  key: LocalTaskFilterKey;
+  label: string;
+  options: LocalTaskFilterOption[];
+  searchableValues?: boolean;
+}
+
+type LocalTaskFilterValues = Record<LocalTaskFilterKey, string>;
 
 function TaskListLatestRunAgentBadge({
   agent,
@@ -233,7 +251,6 @@ const LIST_PAGE_SIZE = 50;
 const GROUP_LOAD_SENTINEL_HEIGHT = 28;
 const GROUPED_OVERSCAN = 4;
 const FLAT_OVERSCAN = 6;
-const TASK_LIST_FILTER_ALL = '__all__';
 
 const columnHelper = createColumnHelper<Task>();
 
@@ -245,6 +262,234 @@ export function applyTaskListInlinePatch(tasks: Task[], taskId: string, patch: P
 
 export function mergeTaskListInlineUpdate(tasks: Task[], updatedTask: Task): Task[] {
   return tasks.map((task) => (task.id === updatedTask.id ? { ...task, ...updatedTask } : task));
+}
+
+function selectedLocalFilterCount(values: LocalTaskFilterValues) {
+  return Object.values(values).filter((value) => value !== TASK_LIST_FILTER_ALL).length;
+}
+
+function selectedLocalFilterLabel(definition: LocalTaskFilterDefinition, value: string) {
+  return definition.options.find((option) => option.value === value)?.label ?? value;
+}
+
+function LocalTaskFilterPill({
+  definition,
+  value,
+  onChange,
+}: {
+  definition: LocalTaskFilterDefinition;
+  value: string;
+  onChange: (key: LocalTaskFilterKey, value: string) => void;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
+      <span className="font-medium text-muted-foreground">{definition.label}</span>
+      <span className="text-muted-foreground/60">is</span>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex max-w-[11rem] items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
+          >
+            <span className="truncate">{selectedLocalFilterLabel(definition, value)}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className={`${definition.searchableValues ? 'w-72' : 'w-52'} p-0`} align="start">
+          <Command>
+            {definition.searchableValues ? (
+              <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
+            ) : null}
+            <CommandList>
+              <CommandEmpty>No results.</CommandEmpty>
+              <CommandGroup>
+                {definition.options.map((option) => {
+                  const isSelected = option.value === value;
+                  return (
+                    <CommandItem
+                      key={option.value}
+                      value={option.label}
+                      onSelect={() => onChange(definition.key, option.value)}
+                    >
+                      <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                        {isSelected ? <TaskListCheckIcon className="h-3 w-3" /> : null}
+                      </div>
+                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      <button
+        type="button"
+        onClick={() => onChange(definition.key, TASK_LIST_FILTER_ALL)}
+        className="ml-0.5 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+        aria-label={`Remove ${definition.label} filter`}
+      >
+        <Cancel01Icon className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+function LocalTaskFilterControls({
+  definitions,
+  values,
+  onChange,
+  onClear,
+}: {
+  definitions: LocalTaskFilterDefinition[];
+  values: LocalTaskFilterValues;
+  onChange: (key: LocalTaskFilterKey, value: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<LocalTaskFilterKey | null>(null);
+  const activeCount = selectedLocalFilterCount(values);
+  const activeKeys = useMemo(
+    () =>
+      new Set(
+        Object.entries(values)
+          .filter(([, value]) => value !== TASK_LIST_FILTER_ALL)
+          .map(([key]) => key as LocalTaskFilterKey),
+      ),
+    [values],
+  );
+  const availableDefinitions = definitions.filter((definition) => !activeKeys.has(definition.key) && definition.options.length > 0);
+  const activeDefinitions = definitions.filter((definition) => activeKeys.has(definition.key));
+  const selectedDefinition = selectedKey
+    ? definitions.find((definition) => definition.key === selectedKey)
+    : undefined;
+  const canChooseFilter = availableDefinitions.length > 0 || Boolean(selectedDefinition);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setSelectedKey(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {canChooseFilter ? (
+        <Popover open={open} onOpenChange={handleOpenChange}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <FilterHorizontalIcon className="h-3.5 w-3.5" />
+                Filters
+              </span>
+              <Badge
+                variant="secondary"
+                className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
+              >
+                {activeCount || 0}
+              </Badge>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            className={`${selectedDefinition ? (selectedDefinition.searchableValues ? 'w-72' : 'w-52') : 'w-48'} p-0`}
+            align="start"
+          >
+            {selectedDefinition ? (
+              <Command>
+                <div className="flex items-center gap-1 border-b border-border/70 px-1.5 py-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    aria-label="Back to filter fields"
+                    onClick={() => setSelectedKey(null)}
+                  >
+                    <ArrowLeft02Icon className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="truncate text-xs font-medium">{selectedDefinition.label}</span>
+                </div>
+                {selectedDefinition.searchableValues ? (
+                  <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} />
+                ) : null}
+                <CommandList>
+                  <CommandEmpty>No results.</CommandEmpty>
+                  <CommandGroup>
+                    {selectedDefinition.options.map((option) => {
+                      const isSelected = values[selectedDefinition.key] === option.value;
+                      return (
+                        <CommandItem
+                          key={option.value}
+                          value={option.label}
+                          onSelect={() => {
+                            onChange(selectedDefinition.key, option.value);
+                            setOpen(false);
+                            setSelectedKey(null);
+                          }}
+                        >
+                          <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                            {isSelected ? <TaskListCheckIcon className="h-3 w-3" /> : null}
+                          </div>
+                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            ) : (
+              <Command>
+                <CommandInput placeholder="Filter by..." />
+                <CommandList>
+                  <CommandEmpty>No filters.</CommandEmpty>
+                  <CommandGroup>
+                    {availableDefinitions.map((definition) => (
+                      <CommandItem
+                        key={definition.key}
+                        value={definition.label}
+                        onSelect={() => setSelectedKey(definition.key)}
+                      >
+                        {definition.label}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            )}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground" disabled>
+          <span className="inline-flex items-center gap-1">
+            <FilterHorizontalIcon className="h-3.5 w-3.5" />
+            Filters
+          </span>
+          <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
+            {activeCount}
+          </Badge>
+        </Button>
+      )}
+
+      {activeDefinitions.map((definition) => (
+        <LocalTaskFilterPill
+          key={definition.key}
+          definition={definition}
+          value={values[definition.key]}
+          onChange={onChange}
+        />
+      ))}
+
+      {activeCount > 0 ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-[10px] text-muted-foreground"
+          onClick={onClear}
+        >
+          Clear all
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 export function TaskListView({
@@ -326,6 +571,9 @@ export function TaskListView({
   const [ownerFilter, setOwnerFilter] = useState(TASK_LIST_FILTER_ALL);
   const [stateFilter, setStateFilter] = useState(TASK_LIST_FILTER_ALL);
   const [typeFilter, setTypeFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [priorityFilter, setPriorityFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [severityFilter, setSeverityFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [labelFilter, setLabelFilter] = useState(TASK_LIST_FILTER_ALL);
   const [sprintFilter, setSprintFilter] = useState(TASK_LIST_FILTER_ALL);
   const { data: agents = [] } = useAgents(workspaceId);
 
@@ -491,6 +739,31 @@ export function TaskListView({
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [tasks]);
 
+  const taskListPriorityOptions = useMemo(() => {
+    const priorities = new Set(tasks.map((task) => task.priority).filter(Boolean) as Priority[]);
+    return ALL_PRIORITIES
+      .filter((priority) => priorities.has(priority))
+      .map((priority) => ({ value: priority, label: PRIORITY_CONFIG[priority].label }));
+  }, [tasks]);
+
+  const taskListSeverityOptions = useMemo(() => {
+    const severities = new Set(tasks.map((task) => task.severity).filter(Boolean) as Severity[]);
+    return ALL_SEVERITIES
+      .filter((severity) => severities.has(severity))
+      .map((severity) => ({ value: severity, label: SEVERITY_CONFIG[severity].label }));
+  }, [tasks]);
+
+  const taskListLabelOptions = useMemo(() => {
+    const labelMap = new Map<string, string>();
+    for (const task of tasks) {
+      for (const label of task.labels ?? []) {
+        labelMap.set(label.id, label.name);
+      }
+    }
+    return Array.from(labelMap, ([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [tasks]);
+
   const taskListSprintOptions = useMemo(() => {
     const sprintIds = new Set(tasks.map((task) => task.sprint_id).filter(Boolean) as string[]);
     return Array.from(sprintIds)
@@ -498,11 +771,132 @@ export function TaskListView({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [sprintMap, tasks]);
 
+  const localTaskFilterDefinitions = useMemo<LocalTaskFilterDefinition[]>(() => {
+    const definitions: LocalTaskFilterDefinition[] = [
+      {
+        key: 'owner',
+        label: 'Owner',
+        options: taskListOwnerOptions.map((owner) => ({ value: owner.id, label: owner.name })),
+        searchableValues: true,
+      },
+      {
+        key: 'state',
+        label: 'State',
+        options: taskListStateOptions.map((state) => ({ value: state.id, label: state.name })),
+        searchableValues: true,
+      },
+    ];
+
+    if (fieldVis.task_type) {
+      definitions.push({
+        key: 'task_type',
+        label: 'Type',
+        options: taskListTypeOptions,
+      });
+    }
+
+    if (fieldVis.priority) {
+      definitions.push({
+        key: 'priority',
+        label: 'Priority',
+        options: taskListPriorityOptions,
+      });
+    }
+
+    if (fieldVis.severity) {
+      definitions.push({
+        key: 'severity',
+        label: 'Severity',
+        options: taskListSeverityOptions,
+      });
+    }
+
+    if (fieldVis.labels) {
+      definitions.push({
+        key: 'label',
+        label: 'Label',
+        options: taskListLabelOptions,
+        searchableValues: true,
+      });
+    }
+
+    if (fieldVis.sprint && !sprintId) {
+      definitions.push({
+        key: 'sprint',
+        label: 'Sprint',
+        options: taskListSprintOptions.map((sprint) => ({ value: sprint.id, label: sprint.name })),
+        searchableValues: true,
+      });
+    }
+
+    return definitions;
+  }, [
+    fieldVis.labels,
+    fieldVis.priority,
+    fieldVis.severity,
+    fieldVis.sprint,
+    fieldVis.task_type,
+    sprintId,
+    taskListLabelOptions,
+    taskListOwnerOptions,
+    taskListPriorityOptions,
+    taskListSeverityOptions,
+    taskListSprintOptions,
+    taskListStateOptions,
+    taskListTypeOptions,
+  ]);
+
+  const localTaskFilterValues = useMemo<LocalTaskFilterValues>(
+    () => ({
+      owner: ownerFilter,
+      state: stateFilter,
+      task_type: typeFilter,
+      priority: priorityFilter,
+      severity: severityFilter,
+      label: labelFilter,
+      sprint: sprintFilter,
+    }),
+    [labelFilter, ownerFilter, priorityFilter, severityFilter, sprintFilter, stateFilter, typeFilter],
+  );
+
+  const handleLocalTaskFilterChange = useCallback((key: LocalTaskFilterKey, value: string) => {
+    if (key === 'owner') setOwnerFilter(value);
+    if (key === 'state') setStateFilter(value);
+    if (key === 'task_type') setTypeFilter(value);
+    if (key === 'priority') setPriorityFilter(value);
+    if (key === 'severity') setSeverityFilter(value);
+    if (key === 'label') setLabelFilter(value);
+    if (key === 'sprint') setSprintFilter(value);
+  }, []);
+
+  useEffect(() => {
+    if (!fieldVis.task_type && typeFilter !== TASK_LIST_FILTER_ALL) setTypeFilter(TASK_LIST_FILTER_ALL);
+    if (!fieldVis.priority && priorityFilter !== TASK_LIST_FILTER_ALL) setPriorityFilter(TASK_LIST_FILTER_ALL);
+    if (!fieldVis.severity && severityFilter !== TASK_LIST_FILTER_ALL) setSeverityFilter(TASK_LIST_FILTER_ALL);
+    if (!fieldVis.labels && labelFilter !== TASK_LIST_FILTER_ALL) setLabelFilter(TASK_LIST_FILTER_ALL);
+    if ((!fieldVis.sprint || sprintId) && sprintFilter !== TASK_LIST_FILTER_ALL) setSprintFilter(TASK_LIST_FILTER_ALL);
+  }, [
+    fieldVis.labels,
+    fieldVis.priority,
+    fieldVis.severity,
+    fieldVis.sprint,
+    fieldVis.task_type,
+    labelFilter,
+    priorityFilter,
+    severityFilter,
+    sprintFilter,
+    sprintId,
+    typeFilter,
+  ]);
+
   const hasLocalTaskFilters =
     taskSearchQuery.trim() !== '' ||
     ownerFilter !== TASK_LIST_FILTER_ALL ||
     stateFilter !== TASK_LIST_FILTER_ALL ||
     typeFilter !== TASK_LIST_FILTER_ALL ||
+    priorityFilter !== TASK_LIST_FILTER_ALL ||
+    severityFilter !== TASK_LIST_FILTER_ALL ||
+    labelFilter !== TASK_LIST_FILTER_ALL ||
     sprintFilter !== TASK_LIST_FILTER_ALL;
 
   const filteredTasks = useMemo(() => {
@@ -513,6 +907,9 @@ export function TaskListView({
       if (ownerFilter !== TASK_LIST_FILTER_ALL && !(task.owner_member_ids ?? []).includes(ownerFilter)) return false;
       if (stateFilter !== TASK_LIST_FILTER_ALL && task.workflow_state_id !== stateFilter) return false;
       if (typeFilter !== TASK_LIST_FILTER_ALL && task.task_type !== typeFilter) return false;
+      if (priorityFilter !== TASK_LIST_FILTER_ALL && task.priority !== priorityFilter) return false;
+      if (severityFilter !== TASK_LIST_FILTER_ALL && task.severity !== severityFilter) return false;
+      if (labelFilter !== TASK_LIST_FILTER_ALL && !(task.labels ?? []).some((label) => label.id === labelFilter)) return false;
       if (sprintFilter !== TASK_LIST_FILTER_ALL && task.sprint_id !== sprintFilter) return false;
 
       if (!query) return true;
@@ -535,8 +932,11 @@ export function TaskListView({
     });
   }, [
     hasLocalTaskFilters,
+    labelFilter,
     ownerFilter,
     ownerNameMap,
+    priorityFilter,
+    severityFilter,
     showLocalTaskControls,
     sprintFilter,
     sprintMap,
@@ -547,11 +947,13 @@ export function TaskListView({
     typeFilter,
   ]);
 
-  const clearLocalTaskFilters = useCallback(() => {
-    setTaskSearchQuery('');
+  const clearLocalTaskFieldFilters = useCallback(() => {
     setOwnerFilter(TASK_LIST_FILTER_ALL);
     setStateFilter(TASK_LIST_FILTER_ALL);
     setTypeFilter(TASK_LIST_FILTER_ALL);
+    setPriorityFilter(TASK_LIST_FILTER_ALL);
+    setSeverityFilter(TASK_LIST_FILTER_ALL);
+    setLabelFilter(TASK_LIST_FILTER_ALL);
     setSprintFilter(TASK_LIST_FILTER_ALL);
   }, []);
 
@@ -1378,71 +1780,12 @@ export function TaskListView({
 
           <div className="flex flex-wrap items-center gap-2">
             {showLocalTaskControls ? (
-              <>
-                <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-                  <SelectTrigger className="h-7 w-auto min-w-[124px] max-w-[180px] gap-1 text-xs">
-                    <span className="shrink-0 text-muted-foreground">Owner</span>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={TASK_LIST_FILTER_ALL}>All</SelectItem>
-                    {taskListOwnerOptions.map((owner) => (
-                      <SelectItem key={owner.id} value={owner.id}>
-                        {owner.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={stateFilter} onValueChange={setStateFilter}>
-                  <SelectTrigger className="h-7 w-auto min-w-[124px] max-w-[180px] gap-1 text-xs">
-                    <span className="shrink-0 text-muted-foreground">State</span>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={TASK_LIST_FILTER_ALL}>All</SelectItem>
-                    {taskListStateOptions.map((state) => (
-                      <SelectItem key={state.id} value={state.id}>
-                        {state.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {fieldVis.task_type ? (
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger className="h-7 w-auto min-w-[116px] max-w-[170px] gap-1 text-xs">
-                      <span className="shrink-0 text-muted-foreground">Type</span>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={TASK_LIST_FILTER_ALL}>All</SelectItem>
-                      {taskListTypeOptions.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : null}
-
-                {fieldVis.sprint && !sprintId ? (
-                  <Select value={sprintFilter} onValueChange={setSprintFilter}>
-                    <SelectTrigger className="h-7 w-auto min-w-[124px] max-w-[190px] gap-1 text-xs">
-                      <span className="shrink-0 text-muted-foreground">Sprint</span>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={TASK_LIST_FILTER_ALL}>All</SelectItem>
-                      {taskListSprintOptions.map((sprint) => (
-                        <SelectItem key={sprint.id} value={sprint.id}>
-                          {sprint.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : null}
-              </>
+              <LocalTaskFilterControls
+                definitions={localTaskFilterDefinitions}
+                values={localTaskFilterValues}
+                onChange={handleLocalTaskFilterChange}
+                onClear={clearLocalTaskFieldFilters}
+              />
             ) : null}
 
             <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
@@ -1459,17 +1802,6 @@ export function TaskListView({
               </SelectContent>
             </Select>
 
-            {showLocalTaskControls && hasLocalTaskFilters ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={clearLocalTaskFilters}
-              >
-                Clear
-              </Button>
-            ) : null}
           </div>
         </div>
       ) : null}
