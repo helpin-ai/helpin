@@ -645,6 +645,21 @@ func listTasksSchema() map[string]any {
 				"type":        "string",
 				"description": "Optional team ID filter.",
 			},
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "Optional task ID. Omit to use the current task target when available.",
+			},
+			"owner_member_ids": map[string]any{
+				"type":        "array",
+				"description": "Optional workspace member IDs. When present, only tasks owned by at least one of these members are returned.",
+				"items": map[string]any{
+					"type": "string",
+				},
+			},
+			"owned_by_actor": map[string]any{
+				"type":        "boolean",
+				"description": "When true, filter to tasks owned by the current workspace actor.",
+			},
 			"open_only": map[string]any{
 				"type":        "boolean",
 				"description": "When true, only return non-completed, non-archived tasks.",

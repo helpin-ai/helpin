@@ -219,6 +219,305 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "docs.list_documents",
+		Module:               "docs",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "document", "epic", "task", "story", "crm_deal"},
+		Tool: &commandtools.RuntimeToolMetadata{
+			CommandName: "docs.list_documents",
+			Alias:       "list_documents",
+			Category:    "Docs",
+			Description: "List Helpin Docs documents in the current workspace. Use status=draft for questions about documents that need to be published.",
+			InputSchema: internalListDocumentsSchema(),
+		},
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.docsDocumentService == nil {
+				return nil, fmt.Errorf("docs document service is not available")
+			}
+			var req struct {
+				SpaceID         string `json:"space_id"`
+				CollectionID    string `json:"collection_id"`
+				TeamID          string `json:"team_id"`
+				Status          string `json:"status"`
+				IncludeArchived bool   `json:"include_archived"`
+				Limit           int    `json:"limit"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse list documents input: %w", err)
+				}
+			}
+			status := strings.TrimSpace(req.Status)
+			switch status {
+			case "", model.DocStatusDraft, model.DocStatusPublished, model.DocStatusArchived:
+			default:
+				return nil, fmt.Errorf("status must be draft, published, or archived")
+			}
+			limit := req.Limit
+			if limit <= 0 {
+				limit = 50
+			}
+			if limit > 100 {
+				limit = 100
+			}
+			docs, err := s.docsDocumentService.List(
+				ctx,
+				meta.WorkspaceID,
+				stringPtrIfNotEmpty(strings.TrimSpace(req.SpaceID)),
+				stringPtrIfNotEmpty(strings.TrimSpace(req.CollectionID)),
+				stringPtrIfNotEmpty(status),
+				stringPtrIfNotEmpty(strings.TrimSpace(req.TeamID)),
+				fallbackActor(meta),
+				strings.TrimSpace(meta.ActorRole),
+				req.IncludeArchived,
+			)
+			if err != nil {
+				return nil, err
+			}
+			counts := map[string]int{
+				model.DocStatusDraft:     0,
+				model.DocStatusPublished: 0,
+				model.DocStatusArchived:  0,
+			}
+			for _, doc := range docs {
+				counts[doc.Status]++
+			}
+			results := make([]map[string]any, 0, min(len(docs), limit))
+			for i, doc := range docs {
+				if i >= limit {
+					break
+				}
+				item := map[string]any{
+					"document_id":      doc.ID,
+					"title":            doc.Title,
+					"status":           doc.Status,
+					"space_id":         doc.SpaceID,
+					"updated_at":       doc.UpdatedAt,
+					"is_pinned":        doc.IsPinned,
+					"requires_publish": doc.Status == model.DocStatusDraft,
+				}
+				if doc.CollectionID != nil && strings.TrimSpace(*doc.CollectionID) != "" {
+					item["collection_id"] = strings.TrimSpace(*doc.CollectionID)
+				}
+				if doc.TeamID != nil && strings.TrimSpace(*doc.TeamID) != "" {
+					item["team_id"] = strings.TrimSpace(*doc.TeamID)
+				}
+				if doc.OwnerID != nil && strings.TrimSpace(*doc.OwnerID) != "" {
+					item["owner_id"] = strings.TrimSpace(*doc.OwnerID)
+				}
+				if doc.PublishedAt != nil {
+					item["published_at"] = doc.PublishedAt
+				}
+				if doc.NextReviewAt != nil {
+					item["next_review_at"] = doc.NextReviewAt
+				}
+				if doc.Excerpt != nil && strings.TrimSpace(*doc.Excerpt) != "" {
+					item["excerpt"] = truncateCommandBarText(strings.TrimSpace(*doc.Excerpt), 240)
+				}
+				results = append(results, item)
+			}
+			return mustJSON(map[string]any{
+				"documents":        results,
+				"total":            len(docs),
+				"returned":         len(results),
+				"counts_by_status": counts,
+				"filters": map[string]any{
+					"space_id":         strings.TrimSpace(req.SpaceID),
+					"collection_id":    strings.TrimSpace(req.CollectionID),
+					"team_id":          strings.TrimSpace(req.TeamID),
+					"status":           status,
+					"include_archived": req.IncludeArchived,
+					"limit":            limit,
+				},
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "docs.read_document",
+		Module:               "docs",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "story", "crm_deal"},
+		Tool:                 internalReadDocumentToolMetadata(),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.docsDocumentService == nil {
+				return nil, fmt.Errorf("docs document service is not available")
+			}
+			var req struct {
+				DocumentID string `json:"document_id"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse read document input: %w", err)
+				}
+			}
+			documentID := firstNonEmptyCommand(req.DocumentID, currentDocumentTargetID(meta))
+			if documentID == "" {
+				return nil, fmt.Errorf("document_id is required")
+			}
+			doc, err := s.docsDocumentService.Get(ctx, documentID)
+			if err != nil {
+				return nil, err
+			}
+			if doc == nil || doc.WorkspaceID != meta.WorkspaceID {
+				return nil, fmt.Errorf("document not found")
+			}
+			out := map[string]any{
+				"id":     doc.ID,
+				"title":  doc.Title,
+				"status": doc.Status,
+			}
+			if doc.TeamID != nil && strings.TrimSpace(*doc.TeamID) != "" {
+				out["team_id"] = strings.TrimSpace(*doc.TeamID)
+			}
+			if s.docsContentService != nil {
+				if content, err := s.docsContentService.Get(ctx, documentID); err == nil && content != nil {
+					text, truncated := truncateCommandBarTextWithFlag(content.ContentText, 2400)
+					out["content_text"] = text
+					out["content_text_runes"] = len([]rune(strings.TrimSpace(content.ContentText)))
+					out["content_text_truncated"] = truncated
+				}
+			}
+			if s.docsBlockService != nil {
+				if blocks, err := s.docsBlockService.List(ctx, meta.WorkspaceID, documentID); err == nil {
+					out["blocks_total"] = len(blocks)
+					page := blocks
+					if len(page) > 40 {
+						out["blocks_next_offset"] = 40
+						page = page[:40]
+					}
+					out["blocks"] = internalCompactDocumentBlocks(page)
+				}
+			}
+			return mustJSON(out), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
+		Name:                 "docs.get_document_blocks",
+		Module:               "docs",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"document", "workspace", "epic", "task", "story", "crm_deal"},
+		Tool:                 internalGetDocumentBlocksToolMetadata(),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.docsBlockService == nil {
+				return nil, fmt.Errorf("docs block service is not available")
+			}
+			var req struct {
+				DocumentID    string   `json:"document_id"`
+				BlockIDs      []string `json:"block_ids"`
+				Include       bool     `json:"include_content"`
+				Offset        int      `json:"offset"`
+				Limit         int      `json:"limit"`
+				AnchorBlockID string   `json:"anchor_block_id"`
+				Around        int      `json:"around"`
+			}
+			if len(input) > 0 {
+				if err := json.Unmarshal(input, &req); err != nil {
+					return nil, fmt.Errorf("parse get document blocks input: %w", err)
+				}
+			}
+			documentID := firstNonEmptyCommand(req.DocumentID, currentDocumentTargetID(meta))
+			if documentID == "" {
+				return nil, fmt.Errorf("document_id is required")
+			}
+			blocks, err := s.docsBlockService.List(ctx, meta.WorkspaceID, documentID)
+			if err != nil {
+				return nil, err
+			}
+			filtered := blocks
+			offset := 0
+			limit := 40
+			if len(req.BlockIDs) > 0 {
+				requested := make(map[string]struct{}, len(req.BlockIDs))
+				for _, id := range req.BlockIDs {
+					id = strings.TrimSpace(id)
+					if id != "" {
+						requested[id] = struct{}{}
+					}
+				}
+				filtered = make([]model.DocsBlock, 0, len(requested))
+				found := make(map[string]struct{}, len(requested))
+				for _, block := range blocks {
+					if _, ok := requested[block.ID]; ok {
+						filtered = append(filtered, block)
+						found[block.ID] = struct{}{}
+					}
+				}
+				for id := range requested {
+					if _, ok := found[id]; !ok {
+						return nil, fmt.Errorf("block %s not found", id)
+					}
+				}
+				limit = len(filtered)
+			} else if strings.TrimSpace(req.AnchorBlockID) != "" {
+				anchorID := strings.TrimSpace(req.AnchorBlockID)
+				anchorIndex := -1
+				for i, block := range blocks {
+					if block.ID == anchorID {
+						anchorIndex = i
+						break
+					}
+				}
+				if anchorIndex < 0 {
+					return nil, fmt.Errorf("anchor block %s not found", anchorID)
+				}
+				around := req.Around
+				if around <= 0 {
+					around = 5
+				}
+				if around > 25 {
+					around = 25
+				}
+				start := anchorIndex - around
+				if start < 0 {
+					start = 0
+				}
+				end := anchorIndex + around + 1
+				if end > len(blocks) {
+					end = len(blocks)
+				}
+				filtered = blocks[start:end]
+				offset = start
+				limit = end - start
+			} else {
+				if req.Offset < 0 {
+					return nil, fmt.Errorf("offset must be >= 0")
+				}
+				if req.Limit > 0 {
+					limit = req.Limit
+				}
+				if limit > 100 {
+					limit = 100
+				}
+				offset = req.Offset
+				if offset >= len(blocks) {
+					filtered = nil
+				} else {
+					end := offset + limit
+					if end > len(blocks) {
+						end = len(blocks)
+					}
+					filtered = blocks[offset:end]
+				}
+			}
+			if req.Include && len(filtered) > 20 {
+				return nil, fmt.Errorf("include_content is limited to 20 blocks; provide block_ids or a smaller limit/window")
+			}
+			nextOffset := (*int)(nil)
+			if offset+len(filtered) < len(blocks) {
+				next := offset + len(filtered)
+				nextOffset = &next
+			}
+			return mustJSON(map[string]any{
+				"document_id": documentID,
+				"total":       len(blocks),
+				"offset":      offset,
+				"limit":       limit,
+				"next_offset": nextOffset,
+				"blocks":      internalDetailedDocumentBlocks(filtered, req.Include),
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "docs.ensure_spec_doc",
 		Module:               "docs",
 		Mutating:             true,
@@ -540,13 +839,16 @@ func (s *InternalCommandService) registerDefaults() {
 				return nil, fmt.Errorf("task service is not configured")
 			}
 			var req struct {
-				LabelID             string `json:"label_id"`
-				TeamID              string `json:"team_id"`
-				OpenOnly            bool   `json:"open_only"`
-				IncludeDescriptions bool   `json:"include_descriptions"`
-				IncludeComments     bool   `json:"include_comments"`
-				Limit               int    `json:"limit"`
-				DetailLevel         string `json:"detail_level"`
+				LabelID             string   `json:"label_id"`
+				TeamID              string   `json:"team_id"`
+				TaskID              string   `json:"task_id"`
+				OwnerMemberIDs      []string `json:"owner_member_ids"`
+				OwnedByActor        bool     `json:"owned_by_actor"`
+				OpenOnly            bool     `json:"open_only"`
+				IncludeDescriptions bool     `json:"include_descriptions"`
+				IncludeComments     bool     `json:"include_comments"`
+				Limit               int      `json:"limit"`
+				DetailLevel         string   `json:"detail_level"`
 			}
 			if len(input) > 0 {
 				if err := json.Unmarshal(input, &req); err != nil {
@@ -557,6 +859,25 @@ func (s *InternalCommandService) registerDefaults() {
 			if req.DetailLevel != "" && req.DetailLevel != "summary" && req.DetailLevel != "compact" && req.DetailLevel != "full" {
 				return nil, fmt.Errorf("detail_level must be summary, compact, or full")
 			}
+			req.TaskID = strings.TrimSpace(firstNonEmptyCommand(req.TaskID, commandTaskTargetID(meta)))
+			if req.TaskID != "" {
+				return s.listSingleTaskCommand(ctx, meta, req.TaskID, req.OpenOnly, req.IncludeDescriptions)
+			}
+			req.OwnerMemberIDs = commandTrimStringSlice(req.OwnerMemberIDs)
+			if req.OwnedByActor {
+				if s.taskService.workspaceRepo == nil {
+					return nil, fmt.Errorf("owned_by_actor requires workspace membership lookup")
+				}
+				member, err := s.taskService.workspaceRepo.GetMembership(ctx, meta.WorkspaceID, meta.ActorID)
+				if err != nil {
+					return nil, err
+				}
+				if member == nil {
+					return nil, fmt.Errorf("owned_by_actor requires an active workspace member actor")
+				}
+				req.OwnerMemberIDs = append(req.OwnerMemberIDs, member.ID)
+				req.OwnerMemberIDs = commandTrimStringSlice(req.OwnerMemberIDs)
+			}
 			limit := req.Limit
 			if limit <= 0 {
 				limit = 50
@@ -566,9 +887,10 @@ func (s *InternalCommandService) registerDefaults() {
 			}
 			archived := false
 			filters := model.PMTaskFilters{
-				LabelID:  stringPtrOrNil(req.LabelID),
-				TeamID:   stringPtrOrNil(req.TeamID),
-				Archived: &archived,
+				LabelID:        stringPtrOrNil(req.LabelID),
+				TeamID:         stringPtrOrNil(req.TeamID),
+				OwnerMemberIDs: req.OwnerMemberIDs,
+				Archived:       &archived,
 			}
 			if req.OpenOnly {
 				completed := false
@@ -1256,6 +1578,141 @@ func fallbackActor(meta model.InternalCommandContext) string {
 	return ""
 }
 
+func currentDocumentTargetID(meta model.InternalCommandContext) string {
+	if strings.TrimSpace(meta.TargetType) == "document" {
+		return strings.TrimSpace(meta.TargetID)
+	}
+	return ""
+}
+
+func internalCompactDocumentBlocks(blocks []model.DocsBlock) []map[string]any {
+	out := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		out = append(out, map[string]any{
+			"id":           block.ID,
+			"type":         block.Type,
+			"revision":     block.Revision,
+			"content_text": truncateCommandBarText(block.ContentText, 140),
+		})
+	}
+	return out
+}
+
+func internalDetailedDocumentBlocks(blocks []model.DocsBlock, includeContent bool) []map[string]any {
+	out := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		item := map[string]any{
+			"id":           block.ID,
+			"type":         block.Type,
+			"revision":     block.Revision,
+			"content_text": truncateCommandBarText(block.ContentText, 140),
+		}
+		if includeContent {
+			item["content_text"] = block.ContentText
+			item["content"] = block.Content
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func internalReadDocumentToolMetadata() *commandtools.RuntimeToolMetadata {
+	return &commandtools.RuntimeToolMetadata{
+		CommandName: "docs.read_document",
+		Alias:       "read_document",
+		Category:    "Docs",
+		Description: "Read a known Helpin Docs document by ID. Returns metadata, a bounded plain-text excerpt, and the first page of compact addressable blocks.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"document_id": map[string]any{
+					"type":        "string",
+					"description": "The document ID to read. Defaults to the current document target when omitted.",
+				},
+			},
+			"additionalProperties": false,
+		},
+	}
+}
+
+func internalGetDocumentBlocksToolMetadata() *commandtools.RuntimeToolMetadata {
+	return &commandtools.RuntimeToolMetadata{
+		CommandName: "docs.get_document_blocks",
+		Alias:       "get_document_blocks",
+		Category:    "Docs",
+		Description: "Fetch addressable blocks for a known Helpin Docs document. Use after read_document when more document context is needed.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"document_id": map[string]any{
+					"type":        "string",
+					"description": "The document ID whose blocks should be fetched. Defaults to the current document target when omitted.",
+				},
+				"block_ids": map[string]any{
+					"type":        "array",
+					"description": "Optional stable block IDs to fetch.",
+					"items":       map[string]any{"type": "string"},
+				},
+				"include_content": map[string]any{
+					"type":        "boolean",
+					"description": "When true, include full block node JSON. Limited to 20 blocks per call.",
+				},
+				"offset": map[string]any{
+					"type":        "integer",
+					"description": "Optional zero-based block offset for paging.",
+				},
+				"limit": map[string]any{
+					"type":        "integer",
+					"description": "Optional page size, default 40, max 100.",
+				},
+				"anchor_block_id": map[string]any{
+					"type":        "string",
+					"description": "Optional block ID to center a window around.",
+				},
+				"around": map[string]any{
+					"type":        "integer",
+					"description": "Optional number of sibling blocks before and after anchor_block_id, default 5, max 25.",
+				},
+			},
+			"additionalProperties": false,
+		},
+	}
+}
+
+func internalListDocumentsSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"space_id": map[string]any{
+				"type":        "string",
+				"description": "Optional Docs space ID filter.",
+			},
+			"collection_id": map[string]any{
+				"type":        "string",
+				"description": "Optional collection ID filter.",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Optional team ID filter.",
+			},
+			"status": map[string]any{
+				"type":        "string",
+				"description": "Optional document status filter. Use draft for documents that need publishing.",
+				"enum":        []string{"draft", "published", "archived"},
+			},
+			"include_archived": map[string]any{
+				"type":        "boolean",
+				"description": "When true, include archived documents when status is omitted.",
+			},
+			"limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum documents to return. Defaults to 50, max 100.",
+			},
+		},
+		"additionalProperties": false,
+	}
+}
+
 func mustCommandToolMetadata(commandName string) *commandtools.RuntimeToolMetadata {
 	meta, ok := commandtools.ToolMetadataForCommand(commandName)
 	if !ok {
@@ -1490,6 +1947,59 @@ func compactTaskComments(comments []model.CommentWithAuthor, limit int) []map[st
 		})
 	}
 	return out
+}
+
+func commandTaskTargetID(meta model.InternalCommandContext) string {
+	if normalizeCommandBarTargetType(meta.TargetType) != "task" {
+		return ""
+	}
+	return strings.TrimSpace(meta.TargetID)
+}
+
+func (s *InternalCommandService) listSingleTaskCommand(ctx context.Context, meta model.InternalCommandContext, taskID string, openOnly bool, includeDescription bool) (json.RawMessage, error) {
+	if s.taskService == nil {
+		return nil, fmt.Errorf("task service is not configured")
+	}
+	detail, err := s.taskService.GetByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	task := detail.Task
+	if task.WorkspaceID != meta.WorkspaceID {
+		return nil, fmt.Errorf("task not found")
+	}
+	tasks := []map[string]any{}
+	total := int64(0)
+	if !openOnly || !task.Completed {
+		item := map[string]any{
+			"task_id":     task.ID,
+			"display_id":  task.DisplayID,
+			"task_key":    task.TaskKey,
+			"name":        task.Name,
+			"team_id":     task.TeamID,
+			"state_id":    task.WorkflowStateID,
+			"completed":   task.Completed,
+			"priority":    task.Priority,
+			"severity":    task.Severity,
+			"external_id": task.ExternalID,
+			"updated_at":  task.UpdatedAt,
+			"labels":      detail.Labels,
+		}
+		if detail.State != nil {
+			item["state_name"] = detail.State.Name
+		}
+		if includeDescription {
+			item["description"] = task.Description
+		}
+		tasks = append(tasks, item)
+		total = 1
+	}
+	return mustJSON(map[string]any{
+		"tasks":        tasks,
+		"total":        total,
+		"limit":        1,
+		"detail_level": "summary",
+	}), nil
 }
 
 func helpinCommandCompactionHint() map[string]any {

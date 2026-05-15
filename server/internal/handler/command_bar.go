@@ -151,6 +151,7 @@ func (h *CommandBarHandler) commandBarChatAccess(r *http.Request) (service.Comma
 		CanReadPM:   canAccess(authorization.PermPMRead, model.ModulePM),
 		CanReadDocs: canAccess(authorization.PermDocsRead, model.ModuleDocs),
 		CanReadCRM:  canAccess(authorization.PermCRMRead, model.ModuleCRM),
+		ActorRole:   actor.Role,
 	}, nil
 }
 

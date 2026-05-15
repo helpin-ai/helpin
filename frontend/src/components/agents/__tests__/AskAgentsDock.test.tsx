@@ -157,6 +157,90 @@ describe('AskAgentsDock chat', () => {
     await waitForText('Hydrated answer');
   });
 
+  it('hydrates completed runs that belong to the latest chat thread', async () => {
+    mocks.listChatThreads.mockResolvedValue({
+      data: {
+        threads: [{
+          thread: {
+            id: 'thread-1',
+            workspace_id: 'ws-1',
+            title: 'Run chat',
+            status: 'open',
+            created_at: '2026-05-15T00:00:00Z',
+            updated_at: '2026-05-15T00:02:00Z',
+          },
+          messages: [
+            {
+              id: 'user-msg',
+              thread_id: 'thread-1',
+              role: 'user',
+              content: 'update USE-239',
+              created_at: '2026-05-15T00:00:00Z',
+            },
+            {
+              id: 'assistant-msg',
+              thread_id: 'thread-1',
+              role: 'assistant',
+              content: 'Approve the one-shot run.',
+              created_at: '2026-05-15T00:00:01Z',
+            },
+          ],
+        }],
+      },
+      error: null,
+    });
+    mocks.listPlans.mockResolvedValue({
+      data: {
+        plans: [{
+          id: 'plan-1',
+          status: 'completed',
+          plan_kind: 'one_shot_command',
+          prompt: 'update USE-239',
+          page_context: { entity_type: 'workspace', entity_id: 'ws-1', display_title: 'Acme' },
+          steps: [{
+            agent_id: 'agent-command',
+            agent_name: 'Command Agent',
+            plan_kind: 'one_shot_command',
+            target: { entity_type: 'task', entity_id: 'task-1', display_title: 'USE-239' },
+            instructions: 'update USE-239',
+          }],
+          run_ids_by_step: { 0: 'run-1' },
+          current_step_index: 0,
+          run_count: 1,
+          created_at: '2026-05-15T00:00:05Z',
+          updated_at: '2026-05-15T00:01:00Z',
+          runs: [{
+            id: 'run-1',
+            workspace_id: 'ws-1',
+            agent_id: 'agent-command',
+            target_type: 'task',
+            target_id: 'task-1',
+            runtime_kind: 'native_sdk',
+            invocation_mode: 'autonomous',
+            approval_state: 'approved',
+            pause_reason: 'none',
+            status: 'completed',
+            input: { text: 'update USE-239' },
+            output_summary: { summary: 'Updated USE-239 with the latest findings.' },
+            cached_input_tokens: 0,
+            input_tokens: 0,
+            output_tokens: 0,
+            tokens_used: 0,
+            created_at: '2026-05-15T00:00:05Z',
+            updated_at: '2026-05-15T00:01:00Z',
+            completed_at: '2026-05-15T00:01:00Z',
+            target_info: { target_type: 'task', target_id: 'task-1', title: 'USE-239' },
+          }],
+        }],
+      },
+      error: null,
+    });
+
+    await renderDock();
+
+    await waitForText('Updated USE-239 with the latest findings.');
+  });
+
   it('renders inline answers without dispatching a plan', async () => {
     mocks.chatTurn.mockResolvedValue({
       data: {

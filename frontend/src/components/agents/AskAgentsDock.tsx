@@ -11,6 +11,7 @@ import { useCommandBarRunStore, type CommandBarRunPlan } from '@/stores/commandB
 import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { PromotionDialog } from '@/components/command-bar/PromotionDialog';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
+import { MarkdownContent } from '@/components/pm/CodingSession/MarkdownContent';
 import type {
   AgentRun,
   CommandBarMessageSummary,
@@ -50,6 +51,59 @@ function threadMessageFromSummary(message: CommandBarMessageSummary): ThreadMess
     ts: Date.parse(message.created_at) || Date.now(),
     proposal: message.proposal,
   };
+}
+
+function normalizeTranscriptPrompt(text: string | undefined | null): string {
+  return (text ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function isNearOrAfterMessage(itemTime: string | undefined, messageTs: number): boolean {
+  const ts = itemTime ? Date.parse(itemTime) : 0;
+  if (!ts || !messageTs) return true;
+  const twoMinutes = 2 * 60 * 1000;
+  const oneDay = 24 * 60 * 60 * 1000;
+  return ts >= messageTs - twoMinutes && ts <= messageTs + oneDay;
+}
+
+function planMatchesRestoredThread(plan: CommandBarRunPlan, messages: ThreadMessage[]): boolean {
+  const prompt = normalizeTranscriptPrompt(plan.prompt);
+  if (!prompt) return false;
+  return messages.some(
+    (message) =>
+      message.kind === 'user' &&
+      normalizeTranscriptPrompt(message.text) === prompt &&
+      isNearOrAfterMessage(plan.createdAt, message.ts),
+  );
+}
+
+function runPrompt(run: AgentRun): string {
+  const input = run.input ?? {};
+  for (const key of ['text', 'prompt', 'instructions']) {
+    const value = input[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  const trigger = input.trigger;
+  if (trigger && typeof trigger === 'object') {
+    const context = (trigger as { context?: unknown }).context;
+    if (context && typeof context === 'object') {
+      const text = (context as { text?: unknown; prompt?: unknown }).text;
+      if (typeof text === 'string' && text.trim()) return text;
+      const prompt = (context as { prompt?: unknown }).prompt;
+      if (typeof prompt === 'string' && prompt.trim()) return prompt;
+    }
+  }
+  return '';
+}
+
+function runMatchesRestoredThread(run: AgentRun, messages: ThreadMessage[]): boolean {
+  const prompt = normalizeTranscriptPrompt(runPrompt(run));
+  if (!prompt) return false;
+  return messages.some(
+    (message) =>
+      message.kind === 'user' &&
+      normalizeTranscriptPrompt(message.text) === prompt &&
+      isNearOrAfterMessage(run.created_at, message.ts),
+  );
 }
 
 export function AskAgentsDock() {
@@ -136,31 +190,31 @@ export function AskAgentsDock() {
     return { runningCount: running, awaitingCount: awaiting };
   }, [runs]);
 
-  // Items visible in conversation = items submitted in *this* session
-  // (kept after completion so the user can see the result) plus anything
-  // currently active (so refreshes show in-flight work). Completed items from
-  // prior sessions live in history (list mode), not conversation.
+  // Items visible in conversation = items submitted in *this* session, anything
+  // currently active, and completed runs that can be matched back to the
+  // restored chat thread. Other completed runs stay in history/list mode.
   const visiblePlanIds = useMemo(() => {
     const ids = new Set(sessionPlanIds);
     for (const plan of plans) {
       const hasActive = Object.values(plan.runIdsByStep)
         .map((id) => runsById[id])
         .some((r) => r && ACTIVE_RUN_STATUSES.has(r.status));
-      if (hasActive) ids.add(plan.id);
+      if (hasActive || planMatchesRestoredThread(plan, messages)) ids.add(plan.id);
     }
     return ids;
-  }, [plans, runsById, sessionPlanIds]);
+  }, [messages, plans, runsById, sessionPlanIds]);
 
   const visibleRunIds = useMemo(() => {
     const ids = new Set(sessionRunIds);
     for (const run of standaloneRuns) {
-      if (ACTIVE_RUN_STATUSES.has(run.status)) ids.add(run.id);
+      if (ACTIVE_RUN_STATUSES.has(run.status) || runMatchesRestoredThread(run, messages)) ids.add(run.id);
     }
     return ids;
-  }, [sessionRunIds, standaloneRuns]);
+  }, [messages, sessionRunIds, standaloneRuns]);
 
-  // Conversation timeline: only items started in THIS session, plus the user
-  // bubbles, ordered by timestamp. Hydrated history lives in list mode.
+  // Conversation timeline: chat bubbles plus run items that belong to this
+  // transcript, ordered by timestamp. Unrelated hydrated history lives in list
+  // mode.
   type TimelineItem =
     | { kind: 'msg'; id: string; ts: number; msg: ThreadMessage }
     | { kind: 'plan'; id: string; ts: number; plan: CommandBarRunPlan }
@@ -514,6 +568,8 @@ export function AskAgentsDock() {
             status: 'running',
             prompt: trimmed,
             currentStepIndex: 0,
+            createdAt: res.data.runs[0]?.created_at,
+            updatedAt: res.data.runs[0]?.updated_at ?? res.data.runs[0]?.created_at,
           },
           res.data.runs,
         );
@@ -1019,7 +1075,7 @@ function AssistantMessageBlock({
   return (
     <div className="flex justify-start">
       <div className="max-w-[86%] rounded-2xl rounded-tl-sm border border-border/60 bg-muted/35 px-3 py-2 text-sm text-foreground">
-        {showText ? <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p> : null}
+        {showText ? <MarkdownContent content={message.text} className="text-sm leading-relaxed" /> : null}
         {proposal?.type === 'create_agent' || proposal?.type === 'create_agent_and_run' ? (
           <AgentDraftProposalCard
             proposal={proposal}

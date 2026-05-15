@@ -131,6 +131,7 @@ func (CommandBarMessage) TableName() string { return "command_bar_messages" }
 type CommandBarProposal struct {
 	Type            string                   `json:"type"`
 	Answer          string                   `json:"answer,omitempty"`
+	Context         json.RawMessage          `json:"context,omitempty"`
 	Plan            *CommandBarPlan          `json:"plan,omitempty"`
 	Draft           *CustomAgentDraft        `json:"draft,omitempty"`
 	RunTarget       *CommandBarPageContext   `json:"run_target,omitempty"`

@@ -842,7 +842,8 @@ func main() {
 			cfg.CommandRouterLLMModel,
 			cfg.CommandRouterLLMMaxTokens,
 			time.Duration(cfg.CommandRouterLLMTimeoutMS)*time.Millisecond,
-		)
+		).
+		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)

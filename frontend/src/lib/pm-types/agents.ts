@@ -283,6 +283,7 @@ export type CommandBarProposalType =
 export interface CommandBarProposal {
   type: CommandBarProposalType;
   answer?: string;
+  context?: unknown;
   plan?: CommandBarPlan;
   draft?: CustomAgentDraft;
   run_target?: CommandBarPageContext;
