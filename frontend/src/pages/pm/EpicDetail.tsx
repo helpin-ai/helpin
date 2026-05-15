@@ -9,7 +9,9 @@ import {
   Calendar03Icon,
   ArrowRight01Icon,
   AttachmentIcon,
+  BotIcon,
   ChartColumnIcon,
+  CheckListIcon,
   FavouriteIcon,
   Link01Icon,
   Loading01Icon,
@@ -512,7 +514,7 @@ export function EpicDetailPage() {
     return teams[0]?.id ?? '';
   }, [epic?.epic.team_id, form?.team_id, teams]);
 
-  // Resources: task owner workload summary.
+  // Task owners: task owner workload summary.
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string; taskCount: number; percentage: number }>();
     const totalTasks = tasks.length;
@@ -927,15 +929,15 @@ export function EpicDetailPage() {
             />
           </div>
 
-          {/* Resources */}
+          {/* Task owners */}
           <div className="mt-6">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resources</h3>
+            <TaskDetailSectionHeading title={`Task owners (${resources.length})`} icon={UserGroupIcon} />
             {resources.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No people assigned yet.</p>
+              <p className="mt-3 text-sm text-muted-foreground">No task owners yet.</p>
             ) : (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 {resources.map((person) => (
-                  <div key={person.id} className="flex min-w-0 items-center gap-2 rounded-md border border-border/60 px-3 py-2">
+                  <div key={person.id} className="inline-flex w-fit max-w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 sm:max-w-[14rem]">
                     <UserAvatar name={person.name || person.email} className="h-6 w-6 border-border/60" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs font-medium">{person.name || person.email}</div>
@@ -953,12 +955,11 @@ export function EpicDetailPage() {
 
           {/* Tasks */}
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Tasks ({tasks.length})
-              </h3>
-              {renderTaskHeaderAddButton()}
-            </div>
+            <TaskDetailSectionHeading
+              title={`Tasks (${tasks.length})`}
+              icon={CheckListIcon}
+              meta={<div className="ml-auto">{renderTaskHeaderAddButton()}</div>}
+            />
             {tasks.length === 0 ? (
               <div className="mt-3 overflow-hidden rounded-lg border border-border/60 bg-card">
                 <div className="px-3 py-3">
@@ -998,7 +999,7 @@ export function EpicDetailPage() {
 
           {/* AI Planning */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Agents</h3>
+            <TaskDetailSectionHeading title="AI Agents" icon={BotIcon} />
             <div className="mt-3">
               {workspaceId ? (
                 <EpicPlannerPanel
