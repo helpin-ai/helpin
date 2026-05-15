@@ -10,6 +10,7 @@ export type AgentPresetKey =
   | 'task_planner'
   | 'crm_operator'
   | 'support_agent'
+  | 'documentation_agent'
   | 'code_builder'
   | 'review_agent'
   | 'command_agent';
@@ -17,7 +18,7 @@ export type AgentStatus = 'idle' | 'working' | 'error' | 'paused';
 export type AgentRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 export type AgentRuntimeKind = 'opencode' | 'codex' | 'native_sdk';
 export type AgentTriggerMode = 'manual' | 'auto_on_assignment' | 'auto_on_event';
-export type AgentTargetType = 'task' | 'support_conversation' | 'epic' | 'document' | 'crm_deal' | 'repository' | 'workspace';
+export type AgentTargetType = 'task' | 'support_conversation' | 'support_coverage_gap' | 'epic' | 'document' | 'crm_deal' | 'repository' | 'workspace';
 export type AgentApprovalState = 'not_required' | 'pending' | 'approved' | 'rejected';
 export type AgentApprovalMode = 'preset_default' | 'never' | 'always';
 export type AgentModelProvider = 'anthropic' | 'openai' | 'openrouter';
@@ -56,6 +57,7 @@ export interface Agent {
   tokens_used_this_month: number;
   active_task_id?: string;
   team_id?: string;
+  team_ids?: string[];
   allowed_tools: string[];
   allowed_commands: string[];
   allowed_targets: string[];
@@ -237,6 +239,12 @@ export interface CommandBarParseRequest {
   page_context: CommandBarPageContext;
 }
 
+export interface CommandBarChatTurnRequest {
+  thread_id?: string;
+  text: string;
+  page_context: CommandBarPageContext;
+}
+
 export type CommandBarParseResponse =
   | {
       status: 'plan';
@@ -262,6 +270,77 @@ export interface CommandBarDispatchResponse {
   steps?: CommandBarPlanStep[];
   run_count?: number;
   runs: AgentRun[];
+}
+
+export type CommandBarProposalType =
+  | 'inline_answer'
+  | 'run_plan'
+  | 'create_agent'
+  | 'create_agent_and_run'
+  | 'clarification'
+  | 'no_match';
+
+export interface CommandBarProposal {
+  type: CommandBarProposalType;
+  answer?: string;
+  context?: unknown;
+  plan?: CommandBarPlan;
+  draft?: CustomAgentDraft;
+  run_target?: CommandBarPageContext;
+  run_instructions?: string;
+  reasons?: CustomAgentDraftReason[];
+  warnings?: string[];
+  reason?: string;
+  suggestions?: string[];
+  guardrails?: Array<{ type: string; severity: string; message: string }>;
+}
+
+export interface CommandBarThreadSummary {
+  id: string;
+  workspace_id: string;
+  actor_id?: string;
+  title: string;
+  status: 'open' | 'archived';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommandBarMessageSummary {
+  id: string;
+  thread_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  page_context?: CommandBarPageContext;
+  proposal?: CommandBarProposal;
+  created_at: string;
+}
+
+export interface CommandBarChatTurnResponse {
+  thread: CommandBarThreadSummary;
+  user_message: CommandBarMessageSummary;
+  assistant_message: CommandBarMessageSummary;
+  proposal?: CommandBarProposal;
+}
+
+export interface CommandBarThreadDetail {
+  thread: CommandBarThreadSummary;
+  messages: CommandBarMessageSummary[];
+}
+
+export interface CommandBarThreadListResponse {
+  threads: CommandBarThreadDetail[];
+}
+
+export interface ConfirmCommandBarChatProposalRequest {
+  name?: string;
+  description?: string;
+  allowed_tools?: string[];
+  allowed_targets?: string[];
+}
+
+export interface ConfirmCommandBarChatCreateAgentResponse {
+  agent: Agent;
+  run?: AgentRun;
 }
 
 export interface CommandBarPlanSummary {
@@ -498,6 +577,7 @@ export interface CreateAgentRequest {
   tools?: unknown[];
   monthly_token_budget?: number;
   team_id?: string | null;
+  team_ids?: string[];
   allowed_tools?: string[];
   allowed_commands?: string[];
   allowed_targets?: string[];
@@ -506,6 +586,37 @@ export interface CreateAgentRequest {
   approval_mode?: AgentApprovalMode;
   max_concurrent_runs?: number;
   default_invocation_mode?: AgentInvocationMode;
+}
+
+export interface CustomAgentDraftRequest {
+  description: string;
+}
+
+export interface CustomAgentDraft {
+  name: string;
+  role?: string;
+  system_prompt: string;
+  allowed_targets: AgentTargetType[];
+  allowed_tools: string[];
+  skills: AgentSkillRef[];
+  approval_mode: AgentApprovalMode;
+  runtime_kind: AgentRuntimeKind;
+  provider: AgentModelProvider;
+  model?: string;
+  default_invocation_mode: AgentInvocationMode;
+  max_concurrent_runs: number;
+}
+
+export interface CustomAgentDraftReason {
+  field: string;
+  value: string;
+  reason: string;
+}
+
+export interface CustomAgentDraftResponse {
+  draft: CustomAgentDraft;
+  reasons: CustomAgentDraftReason[];
+  warnings: string[];
 }
 
 export interface AgentTemplate {
@@ -591,6 +702,7 @@ export interface CreateAgentFromTemplateFlow {
 export interface CreateAgentFromTemplateRequest {
   name?: string;
   team_id?: string | null;
+  team_ids?: string[];
   overrides?: CreateAgentFromTemplateOverrides;
   create_flow?: boolean;
   flow?: CreateAgentFromTemplateFlow;
@@ -619,6 +731,7 @@ export interface UpdateAgentRequest {
   monthly_token_budget?: number;
   active_task_id?: string;
   team_id?: string | null;
+  team_ids?: string[];
   allowed_tools?: string[];
   allowed_commands?: string[];
   allowed_targets?: string[];

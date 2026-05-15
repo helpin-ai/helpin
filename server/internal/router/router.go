@@ -522,6 +522,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Route("/agents", func(r chi.Router) {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListAgents)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.CreateAgent)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/draft", h.Automation.DraftCustomAgent)
 					r.Route("/{id}", func(r chi.Router) {
 						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetAgent)
 						r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.Automation.UpdateAgent)
@@ -596,6 +597,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
 				r.With(requireCommandBarRead()).Post("/intents/parse", h.CommandBar.ParseIntent)
+				r.With(requireCommandBarRead()).Get("/chat/threads", h.CommandBar.ListChatThreads)
+				r.With(requireCommandBarRead()).Post("/chat/turns", h.CommandBar.ChatTurn)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/chat/proposals/{messageID}/create-agent", h.CommandBar.ConfirmChatCreateAgent)
 				r.With(requireCommandBarRead()).Get("/plans", h.CommandBar.ListPlans)
 				r.With(requireCommandBarRead()).Get("/plans/{planID}", h.CommandBar.GetPlan)
 				r.With(requireCommandBarRead()).Get("/agents/{agentID}/tools", h.CommandBar.ListAgentToolCatalog)

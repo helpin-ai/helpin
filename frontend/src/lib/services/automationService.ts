@@ -16,6 +16,8 @@ import type {
   ContinueAgentRunRequest,
   AutomationRule,
   CreateAgentRequest,
+  CustomAgentDraftRequest,
+  CustomAgentDraftResponse,
   CreateAgentFromTemplateRequest,
   CreateAgentFromTemplateResponse,
   CreateAutomationRuleRequest,
@@ -133,6 +135,9 @@ export const automationService = {
 
   createAgent: (workspaceId: string, payload: CreateAgentRequest) =>
     api.post<Agent>(`/automation/agents${qs(workspaceId)}`, payload),
+
+  draftCustomAgent: (workspaceId: string, payload: CustomAgentDraftRequest) =>
+    api.post<CustomAgentDraftResponse>(`/automation/agents/draft${qs(workspaceId)}`, payload),
 
   createAgentFromTemplate: (workspaceId: string, templateId: string, payload: CreateAgentFromTemplateRequest) =>
     api.post<CreateAgentFromTemplateResponse>(`/automation/agent-templates/${templateId}/create-agent${qs(workspaceId)}`, payload),

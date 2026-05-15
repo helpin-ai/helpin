@@ -1023,6 +1023,7 @@ export function EpicDetailPage() {
                 <EpicPlannerPanel
                   workspaceId={workspaceId}
                   epicId={epicId}
+                  epicTeamId={epic.epic.team_id}
                   lastRunId={epic.epic.last_planning_run_id}
                   canEdit={canEdit}
                   onRunCompleted={handlePlannerRunCompleted}

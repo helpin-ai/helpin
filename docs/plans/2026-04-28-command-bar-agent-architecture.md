@@ -1,29 +1,35 @@
 # Command Bar Agent Architecture
 
 **Date:** 2026-04-28
-**Status:** Working architecture reference for command-bar plans, Temporal runs, saved agents, one-shot Command Agent runs, and bounded fan-out.
+**Status:** Working architecture reference for Ask Agents chat, command-bar plans, Temporal runs, saved agents, one-shot Command Agent runs, reusable-agent proposals, and bounded fan-out.
 
 ## Summary
 
-The command bar is a planner and dispatcher. It does not execute work directly, and it does not create a Temporal workflow when the user opens Cmd+K or types.
+Ask Agents / the command bar is a chat planner and dispatcher. It does not execute work directly, and it does not create a Temporal workflow when the user opens the dock or types.
+
+Simple read-only questions can be answered inline in the chat without creating an `AgentRun`. Durable work still uses the existing run primitives.
 
 The durable execution primitive remains `AgentRun`.
 
 One confirmed command-bar step creates one `AgentRun`. Each `AgentRun` starts one normal Temporal `AgentRunWorkflow`.
 
-There is no separate command-bar Temporal workflow, meta-agent workflow, or parent workflow wrapping a multi-step plan.
+Opening Ask Agents, typing, and receiving a chat-turn proposal does not start Temporal. Confirmed DAG and task-pipeline plans may use the parent `CommandBarPlanWorkflow` to schedule ready steps, but execution still happens as normal `AgentRun` rows and `AgentRunWorkflow` runs.
+
+Ask Agents may propose reusable custom agents, but approved creation still persists a normal `agent` record through the existing agent creation service. It does not create hidden throwaway agents for ordinary one-shot work.
 
 ## High-Level Flow
 
 ```mermaid
 flowchart TD
-  User[User] --> CmdK[Cmd+K Command Bar]
+  User[User] --> CmdK[Ask Agents Chat]
 
-  CmdK --> Parse[POST /command-bar/intents/parse]
-  Parse --> Parser[CommandBarService.ParseIntent]
+  CmdK --> Turn[POST /command-bar/chat/turns]
+  Turn --> Parser[CommandBarService.ChatTurn]
 
   Parser --> Candidates[Load runnable agents for current target]
   Parser --> PageCtx[Page context: task / epic / doc / CRM / workspace]
+  Parser --> Inline{Simple read-only question?}
+  Inline -->|yes| InlineAnswer[inline_answer<br/>no AgentRun]
 
   Parser --> Known{Known saved/system agent matches?}
   Known -->|yes| PlanKnown[known_agent plan steps]
@@ -38,13 +44,18 @@ flowchart TD
   Known -->|no| NoMatch[no_matching_agent<br/>log unmet intent]
   OneShot -->|no| NoMatch
 
+  Parser --> CreateAgent{Reusable role requested?}
+  CreateAgent -->|yes| AgentDraft[create_agent proposal<br/>validated custom-agent draft]
+
   PlanKnown --> Confirm[Frontend confirmation]
   OneShotPlan --> Confirm
   FanOutPlan --> Confirm
+  AgentDraft --> CreateConfirm[Create agent confirmation]
 
   Confirm --> Dispatch[POST /command-bar/plans/dispatch]
   Dispatch --> PlanRow[(command_bar_plans)]
   Dispatch --> AgentRunRows[(agent_runs)]
+  CreateConfirm --> AgentRow[(agents)]
 
   AgentRunRows --> Temporal[Temporal AgentRunWorkflow<br/>one workflow per AgentRun]
 
@@ -70,11 +81,14 @@ Temporal starts only after the user confirms dispatch.
 |---|---:|---|
 | Cmd+K opens the bar | No | Frontend state only |
 | User types an intent | No | Frontend state only |
-| `POST /command-bar/intents/parse` | No | Stateless parser/LLM call returns a plan or no-match |
+| `POST /command-bar/chat/turns` | No | Persists chat messages and returns inline answer, proposal, clarification, or no-match |
+| `POST /command-bar/intents/parse` | No | Compatibility parser endpoint returns a plan or no-match |
 | User reviews chips and closes the bar | No | Nothing is persisted or dispatched |
+| User receives inline read-only answer | No | Chat message only; no run is created |
 | User confirms a 1-step plan | Yes | 1 `AgentRun` row and 1 `AgentRunWorkflow` |
 | User confirms a 3-step sequential plan | Yes | 3 `AgentRun` rows total, started one after another |
 | User confirms fan-out across 5 targets | Yes | 5 `AgentRun` rows and 5 workflows, started together |
+| User confirms agent creation | No Temporal | 1 reusable custom `agent` row |
 
 The unit of Temporal work is:
 
@@ -148,6 +162,30 @@ flowchart LR
   Promote --> CustomAgent[(new custom agent)]
   CustomAgent --> FutureParser[Available to future Cmd+K parses]
 ```
+
+## Inline Read-Only Answers
+
+Ask Agents can answer simple read-only questions directly in the chat.
+
+Examples:
+
+- how to configure a Helpin setting
+- where a workspace feature lives
+- simple docs/CRM/PM/support questions that do not require mutation
+
+Inline answers:
+
+- use only non-mutating capabilities
+- may load bounded live context for common task, docs, and CRM list/count questions
+- do not create `agent_run` rows
+- do not create command-bar plans
+- should hand off to a one-shot Command Agent proposal when the question needs broader workspace lookup, long-running synthesis, approval, or mutation
+
+## Reusable Agent Proposals
+
+Ask Agents may propose a reusable custom agent only when the user asks for recurring capability, such as "create an agent that reviews onboarding docs".
+
+The proposal contains a validated custom-agent draft. Confirmation creates a normal custom agent through the existing agent creation path. A combined create-and-run proposal is allowed only when the user explicitly asks to create the reusable agent and run it immediately.
 
 ## Sequential Multi-Step Plans
 
@@ -338,6 +376,8 @@ Cancel:
 ```text
 Command Bar = planner + dispatcher UI
 
+Ask Agents = chat surface for inline answers and explicit proposals
+
 CommandBarService = parser, validator, plan persistence, dispatch policy
 
 agents table = reusable executors
@@ -363,4 +403,3 @@ The current architecture does not implement:
 - fan-out over vague targets without concrete related IDs
 - cross-agent semantic handoff beyond `parent_run_id` and shared plan metadata
 - a general meta-agent that supervises other agents
-

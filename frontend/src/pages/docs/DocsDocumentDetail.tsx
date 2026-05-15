@@ -78,6 +78,7 @@ import {
   useDiscardDocsChangeProposal,
 } from '@/hooks/queries'
 import { timeAgo } from '@/lib/utils'
+import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
@@ -430,9 +431,18 @@ export function DocsDocumentDetail({
   const { data: members = [] } = useAssignableMembers(wsId)
   const { teams = [] } = useWorkspaceTeams(wsId)
   const { data: workspaceAgents = [] } = useAgents(wsId)
+  const accessibleTeamIds = useMemo(
+    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
+    [access?.team_memberships],
+  )
   const documentAgents = useMemo(
-    () => workspaceAgents.filter((agent) => agent.allowed_targets?.includes('document')),
-    [workspaceAgents],
+    () => workspaceAgents.filter((agent) => isAgentAvailableForTarget(agent, {
+      targetType: 'document',
+      targetTeamId: doc?.team_id,
+      accessibleTeamIds,
+      canSeeAllAgents: isAdmin,
+    })),
+    [accessibleTeamIds, doc?.team_id, isAdmin, workspaceAgents],
   )
   const focusedBlockId = useFocusedDocsBlockId(editorInstance)
   const focusedBlock = useMemo(

@@ -1,6 +1,7 @@
 package agentskills
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -81,6 +82,43 @@ func TestSelectNativeActiveSkillsKeepsWorkspaceSkillsDefaultActive(t *testing.T)
 
 	if got := testSkillKeys(selection.Refs); len(got) != 2 || got[0] != "approval_protocol" || got[1] != "workspace_planner_extension" {
 		t.Fatalf("unexpected active refs %#v", got)
+	}
+}
+
+func TestSelectNativeActiveSkillsDocumentationSupportTargetSelectsSupportGapSkills(t *testing.T) {
+	refs := model.AgentSkillRefs{
+		{Key: "docs_information_architecture"},
+		{Key: "external_help_doc_writing"},
+		{Key: "api_doc_writing"},
+		{Key: "internal_docs_maintenance"},
+		{Key: "public_help_docs_maintenance"},
+		{Key: "api_docs_maintenance"},
+		{Key: "release_to_docs_update"},
+		{Key: "support_gap_to_docs"},
+		{Key: "general_agent_behavior"},
+	}
+	definitions := []worker.SkillDefinition{
+		{Key: "docs_information_architecture", SourceKind: "built_in", Instructions: "ia"},
+		{Key: "external_help_doc_writing", SourceKind: "built_in", Instructions: "help-writing"},
+		{Key: "api_doc_writing", SourceKind: "built_in", Instructions: "api-writing"},
+		{Key: "internal_docs_maintenance", SourceKind: "built_in", Instructions: "internal"},
+		{Key: "public_help_docs_maintenance", SourceKind: "built_in", Instructions: "public"},
+		{Key: "api_docs_maintenance", SourceKind: "built_in", Instructions: "api-maintenance"},
+		{Key: "release_to_docs_update", SourceKind: "built_in", Instructions: "release"},
+		{Key: "support_gap_to_docs", SourceKind: "built_in", Instructions: "gap"},
+		{Key: "general_agent_behavior", SourceKind: "built_in", Instructions: "general"},
+	}
+
+	selection := SelectNativeActiveSkills(refs, definitions, NativeActiveSelectionContext{
+		PresetKey:  model.AgentPresetDocumentationAgent,
+		TargetType: "support_conversation",
+	})
+
+	if got := testSkillKeys(selection.Refs); strings.Join(got, ",") != "docs_information_architecture,external_help_doc_writing,public_help_docs_maintenance,support_gap_to_docs,general_agent_behavior" {
+		t.Fatalf("unexpected active refs %#v", got)
+	}
+	if strings.Contains(selection.Instructions, "api-writing") || strings.Contains(selection.Instructions, "release") {
+		t.Fatalf("unexpected inactive documentation instructions included %q", selection.Instructions)
 	}
 }
 

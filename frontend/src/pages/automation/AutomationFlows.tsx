@@ -36,8 +36,9 @@ import { pmTaskService } from '@/lib/services/pmTaskService';
 import { queryKeys } from '@/lib/queryKeys';
 import { unwrap } from '@/lib/queryUtils';
 import type { AutomationInventoryItem } from '@/lib/types';
-import type { AutomationRule, EpicWithStats, GitRepository, Task, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import type { Agent, AgentTargetType, AutomationRule, EpicWithStats, GitRepository, Task, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
 import { buildAutomationActivityPath } from '@/lib/automationUi';
+import { isAgentAvailableForTarget, isAgentVisibleToActor } from '@/lib/agentAccess';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
@@ -765,6 +766,27 @@ function draftSentence(draft: FlowDraft, workflows: WorkflowWithStates[], states
   return { when, conditions, then, using, on };
 }
 
+function triggerTargetType(triggerType: string): AgentTargetType | null {
+  if (isWorkflowTrigger(triggerType)) return 'task';
+  if (triggerType.startsWith('github.')) return 'repository';
+  return null;
+}
+
+function draftAgentTargetType(draft: FlowDraft): AgentTargetType | null {
+  if (draft.targetMode === 'event') return triggerTargetType(draft.triggerType);
+  return draft.targetMode;
+}
+
+function draftTargetTeamId(draft: FlowDraft, tasks: Task[], epics: EpicWithStats[]): string | null {
+  if (draft.targetMode === 'task') {
+    return tasks.find((task) => task.id === draft.targetId)?.team_id ?? null;
+  }
+  if (draft.targetMode === 'epic') {
+    return epics.find((epic) => epic.epic.id === draft.targetId)?.epic.team_id ?? null;
+  }
+  return null;
+}
+
 function describeFlowTitle(rule: AutomationRule, statesById: Map<string, WorkflowState>, agentNames: Map<string, string>) {
   const triggerStateId = stringValue(rule.trigger_config?.state_id);
   const stateName = statesById.get(triggerStateId)?.name;
@@ -1145,6 +1167,8 @@ function FlowComposer({
   workflows,
   statesById,
   agents,
+  accessibleTeamIds,
+  canSeeAllAgents,
   tasks,
   epics,
   repositories,
@@ -1161,7 +1185,9 @@ function FlowComposer({
   draft: FlowDraft;
   workflows: WorkflowWithStates[];
   statesById: Map<string, WorkflowState>;
-  agents: Map<string, string>;
+  agents: Agent[];
+  accessibleTeamIds: Set<string>;
+  canSeeAllAgents: boolean;
   tasks: Task[];
   epics: EpicWithStats[];
   repositories: GitRepository[];
@@ -1174,7 +1200,21 @@ function FlowComposer({
 }) {
   const workflowStates = workflows.find((workflow) => workflow.workflow.id === draft.workflowId)?.states ?? [];
   const actionOptions = allowedActions(draft.triggerType);
-  const sentence = draftSentence(draft, workflows, statesById, agents);
+  const agentNames = useMemo(() => new Map(agents.map((agent) => [agent.id, agent.name])), [agents]);
+  const targetType = draftAgentTargetType(draft);
+  const targetTeamId = draftTargetTeamId(draft, tasks, epics);
+  const availableAgents = useMemo(
+    () => targetType
+      ? agents.filter((agent) => isAgentAvailableForTarget(agent, {
+        targetType,
+        targetTeamId,
+        accessibleTeamIds,
+        canSeeAllAgents,
+      }))
+      : agents.filter((agent) => isAgentVisibleToActor(agent, accessibleTeamIds, canSeeAllAgents)),
+    [accessibleTeamIds, agents, canSeeAllAgents, targetTeamId, targetType],
+  );
+  const sentence = draftSentence(draft, workflows, statesById, agentNames);
   const repositoryOptions = repositories.map((repo) => ({ value: repo.full_name, label: repo.full_name }));
   const targetTaskOptions = tasks.map((task) => ({ value: task.id, label: `${task.task_key} · ${task.name}` }));
   const targetEpicOptions = epics.map((epic) => ({ value: epic.epic.id, label: epic.epic.name }));
@@ -1184,6 +1224,12 @@ function FlowComposer({
   const resolvedScheduleExpression = scheduleExpressionForDraft(draft);
   const simpleSchedulePreview = parseSimpleScheduleExpression(resolvedScheduleExpression);
   const validation = validateDraft(draft);
+
+  useEffect(() => {
+    if (!draft.agentId) return;
+    if (availableAgents.some((agent) => agent.id === draft.agentId)) return;
+    onDraftChange((current) => current.agentId === draft.agentId ? { ...current, agentId: '' } : current);
+  }, [availableAgents, draft.agentId, onDraftChange]);
 
   useEffect(() => {
     if (draft.targetMode !== 'workspace' || draft.targetId === workspaceId) return;
@@ -1586,8 +1632,13 @@ function FlowComposer({
                       <SelectValue placeholder="choose an agent…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {Array.from(agents.entries()).map(([id, name]) => (
-                        <SelectItem key={id} value={id}>{name}</SelectItem>
+                      {availableAgents.length === 0 ? (
+                        <SelectItem value="__none_available__" disabled>
+                          No agents available for this target
+                        </SelectItem>
+                      ) : null}
+                      {availableAgents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1821,6 +1872,10 @@ export function AutomationFlowsPage({
   const workspaceSlug = workspace?.slug;
   const { data: access } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(access);
+  const accessibleTeamIds = useMemo(
+    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
+    [access?.team_memberships],
+  );
   const settingsQuery = useWorkspaceSettings(workspaceId);
   const inventoryQuery = useAutomationOverview(workspaceId);
   const { data: agents = [] } = useAgents(workspaceId);
@@ -2060,7 +2115,9 @@ export function AutomationFlowsPage({
         draft={draft}
         workflows={workflows}
         statesById={statesById}
-        agents={agentNames}
+        agents={agents}
+        accessibleTeamIds={accessibleTeamIds}
+        canSeeAllAgents={permissions.isAdmin}
         tasks={tasks}
         epics={epics}
         repositories={repositories}

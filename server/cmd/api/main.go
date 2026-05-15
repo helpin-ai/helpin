@@ -192,6 +192,7 @@ func main() {
 			&model.PMTeamEstimateSettings{},
 			&model.PMTeamFieldVisibility{},
 			&model.Agent{},
+			&model.AgentTeamAccess{},
 			&model.AgentTemplate{},
 			&model.WorkspaceAgentPresetVersion{},
 			&model.WorkspaceSkill{},
@@ -203,6 +204,8 @@ func main() {
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},
+			&model.CommandBarThread{},
+			&model.CommandBarMessage{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -559,6 +562,7 @@ func main() {
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
 	commandBarUnmetIntentRepo := repository.NewCommandBarUnmetIntentRepository(db)
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
+	commandBarChatRepo := repository.NewCommandBarChatRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
@@ -831,14 +835,16 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMRouter)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMRouter).
+		SetChatRepository(commandBarChatRepo).
 		SetLLMRouterConfig(
 			cfg.CommandRouterLLMProvider,
 			cfg.CommandRouterLLMModel,
 			cfg.CommandRouterLLMMaxTokens,
 			time.Duration(cfg.CommandRouterLLMTimeoutMS)*time.Millisecond,
-		)
+		).
+		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
@@ -918,11 +924,11 @@ func main() {
 	docsAISectionService := service.NewDocsAISectionService(docsAISectionCandidateRepo, docsBlockRepo, docsBlockService, docsDocumentRepo, docsSearchService, supportConversationRepo, agentService, llmProvider, cfg.CrawlerProxyURLs)
 	docsAISectionService.SetRuleEngine(ruleEngine)
 	docsAISectionService.SetActivityService(pmActivityService)
-	docsChangeProposalService := service.NewDocsChangeProposalService(docsChangeProposalRepo, docsDocumentRepo, docsContentService, docsBlockService, wsPublisher)
+	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
+	docsChangeProposalService := service.NewDocsChangeProposalService(docsChangeProposalRepo, docsDocumentRepo, docsContentService, docsBlockService, docsVersionService, wsPublisher)
 	docsReferencesService := service.NewDocsReferencesService(docsLinkRepo, docsBlockRepo, docsDocumentRepo, pmCommentService, agentService)
 	var docsEntityReferenceResolverService *service.DocsEntityReferenceResolverService
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
-	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 
@@ -1066,9 +1072,12 @@ func main() {
 	commandService.SetPMLabelService(pmLabelService)
 	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetGitService(gitService)
+	commandService.SetSettingsRepository(settingsRepo)
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	commandService.SetDocsBlockService(docsBlockService)
+	commandBarService.SetInternalCommandService(commandService).
+		SetReadOnlyDataServices(docsDocumentService, crmDealService, crmContactService, crmCompanyService)
 	ruleEngine.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
@@ -1098,6 +1107,7 @@ func main() {
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	agentService.SetSupportCoverageService(supportCoverageService)
 	supportCoverageService.SetDocsBlockService(docsBlockService)
 	supportCoverageService.SetTemporalClient(temporalClient)
 	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
@@ -1196,7 +1206,7 @@ func main() {
 		PMExternalLink:      handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:              handler.NewPMViewHandler(pmViewService),
 		Search:              handler.NewSearchHandler(searchService),
-		CommandBar:          handler.NewCommandBarHandler(commandBarService),
+		CommandBar:          handler.NewCommandBarHandler(commandBarService, authzService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),

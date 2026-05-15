@@ -62,7 +62,6 @@ import type {
   CreateWorkspaceAgentPresetVersionRequest,
   GitRepository,
   UpdateWorkspaceAgentPresetVersionRequest,
-  CreateAgentRequest,
   SkillCatalogResponse,
   ToolCatalogEntry,
   ToolCatalogResponse,
@@ -125,6 +124,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { CustomAgentCreatePanel } from './CustomAgentCreatePanel';
+import {
+  buildCustomAgentCreatePayload,
+  createDefaultCustomAgentForm,
+} from './customAgentCreateModel';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -165,7 +169,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   crm_operator: {
-    label: 'CRM Operator',
+    label: 'Beacon',
     description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
@@ -176,6 +180,13 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     description: 'Handles support conversations and drafts replies with review controls.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  documentation_agent: {
+    label: 'Quill',
+    description: 'Keeps internal docs, public help docs, and API docs accurate and organized.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
   code_builder: {
@@ -223,9 +234,9 @@ const INVOCATION_MODE_LABELS: Record<AgentInvocationMode, string> = {
 };
 
 const APPROVAL_MODE_OPTIONS: { value: AgentApprovalMode; label: string; description: string }[] = [
-  { value: 'preset_default', label: 'Preset Default', description: 'Uses the standard setting for this agent preset' },
-  { value: 'never', label: 'No — run immediately', description: 'Agent starts working right away without waiting' },
-  { value: 'always', label: 'Yes — always review first', description: 'A team member must approve before the agent runs' },
+  { value: 'always', label: 'Require approval before each run', description: 'A team member must approve each run before the agent starts.' },
+  { value: 'never', label: 'Start runs automatically', description: 'Runs start without the initial approval gate.' },
+  { value: 'preset_default', label: 'Use runtime default', description: 'Uses the default approval behavior for this agent profile.' },
 ];
 
 const EMPTY_STATE_CARDS = [
@@ -369,6 +380,8 @@ interface AgentFormData {
   instruction_skills: string[];
   monthly_token_budget: string;
   team_id: string;
+  teamAccessMode: 'all_teams' | 'specific_teams';
+  team_ids: string[];
   allowed_targets: AgentTargetType[];
   allowed_tools: string[];
   skills: AgentSkillRef[];
@@ -623,6 +636,19 @@ function normalizeToolList(tools: string[]): string[] {
   }, []);
 }
 
+function normalizeTeamIdList(teamIds: string[]): string[] {
+  const seen = new Set<string>();
+  return teamIds.reduce<string[]>((result, teamId) => {
+    const normalized = teamId.trim();
+    if (!normalized || seen.has(normalized)) {
+      return result;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+    return result;
+  }, []);
+}
+
 function normalizeTargetList(targets: AgentTargetType[]): AgentTargetType[] {
   const seen = new Set<AgentTargetType>();
   return targets.reduce<AgentTargetType[]>((result, target) => {
@@ -658,28 +684,7 @@ function defaultRunNowTarget(agent: Agent | null): AgentTargetType | '' {
 }
 
 function createEmptyCustomForm(): AgentFormData {
-  return {
-    name: '',
-    preset_key: DEFAULT_SYSTEM_PRESET_KEY,
-    preset_version_key: fallbackPresetVersionKey(DEFAULT_SYSTEM_PRESET_KEY),
-    runtime_kind: 'opencode',
-    supported_modes: ['autonomous'],
-    provider: 'anthropic',
-    model: '',
-    reasoning_effort: '',
-    service_tier: '',
-    system_prompt: '',
-    instruction_preamble: '',
-    instruction_skills: [],
-    monthly_token_budget: '',
-    team_id: '',
-    allowed_targets: ['task'],
-    allowed_tools: [],
-    skills: [],
-    approval_mode: 'never',
-    max_concurrent_runs: '1',
-    default_invocation_mode: 'autonomous',
-  };
+  return createDefaultCustomAgentForm();
 }
 
 function deriveExecutionConfigFields(
@@ -747,37 +752,6 @@ function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDe
   );
 }
 
-function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean): CreateAgentRequest {
-  const defaultRuntimeKind: AgentRuntimeKind = 'opencode';
-  const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
-  return {
-    workspace_id: workspaceId,
-    name: form.name.trim(),
-    provider,
-    model: form.model.trim() || undefined,
-    execution_config: buildExecutionConfigPayload(form),
-    system_prompt: form.system_prompt.trim() || undefined,
-    trigger_mode: 'manual',
-    team_id: form.team_id,
-    allowed_tools: normalizeToolList(form.allowed_tools),
-    skills: form.skills.length > 0 ? form.skills : undefined,
-    allowed_targets: normalizeTargetList(form.allowed_targets),
-    approval_mode: form.approval_mode,
-    max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
-    default_invocation_mode: form.default_invocation_mode,
-    ...(advancedOpen
-      ? {
-          runtime_kind: form.runtime_kind,
-          monthly_token_budget: form.monthly_token_budget.trim()
-            ? Number.parseInt(form.monthly_token_budget, 10)
-            : 0,
-        }
-      : form.runtime_kind !== defaultRuntimeKind
-        ? { runtime_kind: form.runtime_kind }
-        : {}),
-  };
-}
-
 function buildUpdatePayload(
   form: AgentFormData,
   advancedOpen: boolean,
@@ -787,8 +761,9 @@ function buildUpdatePayload(
   const preset = agent?.is_system ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
   const defaultRuntimeKind = agent?.is_system
     ? (preset?.runtime_kind ?? presetFallback(form.preset_key).runtime_kind)
-    : 'opencode';
+    : 'native_sdk';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
+  const teamIds = form.teamAccessMode === 'specific_teams' ? normalizeTeamIdList(form.team_ids) : [];
   const payload: UpdateAgentRequest = {
     name: form.name.trim(),
     trigger_mode: 'manual',
@@ -796,7 +771,7 @@ function buildUpdatePayload(
     model: form.model.trim(),
     execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
-    team_id: form.team_id,
+    team_ids: teamIds,
     allowed_tools: normalizeToolList(form.allowed_tools),
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
@@ -859,6 +834,8 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     instruction_skills: preset?.instruction_skills ?? [],
     monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
     team_id: '',
+    teamAccessMode: 'all_teams',
+    team_ids: [],
     allowed_targets: normalizeTargetList(
       agent.allowed_targets?.length
         ? (agent.allowed_targets as AgentTargetType[])
@@ -893,6 +870,8 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
     instruction_skills: [],
     monthly_token_budget: template.monthly_token_budget?.toString() ?? '',
     team_id: '',
+    teamAccessMode: 'all_teams',
+    team_ids: [],
     allowed_targets: normalizeTargetList(template.allowed_targets ?? ['task']),
     allowed_tools: normalizeToolList(template.allowed_tools ?? []),
     skills: template.skills ?? [],
@@ -900,6 +879,82 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
     max_concurrent_runs: '1',
     default_invocation_mode: normalizeDefaultInvocationMode(template.default_invocation_mode, runtimeKind, 'autonomous'),
   };
+}
+
+function buildCustomAgentForm(agent: Agent): AgentFormData {
+  const presetKey = fallbackPresetKey(agent);
+  const runtimeKind = agent.runtime_kind;
+  return {
+    name: agent.name,
+    preset_key: presetKey,
+    preset_version_key: fallbackPresetVersionKey(presetKey),
+    runtime_kind: runtimeKind,
+    supported_modes: supportedModesForForm(runtimeKind),
+    provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
+    model: agent.model ?? '',
+    ...deriveExecutionConfigFields(
+      runtimeKind,
+      normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
+      agent.execution_config,
+    ),
+    system_prompt: agent.system_prompt ?? '',
+    instruction_preamble: '',
+    instruction_skills: [],
+    monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
+    team_id: agent.team_id ?? '',
+    teamAccessMode: agent.team_ids?.length || agent.team_id ? 'specific_teams' : 'all_teams',
+    team_ids: agent.team_ids?.length ? agent.team_ids : agent.team_id ? [agent.team_id] : [],
+    allowed_targets: normalizeTargetList(agent.allowed_targets as AgentTargetType[]),
+    allowed_tools: normalizeToolList(agent.allowed_tools),
+    skills: agent.skills ?? [],
+    approval_mode: agent.approval_mode ?? 'preset_default',
+    max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
+    default_invocation_mode: normalizeDefaultInvocationMode(agent.default_invocation_mode, runtimeKind),
+  };
+}
+
+function comparableCustomAgentForm(form: AgentFormData) {
+  const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
+  const teamIDs = form.teamAccessMode === 'specific_teams'
+    ? normalizeTeamIdList(form.team_ids.length > 0 ? form.team_ids : form.team_id ? [form.team_id] : [])
+    : [];
+  return {
+    name: form.name.trim(),
+    runtime_kind: form.runtime_kind,
+    provider,
+    model: form.model.trim(),
+    reasoning_effort: form.runtime_kind === 'codex' ? form.reasoning_effort : '',
+    service_tier: form.runtime_kind === 'codex' && provider === 'openai' ? form.service_tier : '',
+    system_prompt: form.system_prompt.trim(),
+    monthly_token_budget: normalizeTokenBudgetFormValue(form.monthly_token_budget),
+    team_ids: teamIDs,
+    allowed_targets: normalizeTargetList(form.allowed_targets).sort(),
+    allowed_tools: normalizeToolList(form.allowed_tools).sort(),
+    skills: [...form.skills]
+      .map((skill) => ({
+        key: skill.key,
+        skill_id: skill.skill_id ?? '',
+        version_key: skill.version_key ?? '',
+      }))
+      .sort((a, b) => `${a.key}:${a.skill_id}:${a.version_key}`.localeCompare(`${b.key}:${b.skill_id}:${b.version_key}`)),
+    approval_mode: form.approval_mode,
+    max_concurrent_runs: normalizePositiveIntegerFormValue(form.max_concurrent_runs, 1),
+    default_invocation_mode: form.default_invocation_mode,
+  };
+}
+
+function customAgentFormDirtyKey(form: AgentFormData) {
+  return JSON.stringify(comparableCustomAgentForm(form));
+}
+
+function normalizeTokenBudgetFormValue(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function normalizePositiveIntegerFormValue(value: string, fallback: number) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function competitiveIntelCompetitorsFromText(value: string) {
@@ -1441,6 +1496,20 @@ function formatLastRunTime(run?: AgentRun) {
   if (!run) return 'Never';
   const date = run.completed_at || run.started_at || run.created_at;
   return formatDistanceToNow(new Date(date), { addSuffix: true });
+}
+
+function formatAgentTimestamp(value?: string) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return formatDistanceToNow(date, { addSuffix: true });
+}
+
+function formatAgentTimestampTitle(value?: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleString();
 }
 
 function lastRunStatusLabel(run?: AgentRun) {
@@ -2603,33 +2672,7 @@ export function AgentsPage() {
       setDialogOpen(false);
       return;
     }
-    const presetKey = fallbackPresetKey(agent);
-    const runtimeKind = agent.runtime_kind;
-    setForm({
-      name: agent.name,
-      preset_key: presetKey,
-      preset_version_key: fallbackPresetVersionKey(presetKey),
-      runtime_kind: runtimeKind,
-      supported_modes: supportedModesForForm(runtimeKind),
-      provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
-      model: agent.model ?? '',
-      ...deriveExecutionConfigFields(
-        runtimeKind,
-        normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
-        agent.execution_config,
-      ),
-      system_prompt: agent.system_prompt ?? '',
-      instruction_preamble: '',
-      instruction_skills: [],
-      monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
-      team_id: agent.team_id ?? '',
-      allowed_targets: normalizeTargetList(agent.allowed_targets as AgentTargetType[]),
-      allowed_tools: normalizeToolList(agent.allowed_tools),
-      skills: agent.skills ?? [],
-      approval_mode: agent.approval_mode ?? 'preset_default',
-      max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
-      default_invocation_mode: normalizeDefaultInvocationMode(agent.default_invocation_mode, runtimeKind),
-    });
+    setForm(buildCustomAgentForm(agent));
     setDialogOpen(true);
   };
 
@@ -2832,7 +2875,7 @@ export function AgentsPage() {
           toast.error('Failed to create agent from template', { description: res.error });
         }
       } else {
-        const payload = buildCreatePayload(workspaceId, form, advancedOpen);
+        const payload = buildCustomAgentCreatePayload(workspaceId, form, advancedOpen);
         const res = await automationService.createAgent(workspaceId, payload);
         if (!res.error) {
           setDialogOpen(false);
@@ -2991,6 +3034,7 @@ export function AgentsPage() {
     return accessibleTeamIds.has(agent.team_id);
   });
   const sortedAgents = [...visibleAgents].sort((left, right) => {
+    if (left.is_system !== right.is_system) return left.is_system ? -1 : 1;
     const leftAttention = needsAttention(left, runStats[left.id]) ? 1 : 0;
     const rightAttention = needsAttention(right, runStats[right.id]) ? 1 : 0;
     if (leftAttention !== rightAttention) return rightAttention - leftAttention;
@@ -3041,6 +3085,7 @@ export function AgentsPage() {
   const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
   const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
   const codexUsesPresetCapabilities = form.runtime_kind === 'codex';
+  const isBlankCustomCreate = !editingAgent && !templateDraft;
   const isTemplateCreate = Boolean(templateDraft && !editingAgent);
   const createDrawerTitle = editingAgent
     ? 'Edit Custom Agent'
@@ -3092,9 +3137,16 @@ export function AgentsPage() {
     return missing;
   })();
   const createDrawerReady = createDrawerMissingRequirements.length === 0;
+  const customEditHasChanges = useMemo(() => {
+    if (!editingAgent || editingAgent.is_system) return true;
+    return customAgentFormDirtyKey(form) !== customAgentFormDirtyKey(buildCustomAgentForm(editingAgent));
+  }, [editingAgent, form]);
+  const createDrawerCanSave = createDrawerReady && (!editingAgent || editingAgent.is_system || customEditHasChanges);
   const createDrawerStatus = createDrawerReady
     ? editingAgent
-      ? 'Ready to save'
+      ? customEditHasChanges || editingAgent.is_system
+        ? 'Ready to save'
+        : 'No changes to save'
       : starterFlowEnabled
         ? 'Ready to create agent and automation flow'
         : 'Ready to create agent'
@@ -4175,8 +4227,8 @@ export function AgentsPage() {
                         return (
                           <p className="text-[11px] text-muted-foreground">
                             {budget > 0
-                              ? `$${used.toLocaleString()} of $${budget.toLocaleString()} this month (${pct}%)`
-                              : `$${used.toLocaleString()} spent this month · no limit set`}
+                              ? `${used.toLocaleString()} of ${budget.toLocaleString()} tokens this month (${pct}%)`
+                              : `${used.toLocaleString()} tokens used this month · no limit set`}
                           </p>
                         );
                       })()}
@@ -4201,11 +4253,11 @@ export function AgentsPage() {
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {[
                         { label: 'No limit', value: '' },
-                        { label: '$50', value: '50' },
-                        { label: '$100', value: '100' },
-                        { label: '$250', value: '250' },
-                        { label: '$500', value: '500' },
-                        { label: '$1,000', value: '1000' },
+                        { label: '50K', value: '50000' },
+                        { label: '100K', value: '100000' },
+                        { label: '250K', value: '250000' },
+                        { label: '500K', value: '500000' },
+                        { label: '1M', value: '1000000' },
                       ].map((preset) => {
                         const isActive = form.monthly_token_budget === preset.value;
                         return (
@@ -5126,8 +5178,32 @@ export function AgentsPage() {
           }
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]">
-          <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
+        <SheetContent
+          side="right"
+          className={cn(
+            'w-full gap-0 p-0',
+            isBlankCustomCreate
+              ? 'data-[side=right]:w-full data-[side=right]:sm:w-[880px] data-[side=right]:!max-w-[880px]'
+              : 'data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]',
+          )}
+        >
+          {isBlankCustomCreate ? (
+            <CustomAgentCreatePanel
+              workspaceId={workspaceId ?? ''}
+              form={form}
+              onChange={setForm}
+              teams={visibleTeams}
+              tools={toolCatalogEntries}
+              skills={skillCatalogEntries}
+              providerOptions={visibleProviderOptions}
+              advancedOpen={advancedOpen}
+              onAdvancedOpenChange={setAdvancedOpen}
+              onCreate={handleSave}
+              saving={saving}
+            />
+          ) : (
+            <>
+              <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
             <div className="flex items-center gap-4">
               <AgentAvatar agent={editingAgent ?? undefined} className="h-11 w-11 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
               <div className="min-w-0 flex-1">
@@ -5167,12 +5243,12 @@ export function AgentsPage() {
                   </div>
                   <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-right">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Status</p>
-                    <p className={cn('text-xs font-medium', createDrawerReady ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400')}>
-                      {createDrawerReady ? 'Ready' : `${createDrawerMissingRequirements.length} missing`}
+                    <p className={cn('text-xs font-medium', createDrawerCanSave ? 'text-emerald-700 dark:text-emerald-400' : createDrawerReady ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400')}>
+                      {createDrawerCanSave ? 'Ready' : createDrawerReady ? 'No changes' : `${createDrawerMissingRequirements.length} missing`}
                     </p>
                   </div>
                 </div>
-                <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-3 lg:grid-cols-6">
+                <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-4 lg:grid-cols-8">
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
                     <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
@@ -5199,6 +5275,18 @@ export function AgentsPage() {
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Team</dt>
                     <dd className="truncate text-sm font-medium" title={selectedTeamName}>{selectedTeamName}</dd>
                   </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Created</dt>
+                    <dd className="truncate text-sm font-medium" title={formatAgentTimestampTitle(editingAgent?.created_at)}>
+                      {formatAgentTimestamp(editingAgent?.created_at)}
+                    </dd>
+                  </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Last edited</dt>
+                    <dd className="truncate text-sm font-medium" title={formatAgentTimestampTitle(editingAgent?.updated_at)}>
+                      {formatAgentTimestamp(editingAgent?.updated_at)}
+                    </dd>
+                  </div>
                 </dl>
               </section>
 
@@ -5221,7 +5309,15 @@ export function AgentsPage() {
                       </FieldLabel>
                       <Select
                         value={form.team_id || '_none'}
-                        onValueChange={(value) => setForm((current) => ({ ...current, team_id: value === '_none' ? '' : value }))}
+                        onValueChange={(value) => setForm((current) => {
+                          const teamID = value === '_none' ? '' : value;
+                          return {
+                            ...current,
+                            team_id: teamID,
+                            teamAccessMode: teamID ? 'specific_teams' : 'all_teams',
+                            team_ids: teamID ? [teamID] : [],
+                          };
+                        })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="All teams (workspace-wide)" />
@@ -5879,14 +5975,14 @@ export function AgentsPage() {
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
                     {automationOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
-                    Approval & Limits
+                    Run Approval & Limits
                   </span>
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
                 <div className="space-y-2">
-                  <FieldLabel tooltip="When set to 'always review first', a team member must approve each run before the agent starts working.">
-                    Requires approval?
+                  <FieldLabel tooltip="Controls the initial approval gate for each agent run, not individual tool or checkpoint approvals.">
+                    Run approval
                   </FieldLabel>
                   <Select
                     value={form.approval_mode}
@@ -6052,13 +6148,15 @@ export function AgentsPage() {
               </Button>
               <Button
                 size="sm"
-                disabled={saving || !createDrawerReady}
+                disabled={saving || !createDrawerCanSave}
                 onClick={handleSave}
               >
                 {createDrawerPrimaryLabel}
               </Button>
             </div>
           </SheetFooter>
+            </>
+          )}
         </SheetContent>
       </Sheet>
 
