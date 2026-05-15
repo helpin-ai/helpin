@@ -118,22 +118,13 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
                     target="_blank"
                     rel="noopener noreferrer"
                     title={link.url}
-                    className="block truncate text-sm font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                    aria-label={`Open ${link.title || getHostname(link.url)} in a new tab`}
+                    className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-foreground transition-colors hover:text-primary hover:underline"
                   >
-                    {link.title || getHostname(link.url)}
+                    <span className="min-w-0 truncate">{link.title || getHostname(link.url)}</span>
+                    <ArrowUpRight01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
                   </a>
                 </div>
-                <QuickTooltip label="Opens in a new tab">
-                  <a
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`Open ${link.title || getHostname(link.url)} in a new tab`}
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
-                  >
-                    <ArrowUpRight01Icon className="h-3.5 w-3.5" />
-                  </a>
-                </QuickTooltip>
                 <QuickTooltip label="Remove link">
                   <button
                     type="button"
