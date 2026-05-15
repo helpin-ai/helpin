@@ -97,11 +97,11 @@ export function AgentPickerCard({
   }, [autoSelectDefault, defaultAgent, disabled, onChange, value]);
 
   return (
-    <section className={cn('rounded-lg border border-border/70 bg-background p-3 shadow-sm', className)}>
+    <section className={cn('rounded-md border border-border/50 bg-muted/20 px-3 py-2.5', className)}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-[linear-gradient(135deg,hsl(var(--primary)/0.16),hsl(var(--accent)),hsl(var(--primary)/0.08))] text-primary ring-1 ring-primary/15">
-            <BotIcon className="h-4 w-4 text-primary" />
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[linear-gradient(135deg,hsl(var(--primary)/0.14),hsl(var(--accent)/0.75))] text-primary">
+            <BotIcon className="h-3.5 w-3.5 text-primary" />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-medium leading-tight">Assign agent</p>
