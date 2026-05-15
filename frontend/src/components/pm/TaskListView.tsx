@@ -113,6 +113,7 @@ const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 const LIST_AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
 const TASK_LIST_FILTER_ALL = '__all__';
+const TASK_LIST_FILTER_UNASSIGNED = '__unassigned__';
 
 type LocalTaskFilterKey =
   | 'owner'
@@ -720,8 +721,9 @@ export function TaskListView({
   }, [sprints]);
 
   const taskListOwnerOptions = useMemo(() => {
-    return buildAssignableMemberOptions(assignableMembers)
+    const memberOptions = buildAssignableMemberOptions(assignableMembers)
       .sort((a, b) => a.name.localeCompare(b.name));
+    return [{ id: TASK_LIST_FILTER_UNASSIGNED, name: 'Unassigned' }, ...memberOptions];
   }, [assignableMembers]);
 
   const taskListRequesterOptions = useMemo(() => {
@@ -888,7 +890,12 @@ export function TaskListView({
 
     const query = taskSearchQuery.trim().toLowerCase();
     return tasks.filter((task) => {
-      if (ownerFilter !== TASK_LIST_FILTER_ALL && !(task.owner_member_ids ?? []).includes(ownerFilter)) return false;
+      if (
+        ownerFilter !== TASK_LIST_FILTER_ALL &&
+        (ownerFilter === TASK_LIST_FILTER_UNASSIGNED
+          ? (task.owner_member_ids ?? []).length > 0
+          : !(task.owner_member_ids ?? []).includes(ownerFilter))
+      ) return false;
       if (requesterFilter !== TASK_LIST_FILTER_ALL && task.requester_member_id !== requesterFilter) return false;
       if (stateFilter !== TASK_LIST_FILTER_ALL && task.workflow_state_id !== stateFilter) return false;
       if (typeFilter !== TASK_LIST_FILTER_ALL && task.task_type !== typeFilter) return false;

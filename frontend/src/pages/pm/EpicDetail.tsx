@@ -520,9 +520,14 @@ export function EpicDetailPage() {
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string; taskCount: number; percentage: number }>();
     const totalTasks = tasks.length;
+    let unassignedTaskCount = 0;
 
     for (const task of tasks) {
       const ownerIds = task.owner_member_ids ?? [];
+      if (ownerIds.length === 0) {
+        unassignedTaskCount += 1;
+        continue;
+      }
       for (const ownerKey of ownerIds) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
@@ -542,12 +547,27 @@ export function EpicDetailPage() {
       }
     }
 
-    return Array.from(personMap.values())
+    const owners = Array.from(personMap.values())
       .map((person) => ({
         ...person,
         percentage: totalTasks > 0 ? Math.round((person.taskCount / totalTasks) * 100) : 0,
       }))
       .sort((a, b) => b.taskCount - a.taskCount || (a.name || a.email).localeCompare(b.name || b.email));
+
+    if (unassignedTaskCount === 0) {
+      return owners;
+    }
+
+    return [
+      {
+        id: '__unassigned__',
+        name: 'Unassigned',
+        email: '',
+        taskCount: unassignedTaskCount,
+        percentage: totalTasks > 0 ? Math.round((unassignedTaskCount / totalTasks) * 100) : 0,
+      },
+      ...owners,
+    ];
   }, [tasks, assignableMembers, assignableMemberNames]);
 
   const openTask = useCallback(
