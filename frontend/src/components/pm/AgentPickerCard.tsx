@@ -88,9 +88,7 @@ export function AgentPickerCard({
     [agents, runnableTarget, targetTeamId],
   );
   const selectedAgent = runnableAgents.find((agent) => agent.id === value);
-  const helper = hasRepoContext
-    ? 'Optionally run an AI agent after creation. Agents can use your connected repo to refine and extend this story.'
-    : 'Optionally run an AI agent after creation. Connect a repo to give agents code context.';
+  const helper = 'Use AI agents with business and repo context for coding, planning, marketing, support, and more.';
 
   useEffect(() => {
     if (!autoSelectDefault || value || !defaultAgent || disabled) return;
