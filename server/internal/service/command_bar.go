@@ -524,6 +524,7 @@ Policy:
 - Prefer "inline_read_only" for read-only workspace questions when the available non-mutating tools can fetch the data.
 - A resolved task, document, CRM object, or workspace page context is enough target context for inline read-only status questions.
 - Do not route to one-shot merely because live data is needed; inline read-only tools are live data tools.
+- If the user needs current external evidence, industry trends, online research, web search, or fetched URLs, route "inline_read_only" only when an inline web/search/fetch tool is listed. Otherwise route "one_shot_command" so the user can approve a Command Agent with web tools.
 - Use "run_saved_agent" for named-agent invocations such as Forge, Lens, Atlas, or a custom agent name.
 - Use "one_shot_command" for changes, writes, long-running execution, chaining, DAGs, fan-out, or requests requiring mutating tools.
 - Use target resolution context when deciding whether a target is known. If prior_target_state is "multiple" and the user asks to run agents or perform target-specific work, return "clarification" and ask which target to use.
@@ -3669,6 +3670,7 @@ Routing policy:
 - Use one_shot_command for ad hoc data questions, workspace lookup/count/summarization, one-off document/task/CRM changes, or requests that do not fit a reusable saved agent.
 - Use dag only when the user asks for orchestration with dependency order, fan-out/fan-in, parallel branches, or multiple phases that should be durably scheduled.
 - For one_shot_command, choose the minimum necessary tools from the available one-shot tool catalog. Do not choose mutation tools for read-only questions.
+- For one_shot_command requests that need current external evidence, industry trends, online research, web search, or fetched URLs, include web search/fetch tools from the available one-shot catalog.
 - For one_shot_command, set tool_intent to "read_only", "propose_change", or "mutate".
 - Use tool_intent "propose_change" when the requested outcome is a proposed content change, even conditionally, such as "check if this document needs update" or "update only if research finds new information".
 - For Docs proposal/change requests, include publish_document_change_proposal. Read/search tools can gather evidence but cannot submit a Docs proposal.

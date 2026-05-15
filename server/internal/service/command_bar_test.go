@@ -696,6 +696,36 @@ func TestCommandBarRouterUsesOpenRouterMinimumTimeout(t *testing.T) {
 	}
 }
 
+func TestCommandBarRouterPromptTellsOneShotToUseWebToolsForExternalEvidence(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "document", EntityID: "doc-1", DisplayTitle: "Document"}
+	candidates := []model.CommandBarAgent{{
+		ID:             "agent-command",
+		Name:           "Command Agent",
+		PresetKey:      model.AgentPresetCommandAgent,
+		AllowedTargets: []string{"document"},
+		AllowedTools:   []string{"read_document", "web_search_exa", "web_search_brave", "fetch_url"},
+	}}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"one_shot_command",
+		"agent_id":"agent-command",
+		"one_shot_tools":["read_document","web_search_exa","fetch_url"],
+		"tool_intent":"read_only",
+		"rationale":"Needs current external evidence.",
+		"confidence":0.91
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM)
+
+	resp := service.parseIntentWithLLM(context.Background(), "is that relevant to the current trend? web search", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot plan, got %#v", resp)
+	}
+	prompt := fakeLLM.requests[0].SystemPrompt + "\n" + fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(prompt, "current external evidence") || !strings.Contains(prompt, "include web search/fetch tools") {
+		t.Fatalf("expected one-shot router prompt to require web tools for external evidence, got %s", prompt)
+	}
+}
+
 func TestChatTurnOpenRouterProviderOptionsApplyToClassifierAndInlineChat(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	ctx := context.Background()
@@ -726,6 +756,33 @@ func TestChatTurnOpenRouterProviderOptionsApplyToClassifierAndInlineChat(t *test
 		if string(req.ProviderOptions) != `{"order":["openai"]}` {
 			t.Fatalf("request %d missing provider options: %s", idx, string(req.ProviderOptions))
 		}
+	}
+}
+
+func TestChatClassifierPromptRoutesExternalEvidenceOutsideInlineToolsToOneShot(t *testing.T) {
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	fakeLLM := &scriptedCommandBarLLM{response: `{"route":"one_shot_command","reason":"needs current web evidence","confidence":0.98}`}
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetInternalCommandService(commandService)
+
+	classification, err := service.classifyCommandBarChatIntent(ctx, workspaceID, "is that relevant to the current trend? web search", model.CommandBarPageContext{EntityType: "document", EntityID: "doc-1", DisplayTitle: "Wire error tracking into metrics middleware Plan"}, fullCommandBarChatAccess(), nil)
+	if err != nil {
+		t.Fatalf("classify command bar chat intent: %v", err)
+	}
+	if classification == nil || classification.Route != "one_shot_command" {
+		t.Fatalf("expected one-shot classification, got %#v", classification)
+	}
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected one classifier request, got %d", len(fakeLLM.requests))
+	}
+	prompt := fakeLLM.requests[0].SystemPrompt + "\n" + fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(prompt, "current external evidence") || !strings.Contains(prompt, `route "one_shot_command"`) {
+		t.Fatalf("expected classifier prompt to route external evidence outside inline tools to one-shot, got %s", prompt)
+	}
+	if strings.Contains(prompt, `"name":"web_search_exa"`) || strings.Contains(prompt, `"name":"web_search_brave"`) || strings.Contains(prompt, `"name":"fetch_url"`) {
+		t.Fatalf("test setup expected no inline web tools, got prompt %s", prompt)
 	}
 }
 
