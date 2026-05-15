@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { LinkSquare01Icon, GitBranchIcon, GitCommitIcon, GitPullRequestIcon, Loading01Icon } from '@/lib/icons';
 import { Badge } from '@/components/ui/badge';
-import { CollapsibleSection } from '@/components/ui/collapsible-section';
 import { gitService } from '@/lib/services/gitService';
 import { queryKeys } from '@/lib/queryKeys';
 import type { TaskDeliveryTarget, TaskGitLink } from '@/lib/pmTypes';
@@ -72,13 +71,18 @@ export function TaskGitPanel({
 
   return (
     <div className="mt-6">
-      <CollapsibleSection
-        title="Development History"
-        icon={GitBranchIcon}
-        count={links.length}
-        defaultOpen
-      >
-        <div className="overflow-hidden rounded-md border border-border/60 bg-card">
+      <div className="overflow-hidden rounded-md border border-border/60 bg-card">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
+            Development History
+          </span>
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/60 bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
+            {links.length}
+          </span>
+        </div>
+
+        <div className="divide-y divide-border/40 border-t border-border/60">
           {links.map((link, index) => {
             const kind = gitLinkKind(link);
             const Icon = gitLinkIcon(link);
@@ -173,7 +177,7 @@ export function TaskGitPanel({
             );
           })}
         </div>
-      </CollapsibleSection>
+      </div>
     </div>
   );
 }

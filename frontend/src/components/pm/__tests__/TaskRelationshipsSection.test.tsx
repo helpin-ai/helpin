@@ -33,8 +33,13 @@ vi.mock('@/components/docs/DocumentPreviewDialog', () => ({
   DocumentPreviewDialog: () => null,
 }));
 
+vi.mock('@/components/pm/CreateTaskModal', () => ({
+  CreateTaskModal: () => null,
+}));
+
 vi.mock('@/hooks/queries', () => ({
   useTaskAssociations: () => ({ data: associations, isLoading: false, error: null }),
+  useWorkflows: () => ({ data: [{ workflow: { id: 'workflow-1', default_state_id: 'state-1' }, states: [{ id: 'state-1' }] }] }),
   useCreateTaskRelationship: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteTaskRelationship: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }),
   useCreateTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -65,6 +70,8 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof TaskRelati
     taskId: 'task-1',
     taskName: 'Build search',
     taskDisplayId: 42,
+    workflowId: 'workflow-1',
+    workflowStateId: 'state-1',
     externalBlocker: '',
     onExternalBlockerChange: vi.fn(),
     composerOpen: false,
@@ -87,7 +94,7 @@ describe('TaskRelationshipsSection', () => {
     expect(container.querySelector('#task-relationships-section')).toBeNull();
   });
 
-  it('uses the comment action color treatment for the add relationship button', () => {
+  it('uses the inline treatment for the add relationship button', () => {
     renderSection();
 
     const addButton = Array.from(container.querySelectorAll('button')).find(
@@ -95,8 +102,8 @@ describe('TaskRelationshipsSection', () => {
     );
 
     expect(addButton).toBeTruthy();
+    expect(addButton?.className).toContain('text-xs');
     expect(addButton?.className).toContain('text-muted-foreground');
-    expect(addButton?.className).toContain('hover:bg-accent');
     expect(addButton?.className).toContain('hover:text-foreground');
     expect(addButton?.querySelector('svg')?.className.baseVal).not.toContain('text-primary');
   });
@@ -114,5 +121,25 @@ describe('TaskRelationshipsSection', () => {
     });
 
     expect(onComposerOpenChange).toHaveBeenCalledWith(true);
+  });
+
+  it('keeps create related task available before search text is entered', async () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const externalTriggerRef: React.RefObject<HTMLButtonElement> = { current: trigger };
+    renderSection({ composerOpen: true, externalTriggerRef });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const createButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Create related task',
+    );
+
+    expect(createButton).toBeTruthy();
+    expect(createButton?.disabled).toBe(false);
   });
 });

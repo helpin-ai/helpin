@@ -59,7 +59,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
 
   if (runs.length === 0) {
     return (
-      <p className="px-3 py-4 text-xs text-muted-foreground">No runs yet. Click "Run Agent" to start.</p>
+      <p className="px-3 py-4 text-xs text-muted-foreground">No runs yet. Choose an agent and click Run.</p>
     );
   }
 

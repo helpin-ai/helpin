@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft01Icon, ArrowRight01Icon, Download04Icon, Loading01Icon, AttachmentIcon, Delete01Icon, Upload01Icon, Cancel01Icon, PlayCircleIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { LoadingImage } from '@/components/ui/loading-image';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { uploadToS3 } from '@/lib/api';
 import type { AttachmentResponse } from '@/lib/pmTypes';
@@ -38,6 +39,16 @@ interface AttachmentsProps {
 }
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+
+export function getAttachmentGridDensityClasses(count: number): string {
+  if (count >= 9) {
+    return 'grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-1.5';
+  }
+  if (count >= 5) {
+    return 'grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2';
+  }
+  return 'grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2';
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -248,10 +259,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       onDrop={onDrop}
     >
       {hasAttachments && (
-        <div className="flex items-center gap-1.5">
-          <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Attachments</h3>
-        </div>
+        <TaskDetailSectionHeading title="Attachments" icon={AttachmentIcon} />
       )}
 
       <input
@@ -293,7 +301,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
 
       {/* Unified attachment grid — images + files as consistent cards */}
       {attachments.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        <div className={getAttachmentGridDensityClasses(attachments.length)}>
           {attachments.map((entry) => {
             const isImage = isImageType(entry.attachment.content_type);
             const isVideo = isVideoType(entry.attachment.content_type, entry.attachment.file_name);

@@ -117,7 +117,7 @@ func (h *PMEpicHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if tasks == nil {
-		tasks = []model.PMTask{}
+		tasks = []model.BoardTask{}
 	}
 	writeJSON(w, http.StatusOK, tasks)
 }
@@ -136,4 +136,29 @@ func (h *PMEpicHandler) UpdateHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "epic health updated"})
+}
+
+// ListActivity handles GET /api/pm/epics/{id}/activity.
+func (h *PMEpicHandler) ListActivity(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	pagination := queryPagination(r)
+	entries, total, err := h.epicService.ListActivity(r.Context(), id, pagination)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []model.ActivityLogEntry{}
+	}
+	totalPages := 0
+	if pagination.PerPage > 0 {
+		totalPages = int((total + int64(pagination.PerPage) - 1) / int64(pagination.PerPage))
+	}
+	writeJSON(w, http.StatusOK, model.PaginatedResponse{
+		Data:       entries,
+		Total:      int(total),
+		Page:       pagination.Page,
+		PerPage:    pagination.PerPage,
+		TotalPages: totalPages,
+	})
 }

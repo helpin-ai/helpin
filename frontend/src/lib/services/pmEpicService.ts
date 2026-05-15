@@ -1,7 +1,9 @@
 import { api } from '../api';
 import type {
+  ActivityLogEntry,
   CreateEpicRequest,
   EpicWithStats,
+  PaginatedResponse,
   Task,
   UpdateEpicHealthRequest,
   UpdateEpicRequest,
@@ -40,6 +42,10 @@ export const pmEpicService = {
       deadline: toRFC3339(payload.deadline),
     }),
   get: (workspaceId: string, id: string) => api.get<EpicWithStats>(`/pm/epics/${id}${qs(workspaceId)}`),
+  listActivity: (workspaceId: string, id: string, page = 1, perPage = 50) =>
+    api.get<PaginatedResponse<ActivityLogEntry[]>>(
+      `/pm/epics/${id}/activity${qs(workspaceId)}&page=${page}&per_page=${perPage}`
+    ),
   update: (workspaceId: string, id: string, payload: UpdateEpicRequest) =>
     api.put<EpicWithStats>(`/pm/epics/${id}${qs(workspaceId)}`, {
       ...payload,

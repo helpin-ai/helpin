@@ -59,6 +59,22 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
 }
 
 describe('AgentRunTable', () => {
+  it('shows the concise empty-state guidance before any runs exist', () => {
+    act(() => {
+      root.render(
+        <AgentRunTable
+          runs={[]}
+          agents={[]}
+          selectedRunId={null}
+          onSelectRun={vi.fn()}
+          loading={false}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('No runs yet. Choose an agent and click Run.');
+  });
+
   it('anchors the row view tooltip to the first column value', () => {
     act(() => {
       root.render(
