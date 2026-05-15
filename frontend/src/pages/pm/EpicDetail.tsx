@@ -699,34 +699,33 @@ export function EpicDetailPage() {
   };
 
   const renderTaskHeaderAddButton = () => (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-      onClick={() => void handleStartCreateTask()}
-      disabled={!canCreateTask || openingCreateTask}
-      title={createTaskDisabledReason ?? undefined}
-    >
-      {openingCreateTask ? (
-        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <PlusSignIcon className="h-3.5 w-3.5" />
-      )}
-      Create task
-    </Button>
-  );
-
-  const renderTaskListActions = () => (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="h-7 gap-1.5 px-2 text-xs"
-      onClick={viewEpicTasksPage}
-    >
-      <ViewIcon className="h-3.5 w-3.5" />
-      View on Tasks page
-    </Button>
+    <div className="flex items-center gap-1.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-xs"
+        onClick={viewEpicTasksPage}
+      >
+        <ViewIcon className="h-3.5 w-3.5" />
+        View on Tasks page
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+        onClick={() => void handleStartCreateTask()}
+        disabled={!canCreateTask || openingCreateTask}
+        title={createTaskDisabledReason ?? undefined}
+      >
+        {openingCreateTask ? (
+          <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <PlusSignIcon className="h-3.5 w-3.5" />
+        )}
+        Create task
+      </Button>
+    </div>
   );
 
   const renderGhostAddTaskRow = (className: string) => (
@@ -1009,7 +1008,6 @@ export function EpicDetailPage() {
                   groupBy={taskListGroupBy}
                   onGroupByChange={setTaskListGroupBy}
                   showLocalTaskControls
-                  toolbarActions={renderTaskListActions()}
                 />
               </div>
             ) : (

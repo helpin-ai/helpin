@@ -1745,49 +1745,42 @@ export function TaskListView({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {showToolbar ? (
-        <div className="flex flex-col gap-2 px-3 pt-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {showLocalTaskControls ? (
-              <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
-                <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={taskSearchQuery}
-                  onChange={(event) => setTaskSearchQuery(event.target.value)}
-                  placeholder="Search"
-                  className="h-8 pl-8 pr-8 text-sm"
-                />
-                {taskSearchQuery ? (
-                  <button
-                    type="button"
-                    className="absolute right-2 top-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                    onClick={() => setTaskSearchQuery('')}
-                    aria-label="Clear search"
-                  >
-                    <Cancel01Icon className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            <span className="text-xs text-muted-foreground">
-              {displayTaskCount}{showLocalTaskControls && hasLocalTaskFilters ? ` of ${totalTaskCount}` : ''}{' '}
-              {totalTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
-            </span>
-            <div className="ml-auto flex items-center gap-1.5">
-              {toolbarActions}
-              <ListDisplayMenu disabledKeys={teamDisabledKeys} />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {showLocalTaskControls ? (
-              <LocalTaskFilterControls
-                definitions={localTaskFilterDefinitions}
-                values={localTaskFilterValues}
-                onChange={handleLocalTaskFilterChange}
-                onClear={clearLocalTaskFieldFilters}
+        <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
+          {showLocalTaskControls ? (
+            <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
+              <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={taskSearchQuery}
+                onChange={(event) => setTaskSearchQuery(event.target.value)}
+                placeholder="Search"
+                className="h-8 pl-8 pr-8 text-sm"
               />
-            ) : null}
-
+              {taskSearchQuery ? (
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => setTaskSearchQuery('')}
+                  aria-label="Clear search"
+                >
+                  <Cancel01Icon className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          <span className="text-xs text-muted-foreground">
+            {displayTaskCount}{showLocalTaskControls && hasLocalTaskFilters ? ` of ${totalTaskCount}` : ''}{' '}
+            {totalTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
+          </span>
+          {showLocalTaskControls ? (
+            <LocalTaskFilterControls
+              definitions={localTaskFilterDefinitions}
+              values={localTaskFilterValues}
+              onChange={handleLocalTaskFilterChange}
+              onClear={clearLocalTaskFieldFilters}
+            />
+          ) : null}
+          <div className="ml-auto flex items-center gap-1.5">
+            {toolbarActions}
             <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
               <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] gap-1 text-xs">
                 <span className="shrink-0 text-muted-foreground">Group by</span>
@@ -1801,7 +1794,7 @@ export function TaskListView({
                 ))}
               </SelectContent>
             </Select>
-
+            <ListDisplayMenu disabledKeys={teamDisabledKeys} />
           </div>
         </div>
       ) : null}
