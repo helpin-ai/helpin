@@ -26,4 +26,16 @@ describe('task detail optional section labels', () => {
     expect(files.associations).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
     expect(files.agentRuns).toContain('className="text-xs font-semibold uppercase tracking-wide text-foreground/70"');
   });
+
+  it('does not hide agent runs behind development history visibility', () => {
+    const panel = readFileSync(resolve(__dirname, '../TaskDetailPanel.tsx'), 'utf8');
+    const gitPanelIndex = panel.indexOf('<TaskGitPanel');
+    const agentRunPanelIndex = panel.indexOf('<AgentRunPanel');
+    const combinedGateIndex = panel.indexOf('{hasGitIntegration && fieldVis.dev_history && (');
+
+    expect(gitPanelIndex).toBeGreaterThan(combinedGateIndex);
+    expect(agentRunPanelIndex).toBeGreaterThan(-1);
+    expect(agentRunPanelIndex).toBeGreaterThan(gitPanelIndex);
+    expect(agentRunPanelIndex).toBeGreaterThan(panel.indexOf(')}', gitPanelIndex));
+  });
 });

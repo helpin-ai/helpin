@@ -1444,20 +1444,20 @@ function TaskDetailPanelBody({
             />
           </div>
 
-          {/* Git Links & Agent Runs */}
+          {/* Development */}
           {hasGitIntegration && fieldVis.dev_history && (
-            <>
-              <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
-              <AgentRunPanel
-                taskId={taskDetail.task.id}
-                workspaceId={workspaceId}
-                taskTeamId={taskDetail.task.team_id}
-                latestRunAgentId={taskDetail.task.latest_run_agent_id}
-                delivery={delivery}
-                canEditDelivery={canEdit && fieldVis.delivery}
-              />
-            </>
+            <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
           )}
+
+          {/* Agent Runs */}
+          <AgentRunPanel
+            taskId={taskDetail.task.id}
+            workspaceId={workspaceId}
+            taskTeamId={taskDetail.task.team_id}
+            latestRunAgentId={taskDetail.task.latest_run_agent_id}
+            delivery={delivery}
+            canEditDelivery={canEdit && fieldVis.delivery}
+          />
 
           {/* Comments + Activity */}
           <div className="mt-6">
