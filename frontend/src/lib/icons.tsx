@@ -51,6 +51,7 @@ import {
   Clock02Icon as _Clock02Icon,
   CodeIcon as _CodeIcon,
   Comment01Icon as _Comment01Icon,
+  ColumnsThreeCogIcon as _ColumnsThreeCogIcon,
   ComputerIcon as _ComputerIcon,
   Copy01Icon as _Copy01Icon,
   CursorTextIcon as _CursorTextIcon,
@@ -326,6 +327,7 @@ export const Clock01Icon = hi(_Clock01Icon);
 export const Clock02Icon = hi(_Clock02Icon);
 export const CodeIcon = hi(_CodeIcon);
 export const Comment01Icon = hi(_Comment01Icon);
+export const ColumnsThreeCogIcon = hi(_ColumnsThreeCogIcon);
 export const ComputerIcon = hi(_ComputerIcon);
 export const Copy01Icon = hi(_Copy01Icon);
 export const CursorTextIcon = hi(_CursorTextIcon);

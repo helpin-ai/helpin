@@ -310,12 +310,24 @@ describe('buildCodingSessionStreamState', () => {
     });
   });
 
-  it('converts resolved review checkpoints into visible transcript entries with selected findings', () => {
+  it('does not append resolved review checkpoints to the transcript after final assistant output', () => {
     const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'assistant-final',
+        type: 'assistant.message.completed',
+        sequence_no: 20,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-final-1',
+          content: 'Implemented and committed the approved fix.',
+          role: 'assistant',
+          sequence_no: 20,
+        },
+      }),
       buildEvent({
         id: 'interaction-review-resolved',
         type: 'interaction.resolved',
-        sequence_no: 14,
+        sequence_no: 21,
         payload: {
           interaction_id: 'interaction-1',
           interaction_kind: 'review_checkpoint',
@@ -348,16 +360,75 @@ describe('buildCodingSessionStreamState', () => {
 
     expect(state.transcript_messages).toHaveLength(1);
     expect(state.transcript_messages[0]).toMatchObject({
-      role: 'user',
-      message_type: 'review_checkpoint_resolution',
+      role: 'assistant',
+      content: 'Implemented and committed the approved fix.',
     });
-    expect(state.transcript_messages[0]?.content).toContain('Approved selected review findings for implementation');
-    expect(state.transcript_messages[0]?.content).toContain('Missing regression coverage');
-    expect(state.transcript_messages[0]?.content).toContain('`server/internal/service/foo_test.go:10`');
-    expect(state.transcript_messages[0]?.content).toContain('Note: Fix this one first.');
+    expect(state.transcript_messages.map((message) => message.message_type)).not.toContain('review_checkpoint_resolution');
   });
 
-  it('does not fall back to all findings when selected scope has no ids', () => {
+  it('keeps persisted review approval transcript messages in timeline order', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'msg-review-approval',
+        type: 'user.message.completed',
+        sequence_no: 14,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'message-review-approval-1',
+          content: 'Approved review findings for implementation:\n\n- Missing regression coverage',
+          role: 'user',
+          message_type: 'approval',
+          sequence_no: 14,
+        },
+      }),
+      buildEvent({
+        id: 'assistant-final',
+        type: 'assistant.message.completed',
+        sequence_no: 20,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'assistant-final-1',
+          content: 'Implemented and committed the approved fix.',
+          role: 'assistant',
+          sequence_no: 20,
+        },
+      }),
+      buildEvent({
+        id: 'interaction-review-resolved',
+        type: 'interaction.resolved',
+        sequence_no: 21,
+        payload: {
+          interaction_id: 'interaction-1',
+          interaction_kind: 'review_checkpoint',
+          status: 'resolved',
+          request_payload: {
+            findings: [
+              {
+                id: 'finding_1',
+                title: 'Missing regression coverage',
+              },
+            ],
+          },
+          response_payload: {
+            decision: 'approve',
+            selection_mode: 'all',
+          },
+        },
+        runtime_metadata: { source: 'agent_run_interaction', interaction_kind: 'review_checkpoint' },
+      }),
+    ]);
+
+    expect(state.transcript_messages.map((message) => message.content)).toEqual([
+      'Approved review findings for implementation:\n\n- Missing regression coverage',
+      'Implemented and committed the approved fix.',
+    ]);
+    expect(state.transcript_messages.map((message) => message.message_type)).toEqual([
+      'approval',
+      undefined,
+    ]);
+  });
+
+  it('keeps resolved review checkpoints out of the transcript when selected scope has no ids', () => {
     const state = buildCodingSessionStreamState([
       buildEvent({
         id: 'interaction-review-resolved-empty-selected',
@@ -392,10 +463,50 @@ describe('buildCodingSessionStreamState', () => {
       }),
     ]);
 
-    expect(state.transcript_messages).toHaveLength(1);
-    expect(state.transcript_messages[0]?.content).toContain('Approved the review checkpoint.');
-    expect(state.transcript_messages[0]?.content).not.toContain('Nil panic in retry path');
-    expect(state.transcript_messages[0]?.content).not.toContain('Missing regression coverage');
+    expect(state.transcript_messages).toHaveLength(0);
+  });
+
+  it('does not render the same requested-changes note twice', () => {
+    const state = buildCodingSessionStreamState([
+      buildEvent({
+        id: 'msg-request-changes',
+        type: 'user.message.completed',
+        sequence_no: 12,
+        runtime_metadata: { source: 'agent_run_message' },
+        payload: {
+          message_id: 'message-request-changes-1',
+          content: 'Members should be able to create and edit epics.',
+          role: 'user',
+          message_type: 'request_changes',
+          sequence_no: 12,
+        },
+      }),
+      buildEvent({
+        id: 'interaction-approval-resolved',
+        type: 'interaction.resolved',
+        sequence_no: 13,
+        payload: {
+          interaction_id: 'interaction-approval-1',
+          interaction_kind: 'approval_request',
+          status: 'resolved',
+          request_schema_version: 'helpin.v1',
+          request_payload: {
+            title: 'Task Planning Document: Fix Epic Editing for Team Members',
+          },
+          response_payload: {
+            decision: 'request_changes',
+            message: 'Members should be able to create and edit epics.',
+          },
+        },
+        runtime_metadata: { source: 'agent_run_interaction', interaction_kind: 'approval_request' },
+      }),
+    ]);
+
+    expect(state.transcript_messages.map((message) => message.message_type)).toEqual([
+      'approval_request_resolution',
+    ]);
+    const renderedText = state.transcript_messages.map((message) => message.content).join('\n');
+    expect(renderedText.match(/Members should be able to create and edit epics\./g)).toHaveLength(1);
   });
 
   it('does not render the same requested-changes note twice', () => {

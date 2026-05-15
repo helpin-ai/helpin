@@ -15,7 +15,7 @@ import (
 // PMEpicService contains epic business logic.
 type PMEpicService struct {
 	epicRepo            *repository.PMEpicRepository
-	taskRepo           *repository.PMTaskRepository
+	taskRepo            *repository.PMTaskRepository
 	labelRepo           *repository.PMLabelRepository
 	gitRepo             *repository.GitRepositoryRepository
 	attachmentRepo      *repository.PMAttachmentRepository
@@ -30,7 +30,7 @@ type PMEpicService struct {
 func NewPMEpicService(epicRepo *repository.PMEpicRepository, taskRepo *repository.PMTaskRepository, labelRepo *repository.PMLabelRepository, gitRepo *repository.GitRepositoryRepository, attachmentRepo *repository.PMAttachmentRepository, workspaceRepo *repository.WorkspaceRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService) *PMEpicService {
 	return &PMEpicService{
 		epicRepo:            epicRepo,
-		taskRepo:           taskRepo,
+		taskRepo:            taskRepo,
 		labelRepo:           labelRepo,
 		gitRepo:             gitRepo,
 		attachmentRepo:      attachmentRepo,
@@ -482,9 +482,9 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	return nil
 }
 
-// ListTasks returns tasks that belong to an epic, with TaskKey populated.
-func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.PMTask, error) {
-	tasks, err := s.epicRepo.ListTasks(ctx, epicID)
+// ListTasks returns tasks that belong to an epic, with TaskKey and table-facing computed fields populated.
+func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.BoardTask, error) {
+	tasks, err := s.epicRepo.ListEnrichedTasks(ctx, epicID)
 	if err != nil {
 		return nil, err
 	}
@@ -497,8 +497,14 @@ func (s *PMEpicService) ListTasks(ctx context.Context, epicID string) ([]model.P
 	}
 	for i := range tasks {
 		tasks[i].TaskKey = model.FormatTaskKey(ws.WorkspaceKey, tasks[i].DisplayID)
+		tasks[i].PMTask.TaskKey = tasks[i].TaskKey
 	}
 	return tasks, nil
+}
+
+// ListActivity returns epic activity entries.
+func (s *PMEpicService) ListActivity(ctx context.Context, epicID string, pagination model.PMPagination) ([]model.ActivityLogEntry, int64, error) {
+	return s.activityService.ListEntity(ctx, "epic", epicID, pagination)
 }
 
 func (s *PMEpicService) syncProgress(ctx context.Context, epicID string) error {

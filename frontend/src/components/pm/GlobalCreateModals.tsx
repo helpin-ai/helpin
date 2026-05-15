@@ -64,6 +64,7 @@ import {
   type SprintAutomationPromptState,
 } from '@/components/pm/sprintAutomationPrompt';
 import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
+import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
 import csvIcon from '@/assets/attachment/csv-icon.png';
@@ -413,7 +414,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   content={description}
                   onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
                   placeholder="Add a description (optional)..."
-                  className="border-transparent shadow-none"
+                  className="border-transparent shadow-none [&_.tiptap]:min-h-[180px]"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
@@ -422,11 +423,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                      showExternalLinks
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:bg-accent'
-                    }`}
+                    className={getOptionalSectionActionClass(epicExternalLinks.length > 0 ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                    disabled={epicExternalLinks.length > 0}
                     onClick={() => setShowExternalLinks((v) => !v)}
                   >
                     <Link01Icon className="h-3 w-3" />
@@ -437,11 +435,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   </button>
                   <button
                     type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                      showAttachments
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:bg-accent'
-                    }`}
+                    className={getOptionalSectionActionClass(pendingFiles.length > 0 ? 'locked' : showAttachments ? 'open' : 'available')}
+                    disabled={pendingFiles.length > 0}
                     onClick={() => setShowAttachments((value) => !value)}
                   >
                     <AttachmentIcon className="h-3 w-3" />
@@ -1037,7 +1032,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
-                  className="border-transparent shadow-none"
+                  className="border-transparent shadow-none [&_.tiptap]:min-h-[180px]"
                   teams={mentionTeams}
                   members={assignableMembers}
                 />

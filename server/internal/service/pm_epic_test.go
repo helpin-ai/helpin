@@ -226,6 +226,77 @@ func TestPMEpicService_Create(t *testing.T) {
 	})
 }
 
+func TestPMEpicServiceListTasksReturnsTableEnrichment(t *testing.T) {
+	t.Parallel()
+	svc, db, wsID, userID := newEpicTestEnvWithDB(t)
+	ctx := context.Background()
+
+	const (
+		ownerUserID   = "user-epic-task-owner"
+		ownerMemberID = "member-epic-task-owner"
+		workflowID    = "workflow-epic-task-list"
+		stateID       = "state-epic-task-list"
+		taskID        = "task-epic-task-list"
+		labelID       = "label-epic-task-list"
+	)
+
+	seedUser(t, db, ownerUserID, "owner-list@test.com", "Owner List", "hash")
+	seedWorkspaceMember(t, db, ownerMemberID, wsID, ownerUserID, "owner-list@test.com", "Owner List", model.RoleMember)
+	seedWorkflowForStoryTest(t, db, wsID, workflowID, stateID)
+	epic := createTestEpic(t, svc, wsID, userID, "Enriched task list")
+
+	task := model.PMTask{
+		ID:              taskID,
+		WorkspaceID:     wsID,
+		DisplayID:       42,
+		Name:            "Owned task",
+		TaskType:        model.PMTaskTypeFeature,
+		WorkflowID:      workflowID,
+		WorkflowStateID: stateID,
+		EpicID:          &epic.Epic.ID,
+		Priority:        model.PMTaskPriorityMedium,
+		Severity:        model.PMTaskSeverityNone,
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := db.Create(&model.PMTaskOwner{TaskID: taskID, UserID: ownerUserID}).Error; err != nil {
+		t.Fatalf("create task owner: %v", err)
+	}
+	label := model.PMLabel{
+		ID:          labelID,
+		WorkspaceID: wsID,
+		Name:        "Important",
+		Color:       stringPtr("#2563eb"),
+	}
+	if err := db.Create(&label).Error; err != nil {
+		t.Fatalf("create label: %v", err)
+	}
+	if err := db.Create(&model.PMTaskLabel{TaskID: taskID, LabelID: labelID}).Error; err != nil {
+		t.Fatalf("create task label: %v", err)
+	}
+
+	tasks, err := svc.ListTasks(ctx, epic.Epic.ID)
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("tasks len = %d, want 1", len(tasks))
+	}
+	if got := tasks[0].OwnerMemberIDs; len(got) != 1 || got[0] != ownerMemberID {
+		t.Fatalf("OwnerMemberIDs = %#v, want [%s]", got, ownerMemberID)
+	}
+	if len(tasks[0].Labels) != 1 || tasks[0].Labels[0].ID != labelID {
+		t.Fatalf("Labels = %#v, want label %s", tasks[0].Labels, labelID)
+	}
+	if tasks[0].StateName == nil || *tasks[0].StateName != "Backlog" {
+		t.Fatalf("StateName = %v, want Backlog", tasks[0].StateName)
+	}
+	if tasks[0].TaskKey == "" {
+		t.Fatal("TaskKey is empty")
+	}
+}
+
 func TestPMEpicService_Create_Forbidden(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
