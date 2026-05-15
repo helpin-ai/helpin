@@ -88,9 +88,11 @@ export function ExternalLinks({ workspaceId, entityType, entityId, onContentChan
     <div className="space-y-3">
       <div className="rounded-lg border border-border/60 bg-card">
         <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
-          <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <div className="flex items-center gap-1.5">
             <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-            External Links
+            <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
+              External Links
+            </span>
             {links.length > 0 ? (
               <span className="text-xs font-normal text-muted-foreground">({links.length})</span>
             ) : null}
