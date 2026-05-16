@@ -86,7 +86,7 @@ export function AgentPickerCard({
     [agents, runnableTarget, targetTeamId],
   );
   const selectedAgent = runnableAgents.find((agent) => agent.id === value);
-  const helper = 'Use AI agents with business and repo context for coding, planning, marketing, support, and more.';
+  const helper = 'Use context-aware AI agents for planning, coding, and more.';
   const manualTargetLabel = runnableTarget === 'epic' ? 'Manual epic' : 'Manual task';
   const selectedValue = value ?? '__none__';
   const options = useMemo(
