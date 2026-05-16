@@ -739,9 +739,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : assignedAgentId ? 'Create & run agent' : 'Create Epic'}
@@ -1132,9 +1129,6 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Sprint'}
@@ -1482,9 +1476,6 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Objective'}
