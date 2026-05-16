@@ -1073,44 +1073,40 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
 
         {/* Workflow States Editor Dialog */}
         <Dialog open={workflowDialogOpen} onOpenChange={setWorkflowDialogOpen}>
-          <DialogContent
-            className="max-h-[90vh] overflow-y-auto"
-            style={{
-              width: `min(96vw, ${Math.max(40, (activeTeamWorkflow?.states.length ?? 3) * 14.5 + 6)}rem)`,
-              maxWidth: '96vw',
-            }}
-          >
-            <DialogHeader>
+          <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+            <DialogHeader className="border-b border-border px-5 py-4">
               <DialogTitle>Workflow States</DialogTitle>
             </DialogHeader>
-            {activeTeamWorkflow ? (
-              <>
-                <PipelineBuilder
-                  workspaceId={workspaceId}
-                  workflowId={activeTeamWorkflow.workflow.id}
-                  states={activeTeamWorkflow.states.slice().sort((a, b) => a.position - b.position)}
-                  agents={pipelineAgents}
-                  rules={pipelineRules}
-                  editable={teamEditable}
-                  onChanged={() => {
-                    automationRuleService.listByWorkflow(workspaceId, activeTeamWorkflow.workflow.id).then((res) => {
-                      if (res.data) setPipelineRules(res.data);
-                    });
-                  }}
-                />
-                <TeamWorkflowStateEditor
-                  workspaceId={workspaceId}
-                  workflow={activeTeamWorkflow}
-                  editable={teamEditable}
-                  onUpdate={(updated) => {
-                    setWorkflows((prev) => prev.map((w) => w.workflow.id === updated.workflow.id ? updated : w));
-                  }}
-                />
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground py-2">No workflow configured for this team.</p>
-            )}
-            <DialogFooter>
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
+              {activeTeamWorkflow ? (
+                <>
+                  <PipelineBuilder
+                    workspaceId={workspaceId}
+                    workflowId={activeTeamWorkflow.workflow.id}
+                    states={activeTeamWorkflow.states.slice().sort((a, b) => a.position - b.position)}
+                    agents={pipelineAgents}
+                    rules={pipelineRules}
+                    editable={teamEditable}
+                    onChanged={() => {
+                      automationRuleService.listByWorkflow(workspaceId, activeTeamWorkflow.workflow.id).then((res) => {
+                        if (res.data) setPipelineRules(res.data);
+                      });
+                    }}
+                  />
+                  <TeamWorkflowStateEditor
+                    workspaceId={workspaceId}
+                    workflow={activeTeamWorkflow}
+                    editable={teamEditable}
+                    onUpdate={(updated) => {
+                      setWorkflows((prev) => prev.map((w) => w.workflow.id === updated.workflow.id ? updated : w));
+                    }}
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground py-2">No workflow configured for this team.</p>
+              )}
+            </div>
+            <DialogFooter className="border-t border-border px-5 py-3">
               <Button onClick={() => setWorkflowDialogOpen(false)}>Done</Button>
             </DialogFooter>
           </DialogContent>
