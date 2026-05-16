@@ -86,10 +86,7 @@ export function AgentPickerCard({
     [agents, runnableTarget, targetTeamId],
   );
   const selectedAgent = runnableAgents.find((agent) => agent.id === value);
-  const helper = hasRepoContext
-    ? 'Use AI agents with business and repo context for coding, planning, marketing, support, and more.'
-    : 'Select a repo to give AI agents code context for coding, planning, support, and more.';
-  const helperClassName = hasRepoContext ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-300';
+  const helper = 'Use AI agents with business and repo context for coding, planning, marketing, support, and more.';
   const manualTargetLabel = runnableTarget === 'epic' ? 'Manual epic' : 'Manual task';
   const selectedValue = value ?? '__none__';
   const options = useMemo(
@@ -119,7 +116,12 @@ export function AgentPickerCard({
           <BotIcon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <div className="min-w-0">
             <p className="text-sm font-medium leading-tight">Assign agent</p>
-            <p className={cn('mt-0.5 text-xs leading-snug', helperClassName)}>{helper}</p>
+            <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{helper}</p>
+            {!hasRepoContext && (
+              <p className="mt-1 text-xs leading-snug text-amber-700 dark:text-amber-300">
+                Connect a repo to give AI agents code context.
+              </p>
+            )}
           </div>
         </div>
 
