@@ -632,6 +632,7 @@ function EpicVirtualTable({
 }: EpicVirtualTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
+  const columnVisibilityVersion = useMemo(() => JSON.stringify(columnVisibility), [columnVisibility]);
   const table = useReactTable({
     data,
     columns,
@@ -778,6 +779,7 @@ function EpicVirtualTable({
                       row={item.row}
                       onRowClick={onRowClick}
                       columnSizingVersion={columnSizingVersion}
+                      columnVisibilityVersion={columnVisibilityVersion}
                     />
                   )}
                 </div>
@@ -821,6 +823,7 @@ interface EpicDataRowProps {
   row: Row<EpicWithStats>;
   onRowClick: (entry: EpicWithStats) => void;
   columnSizingVersion: string;
+  columnVisibilityVersion: string;
 }
 
 function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps) {
@@ -828,6 +831,7 @@ function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
     prev.columnSizingVersion === next.columnSizingVersion &&
+    prev.columnVisibilityVersion === next.columnVisibilityVersion &&
     prev.onRowClick === next.onRowClick
   );
 }
@@ -836,8 +840,10 @@ const MemoEpicDataRow = memo(function EpicDataRow({
   row,
   onRowClick,
   columnSizingVersion,
+  columnVisibilityVersion,
 }: EpicDataRowProps) {
   void columnSizingVersion;
+  void columnVisibilityVersion;
   return (
     <div
       className={`${TABLE_ROW} cursor-pointer`}
