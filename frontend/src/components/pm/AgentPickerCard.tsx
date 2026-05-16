@@ -3,7 +3,7 @@ import { useEffect, useMemo } from 'react';
 import { AgentAvatar, getAgentPersonaMeta } from '@/components/agents/AgentAvatar';
 import { Button } from '@/components/ui/button';
 import { useAgents } from '@/hooks/queries/useAgents';
-import { BotIcon, Loading01Icon, PlayIcon } from '@/lib/icons';
+import { Loading01Icon, PlayIcon } from '@/lib/icons';
 import type { Agent, AgentPresetKey } from '@/lib/pmTypes';
 import { cn } from '@/lib/utils';
 import { SidebarPopoverSelect } from './SidebarPopoverSelect';
@@ -112,8 +112,7 @@ export function AgentPickerCard({
   return (
     <section className={cn('rounded-lg border border-border/60 bg-background px-3 py-2.5', className)}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-1 items-start gap-2">
-          <BotIcon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <div className="flex min-w-0 flex-1 items-start">
           <div className="min-w-0">
             <p className="text-sm font-medium leading-tight">Assign agent</p>
             <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{helper}</p>
