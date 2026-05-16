@@ -271,19 +271,29 @@ export function isCreateTaskModalDirty({
 
 // ── Metadata Row ───────────────────────────────────────────────────
 
+const CODE_REPO_TOOLTIP = "Gives agents code context for planning and running work.";
+
 function MetadataRow({
   icon: Icon,
   label,
+  tooltip,
   children,
 }: {
   icon: React.ElementType;
   label: string;
+  tooltip?: string;
   children: React.ReactNode;
 }) {
+  const labelNode = <span className="text-xs text-muted-foreground self-center">{label}</span>;
+
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-xs text-muted-foreground self-center">{label}</span>
+      {tooltip ? (
+        <QuickTooltip label={tooltip} side="left">
+          {labelNode}
+        </QuickTooltip>
+      ) : labelNode}
       <div className="min-w-0 self-center">{children}</div>
     </>
   );
@@ -1849,22 +1859,22 @@ export function CreateTaskModal({
                 )}
 
                 {showPlanningRepository && (
-                <MetadataRow icon={Layers01Icon} label="Plan repo">
-                  <SidebarPopoverSelect
-                    value={teamRepoDefault?.repository_id || "__none__"}
-                    options={[
-                      { value: "__none__", label: "Not configured" },
-                      ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
-                    ]}
-                    onChange={() => undefined}
-                    disabled
-                    renderTrigger={() => (
-                      <span className="block whitespace-normal break-words text-left leading-tight">
-                        {currentPlanningRepositoryName}
-                      </span>
-                    )}
-                  />
-                </MetadataRow>
+                  <MetadataRow icon={SourceCodeIcon} label="Code repo" tooltip={CODE_REPO_TOOLTIP}>
+                    <SidebarPopoverSelect
+                      value={teamRepoDefault?.repository_id || "__none__"}
+                      options={[
+                        { value: "__none__", label: "Not configured" },
+                        ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
+                      ]}
+                      onChange={() => undefined}
+                      disabled
+                      renderTrigger={() => (
+                        <span className="block whitespace-normal break-words text-left leading-tight">
+                          {currentPlanningRepositoryName}
+                        </span>
+                      )}
+                    />
+                  </MetadataRow>
                 )}
 
                 {/* ── Tracking ── */}

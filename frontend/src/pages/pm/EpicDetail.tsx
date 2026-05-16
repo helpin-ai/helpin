@@ -18,6 +18,7 @@ import {
   Message01Icon,
   PencilEdit01Icon,
   PlusSignIcon,
+  SourceCodeIcon,
   Target01Icon,
   Upload01Icon,
   UserIcon,
@@ -95,22 +96,31 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   off_track: { label: 'Off track', color: 'text-red-600' },
 };
 const NO_HEALTH_DATES_TOOLTIP = 'No suggestion yet: set a start date and deadline.';
+const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and running work.';
 
 // ── Metadata Row ───────────────────────────────────────────────────
 
 function MetadataRow({
   icon: Icon,
   label,
+  tooltip,
   children,
 }: {
   icon: React.ElementType;
   label: string;
+  tooltip?: string;
   children: React.ReactNode;
 }) {
+  const labelNode = <span className="text-[12px] text-muted-foreground self-center">{label}</span>;
+
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-[12px] text-muted-foreground self-center">{label}</span>
+      {tooltip ? (
+        <QuickTooltip label={tooltip} side="left">
+          {labelNode}
+        </QuickTooltip>
+      ) : labelNode}
       <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
@@ -1333,8 +1343,8 @@ export function EpicDetailPage() {
               <>
                 <Separator className="col-span-3 my-1" />
 
-                {/* Planning Repo */}
-                <MetadataRow icon={Layers01Icon} label="Plan repo">
+                {/* Code repo */}
+                <MetadataRow icon={SourceCodeIcon} label="Code repo" tooltip={CODE_REPO_TOOLTIP}>
                   <SidebarPopoverSelect
                     value={form.planning_repository_id || '__none__'}
                     options={[

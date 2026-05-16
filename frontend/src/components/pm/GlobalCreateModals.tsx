@@ -8,13 +8,13 @@ import {
   UserGroupIcon,
   Cancel01Icon,
   HashtagIcon,
-  Layers01Icon,
   AttachmentIcon,
   Delete01Icon,
   Upload01Icon,
   Link01Icon,
   LinkSquare01Icon as ExternalLinkIcon,
   PlusSignIcon,
+  SourceCodeIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -67,6 +67,7 @@ import {
 } from '@/components/pm/sprintAutomationPrompt';
 import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
 import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 import pdfIcon from '@/assets/attachment/pdf-icon.png';
 import csvIcon from '@/assets/attachment/csv-icon.png';
@@ -86,6 +87,7 @@ import videoIcon from '@/assets/attachment/video-icon.png';
 import defaultIcon from '@/assets/attachment/default-icon.png';
 
 const MAX_PENDING_ATTACHMENT_SIZE = 50 * 1024 * 1024;
+const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and running work.';
 
 function getFileExtension(filename: string): string {
   const parts = filename.split('.');
@@ -712,8 +714,10 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   <>
                     <Separator className="col-span-3 my-1" />
 
-                    <Layers01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                    <span className="text-xs text-muted-foreground self-center">Plan repo</span>
+                    <SourceCodeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                    <QuickTooltip label={CODE_REPO_TOOLTIP} side="left">
+                      <span className="text-xs text-muted-foreground self-center">Code repo</span>
+                    </QuickTooltip>
                     <SidebarPopoverSelect
                       value={meta.planningRepositoryId || '__none__'}
                       options={[
