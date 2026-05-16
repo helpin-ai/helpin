@@ -118,7 +118,7 @@ export function AgentPickerCard({
             <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{helper}</p>
             {!hasRepoContext && (
               <p className="mt-1 text-xs leading-snug text-amber-700 dark:text-amber-300">
-                Select a code repo to give agents code context.
+                Agents lack code context because repo isn't selected yet.
               </p>
             )}
           </div>
