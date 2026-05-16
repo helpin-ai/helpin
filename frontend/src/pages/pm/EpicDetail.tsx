@@ -96,7 +96,7 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   off_track: { label: 'Off track', color: 'text-red-600' },
 };
 const NO_HEALTH_DATES_TOOLTIP = 'No suggestion yet: set a start date and deadline.';
-const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and running work.';
+const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and execution.';
 
 // ── Metadata Row ───────────────────────────────────────────────────
 

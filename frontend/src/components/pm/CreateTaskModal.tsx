@@ -271,7 +271,7 @@ export function isCreateTaskModalDirty({
 
 // ── Metadata Row ───────────────────────────────────────────────────
 
-const CODE_REPO_TOOLTIP = "Gives agents code context for planning and running work.";
+const CODE_REPO_TOOLTIP = "Gives agents code context for planning and execution.";
 
 function MetadataRow({
   icon: Icon,

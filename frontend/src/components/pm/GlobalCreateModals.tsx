@@ -87,7 +87,7 @@ import videoIcon from '@/assets/attachment/video-icon.png';
 import defaultIcon from '@/assets/attachment/default-icon.png';
 
 const MAX_PENDING_ATTACHMENT_SIZE = 50 * 1024 * 1024;
-const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and running work.';
+const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and execution.';
 
 function getFileExtension(filename: string): string {
   const parts = filename.split('.');
