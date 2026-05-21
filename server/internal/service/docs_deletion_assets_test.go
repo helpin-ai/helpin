@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"testing"
@@ -26,6 +27,22 @@ func (s *fakeDocsAssetStore) PublicURL(key string) string {
 func (s *fakeDocsAssetStore) DeleteObject(_ context.Context, key string) error {
 	s.deleted = append(s.deleted, key)
 	return nil
+}
+
+type fakeDocsAssetCleanupEnqueuer struct {
+	err               error
+	workspaceID       string
+	deletedDocumentID string
+	candidateKeys     []string
+	calls             int
+}
+
+func (e *fakeDocsAssetCleanupEnqueuer) EnqueueDocsAssetCleanup(_ context.Context, workspaceID, deletedDocumentID string, candidateAssetKeys []string) error {
+	e.calls++
+	e.workspaceID = workspaceID
+	e.deletedDocumentID = deletedDocumentID
+	e.candidateKeys = append([]string(nil), candidateAssetKeys...)
+	return e.err
 }
 
 func setupDocsDeletionTestDB(t *testing.T) *gorm.DB {
@@ -368,6 +385,7 @@ func TestDocsDocumentDeleteHardDeletesGraphAndExclusiveAssets(t *testing.T) {
 	docRepo := repository.NewDocsDocumentRepository(db, false)
 	svc := NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil, false)
 	store := &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"}
+	cleanup := &fakeDocsAssetCleanupEnqueuer{}
 	svc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
 		ContentRepo:     repository.NewDocsContentRepository(db),
 		VersionRepo:     repository.NewDocsVersionRepository(db),
@@ -377,6 +395,7 @@ func TestDocsDocumentDeleteHardDeletesGraphAndExclusiveAssets(t *testing.T) {
 		PublicationRepo: repository.NewDocsHelpcenterPublicationRepository(db),
 		TranslationRepo: repository.NewDocsHelpcenterTranslationRepository(db),
 		AssetStore:      store,
+		CleanupEnqueuer: cleanup,
 	})
 
 	if err := svc.Delete(ctx, "doc-delete"); err != nil {
@@ -415,9 +434,88 @@ func TestDocsDocumentDeleteHardDeletesGraphAndExclusiveAssets(t *testing.T) {
 		t.Fatalf("kept document was deleted")
 	}
 
-	sort.Strings(store.deleted)
-	if got, want := store.deleted, []string{uniqueKey}; fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("deleted assets = %v, want %v", got, want)
+	if len(store.deleted) != 0 {
+		t.Fatalf("synchronous deleted assets = %v, want none", store.deleted)
+	}
+	sort.Strings(cleanup.candidateKeys)
+	if got, want := cleanup.candidateKeys, []string{sharedKey, uniqueKey}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("cleanup candidate assets = %v, want %v", got, want)
+	}
+	if cleanup.calls != 1 || cleanup.workspaceID != workspaceID || cleanup.deletedDocumentID != "doc-delete" {
+		t.Fatalf("cleanup enqueue = calls:%d workspace:%q doc:%q", cleanup.calls, cleanup.workspaceID, cleanup.deletedDocumentID)
+	}
+}
+
+func TestDocsDocumentDeleteEnqueueFailureDoesNotFailDelete(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-enqueue-failure"
+		spaceID     = "space-enqueue-failure"
+		userID      = "user-enqueue-failure"
+	)
+	ctx := context.Background()
+	db := setupDocsDeletionTestDB(t)
+	now := time.Date(2026, 4, 16, 10, 30, 0, 0, time.UTC)
+
+	seedDocsSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Assets",
+		Slug:        "assets",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeInternal,
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsOrderingDocument(t, db, model.DocsDocument{
+		ID:          "doc-delete",
+		WorkspaceID: workspaceID,
+		SpaceID:     spaceID,
+		Title:       "Delete",
+		Status:      model.DocStatusDraft,
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	assetKey := "docs-import/ws-enqueue-failure/import-1/unique.png"
+	contentRaw := fmt.Sprintf(`{"type":"doc","content":[{"type":"image","attrs":{"src":"https://cdn.helpin.test/%s"}}]}`, assetKey)
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		"content-delete", "doc-delete", []byte(contentRaw), now, now).Error; err != nil {
+		t.Fatalf("seed deleted content: %v", err)
+	}
+
+	docRepo := repository.NewDocsDocumentRepository(db, false)
+	cleanup := &fakeDocsAssetCleanupEnqueuer{err: errors.New("temporal unavailable")}
+	svc := NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil, false)
+	svc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
+		ContentRepo:     repository.NewDocsContentRepository(db),
+		VersionRepo:     repository.NewDocsVersionRepository(db),
+		LinkRepo:        repository.NewDocsLinkRepository(db),
+		ChunkRepo:       repository.NewDocsChunkRepository(db),
+		HelpcenterRepo:  repository.NewDocsHelpcenterRepository(db, false),
+		PublicationRepo: repository.NewDocsHelpcenterPublicationRepository(db),
+		TranslationRepo: repository.NewDocsHelpcenterTranslationRepository(db),
+		AssetStore:      &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"},
+		CleanupEnqueuer: cleanup,
+	})
+
+	if err := svc.Delete(ctx, "doc-delete"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if cleanup.calls != 1 {
+		t.Fatalf("cleanup calls = %d, want 1", cleanup.calls)
+	}
+	var docCount int64
+	if err := db.WithContext(ctx).Table("docs_documents").Where("id = ?", "doc-delete").Count(&docCount).Error; err != nil {
+		t.Fatalf("count docs_documents: %v", err)
+	}
+	if docCount != 0 {
+		t.Fatalf("docs_documents rows for deleted document = %d, want 0", docCount)
 	}
 }
 
@@ -515,6 +613,7 @@ func TestDocsCollectionDeleteWithPermanentDependenciesDeletesSubtreeAndAssets(t 
 	spaceRepo := repository.NewDocsSpaceRepository(db)
 	collectionRepo := repository.NewDocsCollectionRepository(db, false)
 	store := &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"}
+	cleanup := &fakeDocsAssetCleanupEnqueuer{}
 	docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil, false)
 	docSvc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
 		ContentRepo:     repository.NewDocsContentRepository(db),
@@ -525,6 +624,7 @@ func TestDocsCollectionDeleteWithPermanentDependenciesDeletesSubtreeAndAssets(t 
 		PublicationRepo: repository.NewDocsHelpcenterPublicationRepository(db),
 		TranslationRepo: repository.NewDocsHelpcenterTranslationRepository(db),
 		AssetStore:      store,
+		CleanupEnqueuer: cleanup,
 	})
 	collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo, nil, false)
 	collectionSvc.SetPermanentDeleteDependencies(docRepo, docSvc, repository.NewDocsHelpcenterTranslationRepository(db))
@@ -547,8 +647,11 @@ func TestDocsCollectionDeleteWithPermanentDependenciesDeletesSubtreeAndAssets(t 
 	if docCount != 0 {
 		t.Fatalf("document rows after collection delete = %d, want 0", docCount)
 	}
-	if got, want := store.deleted, []string{assetKey}; fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("deleted assets = %v, want %v", got, want)
+	if len(store.deleted) != 0 {
+		t.Fatalf("synchronous deleted assets = %v, want none", store.deleted)
+	}
+	if got, want := cleanup.candidateKeys, []string{assetKey}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("cleanup candidate assets = %v, want %v", got, want)
 	}
 }
 
