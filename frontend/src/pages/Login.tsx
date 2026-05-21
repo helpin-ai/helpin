@@ -11,13 +11,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
-import { loginRedirectFromSearch } from '@/lib/authRedirect';
+import { consumeRedirectAfterLogin, loginRedirectFromSearch } from '@/lib/authRedirect';
 
 export default function Login() {
   useTitle('Sign In');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [twoFaToken, setTwoFaToken] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [useRecoveryCode, setUseRecoveryCode] = useState(false);
@@ -28,16 +28,19 @@ export default function Login() {
   const redirect = loginRedirectFromSearch();
   const registerHref = redirect ? `/register?redirect=${encodeURIComponent(redirect)}` : '/register';
 
-  const completeLoginRedirect = async () => {
-    const redirect = loginRedirectFromSearch();
+  const completeLoginRedirect = async (isCancelled?: () => boolean) => {
+    const redirect = loginRedirectFromSearch() ?? consumeRedirectAfterLogin();
     if (redirect) {
-      navigate({ to: redirect as string });
+      window.location.assign(redirect);
       return;
     }
 
     // After login, redirect to the user's default workspace if set.
     const { data: workspaces } = await workspacesService.list();
-    setLoading(false);
+    if (isCancelled?.()) {
+      return;
+    }
+
     if (workspaces && workspaces.length > 0) {
       const user = useAuthStore.getState().user;
       const defaultWs = user?.default_workspace_id
@@ -81,28 +84,7 @@ export default function Login() {
 
       setLoading(true);
       try {
-        const redirect = loginRedirectFromSearch();
-        if (redirect) {
-          navigate({ to: redirect as string });
-          return;
-        }
-
-        const { data: workspaces } = await workspacesService.list();
-        if (cancelled) {
-          return;
-        }
-
-        if (workspaces && workspaces.length > 0) {
-          const user = useAuthStore.getState().user;
-          const defaultWs = user?.default_workspace_id
-            ? workspaces.find((workspace) => workspace.id === user.default_workspace_id)
-            : null;
-          const targetSlug = defaultWs ? defaultWs.slug : workspaces[0].slug;
-          navigate({ to: '/w/$slug/pm/my-work', params: { slug: targetSlug } });
-          return;
-        }
-
-        navigate({ to: '/workspaces' });
+        await completeLoginRedirect(() => cancelled);
       } finally {
         setLoading(false);
       }

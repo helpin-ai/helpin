@@ -78,10 +78,10 @@ func TestGenerateAndValidateRefreshToken(t *testing.T) {
 	if claims.ExpiresAt == nil {
 		t.Fatal("ExpiresAt is nil")
 	}
-	// Refresh token (no remember me) expires in 24 hours.
+	// Refresh token (no remember me) expires in 7 days.
 	expiresIn := time.Until(claims.ExpiresAt.Time)
-	if expiresIn < 23*time.Hour+59*time.Minute || expiresIn > 24*time.Hour+1*time.Minute {
-		t.Errorf("refresh token expiry = %v from now, want ~24h", expiresIn)
+	if expiresIn < 7*24*time.Hour-time.Minute || expiresIn > 7*24*time.Hour+time.Minute {
+		t.Errorf("refresh token expiry = %v from now, want ~7d", expiresIn)
 	}
 }
 

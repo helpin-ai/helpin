@@ -155,8 +155,6 @@ export default function JoinWorkspace() {
         setSubmitting(false);
         return;
       }
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('refresh_token', data.refresh_token);
       useAuthStore.setState({ user: data.user, serverUnreachable: false });
       toast.success(`Welcome to ${info?.workspace_name}!`);
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] });

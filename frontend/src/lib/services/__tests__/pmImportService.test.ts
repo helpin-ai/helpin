@@ -1,16 +1,9 @@
-// @vitest-environment jsdom
-
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { pmImportService } from '../pmImportService';
 
 describe('pmImportService Shortcut API import', () => {
-  beforeEach(() => {
-    localStorage.setItem('access_token', 'token-123');
-  });
-
   afterEach(() => {
     vi.restoreAllMocks();
-    localStorage.clear();
   });
 
   it('starts Shortcut API preview scan', async () => {
@@ -41,8 +34,8 @@ describe('pmImportService Shortcut API import', () => {
       expect.stringContaining('/workspaces/ws-1/import/shortcut/api/preview'),
       expect.objectContaining({
         method: 'POST',
+        credentials: 'include',
         headers: expect.objectContaining({
-          Authorization: 'Bearer token-123',
           'Content-Type': 'application/json',
         }),
       }),
@@ -100,8 +93,9 @@ describe('pmImportService Shortcut API import', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/workspaces/ws-1/import/shortcut/api/preview/scan-1'),
       expect.objectContaining({
+        credentials: 'include',
         headers: expect.objectContaining({
-          Authorization: 'Bearer token-123',
+          'Content-Type': 'application/json',
         }),
       }),
     );
@@ -141,6 +135,7 @@ describe('pmImportService Shortcut API import', () => {
       expect.stringContaining('/workspaces/ws-1/import/shortcut/api/execute'),
       expect.objectContaining({
         method: 'POST',
+        credentials: 'include',
         body: JSON.stringify({
           api_token: 'sc-token',
           preview_scan_id: 'scan-1',
