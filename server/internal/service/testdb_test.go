@@ -853,6 +853,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			conversation_id TEXT,
 			epic_id TEXT,
 			task_id TEXT,
+			run_id TEXT,
 			from_agent_id TEXT,
 			to_agent_id TEXT,
 			to_user_id TEXT,

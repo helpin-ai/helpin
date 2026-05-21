@@ -1250,6 +1250,26 @@ func TestInlineReadOnlyChatUsesDocsToolForDocumentPublishCount(t *testing.T) {
 		updated_at DATETIME,
 		deleted_at DATETIME
 	)`)
+	mustExec(t, db, `CREATE TABLE docs_change_proposals (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		document_id TEXT NOT NULL,
+		block_id TEXT,
+		agent_id TEXT,
+		agent_run_id TEXT,
+		scope TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		revision INTEGER NOT NULL DEFAULT 0,
+		summary TEXT NOT NULL,
+		content_markdown TEXT NOT NULL,
+		content JSON NOT NULL,
+		sources JSON NOT NULL DEFAULT '[]',
+		created_by TEXT NOT NULL,
+		resolved_by TEXT,
+		resolved_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
 	for _, row := range []struct {
 		id     string
 		title  string
