@@ -14,10 +14,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers: buildHeaders(options.headers),
     });
 
     if (res.status === 401 && shouldAttemptRefresh(path)) {
@@ -27,10 +24,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
         const retryRes = await fetch(`${API_BASE}${path}`, {
           ...options,
           credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            ...options.headers,
-          },
+          headers: buildHeaders(options.headers),
         });
         if (!retryRes.ok) {
           const err = await retryRes.json().catch(() => ({ error: retryRes.statusText }));
@@ -66,6 +60,37 @@ function shouldAttemptRefresh(path: string): boolean {
   return path === '/auth/me' || !path.startsWith('/auth/');
 }
 
+function buildHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (!headers.has('Authorization')) {
+    const accessToken = getStoredToken('access_token');
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+    }
+  }
+  return headers;
+}
+
+function getStoredToken(key: 'access_token' | 'refresh_token'): string | null {
+  try {
+    return localStorage.getItem(key)?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function clearLegacyAuthTokens(): void {
+  try {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+  } catch {
+    // Ignore storage access failures; cookies are the source of truth.
+  }
+}
+
 function clearLegacyTokenStorage(): void {
   try {
     localStorage.removeItem('access_token');
@@ -78,13 +103,16 @@ function clearLegacyTokenStorage(): void {
 
 async function tryRefreshToken(): Promise<boolean> {
   try {
+    const legacyRefreshToken = getStoredToken('refresh_token');
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
+      body: legacyRefreshToken ? JSON.stringify({ refresh_token: legacyRefreshToken }) : undefined,
     });
     if (!res.ok) return false;
     await res.json().catch(() => null);
+    clearLegacyAuthTokens();
     return true;
   } catch {
     return false;

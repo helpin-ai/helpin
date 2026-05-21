@@ -32,7 +32,7 @@ interface AuthState {
     useRecoveryCode: boolean,
     rememberMe?: boolean,
   ) => Promise<{ error: string | null }>
-  signOut: () => void
+  signOut: () => Promise<void>
 }
 
 let initializing = false
@@ -168,8 +168,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null }
   },
 
-  signOut: () => {
-    void authService.signout()
+  signOut: async () => {
+    await authService.signout()
     clearAuthSession()
     set({ user: null, serverUnreachable: false })
     window.location.href = '/admin/login'

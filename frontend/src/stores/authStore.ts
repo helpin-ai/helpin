@@ -18,7 +18,7 @@ interface AuthState {
   ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
   verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
 }
 
@@ -129,8 +129,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null };
   },
 
-  signOut: () => {
-    void authService.signout();
+  signOut: async () => {
+    await authService.signout();
     clearClientSession();
     set({ user: null });
     window.location.replace('/login');
