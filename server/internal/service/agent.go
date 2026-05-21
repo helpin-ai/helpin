@@ -3286,6 +3286,8 @@ func reviewDecisionArtifactFromInteraction(interaction *model.AgentRunInteractio
 	statusForSelection := "requested_changes"
 	if response.Decision == "approve" {
 		statusForSelection = "approved"
+	} else if response.Decision == "skip" {
+		statusForSelection = "skipped"
 	}
 
 	findings := make([]model.ReviewDecisionFinding, 0, len(request.Findings))

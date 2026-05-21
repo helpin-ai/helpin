@@ -312,6 +312,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
       ...(followupMessage.trim() ? { message: followupMessage.trim() } : {}),
       ...(selectionMode ? { selection_mode: selectionMode } : {}),
       ...(selectionMode === 'selected' ? { selected_finding_ids: selectedFindingIDs } : {}),
+      ...(selectionMode === 'none' ? { selected_finding_ids: [] } : {}),
     });
 
     return (
@@ -404,7 +405,7 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
         <Textarea
           value={followupMessage}
           onChange={(event) => setFollowupMessage(event.target.value)}
-          placeholder={hasFindings ? 'Optional note about the approved or requested finding set' : 'Optional note for the agent'}
+          placeholder={hasFindings ? 'Optional note about the selected or skipped findings' : 'Optional note for the agent'}
           className={cn('min-h-[76px]', hasFindings && 'mt-4')}
           disabled={isBusy}
         />
@@ -412,28 +413,27 @@ export function CodingInteractionCard({ interaction, acting, onResolve, compact 
           <Button
             size="sm"
             className={approveButtonClassName}
-            disabled={isBusy}
+            disabled={isBusy || (hasFindings && selectedCount === 0)}
             onClick={() => onResolve(
               interaction.interaction_id,
-              buildReviewResponse('approve', hasFindings ? 'all' : undefined),
+              buildReviewResponse('approve', hasFindings ? 'selected' : undefined),
               followupMessage.trim() || undefined,
             )}
           >
-            {hasFindings ? 'Approve all' : 'Approve'}
+            Approve
           </Button>
           {hasFindings ? (
             <Button
               variant="outline"
-              className={approveButtonClassName}
               size="sm"
-              disabled={isBusy || selectedCount === 0}
+              disabled={isBusy}
               onClick={() => onResolve(
                 interaction.interaction_id,
-                buildReviewResponse('approve', 'selected'),
+                buildReviewResponse('skip', 'none'),
                 followupMessage.trim() || undefined,
               )}
             >
-              Approve selected
+              Skip
             </Button>
           ) : null}
           <Button
