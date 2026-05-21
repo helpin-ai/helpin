@@ -7,22 +7,13 @@ import (
 )
 
 func toolListWorkspaceTeams(ctx *ExecutionContext, input json.RawMessage) (string, error) {
-	if ctx == nil {
-		return "", fmt.Errorf("execution context is required")
+	if output, ok, err := executeInternalCommand(ctx, "workspace", ctx.WorkspaceID, "workspace.list_teams", input); ok {
+		if err != nil {
+			return "", fmt.Errorf("list workspace teams: %w", err)
+		}
+		return string(output), nil
 	}
-	if ctx.Services == nil || ctx.Services.ListWorkspaceTeams == nil {
-		return "", fmt.Errorf("workspace team lookup is not available for this agent")
-	}
-
-	teams, err := ctx.Services.ListWorkspaceTeams(ctx.Context, ctx.WorkspaceID)
-	if err != nil {
-		return "", fmt.Errorf("list workspace teams: %w", err)
-	}
-	if len(teams) == 0 {
-		return "No workspace teams found.", nil
-	}
-
-	return toCompactJSONString(teams), nil
+	return "", fmt.Errorf("list_workspace_teams requires internal commands")
 }
 
 func toolListTeamWorkflowsWithStages(ctx *ExecutionContext, input json.RawMessage) (string, error) {

@@ -93,6 +93,14 @@ func setupDocsOrderingTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME,
 			deleted_at DATETIME
 		)`,
+		`CREATE TABLE docs_change_proposals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 	}
 
 	for _, stmt := range stmts {

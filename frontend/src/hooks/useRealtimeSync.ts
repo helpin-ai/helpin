@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
-import { logPMDnD } from '@/lib/pmDnDDebug'
+import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload'
 import type { Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
 const BOARD_ENTITIES = new Set(['task'])
@@ -19,7 +19,7 @@ let notificationAudio: HTMLAudioElement | null = null
 function playNotificationSound() {
   try {
     if (!notificationAudio) {
-      notificationAudio = new Audio('/sounds/ping.mp3')
+      notificationAudio = new Audio('/sounds/ping-v2.mp3')
       notificationAudio.volume = 0.5
     }
     notificationAudio.currentTime = 0
@@ -186,15 +186,6 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
     // Task-level events → incremental patch when possible, debounced full refresh as fallback
     if (BOARD_ENTITIES.has(event.entity)) {
       const store = usePMBoardStore.getState()
-      const traceID = typeof event.data?.debug_trace_id === 'string' ? event.data.debug_trace_id : null
-      logPMDnD('ws.task_event', {
-        trace_id: traceID,
-        action: event.action,
-        entity: event.entity,
-        task_id: event.entity_id,
-        workspace_id: event.workspace_id,
-        actor_id: event.actor_id,
-      })
 
       if (event.action === 'deleted') {
         // Delete can be patched locally without re-fetching
@@ -202,17 +193,12 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         if (!patched) scheduleRefresh()
       } else if (event.action === 'moved' || event.action === 'reordered') {
         // Position changes renumber siblings; patching only the moved task leaves stale ordering.
-        logPMDnD('ws.task_event_refresh', {
-          trace_id: traceID,
-          action: event.action,
-          task_id: event.entity_id,
-        })
         scheduleRefresh()
       } else {
         // For created/updated, fetch the updated task and patch it in
         pmTaskService.get(workspaceId, event.entity_id).then((res) => {
           if (res.data) {
-            const task = { ...res.data.task }
+            const task = buildPatchedTaskFromDetail(res.data)
             const patched = store.patchTask(event.action as 'created' | 'updated', event.entity_id, task)
             if (!patched) scheduleRefresh()
           } else {
@@ -277,6 +263,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       const docId = event.parent_id || (typeof event.data?.document_id === 'string' ? event.data.document_id : '')
       if (docId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.docs.changeProposals(workspaceId, docId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.changeProposal(workspaceId, docId, event.entity_id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(workspaceId) })
         if (event.data?.status === 'applied') {
           queryClient.invalidateQueries({ queryKey: queryKeys.docs.content(workspaceId, docId) })
           queryClient.invalidateQueries({ queryKey: queryKeys.docs.blocks(workspaceId, docId) })

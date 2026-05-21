@@ -280,7 +280,7 @@ function CommentRow({
                     onClick={() => setReplying(true)}
                     aria-label="Reply"
                   >
-                    <ArrowTurnBackwardIcon className="h-3.5 w-3.5" />
+                    <ArrowTurnBackwardIcon className="h-3.5 w-3.5 -scale-y-100" />
                   </button>
                 </QuickTooltip>
               )}

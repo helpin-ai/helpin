@@ -475,8 +475,10 @@ function TaskRow({ task, onClick, teamName }: {
       onClick={onClick}
       className="flex items-center gap-2.5 px-2 py-2.5 w-full text-left rounded-md hover:bg-muted/40 transition-colors group"
     >
-      <span className="text-xs text-muted-foreground/50 font-mono shrink-0 w-14 text-right tabular-nums">
-        {task.task_key}
+      <span className="relative h-4 shrink-0 w-14">
+        <span className="absolute right-0 top-1/2 -translate-y-1/2 whitespace-nowrap text-right text-xs font-mono tabular-nums text-muted-foreground/50">
+          {task.task_key}
+        </span>
       </span>
 
       <span className={`text-sm truncate flex-1 min-w-0 ${task.completed ? 'line-through text-muted-foreground/60' : 'text-foreground'}`}>

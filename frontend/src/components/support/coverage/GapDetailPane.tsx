@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
 import { Badge } from '@/components/ui/badge'
+import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import {
   Select,
   SelectContent,
@@ -16,7 +17,6 @@ import {
   Cancel01Icon,
   CheckmarkCircle02Icon,
   FileSearchIcon,
-  HelpCircleIcon,
   Loading01Icon,
   MagicWand01Icon,
 } from '@/lib/icons'
@@ -59,11 +59,98 @@ function recommendationLabel(type: string): string {
   return RECOMMENDATION_TYPE_LABELS[type] ?? coverageTopicLabel(type)
 }
 
+function documentationAgentAction(gap: SupportCoverageGapDetail): { label: string; cta: string; description: string } {
+  const primaryRecommendation =
+    gap.recommendations.find((rec) => rec.priority === 'primary') ?? gap.recommendations[0]
+  switch (primaryRecommendation?.recommendation_type) {
+    case 'add_data':
+      return {
+        label: 'Route missing data',
+        cta: 'Route gap',
+        description: 'Summarize the missing data, customer impact, and docs or owner handoff needed.',
+      }
+    case 'add_action':
+      return {
+        label: 'Route missing action',
+        cta: 'Route gap',
+        description: 'Document the unavailable action or prepare a product handoff when docs are not enough.',
+      }
+    case 'define_policy':
+      return {
+        label: 'Define policy guidance',
+        cta: 'Draft policy',
+        description: 'Turn repeated support ambiguity into clear internal or customer-facing policy guidance.',
+      }
+    case 'improve_workflow':
+      return {
+        label: 'Improve workflow guidance',
+        cta: 'Draft workflow',
+        description: 'Capture the process gap and update internal guidance or hand off the workflow fix.',
+      }
+    case 'no_fix':
+      return {
+        label: 'Review no-fix gap',
+        cta: 'Review',
+        description: 'Summarize why documentation may not fix this and ask for a human decision.',
+      }
+  }
+
+  if (gap.gap_kind === 'data') {
+    return {
+      label: 'Route missing data',
+      cta: 'Route gap',
+      description: 'Summarize the missing data, customer impact, and docs or owner handoff needed.',
+    }
+  }
+  if (gap.gap_kind === 'action') {
+    return {
+      label: 'Route missing action',
+      cta: 'Route gap',
+      description: 'Document the unavailable action or prepare a product handoff when docs are not enough.',
+    }
+  }
+
+  switch (gap.v1_gap_type) {
+    case 'missing_article':
+      return {
+        label: 'Write with Quill',
+        cta: 'Write doc',
+        description: 'Draft the right new doc and choose where it belongs.',
+      }
+    case 'weak_article':
+      return {
+        label: 'Improve with Quill',
+        cta: 'Improve doc',
+        description: 'Use the evidence to strengthen the linked article without creating duplicates.',
+      }
+    case 'outdated_or_conflicting_article':
+      return {
+        label: 'Fix docs with Quill',
+        cta: 'Fix docs',
+        description: 'Find stale or conflicting guidance and prepare a reviewed update.',
+      }
+    case 'needs_review':
+      return {
+        label: 'Investigate with Quill',
+        cta: 'Investigate',
+        description: 'Clarify the gap and propose the right documentation action before drafting.',
+      }
+    default:
+      return {
+        label: 'Run Quill',
+        cta: 'Start agent',
+        description: 'Turn this support pattern into the right documentation work.',
+      }
+  }
+}
+
 export function GapDetailPane({
   gap,
   wsSlug,
   loading,
   canGenerate,
+  canRunDocumentationAgent,
+  startingDocumentationAgent,
   externalSpaces,
   collections,
   targetSpaceId,
@@ -77,6 +164,7 @@ export function GapDetailPane({
   onTargetCollectionChange,
   onSuggestImprovements,
   onDraftNewArticle,
+  onRunDocumentationAgent,
   onApplySuggestion,
   onDiscardSuggestion,
   onSetConfirmSuggestion,
@@ -87,6 +175,8 @@ export function GapDetailPane({
   wsSlug: string
   loading: boolean
   canGenerate: boolean
+  canRunDocumentationAgent: boolean
+  startingDocumentationAgent: boolean
   externalSpaces: DocsSpace[]
   collections: DocsCollection[] | undefined
   targetSpaceId: string
@@ -100,6 +190,7 @@ export function GapDetailPane({
   onTargetCollectionChange: (collectionId: string) => void
   onSuggestImprovements: () => void
   onDraftNewArticle: () => void
+  onRunDocumentationAgent: (gapId: string) => void
   onApplySuggestion: (suggestionId: string, override?: { route?: GapAddRoute; target_document_id?: string }) => void
   onDiscardSuggestion: (suggestionId: string) => void
   onSetConfirmSuggestion: (suggestionId: string | null) => void
@@ -107,6 +198,7 @@ export function GapDetailPane({
   onRegenerate: (gapId: string) => void
 }) {
   const [regenerateLockedUntil, setRegenerateLockedUntil] = useState<number | null>(null)
+  const [quickDraftOpen, setQuickDraftOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -114,6 +206,10 @@ export function GapDetailPane({
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [regenerateLockedUntil])
+
+  useEffect(() => {
+    setQuickDraftOpen(false)
+  }, [gap.id])
 
   const draftSuggestion = gap.suggestions.find((s) => s.status === 'draft') ?? null
   const appliedSuggestion = gap.suggestions.find((s) => s.status === 'applied') ?? null
@@ -138,6 +234,14 @@ export function GapDetailPane({
   const collectionOptions = buildCoverageCollectionOptions(targetSpaceId, collections ?? [])
   const explanation = gap.analysis_explanation
   const recommendations = gap.recommendations ?? []
+  const docsAgentAction = documentationAgentAction(gap)
+  const canQuickDraft =
+    canGenerate &&
+    !draftSuggestion &&
+    !appliedSuggestion &&
+    gap.status === 'open' &&
+    (canSuggestImprovements || canDraftNewArticle)
+  const quickDraftButtonLabel = canSuggestImprovements ? 'Quick improvement draft' : 'Quick article draft'
 
   const handleRegenerate = () => {
     setRegenerateLockedUntil(Date.now() + 30_000)
@@ -226,6 +330,151 @@ export function GapDetailPane({
             Open in Editor
             <ArrowUpRight01Icon className="h-3 w-3" />
           </a>
+        </div>
+      )}
+
+      {gap.status === 'open' && (
+        <div className="p-4">
+          <div className="space-y-3 rounded-md border border-border/40 bg-muted/20 p-3">
+            <div className="flex items-start gap-3">
+              <AgentAvatar
+                agent={{ name: 'Quill', preset_key: 'documentation_agent' }}
+                className="h-8 w-8 shrink-0 rounded-none border-0 bg-transparent shadow-none"
+                genericBare
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Suggested coverage action
+                </p>
+                <p className="mt-1 text-sm font-medium">{docsAgentAction.label}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                  {docsAgentAction.description}
+                </p>
+              </div>
+              {canRunDocumentationAgent && (
+                <button
+                  type="button"
+                  onClick={() => onRunDocumentationAgent(gap.id)}
+                  disabled={startingDocumentationAgent}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {startingDocumentationAgent ? (
+                    <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <MagicWand01Icon className="h-3.5 w-3.5" />
+                  )}
+                  {startingDocumentationAgent ? 'Starting...' : docsAgentAction.cta}
+                </button>
+              )}
+            </div>
+
+            {canQuickDraft && (
+              <div className="border-t border-border/50 pt-3">
+                {generating ? (
+                  <div className="flex items-center gap-2 rounded-md border border-border/40 bg-background/70 px-3 py-2.5 text-xs text-muted-foreground">
+                    <Loading01Icon className="h-4 w-4 animate-spin" />
+                    Generating quick draft...
+                  </div>
+                ) : generateError ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                    <div className="mb-2 flex items-start gap-2">
+                      <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                      <p className="text-xs leading-relaxed text-red-800">
+                        Could not generate a quick draft. This may be a temporary service issue.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={canSuggestImprovements ? onSuggestImprovements : onDraftNewArticle}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline"
+                    >
+                      <ArrowReloadHorizontalIcon className="h-3 w-3" />
+                      Try quick draft again
+                    </button>
+                  </div>
+                ) : quickDraftOpen && canDraftNewArticle ? (
+                  <div className="space-y-2">
+                    {externalSpaces.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No external docs space available. Create one in Docs settings first.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex gap-2">
+                          <Select
+                            value={targetSpaceId}
+                            onValueChange={(spaceId) => {
+                              onTargetSpaceChange(spaceId)
+                              onTargetCollectionChange('')
+                            }}
+                          >
+                            <SelectTrigger size="sm" className="flex-1 bg-background">
+                              <SelectValue placeholder="Select space" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {externalSpaces.map((space) => (
+                                <SelectItem key={space.id} value={space.id}>
+                                  {space.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={targetCollectionId}
+                            onValueChange={onTargetCollectionChange}
+                            disabled={!targetSpaceId || (collections?.length ?? 0) === 0}
+                          >
+                            <SelectTrigger size="sm" className="flex-1 bg-background">
+                              <SelectValue placeholder="Collection (optional)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {collectionOptions.map((collection) => (
+                                <SelectItem key={collection.id} value={collection.id}>
+                                  {collection.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setQuickDraftOpen(false)}
+                            className="rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={onDraftNewArticle}
+                            disabled={!targetSpaceId}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                          >
+                            <MagicWand01Icon className="h-3.5 w-3.5" />
+                            Create quick draft
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      Need a faster draft? Generate one without agent investigation.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={canSuggestImprovements ? onSuggestImprovements : () => setQuickDraftOpen(true)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted"
+                    >
+                      <MagicWand01Icon className="h-3.5 w-3.5" />
+                      {quickDraftButtonLabel}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -497,108 +746,6 @@ export function GapDetailPane({
               </button>
             </div>
           )}
-        </div>
-      )}
-
-      {!draftSuggestion && !appliedSuggestion && gap.status === 'open' && canGenerate && (
-        <div className="p-4">
-          {generating ? (
-            <div className="flex items-center gap-2 rounded-md border border-border/40 bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
-              <Loading01Icon className="h-4 w-4 animate-spin" />
-              Generating with AI...
-            </div>
-          ) : generateError ? (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3">
-              <div className="mb-2 flex items-start gap-2">
-                <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-                <p className="text-xs leading-relaxed text-red-800">
-                  Could not generate suggestions. This may be a temporary service issue.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={canSuggestImprovements ? onSuggestImprovements : onDraftNewArticle}
-                className="inline-flex items-center gap-1 text-xs font-medium text-red-700 hover:underline"
-              >
-                <ArrowReloadHorizontalIcon className="h-3 w-3" />
-                Try Again
-              </button>
-            </div>
-          ) : canSuggestImprovements ? (
-            <button
-              type="button"
-              onClick={onSuggestImprovements}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
-            >
-              <MagicWand01Icon className="h-4 w-4" />
-              Suggest Improvements
-            </button>
-          ) : canDraftNewArticle ? (
-            <div className="space-y-2 rounded-md border border-border/40 bg-muted/20 p-3">
-              <p className="text-xs font-medium text-muted-foreground">Draft a new article from this gap</p>
-              {externalSpaces.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No external docs space available. Create one in Docs settings first.
-                </p>
-              ) : (
-                <>
-                  <div className="flex gap-2">
-                    <Select
-                      value={targetSpaceId}
-                      onValueChange={(spaceId) => {
-                        onTargetSpaceChange(spaceId)
-                        onTargetCollectionChange('')
-                      }}
-                    >
-                      <SelectTrigger size="sm" className="flex-1">
-                        <SelectValue placeholder="Select space" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {externalSpaces.map((space) => (
-                          <SelectItem key={space.id} value={space.id}>
-                            {space.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={targetCollectionId}
-                      onValueChange={onTargetCollectionChange}
-                      disabled={!targetSpaceId || (collections?.length ?? 0) === 0}
-                    >
-                      <SelectTrigger size="sm" className="flex-1">
-                        <SelectValue placeholder="Collection (optional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {collectionOptions.map((collection) => (
-                          <SelectItem key={collection.id} value={collection.id}>
-                            {collection.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onDraftNewArticle}
-                    disabled={!targetSpaceId}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    <MagicWand01Icon className="h-3.5 w-3.5" />
-                    Draft New Article
-                  </button>
-                </>
-              )}
-            </div>
-          ) : gap.v1_gap_type === 'needs_review' ? (
-            <div className="flex items-start gap-2 rounded-md border border-border/40 bg-muted/30 px-3 py-3 text-xs text-muted-foreground">
-              <HelpCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
-              <p className="leading-relaxed">
-                Triage this gap to unlock AI suggestions. Reclassify it as a missing or weak article if
-                you know the resolution path.
-              </p>
-            </div>
-          ) : null}
         </div>
       )}
 

@@ -93,9 +93,50 @@ func activeBuiltInSkillSet(ctx NativeActiveSelectionContext) (map[string]bool, b
 		default:
 			return nil, false
 		}
+	case model.AgentPresetDocumentationAgent:
+		return documentationActiveBuiltInSkillSet(targetType), true
 	default:
 		return nil, false
 	}
+}
+
+func documentationActiveBuiltInSkillSet(targetType string) map[string]bool {
+	active := map[string]bool{
+		"docs_information_architecture": true,
+		"general_agent_behavior":        true,
+	}
+	switch strings.TrimSpace(targetType) {
+	case "document":
+		active["internal_docs_maintenance"] = true
+		active["public_help_docs_maintenance"] = true
+		active["api_docs_maintenance"] = true
+	case "support_conversation", "support_coverage_gap":
+		active["support_gap_to_docs"] = true
+		active["external_help_doc_writing"] = true
+		active["public_help_docs_maintenance"] = true
+	case "repository", "task", "epic":
+		active["release_to_docs_update"] = true
+		active["internal_docs_maintenance"] = true
+		active["public_help_docs_maintenance"] = true
+		active["api_docs_maintenance"] = true
+	case "workspace":
+		active["external_help_doc_writing"] = true
+		active["api_doc_writing"] = true
+		active["internal_docs_maintenance"] = true
+		active["public_help_docs_maintenance"] = true
+		active["api_docs_maintenance"] = true
+		active["release_to_docs_update"] = true
+		active["support_gap_to_docs"] = true
+	default:
+		active["external_help_doc_writing"] = true
+		active["api_doc_writing"] = true
+		active["internal_docs_maintenance"] = true
+		active["public_help_docs_maintenance"] = true
+		active["api_docs_maintenance"] = true
+		active["release_to_docs_update"] = true
+		active["support_gap_to_docs"] = true
+	}
+	return active
 }
 
 func shouldKeepActiveByDefault(ref model.AgentSkillRef, definition worker.SkillDefinition) bool {
@@ -111,6 +152,8 @@ func shouldKeepActiveByDefault(ref model.AgentSkillRef, definition worker.SkillD
 func isPhaseSelectableBuiltInSkill(key string) bool {
 	switch strings.TrimSpace(key) {
 	case "approval_protocol", "prd_authorship", "task_decomposition", "epic_state_routing", "task_planner_context":
+		return true
+	case "docs_information_architecture", "external_help_doc_writing", "api_doc_writing", "internal_docs_maintenance", "public_help_docs_maintenance", "api_docs_maintenance", "release_to_docs_update", "support_gap_to_docs":
 		return true
 	default:
 		return false

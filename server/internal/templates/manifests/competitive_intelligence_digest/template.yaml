@@ -1,0 +1,139 @@
+key: competitive_intelligence_digest
+version: 1
+name: Competitive Intelligence Digest
+icon: chart
+short_description: Tracks competitor updates and saves a market digest report.
+categories: [marketing]
+agent:
+  create:
+    preset: researcher
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    skills: [competitive_intelligence_digest]
+    system_prompt: |
+      You are a competitive intelligence agent for {{target_company}}.
+
+      Configured digest:
+      - target_company: {{target_company}}
+      - target_domain: {{target_domain}}
+      - competitors: {{competitors}}
+      - lookback_days: {{lookback_days}}
+      - report_space_id: {{report_space_id}}
+      - report_collection_id: {{report_collection_id}}
+      - create_follow_up_tasks: {{create_follow_up_tasks}}
+      - destination_team_id: {{destination_team_id}}
+      - destination_state_id: {{destination_state_id}}
+      - schedule: {{schedule}}
+
+      Treat these configured values as already resolved and authoritative. Do not plan or perform discovery of configuration variables, workspace context, teams, stages, cadence, or lookback settings.
+
+      Use the configured competitor list when it is not empty. If no competitors are configured, discover competitors with web search and cite sources.
+
+      For each competitor, first use web_search_exa to find official changelog, release notes, product updates, blog, docs, or roadmap pages. Then use fetch_url on exact source URLs to verify page content and dates. If search is thin, use crawl_url on the competitor's official website or docs host with changelog/update keywords before marking no_public_changelog.
+
+      Always create one Docs digest report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Competitive intelligence digest - <scope/context>`. Use {{target_company}}, the market/category, or the primary competitor set for `<scope/context>`. Include competitor updates, source links, relevance to {{target_company}}, customer-facing implications, and recommended messaging or product follow-ups.
+
+      If create_follow_up_tasks is true, create focused marketing/product tasks only for notable changes that need action. Pass destination_team_id directly as team_id. Pass destination_state_id directly as state_id only when it is configured; otherwise let the team default stage apply.
+
+      Raw configuration:
+      {{raw_configuration_json}}
+    allowed_tools: [update_plan, web_search_exa, fetch_url, crawl_url, create_document, write_document_content, link_document_to_object, list_workspace_teams, list_team_workflows_with_stages, create_task]
+    allowed_targets: [workspace, document, task]
+    approval_mode: always
+trigger:
+  type: cron
+inputs:
+  - key: schedule
+    type: cron
+    required: true
+    label: Run schedule
+    section: When should it run
+    help_text: How often the market digest should be created.
+  - key: target_company
+    type: string
+    required: true
+    label: Your company/brand
+    section: What market should it watch?
+    placeholder: Acme
+    help_text: The company the digest should compare competitors against.
+  - key: target_domain
+    type: string
+    required: false
+    label: Website
+    section: What market should it watch?
+    placeholder: acme.com
+    help_text: Optional. Helps the agent understand your product and market.
+  - key: lookback_days
+    type: int
+    required: true
+    default: 7
+    min: 1
+    max: 30
+    label: Lookback window
+    section: What market should it watch?
+    help_text: How many days of competitor updates to include in each digest.
+  - key: competitors
+    type: string_list
+    required: false
+    label: Competitor websites
+    section: What market should it watch?
+    placeholder: |
+      competitor-one.com
+      competitor-two.com
+    help_text: Optional. Add one competitor per line. If empty, the agent will discover likely competitors.
+  - key: report_space_id
+    type: space
+    required: true
+    label: Docs space
+    section: Where should the report be saved?
+    help_text: Market digest reports are saved as internal Docs documents in this space.
+  - key: report_collection_id
+    type: collection
+    required: true
+    label: Docs collection
+    section: Where should the report be saved?
+    depends_on: report_space_id
+    help_text: The collection where competitive intelligence reports will be created.
+  - key: create_follow_up_tasks
+    type: bool
+    required: false
+    default: false
+    label: Create tasks for notable changes
+    section: Should it create follow-up tasks?
+    help_text: Off by default. The report still includes recommended follow-ups.
+  - key: destination_team_id
+    type: team
+    required: false
+    label: Team
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Optional destination for tasks created from notable competitor changes.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    depends_on: destination_team_id
+    help_text: Optional stage for created tasks. If empty, the team's default stage is used.
+flow:
+  action: start_agent_run
+  parameters:
+    target_company:
+      from_input: target_company
+    target_domain:
+      from_input: target_domain
+    competitors:
+      from_input: competitors
+    lookback_days:
+      from_input: lookback_days
+    report_space_id:
+      from_input: report_space_id
+    report_collection_id:
+      from_input: report_collection_id
+    create_follow_up_tasks:
+      from_input: create_follow_up_tasks
+    destination_team_id:
+      from_input: destination_team_id
+    destination_state_id:
+      from_input: destination_state_id

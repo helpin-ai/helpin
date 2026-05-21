@@ -34,6 +34,10 @@ export interface SidebarPopoverSelectProps<T extends string = string> {
   searchPlaceholder?: string;
   /** Disable interaction */
   disabled?: boolean;
+  /** Called when the popover opens or closes. */
+  onOpenChange?: (open: boolean) => void;
+  /** Content to show when there are no options. */
+  emptyContent?: React.ReactNode;
   /** Optional trigger button class override */
   triggerClassName?: string;
   /** Show a chevron icon on the trigger */
@@ -51,6 +55,8 @@ export function SidebarPopoverSelect<T extends string>({
   width = 'w-52',
   searchPlaceholder = 'Search...',
   disabled = false,
+  onOpenChange,
+  emptyContent,
   triggerClassName,
   showChevron = false,
 }: SidebarPopoverSelectProps<T>) {
@@ -58,14 +64,19 @@ export function SidebarPopoverSelect<T extends string>({
   const resolvedGroups: SidebarPopoverSelectGroup<T>[] = groups ?? [{ options: options ?? [] }];
   const totalOptionCount = resolvedGroups.reduce((sum, group) => sum + group.options.length, 0);
   const showSearch = totalOptionCount > searchThreshold;
+  const updateOpen = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
 
   if (showSearch) {
     return (
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={updateOpen}>
         <PopoverTrigger asChild>
           <button
             type="button"
             disabled={disabled}
+            onClick={() => updateOpen(true)}
             className={cn(
               'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
               triggerClassName,
@@ -96,7 +107,7 @@ export function SidebarPopoverSelect<T extends string>({
                       <CommandItem
                         key={option.value}
                         value={option.label}
-                        onSelect={() => { onChange(option.value); setOpen(false); }}
+                        onSelect={() => { onChange(option.value); updateOpen(false); }}
                         className="flex items-center gap-2 text-xs"
                       >
                         {renderOption ? renderOption(option.value) : <span className={cn('truncate', option.className)}>{option.label}</span>}
@@ -114,11 +125,12 @@ export function SidebarPopoverSelect<T extends string>({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={updateOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
           disabled={disabled}
+          onClick={() => updateOpen(true)}
           className={cn(
             'inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[12px] text-foreground transition-colors hover:bg-accent cursor-pointer disabled:pointer-events-none disabled:opacity-50',
             triggerClassName,
@@ -130,7 +142,9 @@ export function SidebarPopoverSelect<T extends string>({
       </PopoverTrigger>
       <PopoverContent className={cn(width, 'p-0.5')} align="start">
         <div className="flex max-h-60 flex-col overflow-y-auto">
-          {resolvedGroups.map((group, groupIndex) => (
+          {totalOptionCount === 0 && emptyContent ? (
+            emptyContent
+          ) : resolvedGroups.map((group, groupIndex) => (
             group.options.length === 0 ? null : (
               <div key={groupIndex} className="flex flex-col">
                 {group.label && (
@@ -148,7 +162,7 @@ export function SidebarPopoverSelect<T extends string>({
                         ? 'bg-accent font-medium'
                         : 'hover:bg-accent',
                     )}
-                    onClick={() => { onChange(option.value); setOpen(false); }}
+                    onClick={() => { onChange(option.value); updateOpen(false); }}
                   >
                     {renderOption ? renderOption(option.value) : <span className={cn('truncate', option.className)}>{option.label}</span>}
                   </button>

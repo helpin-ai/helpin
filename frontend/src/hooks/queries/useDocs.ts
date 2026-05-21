@@ -437,6 +437,14 @@ export function useDocsChangeProposals(wsId: string, docId: string) {
   })
 }
 
+export function useDocsChangeProposal(wsId: string, docId: string, proposalId?: string | null) {
+  return useQuery({
+    queryKey: queryKeys.docs.changeProposal(wsId, docId, proposalId ?? ''),
+    queryFn: async () => unwrap(await docsService.getChangeProposal(wsId, docId, proposalId!)),
+    enabled: !!wsId && !!docId && !!proposalId,
+  })
+}
+
 export function useApplyDocsChangeProposal(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
@@ -444,6 +452,7 @@ export function useApplyDocsChangeProposal(wsId: string) {
       unwrap(await docsService.applyChangeProposal(wsId, docId, proposalId)),
     onSuccess: (response, { docId }) => {
       qc.setQueryData(queryKeys.docs.content(wsId, docId), response.content)
+      qc.setQueryData(queryKeys.docs.changeProposal(wsId, docId, response.proposal.id), response.proposal)
       qc.invalidateQueries({ queryKey: queryKeys.docs.blocks(wsId, docId) })
       qc.invalidateQueries({ queryKey: queryKeys.docs.changeProposals(wsId, docId) })
       qc.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId), exact: true })
@@ -463,8 +472,10 @@ export function useDiscardDocsChangeProposal(wsId: string) {
   return useMutation({
     mutationFn: async ({ docId, proposalId }: { docId: string; proposalId: string }) =>
       unwrap(await docsService.discardChangeProposal(wsId, docId, proposalId)),
-    onSuccess: (_, { docId }) => {
+    onSuccess: (proposal, { docId }) => {
+      qc.setQueryData(queryKeys.docs.changeProposal(wsId, docId, proposal.id), proposal)
       qc.invalidateQueries({ queryKey: queryKeys.docs.changeProposals(wsId, docId) })
+      qc.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
     },
   })
 }

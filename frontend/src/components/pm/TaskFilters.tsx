@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Tick01Icon, FilterHorizontalIcon, Cancel01Icon } from '@/lib/icons';
+import { Tick01Icon, FilterHorizontalIcon, Cancel01Icon, ArrowLeft02Icon, PlusSignIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -14,13 +14,15 @@ import {
 import { PRIORITY_CONFIG, SEVERITY_CONFIG, TASK_TYPE_CONFIG } from '@/lib/pmConstants';
 import type { Priority, Severity, TaskType, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import type { AssignableMember, TeamUserMembership } from '@/lib/types';
-import type { BoardFilters } from '@/stores/pmBoardStore';
+import { usePMBoardStore, type BoardFilters } from '@/stores/pmBoardStore';
+import { isDefaultView } from '@/lib/pmDefaultViews';
 import { buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { useCompanies, useContacts, useConversations, useDeals } from '@/hooks/queries';
 import { useWorkspaceMemberPresenceMap } from '@/hooks/queries';
 import { UserAvatar } from './UserAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { filterAssignableMembersForTeam } from '@/components/pm/task-detail/taskFilterMembers';
+import { SaveViewDialog } from './SaveViewDialog';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -54,6 +56,7 @@ interface FilterDefinition {
   label: string;
   options: FilterOption[];
   singleSelect?: boolean;
+  searchableValues?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -66,6 +69,11 @@ function filterStateToQueryParams(state: FilterState): BoardFilters {
     }
   }
   return params;
+}
+
+function normalizeHexColor(color?: string | null): string | undefined {
+  if (!color) return undefined;
+  return color.startsWith('#') ? color : `#${color}`;
 }
 
 // ── Context for shared state between trigger + bar ─────────────────
@@ -115,16 +123,18 @@ function FilterValueSelect({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs hover:bg-accent transition-colors">
-          {selectedLabels.length === 1
+          {selectedLabels.length === 0
+            ? 'Choose value'
+            : selectedLabels.length === 1
             ? selectedLabels[0]
-            : selectedLabels.length > 1
-              ? `${selectedLabels.length} selected`
-              : <span className="text-muted-foreground">Select</span>}
+            : `${selectedLabels.length} selected`}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-52 p-0" align="start">
+      <PopoverContent className={`${definition.searchableValues ? 'w-80' : 'w-52'} p-0`} align="start">
         <Command>
-          <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
+          {definition.searchableValues ? (
+            <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
+          ) : null}
           <CommandList>
             <CommandEmpty>No results.</CommandEmpty>
             <CommandGroup>
@@ -136,11 +146,11 @@ function FilterValueSelect({
                     value={opt.label}
                     onSelect={() => onToggle(opt.value)}
                   >
-                    <div className={`mr-2 flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                    <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
                       {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
                     </div>
                     {opt.icon ? <span className="mr-1.5 shrink-0">{opt.icon}</span> : null}
-                    <span className="truncate">{opt.label}</span>
+                    <span className="min-w-0 flex-1 truncate">{opt.label}</span>
                   </CommandItem>
                 );
               })}
@@ -258,8 +268,8 @@ export function TaskFilterProvider({
     const labelOptions: FilterOption[] = labels.map((l) => ({
       value: l.id,
       label: l.name,
-      icon: l.color ? (
-        <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+      icon: normalizeHexColor(l.color) ? (
+        <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: normalizeHexColor(l.color) }} />
       ) : undefined,
     }));
 
@@ -310,15 +320,15 @@ export function TaskFilterProvider({
       { key: 'priority' as FilterKey, label: 'Priority', options: priorityOptions },
       { key: 'severity' as FilterKey, label: 'Severity', options: severityOptions },
       { key: 'task_type' as FilterKey, label: 'Type', options: typeOptions },
-      { key: 'owner_member_ids' as FilterKey, label: 'Owner', options: memberOptions },
-      { key: 'requester_member_id' as FilterKey, label: 'Requester', options: memberOptions },
-      { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions },
-      { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions },
-      { key: 'sprint_id' as FilterKey, label: 'Sprint', options: sprintOptions },
-      { key: 'contact_id' as FilterKey, label: 'Contact', options: contactOptions },
-      { key: 'company_id' as FilterKey, label: 'Company', options: companyOptions },
-      { key: 'deal_id' as FilterKey, label: 'Deal', options: dealOptions },
-      { key: 'support_conversation_id' as FilterKey, label: 'Support', options: supportConversationOptions },
+      { key: 'owner_member_ids' as FilterKey, label: 'Owner', options: memberOptions, searchableValues: true },
+      { key: 'requester_member_id' as FilterKey, label: 'Requester', options: memberOptions, searchableValues: true },
+      { key: 'label_id' as FilterKey, label: 'Label', options: labelOptions, searchableValues: true },
+      { key: 'epic_id' as FilterKey, label: 'Epic', options: epicOptions, searchableValues: true },
+      { key: 'sprint_id' as FilterKey, label: 'Sprint', options: sprintOptions, searchableValues: true },
+      { key: 'contact_id' as FilterKey, label: 'Contact', options: contactOptions, searchableValues: true },
+      { key: 'company_id' as FilterKey, label: 'Company', options: companyOptions, searchableValues: true },
+      { key: 'deal_id' as FilterKey, label: 'Deal', options: dealOptions, searchableValues: true },
+      { key: 'support_conversation_id' as FilterKey, label: 'Support', options: supportConversationOptions, searchableValues: true },
       { key: 'blocked' as FilterKey, label: 'Blocked', options: blockedOptions },
       { key: 'blocking' as FilterKey, label: 'Blocking', options: blockingOptions },
       { key: 'archived' as FilterKey, label: 'Archived', options: archivedOptions, singleSelect: true },
@@ -328,7 +338,9 @@ export function TaskFilterProvider({
   const activeKeys = useMemo(() => {
     const keys = new Set<FilterKey>();
     for (const [key, values] of Object.entries(filterState)) {
-      if (values && values.length > 0) keys.add(key as FilterKey);
+      if (values && values.length > 0) {
+        keys.add(key as FilterKey);
+      }
     }
     return keys;
   }, [filterState]);
@@ -367,17 +379,22 @@ export function TaskFilterProvider({
           ? current.filter((v) => v !== value)
           : [...current, value];
       }
-      const updated = { ...filterState, [key]: next };
-      setFilterState(updated);
-      emitChange(updated);
+      if (next.length === 0) {
+        const updated = { ...filterState, [key]: [] };
+        setFilterState(updated);
+        emitChange(updated);
+      } else {
+        const updated = { ...filterState, [key]: next };
+        setFilterState(updated);
+        emitChange(updated);
+      }
     },
     [filterState, definitions, emitChange]
   );
 
   const handleRemove = useCallback(
     (key: FilterKey) => {
-      const rest = { ...filterState };
-      delete rest[key];
+      const { [key]: _, ...rest } = filterState;
       setFilterState(rest);
       emitChange(rest);
     },
@@ -412,14 +429,26 @@ export function TaskFilterProvider({
 // ── Trigger button (goes in the header row) ────────────────────────
 
 export function TaskFilterTrigger() {
-  const { definitions, visibleKeys, activeCount, handleAdd } = useFilterContext();
+  const { definitions, filterState, visibleKeys, activeCount, handleAdd, handleToggle } = useFilterContext();
   const [open, setOpen] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<FilterKey | null>(null);
   const available = definitions.filter((d) => !visibleKeys.has(d.key) && d.options.length > 0);
+  const selectedDefinition = selectedKey
+    ? definitions.find((definition) => definition.key === selectedKey)
+    : undefined;
+  const canChooseFilter = available.length > 0 || Boolean(selectedDefinition);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setSelectedKey(null);
+    }
+  };
 
   return (
     <>
-      {available.length > 0 ? (
-        <Popover open={open} onOpenChange={setOpen}>
+      {canChooseFilter ? (
+        <Popover open={open} onOpenChange={handleOpenChange}>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1">
@@ -434,27 +463,78 @@ export function TaskFilterTrigger() {
               </Badge>
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-48 p-0" align="start">
-            <Command>
-              <CommandInput placeholder="Filter by..." />
-              <CommandList>
-                <CommandEmpty>No filters.</CommandEmpty>
-                <CommandGroup>
-                  {available.map((def) => (
-                    <CommandItem
-                      key={def.key}
-                      value={def.label}
-                      onSelect={() => {
-                        handleAdd(def.key);
-                        setOpen(false);
-                      }}
-                    >
-                      {def.label}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
+          <PopoverContent
+            className={`${selectedDefinition ? (selectedDefinition.searchableValues ? 'w-80' : 'w-52') : 'w-48'} p-0`}
+            align="start"
+          >
+            {selectedDefinition ? (
+              <Command>
+                <div className="flex items-center gap-1 border-b border-border/70 px-1.5 py-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    aria-label="Back to filter fields"
+                    onClick={() => setSelectedKey(null)}
+                  >
+                    <ArrowLeft02Icon className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="truncate text-xs font-medium">{selectedDefinition.label}</span>
+                </div>
+                {selectedDefinition.searchableValues ? (
+                  <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} />
+                ) : null}
+                <CommandList>
+                  <CommandEmpty>No results.</CommandEmpty>
+                  <CommandGroup>
+                    {selectedDefinition.options.map((option) => {
+                      const isSelected = filterState[selectedDefinition.key]?.includes(option.value) ?? false;
+                      return (
+                        <CommandItem
+                          key={option.value}
+                          value={option.label}
+                          onSelect={() => {
+                            handleToggle(selectedDefinition.key, option.value);
+                            if (selectedDefinition.singleSelect) {
+                              setOpen(false);
+                              setSelectedKey(null);
+                            }
+                          }}
+                        >
+                          <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                            {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
+                          </div>
+                          {option.icon ? <span className="mr-1.5 shrink-0">{option.icon}</span> : null}
+                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            ) : (
+              <Command>
+                <CommandInput placeholder="Filter by..." />
+                <CommandList>
+                  <CommandEmpty>No filters.</CommandEmpty>
+                  <CommandGroup>
+                    {available.map((def) => (
+                      <CommandItem
+                        key={def.key}
+                        value={def.label}
+                        onSelect={() => {
+                          handleAdd(def.key);
+                          setSelectedKey(def.key);
+                        }}
+                      >
+                        {def.label}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            )}
           </PopoverContent>
         </Popover>
       ) : (
@@ -474,8 +554,30 @@ export function TaskFilterTrigger() {
 
 // ── Filter bar (renders on its own row below the header) ───────────
 
+function suggestViewName(
+  filterState: FilterState,
+  definitions: FilterDefinition[],
+): string {
+  const parts: string[] = [];
+  for (const def of definitions) {
+    const values = filterState[def.key];
+    if (!values || values.length === 0) continue;
+    if (values.length === 1) {
+      const label = def.options.find((o) => o.value === values[0])?.label ?? values[0];
+      parts.push(`${def.label}: ${label}`);
+    } else {
+      parts.push(`${def.label} (${values.length})`);
+    }
+  }
+  return parts.slice(0, 2).join(' · ');
+}
+
 export function TaskFilterBar() {
-  const { filterState, definitions, visibleKeys, visibleCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
+  const { workspaceId, filterState, definitions, visibleKeys, activeCount, visibleCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
+  const { activeViewId, saveCurrentAsView } = usePMBoardStore();
+  const [saveOpen, setSaveOpen] = useState(false);
+
+  const canSaveAsView = !activeViewId || isDefaultView(activeViewId);
 
   if (visibleCount === 0) return null;
 
@@ -500,24 +602,65 @@ export function TaskFilterBar() {
       >
         Clear all
       </Button>
+      {canSaveAsView && activeCount > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setSaveOpen(true)}
+            className="inline-flex items-center gap-1 rounded-md border border-dashed border-border/80 px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground transition-colors"
+          >
+            <PlusSignIcon className="h-3 w-3" />
+            Save as view
+          </button>
+          <SaveViewDialog
+            open={saveOpen}
+            onOpenChange={setSaveOpen}
+            title="Save as new view"
+            initialName={suggestViewName(filterState, definitions)}
+            onSave={(name, isShared) => {
+              saveCurrentAsView(workspaceId, name, isShared);
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }
+
+const OWNER_AVATAR_INLINE_CAP = 7;
 
 export function TaskOwnerAvatarFilterRow() {
   const { workspaceId, assignableMembers, activeTeamId, userMemberships, filterState, handleToggle } = useFilterContext();
   const { data: memberPresenceByUserId } = useWorkspaceMemberPresenceMap(workspaceId);
   const ownerFilters = filterState.owner_member_ids ?? [];
+  const [overflowOpen, setOverflowOpen] = useState(false);
+
   const members = useMemo(
     () => filterAssignableMembersForTeam(assignableMembers, activeTeamId, userMemberships),
     [assignableMembers, activeTeamId, userMemberships],
   );
 
+  // Sort selected first so they're guaranteed visible in the inline row.
+  const sortedMembers = useMemo(() => {
+    const selected: AssignableMember[] = [];
+    const unselected: AssignableMember[] = [];
+    for (const m of members) {
+      if (ownerFilters.includes(m.id)) selected.push(m);
+      else unselected.push(m);
+    }
+    return [...selected, ...unselected];
+  }, [members, ownerFilters]);
+
+  const visible = sortedMembers.slice(0, OWNER_AVATAR_INLINE_CAP);
+  const overflow = sortedMembers.slice(OWNER_AVATAR_INLINE_CAP);
+  const overflowCount = overflow.length;
+  const hasOverflowSelected = overflow.some((m) => ownerFilters.includes(m.id));
+
   if (members.length === 0) return null;
 
   return (
     <div className="ml-3 flex min-w-0 items-center -space-x-1">
-      {members.map((member) => {
+      {visible.map((member) => {
         const isSelected = ownerFilters.includes(member.id);
         const label = member.display_name?.trim() || member.email;
         const presenceStatus = member.user_id ? (memberPresenceByUserId?.get(member.user_id)?.status ?? null) : null;
@@ -549,6 +692,61 @@ export function TaskOwnerAvatarFilterRow() {
           </QuickTooltip>
         );
       })}
+      {overflowCount > 0 && (
+        <Popover open={overflowOpen} onOpenChange={setOverflowOpen}>
+          <QuickTooltip label={`${overflowCount} more`}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-medium ring-offset-1 ring-offset-background transition-colors hover:z-10 ${
+                  hasOverflowSelected
+                    ? 'z-10 bg-primary/10 text-primary ring-[1.5px] ring-ring'
+                    : 'bg-muted text-muted-foreground hover:bg-accent hover:text-foreground'
+                }`}
+                aria-label={`Show ${overflowCount} more members`}
+              >
+                +{overflowCount}
+              </button>
+            </PopoverTrigger>
+          </QuickTooltip>
+          <PopoverContent className="w-64 p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search members..." />
+              <CommandList>
+                <CommandEmpty>No members.</CommandEmpty>
+                <CommandGroup>
+                  {members.map((member) => {
+                    const isSelected = ownerFilters.includes(member.id);
+                    const label = member.display_name?.trim() || member.email;
+                    const presenceStatus = member.user_id ? (memberPresenceByUserId?.get(member.user_id)?.status ?? null) : null;
+                    return (
+                      <CommandItem
+                        key={member.id}
+                        value={label}
+                        onSelect={() => handleToggle('owner_member_ids', member.id)}
+                      >
+                        <UserAvatar
+                          name={label}
+                          avatarUrl={member.avatar_url}
+                          avatarStyle={member.avatar_style}
+                          avatarSeed={member.avatar_seed}
+                          avatarBackgroundMode={member.avatar_background_mode}
+                          avatarBackgroundColor={member.avatar_background_color}
+                          presenceStatus={presenceStatus}
+                          className="mr-2 h-5 w-5"
+                          fallbackClassName="text-[8px]"
+                        />
+                        <span className="min-w-0 flex-1 truncate">{label}</span>
+                        {isSelected && <Tick01Icon className="ml-2 h-3.5 w-3.5 text-primary" />}
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }

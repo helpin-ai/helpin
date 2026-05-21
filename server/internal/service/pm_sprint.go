@@ -394,9 +394,9 @@ func (s *PMSprintService) GetCurrentSprint(ctx context.Context, workspaceID stri
 	return s.sprintRepo.GetCurrentSprint(ctx, workspaceID, teamID)
 }
 
-// ListTasks returns tasks in a sprint, with TaskKey populated.
-func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]model.PMTask, error) {
-	tasks, err := s.sprintRepo.ListTasks(ctx, sprintID)
+// ListTasks returns tasks in a sprint, with TaskKey and table-facing computed fields populated.
+func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]model.BoardTask, error) {
+	tasks, err := s.sprintRepo.ListEnrichedTasks(ctx, sprintID)
 	if err != nil {
 		return nil, err
 	}
@@ -409,6 +409,7 @@ func (s *PMSprintService) ListTasks(ctx context.Context, sprintID string) ([]mod
 	}
 	for i := range tasks {
 		tasks[i].TaskKey = model.FormatTaskKey(ws.WorkspaceKey, tasks[i].DisplayID)
+		tasks[i].PMTask.TaskKey = tasks[i].TaskKey
 	}
 	return tasks, nil
 }

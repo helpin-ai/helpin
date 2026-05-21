@@ -40,6 +40,8 @@ var toolCategory = map[string]string{
 	"open_pr":                    "Git",
 	"get_release_context":        "Git",
 	"find_tasks_for_git_changes": "Git",
+	"get_pull_request_diff":      "Git",
+	"get_check_run_logs":         "Git",
 
 	// PM / Tasks
 	"request_approval":                "Interaction",

@@ -21,6 +21,7 @@ import {
   ArrowShrinkIcon as _ArrowShrinkIcon,
   ArrowTurnBackwardIcon as _ArrowTurnBackwardIcon,
   ArrowTurnDownIcon as _ArrowTurnDownIcon,
+  ArrowTurnForwardIcon as _ArrowTurnForwardIcon,
   ArrowUp02Icon as _ArrowUp02Icon,
   AttachmentIcon as _AttachmentIcon,
   Award01Icon as _Award01Icon,
@@ -50,6 +51,7 @@ import {
   Clock02Icon as _Clock02Icon,
   CodeIcon as _CodeIcon,
   Comment01Icon as _Comment01Icon,
+  ColumnsThreeCogIcon as _ColumnsThreeCogIcon,
   ComputerIcon as _ComputerIcon,
   Copy01Icon as _Copy01Icon,
   CursorTextIcon as _CursorTextIcon,
@@ -118,6 +120,8 @@ import {
   MinusSignIcon as _MinusSignIcon,
   Message01Icon as _Message01Icon,
   MessagePreview01Icon as _MessagePreview01Icon,
+  MessageCircleReplyIcon as _MessageCircleReplyIcon,
+  MailReply01Icon as _MailReply01Icon,
   Minimize01Icon as _Minimize01Icon,
   Moon02Icon as _Moon02Icon,
   MoreHorizontalIcon as _MoreHorizontalIcon,
@@ -288,6 +292,7 @@ export const ArrowRight02Icon = hi(_ArrowRight02Icon);
 export const ArrowShrinkIcon = hi(_ArrowShrinkIcon);
 export const ArrowTurnBackwardIcon = hi(_ArrowTurnBackwardIcon);
 export const ArrowTurnDownIcon = hi(_ArrowTurnDownIcon);
+export const ArrowTurnForwardIcon = hi(_ArrowTurnForwardIcon);
 export const ArrowUp01Icon: IconComponent = ({ className, style }) => (
   <svg className={className} style={style} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M6 15L12 9L18 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -322,6 +327,7 @@ export const Clock01Icon = hi(_Clock01Icon);
 export const Clock02Icon = hi(_Clock02Icon);
 export const CodeIcon = hi(_CodeIcon);
 export const Comment01Icon = hi(_Comment01Icon);
+export const ColumnsThreeCogIcon = hi(_ColumnsThreeCogIcon);
 export const ComputerIcon = hi(_ComputerIcon);
 export const Copy01Icon = hi(_Copy01Icon);
 export const CursorTextIcon = hi(_CursorTextIcon);
@@ -377,6 +383,8 @@ export const Maximize01Icon = hi(_Maximize01Icon);
 export const Menu01Icon = hi(_Menu01Icon);
 export const Message01Icon = hi(_Message01Icon);
 export const MessagePreview01Icon = hi(_MessagePreview01Icon);
+export const MessageCircleReplyIcon = hi(_MessageCircleReplyIcon);
+export const MailReply01Icon = hi(_MailReply01Icon);
 export const Minimize01Icon = hi(_Minimize01Icon);
 export const Moon02Icon = hi(_Moon02Icon);
 export const MoreHorizontalIcon = hi(_MoreHorizontalIcon);

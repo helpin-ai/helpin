@@ -18,12 +18,14 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
+import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
 import { ACTIVE_RUN_STATUSES, STATUS_META, getAgentRunDisplayStatus } from './agentRunConstants';
 
 interface EpicPlannerPanelProps {
   workspaceId: string;
   epicId: string;
+  epicTeamId?: string | null;
   lastRunId?: string;
   canEdit: boolean;
   onRunCompleted?: () => void;
@@ -179,6 +181,7 @@ export function getEpicPlannerPrimaryAction({
 export function EpicPlannerPanel({
   workspaceId,
   epicId,
+  epicTeamId,
   lastRunId,
   canEdit,
   onRunCompleted,
@@ -194,7 +197,7 @@ export function EpicPlannerPanel({
   const [refreshingRuns, setRefreshingRuns] = useState(false);
   const [starting, setStarting] = useState(false);
   const lastReportedCompletedRunIdRef = useRef<string | null>(null);
-  const { teams: accessibleTeams } = useAccessibleTeams(workspaceId);
+  const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId);
   const accessibleTeamIds = useMemo(
     () => new Set(accessibleTeams.map((team) => team.id)),
     [accessibleTeams],
@@ -274,16 +277,13 @@ export function EpicPlannerPanel({
   }, [loadRuns, runs]);
 
   const plannerAgents = useMemo(() => {
-    return agents.filter((agent) => {
-      if (!agent.allowed_targets.includes('epic')) {
-        return false;
-      }
-      if (!agent.team_id) {
-        return true;
-      }
-      return accessibleTeamIds.has(agent.team_id);
-    });
-  }, [accessibleTeamIds, agents]);
+    return agents.filter((agent) => isAgentAvailableForTarget(agent, {
+      targetType: 'epic',
+      targetTeamId: epicTeamId,
+      accessibleTeamIds,
+      canSeeAllAgents: isAdmin,
+    }));
+  }, [accessibleTeamIds, agents, epicTeamId, isAdmin]);
 
   const selectedPlanner = useMemo(
     () => plannerAgents.find((agent) => agent.id === selectedAgentId) ?? null,

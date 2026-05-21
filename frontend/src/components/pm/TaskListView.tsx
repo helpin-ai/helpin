@@ -15,13 +15,16 @@ import {
   type ColumnSizingState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Loading01Icon } from '@/lib/icons';
+import { ArrowLeft02Icon, Cancel01Icon, Copy01Icon, FilterHorizontalIcon, Loading01Icon, Search01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
@@ -68,6 +71,7 @@ import type { AssignableMember, TeamEstimateSettings, WorkspaceTeam } from '@/li
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { showTaskDuplicatedToast } from '@/components/pm/TaskDuplicatedToast';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildTaskCopyUrl } from '@/lib/pmTaskLinks';
 import { useAgents, useAutomationRulesByWorkflow, useTeamEstimateSettings, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
@@ -90,7 +94,7 @@ import {
   pinnedStyle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
-import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { getTaskListPinnedOffsets, type TaskListPinnedOffsets } from '@/components/pm/task-detail/taskListPinnedOffsets';
 import {
   getVisibleTaskListGroupOptions,
@@ -108,6 +112,34 @@ import {
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 const LIST_AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
+const TASK_LIST_FILTER_ALL = '__all__';
+const TASK_LIST_FILTER_UNASSIGNED = '__unassigned__';
+
+type LocalTaskFilterKey =
+  | 'owner'
+  | 'requester'
+  | 'state'
+  | 'task_type'
+  | 'priority'
+  | 'severity'
+  | 'label'
+  | 'sprint'
+  | 'blocked'
+  | 'blocking';
+
+interface LocalTaskFilterOption {
+  value: string;
+  label: string;
+}
+
+interface LocalTaskFilterDefinition {
+  key: LocalTaskFilterKey;
+  label: string;
+  options: LocalTaskFilterOption[];
+  searchableValues?: boolean;
+}
+
+type LocalTaskFilterValues = Record<LocalTaskFilterKey, string>;
 
 function TaskListLatestRunAgentBadge({
   agent,
@@ -200,10 +232,16 @@ interface TaskListViewProps {
   sprintId?: string | null;
   /** When provided, use these tasks instead of fetching internally. */
   externalTasks?: Task[];
+  /** Keeps an external owner of task state in sync with inline table edits. */
+  onExternalTasksChange?: (updater: TaskListTasksUpdater) => void;
+  onInlineUpdateSavingChange?: (saving: boolean) => void;
+  onInlineUpdateError?: (error: string | null) => void;
   onOpenTask: (task: Task) => void;
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
   showToolbar?: boolean;
+  showLocalTaskControls?: boolean;
+  toolbarActions?: React.ReactNode;
   footer?: React.ReactNode;
 }
 
@@ -227,6 +265,245 @@ const FLAT_OVERSCAN = 6;
 
 const columnHelper = createColumnHelper<Task>();
 
+type TaskListTasksUpdater = Task[] | ((tasks: Task[]) => Task[]);
+
+export function applyTaskListInlinePatch(tasks: Task[], taskId: string, patch: Partial<Task>): Task[] {
+  return tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task));
+}
+
+export function mergeTaskListInlineUpdate(tasks: Task[], updatedTask: Task): Task[] {
+  return tasks.map((task) => (task.id === updatedTask.id ? { ...task, ...updatedTask } : task));
+}
+
+function selectedLocalFilterCount(values: LocalTaskFilterValues) {
+  return Object.values(values).filter((value) => value !== TASK_LIST_FILTER_ALL).length;
+}
+
+function selectedLocalFilterLabel(definition: LocalTaskFilterDefinition, value: string) {
+  return definition.options.find((option) => option.value === value)?.label ?? value;
+}
+
+function LocalTaskFilterPill({
+  definition,
+  value,
+  onChange,
+}: {
+  definition: LocalTaskFilterDefinition;
+  value: string;
+  onChange: (key: LocalTaskFilterKey, value: string) => void;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
+      <span className="font-medium text-muted-foreground">{definition.label}</span>
+      <span className="text-muted-foreground/60">is</span>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex max-w-[11rem] items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
+          >
+            <span className="truncate">{selectedLocalFilterLabel(definition, value)}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className={`${definition.searchableValues ? 'w-72' : 'w-52'} p-0`} align="start">
+          <Command>
+            {definition.searchableValues ? (
+              <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
+            ) : null}
+            <CommandList>
+              <CommandEmpty>No results.</CommandEmpty>
+              <CommandGroup>
+                {definition.options.map((option) => {
+                  const isSelected = option.value === value;
+                  return (
+                    <CommandItem
+                      key={option.value}
+                      value={option.label}
+                      onSelect={() => onChange(definition.key, option.value)}
+                    >
+                      <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                        {isSelected ? <TaskListCheckIcon className="h-3 w-3" /> : null}
+                      </div>
+                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      <button
+        type="button"
+        onClick={() => onChange(definition.key, TASK_LIST_FILTER_ALL)}
+        className="ml-0.5 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+        aria-label={`Remove ${definition.label} filter`}
+      >
+        <Cancel01Icon className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+function LocalTaskFilterControls({
+  definitions,
+  values,
+  onChange,
+  onClear,
+}: {
+  definitions: LocalTaskFilterDefinition[];
+  values: LocalTaskFilterValues;
+  onChange: (key: LocalTaskFilterKey, value: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<LocalTaskFilterKey | null>(null);
+  const activeCount = selectedLocalFilterCount(values);
+  const activeKeys = useMemo(
+    () =>
+      new Set(
+        Object.entries(values)
+          .filter(([, value]) => value !== TASK_LIST_FILTER_ALL)
+          .map(([key]) => key as LocalTaskFilterKey),
+      ),
+    [values],
+  );
+  const availableDefinitions = definitions.filter((definition) => !activeKeys.has(definition.key) && definition.options.length > 0);
+  const activeDefinitions = definitions.filter((definition) => activeKeys.has(definition.key));
+  const selectedDefinition = selectedKey
+    ? definitions.find((definition) => definition.key === selectedKey)
+    : undefined;
+  const canChooseFilter = availableDefinitions.length > 0 || Boolean(selectedDefinition);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setSelectedKey(null);
+    }
+  };
+
+  return (
+    <div className="contents">
+      {canChooseFilter ? (
+        <Popover open={open} onOpenChange={handleOpenChange}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1">
+                <FilterHorizontalIcon className="h-3.5 w-3.5" />
+                Filters
+              </span>
+              <Badge
+                variant="secondary"
+                className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
+              >
+                {activeCount || 0}
+              </Badge>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            className={`${selectedDefinition ? (selectedDefinition.searchableValues ? 'w-72' : 'w-52') : 'w-48'} p-0`}
+            align="start"
+          >
+            {selectedDefinition ? (
+              <Command>
+                <div className="flex items-center gap-1 border-b border-border/70 px-1.5 py-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    aria-label="Back to filter fields"
+                    onClick={() => setSelectedKey(null)}
+                  >
+                    <ArrowLeft02Icon className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="truncate text-xs font-medium">{selectedDefinition.label}</span>
+                </div>
+                {selectedDefinition.searchableValues ? (
+                  <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} />
+                ) : null}
+                <CommandList>
+                  <CommandEmpty>No results.</CommandEmpty>
+                  <CommandGroup>
+                    {selectedDefinition.options.map((option) => {
+                      const isSelected = values[selectedDefinition.key] === option.value;
+                      return (
+                        <CommandItem
+                          key={option.value}
+                          value={option.label}
+                          onSelect={() => {
+                            onChange(selectedDefinition.key, option.value);
+                            setOpen(false);
+                            setSelectedKey(null);
+                          }}
+                        >
+                          <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
+                            {isSelected ? <TaskListCheckIcon className="h-3 w-3" /> : null}
+                          </div>
+                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            ) : (
+              <Command>
+                <CommandInput placeholder="Filter by..." />
+                <CommandList>
+                  <CommandEmpty>No filters.</CommandEmpty>
+                  <CommandGroup>
+                    {availableDefinitions.map((definition) => (
+                      <CommandItem
+                        key={definition.key}
+                        value={definition.label}
+                        onSelect={() => setSelectedKey(definition.key)}
+                      >
+                        {definition.label}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            )}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground" disabled>
+          <span className="inline-flex items-center gap-1">
+            <FilterHorizontalIcon className="h-3.5 w-3.5" />
+            Filters
+          </span>
+          <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
+            {activeCount}
+          </Badge>
+        </Button>
+      )}
+
+      {activeCount > 0 ? (
+        <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
+          {activeDefinitions.map((definition) => (
+            <LocalTaskFilterPill
+              key={definition.key}
+              definition={definition}
+              value={values[definition.key]}
+              onChange={onChange}
+            />
+          ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[10px] text-muted-foreground"
+            onClick={onClear}
+          >
+            Clear all
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TaskListView({
   workspaceId,
   workflow,
@@ -240,10 +517,15 @@ export function TaskListView({
   epicId,
   sprintId,
   externalTasks,
+  onExternalTasksChange,
+  onInlineUpdateSavingChange,
+  onInlineUpdateError,
   onOpenTask,
   groupBy: controlledGroupBy,
   onGroupByChange,
   showToolbar = true,
+  showLocalTaskControls = false,
+  toolbarActions,
   footer,
 }: TaskListViewProps) {
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
@@ -291,11 +573,23 @@ export function TaskListView({
   const setGroupBy = onGroupByChange ?? setUncontrolledGroupBy;
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
+  const horizontalScrollLeftRef = useRef(0);
   const headerRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
+  const [taskSearchQuery, setTaskSearchQuery] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [requesterFilter, setRequesterFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [stateFilter, setStateFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [typeFilter, setTypeFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [priorityFilter, setPriorityFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [severityFilter, setSeverityFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [labelFilter, setLabelFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [sprintFilter, setSprintFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [blockedFilter, setBlockedFilter] = useState(TASK_LIST_FILTER_ALL);
+  const [blockingFilter, setBlockingFilter] = useState(TASK_LIST_FILTER_ALL);
   const { data: agents = [] } = useAgents(workspaceId);
 
   // Per-group pagination state (for workflow_state grouping)
@@ -304,6 +598,7 @@ export function TaskListView({
   const groupLoadingRef = useRef(false);
   const isPerGroupMode = groupBy === 'workflow_state' && !isExternal;
   const onOpenTaskRef = useRef(onOpenTask);
+  const pendingInlineUpdatesRef = useRef(0);
 
   useEffect(() => {
     onOpenTaskRef.current = onOpenTask;
@@ -313,9 +608,49 @@ export function TaskListView({
     onOpenTaskRef.current(task);
   }, []);
 
+  const applyTasksUpdate = useCallback(
+    (updater: TaskListTasksUpdater) => {
+      setTasks(updater);
+      onExternalTasksChange?.(updater);
+    },
+    [onExternalTasksChange],
+  );
+
+  const beginInlineUpdate = useCallback(() => {
+    pendingInlineUpdatesRef.current += 1;
+    if (pendingInlineUpdatesRef.current === 1) {
+      onInlineUpdateSavingChange?.(true);
+    }
+    onInlineUpdateError?.(null);
+  }, [onInlineUpdateError, onInlineUpdateSavingChange]);
+
+  const endInlineUpdate = useCallback(() => {
+    pendingInlineUpdatesRef.current = Math.max(pendingInlineUpdatesRef.current - 1, 0);
+    if (pendingInlineUpdatesRef.current === 0) {
+      onInlineUpdateSavingChange?.(false);
+    }
+  }, [onInlineUpdateSavingChange]);
+
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
   }, [workspaceId]);
+
+  useEffect(() => {
+    const handleTaskCreated = (event: Event) => {
+      const created = (event as CustomEvent<{ task?: Task }>).detail?.task;
+      if (!created) return;
+      if (created.workspace_id !== workspaceId) return;
+      if (created.workflow_id !== workflow.workflow.id) return;
+      if (teamId && created.team_id !== teamId) return;
+      setTasks((current) => (
+        current.some((candidate) => candidate.id === created.id)
+          ? current
+          : [created, ...current]
+      ));
+    };
+    window.addEventListener('task-created', handleTaskCreated);
+    return () => window.removeEventListener('task-created', handleTaskCreated);
+  }, [workspaceId, workflow.workflow.id, teamId]);
 
   // Build lookup maps
   const availableWorkflows = useMemo(
@@ -385,6 +720,243 @@ export function TaskListView({
     }
     return map;
   }, [sprints]);
+
+  const taskListOwnerOptions = useMemo(() => {
+    const memberOptions = buildAssignableMemberOptions(assignableMembers)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return [{ id: TASK_LIST_FILTER_UNASSIGNED, name: 'Unassigned' }, ...memberOptions];
+  }, [assignableMembers]);
+
+  const taskListRequesterOptions = useMemo(() => {
+    return buildAssignableMemberOptions(assignableMembers)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [assignableMembers]);
+
+  const taskListStateOptions = useMemo(() => {
+    return workflow.states
+      .map((state) => ({
+        id: state.id,
+        name: state.name,
+        position: state.position,
+      }))
+      .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
+  }, [workflow.states]);
+
+  const taskListTypeOptions = useMemo(() => {
+    return (['feature', 'bug', 'chore'] as const)
+      .map((type) => ({ value: type, label: TASK_TYPE_CONFIG[type].label }));
+  }, []);
+
+  const taskListPriorityOptions = useMemo(() => {
+    return ALL_PRIORITIES
+      .map((priority) => ({ value: priority, label: PRIORITY_CONFIG[priority].label }));
+  }, []);
+
+  const taskListSeverityOptions = useMemo(() => {
+    return ALL_SEVERITIES
+      .map((severity) => ({ value: severity, label: SEVERITY_CONFIG[severity].label }));
+  }, []);
+
+  const taskListLabelOptions = useMemo(() => {
+    return allLabels
+      .map((label) => ({ value: label.id, label: label.name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allLabels]);
+
+  const taskListSprintOptions = useMemo(() => {
+    return getVisibleSprintsForTaskScope(sprints, { listTeamId: teamId })
+      .map((item) => ({ id: item.sprint.id, name: item.sprint.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [sprints, teamId]);
+
+  const localTaskFilterDefinitions = useMemo<LocalTaskFilterDefinition[]>(() => {
+    return [
+      {
+        key: 'owner',
+        label: 'Owner',
+        options: taskListOwnerOptions.map((owner) => ({ value: owner.id, label: owner.name })),
+        searchableValues: true,
+      },
+      {
+        key: 'requester',
+        label: 'Requester',
+        options: taskListRequesterOptions.map((requester) => ({ value: requester.id, label: requester.name })),
+        searchableValues: true,
+      },
+      {
+        key: 'state',
+        label: 'State',
+        options: taskListStateOptions.map((state) => ({ value: state.id, label: state.name })),
+        searchableValues: true,
+      },
+      {
+        key: 'task_type',
+        label: 'Type',
+        options: taskListTypeOptions,
+      },
+      {
+        key: 'priority',
+        label: 'Priority',
+        options: taskListPriorityOptions,
+      },
+      {
+        key: 'severity',
+        label: 'Severity',
+        options: taskListSeverityOptions,
+      },
+      {
+        key: 'label',
+        label: 'Label',
+        options: taskListLabelOptions,
+        searchableValues: true,
+      },
+      {
+        key: 'sprint',
+        label: 'Sprint',
+        options: taskListSprintOptions.map((sprint) => ({ value: sprint.id, label: sprint.name })),
+        searchableValues: true,
+      },
+      {
+        key: 'blocked',
+        label: 'Blocked',
+        options: [
+          { value: 'true', label: 'Blocked' },
+          { value: 'false', label: 'Not blocked' },
+        ],
+      },
+      {
+        key: 'blocking',
+        label: 'Blocking',
+        options: [
+          { value: 'true', label: 'Blocking others' },
+          { value: 'false', label: 'Not blocking others' },
+        ],
+      },
+    ];
+  }, [
+    taskListLabelOptions,
+    taskListOwnerOptions,
+    taskListPriorityOptions,
+    taskListRequesterOptions,
+    taskListSeverityOptions,
+    taskListSprintOptions,
+    taskListStateOptions,
+    taskListTypeOptions,
+  ]);
+
+  const localTaskFilterValues = useMemo<LocalTaskFilterValues>(
+    () => ({
+      owner: ownerFilter,
+      requester: requesterFilter,
+      state: stateFilter,
+      task_type: typeFilter,
+      priority: priorityFilter,
+      severity: severityFilter,
+      label: labelFilter,
+      sprint: sprintFilter,
+      blocked: blockedFilter,
+      blocking: blockingFilter,
+    }),
+    [blockedFilter, blockingFilter, labelFilter, ownerFilter, priorityFilter, requesterFilter, severityFilter, sprintFilter, stateFilter, typeFilter],
+  );
+
+  const handleLocalTaskFilterChange = useCallback((key: LocalTaskFilterKey, value: string) => {
+    if (key === 'owner') setOwnerFilter(value);
+    if (key === 'requester') setRequesterFilter(value);
+    if (key === 'state') setStateFilter(value);
+    if (key === 'task_type') setTypeFilter(value);
+    if (key === 'priority') setPriorityFilter(value);
+    if (key === 'severity') setSeverityFilter(value);
+    if (key === 'label') setLabelFilter(value);
+    if (key === 'sprint') setSprintFilter(value);
+    if (key === 'blocked') setBlockedFilter(value);
+    if (key === 'blocking') setBlockingFilter(value);
+  }, []);
+
+  const hasLocalTaskFilters =
+    taskSearchQuery.trim() !== '' ||
+    ownerFilter !== TASK_LIST_FILTER_ALL ||
+    requesterFilter !== TASK_LIST_FILTER_ALL ||
+    stateFilter !== TASK_LIST_FILTER_ALL ||
+    typeFilter !== TASK_LIST_FILTER_ALL ||
+    priorityFilter !== TASK_LIST_FILTER_ALL ||
+    severityFilter !== TASK_LIST_FILTER_ALL ||
+    labelFilter !== TASK_LIST_FILTER_ALL ||
+    sprintFilter !== TASK_LIST_FILTER_ALL ||
+    blockedFilter !== TASK_LIST_FILTER_ALL ||
+    blockingFilter !== TASK_LIST_FILTER_ALL;
+
+  const filteredTasks = useMemo(() => {
+    if (!showLocalTaskControls || !hasLocalTaskFilters) return tasks;
+
+    const query = taskSearchQuery.trim().toLowerCase();
+    return tasks.filter((task) => {
+      if (
+        ownerFilter !== TASK_LIST_FILTER_ALL &&
+        (ownerFilter === TASK_LIST_FILTER_UNASSIGNED
+          ? (task.owner_member_ids ?? []).length > 0
+          : !(task.owner_member_ids ?? []).includes(ownerFilter))
+      ) return false;
+      if (requesterFilter !== TASK_LIST_FILTER_ALL && task.requester_member_id !== requesterFilter) return false;
+      if (stateFilter !== TASK_LIST_FILTER_ALL && task.workflow_state_id !== stateFilter) return false;
+      if (typeFilter !== TASK_LIST_FILTER_ALL && task.task_type !== typeFilter) return false;
+      if (priorityFilter !== TASK_LIST_FILTER_ALL && task.priority !== priorityFilter) return false;
+      if (severityFilter !== TASK_LIST_FILTER_ALL && task.severity !== severityFilter) return false;
+      if (labelFilter !== TASK_LIST_FILTER_ALL && !(task.labels ?? []).some((label) => label.id === labelFilter)) return false;
+      if (sprintFilter !== TASK_LIST_FILTER_ALL && task.sprint_id !== sprintFilter) return false;
+      if (blockedFilter !== TASK_LIST_FILTER_ALL && String(task.blocked || task.is_blocked_by_task) !== blockedFilter) return false;
+      if (blockingFilter !== TASK_LIST_FILTER_ALL && String(task.is_blocking_other_task) !== blockingFilter) return false;
+
+      if (!query) return true;
+
+      const ownerNames = (task.owner_member_ids ?? []).map((id) => ownerNameMap.get(id) ?? '');
+      const labels = task.labels?.map((label) => label.name) ?? [];
+      const searchableText = [
+        task.display_id,
+        task.task_key,
+        task.name,
+        TASK_TYPE_CONFIG[task.task_type]?.label,
+        stateMap.get(task.workflow_state_id)?.name,
+        stateMap.get(task.workflow_state_id)?.groupLabel,
+        task.sprint_id ? sprintMap.get(task.sprint_id) : '',
+        ...ownerNames,
+        ...labels,
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }, [
+    hasLocalTaskFilters,
+    blockedFilter,
+    blockingFilter,
+    labelFilter,
+    ownerFilter,
+    ownerNameMap,
+    priorityFilter,
+    requesterFilter,
+    severityFilter,
+    showLocalTaskControls,
+    sprintFilter,
+    sprintMap,
+    stateFilter,
+    stateMap,
+    taskSearchQuery,
+    tasks,
+    typeFilter,
+  ]);
+
+  const clearLocalTaskFieldFilters = useCallback(() => {
+    setOwnerFilter(TASK_LIST_FILTER_ALL);
+    setRequesterFilter(TASK_LIST_FILTER_ALL);
+    setStateFilter(TASK_LIST_FILTER_ALL);
+    setTypeFilter(TASK_LIST_FILTER_ALL);
+    setPriorityFilter(TASK_LIST_FILTER_ALL);
+    setSeverityFilter(TASK_LIST_FILTER_ALL);
+    setLabelFilter(TASK_LIST_FILTER_ALL);
+    setSprintFilter(TASK_LIST_FILTER_ALL);
+    setBlockedFilter(TASK_LIST_FILTER_ALL);
+    setBlockingFilter(TASK_LIST_FILTER_ALL);
+  }, []);
 
   const estimateSettingsByTeamId = useMemo(() => {
     const map = new Map<string, TeamEstimateSettings>();
@@ -525,29 +1097,47 @@ export function TaskListView({
   // Optimistic inline update with rollback on failure
   const updateTaskField = useCallback(
     async (taskId: string, patch: Partial<Task>) => {
-      let snapshot: Task[] = [];
-      setTasks((current) => {
-        snapshot = current;
-        return current.map((s) => (s.id === taskId ? { ...s, ...patch } : s));
-      });
+      const previousTask = tasks.find((task) => task.id === taskId) ?? null;
+      applyTasksUpdate((current) => applyTaskListInlinePatch(current, taskId, patch));
       const apiPatch = { ...patch };
       delete apiPatch.epic_name;
       delete apiPatch.labels;
-      const { error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
-      if (error) setTasks(snapshot);
-      if (!error && patch.workflow_state_id !== undefined) {
-        const previousStateId = snapshot.find((task) => task.id === taskId)?.workflow_state_id;
-        if (shouldNotifyAgentAutoRunStateChange({
-          fromStateId: previousStateId,
-          toStateId: patch.workflow_state_id,
-          automatedStateIds,
-        })) {
-          const stateName = workflow.states.find((state) => state.id === patch.workflow_state_id)?.name ?? 'this state';
-          toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(patch.workflow_state_id) });
+      beginInlineUpdate();
+      try {
+        const { data, error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
+        if (error) {
+          if (previousTask) {
+            applyTasksUpdate((current) => mergeTaskListInlineUpdate(current, previousTask));
+          }
+          onInlineUpdateError?.(error);
+        } else if (data?.task) {
+          applyTasksUpdate((current) => mergeTaskListInlineUpdate(current, data.task));
         }
+        if (!error && patch.workflow_state_id !== undefined) {
+          const previousStateId = previousTask?.workflow_state_id;
+          if (shouldNotifyAgentAutoRunStateChange({
+            fromStateId: previousStateId,
+            toStateId: patch.workflow_state_id,
+            automatedStateIds,
+          })) {
+            const stateName = workflow.states.find((state) => state.id === patch.workflow_state_id)?.name ?? 'this state';
+            toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(patch.workflow_state_id) });
+          }
+        }
+      } finally {
+        endInlineUpdate();
       }
     },
-    [workspaceId, ownerNameMap, automatedStateIds, workflow.states],
+    [
+      workspaceId,
+      automatedStateIds,
+      workflow.states,
+      applyTasksUpdate,
+      beginInlineUpdate,
+      endInlineUpdate,
+      onInlineUpdateError,
+      tasks,
+    ],
   );
 
   // Listen for task events (only for self-fetching mode)
@@ -900,6 +1490,7 @@ export function TaskListView({
               task={info.row.original}
               workspaceId={workspaceId}
               workspaceSlug={workspaceSlug}
+              automatedStateIds={automatedStateIds}
               onOpenTask={handleOpenTask}
               setTasks={setTasks}
             />
@@ -954,7 +1545,7 @@ export function TaskListView({
     if (visibleGroupOptions.some((option) => option.value === groupBy)) {
       return;
     }
-    setGroupBy('workflow_state');
+    setGroupBy(visibleGroupOptions[0]?.value ?? 'none');
   }, [groupBy, setGroupBy, visibleGroupOptions]);
 
   const columnVisibility = useMemo(() => {
@@ -1000,7 +1591,7 @@ export function TaskListView({
   const hasGroupedRows = grouping.length > 0;
 
   const table = useReactTable({
-    data: tasks,
+    data: filteredTasks,
     columns: tableColumns,
     state: {
       grouping,
@@ -1138,9 +1729,12 @@ export function TaskListView({
   }, []);
 
   // Compute total task count (including unloaded) for per-group mode
-  const displayTaskCount = isPerGroupMode && groupHasMore.size > 0
+  const totalTaskCount = isPerGroupMode && groupHasMore.size > 0
     ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
     : tasks.length;
+  const displayTaskCount = showLocalTaskControls && hasLocalTaskFilters ? filteredTasks.length : totalTaskCount;
+  const hasLocalSearchQuery = showLocalTaskControls && taskSearchQuery.trim() !== '';
+  const showTaskCount = !showLocalTaskControls || hasLocalSearchQuery;
 
   if (loading) {
     return (
@@ -1154,24 +1748,57 @@ export function TaskListView({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       {showToolbar ? (
-        <div className="flex items-center gap-2 px-3 pt-2">
-          <span className="text-xs text-muted-foreground">Group by:</span>
-          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
-            <SelectTrigger className="h-7 w-[160px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {visibleGroupOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-xs text-muted-foreground">
-            {displayTaskCount} {displayTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
-          </span>
-          <div className="ml-auto">
+        <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
+          {showLocalTaskControls ? (
+            <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
+              <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={taskSearchQuery}
+                onChange={(event) => setTaskSearchQuery(event.target.value)}
+                placeholder="Search"
+                className="h-8 pl-8 pr-8 text-sm"
+              />
+              {taskSearchQuery ? (
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={() => setTaskSearchQuery('')}
+                  aria-label="Clear search"
+                >
+                  <Cancel01Icon className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {showTaskCount ? (
+            <span className="text-xs text-muted-foreground">
+              {displayTaskCount}{showLocalTaskControls && hasLocalTaskFilters ? ` of ${totalTaskCount}` : ''}{' '}
+              {totalTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
+            </span>
+          ) : null}
+          {showLocalTaskControls ? (
+            <LocalTaskFilterControls
+              definitions={localTaskFilterDefinitions}
+              values={localTaskFilterValues}
+              onChange={handleLocalTaskFilterChange}
+              onClear={clearLocalTaskFieldFilters}
+            />
+          ) : null}
+          <div className="ml-auto flex items-center gap-1.5">
+            {toolbarActions}
+            <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
+              <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] gap-1 text-xs">
+                <span className="shrink-0 text-muted-foreground">Group by</span>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {visibleGroupOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <ListDisplayMenu disabledKeys={teamDisabledKeys} />
           </div>
         </div>
@@ -1184,6 +1811,12 @@ export function TaskListView({
         onScroll={(e) => {
           const el = e.currentTarget;
           const scrollTop = el.scrollTop;
+          const scrollLeft = el.scrollLeft;
+
+          if (scrollLeft !== horizontalScrollLeftRef.current) {
+            horizontalScrollLeftRef.current = scrollLeft;
+            el.style.setProperty('--task-list-scroll-left', `${scrollLeft}px`);
+          }
 
           // Infinite loading (only for flat/global pagination, not per-group mode)
           if (!isExternal && !isPerGroupMode && hasMore && !loadingMore) {
@@ -1253,6 +1886,11 @@ export function TaskListView({
         </div>
 
         {/* Virtualized body */}
+        {rows.length === 0 ? (
+          <div className="flex h-24 items-center justify-center border-b border-border/60 text-sm text-muted-foreground">
+            {tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the current filters.'}
+          </div>
+        ) : (
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             {hasGroupedRows ? (
               <StickyPinnedGroupOverlay
@@ -1290,7 +1928,10 @@ export function TaskListView({
                     top: 0,
                     left: 0,
                     width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
+                    transform: isGrouped
+                      ? `translateX(var(--task-list-scroll-left, 0px)) translateY(${virtualRow.start}px)`
+                      : `translateY(${virtualRow.start}px)`,
+                    willChange: isGrouped ? 'transform' : undefined,
                   }}
                 >
                   {isGrouped ? (
@@ -1316,6 +1957,7 @@ export function TaskListView({
               );
             })}
           </div>
+        )}
           {loadingMore && !isPerGroupMode && (
             <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
               <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
@@ -1487,7 +2129,13 @@ function StickyPinnedGroupOverlay({
 
   return (
     <div className="sticky z-[5]" style={{ top: 'var(--task-list-header-height, 0px)', height: 0, overflow: 'visible' }}>
-      <div className="border-b border-border/60 bg-background">
+      <div
+        className="border-b border-border/60 bg-background"
+        style={{
+          transform: 'translateX(var(--task-list-scroll-left, 0px))',
+          willChange: 'transform',
+        }}
+      >
         <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
       </div>
     </div>
@@ -2300,17 +2948,21 @@ function InlineActionsCell({
   task,
   workspaceId,
   workspaceSlug,
+  automatedStateIds,
   onOpenTask,
   setTasks,
 }: {
   task: Task;
   workspaceId: string;
   workspaceSlug: string | null;
+  automatedStateIds: Set<string>;
   onOpenTask: (task: Task) => void;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const { copy } = useCopyToClipboard();
 
   const copyLink = (e: React.MouseEvent) => {
@@ -2333,6 +2985,36 @@ function InlineActionsCell({
     }
   };
 
+  const duplicateTask = async () => {
+    if (duplicating) return;
+    setDuplicateConfirmOpen(false);
+    setDuplicating(true);
+    try {
+      const { data, error } = await pmTaskService.duplicate(workspaceId, task.id);
+      if (error || !data) {
+        toast.error(error ?? 'Failed to duplicate task');
+        return;
+      }
+      setTasks((current) => [data.task, ...current]);
+      showTaskDuplicatedToast({
+        taskName: data.task.name,
+        taskKey: data.task.task_key,
+        taskType: data.task.task_type,
+        onOpen: () => onOpenTask(data.task),
+      });
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+  const requestDuplicateTask = () => {
+    if (automatedStateIds.has(task.workflow_state_id)) {
+      setDuplicateConfirmOpen(true);
+      return;
+    }
+    void duplicateTask();
+  };
+
   const trigger = (
     <button
       type="button"
@@ -2348,7 +3030,7 @@ function InlineActionsCell({
     </button>
   );
 
-  if (!menuOpen && !archiveOpen) {
+  if (!menuOpen && !archiveOpen && !duplicateConfirmOpen) {
     return <div onClick={(e) => e.stopPropagation()}>{trigger}</div>;
   }
 
@@ -2357,6 +3039,10 @@ function InlineActionsCell({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={requestDuplicateTask} disabled={duplicating}>
+            <Copy01Icon className="mr-2 h-3.5 w-3.5" />
+            Duplicate Task
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onOpenTask(task)}>
             <TaskListOpenTaskIcon className="mr-2 h-3.5 w-3.5" />
             Open Task
@@ -2382,6 +3068,16 @@ function InlineActionsCell({
           description="This task will be hidden from the board and lists. You can restore it later from archived items."
           confirmLabel="Archive"
           onConfirm={archiveTask}
+        />
+      ) : null}
+      {duplicateConfirmOpen ? (
+        <ConfirmDialog
+          open={duplicateConfirmOpen}
+          onOpenChange={setDuplicateConfirmOpen}
+          title="Duplicate task and start agent?"
+          description="This task is in an auto-run state. Duplicating it will create a copy in the same state and start the assigned agent automatically."
+          confirmLabel="Duplicate and start agent"
+          onConfirm={duplicateTask}
         />
       ) : null}
     </div>

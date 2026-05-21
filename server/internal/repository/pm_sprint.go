@@ -303,6 +303,16 @@ func (r *PMSprintRepository) ListTasks(ctx context.Context, sprintID string) ([]
 	return stories, nil
 }
 
+// ListEnrichedTasks returns tasks in a sprint with table-facing computed fields
+// such as owner member IDs, labels, state info, and latest run.
+func (r *PMSprintRepository) ListEnrichedTasks(ctx context.Context, sprintID string) ([]model.BoardTask, error) {
+	tasks, err := r.ListTasks(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	return NewPMTaskRepository(r.db).EnrichTasksForList(ctx, tasks), nil
+}
+
 // HasDateOverlap checks whether another sprint overlaps date range for workspace/team.
 func (r *PMSprintRepository) HasDateOverlap(ctx context.Context, workspaceID string, teamID *string, startDate, endDate time.Time, excludeID *string) (bool, error) {
 	query := r.db.WithContext(ctx).
@@ -468,7 +478,6 @@ func (r *PMSprintRepository) ListPreviewTasksPage(ctx context.Context, sprintID 
 			s.workflow_state_id,
 			ws.name AS state_name,
 			ws.state_type AS state_type,
-			s.owner_member_id,
 			s.estimate,
 			s.priority,
 			s.sprint_id,
@@ -479,6 +488,9 @@ func (r *PMSprintRepository) ListPreviewTasksPage(ctx context.Context, sprintID 
 		Limit(perPage).
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list preview tasks page: %w", err)
+	}
+	if err := r.enrichPlanningTaskPreviewOwners(ctx, rows); err != nil {
+		return nil, err
 	}
 
 	totalPages := 0
@@ -511,7 +523,6 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 			s.workflow_state_id,
 			ws.name AS state_name,
 			ws.state_type AS state_type,
-			s.owner_member_id,
 			s.estimate,
 			s.priority,
 			s.sprint_id,
@@ -522,6 +533,9 @@ func (r *PMSprintRepository) listPlanningPreviewStories(ctx context.Context, spr
 		Order("s.sprint_id ASC, s.position ASC, s.created_at DESC").
 		Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list planning preview stories: %w", err)
+	}
+	if err := r.enrichPlanningTaskPreviewOwners(ctx, rows); err != nil {
+		return nil, err
 	}
 
 	for _, row := range rows {
@@ -568,7 +582,6 @@ func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, wor
 			s.workflow_state_id,
 			ws.name AS state_name,
 			ws.state_type AS state_type,
-			s.owner_member_id,
 			s.estimate,
 			s.priority,
 			s.sprint_id,
@@ -579,5 +592,51 @@ func (r *PMSprintRepository) listPlanningBacklogStories(ctx context.Context, wor
 		Scan(&stories).Error; err != nil {
 		return nil, 0, fmt.Errorf("list planning backlog stories: %w", err)
 	}
+	if err := r.enrichPlanningTaskPreviewOwners(ctx, stories); err != nil {
+		return nil, 0, err
+	}
 	return stories, int(total), nil
+}
+
+func (r *PMSprintRepository) enrichPlanningTaskPreviewOwners(ctx context.Context, tasks []model.SprintPlanningTaskPreview) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	taskIDs := make([]string, 0, len(tasks))
+	for i := range tasks {
+		taskIDs = append(taskIDs, tasks[i].ID)
+		tasks[i].OwnerMemberID = nil
+		tasks[i].OwnerMemberIDs = []string{}
+	}
+
+	var rows []struct {
+		TaskID   string `gorm:"column:task_id"`
+		MemberID string `gorm:"column:member_id"`
+	}
+	if err := r.db.WithContext(ctx).
+		Table("pm_task_owners po").
+		Select("po.task_id, wm.id AS member_id").
+		Joins("JOIN pm_tasks t ON t.id = po.task_id").
+		Joins("JOIN workspace_members wm ON wm.user_id = po.user_id AND wm.workspace_id = t.workspace_id").
+		Where("po.task_id IN ?", taskIDs).
+		Order("po.task_id, po.created_at ASC").
+		Scan(&rows).Error; err != nil {
+		return fmt.Errorf("list planning task owners: %w", err)
+	}
+
+	ownerMemberIDsByTaskID := make(map[string][]string, len(tasks))
+	for _, row := range rows {
+		ownerMemberIDsByTaskID[row.TaskID] = append(ownerMemberIDsByTaskID[row.TaskID], row.MemberID)
+	}
+	for i := range tasks {
+		tasks[i].OwnerMemberIDs = ownerMemberIDsByTaskID[tasks[i].ID]
+		if len(tasks[i].OwnerMemberIDs) == 0 {
+			tasks[i].OwnerMemberIDs = []string{}
+			continue
+		}
+		tasks[i].OwnerMemberID = &tasks[i].OwnerMemberIDs[0]
+	}
+
+	return nil
 }

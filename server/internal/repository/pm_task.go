@@ -1051,6 +1051,12 @@ func (r *PMTaskRepository) collectAndEnrich(ctx context.Context, tasks []model.P
 	return r.enrichBoardTasks(tasks, epicNameMap, sprintNameMap, ownerMemberIDsByTaskID, labelMap, stateInfoMap, contactsMap, companiesMap, dealsMap, supportMap)
 }
 
+// EnrichTasksForList applies the same table-facing computed fields used by
+// board/list endpoints to an already-scoped task slice.
+func (r *PMTaskRepository) EnrichTasksForList(ctx context.Context, tasks []model.PMTask) []model.BoardTask {
+	return r.collectAndEnrich(ctx, tasks, taskEnrichOptions{})
+}
+
 // stateInfo holds denormalized workflow state metadata for board tasks.
 type stateInfo struct {
 	Name      string

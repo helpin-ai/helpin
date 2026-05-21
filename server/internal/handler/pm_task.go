@@ -253,7 +253,7 @@ func (h *PMTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WorkspaceID == "" {
 		req.WorkspaceID = getWorkspaceID(r)
 	}
-	task, err := h.taskService.Create(r.Context(), req, userID)
+	task, err := h.taskService.CreateWithAgentRun(r.Context(), req, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -326,6 +326,34 @@ func (h *PMTaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
+}
+
+// SaveAsTemplate handles POST /api/pm/tasks/{id}/save-as-template.
+func (h *PMTaskHandler) SaveAsTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req model.SaveTaskAsTemplateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	tmpl, err := h.taskService.SaveAsTemplate(r.Context(), id, req)
+	if err != nil {
+		writeError(w, pmTaskUpdateErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, tmpl)
+}
+
+// Duplicate handles POST /api/pm/tasks/{id}/duplicate.
+func (h *PMTaskHandler) Duplicate(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	id := chi.URLParam(r, "id")
+	task, err := h.taskService.Duplicate(r.Context(), id, userID)
+	if err != nil {
+		writeError(w, pmTaskUpdateErrorStatus(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, task)
 }
 
 func pmTaskUpdateErrorStatus(err error) int {

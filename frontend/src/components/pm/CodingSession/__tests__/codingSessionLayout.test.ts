@@ -1,0 +1,40 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  shouldShowFailedCodingSessionRecoveryNotice,
+  shouldShowCodingSessionPlanPanel,
+  shouldShowCodingSessionSidePanel,
+} from '../codingSessionLayout';
+import type { RunPlanArtifact } from '@/lib/pmTypes';
+
+const populatedPlan: RunPlanArtifact = {
+  plan: [{ step: 'Inspect repository', status: 'in_progress' }],
+};
+
+describe('coding session layout decisions', () => {
+  it('hides the plan panel until the agent publishes a real plan', () => {
+    expect(shouldShowCodingSessionPlanPanel(null)).toBe(false);
+    expect(shouldShowCodingSessionPlanPanel({ plan: [] })).toBe(false);
+    expect(shouldShowCodingSessionPlanPanel(populatedPlan)).toBe(true);
+  });
+
+  it('keeps the side panel hidden when there is no plan or preview content', () => {
+    expect(shouldShowCodingSessionSidePanel(null, 0)).toBe(false);
+  });
+
+  it('shows the side panel for plans or preview content', () => {
+    expect(shouldShowCodingSessionSidePanel(populatedPlan, 0)).toBe(true);
+    expect(shouldShowCodingSessionSidePanel(null, 1)).toBe(true);
+  });
+
+  it('shows the side panel for review history', () => {
+    expect(shouldShowCodingSessionSidePanel(null, 0, 1)).toBe(true);
+  });
+
+  it('shows failed-run recovery copy only when partial output is visible', () => {
+    expect(shouldShowFailedCodingSessionRecoveryNotice('failed', populatedPlan, 0)).toBe(true);
+    expect(shouldShowFailedCodingSessionRecoveryNotice('failed', null, 1)).toBe(true);
+    expect(shouldShowFailedCodingSessionRecoveryNotice('failed', null, 0)).toBe(false);
+    expect(shouldShowFailedCodingSessionRecoveryNotice('running', populatedPlan, 1)).toBe(false);
+  });
+});

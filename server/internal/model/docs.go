@@ -38,10 +38,11 @@ const (
 
 // Version type values.
 const (
-	VersionTypeManual  = "manual"
-	VersionTypeAuto    = "auto"
-	VersionTypePublish = "publish"
-	VersionTypeRevert  = "revert"
+	VersionTypeManual        = "manual"
+	VersionTypeAuto          = "auto"
+	VersionTypePublish       = "publish"
+	VersionTypeRevert        = "revert"
+	VersionTypeProposalApply = "proposal_apply"
 )
 
 // Link context values.
@@ -209,14 +210,15 @@ type DocsDocument struct {
 	DeletedAt        *time.Time      `json:"deleted_at" gorm:"index"`
 
 	// Transient fields (not stored in docs_documents, populated by handlers)
-	HCSlug                string     `json:"hc_slug,omitempty" gorm:"-"`
-	HCOGTitle             *string    `json:"hc_og_title,omitempty" gorm:"-"`
-	HCOGDescription       *string    `json:"hc_og_description,omitempty" gorm:"-"`
-	HCOGImageURL          *string    `json:"hc_og_image_url,omitempty" gorm:"-"`
-	HCOGImageAlt          *string    `json:"hc_og_image_alt,omitempty" gorm:"-"`
-	HasUnpublishedChanges bool       `json:"has_unpublished_changes" gorm:"-"`
-	LivePublishedAt       *time.Time `json:"live_published_at,omitempty" gorm:"-"`
-	LiveSlug              *string    `json:"live_slug,omitempty" gorm:"-"`
+	HCSlug                     string     `json:"hc_slug,omitempty" gorm:"-"`
+	HCOGTitle                  *string    `json:"hc_og_title,omitempty" gorm:"-"`
+	HCOGDescription            *string    `json:"hc_og_description,omitempty" gorm:"-"`
+	HCOGImageURL               *string    `json:"hc_og_image_url,omitempty" gorm:"-"`
+	HCOGImageAlt               *string    `json:"hc_og_image_alt,omitempty" gorm:"-"`
+	HasUnpublishedChanges      bool       `json:"has_unpublished_changes" gorm:"-"`
+	LivePublishedAt            *time.Time `json:"live_published_at,omitempty" gorm:"-"`
+	LiveSlug                   *string    `json:"live_slug,omitempty" gorm:"-"`
+	PendingChangeProposalCount int        `json:"pending_change_proposal_count" gorm:"->;-:migration"`
 }
 
 func (DocsDocument) TableName() string { return "docs_documents" }
@@ -331,13 +333,13 @@ func (DocsAISectionCandidate) TableName() string { return "docs_ai_section_candi
 // for review inside Docs. The document aggregate is unchanged until applied.
 type DocsChangeProposal struct {
 	ID              string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	DocumentID      string          `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_change_proposals_doc_status_created,priority:1"`
+	WorkspaceID     string          `json:"workspace_id" gorm:"type:uuid;not null;index;index:idx_docs_change_proposals_ws_doc_status,priority:1"`
+	DocumentID      string          `json:"document_id" gorm:"type:uuid;not null;index:idx_docs_change_proposals_doc_status_created,priority:1;index:idx_docs_change_proposals_ws_doc_status,priority:2"`
 	BlockID         *string         `json:"block_id,omitempty" gorm:"type:uuid;index"`
 	AgentID         *string         `json:"agent_id,omitempty" gorm:"type:uuid;index"`
 	AgentRunID      *string         `json:"agent_run_id,omitempty" gorm:"type:uuid;index"`
 	Scope           string          `json:"scope" gorm:"not null"`
-	Status          string          `json:"status" gorm:"not null;default:'pending';index:idx_docs_change_proposals_doc_status_created,priority:2"`
+	Status          string          `json:"status" gorm:"not null;default:'pending';index:idx_docs_change_proposals_doc_status_created,priority:2;index:idx_docs_change_proposals_ws_doc_status,priority:3"`
 	Revision        int             `json:"revision,omitempty" gorm:"not null;default:0"`
 	Summary         string          `json:"summary" gorm:"type:text;not null"`
 	ContentMarkdown string          `json:"content_markdown" gorm:"type:text;not null"`
@@ -351,6 +353,51 @@ type DocsChangeProposal struct {
 }
 
 func (DocsChangeProposal) TableName() string { return "docs_change_proposals" }
+
+type DocsChangeProposalSource struct {
+	Type  string `json:"type"`
+	ID    string `json:"id,omitempty"`
+	Label string `json:"label"`
+	URL   string `json:"url,omitempty"`
+}
+
+func NormalizeDocsChangeProposalSources(raw json.RawMessage) []DocsChangeProposalSource {
+	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "" || strings.TrimSpace(string(raw)) == "null" {
+		return []DocsChangeProposalSource{}
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return []DocsChangeProposalSource{}
+	}
+	out := make([]DocsChangeProposalSource, 0, len(entries))
+	for _, entry := range entries {
+		var source DocsChangeProposalSource
+		if err := json.Unmarshal(entry, &source); err != nil {
+			continue
+		}
+		sourceType := strings.TrimSpace(source.Type)
+		label := strings.TrimSpace(source.Label)
+		if sourceType == "" || label == "" || !isDocsChangeProposalSourceType(sourceType) {
+			continue
+		}
+		out = append(out, DocsChangeProposalSource{
+			Type:  sourceType,
+			ID:    strings.TrimSpace(source.ID),
+			Label: label,
+			URL:   strings.TrimSpace(source.URL),
+		})
+	}
+	return out
+}
+
+func isDocsChangeProposalSourceType(sourceType string) bool {
+	switch sourceType {
+	case "conversation", "document", "url", "agent_run", "coverage_gap":
+		return true
+	default:
+		return false
+	}
+}
 
 type CreateDocsChangeProposalRequest struct {
 	Scope           string          `json:"scope"`

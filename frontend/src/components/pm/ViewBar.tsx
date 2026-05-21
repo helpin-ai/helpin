@@ -1,22 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ArrowDown01Icon,
-  LockIcon,
+  MoreVerticalIcon,
   PinIcon,
-  PinOffIcon,
   UndoIcon,
   ViewIcon,
-  GlobeIcon,
   PencilEdit01Icon,
-  PlusSignIcon,
   FloppyDiskIcon,
   Delete01Icon,
   Cancel01Icon,
   Copy01Icon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,14 +18,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   Popover,
   PopoverContent,
@@ -49,6 +35,8 @@ import {
 import { usePMBoardStore, type BoardFilters } from '@/stores/pmBoardStore';
 import type { PMView } from '@/lib/pmTypes';
 import { isDefaultView } from '@/lib/pmDefaultViews';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { SaveViewDialog } from './SaveViewDialog';
 
 interface ViewBarProps {
   workspaceId: string;
@@ -87,89 +75,6 @@ function filtersEqual(a: BoardFilters, b: BoardFilters): boolean {
   return aKeys.every((k) => na[k] === nb[k]);
 }
 
-// ── Save View Dialog ────────────────────────────────────────────────
-
-function SaveViewDialog({
-  open,
-  onOpenChange,
-  onSave,
-  initialName,
-  title,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSave: (name: string, isShared: boolean) => void;
-  initialName?: string;
-  title: string;
-}) {
-  const [name, setName] = useState(initialName ?? '');
-  const [isShared, setIsShared] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setName(initialName ?? '');
-      setIsShared(false);
-    }
-  }, [open, initialName]);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[420px] gap-0 p-0">
-        <DialogHeader className="px-5 pt-5 pb-4">
-          <DialogTitle className="text-base">{title}</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            Save the current filters as a reusable view.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 px-5 pb-5">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">View name</label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. My bug tracker, Sprint 4..."
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && name.trim()) {
-                  onSave(name.trim(), isShared);
-                  onOpenChange(false);
-                }
-              }}
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-md border border-border/70 px-3 py-2.5">
-            <div className="flex items-center gap-2.5">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-md ${isShared ? 'bg-blue-500/10 text-blue-500' : 'bg-muted text-muted-foreground'}`}>
-                {isShared ? <GlobeIcon className="h-3.5 w-3.5" /> : <LockIcon className="h-3.5 w-3.5" />}
-              </div>
-              <div>
-                <p className="text-sm font-medium leading-none">{isShared ? 'Shared' : 'Personal'}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{isShared ? 'Visible to all workspace members' : 'Only visible to you'}</p>
-              </div>
-            </div>
-            <Switch checked={isShared} onCheckedChange={setIsShared} />
-          </div>
-        </div>
-        <DialogFooter className="border-t border-border/70 px-5 py-3">
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            disabled={!name.trim()}
-            onClick={() => {
-              onSave(name.trim(), isShared);
-              onOpenChange(false);
-            }}
-          >
-            Save View
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ── Active View Context Menu ────────────────────────────────────────
 
 function ActiveViewMenu({
@@ -189,8 +94,11 @@ function ActiveViewMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="ml-0.5 rounded p-0.5 hover:bg-accent transition-colors">
-            <ArrowDown01Icon className="h-3 w-3" />
+          <button
+            className="ml-0.5 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            aria-label="View options"
+          >
+            <MoreVerticalIcon className="h-3.5 w-3.5" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48">
@@ -199,40 +107,23 @@ function ActiveViewMenu({
             onClick={() => saveChangesToView(workspaceId)}
           >
             <FloppyDiskIcon className="mr-2 h-4 w-4" />
-            Save Changes
+            Update
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setSaveAsOpen(true)}>
+            <Copy01Icon className="mr-2 h-4 w-4" />
+            Save as new
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={!hasChanges}
             onClick={discardChanges}
           >
             <UndoIcon className="mr-2 h-4 w-4" />
-            Discard Changes
+            Discard changes
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setRenameOpen(true)}>
             <PencilEdit01Icon className="mr-2 h-4 w-4" />
             Edit
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setSaveAsOpen(true)}>
-            <Copy01Icon className="mr-2 h-4 w-4" />
-            Save As...
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() =>
-              updateView(workspaceId, view.id, { is_pinned: !view.is_pinned })
-            }
-          >
-            {view.is_pinned ? (
-              <>
-                <PinOffIcon className="mr-2 h-4 w-4" />
-                Unpin
-              </>
-            ) : (
-              <>
-                <PinIcon className="mr-2 h-4 w-4" />
-                Pin
-              </>
-            )}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -249,6 +140,7 @@ function ActiveViewMenu({
         open={renameOpen}
         onOpenChange={setRenameOpen}
         initialName={view.name}
+        initialIsShared={view.is_shared}
         title="Edit View"
         onSave={(name, isShared) => {
           updateView(workspaceId, view.id, { name, is_shared: isShared });
@@ -269,105 +161,123 @@ function ActiveViewMenu({
 
 // ── Views Dropdown ──────────────────────────────────────────────────
 
+function ViewsDropdownRow({
+  view,
+  onOpen,
+  onTogglePin,
+}: {
+  view: PMView;
+  onOpen: () => void;
+  onTogglePin: () => void;
+}) {
+  return (
+    <CommandItem
+      key={view.id}
+      value={view.name}
+      onSelect={onOpen}
+      className="group pr-8"
+    >
+      <span className="min-w-0 flex-1 truncate">{view.name}</span>
+      <QuickTooltip label={view.is_pinned ? 'Unpin' : 'Pin'}>
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onTogglePin();
+          }}
+          className={`absolute right-1.5 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground transition-opacity duration-150 hover:bg-accent hover:text-foreground ${
+            view.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-60 hover:!opacity-100'
+          }`}
+          aria-label={view.is_pinned ? 'Unpin view' : 'Pin view'}
+        >
+          <PinIcon className="h-3 w-3" />
+        </button>
+      </QuickTooltip>
+    </CommandItem>
+  );
+}
+
 function ViewsDropdown({
-  workspaceId,
   currentUserId,
   onOpenView,
+  onTogglePin,
 }: {
-  workspaceId: string;
   currentUserId: string;
   onOpenView: (view: PMView) => void;
+  onTogglePin: (view: PMView) => void;
 }) {
   const { views } = usePMBoardStore();
   const [open, setOpen] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
 
   const personalViews = views.filter(
     (v) => !isDefaultView(v.id) && !v.is_shared && v.created_by === currentUserId
   );
   const sharedViews = views.filter((v) => !isDefaultView(v.id) && v.is_shared);
+  const totalCustom = personalViews.length + sharedViews.length;
+  const hasAnyCustom = totalCustom > 0;
+  const showSearch = totalCustom > 10;
 
   return (
-    <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
-            <PlusSignIcon className="h-3.5 w-3.5" />
-            Views
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-56 p-0" align="start">
-          <Command>
-            <CommandInput placeholder="Search views..." />
-            <CommandList>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
+          <ViewIcon className="h-3.5 w-3.5" />
+          Views
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <Command>
+          {showSearch ? <CommandInput placeholder="Search views..." /> : null}
+          <CommandList
+            className="[scrollbar-width:thin] [&::-webkit-scrollbar]:!block [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/40"
+          >
+            {!hasAnyCustom ? (
+              <div className="px-3 py-4 text-center text-xs text-muted-foreground">
+                No saved views yet.
+              </div>
+            ) : (
               <CommandEmpty>No views found.</CommandEmpty>
-              <CommandGroup>
-                <CommandItem
-                  onSelect={() => {
-                    setOpen(false);
-                    setCreateOpen(true);
-                  }}
-                >
-                  <PlusSignIcon className="mr-2 h-4 w-4" />
-                  Create New View
-                </CommandItem>
+            )}
+            {personalViews.length > 0 && (
+              <CommandGroup heading="Personal">
+                {personalViews.map((view) => (
+                  <ViewsDropdownRow
+                    key={view.id}
+                    view={view}
+                    onOpen={() => {
+                      onOpenView(view);
+                      setOpen(false);
+                    }}
+                    onTogglePin={() => onTogglePin(view)}
+                  />
+                ))}
               </CommandGroup>
-              {personalViews.length > 0 && (
-                <>
-                  <CommandSeparator />
-                  <CommandGroup heading="Personal Views">
-                    {personalViews.map((view) => (
-                      <CommandItem
-                        key={view.id}
-                        value={view.name}
-                        onSelect={() => {
-                          onOpenView(view);
-                          setOpen(false);
-                        }}
-                      >
-                        <ViewIcon className="mr-2 h-4 w-4" />
-                        {view.name}
-                        {view.is_pinned && <PinIcon className="ml-auto h-3 w-3 text-muted-foreground" />}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </>
-              )}
-              {sharedViews.length > 0 && (
-                <>
-                  <CommandSeparator />
-                  <CommandGroup heading="Shared Views">
-                    {sharedViews.map((view) => (
-                      <CommandItem
-                        key={view.id}
-                        value={view.name}
-                        onSelect={() => {
-                          onOpenView(view);
-                          setOpen(false);
-                        }}
-                      >
-                        <GlobeIcon className="mr-2 h-4 w-4" />
-                        {view.name}
-                        {view.is_pinned && <PinIcon className="ml-auto h-3 w-3 text-muted-foreground" />}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </>
-              )}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-
-      <SaveViewDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        title="Create New View"
-        onSave={(name, isShared) => {
-          usePMBoardStore.getState().saveCurrentAsView(workspaceId, name, isShared);
-        }}
-      />
-    </>
+            )}
+            {personalViews.length > 0 && sharedViews.length > 0 && <CommandSeparator />}
+            {sharedViews.length > 0 && (
+              <CommandGroup heading="Shared">
+                {sharedViews.map((view) => (
+                  <ViewsDropdownRow
+                    key={view.id}
+                    view={view}
+                    onOpen={() => {
+                      onOpenView(view);
+                      setOpen(false);
+                    }}
+                    onTogglePin={() => onTogglePin(view)}
+                  />
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+          <div className="border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
+            Want to create a view? Apply filters, then <span className="text-foreground/80">save as view</span>.
+          </div>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -382,7 +292,6 @@ function ViewTab({
   onClose,
   workspaceId,
   hasChanges,
-  onSaveAsNew,
 }: {
   view: PMView;
   isActive: boolean;
@@ -392,7 +301,6 @@ function ViewTab({
   onClose: () => void;
   workspaceId: string;
   hasChanges: boolean;
-  onSaveAsNew: () => void;
 }) {
   return (
     <button
@@ -404,19 +312,6 @@ function ViewTab({
       }`}
     >
       {view.name}
-      {isActive && hasChanges && isDefault && (
-        <span
-          role="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSaveAsNew();
-          }}
-          className="ml-0.5 inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 transition-colors"
-        >
-          <PlusSignIcon className="h-3 w-3" />
-          New View
-        </span>
-      )}
       {isActive && hasChanges && !isDefault && (
         <span className="h-1.5 w-1.5 rounded-full bg-primary" title="Unsaved changes" />
       )}
@@ -424,16 +319,18 @@ function ViewTab({
         <ActiveViewMenu view={view} workspaceId={workspaceId} hasChanges={hasChanges} />
       )}
       {!isActive && canClose && (
-        <span
-          role="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          className="ml-0.5 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent transition-all"
-        >
-          <Cancel01Icon className="h-3 w-3" />
-        </span>
+        <QuickTooltip label="Close tab (view stays saved)">
+          <span
+            role="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            className="ml-0.5 rounded p-0.5 opacity-0 group-hover:opacity-100 hover:bg-accent transition-all"
+          >
+            <Cancel01Icon className="h-3 w-3" />
+          </span>
+        </QuickTooltip>
       )}
     </button>
   );
@@ -443,7 +340,6 @@ function ViewTab({
 
 export function ViewBar({ workspaceId, currentUserId }: ViewBarProps) {
   const { views, activeViewId, filters, savedViewFilters, applyView } = usePMBoardStore();
-  const [saveAsNewOpen, setSaveAsNewOpen] = useState(false);
 
   const [openNonPinnedIds, setOpenNonPinnedIds] = useState<Set<string>>(() => {
     return new Set(getOpenViewIds(workspaceId));
@@ -496,12 +392,36 @@ export function ViewBar({ workspaceId, currentUserId }: ViewBarProps) {
     [activeViewId, views, applyView]
   );
 
+  const handleTogglePin = useCallback(
+    async (view: PMView) => {
+      const willBePinned = !view.is_pinned;
+      const result = await usePMBoardStore
+        .getState()
+        .updateView(workspaceId, view.id, { is_pinned: willBePinned });
+      if (!result) return; // API failed — leave UI as-is; store didn't change either.
+      if (!willBePinned) {
+        // Unpinning: remove from tab strip entirely.
+        setOpenNonPinnedIds((prev) => {
+          if (!prev.has(view.id)) return prev;
+          const next = new Set(prev);
+          next.delete(view.id);
+          return next;
+        });
+        if (view.id === activeViewId) {
+          const everything = views.find((v) => v.id === '__default_everything__');
+          if (everything) applyView(everything);
+        }
+      }
+    },
+    [workspaceId, activeViewId, views, applyView]
+  );
+
   return (
     <div className="ui-divider-bottom-fade flex items-center gap-0.5 px-3 overflow-x-auto">
       <ViewsDropdown
-        workspaceId={workspaceId}
         currentUserId={currentUserId}
         onOpenView={handleOpenView}
+        onTogglePin={handleTogglePin}
       />
 
       <div className="mx-1 h-4 w-px bg-border" />
@@ -520,19 +440,9 @@ export function ViewBar({ workspaceId, currentUserId }: ViewBarProps) {
             onClose={() => handleCloseTab(view.id)}
             workspaceId={workspaceId}
             hasChanges={view.id === activeViewId && hasChanges}
-            onSaveAsNew={() => setSaveAsNewOpen(true)}
           />
         );
       })}
-
-      <SaveViewDialog
-        open={saveAsNewOpen}
-        onOpenChange={setSaveAsNewOpen}
-        title="Save as New View"
-        onSave={(name, isShared) => {
-          usePMBoardStore.getState().saveCurrentAsView(workspaceId, name, isShared);
-        }}
-      />
     </div>
   );
 }

@@ -2,14 +2,17 @@ import { api } from '../api';
 import type {
   ActivityLogEntry,
   ColumnTasksResponse,
+  CreateTaskResponse,
   CreateTaskRequest,
   MoveTaskRequest,
   PaginatedResponse,
   ReorderTaskRequest,
+  SaveTaskAsTemplateRequest,
   SeedPMTasksRequest,
   SeedPMTasksResponse,
   Task,
   TaskDetail,
+  TaskTemplate,
   TaskLabelLinkRequest,
   TaskMemberColumn,
   TaskStateColumn,
@@ -172,7 +175,7 @@ export const pmTaskService = {
   countByState: (workspaceId: string, workflowId: string) =>
     api.get<TaskStateCount[]>(`/pm/tasks/counts?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
   create: (payload: CreateTaskRequest) =>
-    api.post<TaskDetail>(`/pm/tasks?${qs(payload.workspace_id)}`, {
+    api.post<CreateTaskResponse>(`/pm/tasks?${qs(payload.workspace_id)}`, {
       ...payload,
       deadline: toRFC3339(payload.deadline),
     }),
@@ -187,6 +190,10 @@ export const pmTaskService = {
       deadline: toRFC3339(payload.deadline),
     }),
   remove: (workspaceId: string, id: string) => api.del(`/pm/tasks/${id}?${qs(workspaceId)}`),
+  saveAsTemplate: (workspaceId: string, id: string, payload: SaveTaskAsTemplateRequest) =>
+    api.post<TaskTemplate>(`/pm/tasks/${id}/save-as-template?${qs(workspaceId)}`, payload),
+  duplicate: (workspaceId: string, id: string) =>
+    api.post<TaskDetail>(`/pm/tasks/${id}/duplicate?${qs(workspaceId)}`, {}),
   move: (workspaceId: string, id: string, payload: MoveTaskRequest) =>
     api.put<TaskDetail>(`/pm/tasks/${id}/move?${qs(workspaceId)}`, payload),
   reorder: (workspaceId: string, id: string, payload: ReorderTaskRequest) =>

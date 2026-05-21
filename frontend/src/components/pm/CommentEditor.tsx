@@ -7,6 +7,7 @@ import { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import { Loading01Icon, SentIcon, Image01Icon, AttachmentIcon, Cancel01Icon } from '@/lib/icons'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { ImageLightbox } from '@/components/pm/ImageLightbox'
+import { EmojiPicker } from '@/components/support/EmojiPicker'
 import type { WorkspaceTeam, AssignableMember } from '@/lib/types'
 import {
   getMemberMentionHandle,
@@ -27,6 +28,7 @@ interface CommentEditorProps {
   initialContent?: string
   onCancel?: () => void
   autoFocus?: boolean
+  enableEmojiPicker?: boolean
   /** Visual variant — 'primary' for top-level composers, 'reply' for nested reply composers, 'legacy' (default) keeps the existing filled style. */
   variant?: 'primary' | 'reply' | 'legacy'
 }
@@ -83,6 +85,7 @@ export function CommentEditor({
   onCancel,
   variant = 'legacy',
   autoFocus = false,
+  enableEmojiPicker = false,
 }: CommentEditorProps) {
   const [mentionState, setMentionState] = useState<{
     from: number
@@ -99,7 +102,7 @@ export function CommentEditor({
   const onImageSelectRef = useRef(onImageSelect)
   onImageSelectRef.current = onImageSelect
   const [hasContent, setHasContent] = useState(false)
-  const [lightboxSrc, setLightboxSrc] = useState<{ src: string; name: string } | null>(null)
+  const [lightboxFileId, setLightboxFileId] = useState<string | null>(null)
   const currentHtmlRef = useRef('')
   const skipNextCleanupRef = useRef(false)
 
@@ -129,6 +132,10 @@ export function CommentEditor({
 
   const handleSubmitRef = useRef(handleSubmit)
   handleSubmitRef.current = handleSubmit
+
+  const insertEmoji = useCallback((emoji: string) => {
+    editorRef.current?.chain().focus().insertContent(emoji).run()
+  }, [])
 
   const extensions = useMemo(() => [
     StarterKit.configure({
@@ -292,10 +299,18 @@ export function CommentEditor({
   if (!editor) return null
 
   const canSubmit = !loading && (hasContent || uploadedFiles.length > 0)
+  const previewFiles = uploadedFiles.filter((file) => {
+    const ext = getFileExtension(file.name)
+    return Boolean(file.url) && /^(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(ext)
+  })
+  const activePreviewIndex = lightboxFileId
+    ? previewFiles.findIndex((file) => file.id === lightboxFileId)
+    : -1
+  const activePreviewFile = activePreviewIndex >= 0 ? previewFiles[activePreviewIndex] : null
 
   const wrapperClass =
     variant === 'primary'
-      ? 'relative rounded-lg border border-border/60 bg-background px-3 pt-2 pb-1.5 transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
+      ? 'relative rounded-lg border border-border bg-muted/70 px-3 pt-2 pb-1.5 transition-[color,box-shadow,background-color] focus-within:bg-background focus-within:ring-1 focus-within:ring-ring/40'
       : variant === 'reply'
         ? 'relative rounded-md border border-border/60 bg-background px-2.5 pt-1.5 pb-1 transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
         : 'relative bg-muted/50 px-3 pt-2 pb-1.5 rounded-b-lg transition-[color,box-shadow,background-color] focus-within:ring-1 focus-within:ring-ring/40'
@@ -345,7 +360,7 @@ export function CommentEditor({
                 {f.url && isImage ? (
                   <button
                     type="button"
-                    onClick={() => setLightboxSrc({ src: f.url!, name: f.name })}
+                    onClick={() => setLightboxFileId(f.id)}
                     className="flex items-center gap-1.5 min-w-0 hover:text-foreground cursor-pointer"
                   >
                     <img src={f.url} alt={f.name} className="h-6 w-6 rounded object-cover" />
@@ -412,6 +427,13 @@ export function CommentEditor({
               </button>
             </QuickTooltip>
           )}
+          {enableEmojiPicker && (
+            <EmojiPicker
+              align="start"
+              side="top"
+              onEmojiSelect={insertEmoji}
+            />
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {onCancel && (
@@ -423,31 +445,46 @@ export function CommentEditor({
               Cancel
             </button>
           )}
-          <QuickTooltip label="Send (⌘+Enter)">
-            <button
-              type="button"
-              className={
-                canSubmit
-                  ? 'inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-95 cursor-pointer'
-                  : 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background text-muted-foreground/60 transition-colors cursor-not-allowed'
-              }
-              disabled={!canSubmit}
-              onClick={handleSubmit}
-            >
-              {loading ? (
-                <Loading01Icon className="h-4 w-4 animate-spin" />
-              ) : (
-                <SentIcon className="h-4 w-4" />
-              )}
-            </button>
-          </QuickTooltip>
+          <kbd className="hidden items-center gap-1 font-mono text-[15px] leading-none text-muted-foreground sm:inline-flex">
+            <span>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}</span>
+            <span>{'↵'}</span>
+          </kbd>
+          <button
+            type="button"
+            className={
+              canSubmit
+                ? 'inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow active:scale-95 cursor-pointer'
+                : 'inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background/60 text-muted-foreground/50 transition-all duration-200 cursor-not-allowed'
+            }
+            disabled={!canSubmit}
+            onClick={handleSubmit}
+          >
+            {loading ? (
+              <Loading01Icon className="h-4 w-4 animate-spin" />
+            ) : (
+              <SentIcon className="h-4 w-4 rotate-45" />
+            )}
+          </button>
         </div>
       </div>
-      {lightboxSrc && (
+      {activePreviewFile?.url && (
         <ImageLightbox
-          src={lightboxSrc.src}
-          alt={lightboxSrc.name}
-          onClose={() => setLightboxSrc(null)}
+          src={activePreviewFile.url}
+          alt={activePreviewFile.name}
+          onClose={() => setLightboxFileId(null)}
+          hasPrevious={activePreviewIndex > 0}
+          hasNext={activePreviewIndex < previewFiles.length - 1}
+          onPrevious={() => {
+            if (activePreviewIndex > 0) {
+              setLightboxFileId(previewFiles[activePreviewIndex - 1].id)
+            }
+          }}
+          onNext={() => {
+            if (activePreviewIndex < previewFiles.length - 1) {
+              setLightboxFileId(previewFiles[activePreviewIndex + 1].id)
+            }
+          }}
+          positionLabel={previewFiles.length > 1 ? `${activePreviewIndex + 1} / ${previewFiles.length}` : undefined}
         />
       )}
     </div>

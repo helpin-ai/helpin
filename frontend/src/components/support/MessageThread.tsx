@@ -186,7 +186,7 @@ function DaySeparator({
 /** Skeleton message bubbles shown while loading */
 const MessageSkeleton = memo(function MessageSkeleton() {
   return (
-    <div className="space-y-6 py-8">
+    <div data-testid="support-thread-message-skeleton" className="space-y-6 py-8">
       {/* Customer message group */}
       <div className="flex items-end gap-2" style={{ width: '55%' }}>
         <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
@@ -210,6 +210,25 @@ const MessageSkeleton = memo(function MessageSkeleton() {
           <div className="h-8 animate-pulse rounded-2xl rounded-bl-sm bg-muted" />
         </div>
       </div>
+    </div>
+  );
+});
+
+const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton() {
+  return (
+    <div
+      data-testid="support-thread-header-skeleton"
+      className="relative z-10 flex items-center justify-between border-b bg-background px-4 py-2.5"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="h-4 w-64 max-w-[70%] animate-pulse rounded bg-muted" />
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div className="h-7 w-24 animate-pulse rounded-md bg-muted" />
+        <div className="h-7 w-20 animate-pulse rounded-md bg-muted" />
+        <div className="h-7 w-7 animate-pulse rounded-md bg-muted" />
+      </div>
+      <div className="pointer-events-none absolute left-0 right-0 top-full h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent" />
     </div>
   );
 });
@@ -251,6 +270,7 @@ export function MessageThread({
   const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
   const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
+  const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
 
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
@@ -841,6 +861,7 @@ export function MessageThread({
           </div>
         </div>
       )}
+      {!conversation && isThreadLoading && <ThreadHeaderSkeleton />}
 
       {conversation && triageBanner && (
         <div className={`border-b px-4 py-3 ${
@@ -919,8 +940,8 @@ export function MessageThread({
       {/* Messages area with light background (Crisp-style) */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 bg-muted/20">
         <div className="px-4 pb-10 pt-2">
-          {isLoading && <MessageSkeleton />}
-          {!isLoading && messages.length === 0 && (
+          {isThreadLoading && <MessageSkeleton />}
+          {!isThreadLoading && messages.length === 0 && (
             <EmptyState
               icon={Message01Icon}
               title="No messages yet"
@@ -975,11 +996,10 @@ export function MessageThread({
       {/* Soft gradient fade between thread and composer */}
       <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />
 
-      {/* Reply composer — show during loading (cache may still populate) and
-          after a successful load. Only hide when the fetch settled AND the
-          conversation didn't load (stale/deleted id) to avoid offering a
-          reply for a conversation that doesn't exist. */}
-      {composerReady && conversationId && (conversation || !conversationFetched) && (
+      {/* Reply composer — only show once the selected conversation and its
+          messages have loaded, so switching threads never exposes a stale
+          or half-ready composer. */}
+      {composerReady && conversationId && conversation && !isLoading && (
         <ReplyComposer
           workspaceId={workspaceId}
           conversationId={conversationId}

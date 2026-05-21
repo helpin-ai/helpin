@@ -36,4 +36,29 @@ describe('TaskStateSelectContent', () => {
     });
     container.remove();
   });
+
+  it('renders an auto-run tag when enabled', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <TaskStateSelectContent
+          stateType="started"
+          label="Review"
+          color="#654321"
+          autoRunEnabled
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Review');
+    expect(container.textContent).toContain('Auto-run');
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });

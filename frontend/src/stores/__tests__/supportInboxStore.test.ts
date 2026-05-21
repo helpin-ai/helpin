@@ -199,7 +199,7 @@ describe('supportInboxStore', () => {
     expect(useSupportInboxStore.getState().searchQuery).toBe('invoice');
     expect(useSupportInboxStore.getState().conversationListFilters).toEqual({
       states: ['open', 'waiting_on_customer'],
-      assignment: [],
+      assignment: ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'],
       mailboxIds: ['all'],
       tagIds: [],
       aiStates: ['handoff'],
@@ -207,7 +207,17 @@ describe('supportInboxStore', () => {
     });
   });
 
-  it('uses visible Assignment defaults for Mine without affecting other sidebar items', () => {
+  it('uses visible Assignment defaults for built-in sidebar items', () => {
+    useSupportInboxStore.getState().setNavFilter('inbox');
+
+    expect(useSupportInboxStore.getState().conversationListFilters.assignment).toEqual([
+      'me',
+      'mentioned_me',
+      'opened_by_me',
+      'unassigned',
+      'others',
+    ]);
+
     useSupportInboxStore.getState().setNavFilter('mine');
 
     expect(useSupportInboxStore.getState().conversationListFilters.assignment).toEqual([

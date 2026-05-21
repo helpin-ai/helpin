@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
 )
 
 func TestListWorkspaceTeamsToolIsRegistered(t *testing.T) {
@@ -24,19 +26,19 @@ func TestListWorkspaceTeamsToolReturnsWorkspaceTeams(t *testing.T) {
 	ctx := &ExecutionContext{
 		Context:     context.Background(),
 		WorkspaceID: "ws-1",
+		AgentID:     "agent-1",
 		AllowedTools: map[string]bool{
 			"list_workspace_teams": true,
 		},
 		Services: &ServiceBridge{
-			ListWorkspaceTeams: func(ctx context.Context, workspaceID string) ([]WorkspaceTeamSummary, error) {
-				if workspaceID != "ws-1" {
-					t.Fatalf("expected workspace_id ws-1, got %q", workspaceID)
+			ExecuteInternalCommand: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+				if name != "workspace.list_teams" {
+					t.Fatalf("expected workspace.list_teams command, got %q", name)
 				}
-				handle := "platform"
-				return []WorkspaceTeamSummary{
-					{ID: "team-1", Name: "Platform", Handle: &handle, TeamType: "engineering", DefaultTaskType: "feature"},
-					{ID: "team-2", Name: "Growth", TeamType: "growth", DefaultTaskType: "task"},
-				}, nil
+				if meta.WorkspaceID != "ws-1" || meta.TargetType != "workspace" || meta.TargetID != "ws-1" || meta.ActorID != "agent-1" {
+					t.Fatalf("unexpected command metadata %#v", meta)
+				}
+				return json.RawMessage(`[{"id":"team-1","name":"Platform","handle":"platform","team_type":"engineering","default_task_type":"feature"},{"id":"team-2","name":"Growth","team_type":"growth","default_task_type":"task"}]`), nil
 			},
 		},
 	}

@@ -26,8 +26,12 @@ export const PRESET_STYLES: Record<AgentPresetKey, { label: string; className: s
     label: 'Support Agent',
     className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
   },
+  documentation_agent: {
+    label: 'Quill',
+    className: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/20',
+  },
   crm_operator: {
-    label: 'CRM Operator',
+    label: 'Beacon',
     className: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
   },
   command_agent: {

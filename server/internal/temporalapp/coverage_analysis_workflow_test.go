@@ -115,6 +115,31 @@ func TestCoverageWorkspaceAnalysisWorkflow_FailsOnActivityError(t *testing.T) {
 	}
 }
 
+func TestCoverageDailyAnalysisWorkflow_FailsWhenWorkspaceChildFails(t *testing.T) {
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	start := time.Date(2026, 4, 29, 4, 30, 0, 0, time.UTC)
+	env.SetStartTime(start)
+
+	analyzer := &fakeCoverageDailyAnalyzer{
+		workspaces: []string{"ws-1"},
+		err:        errors.New("analysis failed"),
+	}
+	activities := NewCoverageAnalysisActivities(analyzer)
+	env.RegisterWorkflow(CoverageWorkspaceAnalysisWorkflow)
+	env.RegisterActivityWithOptions(activities.ListWorkspacesActivity, activity.RegisterOptions{Name: CoverageListAnalysisWorkspacesActivity})
+	env.RegisterActivityWithOptions(activities.RunWorkspaceAnalysisActivity, activity.RegisterOptions{Name: CoverageRunWorkspaceAnalysisActivityName})
+
+	env.ExecuteWorkflow(CoverageDailyAnalysisWorkflow)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+	if err := env.GetWorkflowError(); err == nil {
+		t.Fatal("expected workflow error")
+	}
+}
+
 func TestCoverageDailyAnalysisWorkflow_ConcurrencyBound(t *testing.T) {
 	if CoverageAnalysisMaxWorkspaceChildren != 10 {
 		t.Fatalf("workspace child concurrency = %d, want 10", CoverageAnalysisMaxWorkspaceChildren)

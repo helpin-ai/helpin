@@ -4,9 +4,11 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/helpin-ai/helpin/server/internal/authorization"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/service"
@@ -45,7 +47,7 @@ func (h *AgentHandler) ListAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	agents, err := h.agentService.ListAgents(r.Context(), workspaceID)
+	agents, err := h.agentService.ListAgentsForActor(r.Context(), workspaceID, authorization.GetActor(r.Context()))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -61,6 +63,10 @@ func (h *AgentHandler) GetAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	agent, err := h.agentService.GetAgent(r.Context(), workspaceID, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -74,6 +80,10 @@ func (h *AgentHandler) GetAgentUsage(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	id := chi.URLParam(r, "id")
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	summary, err := h.agentService.GetAgentUsageSummary(r.Context(), workspaceID, id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -200,6 +210,10 @@ func (h *AgentHandler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 
 	agent, err := h.agentService.UpdateAgent(r.Context(), workspaceID, id, req, actorID)
 	if err != nil {
@@ -215,6 +229,10 @@ func (h *AgentHandler) DeleteAgent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, id, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	if err := h.agentService.DeleteAgent(r.Context(), workspaceID, id, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -231,6 +249,10 @@ func (h *AgentHandler) RunTaskAgent(w http.ResponseWriter, r *http.Request) {
 	var req model.StartAgentRunRequest
 	if err := decodeJSON(r, &req); err != nil && r.ContentLength > 0 {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, req.AgentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -253,6 +275,12 @@ func (h *AgentHandler) RunEpicAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	if strings.TrimSpace(req.AgentID) != "" {
+		if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, req.AgentID, authorization.GetActor(r.Context())); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
 
 	run, err := h.agentService.RunEpicAgent(r.Context(), workspaceID, epicID, actorID, req)
 	if err != nil {
@@ -270,6 +298,10 @@ func (h *AgentHandler) StartTargetRun(w http.ResponseWriter, r *http.Request) {
 	var req model.StartTargetAgentRunRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, req.AgentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -651,6 +683,10 @@ func (h *AgentHandler) ListAgentRuns(w http.ResponseWriter, r *http.Request) {
 	agentID := chi.URLParam(r, "id")
 	pagination := queryPagination(r)
 
+	if err := h.agentService.RequireActorCanUseAgent(r.Context(), workspaceID, agentID, authorization.GetActor(r.Context())); err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
 	runs, total, err := h.agentService.ListAgentRuns(r.Context(), workspaceID, agentID, pagination)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
