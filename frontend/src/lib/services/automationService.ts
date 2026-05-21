@@ -16,11 +16,18 @@ import type {
   ContinueAgentRunRequest,
   AutomationRule,
   CreateAgentRequest,
+  CustomAgentDraftRequest,
+  CustomAgentDraftResponse,
   CreateAgentFromTemplateRequest,
   CreateAgentFromTemplateResponse,
   CreateAutomationRuleRequest,
+  FlowTemplateManifest,
   CreateWorkspaceSkillRequest,
   HandoffAgentRunRequest,
+  InstallFlowTemplateRequest,
+  InstallFlowTemplateResponse,
+  UninstallFlowTemplateRequest,
+  UninstallFlowTemplateResponse,
   PaginatedResponse,
   ResumeAgentRunRequest,
   SendAgentRunMessageRequest,
@@ -63,6 +70,18 @@ export const automationService = {
 
   listFlowsByWorkflow: (workspaceId: string, workflowId: string) =>
     api.get<AutomationRule[]>(`/automation/flows${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
+
+  listFlowTemplates: (workspaceId: string) =>
+    api.get<FlowTemplateManifest[]>(`/automation/templates${qs(workspaceId)}`),
+
+  getFlowTemplate: (workspaceId: string, key: string) =>
+    api.get<FlowTemplateManifest>(`/automation/templates/${key}${qs(workspaceId)}`),
+
+  installFlowTemplate: (workspaceId: string, key: string, payload: InstallFlowTemplateRequest) =>
+    api.post<InstallFlowTemplateResponse>(`/automation/templates/${key}/install${qs(workspaceId)}`, payload),
+
+  uninstallFlowTemplate: (workspaceId: string, instanceId: string, payload: UninstallFlowTemplateRequest) =>
+    api.post<UninstallFlowTemplateResponse>(`/automation/template-instances/${instanceId}/uninstall${qs(workspaceId)}`, payload),
 
   createFlow: (workspaceId: string, data: CreateAutomationRuleRequest) =>
     api.post<AutomationRule>(`/automation/flows${qs(workspaceId)}`, data),
@@ -132,6 +151,9 @@ export const automationService = {
 
   createAgent: (workspaceId: string, payload: CreateAgentRequest) =>
     api.post<Agent>(`/automation/agents${qs(workspaceId)}`, payload),
+
+  draftCustomAgent: (workspaceId: string, payload: CustomAgentDraftRequest) =>
+    api.post<CustomAgentDraftResponse>(`/automation/agents/draft${qs(workspaceId)}`, payload),
 
   createAgentFromTemplate: (workspaceId: string, templateId: string, payload: CreateAgentFromTemplateRequest) =>
     api.post<CreateAgentFromTemplateResponse>(`/automation/agent-templates/${templateId}/create-agent${qs(workspaceId)}`, payload),

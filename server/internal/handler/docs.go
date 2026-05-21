@@ -935,6 +935,23 @@ func (h *DocsHandler) ListChangeProposals(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, proposals)
 }
 
+func (h *DocsHandler) GetChangeProposal(w http.ResponseWriter, r *http.Request) {
+	if h.changeProposalSvc == nil {
+		writeError(w, http.StatusInternalServerError, "docs change proposal service not configured")
+		return
+	}
+	proposal, err := h.changeProposalSvc.Get(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"), chi.URLParam(r, "proposalId"))
+	if err != nil {
+		if errors.Is(err, service.ErrDocsChangeProposalNotFound) {
+			writeError(w, http.StatusNotFound, "proposal not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, proposal)
+}
+
 func (h *DocsHandler) ApplyChangeProposal(w http.ResponseWriter, r *http.Request) {
 	if h.changeProposalSvc == nil {
 		writeError(w, http.StatusInternalServerError, "docs change proposal service not configured")
@@ -949,7 +966,7 @@ func (h *DocsHandler) ApplyChangeProposal(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusConflict, "block revision is stale")
 		case errors.Is(err, service.ErrDocsDocumentLocked):
 			writeError(w, http.StatusForbidden, err.Error())
-		case strings.Contains(strings.ToLower(err.Error()), "not found"):
+		case errors.Is(err, service.ErrDocsChangeProposalNotFound):
 			writeError(w, http.StatusNotFound, "proposal not found")
 		default:
 			writeError(w, http.StatusBadRequest, err.Error())
@@ -972,7 +989,7 @@ func (h *DocsHandler) DiscardChangeProposal(w http.ResponseWriter, r *http.Reque
 	userID := middleware.GetUserID(r.Context())
 	proposal, err := h.changeProposalSvc.Discard(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"), chi.URLParam(r, "proposalId"), userID)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+		if errors.Is(err, service.ErrDocsChangeProposalNotFound) {
 			writeError(w, http.StatusNotFound, "proposal not found")
 			return
 		}

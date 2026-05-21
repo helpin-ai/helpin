@@ -251,6 +251,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			orchestrator_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,

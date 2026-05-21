@@ -140,6 +140,8 @@ export const docsService = {
     api.post<AISectionCandidateResponse>(`/docs/documents/${docId}/blocks/${blockId}/ai-section/reject${qs(wsId)}`, {}),
   listChangeProposals: (wsId: string, docId: string) =>
     api.get<DocsChangeProposal[]>(`/docs/documents/${docId}/change-proposals${qs(wsId)}`),
+  getChangeProposal: (wsId: string, docId: string, proposalId: string) =>
+    api.get<DocsChangeProposal>(`/docs/documents/${docId}/change-proposals/${proposalId}${qs(wsId)}`),
   applyChangeProposal: (wsId: string, docId: string, proposalId: string) =>
     api.post<DocsChangeProposalApplyResponse>(`/docs/documents/${docId}/change-proposals/${proposalId}/apply${qs(wsId)}`, {}),
   discardChangeProposal: (wsId: string, docId: string, proposalId: string) =>

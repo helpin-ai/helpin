@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { pmEpicService } from '@/lib/services/pmEpicService';
+import { agentService } from '@/lib/services/agentService';
 import type { EpicWithStats, Task } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { useEpicPanelStore } from '@/stores/epicPanelStore';
@@ -17,6 +18,8 @@ import {
   type EpicOverlayLocationLike,
 } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
+import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 
 interface GlobalEpicPanelProps {
   workspaceId: string;
@@ -46,6 +49,9 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
   const [epic, setEpic] = useState<EpicWithStats | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
+  const [startingAgentRun, setStartingAgentRun] = useState(false);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { canEdit } = usePermissions(access);
   const openedAtRef = useRef<number | null>(null);
   const locationRef = useRef(overlayLocation);
   const navigateRef = useRef(navigate);
@@ -113,6 +119,44 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
   const doneCount = epic ? getEpicDoneTaskCount(epic.stats) : 0;
   const taskCount = epic ? getEpicTaskCount(epic.stats) : 0;
   const progress = taskCount > 0 ? Math.round((doneCount / taskCount) * 100) : 0;
+
+  const refreshEpic = useCallback(async () => {
+    if (!activeEpicId) return;
+    const { data, error } = await pmEpicService.get(workspaceId, activeEpicId);
+    if (error || !data) {
+      toast.error(error || 'Failed to refresh epic');
+      return;
+    }
+    setEpic(data);
+  }, [activeEpicId, workspaceId]);
+
+  const updateAssignedAgent = useCallback(async (agentId: string | undefined) => {
+    if (!activeEpicId || !epic) return;
+    const previous = epic;
+    setEpic({ ...epic, epic: { ...epic.epic, assigned_agent_id: agentId } });
+    const { data, error } = await pmEpicService.update(workspaceId, activeEpicId, { assigned_agent_id: agentId ?? '' });
+    if (error || !data) {
+      setEpic(previous);
+      toast.error(error || 'Failed to update agent');
+      return;
+    }
+    setEpic(data);
+  }, [activeEpicId, epic, workspaceId]);
+
+  const runAssignedAgent = useCallback(async () => {
+    if (!activeEpicId || !epic?.epic.assigned_agent_id || startingAgentRun) return;
+    setStartingAgentRun(true);
+    try {
+      const { error } = await agentService.runEpic(workspaceId, activeEpicId, { agent_id: epic.epic.assigned_agent_id });
+      if (error) throw new Error(error);
+      toast.success('Agent run started');
+      await refreshEpic();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start agent');
+    } finally {
+      setStartingAgentRun(false);
+    }
+  }, [activeEpicId, epic?.epic.assigned_agent_id, refreshEpic, startingAgentRun, workspaceId]);
 
   return (
     <Sheet
@@ -192,6 +236,21 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
                   </section>
                 </>
               )}
+
+              <Separator className="my-5" />
+              <section>
+                <AgentPickerCard
+                  workspaceId={workspaceId}
+                  runnableTarget="epic"
+                  targetTeamId={epic.epic.team_id ?? null}
+                  value={epic.epic.assigned_agent_id}
+                  onChange={updateAssignedAgent}
+                  hasRepoContext={Boolean(epic.epic.planning_repository_id)}
+                  disabled={!canEdit}
+                  onRun={runAssignedAgent}
+                  running={startingAgentRun}
+                />
+              </section>
 
               <Separator className="my-5" />
               <section>

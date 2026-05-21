@@ -49,6 +49,7 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -103,6 +104,7 @@ const DEFAULT_VISIBLE = [
   'points',
   'owner',
   'target_date',
+  'updated',
 ];
 
 const columnHelper = createColumnHelper<EpicWithStats>();
@@ -115,7 +117,7 @@ const EPIC_GROUP_BY_OPTIONS = [
   { value: 'objective', label: 'Objective' },
   { value: 'target_date', label: 'Target date' },
   { value: 'start_date', label: 'Start date' },
-  { value: 'none', label: 'No grouping' },
+  { value: 'none', label: 'None' },
 ] as const;
 const FILTER_POPOVER_WIDTH = 'w-[220px]';
 
@@ -237,12 +239,10 @@ function epicMatchesFilters(entry: EpicWithStats, filters: EpicFilterState) {
   return true;
 }
 
-function sortEntries(entries: EpicWithStats[], epicStates: EpicWorkflowState[]) {
-  const positionByStateId = new Map(epicStates.map((state) => [state.id, state.position]));
+function sortEntries(entries: EpicWithStats[]) {
   return [...entries].sort((a, b) => {
-    const aPos = a.epic.epic_state_id ? (positionByStateId.get(a.epic.epic_state_id) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-    const bPos = b.epic.epic_state_id ? (positionByStateId.get(b.epic.epic_state_id) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
-    if (aPos !== bPos) return aPos - bPos;
+    const updatedCmp = b.epic.updated_at.localeCompare(a.epic.updated_at);
+    if (updatedCmp !== 0) return updatedCmp;
     return a.epic.name.localeCompare(b.epic.name);
   });
 }
@@ -310,7 +310,7 @@ function sortEntriesForTable(
   ownerNameMap: Map<string, string>,
   teamMap: Map<string, string>,
 ) {
-  if (sorting.length === 0) return sortEntries(entries, epicStates);
+  if (sorting.length === 0) return sortEntries(entries);
 
   return [...entries].sort((a, b) => {
     for (const sort of sorting) {
@@ -392,7 +392,7 @@ function buildEpicGroups(
 
   const groups = Array.from(grouped.values()).map((group) => ({
     ...group,
-    entries: preserveEntryOrder ? group.entries : sortEntries(group.entries, epicStates),
+    entries: preserveEntryOrder ? group.entries : sortEntries(group.entries),
   }));
 
   return groups.sort((a, b) => {
@@ -417,18 +417,18 @@ function buildEpicGroups(
 
 function loadEpicViewState(storageKey: string | null): { groupBy: EpicGroupBy; filters: EpicFilterState } {
   if (!storageKey) {
-    return { groupBy: 'state', filters: {} };
+    return { groupBy: 'none', filters: {} };
   }
   try {
     const raw = localStorage.getItem(storageKey);
-    if (!raw) return { groupBy: 'state', filters: {} };
+    if (!raw) return { groupBy: 'none', filters: {} };
     const parsed = JSON.parse(raw) as { groupBy?: EpicGroupBy; filters?: EpicFilterState };
     return {
-      groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'state',
+      groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'none',
       filters: parsed.filters ?? {},
     };
   } catch {
-    return { groupBy: 'state', filters: {} };
+    return { groupBy: 'none', filters: {} };
   }
 }
 
@@ -532,28 +532,40 @@ function EpicFilterTrigger({
   activeCount: number;
 }) {
   const [open, setOpen] = useState(false);
+  const availableDefinitions = definitions.filter((definition) => !activeKeys.has(definition.key));
+  const canChooseFilter = availableDefinitions.length > 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
-          <FilterHorizontalIcon className="h-3.5 w-3.5" />
-          Filters
-          {activeCount > 0 ? <span className="rounded-full bg-muted px-1.5 py-0 text-[10px]">{activeCount}</span> : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground"
+          disabled={!canChooseFilter}
+        >
+          <span className="inline-flex items-center gap-1">
+            <FilterHorizontalIcon className="h-3.5 w-3.5" />
+            Filters
+          </span>
+          <Badge
+            variant="secondary"
+            className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
+          >
+            {activeCount || 0}
+          </Badge>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-60 p-0" align="start">
+      <PopoverContent className="w-48 p-0" align="start">
         <Command>
-          <CommandInput placeholder="Add filter..." className="h-8 text-xs" />
+          <CommandInput placeholder="Filter by..." />
           <CommandList>
-            <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No filters</CommandEmpty>
+            <CommandEmpty>No filters.</CommandEmpty>
             <CommandGroup>
-              {definitions.map((definition) => (
+              {availableDefinitions.map((definition) => (
                 <CommandItem
                   key={definition.key}
                   value={definition.label}
-                  disabled={activeKeys.has(definition.key)}
-                  className="text-xs"
                   onSelect={() => {
                     onAdd(definition.key);
                     setOpen(false);
@@ -689,7 +701,7 @@ function EpicVirtualTable({
   });
 
   return (
-    <div className="min-h-0 flex-1 rounded-lg border border-border">
+    <div className="-mt-2 min-h-0 flex-1 rounded-lg border border-border">
       <div
         ref={parentRef}
         className={TABLE_CONTAINER}
@@ -1261,7 +1273,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [groupBy, setGroupBy] = useState<EpicGroupBy>('state');
+  const [groupBy, setGroupBy] = useState<EpicGroupBy>('none');
   const [filters, setFilters] = useState<EpicFilterState>({});
   const [tableSorting, setTableSorting] = useState<SortingState>([]);
   const [tableColumnSizing, setTableColumnSizing] = useState<ColumnSizingState>({});
@@ -1491,7 +1503,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       columnHelper.accessor((row) => ALL_HEALTH_OPTIONS.indexOf(row.epic.health), {
         id: 'health',
         header: 'Health',
-        size: 120,
+        size: 96,
         cell: (info) => (
           canEdit ? (
             <InlineEpicHealthCell entry={info.row.original} onUpdate={updateEpicField} />
@@ -1536,7 +1548,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       columnHelper.accessor((row) => (row.epic.owner_member_id ? ownerNameMap.get(row.epic.owner_member_id) ?? '' : ''), {
         id: 'owner',
         header: 'Owner',
-        size: 180,
+        size: 140,
         cell: (info) => {
           if (canEdit) {
             return (
@@ -1867,17 +1879,11 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     ),
     [epicStates, filters, groupBy, objectiveNameMap, ownerNameMap, sortedEpics, tableSorting.length, teamMap],
   );
-  const areAllGroupsCollapsed = groupedEpics.length > 0 && groupedEpics.every((group) => collapsedGroupKeys.has(group.key));
-
   useEffect(() => {
     setCollapsedGroupKeys((current) => {
       const validKeys = new Set(groupedEpics.map((group) => group.key));
       return new Set([...current].filter((key) => validKeys.has(key)));
     });
-  }, [groupedEpics]);
-
-  const handleSetAllGroupsCollapsed = useCallback((collapsed: boolean) => {
-    setCollapsedGroupKeys(collapsed ? new Set(groupedEpics.map((group) => group.key)) : new Set());
   }, [groupedEpics]);
 
   const teamLabel = teamId ? findTeamName(teamId) : null;
@@ -1912,36 +1918,58 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       ) : null}
 
       {showHeaderActions ? (
-        <div
-          className="ui-divider-bottom-fade relative flex items-center gap-2 overflow-x-auto px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          ref={(el) => {
-            if (!el) return;
-            const update = () => {
-              const sl = el.scrollLeft;
-              const sr = el.scrollWidth - el.clientWidth - sl;
-              el.style.maskImage =
-                sl > 2 && sr > 2
-                  ? 'linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)'
-                  : sl > 2
-                    ? 'linear-gradient(to right, transparent, black 24px)'
-                    : sr > 2
-                      ? 'linear-gradient(to left, transparent, black 24px)'
-                      : 'none';
-            };
-            el.addEventListener('scroll', update, { passive: true });
-            const ro = new ResizeObserver(update);
-            ro.observe(el);
-            update();
-          }}
-        >
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+          <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
+            <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-8 pl-8 pr-8 text-sm"
+            />
+            {search ? (
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+              >
+                <Cancel01Icon className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
           <EpicFilterTrigger
             definitions={filterDefinitions}
             activeKeys={activeFilterKeys}
             activeCount={activeFilterKeys.size}
             onAdd={handleAddFilter}
           />
+          <span className="text-xs text-muted-foreground">
+            {sortedEpics.length} {sortedEpics.length === 1 ? 'epic' : 'epics'}
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Select value={groupBy} onValueChange={(value) => setGroupBy(value as EpicGroupBy)}>
+              <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] gap-1 text-xs">
+                <span className="shrink-0 text-muted-foreground">Group by</span>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {EPIC_GROUP_BY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <DisplayPropertiesPopover
+              allProperties={ALL_PROPERTIES}
+              visible={visibleColumns}
+              onChange={setVisibleColumns}
+              iconOnly
+            />
+          </div>
           {activeFilterKeys.size > 0 ? (
-            <>
+            <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
               {filterDefinitions
                 .filter((definition) => activeFilterKeys.has(definition.key))
                 .map((definition) => (
@@ -1953,55 +1981,11 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
                     onRemove={() => handleRemoveFilter(definition.key)}
                   />
                 ))}
-              <Button variant="ghost" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={handleClearFilters}>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-muted-foreground" onClick={handleClearFilters}>
                 Clear all
               </Button>
-              <div className="mx-0.5 h-4 w-px shrink-0 bg-border" />
-            </>
-          ) : null}
-          <span className="shrink-0 text-xs text-muted-foreground">Group by:</span>
-          <Select value={groupBy} onValueChange={(value) => setGroupBy(value as EpicGroupBy)}>
-            <SelectTrigger className="h-7 w-[160px] shrink-0 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {EPIC_GROUP_BY_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {groupBy !== 'none' && groupedEpics.length > 0 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 shrink-0 px-2 text-xs"
-              onClick={() => handleSetAllGroupsCollapsed(!areAllGroupsCollapsed)}
-            >
-              {areAllGroupsCollapsed ? 'Expand all' : 'Collapse all'}
-            </Button>
-          ) : null}
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {sortedEpics.length} {sortedEpics.length === 1 ? 'epic' : 'epics'}
-          </span>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <div className="relative">
-              <Search01Icon className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search epics…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-7 w-48 pl-8 text-xs"
-              />
             </div>
-            <DisplayPropertiesPopover
-              allProperties={ALL_PROPERTIES}
-              visible={visibleColumns}
-              onChange={setVisibleColumns}
-              iconOnly
-            />
-          </div>
+          ) : null}
         </div>
       ) : null}
 

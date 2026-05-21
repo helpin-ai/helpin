@@ -44,7 +44,7 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
   const linkedDecision = artifact.artifact_type === 'review_findings' ? parseReviewDecisionArtifact(reviewDecisionArtifact?.inline_content) : null;
 
   return (
-    <div className="rounded border border-border/60 bg-muted/30 p-2">
+    <div className="min-w-0 overflow-hidden rounded border border-border/60 bg-muted/30 p-2">
       <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium">
         {ARTIFACT_ICONS[artifact.artifact_type] ?? <File01Icon className="h-3.5 w-3.5" />}
         <span className="capitalize">{label}</span>
@@ -65,7 +65,7 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
           </ul>
         </div>
       ) : reviewFindings ? (
-        <div className="space-y-2 text-[11px] text-muted-foreground">
+        <div className="min-w-0 space-y-2 text-[11px] text-muted-foreground">
           {reviewFindings.title ? <div className="font-medium text-foreground">{reviewFindings.title}</div> : null}
           {reviewFindings.summary ? <p>{reviewFindings.summary}</p> : null}
           <div className="flex flex-wrap items-center gap-1.5">
@@ -94,7 +94,7 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
           {reviewFindings.findings.length > 0 ? (
             <ul className="space-y-1">
               {reviewFindings.findings.map((finding) => (
-                <li key={finding.id} className="rounded border border-border/60 bg-background/70 px-2 py-1.5">
+                <li key={finding.id} className="min-w-0 overflow-hidden rounded border border-border/60 bg-background/70 px-2 py-1.5">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <div className="font-medium text-foreground">{finding.title}</div>
                     {linkedDecision?.findingsById[finding.id]?.status ? (
@@ -104,10 +104,10 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
                     ) : null}
                   </div>
                   {finding.body ? <p className="mt-1">{finding.body}</p> : null}
-                  <div className="mt-1 flex flex-wrap gap-2 text-[10px]">
-                    <code>{finding.id}</code>
+                  <div className="mt-1 flex min-w-0 flex-wrap gap-2 text-[10px]">
+                    <code className="break-all">{finding.id}</code>
                     {finding.priority ? <span>{finding.priority.toUpperCase()}</span> : null}
-                    {finding.code_location ? <code>{finding.code_location}</code> : null}
+                    {finding.code_location ? <code className="break-all">{finding.code_location}</code> : null}
                   </div>
                 </li>
               ))}
@@ -124,14 +124,14 @@ export function AgentRunArtifactView({ artifact, reviewDecisionArtifact = null, 
           </div>
           <ul className="space-y-1">
             {reviewDecision.findings.map((finding) => (
-              <li key={finding.id} className="rounded border border-border/60 bg-background/70 px-2 py-1.5">
+              <li key={finding.id} className="min-w-0 overflow-hidden rounded border border-border/60 bg-background/70 px-2 py-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <div className="font-medium text-foreground">{finding.title || finding.id}</div>
                   <Badge variant="outline" className={cn('h-5 rounded-full px-1.5 text-[10px] uppercase tracking-wide', reviewFindingStatusBadgeClass(finding.status))}>
                     {finding.status.replaceAll('_', ' ')}
                   </Badge>
                 </div>
-                {finding.code_location ? <div className="mt-1 text-[10px]"><code>{finding.code_location}</code></div> : null}
+                {finding.code_location ? <div className="mt-1 min-w-0 text-[10px]"><code className="break-all">{finding.code_location}</code></div> : null}
               </li>
             ))}
           </ul>

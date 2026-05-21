@@ -131,38 +131,49 @@ func (r *DocsDocumentRepository) ListByIDs(ctx context.Context, workspaceID stri
 
 // List returns documents for a workspace with optional filters.
 func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
-	query := r.db.WithContext(ctx).Where("workspace_id = ? AND deleted_at IS NULL", workspaceID)
+	query := r.db.WithContext(ctx).
+		Model(&model.DocsDocument{}).
+		Select(`docs_documents.*, COALESCE(pending_proposals.pending_change_proposal_count, 0) AS pending_change_proposal_count`).
+		Joins(`LEFT JOIN (
+			SELECT workspace_id, document_id, COUNT(*) AS pending_change_proposal_count
+			FROM docs_change_proposals
+			WHERE status = ?
+			GROUP BY workspace_id, document_id
+		) pending_proposals
+			ON pending_proposals.workspace_id = docs_documents.workspace_id
+			AND pending_proposals.document_id = docs_documents.id`, model.DocsChangeProposalStatusPending).
+		Where("docs_documents.workspace_id = ? AND docs_documents.deleted_at IS NULL", workspaceID)
 	if spaceID != nil && *spaceID != "" {
-		query = query.Where("space_id = ?", *spaceID)
+		query = query.Where("docs_documents.space_id = ?", *spaceID)
 	}
 	if collectionID != nil && *collectionID != "" {
-		query = query.Where("collection_id = ?", *collectionID)
+		query = query.Where("docs_documents.collection_id = ?", *collectionID)
 	}
 	if status != nil && *status != "" {
-		query = query.Where("status = ?", *status)
+		query = query.Where("docs_documents.status = ?", *status)
 	} else if !includeArchived {
 		// By default, exclude archived documents unless explicitly requested.
-		query = query.Where("status != ?", model.DocStatusArchived)
+		query = query.Where("docs_documents.status != ?", model.DocStatusArchived)
 	}
 	if teamID != nil && *teamID != "" {
-		query = query.Where("team_id = ?", *teamID)
+		query = query.Where("docs_documents.team_id = ?", *teamID)
 	}
 
 	// If draftViewerID is set, hide other users' drafts (admins/owners pass empty to see all).
 	if draftViewerID != "" {
-		query = query.Where("status != ? OR created_by = ?", model.DocStatusDraft, draftViewerID)
+		query = query.Where("docs_documents.status != ? OR docs_documents.created_by = ?", model.DocStatusDraft, draftViewerID)
 	}
 
 	var docs []model.DocsDocument
 	// Space-scoped: use canonical bucket order. Otherwise: recency order.
 	if spaceID != nil && *spaceID != "" {
 		if r.useSortKey {
-			query = query.Order("collection_id ASC NULLS FIRST, sort_key ASC, id ASC")
+			query = query.Order("docs_documents.collection_id ASC NULLS FIRST, docs_documents.sort_key ASC, docs_documents.id ASC")
 		} else {
-			query = query.Order("collection_id ASC NULLS FIRST, position ASC, created_at ASC")
+			query = query.Order("docs_documents.collection_id ASC NULLS FIRST, docs_documents.position ASC, docs_documents.created_at ASC")
 		}
 	} else {
-		query = query.Order("is_pinned DESC, updated_at DESC")
+		query = query.Order("docs_documents.is_pinned DESC, docs_documents.updated_at DESC")
 	}
 	if err := query.Find(&docs).Error; err != nil {
 		return nil, fmt.Errorf("list docs documents: %w", err)

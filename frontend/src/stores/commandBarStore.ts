@@ -9,6 +9,8 @@ export interface CommandBarRunPlan {
   status?: CommandBarPlanSummary['status'];
   prompt?: string;
   currentStepIndex?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type RailMode = 'closed' | 'peek' | 'open';
@@ -141,6 +143,8 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
           status: plan.status,
           prompt: plan.prompt,
           currentStepIndex: plan.current_step_index,
+          createdAt: plan.created_at,
+          updatedAt: plan.updated_at,
         };
         for (const run of plan.runs ?? []) {
           runsById[run.id] = run;
@@ -187,6 +191,8 @@ export const useCommandBarRunStore = create<CommandBarRunState>((set) => ({
             status: plan.status,
             prompt: plan.prompt,
             currentStepIndex: plan.current_step_index,
+            createdAt: plan.created_at,
+            updatedAt: plan.updated_at,
           },
         },
       };

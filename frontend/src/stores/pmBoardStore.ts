@@ -707,7 +707,7 @@ export const usePMBoardStore = create<PMBoardState>((set, get) => {
       return null;
     }
 
-    const task = data.task;
+    const task = data.task.task;
     set((state) => {
       const columns = cloneColumns(state.columns);
       const targetIndex = columns.findIndex((column) => column.state.id === task.workflow_state_id);

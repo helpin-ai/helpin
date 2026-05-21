@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { useTitle } from '@/hooks/useTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { formatDistanceToNow, parseISO } from 'date-fns';
 import {
+  Activity01Icon,
   ArchiveIcon,
   ArrowLeftRightIcon,
   ArrowUpRight01Icon,
@@ -43,13 +43,11 @@ import {
   TASK_TYPE_CONFIG,
   TaskTypeIcon,
 } from '@/lib/pmConstants';
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
@@ -75,6 +73,7 @@ import { cn } from '@/lib/utils';
 import { gitService } from '@/lib/services/gitService';
 import { pmChecklistService } from '@/lib/services/pmChecklistService';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
+import { associationsService } from '@/lib/services/associationsService';
 import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
@@ -104,8 +103,11 @@ import { useTeamFieldVisibilityForTeam, useAutomationRulesByWorkflow, useWorkspa
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { buildTaskCopyUrl, buildTaskPath } from '@/lib/pmTaskLinks';
 import { CommentThread } from '@/components/pm/CommentThread';
+import { ActivityTimeline } from '@/components/pm/ActivityTimeline';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
 import { TaskRelationshipsSection } from '@/components/pm/TaskRelationshipsSection';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
+import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -114,6 +116,7 @@ import { shouldSuppressTaskOverlayOutsideDismiss } from '@/components/pm/task-de
 import { isInsideAskAgentsDock } from '@/lib/agentsDockGuard';
 import { getFlushablePendingTaskPatch, hasPendingTaskSave } from '@/components/pm/task-detail/taskPendingPatch';
 import { getTaskPatchSignature, isBlockedTaskPatch } from '@/components/pm/task-detail/taskAutosaveFailure';
+import { hasVisibleTaskAssociations } from '@/components/pm/task-detail/taskRelationshipVisibility';
 import { queryKeys } from '@/lib/queryKeys';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import {
@@ -175,6 +178,7 @@ interface FormState {
   owner_member_ids: string[];
   requester_member_id: string;
   blocker: string;
+  assigned_agent_id: string;
 }
 
 interface DuplicateNoticeState {
@@ -205,6 +209,7 @@ const buildFormState = (detail: TaskDetail): FormState => ({
   owner_member_ids: detail.task.owner_member_ids ?? [],
   requester_member_id: detail.task.requester_member_id ?? '',
   blocker: detail.task.blocker ?? '',
+  assigned_agent_id: detail.task.assigned_agent_id ?? '',
 });
 
 const isInsideSonnerToast = (target: EventTarget | null) => (
@@ -212,14 +217,6 @@ const isInsideSonnerToast = (target: EventTarget | null) => (
 );
 
 // ── Helpers ────────────────────────────────────────────────────────
-
-function formatRelativeTime(iso: string) {
-  try {
-    return formatDistanceToNow(parseISO(iso), { addSuffix: true });
-  } catch {
-    return iso;
-  }
-}
 
 function hasDraggedFiles(event: DragEvent) {
   return event.dataTransfer.types.includes('Files');
@@ -245,227 +242,6 @@ function MetadataRow({
   );
 }
 
-
-// ── Timeline Entry ─────────────────────────────────────────────────
-
-type TimelineItem =
-  | { kind: 'activity'; data: ActivityLogEntry; time: string }
-  | { kind: 'comment'; data: CommentWithAuthor; time: string };
-
-const ACTIVITY_ICON_MAP: Record<string, { icon: React.ElementType; color: string }> = {
-  workflow_state_id: { icon: HashtagIcon, color: 'text-blue-500' },
-  owner_member_id: { icon: UserIcon, color: 'text-violet-500' },
-  owner_member_ids: { icon: UserIcon, color: 'text-violet-500' },
-  team_id: { icon: UserGroupIcon, color: 'text-teal-500' },
-  priority: { icon: DashboardSpeed01Icon, color: 'text-orange-500' },
-  sprint_id: { icon: HexagonIcon, color: 'text-green-500' },
-  epic_id: { icon: Layers01Icon, color: 'text-purple-500' },
-  estimate: { icon: LayoutGridIcon, color: 'text-amber-500' },
-  deadline: { icon: Calendar03Icon, color: 'text-red-500' },
-  task_type: { icon: Tag01Icon, color: 'text-indigo-500' },
-  labels: { icon: Tag01Icon, color: 'text-pink-500' },
-  severity: { icon: Shield02Icon, color: 'text-red-500' },
-  name: { icon: PencilEdit01Icon, color: 'text-muted-foreground' },
-  description: { icon: PencilEdit01Icon, color: 'text-muted-foreground' },
-  agent_run: { icon: BotIcon, color: 'text-indigo-500' },
-};
-
-const AGENT_RUN_ACTION_LABELS: Record<string, string> = {
-  started: 'started',
-  completed: 'completed',
-  failed: 'failed',
-  cancelled: 'cancelled',
-  paused: 'paused',
-  resumed: 'resumed',
-};
-
-/** Map raw action strings like "comment_added" to readable labels. */
-const ACTION_LABELS: Record<string, string> = {
-  comment_added: 'added a comment',
-  comment_updated: 'edited a comment',
-  comment_deleted: 'deleted a comment',
-  attachment_added: 'attached a file',
-  attachment_removed: 'removed an attachment',
-  task_created: 'created this task',
-  created: 'created this task',
-  label_added: 'added a label',
-  label_removed: 'removed a label',
-};
-
-function formatAction(action?: string): string {
-  if (!action) return '';
-  return ACTION_LABELS[action] ?? action.replace(/_/g, ' ');
-}
-
-function getActivityIcon(action?: string, fieldName?: string): { icon: React.ElementType; color: string } {
-  if (fieldName && ACTIVITY_ICON_MAP[fieldName]) return ACTIVITY_ICON_MAP[fieldName];
-  if (action?.includes('comment')) return { icon: Message01Icon, color: 'text-blue-500' };
-  if (action?.includes('attachment') || action?.includes('file')) return { icon: AttachmentIcon, color: 'text-muted-foreground' };
-  if (action?.includes('label')) return { icon: Tag01Icon, color: 'text-pink-500' };
-  if (action?.includes('moved') || action?.includes('state')) return { icon: HashtagIcon, color: 'text-blue-500' };
-  if (action?.includes('priority')) return { icon: DashboardSpeed01Icon, color: 'text-orange-500' };
-  if (action?.includes('owner') || action?.includes('assigned') || action?.includes('requester')) return { icon: UserIcon, color: 'text-violet-500' };
-  if (action?.includes('team')) return { icon: UserGroupIcon, color: 'text-teal-500' };
-  if (action?.includes('sprint')) return { icon: HexagonIcon, color: 'text-green-500' };
-  if (action?.includes('epic')) return { icon: Layers01Icon, color: 'text-purple-500' };
-  if (action?.includes('blocked')) return { icon: Shield02Icon, color: 'text-red-500' };
-  if (action?.includes('archived')) return { icon: ArchiveIcon, color: 'text-amber-500' };
-  if (action?.includes('created')) return { icon: PlayIcon, color: 'text-green-500' };
-  if (action?.includes('deadline') || action?.includes('due date')) return { icon: Calendar03Icon, color: 'text-red-500' };
-  if (action?.includes('estimate')) return { icon: LayoutGridIcon, color: 'text-amber-500' };
-  if (action?.includes('type')) return { icon: Tag01Icon, color: 'text-indigo-500' };
-  if (action?.includes('severity')) return { icon: Shield02Icon, color: 'text-red-500' };
-  return { icon: ArrowLeftRightIcon, color: 'text-muted-foreground' };
-}
-
-function TimelineEntry({ item, states = [] }: { item: TimelineItem; states?: WorkflowState[] }) {
-  if (item.kind === 'comment') {
-    const { comment, author } = item.data;
-    return (
-      <div className="flex items-start gap-2.5">
-        <UserAvatar
-          name={author.full_name || author.email}
-          avatarUrl={author.avatar_url}
-          className="h-5 w-5"
-          fallbackClassName="text-[7px]"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-xs font-medium">{author.full_name || author.email}</span>
-            <span className="text-[11px] text-muted-foreground">{formatRelativeTime(comment.created_at)}</span>
-          </div>
-          <p className="mt-0.5 text-xs text-foreground/90">{comment.body}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const { activity, actor } = item.data;
-  const iconConfig = getActivityIcon(activity.action, activity.field_name);
-  const ActivityIconEl = iconConfig.icon;
-  const label = formatAction(activity.action);
-
-  // For state changes, extract the target state name and use its color
-  const stateMatch = activity.action?.match(/moved this (?:task|story) to (.+)/);
-  const isStateChange = !!stateMatch;
-  const targetStateName = stateMatch?.[1] ?? null;
-  const matchedState = targetStateName ? states.find((s) => s.name === targetStateName) : null;
-  const stateColor = matchedState?.color ?? null;
-
-  // Always show avatar; fall back to icon for system/no-actor entries
-  const marker = actor ? (
-    <span className="relative z-10">
-      <UserAvatar
-        name={actor.full_name || actor.email}
-        avatarUrl={actor.avatar_url}
-        className="h-5 w-5"
-        fallbackClassName="text-[7px]"
-      />
-    </span>
-  ) : (
-    <span className="relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
-      <ActivityIconEl className={`h-3 w-3 ${iconConfig.color}`} />
-    </span>
-  );
-
-  // Build rich inline label
-  let richLabel: React.ReactNode = null;
-
-  const isAgentRunActivity = activity.field_name === 'agent_run';
-
-  if (isStateChange && targetStateName) {
-    richLabel = (
-      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-        moved to
-        <span
-          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-          style={stateColor ? { backgroundColor: `${stateColor}18`, color: stateColor, border: `1px solid ${stateColor}30` } : undefined}
-        >
-          {matchedState && <StateTypeIcon stateType={matchedState.state_type} className="h-3 w-3" />}
-          {targetStateName}
-        </span>
-      </span>
-    );
-  } else if (isAgentRunActivity) {
-    const meta = activity.metadata as { agent_name?: string } | undefined;
-    const rawAction = activity.new_value ?? 'started';
-    const actionLabel = AGENT_RUN_ACTION_LABELS[rawAction] ?? rawAction;
-    const agentName = meta?.agent_name ?? 'agent';
-
-    richLabel = (
-      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-        {actionLabel} agent run
-        <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
-          <AgentAvatar name={agentName} className="h-3 w-3 rounded-none border-0 bg-transparent shadow-none" genericBare />
-          {agentName}
-        </span>
-      </span>
-    );
-  } else {
-    // Parse "changed X from Y to Z" patterns
-    const changeMatch = activity.action?.match(/changed (type|priority|severity) from (\S+) to (\S+)/);
-    if (changeMatch) {
-      const [, field, oldVal, newVal] = changeMatch;
-      const renderBadge = (value: string) => {
-        if (field === 'type') {
-          const cfg = TASK_TYPE_CONFIG[value as TaskType];
-          if (cfg) {
-            return (
-              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
-                <TaskTypeIcon taskType={value as TaskType} className="h-3 w-3" />
-                {cfg.label}
-              </span>
-            );
-          }
-        }
-        if (field === 'priority') {
-          const cfg = PRIORITY_CONFIG[value as Priority];
-          if (cfg) {
-            return (
-              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
-                <PriorityIcon priority={value as Priority} className="h-3 w-3" />
-                {cfg.label}
-              </span>
-            );
-          }
-        }
-        if (field === 'severity') {
-          const cfg = SEVERITY_CONFIG[value as Severity];
-          if (cfg) {
-            return (
-              <span className="inline-flex items-center gap-0.5 rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">
-                <SeverityIcon severity={value as Severity} className="h-3 w-3" />
-                {cfg.label}
-              </span>
-            );
-          }
-        }
-        return <span className="rounded-full border border-border/60 px-1.5 py-0.5 text-[10px] font-medium">{value}</span>;
-      };
-
-      richLabel = (
-        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground flex-wrap">
-          changed {field} from {renderBadge(oldVal)}
-          <ArrowLeftRightIcon className="h-2.5 w-2.5 text-muted-foreground/50" />
-          {renderBadge(newVal)}
-        </span>
-      );
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-2.5">
-      {marker}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium shrink-0">{actor?.full_name || actor?.email || 'System'}</span>
-          {richLabel ?? <span className="text-[11px] text-muted-foreground truncate">{label}</span>}
-          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{formatRelativeTime(activity.created_at)}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── Main Body ──────────────────────────────────────────────────────
 
@@ -633,8 +409,17 @@ function TaskDetailPanelBody({
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [showRelationships, setShowRelationships] = useState(false);
+  const [hasChecklistItems, setHasChecklistItems] = useState(false);
+  const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
+  const [hasRelationshipItems, setHasRelationshipItems] = useState(false);
+  const [checklistSummary, setChecklistSummary] = useState({ completed: 0, total: 0 });
+  const [externalLinkCount, setExternalLinkCount] = useState(0);
+  const [relationshipCount, setRelationshipCount] = useState(0);
   const [relationshipComposerOpen, setRelationshipComposerOpen] = useState(false);
   const relationshipButtonRef = useRef<HTMLButtonElement>(null);
+  const relationshipsToggleActive = showRelationships || relationshipComposerOpen;
+  const hasOptionalTaskSections = relationshipsToggleActive || showChecklist || showExternalLinks;
   const { teams } = useAccessibleTeams(workspaceId);
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const memberNameMap = useMemo(
@@ -907,17 +692,69 @@ function TaskDetailPanelBody({
     }
   }, [form.team_id, form.epic_id, form.sprint_id, epics, sprints]);
 
-  // ── Auto-show checklist / external links if items exist ────────
+  const syncOptionalSectionContent = useCallback(async () => {
+    const [clRes, elRes, associationsRes] = await Promise.all([
+      pmChecklistService.list(workspaceId, taskDetail.task.id),
+      pmExternalLinkService.list(workspaceId, taskDetail.task.id),
+      associationsService.listByTask(workspaceId, taskDetail.task.id),
+    ]);
+
+    const hasChecklistContent = (clRes.data?.length ?? 0) > 0;
+    const hasExternalLinkContent = (elRes.data?.length ?? 0) > 0;
+    const taskRelationships = associationsRes.data?.task_relationships;
+    const relationshipItemCount = (
+      taskRelationships
+        ? Object.values(taskRelationships).reduce((total, group) => total + group.length, 0)
+        : 0
+    ) + (associationsRes.data?.docs.length ?? 0);
+    const hasRelationshipContent = hasVisibleTaskAssociations(associationsRes.data);
+
+    setHasChecklistItems(hasChecklistContent);
+    setHasExternalLinkItems(hasExternalLinkContent);
+    setHasRelationshipItems(hasRelationshipContent);
+    setChecklistSummary({
+      completed: (clRes.data ?? []).filter((item) => item.completed).length,
+      total: clRes.data?.length ?? 0,
+    });
+    setExternalLinkCount(elRes.data?.length ?? 0);
+    setRelationshipCount(relationshipItemCount);
+
+    if (hasChecklistContent) setShowChecklist(true);
+    if (hasExternalLinkContent) setShowExternalLinks(true);
+    if (hasRelationshipContent) setShowRelationships(true);
+  }, [workspaceId, taskDetail.task.id]);
+
+  // ── Auto-show optional sections if items exist ────────
   useEffect(() => {
-    (async () => {
-      const [clRes, elRes] = await Promise.all([
-        pmChecklistService.list(workspaceId, taskDetail.task.id),
-        pmExternalLinkService.list(workspaceId, taskDetail.task.id),
-      ]);
-      if (clRes.data && clRes.data.length > 0) setShowChecklist(true);
-      if (elRes.data && elRes.data.length > 0) setShowExternalLinks(true);
-    })();
-  }, [workspaceId, taskDetail]);
+    void syncOptionalSectionContent();
+  }, [syncOptionalSectionContent]);
+
+  const handleChecklistContentChange = useCallback((hasContent: boolean) => {
+    setHasChecklistItems(hasContent);
+    if (hasContent) setShowChecklist(true);
+  }, []);
+
+  const handleChecklistStatsChange = useCallback((stats: { completed: number; total: number }) => {
+    setChecklistSummary(stats);
+  }, []);
+
+  const handleRelationshipContentChange = useCallback((hasContent: boolean) => {
+    setHasRelationshipItems(hasContent);
+    if (hasContent) setShowRelationships(true);
+  }, []);
+
+  const handleRelationshipCountChange = useCallback((count: number) => {
+    setRelationshipCount(count);
+  }, []);
+
+  const handleExternalLinkContentChange = useCallback((hasContent: boolean) => {
+    setHasExternalLinkItems(hasContent);
+    if (hasContent) setShowExternalLinks(true);
+  }, []);
+
+  const handleExternalLinkCountChange = useCallback((count: number) => {
+    setExternalLinkCount(count);
+  }, []);
 
   // ── Auto-save debounce ─────────────────────────────────────────
   useEffect(() => {
@@ -1395,7 +1232,7 @@ function TaskDetailPanelBody({
           {/* Description */}
           <div
             className={cn(
-              'relative mt-4 rounded-lg transition-[box-shadow,background-color]',
+              'group/desc relative mt-4 rounded-lg pb-3 transition-[box-shadow,background-color]',
               descriptionDragging && 'bg-primary/5 ring-1 ring-primary/50',
             )}
             onDragEnter={handleDescriptionDragEnter}
@@ -1424,84 +1261,98 @@ function TaskDetailPanelBody({
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
-                <div className="mt-2 flex justify-end">
+                <div className="mt-2 flex justify-start">
                   <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditingDescription(false)}>
                     Done
                   </Button>
                 </div>
               </div>
             ) : (
-              <div className="group/desc relative">
+              <div className="relative">
                 {form.description ? (
                   <RichTextMentionContent
                     html={form.description}
                     members={assignableMembers}
                     teams={mentionTeams}
-                    className="prose prose-sm dark:prose-invert max-w-none text-sm [&_p:empty]:h-1 [&_p:empty]:my-0"
+                    className="prose prose-sm dark:prose-invert max-w-none text-sm text-foreground/80 prose-p:text-foreground/80 prose-li:text-foreground/80 prose-strong:text-foreground/90 [&_p:empty]:h-1 [&_p:empty]:my-0"
                     onHtmlChange={(html) => updateField('description', html, { description: html })}
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">No description yet</p>
                 )}
-                <button
-                  type="button"
-                  className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                  onClick={() => setEditingDescription(true)}
-                >
-                  <PencilEdit01Icon className="h-3 w-3" />
-                  Edit description
-                </button>
+                <div className="mt-3 flex justify-start opacity-0 transition-opacity group-hover/desc:opacity-100 group-focus-within/desc:opacity-100">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+                    onClick={() => setEditingDescription(true)}
+                  >
+                    <PencilEdit01Icon className="h-3 w-3" />
+                    Edit description
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
           {/* Action bar — "Add to Task" */}
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                showChecklist
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setShowChecklist((v) => !v)}
-            >
-              <CheckmarkSquare02Icon className="h-3 w-3" />
-              Checklist
-            </button>
-            <button
-              ref={relationshipButtonRef}
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                relationshipComposerOpen
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setRelationshipComposerOpen(true)}
-            >
-              <ArrowLeftRightIcon className="h-3 w-3" />
-              Relationships
-            </button>
-            <button
-              type="button"
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                showExternalLinks
-                  ? 'border-primary/30 bg-primary/10 text-primary'
-                  : 'border-border/60 text-muted-foreground hover:bg-accent'
-              }`}
-              onClick={() => setShowExternalLinks((v) => !v)}
-            >
-              <Link01Icon className="h-3 w-3" />
-              External Links
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
-              onClick={() => openFilePickerRef.current?.()}
-            >
-              <AttachmentIcon className="h-3 w-3" />
-              Attach Files
-            </button>
+          <div className="border-t border-border/60 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={getOptionalSectionActionClass(hasChecklistItems ? 'locked' : showChecklist ? 'open' : 'available')}
+                disabled={hasChecklistItems}
+                onClick={() => setShowChecklist((v) => !v)}
+              >
+                <CheckmarkSquare02Icon className="h-3 w-3" />
+                Checklist
+                {hasChecklistItems ? (
+                  <span className="text-[10px] opacity-70">
+                    {checklistSummary.completed}/{checklistSummary.total}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                ref={relationshipButtonRef}
+                type="button"
+                className={getOptionalSectionActionClass(hasRelationshipItems ? 'locked' : relationshipsToggleActive ? 'open' : 'available')}
+                disabled={hasRelationshipItems}
+                onClick={() => {
+                  setShowRelationships((open) => {
+                    const nextOpen = !open;
+                    if (!nextOpen) {
+                      setRelationshipComposerOpen(false);
+                    }
+                    return nextOpen;
+                  });
+                }}
+              >
+                <ArrowLeftRightIcon className="h-3 w-3" />
+                Relationships
+                {hasRelationshipItems ? (
+                  <span className="text-[10px] opacity-70">{relationshipCount}</span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                className={getOptionalSectionActionClass(hasExternalLinkItems ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                disabled={hasExternalLinkItems}
+                onClick={() => setShowExternalLinks((v) => !v)}
+              >
+                <Link01Icon className="h-3 w-3" />
+                External Links
+                {hasExternalLinkItems ? (
+                  <span className="text-[10px] opacity-70">{externalLinkCount}</span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                className={getOptionalSectionActionClass('available')}
+                onClick={() => openFilePickerRef.current?.()}
+              >
+                <AttachmentIcon className="h-3 w-3" />
+                Attach Files
+              </button>
+            </div>
           </div>
 
           {/* Recurring info card */}
@@ -1527,42 +1378,57 @@ function TaskDetailPanelBody({
             </button>
           ) : null}
 
-          <TaskRelationshipsSection
-            workspaceId={workspaceId}
-            taskId={taskDetail.task.id}
-            taskName={taskDetail.task.name}
-            taskDisplayId={taskDetail.task.display_id}
-            workflowId={taskDetail.task.workflow_id}
-            workflowStateId={taskDetail.task.workflow_state_id}
-            epicId={taskDetail.task.epic_id}
-            sprintId={taskDetail.task.sprint_id}
-            teamId={taskDetail.task.team_id}
-            taskType={taskDetail.task.task_type}
-            priority={taskDetail.task.priority}
-            severity={taskDetail.task.severity}
-            externalBlocker={form.blocker}
-            onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
-            composerOpen={relationshipComposerOpen}
-            onComposerOpenChange={setRelationshipComposerOpen}
-            externalTriggerRef={relationshipButtonRef}
-          />
+          {hasOptionalTaskSections && (
+            <div className="mt-8 space-y-8">
+              {/* Checklist */}
+              {showChecklist && (
+                <div>
+                  <ChecklistItems
+                    workspaceId={workspaceId}
+                    taskId={taskDetail.task.id}
+                    members={assignableMembers}
+                    teams={mentionTeams}
+                    onContentChange={handleChecklistContentChange}
+                    onStatsChange={handleChecklistStatsChange}
+                  />
+                </div>
+              )}
 
-          {/* Checklist */}
-          {showChecklist && (
-            <div className="mt-6">
-              <ChecklistItems
+              <TaskRelationshipsSection
                 workspaceId={workspaceId}
                 taskId={taskDetail.task.id}
-                members={assignableMembers}
-                teams={mentionTeams}
+                taskName={taskDetail.task.name}
+                taskDisplayId={taskDetail.task.display_id}
+                workflowId={taskDetail.task.workflow_id}
+                workflowStateId={taskDetail.task.workflow_state_id}
+                epicId={taskDetail.task.epic_id}
+                sprintId={taskDetail.task.sprint_id}
+                teamId={taskDetail.task.team_id}
+                taskType={taskDetail.task.task_type}
+                priority={taskDetail.task.priority}
+                severity={taskDetail.task.severity}
+                externalBlocker={form.blocker}
+                onExternalBlockerChange={(value) => updateField('blocker', value, { blocker: value || undefined })}
+                composerOpen={relationshipComposerOpen}
+                onComposerOpenChange={setRelationshipComposerOpen}
+                visible={showRelationships}
+                externalTriggerRef={relationshipButtonRef}
+                onContentChange={handleRelationshipContentChange}
+                onCountChange={handleRelationshipCountChange}
               />
-            </div>
-          )}
 
-          {/* External Links */}
-          {showExternalLinks && (
-            <div className="mt-6">
-              <ExternalLinks workspaceId={workspaceId} entityType="task" entityId={taskDetail.task.id} />
+              {/* External Links */}
+              {showExternalLinks && (
+                <div>
+                  <ExternalLinks
+                    workspaceId={workspaceId}
+                    entityType="task"
+                    entityId={taskDetail.task.id}
+                    onContentChange={handleExternalLinkContentChange}
+                    onCountChange={handleExternalLinkCountChange}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1578,25 +1444,23 @@ function TaskDetailPanelBody({
             />
           </div>
 
-          {/* Git Links & Agent Runs */}
+          {/* Development */}
           {hasGitIntegration && fieldVis.dev_history && (
-            <>
-              <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
-              <AgentRunPanel
-                taskId={taskDetail.task.id}
-                workspaceId={workspaceId}
-                latestRunAgentId={taskDetail.task.latest_run_agent_id}
-                delivery={delivery}
-                canEditDelivery={canEdit && fieldVis.delivery}
-              />
-            </>
+            <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
           )}
 
-          {/* Separator */}
-          <Separator className="my-6" />
+          {/* Agent Runs */}
+          <AgentRunPanel
+            taskId={taskDetail.task.id}
+            workspaceId={workspaceId}
+            taskTeamId={taskDetail.task.team_id}
+            latestRunAgentId={taskDetail.task.latest_run_agent_id}
+            delivery={delivery}
+            canEditDelivery={canEdit && fieldVis.delivery}
+          />
 
           {/* Comments + Activity */}
-          <div>
+          <div className="mt-6">
             {/* Comments card */}
             {commentsLoading ? (
               <div className="space-y-3 rounded-lg border border-border/60 p-4">
@@ -1612,9 +1476,7 @@ function TaskDetailPanelBody({
               </div>
             ) : (
               <>
-                {comments.length > 0 && (
-                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comments</h3>
-                )}
+                <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70" />
               <CommentThread
                 workspaceId={workspaceId}
                 entityType="task"
@@ -1643,25 +1505,14 @@ function TaskDetailPanelBody({
             ) : null}
             {!activityLoading && activity.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Activity</h3>
-                <div className="relative mt-3">
-                  {/* Vertical timeline line */}
-                  <div className="absolute left-[9px] top-3 bottom-3 w-px bg-border/60" />
-                  <div className="space-y-3">
-                    {!showAllActivity && activity.length > 5 && (
-                      <button
-                        type="button"
-                        className="relative z-10 ml-6 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                        onClick={() => setShowAllActivity(true)}
-                      >
-                        Show {activity.length - 5} older entries...
-                      </button>
-                    )}
-                    {(showAllActivity ? activity : activity.slice(0, 5)).map((entry) => (
-                      <TimelineEntry key={`a-${entry.activity.id}`} item={{ kind: 'activity', data: entry, time: entry.activity.created_at }} states={states} />
-                    ))}
-                  </div>
-                </div>
+                <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} className="text-xs font-semibold text-foreground/70 uppercase tracking-wide" />
+                <ActivityTimeline
+                  activity={activity}
+                  states={states}
+                  showAll={showAllActivity}
+                  onShowAll={() => setShowAllActivity(true)}
+                  entityLabel="task"
+                />
               </div>
             )}
           </div>
@@ -1700,6 +1551,7 @@ function TaskDetailPanelBody({
                       stateType={currentState.state_type}
                       label={currentState.name}
                       color={currentState.color}
+                      autoRunEnabled={automatedStateIds.has(currentState.id)}
                     />
                   ) : (
                     <span>Select</span>
@@ -1712,6 +1564,7 @@ function TaskDetailPanelBody({
                       stateType={s.state_type}
                       label={s.name}
                       color={s.color}
+                      autoRunEnabled={automatedStateIds.has(s.id)}
                     />
                   ) : null;
                 }}

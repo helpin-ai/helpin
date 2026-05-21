@@ -68,7 +68,10 @@ export function useTaskActivity(wsId: string, taskId: string, page = 1, perPage 
 export function useCreateTask(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: CreateTaskRequest) => unwrap(await pmTaskService.create(data)),
+    mutationFn: async (data: CreateTaskRequest) => {
+      const response = unwrap(await pmTaskService.create(data))
+      return response.task
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'tasks'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })

@@ -59,7 +59,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
 
   if (runs.length === 0) {
     return (
-      <p className="px-3 py-4 text-xs text-muted-foreground">No runs yet. Click "Run Agent" to start.</p>
+      <p className="px-3 py-4 text-xs text-muted-foreground">No runs yet. Choose an agent and click Run.</p>
     );
   }
 
@@ -108,10 +108,12 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                <Badge variant={meta.variant} className={`gap-1 px-1.5 py-0 text-[10px] ${meta.className ?? ''}`}>
-                  {STATUS_ICONS[displayStatus]}
-                  {meta.label}
-                </Badge>
+                <QuickTooltip label="View run">
+                  <Badge variant={meta.variant} className={`gap-1 px-1.5 py-0 text-[10px] ${meta.className ?? ''}`}>
+                    {STATUS_ICONS[displayStatus]}
+                    {meta.label}
+                  </Badge>
+                </QuickTooltip>
               )}
             </div>
             <div className={`${TABLE_CELL} text-foreground`} style={{ width: 150 }}>

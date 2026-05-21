@@ -212,6 +212,16 @@ func (r *PMEpicRepository) ListTasks(ctx context.Context, epicID string) ([]mode
 	return stories, nil
 }
 
+// ListEnrichedTasks returns non-archived tasks in an epic with table-facing
+// computed fields such as owner member IDs, labels, state info, and latest run.
+func (r *PMEpicRepository) ListEnrichedTasks(ctx context.Context, epicID string) ([]model.BoardTask, error) {
+	tasks, err := r.ListTasks(ctx, epicID)
+	if err != nil {
+		return nil, err
+	}
+	return NewPMTaskRepository(r.db).EnrichTasksForList(ctx, tasks), nil
+}
+
 func (r *PMEpicRepository) listObjectives(ctx context.Context, epicID string) ([]model.RoadmapObjectiveRef, error) {
 	var refs []model.RoadmapObjectiveRef
 	if err := r.db.WithContext(ctx).

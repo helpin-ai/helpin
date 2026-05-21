@@ -577,7 +577,7 @@ function resolvedInteractionResponseNote(event: CodingSessionEvent) {
   if (event.type !== 'interaction.resolved') return undefined;
   const payload = asRecord(event.payload);
   const interactionKind = asString(payload?.interaction_kind);
-  if (interactionKind !== 'approval_request') return undefined;
+  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return undefined;
   return asString(asRecord(payload?.response_payload)?.message)?.trim();
 }
 
@@ -585,7 +585,7 @@ function resolvedInteractionResumeMessageType(event: CodingSessionEvent) {
   if (event.type !== 'interaction.resolved') return undefined;
   const payload = asRecord(event.payload);
   const interactionKind = asString(payload?.interaction_kind);
-  if (interactionKind !== 'approval_request') return undefined;
+  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return undefined;
   const decision = asString(asRecord(payload?.response_payload)?.decision)?.trim();
   if (!decision) return undefined;
   return decision === 'approve' ? 'approval' : 'request_changes';

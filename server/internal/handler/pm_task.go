@@ -253,7 +253,7 @@ func (h *PMTaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WorkspaceID == "" {
 		req.WorkspaceID = getWorkspaceID(r)
 	}
-	task, err := h.taskService.Create(r.Context(), req, userID)
+	task, err := h.taskService.CreateWithAgentRun(r.Context(), req, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

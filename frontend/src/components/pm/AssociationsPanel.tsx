@@ -87,7 +87,7 @@ function AssociationsRailSection({
   return (
     <>
       <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
           {title}
           {count > 0 && <span className="ml-1.5 font-normal">{count}</span>}
         </h3>

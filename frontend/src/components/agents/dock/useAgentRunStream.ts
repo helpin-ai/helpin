@@ -16,6 +16,10 @@ interface AgentRunStreamState {
   pendingInteraction: CodingSessionInteraction | null;
   /** True while at least one fetch is in flight. */
   loading: boolean;
+  /** Force a snapshot/events reconciliation for this run. */
+  refetch: () => Promise<void>;
+  /** Optimistically hide a submitted interaction while the backend catches up. */
+  clearPendingInteraction: (interactionId: string) => void;
 }
 
 /**
@@ -46,6 +50,16 @@ export function useAgentRunStream(
   const eventsRef = useRef<CodingSessionEvent[]>([]);
   const snapshotRef = useRef<CodingSessionStreamSnapshot | null>(null);
   const cancelledRef = useRef(false);
+  const clearedInteractionIdsRef = useRef<Set<string>>(new Set());
+
+  const clearPendingInteraction = useCallback((interactionId: string) => {
+    const trimmed = interactionId.trim();
+    if (!trimmed) return;
+    clearedInteractionIdsRef.current.add(trimmed);
+    setPendingInteraction((current) =>
+      current?.interaction_id === trimmed ? null : current,
+    );
+  }, []);
 
   const refetch = useCallback(async () => {
     if (!workspaceId || !runId) return;
@@ -67,8 +81,13 @@ export function useAgentRunStream(
       // plan resolves whether it came through stream_state_snapshot.current_plan
       // (codex/opencode) or from update_plan tool calls in events (native_sdk).
       const built = buildCodingSessionStreamState(eventsRef.current, snapshotRef.current);
+      const latestPending = latestPendingCodingSessionInteraction(eventsRef.current);
       setCurrentPlan(built.current_plan);
-      setPendingInteraction(latestPendingCodingSessionInteraction(eventsRef.current));
+      setPendingInteraction(
+        latestPending && clearedInteractionIdsRef.current.has(latestPending.interaction_id)
+          ? null
+          : latestPending,
+      );
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
@@ -80,6 +99,7 @@ export function useAgentRunStream(
     seqRef.current = 0;
     eventsRef.current = [];
     snapshotRef.current = null;
+    clearedInteractionIdsRef.current = new Set();
     setCurrentPlan(null);
     setPendingInteraction(null);
     return () => {
@@ -115,7 +135,7 @@ export function useAgentRunStream(
     return () => clearInterval(id);
   }, [active, pollMs, refetch, runId, workspaceId]);
 
-  return { currentPlan, pendingInteraction, loading };
+  return { currentPlan, pendingInteraction, loading, refetch, clearPendingInteraction };
 }
 
 function mergeEvents(

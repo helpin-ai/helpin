@@ -2574,6 +2574,12 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			sources := req.Sources
 			if len(sources) == 0 || strings.TrimSpace(string(sources)) == "" || strings.TrimSpace(string(sources)) == "null" {
 				sources = json.RawMessage(`[]`)
+			} else {
+				normalizedSources, err := json.Marshal(model.NormalizeDocsChangeProposalSources(sources))
+				if err != nil {
+					return nil, fmt.Errorf("marshal proposal sources: %w", err)
+				}
+				sources = normalizedSources
 			}
 			proposal := &model.DocsChangeProposal{
 				WorkspaceID:     workspaceID,

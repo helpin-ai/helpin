@@ -693,3 +693,65 @@ func TestToolWriteDocumentContentUsesInternalCommandExecutorWhenAvailable(t *tes
 		t.Fatalf("unexpected tool output %q", output)
 	}
 }
+
+func TestToolPublishDocumentChangeProposalRequiresDocumentTarget(t *testing.T) {
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+		Services: &ServiceBridge{
+			PublishDocumentChangeProposal: func(ctx context.Context, workspaceID string, req model.CreateDocsChangeProposalRequest) (*model.DocsChangeProposal, error) {
+				t.Fatal("publish should not be called for workspace target")
+				return nil, nil
+			},
+		},
+	}
+
+	_, err := toolPublishDocumentChangeProposal(ctx, json.RawMessage(`{
+		"scope": "document",
+		"document_id": "doc-1",
+		"summary": "Update dependencies",
+		"content": "Updated content"
+	}`))
+	if err == nil || err.Error() != "document change proposals must target a document" {
+		t.Fatalf("expected document target error, got %v", err)
+	}
+}
+
+func TestToolPublishDocumentChangeProposalAllowsMatchingDocumentTarget(t *testing.T) {
+	var captured model.CreateDocsChangeProposalRequest
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		AgentID:     "agent-1",
+		RunID:       "run-1",
+		TargetType:  "document",
+		TargetID:    "doc-1",
+		Services: &ServiceBridge{
+			PublishDocumentChangeProposal: func(ctx context.Context, workspaceID string, req model.CreateDocsChangeProposalRequest) (*model.DocsChangeProposal, error) {
+				if workspaceID != "ws-1" {
+					t.Fatalf("unexpected workspace %q", workspaceID)
+				}
+				captured = req
+				return &model.DocsChangeProposal{ID: "proposal-1"}, nil
+			},
+		},
+	}
+
+	output, err := toolPublishDocumentChangeProposal(ctx, json.RawMessage(`{
+		"scope": "document",
+		"document_id": "doc-1",
+		"summary": "Update dependencies",
+		"content": "Updated content"
+	}`))
+	if err != nil {
+		t.Fatalf("toolPublishDocumentChangeProposal returned error: %v", err)
+	}
+	if captured.DocumentID != "doc-1" || captured.Scope != "document" || captured.Summary != "Update dependencies" {
+		t.Fatalf("unexpected proposal request %#v", captured)
+	}
+	if output != `{"block_id":"","document_id":"doc-1","next_action":"Finish. The proposal is now visible in Docs for a human to apply or discard.","proposal_id":"proposal-1","scope":"document","status":"submitted"}` {
+		t.Fatalf("unexpected output %q", output)
+	}
+}
