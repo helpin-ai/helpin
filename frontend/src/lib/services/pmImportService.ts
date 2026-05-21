@@ -185,14 +185,12 @@ export interface ShortcutImportOptionsPayload {
 }
 
 async function jsonRequest<T>(path: string, body: unknown): Promise<{ data: T | null; error: string | null }> {
-  const token = localStorage.getItem('access_token');
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(body),
     });
@@ -208,12 +206,10 @@ async function jsonRequest<T>(path: string, body: unknown): Promise<{ data: T | 
 }
 
 function statusRequest<T>(path: string): Promise<{ data: T | null; error: string | null }> {
-  const token = localStorage.getItem('access_token');
   return fetch(`${API_BASE}${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   })
     .then(async (res) => {
@@ -228,13 +224,11 @@ function statusRequest<T>(path: string): Promise<{ data: T | null; error: string
 }
 
 function postStatusRequest<T>(path: string): Promise<{ data: T | null; error: string | null }> {
-  const token = localStorage.getItem('access_token');
   return fetch(`${API_BASE}${path}`, {
     method: 'POST',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   })
     .then(async (res) => {

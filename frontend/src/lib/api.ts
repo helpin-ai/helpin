@@ -10,14 +10,12 @@ interface ApiResponse<T> {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-  const token = localStorage.getItem('access_token');
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     });
@@ -26,14 +24,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       // Try refresh (skip for auth endpoints — a 401 there means bad credentials)
       const refreshed = await tryRefreshToken();
       if (refreshed) {
-        // Retry with new token
-        const newToken = localStorage.getItem('access_token');
         const retryRes = await fetch(`${API_BASE}${path}`, {
           ...options,
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            ...(newToken ? { Authorization: `Bearer ${newToken}` } : {}),
             ...options.headers,
           },
         });
@@ -48,10 +43,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       if (path === '/auth/me') {
         return { data: null, error: 'Session expired', status: 401 };
       }
-      // Refresh failed, clear tokens
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('remember_me');
+      clearLegacyTokenStorage();
       stopTokenRefreshTimer();
       storeRedirectAfterLogin();
       window.location.href = buildLoginPathForCurrentLocation();
@@ -74,14 +66,22 @@ function shouldAttemptRefresh(path: string): boolean {
   return path === '/auth/me' || !path.startsWith('/auth/');
 }
 
+function clearLegacyTokenStorage(): void {
+  try {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('remember_me');
+  } catch {
+    // Ignore storage access failures; cookies are the source of truth.
+  }
+}
+
 async function tryRefreshToken(): Promise<boolean> {
-  const refreshToken = localStorage.getItem('refresh_token');
   try {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
     });
     if (!res.ok) return false;
     await res.json().catch(() => null);

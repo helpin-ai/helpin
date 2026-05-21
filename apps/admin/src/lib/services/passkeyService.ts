@@ -81,7 +81,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
 
 async function beginAuthentication(
   emailHint?: string,
-  rememberMe = false,
+  rememberMe = true,
   options?: { useAutofill?: boolean },
 ): Promise<ApiResult<PasskeyAuthenticationResponse>> {
   const optionsResult = await request<PasskeyOptionsResponse>('/auth/passkey/authentication-options', {

@@ -20,14 +20,12 @@ import type {
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
 
 async function gitRawRequest<T>(path: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('access_token');
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     });

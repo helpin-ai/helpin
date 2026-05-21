@@ -114,7 +114,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  signInWithPasskey: async (emailHint?: string, rememberMe = false, options?: { useAutofill?: boolean }) => {
+  signInWithPasskey: async (emailHint?: string, rememberMe = true, options?: { useAutofill?: boolean }) => {
     const { data, error, code, cancelled } = await passkeyService.beginAuthentication(emailHint, rememberMe, options)
     if (cancelled) {
       return { error: null, cancelled: true }
@@ -136,7 +136,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null }
   },
 
-  signInWithPassword: async (email: string, password: string, rememberMe = false) => {
+  signInWithPassword: async (email: string, password: string, rememberMe = true) => {
     const { data, error } = await authService.signin(email, password, rememberMe)
     if (error || !data) {
       return { error: error || 'Sign in failed' }
@@ -155,7 +155,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null }
   },
 
-  verify2FASignIn: async (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe = false) => {
+  verify2FASignIn: async (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe = true) => {
     const { data, error } = await authService.verify2FASignin(twoFaToken, code, useRecoveryCode)
     if (error || !data || !data.user || !data.access_token) {
       return { error: error || 'Verification failed' }

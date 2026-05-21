@@ -8,15 +8,12 @@ interface ApiResponse<T> {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-  const token = localStorage.getItem('access_token')
-
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     })
@@ -25,13 +22,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
       const refreshed = await tryRefreshToken()
 
       if (refreshed) {
-        const nextToken = localStorage.getItem('access_token')
         const retryResponse = await fetch(`${API_BASE}${path}`, {
           ...options,
           credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            ...(nextToken ? { Authorization: `Bearer ${nextToken}` } : {}),
             ...options.headers,
           },
         })
@@ -96,8 +91,6 @@ function clearStoredSession(): void {
 }
 
 async function tryRefreshToken(): Promise<boolean> {
-  const refreshToken = localStorage.getItem('refresh_token')
-
   try {
     const response = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
@@ -105,7 +98,6 @@ async function tryRefreshToken(): Promise<boolean> {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
     })
 
     if (!response.ok) {

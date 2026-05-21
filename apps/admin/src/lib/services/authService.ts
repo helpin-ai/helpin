@@ -2,7 +2,7 @@ import { api } from '@/lib/api'
 import type { SigninResponse, User } from '@/lib/types'
 
 export const authService = {
-  signin: (email: string, password: string, rememberMe = false) =>
+  signin: (email: string, password: string, rememberMe = true) =>
     api.post<SigninResponse>('/auth/signin', { email, password, remember_me: rememberMe }),
   verify2FASignin: (twoFaToken: string, code: string, useRecoveryCode = false) =>
     api.post<SigninResponse>(

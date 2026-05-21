@@ -65,9 +65,7 @@ function getWSUrl(workspaceId: string): string {
 
   // Swap http(s) → ws(s) and replace trailing /api with /api/ws
   const base = API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '/api')
-  const token = localStorage.getItem('access_token')
-  const tokenParam = token ? `token=${encodeURIComponent(token)}&` : ''
-  return `${base}/ws?${tokenParam}workspace_id=${encodeURIComponent(workspaceId)}`
+  return `${base}/ws?workspace_id=${encodeURIComponent(workspaceId)}`
 }
 
 export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsPresenceSnapshot }: UseWebSocketOptions) {
