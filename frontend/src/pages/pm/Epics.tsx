@@ -522,17 +522,17 @@ function EpicFilterPill({
 
 function EpicFilterTrigger({
   definitions,
-  activeKeys,
+  visibleKeys,
   onAdd,
   activeCount,
 }: {
   definitions: EpicFilterDefinition[];
-  activeKeys: Set<EpicFilterKey>;
+  visibleKeys: Set<EpicFilterKey>;
   onAdd: (key: EpicFilterKey) => void;
   activeCount: number;
 }) {
   const [open, setOpen] = useState(false);
-  const availableDefinitions = definitions.filter((definition) => !activeKeys.has(definition.key));
+  const availableDefinitions = definitions.filter((definition) => !visibleKeys.has(definition.key));
   const canChooseFilter = availableDefinitions.length > 0;
 
   return (
@@ -1386,6 +1386,10 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     () => new Set(Object.entries(filters).filter(([, value]) => value && value.length > 0).map(([key]) => key as EpicFilterKey)),
     [filters],
   );
+  const visibleFilterKeys = useMemo(
+    () => new Set(Object.keys(filters).map((key) => key as EpicFilterKey)),
+    [filters],
+  );
 
   const updateEpicField = useCallback(
     async (epicId: string, patch: UpdateEpicRequest) => {
@@ -1815,9 +1819,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
 
   const handleAddFilter = useCallback((key: EpicFilterKey) => {
     const definition = filterDefinitions.find((item) => item.key === key);
-    const firstValue = definition?.options[0]?.value;
-    if (!firstValue) return;
-    setFilters((current) => ({ ...current, [key]: [firstValue] }));
+    if (!definition || definition.options.length === 0) return;
+    setFilters((current) => ({ ...current, [key]: current[key] ?? [] }));
   }, [filterDefinitions]);
 
   const handleToggleFilterValue = useCallback((key: EpicFilterKey, value: string) => {
@@ -1825,10 +1828,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       const nextValues = current[key]?.includes(value)
         ? current[key]!.filter((item) => item !== value)
         : [...(current[key] ?? []), value];
-      if (nextValues.length === 0) {
-        const { [key]: _removed, ...rest } = current;
-        return rest;
-      }
       return { ...current, [key]: nextValues };
     });
   }, []);
@@ -1940,7 +1939,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           </div>
           <EpicFilterTrigger
             definitions={filterDefinitions}
-            activeKeys={activeFilterKeys}
+            visibleKeys={visibleFilterKeys}
             activeCount={activeFilterKeys.size}
             onAdd={handleAddFilter}
           />
@@ -1968,10 +1967,10 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
               iconOnly
             />
           </div>
-          {activeFilterKeys.size > 0 ? (
+          {visibleFilterKeys.size > 0 ? (
             <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
               {filterDefinitions
-                .filter((definition) => activeFilterKeys.has(definition.key))
+                .filter((definition) => visibleFilterKeys.has(definition.key))
                 .map((definition) => (
                   <EpicFilterPill
                     key={definition.key}
