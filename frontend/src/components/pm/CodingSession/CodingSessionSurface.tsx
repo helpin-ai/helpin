@@ -541,6 +541,7 @@ export function CodingSessionSurface({
       )}>
         <CodingTranscriptPane
           promptArtifact={promptArtifact}
+          reviewArtifacts={activeInteraction ? reviewArtifacts : []}
           transcriptMessages={streamState.transcript_messages}
           liveAssistantMessage={streamState.live_assistant_message}
           liveReasoningMessage={streamState.live_reasoning_message}

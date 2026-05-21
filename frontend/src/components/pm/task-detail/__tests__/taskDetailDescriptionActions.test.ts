@@ -17,6 +17,7 @@ describe('TaskDetailPanel description actions', () => {
     expect(editIndex).toBeGreaterThan(-1);
     expect(doneBlock).toContain('flex justify-start');
     expect(editBlock).toContain('flex justify-start');
+    expect(editBlock).toContain('mt-3');
     expect(doneBlock).not.toContain('justify-end');
     expect(editBlock).not.toContain('justify-end');
   });

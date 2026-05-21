@@ -2,7 +2,6 @@ import type { PMView } from './pmTypes';
 
 export function getDefaultViews(currentMemberId: string): PMView[] {
   const now = new Date().toISOString();
-  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   return [
     {
@@ -12,7 +11,7 @@ export function getDefaultViews(currentMemberId: string): PMView[] {
       filters: {},
       is_shared: false,
       is_pinned: true,
-      position: -4,
+      position: -3,
       created_by: '',
       created_at: now,
       updated_at: now,
@@ -24,7 +23,7 @@ export function getDefaultViews(currentMemberId: string): PMView[] {
       filters: { owner_member_ids: currentMemberId },
       is_shared: false,
       is_pinned: true,
-      position: -3,
+      position: -2,
       created_by: '',
       created_at: now,
       updated_at: now,
@@ -34,18 +33,6 @@ export function getDefaultViews(currentMemberId: string): PMView[] {
       workspace_id: '',
       name: 'Requested by me',
       filters: { requester_member_id: currentMemberId },
-      is_shared: false,
-      is_pinned: true,
-      position: -2,
-      created_by: '',
-      created_at: now,
-      updated_at: now,
-    },
-    {
-      id: '__default_updated_last_week__',
-      workspace_id: '',
-      name: 'Updated last week',
-      filters: { updated_after: oneWeekAgo },
       is_shared: false,
       is_pinned: true,
       position: -1,

@@ -1522,6 +1522,7 @@ func createImportTestSchema(t *testing.T, db *gorm.DB) {
 			health TEXT NOT NULL,
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			orchestrator_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,

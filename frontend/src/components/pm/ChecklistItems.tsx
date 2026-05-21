@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon } from '@/lib/icons';
+import { CheckmarkSquare02Icon, DragDropVerticalIcon, PlusSignIcon, Delete01Icon, Cancel01Icon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +35,8 @@ interface ChecklistItemsProps {
   taskId: string;
   members?: AssignableMember[];
   teams?: Pick<WorkspaceTeam, 'id' | 'name' | 'handle'>[];
+  onContentChange?: (hasContent: boolean) => void;
+  onStatsChange?: (stats: { completed: number; total: number }) => void;
 }
 
 export type ChecklistMentionOption = MentionSuggestionItem;
@@ -81,7 +83,7 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-2 py-1 ${isDragging ? 'opacity-50' : ''}`}
+      className={`group flex items-center gap-2 py-0.5 ${isDragging ? 'opacity-50' : ''}`}
     >
       <input
         type="checkbox"
@@ -90,7 +92,7 @@ function SortableItem({
         className="h-3.5 w-3.5 shrink-0 rounded border-border cursor-pointer accent-primary"
       />
       <span
-        className={`min-w-0 flex-1 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-muted/30 ${
+        className={`min-w-0 flex-1 rounded-md px-1.5 py-0.5 text-sm transition-colors hover:bg-muted/30 ${
           item.completed ? 'line-through text-muted-foreground' : 'text-foreground'
         }`}
       >
@@ -159,10 +161,18 @@ function SortableItem({
   );
 }
 
-export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }: ChecklistItemsProps) {
+export function ChecklistItems({
+  workspaceId,
+  taskId,
+  members = [],
+  teams = [],
+  onContentChange,
+  onStatsChange,
+}: ChecklistItemsProps) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [newText, setNewText] = useState('');
   const [adding, setAdding] = useState(false);
+  const [addingItem, setAddingItem] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const textRef = useRef(newText);
   textRef.current = newText;
@@ -187,6 +197,18 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
   }, [workspaceId, taskId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    onContentChange?.(items.length > 0);
+    onStatsChange?.({
+      completed: items.filter((item) => item.completed).length,
+      total: items.length,
+    });
+  }, [items, onContentChange, onStatsChange]);
+
+  useEffect(() => {
+    if (addingItem) inputRef.current?.focus();
+  }, [addingItem]);
 
   // Re-fetch when another client changes checklist items
   useEffect(() => {
@@ -234,6 +256,12 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
     inputRef.current?.focus();
   };
 
+  const closeAddItemInput = () => {
+    setAddingItem(false);
+    setNewText('');
+    setMentionQuery(null);
+  };
+
   const handleToggle = async (item: ChecklistItem) => {
     const newCompleted = !item.completed;
     setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, completed: newCompleted } : i)));
@@ -277,125 +305,161 @@ export function ChecklistItems({ workspaceId, taskId, members = [], teams = [] }
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5">
-        <CheckmarkSquare02Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
-          Checklist
-          {items.length > 0 && (
-            <span className="ml-1 font-normal">
-              {completedCount}/{items.length}
+      <div className="rounded-lg border border-border/60 bg-card">
+        <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <CheckmarkSquare02Icon className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
+              Checklist
             </span>
-          )}
-        </h3>
-      </div>
-
-      {/* Progress bar */}
-      {items.length > 0 && (
-        <div className="mt-3 flex items-center gap-2">
-          <span className="w-8 text-left text-xs tabular-nums text-muted-foreground">
-            {Math.round((completedCount / items.length) * 100)}%
-          </span>
-          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full bg-green-500 transition-all duration-300"
-              style={{ width: `${(completedCount / items.length) * 100}%` }}
-            />
+            {items.length > 0 ? (
+              <span className="text-xs font-normal text-muted-foreground">
+                ({completedCount}/{items.length})
+              </span>
+            ) : null}
           </div>
         </div>
-      )}
 
-      {/* Items */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-0.5">
-            {items.map((item) => (
-              <SortableItem
-                key={item.id}
-                item={item}
-                onToggle={handleToggle}
-                onDelete={handleDelete}
-                onAssigneeChange={handleAssigneeChange}
-                members={members}
-                teams={teams}
+        {/* Progress bar */}
+        {items.length > 0 && (
+          <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
+            <span className="w-8 text-left text-xs tabular-nums text-muted-foreground">
+              {Math.round((completedCount / items.length) * 100)}%
+            </span>
+            <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-green-500 transition-all duration-300"
+                style={{ width: `${(completedCount / items.length) * 100}%` }}
               />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
-
-      {/* Add input */}
-      <div className="relative">
-        <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-background px-2.5 py-2 transition-colors focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10">
-          <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <input
-            ref={inputRef}
-            type="text"
-            value={newText}
-            placeholder="Add an item... (type @ to mention)"
-            className="min-w-0 flex-1 bg-transparent text-sm placeholder:text-muted-foreground/50 focus:outline-none"
-            disabled={adding}
-            onChange={(e) => {
-              setNewText(e.target.value);
-              detectMention(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              if (mentionQuery !== null && mentionResults.length > 0) {
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setMentionIndex((prev) => (prev + 1) % mentionResults.length);
-                  return;
-                }
-                if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setMentionIndex((prev) => (prev - 1 + mentionResults.length) % mentionResults.length);
-                  return;
-                }
-                if (e.key === 'Enter' || e.key === 'Tab') {
-                  e.preventDefault();
-                  insertMention(mentionResults[mentionIndex]);
-                  return;
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setMentionQuery(null);
-                  return;
-                }
-              }
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleAdd();
-              }
-            }}
-            onBlur={() => {
-              // Small delay to allow click on mention item.
-              setTimeout(() => setMentionQuery(null), 150);
-            }}
-          />
-          {newText.trim() && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 shrink-0 px-2 text-xs"
-              disabled={adding}
-              onClick={handleAdd}
-            >
-              Add
-            </Button>
-          )}
-        </div>
-        {/* Mention autocomplete dropdown */}
-        {mentionQuery !== null && mentionResults.length > 0 && (
-          <div className="absolute left-6 bottom-full z-50 mb-1.5 w-56 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
-            <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
-              Suggestions
-            </p>
-            <MentionSuggestionsList
-              items={mentionResults}
-              selectedIndex={mentionIndex}
-              onSelect={insertMention}
-            />
+            </div>
           </div>
         )}
+
+        {/* Items */}
+        {items.length > 0 && (
+          <div className="px-3 py-1">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-px">
+                  {items.map((item) => (
+                    <SortableItem
+                      key={item.id}
+                      item={item}
+                      onToggle={handleToggle}
+                      onDelete={handleDelete}
+                      onAssigneeChange={handleAssigneeChange}
+                      members={members}
+                      teams={teams}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </div>
+        )}
+
+        {/* Add input */}
+        <div className="relative border-t border-border/40 px-3 py-2">
+          {addingItem ? (
+            <div className="flex items-center gap-2">
+              <PlusSignIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={newText}
+                placeholder="Add an item... (type @ to mention)"
+                className="min-w-0 flex-1 bg-transparent py-1 text-sm placeholder:text-muted-foreground/50 focus:outline-none"
+                disabled={adding}
+                onChange={(e) => {
+                  setNewText(e.target.value);
+                  detectMention(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (mentionQuery !== null && mentionResults.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setMentionIndex((prev) => (prev + 1) % mentionResults.length);
+                      return;
+                    }
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setMentionIndex((prev) => (prev - 1 + mentionResults.length) % mentionResults.length);
+                      return;
+                    }
+                    if (e.key === 'Enter' || e.key === 'Tab') {
+                      e.preventDefault();
+                      insertMention(mentionResults[mentionIndex]);
+                      return;
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setMentionQuery(null);
+                      return;
+                    }
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeAddItemInput();
+                  }
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAdd();
+                  }
+                }}
+                onBlur={() => {
+                  // Small delay to allow click on mention item.
+                  setTimeout(() => setMentionQuery(null), 150);
+                }}
+              />
+              <QuickTooltip label="Close">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Close checklist item input"
+                  onClick={closeAddItemInput}
+                >
+                  <Cancel01Icon />
+                </Button>
+              </QuickTooltip>
+              {newText.trim() && (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  disabled={adding}
+                  onClick={handleAdd}
+                >
+                  <PlusSignIcon />
+                  Add item
+                </Button>
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
+              onClick={() => setAddingItem(true)}
+            >
+              <PlusSignIcon className="h-3 w-3" />
+              Add item
+            </button>
+          )}
+          {/* Mention autocomplete dropdown */}
+          {mentionQuery !== null && mentionResults.length > 0 && (
+            <div className="absolute left-6 bottom-full z-50 mb-1.5 w-56 max-h-[260px] overflow-y-auto rounded-xl border border-border/60 bg-popover p-1.5 shadow-lg">
+              <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+                Suggestions
+              </p>
+              <MentionSuggestionsList
+                items={mentionResults}
+                selectedIndex={mentionIndex}
+                onSelect={insertMention}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

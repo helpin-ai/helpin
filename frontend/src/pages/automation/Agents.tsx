@@ -26,6 +26,7 @@ import {
   SecurityCheckIcon,
 } from '@/lib/icons';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { ToolMultiSelectPopover } from '@/components/automation/ToolMultiSelectPopover';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useTitle } from '@/hooks/useTitle';
@@ -62,9 +63,7 @@ import type {
   CreateWorkspaceAgentPresetVersionRequest,
   GitRepository,
   UpdateWorkspaceAgentPresetVersionRequest,
-  CreateAgentRequest,
   SkillCatalogResponse,
-  ToolCatalogEntry,
   ToolCatalogResponse,
   UpdateAgentRequest,
   WorkflowWithStates,
@@ -125,6 +124,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { CustomAgentCreatePanel } from './CustomAgentCreatePanel';
+import {
+  buildCustomAgentCreatePayload,
+  createDefaultCustomAgentForm,
+} from './customAgentCreateModel';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -165,7 +169,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     supported_modes: ['autonomous', 'interactive'],
   },
   crm_operator: {
-    label: 'CRM Operator',
+    label: 'Beacon',
     description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
@@ -176,6 +180,13 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
     description: 'Handles support conversations and drafts replies with review controls.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  documentation_agent: {
+    label: 'Quill',
+    description: 'Keeps internal docs, public help docs, and API docs accurate and organized.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
   code_builder: {
@@ -223,9 +234,9 @@ const INVOCATION_MODE_LABELS: Record<AgentInvocationMode, string> = {
 };
 
 const APPROVAL_MODE_OPTIONS: { value: AgentApprovalMode; label: string; description: string }[] = [
-  { value: 'preset_default', label: 'Preset Default', description: 'Uses the standard setting for this agent preset' },
-  { value: 'never', label: 'No — run immediately', description: 'Agent starts working right away without waiting' },
-  { value: 'always', label: 'Yes — always review first', description: 'A team member must approve before the agent runs' },
+  { value: 'always', label: 'Require approval before each run', description: 'A team member must approve each run before the agent starts.' },
+  { value: 'never', label: 'Start runs automatically', description: 'Runs start without the initial approval gate.' },
+  { value: 'preset_default', label: 'Use runtime default', description: 'Uses the default approval behavior for this agent profile.' },
 ];
 
 const EMPTY_STATE_CARDS = [
@@ -369,6 +380,8 @@ interface AgentFormData {
   instruction_skills: string[];
   monthly_token_budget: string;
   team_id: string;
+  teamAccessMode: 'all_teams' | 'specific_teams';
+  team_ids: string[];
   allowed_targets: AgentTargetType[];
   allowed_tools: string[];
   skills: AgentSkillRef[];
@@ -623,6 +636,19 @@ function normalizeToolList(tools: string[]): string[] {
   }, []);
 }
 
+function normalizeTeamIdList(teamIds: string[]): string[] {
+  const seen = new Set<string>();
+  return teamIds.reduce<string[]>((result, teamId) => {
+    const normalized = teamId.trim();
+    if (!normalized || seen.has(normalized)) {
+      return result;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+    return result;
+  }, []);
+}
+
 function normalizeTargetList(targets: AgentTargetType[]): AgentTargetType[] {
   const seen = new Set<AgentTargetType>();
   return targets.reduce<AgentTargetType[]>((result, target) => {
@@ -658,28 +684,7 @@ function defaultRunNowTarget(agent: Agent | null): AgentTargetType | '' {
 }
 
 function createEmptyCustomForm(): AgentFormData {
-  return {
-    name: '',
-    preset_key: DEFAULT_SYSTEM_PRESET_KEY,
-    preset_version_key: fallbackPresetVersionKey(DEFAULT_SYSTEM_PRESET_KEY),
-    runtime_kind: 'opencode',
-    supported_modes: ['autonomous'],
-    provider: 'anthropic',
-    model: '',
-    reasoning_effort: '',
-    service_tier: '',
-    system_prompt: '',
-    instruction_preamble: '',
-    instruction_skills: [],
-    monthly_token_budget: '',
-    team_id: '',
-    allowed_targets: ['task'],
-    allowed_tools: [],
-    skills: [],
-    approval_mode: 'never',
-    max_concurrent_runs: '1',
-    default_invocation_mode: 'autonomous',
-  };
+  return createDefaultCustomAgentForm();
 }
 
 function deriveExecutionConfigFields(
@@ -747,37 +752,6 @@ function hasConfiguredAdvancedFields(agent: Agent | null, presets: AgentPresetDe
   );
 }
 
-function buildCreatePayload(workspaceId: string, form: AgentFormData, advancedOpen: boolean): CreateAgentRequest {
-  const defaultRuntimeKind: AgentRuntimeKind = 'opencode';
-  const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
-  return {
-    workspace_id: workspaceId,
-    name: form.name.trim(),
-    provider,
-    model: form.model.trim() || undefined,
-    execution_config: buildExecutionConfigPayload(form),
-    system_prompt: form.system_prompt.trim() || undefined,
-    trigger_mode: 'manual',
-    team_id: form.team_id,
-    allowed_tools: normalizeToolList(form.allowed_tools),
-    skills: form.skills.length > 0 ? form.skills : undefined,
-    allowed_targets: normalizeTargetList(form.allowed_targets),
-    approval_mode: form.approval_mode,
-    max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
-    default_invocation_mode: form.default_invocation_mode,
-    ...(advancedOpen
-      ? {
-          runtime_kind: form.runtime_kind,
-          monthly_token_budget: form.monthly_token_budget.trim()
-            ? Number.parseInt(form.monthly_token_budget, 10)
-            : 0,
-        }
-      : form.runtime_kind !== defaultRuntimeKind
-        ? { runtime_kind: form.runtime_kind }
-        : {}),
-  };
-}
-
 function buildUpdatePayload(
   form: AgentFormData,
   advancedOpen: boolean,
@@ -787,42 +761,51 @@ function buildUpdatePayload(
   const preset = agent?.is_system ? presetMetaForSelection(form.preset_key, form.preset_version_key, presets) : null;
   const defaultRuntimeKind = agent?.is_system
     ? (preset?.runtime_kind ?? presetFallback(form.preset_key).runtime_kind)
-    : 'opencode';
+    : 'native_sdk';
   const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
-  const payload: UpdateAgentRequest = {
+  const teamIds = form.teamAccessMode === 'specific_teams' ? normalizeTeamIdList(form.team_ids) : [];
+  const advancedPayload: UpdateAgentRequest = advancedOpen
+    ? {
+        runtime_kind: form.runtime_kind,
+        monthly_token_budget: form.monthly_token_budget.trim()
+          ? Number.parseInt(form.monthly_token_budget, 10)
+          : 0,
+      }
+    : form.runtime_kind !== defaultRuntimeKind
+      ? { runtime_kind: form.runtime_kind }
+      : {};
+
+  if (agent?.is_system) {
+    return {
+      name: form.name.trim(),
+      preset_key: form.preset_key,
+      preset_version_key: form.preset_version_key,
+      provider: provider || undefined,
+      model: form.model.trim(),
+      execution_config: buildExecutionConfigPayload(form),
+      monthly_token_budget: form.monthly_token_budget.trim()
+        ? Number.parseInt(form.monthly_token_budget, 10)
+        : 0,
+      ...advancedPayload,
+    };
+  }
+
+  return {
     name: form.name.trim(),
     trigger_mode: 'manual',
     provider: provider || undefined,
     model: form.model.trim(),
     execution_config: buildExecutionConfigPayload(form),
     system_prompt: form.system_prompt.trim() || undefined,
-    team_id: form.team_id,
+    team_ids: teamIds,
     allowed_tools: normalizeToolList(form.allowed_tools),
+    allowed_targets: normalizeTargetList(form.allowed_targets),
+    skills: form.skills,
     approval_mode: form.approval_mode,
     max_concurrent_runs: form.max_concurrent_runs ? Number.parseInt(form.max_concurrent_runs, 10) : 1,
     default_invocation_mode: form.default_invocation_mode,
-    ...(advancedOpen
-      ? {
-          runtime_kind: form.runtime_kind,
-          monthly_token_budget: form.monthly_token_budget.trim()
-            ? Number.parseInt(form.monthly_token_budget, 10)
-            : 0,
-        }
-      : form.runtime_kind !== defaultRuntimeKind
-        ? { runtime_kind: form.runtime_kind }
-        : {}),
+    ...advancedPayload,
   };
-  if (agent?.is_system) {
-    payload.preset_key = form.preset_key;
-    payload.preset_version_key = form.preset_version_key;
-    payload.monthly_token_budget = form.monthly_token_budget.trim()
-      ? Number.parseInt(form.monthly_token_budget, 10)
-      : 0;
-  } else {
-    payload.allowed_targets = normalizeTargetList(form.allowed_targets);
-    payload.skills = form.skills;
-  }
-  return payload;
 }
 
 function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): AgentFormData {
@@ -859,6 +842,8 @@ function buildSystemAgentForm(agent: Agent, presets: AgentPresetDefinition[]): A
     instruction_skills: preset?.instruction_skills ?? [],
     monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
     team_id: '',
+    teamAccessMode: 'all_teams',
+    team_ids: [],
     allowed_targets: normalizeTargetList(
       agent.allowed_targets?.length
         ? (agent.allowed_targets as AgentTargetType[])
@@ -893,6 +878,8 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
     instruction_skills: [],
     monthly_token_budget: template.monthly_token_budget?.toString() ?? '',
     team_id: '',
+    teamAccessMode: 'all_teams',
+    team_ids: [],
     allowed_targets: normalizeTargetList(template.allowed_targets ?? ['task']),
     allowed_tools: normalizeToolList(template.allowed_tools ?? []),
     skills: template.skills ?? [],
@@ -900,6 +887,82 @@ function buildTemplateAgentForm(template: AgentTemplate): AgentFormData {
     max_concurrent_runs: '1',
     default_invocation_mode: normalizeDefaultInvocationMode(template.default_invocation_mode, runtimeKind, 'autonomous'),
   };
+}
+
+function buildCustomAgentForm(agent: Agent): AgentFormData {
+  const presetKey = fallbackPresetKey(agent);
+  const runtimeKind = agent.runtime_kind;
+  return {
+    name: agent.name,
+    preset_key: presetKey,
+    preset_version_key: fallbackPresetVersionKey(presetKey),
+    runtime_kind: runtimeKind,
+    supported_modes: supportedModesForForm(runtimeKind),
+    provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
+    model: agent.model ?? '',
+    ...deriveExecutionConfigFields(
+      runtimeKind,
+      normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
+      agent.execution_config,
+    ),
+    system_prompt: agent.system_prompt ?? '',
+    instruction_preamble: '',
+    instruction_skills: [],
+    monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
+    team_id: agent.team_id ?? '',
+    teamAccessMode: agent.team_ids?.length || agent.team_id ? 'specific_teams' : 'all_teams',
+    team_ids: agent.team_ids?.length ? agent.team_ids : agent.team_id ? [agent.team_id] : [],
+    allowed_targets: normalizeTargetList(agent.allowed_targets as AgentTargetType[]),
+    allowed_tools: normalizeToolList(agent.allowed_tools),
+    skills: agent.skills ?? [],
+    approval_mode: agent.approval_mode ?? 'preset_default',
+    max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
+    default_invocation_mode: normalizeDefaultInvocationMode(agent.default_invocation_mode, runtimeKind),
+  };
+}
+
+function comparableCustomAgentForm(form: AgentFormData) {
+  const provider = normalizeProviderForRuntime(form.runtime_kind, form.provider);
+  const teamIDs = form.teamAccessMode === 'specific_teams'
+    ? normalizeTeamIdList(form.team_ids.length > 0 ? form.team_ids : form.team_id ? [form.team_id] : [])
+    : [];
+  return {
+    name: form.name.trim(),
+    runtime_kind: form.runtime_kind,
+    provider,
+    model: form.model.trim(),
+    reasoning_effort: form.runtime_kind === 'codex' ? form.reasoning_effort : '',
+    service_tier: form.runtime_kind === 'codex' && provider === 'openai' ? form.service_tier : '',
+    system_prompt: form.system_prompt.trim(),
+    monthly_token_budget: normalizeTokenBudgetFormValue(form.monthly_token_budget),
+    team_ids: teamIDs,
+    allowed_targets: normalizeTargetList(form.allowed_targets).sort(),
+    allowed_tools: normalizeToolList(form.allowed_tools).sort(),
+    skills: [...form.skills]
+      .map((skill) => ({
+        key: skill.key,
+        skill_id: skill.skill_id ?? '',
+        version_key: skill.version_key ?? '',
+      }))
+      .sort((a, b) => `${a.key}:${a.skill_id}:${a.version_key}`.localeCompare(`${b.key}:${b.skill_id}:${b.version_key}`)),
+    approval_mode: form.approval_mode,
+    max_concurrent_runs: normalizePositiveIntegerFormValue(form.max_concurrent_runs, 1),
+    default_invocation_mode: form.default_invocation_mode,
+  };
+}
+
+function customAgentFormDirtyKey(form: AgentFormData) {
+  return JSON.stringify(comparableCustomAgentForm(form));
+}
+
+function normalizeTokenBudgetFormValue(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function normalizePositiveIntegerFormValue(value: string, fallback: number) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function competitiveIntelCompetitorsFromText(value: string) {
@@ -1081,108 +1144,6 @@ function DrawerConfigSection({
         </div>
       </Collapsible.Content>
     </Collapsible.Root>
-  );
-}
-
-function ToolMultiSelectPopover({
-  open,
-  onOpenChange,
-  tools,
-  selectedTools,
-  disabled,
-  onToggleTool,
-  onClearTools,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  tools: ToolCatalogEntry[];
-  selectedTools: string[];
-  disabled?: boolean;
-  onToggleTool: (toolName: string) => void;
-  onClearTools: () => void;
-}) {
-  const selectedSet = new Set(selectedTools);
-
-  return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 px-2 text-[11px]"
-          disabled={tools.length === 0 || disabled}
-        >
-          <PlusSignIcon className="h-3.5 w-3.5" />
-          Select tools
-          {selectedTools.length > 0 && (
-            <span className="rounded-full bg-muted px-1.5 py-0 text-[10px] text-muted-foreground">
-              {selectedTools.length}
-            </span>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-[28rem] overflow-hidden p-0"
-        onWheelCapture={(event) => event.stopPropagation()}
-      >
-        <Command>
-          <CommandInput placeholder="Search tools..." />
-          <CommandList className="max-h-72 overscroll-contain">
-            <CommandEmpty>
-              {tools.length === 0 ? 'Tool catalog unavailable.' : 'No tools match.'}
-            </CommandEmpty>
-            <CommandGroup heading={`${selectedTools.length} selected`}>
-              {tools.map((tool) => {
-                const selected = selectedSet.has(tool.name);
-                return (
-                  <CommandItem
-                    key={tool.name}
-                    value={`${tool.name} ${tool.category} ${tool.description}`}
-                    onSelect={() => onToggleTool(tool.name)}
-                    data-checked={selected ? 'true' : undefined}
-                    aria-label={`${selected ? 'Remove' : 'Add'} ${tool.name}`}
-                    className="cursor-pointer items-start py-2"
-                  >
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-foreground">{tool.name}</span>
-                        <Badge variant="outline" className="text-[10px]">
-                          {tool.category}
-                        </Badge>
-                      </div>
-                      <p className="text-xs leading-relaxed text-muted-foreground">{tool.description}</p>
-                    </div>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-        <div className="flex items-center justify-between border-t border-border/60 px-2 py-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-[11px] text-muted-foreground"
-            onClick={onClearTools}
-            disabled={selectedTools.length === 0}
-          >
-            Clear
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 px-2 text-[11px]"
-            onClick={() => onOpenChange(false)}
-          >
-            Done
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -1392,11 +1353,7 @@ function agentRoleLabel(agent: Agent, presets: AgentPresetDefinition[]) {
   if (agent.is_system) {
     return presetLabel(fallbackPresetKey(agent), presets);
   }
-  if (agent.source_template_key === 'release_notes_writer') {
-    return 'Release Notes Writer';
-  }
-  const role = agent.role?.trim();
-  return role || 'Custom agent';
+  return 'Custom agent';
 }
 
 function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
@@ -1411,10 +1368,7 @@ function agentPurpose(agent: Agent, presets: AgentPresetDefinition[]) {
       'Built-in workspace agent.',
     );
   }
-  return trimSummaryText(
-    agent.planning_notes || agent.system_prompt || agent.role,
-    'Custom agent for workspace-specific execution.',
-  );
+  return 'Custom agent';
 }
 
 // An empty model resolves to "Auto" (the runtime picks a default). That is a
@@ -1441,6 +1395,20 @@ function formatLastRunTime(run?: AgentRun) {
   if (!run) return 'Never';
   const date = run.completed_at || run.started_at || run.created_at;
   return formatDistanceToNow(new Date(date), { addSuffix: true });
+}
+
+function formatAgentTimestamp(value?: string) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return formatDistanceToNow(date, { addSuffix: true });
+}
+
+function formatAgentTimestampTitle(value?: string) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toLocaleString();
 }
 
 function lastRunStatusLabel(run?: AgentRun) {
@@ -1619,6 +1587,10 @@ function FlowRefs({
   );
 }
 
+function agentFlowUsages(usage?: AgentTriggerUsageSummary | null) {
+  return (usage?.items ?? []).filter((item) => item.reference_type === 'automation_rule' && item.reference_id);
+}
+
 function RunBars5({ statuses }: { statuses: AgentRun['status'][] }) {
   const values = statuses.length > 0 ? statuses : ['queued', 'queued', 'queued', 'queued', 'queued'];
   return (
@@ -1650,7 +1622,9 @@ function AgentCard({
   onOpen,
   onOpenRun,
   onRunNow,
+  onDelete,
   canEdit,
+  workspaceSlug,
 }: {
   agent: Agent;
   stats?: AgentRunStats;
@@ -1659,7 +1633,9 @@ function AgentCard({
   onOpen: (agent: Agent) => void;
   onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
+  onDelete: (agent: Agent) => void;
   canEdit: boolean;
+  workspaceSlug?: string;
 }) {
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
@@ -1681,11 +1657,47 @@ function AgentCard({
               <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
               <AgentStatusBadge stats={stats} onOpenRun={onOpenRun} />
               {agent.is_system ? <Badge variant="outline" className="text-[10px]">System</Badge> : null}
-              {agent.source_template_key ? <Badge variant="secondary" className="text-[10px]">Template</Badge> : null}
             </div>
             <p className="text-xs text-muted-foreground">{role}</p>
             <p className="line-clamp-2 text-sm text-muted-foreground">{purpose}</p>
           </div>
+          {canEdit ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground"
+                  aria-label="More agent actions"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <MoreHorizontalIcon className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                <DropdownMenuItem asChild>
+                  <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, agent_id: agent.id })}>View runs</a>
+                </DropdownMenuItem>
+                {stats?.lastRun ? (
+                  <DropdownMenuItem onClick={() => onOpenRun(stats.lastRun!.id)}>
+                    Open latest run
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onClick={() => onOpen(agent)}>
+                  Edit
+                </DropdownMenuItem>
+                {!agent.is_system ? (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDelete(agent)}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
@@ -1796,15 +1808,19 @@ export function AgentActions({
   agent,
   stats,
   workspaceSlug,
+  onOpen,
   onOpenRun,
   onRunNow,
+  onDelete,
   canEdit,
 }: {
   agent: Agent;
   stats?: AgentRunStats;
   workspaceSlug?: string;
+  onOpen: (agent: Agent) => void;
   onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
+  onDelete: (agent: Agent) => void;
   canEdit: boolean;
 }) {
   const canRunNow = !agent.is_system && canEdit;
@@ -1845,14 +1861,27 @@ export function AgentActions({
           align="end"
           onClick={(event) => event.stopPropagation()}
         >
+          <DropdownMenuItem asChild>
+            <a href={runsPath}>View runs</a>
+          </DropdownMenuItem>
+          {canEdit ? (
+            <DropdownMenuItem onClick={() => onOpen(agent)}>
+              Edit
+            </DropdownMenuItem>
+          ) : null}
           {stats?.lastRun ? (
             <DropdownMenuItem onClick={() => onOpenRun(stats.lastRun!.id)}>
               Open latest run
             </DropdownMenuItem>
           ) : null}
-          <DropdownMenuItem asChild>
-            <a href={runsPath}>View runs</a>
-          </DropdownMenuItem>
+          {canEdit && !agent.is_system ? (
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => onDelete(agent)}
+            >
+              Delete
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -1867,6 +1896,7 @@ function AgentRow({
   onOpen,
   onOpenRun,
   onRunNow,
+  onDelete,
   canEdit,
   workspaceSlug,
 }: {
@@ -1877,6 +1907,7 @@ function AgentRow({
   onOpen: (agent: Agent) => void;
   onOpenRun: (runId: string) => void;
   onRunNow: (agent: Agent) => void;
+  onDelete: (agent: Agent) => void;
   canEdit: boolean;
   workspaceSlug?: string;
 }) {
@@ -1905,7 +1936,6 @@ function AgentRow({
             <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5">
               <span className="truncate text-xs text-muted-foreground">{role}</span>
               {agent.is_system ? <Badge variant="outline" className="h-5 px-1.5 text-[10px]">System</Badge> : null}
-              {agent.source_template_key ? <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">Template</Badge> : null}
             </div>
           </div>
         </div>
@@ -1950,8 +1980,10 @@ function AgentRow({
         agent={agent}
         stats={stats}
         workspaceSlug={workspaceSlug}
+        onOpen={onOpen}
         onOpenRun={onOpenRun}
         onRunNow={onRunNow}
+        onDelete={onDelete}
         canEdit={canEdit}
       />
     </div>
@@ -1990,7 +2022,7 @@ export function AgentsPage() {
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [runStats, setRunStats] = useState<Record<string, AgentRunStats>>({});
   const [agentUsageMap, setAgentUsageMap] = useState<Record<string, AgentTriggerUsageSummary | null>>({});
-  const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
+  const agentTemplates: AgentTemplate[] = [];
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [templateSetupDialogOpen, setTemplateSetupDialogOpen] = useState(false);
   const [templateDraft, setTemplateDraft] = useState<TemplateDraft | null>(null);
@@ -2050,6 +2082,7 @@ export function AgentsPage() {
   const [systemPromptEditorOpen, setSystemPromptEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [discardCustomEditConfirmOpen, setDiscardCustomEditConfirmOpen] = useState(false);
   const [versionDraftOpen, setVersionDraftOpen] = useState(false);
   const [versionLabelDraft, setVersionLabelDraft] = useState('');
   const [versionDescriptionDraft, setVersionDescriptionDraft] = useState('');
@@ -2111,14 +2144,6 @@ export function AgentsPage() {
     const res = await automationService.listSkillCatalog(workspaceId);
     if (!res.error && res.data) {
       setSkillCatalog(res.data);
-    }
-  }, [workspaceId]);
-
-  const loadAgentTemplates = useCallback(async () => {
-    if (!workspaceId) return;
-    const res = await automationService.listAgentTemplates(workspaceId);
-    if (!res.error) {
-      setAgentTemplates(res.data ?? []);
     }
   }, [workspaceId]);
 
@@ -2290,8 +2315,7 @@ export function AgentsPage() {
     loadPresets();
     loadToolCatalog();
     loadSkillCatalog();
-    loadAgentTemplates();
-  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog, loadAgentTemplates]);
+  }, [loadAgents, loadProviderOptions, loadPresets, loadToolCatalog, loadSkillCatalog]);
 
   const loadFleetData = useCallback(async () => {
     if (!workspaceId || agents.length === 0) {
@@ -2387,13 +2411,6 @@ export function AgentsPage() {
     setTemplateSetupDialogOpen(false);
     setForm(createEmptyCustomForm());
     setDialogOpen(true);
-  };
-
-  const openTemplateLibrary = async () => {
-    setTemplateDialogOpen(true);
-    if (agentTemplates.length === 0) {
-      await loadAgentTemplates();
-    }
   };
 
   const openCreateFromTemplateDrawer = async (template: AgentTemplate) => {
@@ -2603,34 +2620,14 @@ export function AgentsPage() {
       setDialogOpen(false);
       return;
     }
-    const presetKey = fallbackPresetKey(agent);
-    const runtimeKind = agent.runtime_kind;
-    setForm({
-      name: agent.name,
-      preset_key: presetKey,
-      preset_version_key: fallbackPresetVersionKey(presetKey),
-      runtime_kind: runtimeKind,
-      supported_modes: supportedModesForForm(runtimeKind),
-      provider: normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
-      model: agent.model ?? '',
-      ...deriveExecutionConfigFields(
-        runtimeKind,
-        normalizeProviderForRuntime(runtimeKind, agent.provider ?? 'anthropic'),
-        agent.execution_config,
-      ),
-      system_prompt: agent.system_prompt ?? '',
-      instruction_preamble: '',
-      instruction_skills: [],
-      monthly_token_budget: agent.monthly_token_budget?.toString() ?? '',
-      team_id: agent.team_id ?? '',
-      allowed_targets: normalizeTargetList(agent.allowed_targets as AgentTargetType[]),
-      allowed_tools: normalizeToolList(agent.allowed_tools),
-      skills: agent.skills ?? [],
-      approval_mode: agent.approval_mode ?? 'preset_default',
-      max_concurrent_runs: agent.max_concurrent_runs?.toString() ?? '1',
-      default_invocation_mode: normalizeDefaultInvocationMode(agent.default_invocation_mode, runtimeKind),
-    });
+    setForm(buildCustomAgentForm(agent));
     setDialogOpen(true);
+  };
+
+  const openDeleteDialog = (agent: Agent) => {
+    if (agent.is_system) return;
+    setEditingAgent(agent);
+    setDeleteConfirmOpen(true);
   };
 
   const handleSave = async () => {
@@ -2832,7 +2829,7 @@ export function AgentsPage() {
           toast.error('Failed to create agent from template', { description: res.error });
         }
       } else {
-        const payload = buildCreatePayload(workspaceId, form, advancedOpen);
+        const payload = buildCustomAgentCreatePayload(workspaceId, form, advancedOpen);
         const res = await automationService.createAgent(workspaceId, payload);
         if (!res.error) {
           setDialogOpen(false);
@@ -2972,10 +2969,25 @@ export function AgentsPage() {
   const handleDelete = async () => {
     if (!workspaceId || !editingAgent) return;
     setSaving(true);
+    const flows = agentFlowUsages(agentUsageMap[editingAgent.id]);
+    for (const flow of flows) {
+      if (!flow.reference_id) continue;
+      const flowRes = await automationService.deleteFlow(workspaceId, flow.reference_id);
+      if (flowRes.error) {
+        toast.error('Failed to delete linked flow', { description: flowRes.error });
+        setSaving(false);
+        return;
+      }
+    }
     const res = await automationService.deleteAgent(workspaceId, editingAgent.id);
     if (!res.error) {
       setDialogOpen(false);
+      setDeleteConfirmOpen(false);
+      setEditingAgent(null);
       await loadAgents();
+      toast.success(flows.length > 0 ? 'Agent and flows deleted' : 'Agent deleted');
+    } else {
+      toast.error('Failed to delete agent', { description: res.error });
     }
     setSaving(false);
   };
@@ -2991,11 +3003,14 @@ export function AgentsPage() {
     return accessibleTeamIds.has(agent.team_id);
   });
   const sortedAgents = [...visibleAgents].sort((left, right) => {
+    if (left.is_system !== right.is_system) return left.is_system ? -1 : 1;
     const leftAttention = needsAttention(left, runStats[left.id]) ? 1 : 0;
     const rightAttention = needsAttention(right, runStats[right.id]) ? 1 : 0;
     if (leftAttention !== rightAttention) return rightAttention - leftAttention;
     return left.name.localeCompare(right.name);
   });
+  const deleteAgentFlows = editingAgent ? agentFlowUsages(agentUsageMap[editingAgent.id]) : [];
+  const deleteAgentFlowCount = deleteAgentFlows.length;
   const runNowTargets = runNowTargetOptions(runNowAgent);
   const runnableRepositories = repositories.filter((repo) => repo.selected && repo.active && !repo.archived);
   const selectedRunNowRepository = repositories.find((repo) => repo.id === runNowTargetId);
@@ -3041,6 +3056,8 @@ export function AgentsPage() {
   const supportsReasoningEffort = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_reasoning_effort);
   const supportsServiceTier = form.runtime_kind === 'codex' && Boolean(selectedProviderOption?.supports_service_tier);
   const codexUsesPresetCapabilities = form.runtime_kind === 'codex';
+  const isBlankCustomCreate = !editingAgent && !templateDraft;
+  const isCustomEdit = Boolean(editingAgent && !editingAgent.is_system && !templateDraft);
   const isTemplateCreate = Boolean(templateDraft && !editingAgent);
   const createDrawerTitle = editingAgent
     ? 'Edit Custom Agent'
@@ -3092,9 +3109,32 @@ export function AgentsPage() {
     return missing;
   })();
   const createDrawerReady = createDrawerMissingRequirements.length === 0;
+  const customEditHasChanges = useMemo(() => {
+    if (!editingAgent || editingAgent.is_system) return true;
+    return customAgentFormDirtyKey(form) !== customAgentFormDirtyKey(buildCustomAgentForm(editingAgent));
+  }, [editingAgent, form]);
+  const createDrawerCanSave = createDrawerReady && (!editingAgent || editingAgent.is_system || customEditHasChanges);
+  const closeCustomAgentDrawer = useCallback(() => {
+    setDialogOpen(false);
+    setToolPickerOpen(false);
+    setSkillPickerOpen(false);
+    setSystemPromptEditorOpen(false);
+    setTemplateSetupDialogOpen(false);
+    setTemplateDraft(null);
+    setDocsCollections([]);
+  }, []);
+  const requestCloseCustomAgentDrawer = useCallback(() => {
+    if (editingAgent && !editingAgent.is_system && customEditHasChanges) {
+      setDiscardCustomEditConfirmOpen(true);
+      return;
+    }
+    closeCustomAgentDrawer();
+  }, [closeCustomAgentDrawer, customEditHasChanges, editingAgent]);
   const createDrawerStatus = createDrawerReady
     ? editingAgent
-      ? 'Ready to save'
+      ? customEditHasChanges || editingAgent.is_system
+        ? 'Ready to save'
+        : 'No changes to save'
       : starterFlowEnabled
         ? 'Ready to create agent and automation flow'
         : 'Ready to create agent'
@@ -3124,12 +3164,6 @@ export function AgentsPage() {
     setForm((current) => ({
       ...current,
       allowed_tools: current.allowed_tools.filter((tool) => tool !== toolName),
-    }));
-  };
-  const clearTools = () => {
-    setForm((current) => ({
-      ...current,
-      allowed_tools: [],
     }));
   };
   const skillCatalogEntries = skillCatalog?.skills ?? [];
@@ -3223,16 +3257,10 @@ export function AgentsPage() {
               </button>
             </div>
             {canEdit && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => void openTemplateLibrary()}>
-                  <BookOpen01Icon className="mr-1.5 h-4 w-4" />
-                  Use Template
-                </Button>
-                <Button size="sm" onClick={openCreateDialog}>
-                  <PlusSignIcon className="mr-1.5 h-4 w-4" />
-                  New Custom Agent
-                </Button>
-              </>
+              <Button size="sm" onClick={openCreateDialog}>
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
+                New Custom Agent
+              </Button>
             )}
           </div>
         )}
@@ -3253,10 +3281,6 @@ export function AgentsPage() {
           </p>
           {canEdit && (
             <div className="mb-8 flex flex-wrap items-center justify-center gap-2">
-              <Button variant="outline" className="gap-2" onClick={() => void openTemplateLibrary()}>
-                <BookOpen01Icon className="h-4 w-4" />
-                Use Template
-              </Button>
               <Button className="gap-2" onClick={openCreateDialog}>
                 <PlusSignIcon className="h-4 w-4" />
                 New Custom Agent
@@ -3289,6 +3313,7 @@ export function AgentsPage() {
               onOpen={openEditDialog}
               onOpenRun={openRunDetails}
               onRunNow={openRunNowDialog}
+              onDelete={openDeleteDialog}
               canEdit={canEdit}
               workspaceSlug={workspace?.slug}
             />
@@ -3308,7 +3333,9 @@ export function AgentsPage() {
               onOpen={openEditDialog}
               onOpenRun={openRunDetails}
               onRunNow={openRunNowDialog}
+              onDelete={openDeleteDialog}
               canEdit={canEdit}
+              workspaceSlug={workspace?.slug}
             />
           ))}
         </div>
@@ -4071,7 +4098,6 @@ export function AgentsPage() {
                             selectedTools={form.allowed_tools}
                             disabled={codexUsesPresetCapabilities || systemVersionReadOnly}
                             onToggleTool={toggleTool}
-                            onClearTools={clearTools}
                           />
                       </div>
                       {form.allowed_tools.length > 0 ? (
@@ -4175,8 +4201,8 @@ export function AgentsPage() {
                         return (
                           <p className="text-[11px] text-muted-foreground">
                             {budget > 0
-                              ? `$${used.toLocaleString()} of $${budget.toLocaleString()} this month (${pct}%)`
-                              : `$${used.toLocaleString()} spent this month · no limit set`}
+                              ? `${used.toLocaleString()} of ${budget.toLocaleString()} tokens this month (${pct}%)`
+                              : `${used.toLocaleString()} tokens used this month · no limit set`}
                           </p>
                         );
                       })()}
@@ -4201,11 +4227,11 @@ export function AgentsPage() {
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {[
                         { label: 'No limit', value: '' },
-                        { label: '$50', value: '50' },
-                        { label: '$100', value: '100' },
-                        { label: '$250', value: '250' },
-                        { label: '$500', value: '500' },
-                        { label: '$1,000', value: '1000' },
+                        { label: '50K', value: '50000' },
+                        { label: '100K', value: '100000' },
+                        { label: '250K', value: '250000' },
+                        { label: '500K', value: '500000' },
+                        { label: '1M', value: '1000000' },
                       ].map((preset) => {
                         const isActive = form.monthly_token_budget === preset.value;
                         return (
@@ -5115,19 +5141,42 @@ export function AgentsPage() {
       <Sheet
         open={dialogOpen}
         onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) {
-            setToolPickerOpen(false);
-            setSkillPickerOpen(false);
-            setSystemPromptEditorOpen(false);
-            setTemplateSetupDialogOpen(false);
-            setTemplateDraft(null);
-            setDocsCollections([]);
+          if (open) {
+            setDialogOpen(true);
+            return;
           }
+          requestCloseCustomAgentDrawer();
         }}
       >
-        <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]">
-          <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
+        <SheetContent
+          side="right"
+          className={cn(
+            'w-full gap-0 p-0',
+            isBlankCustomCreate
+              ? 'data-[side=right]:w-full data-[side=right]:sm:w-[880px] data-[side=right]:!max-w-[880px]'
+              : 'data-[side=right]:w-[88vw] data-[side=right]:sm:max-w-[88vw] xl:data-[side=right]:w-[1280px] xl:data-[side=right]:max-w-[1280px]',
+          )}
+        >
+          {isBlankCustomCreate || isCustomEdit ? (
+            <CustomAgentCreatePanel
+              workspaceId={workspaceId ?? ''}
+              form={form}
+              onChange={setForm}
+              teams={visibleTeams}
+              tools={toolCatalogEntries}
+              skills={skillCatalogEntries}
+              providerOptions={visibleProviderOptions}
+              advancedOpen={advancedOpen}
+              onAdvancedOpenChange={setAdvancedOpen}
+              onCreate={handleSave}
+              saving={saving}
+              mode={isCustomEdit ? 'edit' : 'create'}
+              canSave={isCustomEdit ? customEditHasChanges : undefined}
+              statusText={isCustomEdit ? (customEditHasChanges ? 'Unsaved changes' : 'No changes to save') : undefined}
+            />
+          ) : (
+            <>
+              <SheetHeader className="border-b border-border/60 bg-muted/20 py-4 pl-6 pr-14">
             <div className="flex items-center gap-4">
               <AgentAvatar agent={editingAgent ?? undefined} className="h-11 w-11 shrink-0 rounded-none border-0 bg-transparent shadow-none" genericBare />
               <div className="min-w-0 flex-1">
@@ -5167,12 +5216,12 @@ export function AgentsPage() {
                   </div>
                   <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-right">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Status</p>
-                    <p className={cn('text-xs font-medium', createDrawerReady ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400')}>
-                      {createDrawerReady ? 'Ready' : `${createDrawerMissingRequirements.length} missing`}
+                    <p className={cn('text-xs font-medium', createDrawerCanSave ? 'text-emerald-700 dark:text-emerald-400' : createDrawerReady ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400')}>
+                      {createDrawerCanSave ? 'Ready' : createDrawerReady ? 'No changes' : `${createDrawerMissingRequirements.length} missing`}
                     </p>
                   </div>
                 </div>
-                <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-3 lg:grid-cols-6">
+                <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-4 lg:grid-cols-8">
                   <div className="space-y-1 p-3">
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Runtime</dt>
                     <dd className="truncate text-sm font-medium">{AGENT_RUNTIME_LABELS[form.runtime_kind] ?? form.runtime_kind}</dd>
@@ -5199,6 +5248,18 @@ export function AgentsPage() {
                     <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Team</dt>
                     <dd className="truncate text-sm font-medium" title={selectedTeamName}>{selectedTeamName}</dd>
                   </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Created</dt>
+                    <dd className="truncate text-sm font-medium" title={formatAgentTimestampTitle(editingAgent?.created_at)}>
+                      {formatAgentTimestamp(editingAgent?.created_at)}
+                    </dd>
+                  </div>
+                  <div className="space-y-1 p-3">
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Last edited</dt>
+                    <dd className="truncate text-sm font-medium" title={formatAgentTimestampTitle(editingAgent?.updated_at)}>
+                      {formatAgentTimestamp(editingAgent?.updated_at)}
+                    </dd>
+                  </div>
                 </dl>
               </section>
 
@@ -5221,7 +5282,15 @@ export function AgentsPage() {
                       </FieldLabel>
                       <Select
                         value={form.team_id || '_none'}
-                        onValueChange={(value) => setForm((current) => ({ ...current, team_id: value === '_none' ? '' : value }))}
+                        onValueChange={(value) => setForm((current) => {
+                          const teamID = value === '_none' ? '' : value;
+                          return {
+                            ...current,
+                            team_id: teamID,
+                            teamAccessMode: teamID ? 'specific_teams' : 'all_teams',
+                            team_ids: teamID ? [teamID] : [],
+                          };
+                        })}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="All teams (workspace-wide)" />
@@ -5843,7 +5912,6 @@ export function AgentsPage() {
                         selectedTools={form.allowed_tools}
                         disabled={codexUsesPresetCapabilities}
                         onToggleTool={toggleTool}
-                        onClearTools={clearTools}
                       />
                     </div>
                     <p className="text-[11px] leading-relaxed text-muted-foreground">
@@ -5879,14 +5947,14 @@ export function AgentsPage() {
                 <Button type="button" variant="ghost" className="flex w-full items-center justify-between px-2">
                   <span className="flex items-center gap-2 text-sm">
                     {automationOpen ? <ArrowDown01Icon className="h-4 w-4" /> : <ArrowRight01Icon className="h-4 w-4" />}
-                    Approval & Limits
+                    Run Approval & Limits
                   </span>
                 </Button>
               </Collapsible.Trigger>
               <Collapsible.Content className="space-y-4 rounded-md border bg-muted/30 p-3 mt-2">
                 <div className="space-y-2">
-                  <FieldLabel tooltip="When set to 'always review first', a team member must approve each run before the agent starts working.">
-                    Requires approval?
+                  <FieldLabel tooltip="Controls the initial approval gate for each agent run, not individual tool or checkpoint approvals.">
+                    Run approval
                   </FieldLabel>
                   <Select
                     value={form.approval_mode}
@@ -6052,13 +6120,15 @@ export function AgentsPage() {
               </Button>
               <Button
                 size="sm"
-                disabled={saving || !createDrawerReady}
+                disabled={saving || !createDrawerCanSave}
                 onClick={handleSave}
               >
                 {createDrawerPrimaryLabel}
               </Button>
             </div>
           </SheetFooter>
+            </>
+          )}
         </SheetContent>
       </Sheet>
 
@@ -6092,10 +6162,38 @@ export function AgentsPage() {
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
         title="Delete agent"
-        description="This will permanently remove this agent and its direct configuration. This action cannot be undone."
-        confirmLabel="Delete"
+        description={
+          deleteAgentFlowCount > 0 ? (
+            <span className="space-y-2">
+              <span className="block">
+                This agent is used by{' '}
+                <span className="font-medium text-destructive">
+                  {deleteAgentFlowCount} {deleteAgentFlowCount === 1 ? 'flow' : 'flows'}
+                </span>
+                . Deleting it will also delete those flows.
+              </span>
+              <span className="block">This action cannot be undone.</span>
+            </span>
+          ) : (
+            'This will permanently remove this agent and its direct configuration. This action cannot be undone.'
+          )
+        }
+        confirmLabel={deleteAgentFlowCount > 0 ? 'Delete agent and flows' : 'Delete'}
         variant="destructive"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={discardCustomEditConfirmOpen}
+        onOpenChange={setDiscardCustomEditConfirmOpen}
+        title="Discard unsaved changes?"
+        description="You have unsaved changes to this agent. Closing now will discard them."
+        confirmLabel="Discard changes"
+        variant="destructive"
+        onConfirm={() => {
+          setDiscardCustomEditConfirmOpen(false);
+          closeCustomAgentDrawer();
+        }}
       />
 
       <ConfirmDialog

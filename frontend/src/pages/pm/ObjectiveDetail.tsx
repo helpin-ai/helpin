@@ -75,6 +75,32 @@ const healthOptions: { value: ObjectiveHealth; label: string; color: string }[] 
   { value: 'off_track', label: 'Off Track', color: 'text-red-600' },
 ];
 
+const OBJECTIVE_MANAGER_TOOLTIP = 'Only team managers can edit objectives. Ask your team manager for access.';
+
+function ManagerOnlyTooltip({
+  disabled,
+  className,
+  children,
+}: {
+  disabled: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  if (!disabled) return <>{children}</>;
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={`inline-flex max-w-full ${className ?? ''}`}>{children}</span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[260px] text-xs">
+          {OBJECTIVE_MANAGER_TOOLTIP}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // ── Sidebar Popover Select ─────────────────────────────────────────
 
 function SidebarPopoverSelect<T extends string>({
@@ -82,20 +108,23 @@ function SidebarPopoverSelect<T extends string>({
   options,
   onChange,
   renderTrigger,
+  disabled = false,
 }: {
   value: T;
   options: { value: T; label: string; className?: string }[];
   onChange: (value: T) => void;
   renderTrigger: () => React.ReactNode;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+          disabled={disabled}
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
         >
           {renderTrigger()}
         </button>
@@ -169,14 +198,30 @@ function MultiValueList({
       {selected.map((item) => (
         <div key={item.id} className="flex items-center justify-between rounded-md bg-muted/50 px-2 py-0.5 text-xs">
           <span className="truncate">{item.name}</span>
-          {!readOnly && (
-            <button type="button" className="text-muted-foreground hover:text-destructive cursor-pointer" onClick={() => onRemove(item.id)}>
+          <ManagerOnlyTooltip disabled={!!readOnly}>
+            <button
+              type="button"
+              disabled={readOnly}
+              className="text-muted-foreground hover:text-destructive cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground"
+              onClick={() => onRemove(item.id)}
+            >
               <Cancel01Icon className="h-3 w-3" />
             </button>
-          )}
+          </ManagerOnlyTooltip>
         </div>
       ))}
-      {!readOnly && (
+      {readOnly ? (
+        <ManagerOnlyTooltip disabled>
+          <button
+            type="button"
+            disabled
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <PlusSignIcon className="h-3 w-3" />
+            {placeholder}
+          </button>
+        </ManagerOnlyTooltip>
+      ) : (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
@@ -364,10 +409,12 @@ function LinkEpicPopover({
   workspaceId,
   linkedEpicIds,
   onLink,
+  disabled = false,
 }: {
   workspaceId: string;
   linkedEpicIds: string[];
   onLink: (epicId: string) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [allEpics, setAllEpics] = useState<EpicWithStats[]>([]);
@@ -382,9 +429,9 @@ function LinkEpicPopover({
   const available = allEpics.filter((e) => !linkedEpicIds.includes(e.epic.id));
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(next) => setOpen(disabled ? false : next)}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 text-xs">
+        <Button variant="outline" size="sm" className="h-7 text-xs" disabled={disabled}>
           <PlusSignIcon className="mr-1 h-3 w-3" />
           Add Epics
         </Button>
@@ -440,7 +487,7 @@ export function ObjectiveDetailPage() {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const workspaceId = workspace?.id;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { canEdit, isAdmin } = usePermissions(access);
+  const { canEdit, isAdmin, canManageTeam } = usePermissions(access);
 
   const [data, setData] = useState<ObjectiveWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -752,6 +799,7 @@ export function ObjectiveDetailPage() {
     ? Math.round((data.stats.epic_done_tasks / data.stats.epic_task_count) * 100)
     : 0;
   const ownerIds = data.owner_member_ids ?? data.owners;
+  const canManageObjective = canEdit && (isAdmin || data.teams.some((teamId) => canManageTeam(teamId)));
 
   return (
     <div className="flex h-full flex-col">
@@ -783,14 +831,17 @@ export function ObjectiveDetailPage() {
           {/* ── Objective Header Card ──────────────────────────── */}
           <div className="rounded-lg border border-border/60 p-6">
             {canEdit ? (
-              <input
-                type="text"
-                aria-label="Objective title"
-                value={form.name}
-                onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-                className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-                placeholder="Untitled"
-              />
+              <ManagerOnlyTooltip disabled={!canManageObjective} className="w-full">
+                <input
+                  type="text"
+                  aria-label="Objective title"
+                  value={form.name}
+                  disabled={!canManageObjective}
+                  onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+                  className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="Untitled"
+                />
+              </ManagerOnlyTooltip>
             ) : (
               <h1 className="text-2xl font-bold text-foreground">{form.name}</h1>
             )}
@@ -826,14 +877,17 @@ export function ObjectiveDetailPage() {
                     <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
                   )}
                   {canEdit && (
-                    <button
-                      type="button"
-                      className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                      onClick={() => setEditingDescription(true)}
-                    >
-                      <PencilEdit01Icon className="h-3 w-3" />
-                      Edit description
-                    </button>
+                    <ManagerOnlyTooltip disabled={!canManageObjective}>
+                      <button
+                        type="button"
+                        disabled={!canManageObjective}
+                        className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+                        onClick={() => setEditingDescription(true)}
+                      >
+                        <PencilEdit01Icon className="h-3 w-3" />
+                        Edit description
+                      </button>
+                    </ManagerOnlyTooltip>
                   )}
                 </div>
               )}
@@ -847,6 +901,7 @@ export function ObjectiveDetailPage() {
               entityId={data.objective.id}
               memberNameMap={memberMap}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
+              editable={canManageObjective}
             />
           </div>
 
@@ -858,14 +913,17 @@ export function ObjectiveDetailPage() {
                 <FavouriteIcon className="h-3.5 w-3.5" />
                 <span>Health:</span>
                 {canEdit ? (
-                  <SidebarPopoverSelect
-                    value={form.health}
-                    options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
-                    onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
-                    renderTrigger={() => (
-                      <span className={currentHealth.color}>{currentHealth.label}</span>
-                    )}
-                  />
+                  <ManagerOnlyTooltip disabled={!canManageObjective}>
+                    <SidebarPopoverSelect
+                      value={form.health}
+                      options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
+                      onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
+                      renderTrigger={() => (
+                        <span className={currentHealth.color}>{currentHealth.label}</span>
+                      )}
+                      disabled={!canManageObjective}
+                    />
+                  </ManagerOnlyTooltip>
                 ) : (
                   <span className={currentHealth.color}>{currentHealth.label}</span>
                 )}
@@ -967,10 +1025,18 @@ export function ObjectiveDetailPage() {
                   </TooltipProvider>
                 )}
                 {canEdit && (
-                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setKrModalOpen(true)}>
-                    <PlusSignIcon className="mr-1 h-3 w-3" />
-                    Add Key Results
-                  </Button>
+                  <ManagerOnlyTooltip disabled={!canManageObjective}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={!canManageObjective}
+                      onClick={() => setKrModalOpen(true)}
+                    >
+                      <PlusSignIcon className="mr-1 h-3 w-3" />
+                      Add Key Results
+                    </Button>
+                  </ManagerOnlyTooltip>
                 )}
               </div>
             </div>
@@ -984,7 +1050,7 @@ export function ObjectiveDetailPage() {
                     memberMap={memberMap}
                     onUpdate={handleUpdateKeyResult}
                     onDelete={() => handleDeleteKeyResult(kr.id)}
-                    readOnly={!canEdit}
+                    readOnly={!canManageObjective}
                   />
                 ))}
               </div>
@@ -1001,11 +1067,16 @@ export function ObjectiveDetailPage() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-foreground">Epics</h3>
               {canEdit && (
-                <LinkEpicPopover
-                  workspaceId={workspaceId!}
-                  linkedEpicIds={data.epics.map((e) => e.epic.id)}
-                  onLink={handleLinkEpic}
-                />
+                <ManagerOnlyTooltip disabled={!canManageObjective}>
+                  <span>
+                    <LinkEpicPopover
+                      workspaceId={workspaceId!}
+                      linkedEpicIds={data.epics.map((e) => e.epic.id)}
+                      onLink={handleLinkEpic}
+                      disabled={!canManageObjective}
+                    />
+                  </span>
+                </ManagerOnlyTooltip>
               )}
             </div>
 
@@ -1047,16 +1118,19 @@ export function ObjectiveDetailPage() {
                             <Progress value={pct} className="h-1.5 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
                           </div>
                           {canEdit && (
-                            <button
-                              type="button"
-                              className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void handleUnlinkEpic(e.epic.id);
-                              }}
-                            >
-                              <Cancel01Icon className="h-3.5 w-3.5" />
-                            </button>
+                            <ManagerOnlyTooltip disabled={!canManageObjective}>
+                              <button
+                                type="button"
+                                disabled={!canManageObjective}
+                                className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive cursor-pointer transition-opacity disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-muted-foreground"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleUnlinkEpic(e.epic.id);
+                                }}
+                              >
+                                <Cancel01Icon className="h-3.5 w-3.5" />
+                              </button>
+                            </ManagerOnlyTooltip>
                           )}
                         </div>
                         <span className={`text-[11px] text-muted-foreground ${canEdit ? 'pr-6' : ''}`}>Updated {epicUpdated}</span>
@@ -1079,12 +1153,15 @@ export function ObjectiveDetailPage() {
             {/* State */}
             <MetadataRow icon={HashtagIcon} label="State">
               {canEdit ? (
-                <SidebarPopoverSelect
-                  value={form.state}
-                  options={stateOptions}
-                  onChange={(v) => updateField('state', v as ObjectiveState, { state: v as ObjectiveState })}
-                  renderTrigger={() => <span className={currentState.className}>{currentState.label}</span>}
-                />
+                <ManagerOnlyTooltip disabled={!canManageObjective}>
+                  <SidebarPopoverSelect
+                    value={form.state}
+                    options={stateOptions}
+                    onChange={(v) => updateField('state', v as ObjectiveState, { state: v as ObjectiveState })}
+                    renderTrigger={() => <span className={currentState.className}>{currentState.label}</span>}
+                    disabled={!canManageObjective}
+                  />
+                </ManagerOnlyTooltip>
               ) : (
                 <span className={`text-xs ${currentState.className}`}>{currentState.label}</span>
               )}
@@ -1095,25 +1172,31 @@ export function ObjectiveDetailPage() {
             <MetadataRow icon={FavouriteIcon} label="Health">
               <div className="flex flex-col gap-1">
                 {canEdit ? (
-                  <SidebarPopoverSelect
-                    value={form.health}
-                    options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
-                    onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
-                    renderTrigger={() => (
-                      <span className={currentHealth.color}>{currentHealth.label}</span>
-                    )}
-                  />
+                  <ManagerOnlyTooltip disabled={!canManageObjective}>
+                    <SidebarPopoverSelect
+                      value={form.health}
+                      options={healthOptions.map((h) => ({ value: h.value, label: h.label }))}
+                      onChange={(v) => updateField('health', v as ObjectiveHealth, { health: v as ObjectiveHealth })}
+                      renderTrigger={() => (
+                        <span className={currentHealth.color}>{currentHealth.label}</span>
+                      )}
+                      disabled={!canManageObjective}
+                    />
+                  </ManagerOnlyTooltip>
                 ) : (
                   <span className={`text-xs px-1.5 py-0.5 ${currentHealth.color}`}>{currentHealth.label}</span>
                 )}
                 {canEdit && suggestedLabel && suggestedHealth !== form.health && (
-                  <button
-                    type="button"
-                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
-                    onClick={() => updateField('health', suggestedHealth!, { health: suggestedHealth })}
-                  >
-                    Suggested: <span className={suggestedLabel.color}>{suggestedLabel.label}</span>
-                  </button>
+                  <ManagerOnlyTooltip disabled={!canManageObjective}>
+                    <button
+                      type="button"
+                      disabled={!canManageObjective}
+                      className="text-left text-[10px] text-muted-foreground transition-colors hover:text-foreground cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-muted-foreground"
+                      onClick={() => updateField('health', suggestedHealth!, { health: suggestedHealth })}
+                    >
+                      Suggested: <span className={suggestedLabel.color}>{suggestedLabel.label}</span>
+                    </button>
+                  </ManagerOnlyTooltip>
                 )}
               </div>
             </MetadataRow>
@@ -1130,53 +1213,55 @@ export function ObjectiveDetailPage() {
                 onAdd={handleAddTeam}
                 onRemove={handleRemoveTeam}
                 placeholder="Add team"
-                readOnly={!canEdit}
+                readOnly={!canManageObjective}
               />
             </MetadataRow>
 
             {/* Owners */}
             <MetadataRow icon={UserIcon} label="Owners">
-              <MultiMemberPickerPopover
-                values={ownerIds}
-                members={assignableMembers}
-                disabled={!canEdit}
-                onChange={(nextOwnerIds) => {
-                  void handleOwnerSelectionChange(nextOwnerIds);
-                }}
-                renderTrigger={() => {
-                  const selectedMembers = assignableMembers.filter((member) => ownerIds.includes(member.id));
-                  if (selectedMembers.length === 0) {
-                    return <span className="text-muted-foreground">{canEdit ? 'Add owners' : 'None'}</span>;
-                  }
+              <ManagerOnlyTooltip disabled={!canManageObjective}>
+                <MultiMemberPickerPopover
+                  values={ownerIds}
+                  members={assignableMembers}
+                  disabled={!canManageObjective}
+                  onChange={(nextOwnerIds) => {
+                    void handleOwnerSelectionChange(nextOwnerIds);
+                  }}
+                  renderTrigger={() => {
+                    const selectedMembers = assignableMembers.filter((member) => ownerIds.includes(member.id));
+                    if (selectedMembers.length === 0) {
+                      return <span className="text-muted-foreground">{canManageObjective ? 'Add owners' : 'None'}</span>;
+                    }
 
-                  const label = selectedMembers
-                    .map((member) => member.display_name || member.email)
-                    .join(', ');
+                    const label = selectedMembers
+                      .map((member) => member.display_name || member.email)
+                      .join(', ');
 
-                  return (
-                    <>
-                      <div className="flex items-center -space-x-1">
-                        {selectedMembers.slice(0, 2).map((member) => (
-                          <UserAvatar
-                            key={member.id}
-                            name={member.display_name || member.email}
-                            avatarUrl={member.avatar_url}
-                            avatarStyle={member.avatar_style}
-                            avatarSeed={member.avatar_seed}
-                            avatarBackgroundMode={member.avatar_background_mode}
-                            avatarBackgroundColor={member.avatar_background_color}
-                            className="h-4 w-4"
-                            fallbackClassName="text-[7px]"
-                          />
-                        ))}
-                      </div>
-                      <span className="truncate">{label}</span>
-                    </>
-                  );
-                }}
-                triggerClassName="inline-flex max-w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
-                contentClassName="w-[260px]"
-              />
+                    return (
+                      <>
+                        <div className="flex items-center -space-x-1">
+                          {selectedMembers.slice(0, 2).map((member) => (
+                            <UserAvatar
+                              key={member.id}
+                              name={member.display_name || member.email}
+                              avatarUrl={member.avatar_url}
+                              avatarStyle={member.avatar_style}
+                              avatarSeed={member.avatar_seed}
+                              avatarBackgroundMode={member.avatar_background_mode}
+                              avatarBackgroundColor={member.avatar_background_color}
+                              className="h-4 w-4"
+                              fallbackClassName="text-[7px]"
+                            />
+                          ))}
+                        </div>
+                        <span className="truncate">{label}</span>
+                      </>
+                    );
+                  }}
+                  triggerClassName="inline-flex max-w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
+                  contentClassName="w-[260px]"
+                />
+              </ManagerOnlyTooltip>
             </MetadataRow>
 
             {/* ── Planning ── */}
@@ -1184,7 +1269,7 @@ export function ObjectiveDetailPage() {
 
             {/* Start Date */}
             <MetadataRow icon={Calendar03Icon} label="Start date">
-              {canEdit ? (
+              {canEdit && canManageObjective ? (
                 <DatePicker
                   value={form.planned_start_date}
                   onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
@@ -1201,6 +1286,12 @@ export function ObjectiveDetailPage() {
                   hideIcon
                   className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
                 />
+              ) : canEdit ? (
+                <ManagerOnlyTooltip disabled>
+                  <span className="text-xs px-1.5 py-0.5">
+                    {form.planned_start_date ? format(parseISO(form.planned_start_date), 'MMM d, yyyy') : 'None'}
+                  </span>
+                </ManagerOnlyTooltip>
               ) : (
                 <span className="text-xs px-1.5 py-0.5">
                   {form.planned_start_date ? format(parseISO(form.planned_start_date), 'MMM d, yyyy') : 'None'}
@@ -1210,7 +1301,7 @@ export function ObjectiveDetailPage() {
 
             {/* Target Date */}
             <MetadataRow icon={Calendar03Icon} label="Target date">
-              {canEdit ? (
+              {canEdit && canManageObjective ? (
                 <DatePicker
                   value={form.planned_start_date}
                   onChange={(v) => updateField('planned_start_date', v, { planned_start_date: v || undefined })}
@@ -1230,6 +1321,12 @@ export function ObjectiveDetailPage() {
                   urgencyColor
                   className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
                 />
+              ) : canEdit ? (
+                <ManagerOnlyTooltip disabled>
+                  <span className="text-xs px-1.5 py-0.5">
+                    {form.deadline ? format(parseISO(form.deadline), 'MMM d, yyyy') : 'None'}
+                  </span>
+                </ManagerOnlyTooltip>
               ) : (
                 <span className="text-xs px-1.5 py-0.5">
                   {form.deadline ? format(parseISO(form.deadline), 'MMM d, yyyy') : 'None'}
@@ -1358,7 +1455,7 @@ export function ObjectiveDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setKrModalOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={handleCreateKeyResult} disabled={!newKrName.trim()}>
+            <Button size="sm" onClick={handleCreateKeyResult} disabled={!canManageObjective || !newKrName.trim()}>
               Add Key Result
             </Button>
           </DialogFooter>

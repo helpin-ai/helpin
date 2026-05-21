@@ -1,4 +1,4 @@
-import { buildLoginPathForCurrentLocation } from './authRedirect';
+import { buildLoginPathForCurrentLocation, storeRedirectAfterLogin } from '@/lib/authRedirect';
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -10,30 +10,21 @@ interface ApiResponse<T> {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-  const token = localStorage.getItem('access_token');
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...options.headers,
-      },
+      credentials: 'include',
+      headers: buildHeaders(options.headers),
     });
 
-    if (res.status === 401 && !path.startsWith('/auth/')) {
+    if (res.status === 401 && shouldAttemptRefresh(path)) {
       // Try refresh (skip for auth endpoints — a 401 there means bad credentials)
       const refreshed = await tryRefreshToken();
       if (refreshed) {
-        // Retry with new token
-        const newToken = localStorage.getItem('access_token');
         const retryRes = await fetch(`${API_BASE}${path}`, {
           ...options,
-          headers: {
-            'Content-Type': 'application/json',
-            ...(newToken ? { Authorization: `Bearer ${newToken}` } : {}),
-            ...options.headers,
-          },
+          credentials: 'include',
+          headers: buildHeaders(options.headers),
         });
         if (!retryRes.ok) {
           const err = await retryRes.json().catch(() => ({ error: retryRes.statusText }));
@@ -43,11 +34,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
         const data = await retryRes.json();
         return { data, error: null };
       }
-      // Refresh failed, clear tokens
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('remember_me');
+      if (path === '/auth/me') {
+        return { data: null, error: 'Session expired', status: 401 };
+      }
+      clearLegacyTokenStorage();
       stopTokenRefreshTimer();
+      storeRedirectAfterLogin();
       window.location.href = buildLoginPathForCurrentLocation();
       return { data: null, error: 'Session expired' };
     }
@@ -64,19 +56,63 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<ApiR
   }
 }
 
-async function tryRefreshToken(): Promise<boolean> {
-  const refreshToken = localStorage.getItem('refresh_token');
-  if (!refreshToken) return false;
+function shouldAttemptRefresh(path: string): boolean {
+  return path === '/auth/me' || !path.startsWith('/auth/');
+}
+
+function buildHeaders(init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  if (!headers.has('Authorization')) {
+    const accessToken = getStoredToken('access_token');
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+    }
+  }
+  return headers;
+}
+
+function getStoredToken(key: 'access_token' | 'refresh_token'): string | null {
   try {
+    return localStorage.getItem(key)?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function clearLegacyAuthTokens(): void {
+  try {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+  } catch {
+    // Ignore storage access failures; cookies are the source of truth.
+  }
+}
+
+function clearLegacyTokenStorage(): void {
+  try {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('remember_me');
+  } catch {
+    // Ignore storage access failures; cookies are the source of truth.
+  }
+}
+
+async function tryRefreshToken(): Promise<boolean> {
+  try {
+    const legacyRefreshToken = getStoredToken('refresh_token');
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: legacyRefreshToken ? JSON.stringify({ refresh_token: legacyRefreshToken }) : undefined,
     });
     if (!res.ok) return false;
-    const data = await res.json();
-    localStorage.setItem('access_token', data.access_token);
-    localStorage.setItem('refresh_token', data.refresh_token);
+    await res.json().catch(() => null);
+    clearLegacyAuthTokens();
     return true;
   } catch {
     return false;
@@ -95,10 +131,7 @@ let refreshTimerId: ReturnType<typeof setInterval> | null = null;
 export function startTokenRefreshTimer(): void {
   stopTokenRefreshTimer();
   refreshTimerId = setInterval(() => {
-    const token = localStorage.getItem('refresh_token');
-    if (token) {
-      tryRefreshToken();
-    }
+    tryRefreshToken();
   }, TOKEN_REFRESH_INTERVAL);
 }
 
@@ -116,7 +149,7 @@ export function stopTokenRefreshTimer(): void {
  */
 export function setupVisibilityRefresh(): void {
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && localStorage.getItem('refresh_token')) {
+    if (document.visibilityState === 'visible') {
       tryRefreshToken();
     }
   });

@@ -303,6 +303,16 @@ func (r *PMSprintRepository) ListTasks(ctx context.Context, sprintID string) ([]
 	return stories, nil
 }
 
+// ListEnrichedTasks returns tasks in a sprint with table-facing computed fields
+// such as owner member IDs, labels, state info, and latest run.
+func (r *PMSprintRepository) ListEnrichedTasks(ctx context.Context, sprintID string) ([]model.BoardTask, error) {
+	tasks, err := r.ListTasks(ctx, sprintID)
+	if err != nil {
+		return nil, err
+	}
+	return NewPMTaskRepository(r.db).EnrichTasksForList(ctx, tasks), nil
+}
+
 // HasDateOverlap checks whether another sprint overlaps date range for workspace/team.
 func (r *PMSprintRepository) HasDateOverlap(ctx context.Context, workspaceID string, teamID *string, startDate, endDate time.Time, excludeID *string) (bool, error) {
 	query := r.db.WithContext(ctx).

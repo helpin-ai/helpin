@@ -72,11 +72,15 @@ describe('ExternalLinks', () => {
       makeLink('link-2', 'https://docs.helpin.ai/tasks/links', 'Task links doc'),
     ])
 
-    expect(container?.textContent).not.toContain('2 links')
+    expect(container?.textContent).toContain('(2)')
     expect(container?.textContent).toContain('Fix task sync')
-    expect(container?.textContent).toContain('github.com')
+    expect(container?.textContent).not.toContain('github.com/helpin-ai/helpin/pull/31')
 
     const row = container?.querySelector('[data-testid="external-link-row"]')
-    expect(row?.className).toContain('bg-muted/35')
+    expect(row?.className).toContain('hover:bg-muted/30')
+    const newTabLink = row?.querySelector<HTMLAnchorElement>('a[aria-label="Open Fix task sync in a new tab"]')
+    expect(newTabLink?.textContent).toBe('Fix task sync')
+    expect(newTabLink?.href).toBe('https://github.com/helpin-ai/helpin/pull/31')
+    expect(container?.querySelector('[data-slot="tooltip-trigger"]')).toBeTruthy()
   })
 })

@@ -1,5 +1,5 @@
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import {
   ArrowLeftRightIcon,
   Tick01Icon,
@@ -17,6 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DocumentPreviewDialog } from '@/components/docs/DocumentPreviewDialog';
+import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,17 +35,18 @@ import {
   useDeleteDocAssociation,
   useDeleteTaskRelationship,
   useTaskAssociations,
+  useWorkflows,
 } from '@/hooks/queries';
 import { searchService, type SearchResult } from '@/lib/services/searchService';
 import type {
   CreateTaskRequest,
   GroupedAssociations,
+  Task,
   TaskRelationshipAction,
 } from '@/lib/pmTypes';
 import { TaskTypeIcon } from '@/lib/pmConstants';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 
 interface TaskRelationshipsSectionProps {
   workspaceId: string;
@@ -68,6 +70,8 @@ interface TaskRelationshipsSectionProps {
    *  When set, clicking that element opens the popover anchored there instead of inline. */
   externalTriggerRef?: RefObject<HTMLElement | null>;
   className?: string;
+  onContentChange?: (hasContent: boolean) => void;
+  onCountChange?: (count: number) => void;
 }
 
 const RELATIONSHIP_OPTIONS: Array<{
@@ -238,9 +242,9 @@ export function TaskRelationshipsSection({
   visible = false,
   externalTriggerRef,
   className,
+  onContentChange,
+  onCountChange,
 }: TaskRelationshipsSectionProps) {
-  const navigate = useNavigate();
-  const location = useLocation();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const inlineAddRef = useRef<HTMLButtonElement>(null);
   const [anchorSource, setAnchorSource] = useState<'external' | 'inline'>('inline');
@@ -251,8 +255,11 @@ export function TaskRelationshipsSection({
   const [taskResults, setTaskResults] = useState<SearchResult[]>([]);
   const [docResults, setDocResults] = useState<SearchResult[]>([]);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const [createRelatedTaskOpen, setCreateRelatedTaskOpen] = useState(false);
+  const [createRelatedTaskInitialName, setCreateRelatedTaskInitialName] = useState('');
 
   const associationsQuery = useTaskAssociations(workspaceId, taskId);
+  const workflowsQuery = useWorkflows(workspaceId);
   const data = associationsQuery.data as GroupedAssociations | undefined;
   const createRelationship = useCreateTaskRelationship(workspaceId, taskId);
   const deleteRelationship = useDeleteTaskRelationship(workspaceId, taskId);
@@ -316,11 +323,13 @@ export function TaskRelationshipsSection({
   }, [data]);
 
   const linkedDocs = useMemo(() => data?.docs ?? [], [data]);
+  const relationshipContentCount = allRelationships.length + linkedDocs.length;
+  const hasRelationshipContent = relationshipContentCount > 0;
 
-  const handleOpenTask = (targetTaskId: string) => {
-    if (!workspace?.slug) return;
-    openTaskRoute(navigate as never, location as never, workspace.slug, targetTaskId);
-  };
+  useEffect(() => {
+    onContentChange?.(hasRelationshipContent);
+    onCountChange?.(relationshipContentCount);
+  }, [hasRelationshipContent, relationshipContentCount, onContentChange, onCountChange]);
 
   const handleCreateRelationship = async (otherTaskId: string) => {
     await createRelationship.mutateAsync({
@@ -331,28 +340,21 @@ export function TaskRelationshipsSection({
   };
 
   const handleCreateRelatedTask = async () => {
-    const name = query.trim();
-    if (!name) return;
+    setCreateRelatedTaskInitialName(query.trim());
+    onComposerOpenChange(false);
+    setCreateRelatedTaskOpen(true);
+  };
 
-    const payload: CreateTaskRequest = {
-      workspace_id: workspaceId,
-      name,
-      workflow_id: workflowId,
-      workflow_state_id: workflowStateId,
-      epic_id: epicId,
-      sprint_id: sprintId,
-      team_id: teamId,
-      task_type: taskType,
-      priority,
-      severity,
-    };
-
+  const handleCreateAndRelateTask = async (payload: CreateTaskRequest) => {
     const created = await createTask.mutateAsync(payload);
     await createRelationship.mutateAsync({
       relationship_type: relationshipType,
       other_task_id: created.task.id,
     });
-    onComposerOpenChange(false);
+    return {
+      id: created.task.id,
+      task: created.task as Pick<Task, 'id' | 'name' | 'display_id' | 'task_key'>,
+    };
   };
 
   const handleLinkDoc = async (documentId: string) => {
@@ -391,6 +393,10 @@ export function TaskRelationshipsSection({
     anchorSource === 'external' && externalTriggerRef?.current
       ? externalTriggerRef.current
       : inlineAddRef.current;
+  const createWorkflow = useMemo(
+    () => workflowsQuery.data?.find((item) => item.workflow.id === workflowId),
+    [workflowId, workflowsQuery.data],
+  );
 
   const popoverBody: ReactNode = (
     <>
@@ -518,11 +524,13 @@ export function TaskRelationshipsSection({
               type="button"
               variant="outline"
               className="h-7 gap-1 rounded-lg border-border/60 px-2.5 text-xs font-medium transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
-              disabled={query.trim().length === 0}
+              disabled={!createWorkflow}
               onClick={handleCreateRelatedTask}
             >
               <PlusSignIcon className="h-3 w-3" />
-              Create Related Task
+              <span className="max-w-44 truncate">
+                {query.trim() ? `Create "${query.trim()}"` : 'Create related task'}
+              </span>
             </Button>
           </div>
         ) : null}
@@ -537,19 +545,29 @@ export function TaskRelationshipsSection({
 
   return (
     <section id="task-relationships-section" className={className}>
-      <div className="flex items-center gap-1.5">
-        <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">Task Relationships</h3>
-      </div>
-
-      {associationsQuery.error ? (
-        <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
-          {(associationsQuery.error as Error).message}
+      <div className="rounded-lg border border-border/60 bg-card">
+        <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
+          <div className="flex items-center gap-1.5">
+            <ArrowLeftRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
+              Task Relationships
+            </span>
+            {relationshipContentCount > 0 ? (
+              <span className="text-xs font-normal text-muted-foreground">
+                ({relationshipContentCount})
+              </span>
+            ) : null}
+          </div>
         </div>
-      ) : null}
 
-      {/* Flat relationship list — no borders */}
-      <div className="mt-1">
+        {associationsQuery.error ? (
+          <div className="border-b border-border/40 px-3 py-2.5 text-sm text-destructive">
+            {(associationsQuery.error as Error).message}
+          </div>
+        ) : null}
+
+        {relationshipContentCount > 0 ? (
+          <div className="divide-y divide-border/40">
         {allRelationships.map((item) => {
           const meta = getRelationshipMeta(item.link_type);
           const Icon = meta.icon;
@@ -562,20 +580,29 @@ export function TaskRelationshipsSection({
             <div
               key={item.relationship_id}
               className={cn(
-                'group flex items-center gap-1.5 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-accent/40',
+                'group flex items-center gap-1.5 px-3 py-2 transition-colors hover:bg-muted/30',
                 resolved && 'opacity-50',
               )}
             >
               <div className="flex min-w-0 flex-1 items-center gap-1.5">
                 <Icon className={cn('h-3.5 w-3.5 shrink-0', meta.color)} />
                 <span className={cn('shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium', meta.bg, meta.color)}>{meta.label}</span>
-                <button
-                  type="button"
-                  onClick={() => handleOpenTask(relatedTask.object_id)}
-                  className="min-w-0 truncate text-ui font-medium text-left transition-colors hover:text-primary"
-                >
-                  {relatedTask.title}
-                </button>
+                {workspace?.slug ? (
+                  <Link
+                    to="/w/$slug/pm/tasks/$taskId"
+                    params={{ slug: workspace.slug, taskId: relatedTask.object_id }}
+                    search={{ team: undefined, run: undefined }}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-w-0 truncate text-ui font-medium text-foreground transition-colors hover:text-primary"
+                  >
+                    {relatedTask.title}
+                  </Link>
+                ) : (
+                  <span className="min-w-0 truncate text-ui font-medium text-foreground">
+                    {relatedTask.title}
+                  </span>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 {(relatedTask.task_key || relatedTask.display_id) ? (
@@ -631,7 +658,7 @@ export function TaskRelationshipsSection({
         {linkedDocs.map((doc) => (
           <div
             key={`doc-${doc.object_id}-${doc.association_id ?? 'f'}`}
-            className="group flex items-center gap-1.5 rounded-md px-1.5 py-1 -mx-1.5 transition-colors hover:bg-accent/40"
+            className="group flex items-center gap-1.5 px-3 py-2 transition-colors hover:bg-muted/30"
           >
             <button
               type="button"
@@ -667,24 +694,23 @@ export function TaskRelationshipsSection({
             ) : null}
           </div>
         ))}
-      </div>
+          </div>
+        ) : null}
 
       {/* + Add Relationship */}
-      <div className="mt-1 flex items-center gap-2">
-        <Button
+      <div className="flex items-center gap-2 border-t border-border/40 px-3 py-2">
+        <button
           ref={inlineAddRef}
           type="button"
-          size="sm"
-          variant="ghost"
-          className="inline-flex h-auto items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground cursor-pointer"
           onClick={() => {
             setAnchorSource('inline');
             onComposerOpenChange(true);
           }}
         >
-          <PlusSignIcon className="h-4 w-4" />
+          <PlusSignIcon className="h-3 w-3" />
           Add relationship
-        </Button>
+        </button>
 
         {busy ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -692,11 +718,31 @@ export function TaskRelationshipsSection({
           </span>
         ) : null}
       </div>
+      </div>
 
       {/* Floating popover — anchored to whichever trigger was clicked */}
       <FloatingPopover open={composerOpen} onOpenChange={onComposerOpenChange} anchorEl={anchorEl}>
         {popoverBody}
       </FloatingPopover>
+
+      {createWorkflow ? (
+        <CreateTaskModal
+          open={createRelatedTaskOpen}
+          onOpenChange={setCreateRelatedTaskOpen}
+          workspaceId={workspaceId}
+          workflow={createWorkflow}
+          initialStateId={workflowStateId ?? createWorkflow.workflow.default_state_id ?? createWorkflow.states[0]?.id ?? ''}
+          initialName={createRelatedTaskInitialName}
+          initialTaskType={taskType}
+          initialPriority={priority}
+          initialSeverity={severity}
+          initialTeamId={teamId}
+          initialEpicId={epicId}
+          initialSprintId={sprintId}
+          onCreate={handleCreateAndRelateTask}
+          stackedOverDrawer
+        />
+      ) : null}
 
       <DocumentPreviewDialog
         workspaceId={workspaceId}

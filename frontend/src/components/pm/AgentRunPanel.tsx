@@ -17,14 +17,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
+import { isAgentAvailableForTarget } from '@/lib/agentAccess';
 import { agentService } from '@/lib/services/agentService';
+import { usePermissions, useWorkspaceAccess } from '@/hooks/queries/useSession';
 import type { Agent, AgentPresetKey, AgentRun, GitRepository, TaskDeliveryTarget } from '@/lib/pmTypes';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus } from './agentRunConstants';
 
 interface Props {
   taskId: string;
   workspaceId: string;
+  taskTeamId?: string | null;
   latestRunAgentId?: string | null;
   delivery?: AgentRunDeliveryContext;
   canEditDelivery?: boolean;
@@ -221,17 +225,11 @@ export function getTaskAgentRunSuggestedAgent<TAgent extends Pick<Agent, 'id' | 
     ?? null;
 }
 
-export function getTaskAgentRunPickerLabel({
-  activeRun,
-  suggestedAgent,
-}: {
+export function getTaskAgentRunPickerLabel(_args: {
   activeRun: Pick<AgentRun, 'status' | 'pause_reason' | 'approval_state'> | null | undefined;
   suggestedAgent: Pick<Agent, 'preset_key'> | null | undefined;
 }) {
-  if (activeRun) return 'Current agent';
-  if (suggestedAgent?.preset_key === 'task_planner') return 'First agent';
-  if (suggestedAgent?.preset_key === 'review_agent') return 'Review agent';
-  return 'Next agent';
+  return 'Agent';
 }
 
 export function getTaskAgentRunExecutionContextLockReason({
@@ -256,10 +254,16 @@ export function getTaskAgentRunExecutionContextLockReason({
   return `${activeName} is ${stateText}. Repository and branch can be changed after this run finishes.`;
 }
 
-export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery, canEditDelivery = false }: Props) {
+export function AgentRunPanel({ taskId, workspaceId, taskTeamId, latestRunAgentId, delivery, canEditDelivery = false }: Props) {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { run?: string };
   const urlRunId = search.run ?? null;
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { isAdmin } = usePermissions(access);
+  const accessibleTeamIds = useMemo(
+    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
+    [access?.team_memberships],
+  );
 
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
@@ -326,7 +330,15 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
     void fetchRuns();
   }, [fetchRuns]);
 
-  const taskRunnableAgents = useMemo(() => agents.filter(isTaskRunnableAgent), [agents]);
+  const taskRunnableAgents = useMemo(
+    () => agents.filter((agent) => isAgentAvailableForTarget(agent, {
+      targetType: 'task',
+      targetTeamId: taskTeamId,
+      accessibleTeamIds,
+      canSeeAllAgents: isAdmin,
+    })),
+    [accessibleTeamIds, agents, isAdmin, taskTeamId],
+  );
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail as { parent_type?: string; parent_id?: string } | undefined;
@@ -399,12 +411,20 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
     activeRunAgentName,
     triggering,
   });
+  const launchState = getTaskAgentRunLaunchState({ activeRun, triggering });
   const pickerLabel = getTaskAgentRunPickerLabel({ activeRun, suggestedAgent: selectedAgent });
   const executionContextLockReason = getTaskAgentRunExecutionContextLockReason({
     activeRun,
     activeRunAgentName,
   });
   const agentSelectionDisabled = !!activeRun || triggering;
+  const actionDisabledReason = primaryAction.kind === 'open'
+    ? null
+    : loadingAgents
+      ? 'Loading agents...'
+      : !selectedAgentId
+        ? 'Choose an agent to run.'
+        : launchState.disabledReason;
 
   const handleRunAgent = async () => {
     if (primaryAction.kind === 'open' && primaryAction.runId) {
@@ -485,17 +505,31 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
               </SelectContent>
             </Select>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleRunAgent}
-            disabled={loadingAgents || (primaryAction.kind === 'start' && (!selectedAgentId || triggering))}
-            title={primaryAction.status}
-            className="h-7 gap-1 px-2.5 text-xs"
-          >
-            {triggering ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
-            {primaryAction.label}
-          </Button>
+          {actionDisabledReason ? (
+            <p className="ml-auto min-w-0 truncate text-right text-[11px] text-muted-foreground">
+              {actionDisabledReason}
+            </p>
+          ) : null}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRunAgent}
+                  disabled={loadingAgents || (primaryAction.kind === 'start' && (!selectedAgentId || launchState.disabled))}
+                  title={primaryAction.status}
+                  className="h-7 gap-1 px-2.5 text-xs"
+                >
+                  {triggering ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <PlayIcon className="h-3 w-3" />}
+                  {primaryAction.label}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {actionDisabledReason ? (
+              <TooltipContent side="top">{actionDisabledReason}</TooltipContent>
+            ) : null}
+          </Tooltip>
         </div>
 
         {latestCompletedAgent ? (
@@ -528,10 +562,6 @@ export function AgentRunPanel({ taskId, workspaceId, latestRunAgentId, delivery,
       />
     </div>
   );
-}
-
-function isTaskRunnableAgent(agent: Agent) {
-  return agent.allowed_targets.includes('task');
 }
 
 function AgentRunExecutionContext({

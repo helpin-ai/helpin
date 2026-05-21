@@ -49,8 +49,8 @@ func TestCreateAgentDefaultsToCodeBuilderPreset(t *testing.T) {
 	if created.Role != "Custom Agent" {
 		t.Fatalf("expected default role Custom Agent, got %q", created.Role)
 	}
-	if created.RuntimeKind != "opencode" {
-		t.Fatalf("expected default runtime opencode, got %q", created.RuntimeKind)
+	if created.RuntimeKind != "native_sdk" {
+		t.Fatalf("expected default runtime native_sdk, got %q", created.RuntimeKind)
 	}
 }
 
@@ -88,6 +88,102 @@ func TestCreatePlannerPersistsDefaultSystemPrompt(t *testing.T) {
 	}
 	if created.SourcePresetVersionKey != "" {
 		t.Fatalf("expected custom agent source preset version to remain empty, got %q", created.SourcePresetVersionKey)
+	}
+}
+
+func TestCreateAgentPersistsMultipleTeamIDs(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	req := modelCreateAgentRequest(nil)
+	req.TeamIDs = []string{"team-a", "team-b"}
+	req.TeamID = agentTestStringPtr("legacy-team")
+
+	created, err := svc.CreateAgent(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgent returned error: %v", err)
+	}
+	if got, want := created.TeamIDs, []string{"team-a", "team-b"}; !slices.Equal(got, want) {
+		t.Fatalf("created.TeamIDs = %#v, want %#v", got, want)
+	}
+	if created.TeamID == nil || *created.TeamID != "team-a" {
+		t.Fatalf("created.TeamID = %v, want legacy-compatible first team", created.TeamID)
+	}
+}
+
+func TestCreateAgentLegacyTeamIDBackfillsTeamIDs(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	req := modelCreateAgentRequest(nil)
+	req.TeamID = agentTestStringPtr("team-a")
+
+	created, err := svc.CreateAgent(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgent returned error: %v", err)
+	}
+	if got, want := created.TeamIDs, []string{"team-a"}; !slices.Equal(got, want) {
+		t.Fatalf("created.TeamIDs = %#v, want %#v", got, want)
+	}
+}
+
+func TestUpdateAgentReplacesTeamIDsWhenExplicit(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	req := modelCreateAgentRequest(nil)
+	req.TeamIDs = []string{"team-a", "team-b"}
+	created, err := svc.CreateAgent(context.Background(), req, "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgent returned error: %v", err)
+	}
+
+	updated, err := svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
+		TeamIDs: &[]string{"team-c"},
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent returned error: %v", err)
+	}
+	if got, want := updated.TeamIDs, []string{"team-c"}; !slices.Equal(got, want) {
+		t.Fatalf("updated.TeamIDs = %#v, want %#v", got, want)
+	}
+	if updated.TeamID == nil || *updated.TeamID != "team-c" {
+		t.Fatalf("updated.TeamID = %v, want legacy-compatible first team", updated.TeamID)
+	}
+
+	updated, err = svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
+		TeamIDs: &[]string{},
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("UpdateAgent clear returned error: %v", err)
+	}
+	if len(updated.TeamIDs) != 0 {
+		t.Fatalf("updated.TeamIDs = %#v, want workspace-wide empty team_ids", updated.TeamIDs)
+	}
+	if updated.TeamID != nil {
+		t.Fatalf("updated.TeamID = %v, want nil after clearing team_ids", *updated.TeamID)
+	}
+}
+
+func TestUpdateAgentRejectsMixedLegacyAndMultiTeamInputs(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	created, err := svc.CreateAgent(context.Background(), modelCreateAgentRequest(nil), "user-1")
+	if err != nil {
+		t.Fatalf("CreateAgent returned error: %v", err)
+	}
+
+	legacyTeamID := "team-a"
+	if _, err := svc.UpdateAgent(context.Background(), "ws-test", created.ID, model.UpdateAgentRequest{
+		TeamID:  &legacyTeamID,
+		TeamIDs: &[]string{"team-b"},
+	}, "user-1"); err == nil {
+		t.Fatal("expected mixed team_id and team_ids update to be rejected")
 	}
 }
 
@@ -382,6 +478,25 @@ func TestSeedWorkspaceDefaults_CreatesMissingSystemAgentsWithoutPromotingCustomA
 	}
 	if lens.Model == nil || *lens.Model != "gpt-5.5" {
 		t.Fatalf("expected lens model gpt-5.5, got %+v", lens.Model)
+	}
+	docsAgent, err := agentRepo.GetSystemByPreset(context.Background(), "ws-test", model.AgentPresetDocumentationAgent)
+	if err != nil {
+		t.Fatalf("GetSystemByPreset returned error: %v", err)
+	}
+	if docsAgent == nil {
+		t.Fatal("expected documentation system agent")
+	}
+	if docsAgent.Name != "Quill" {
+		t.Fatalf("expected documentation agent name, got %q", docsAgent.Name)
+	}
+	if docsAgent.RuntimeKind != "native_sdk" {
+		t.Fatalf("expected documentation runtime native_sdk, got %q", docsAgent.RuntimeKind)
+	}
+	if docsAgent.DefaultInvocationMode != model.InvocationModeInteractive {
+		t.Fatalf("expected documentation default invocation mode interactive, got %q", docsAgent.DefaultInvocationMode)
+	}
+	if !slices.Contains(parseJSONStringSlice(docsAgent.AllowedTargets), "document") || !slices.Contains(parseJSONStringSlice(docsAgent.AllowedTargets), "support_conversation") {
+		t.Fatalf("expected documentation targets to include document and support_conversation, got %s", string(docsAgent.AllowedTargets))
 	}
 
 	custom, err := agentRepo.GetByID(context.Background(), "ws-test", "agent-custom-code-builder")
@@ -1381,6 +1496,9 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			source_preset_version_key TEXT,
 			source_template_id TEXT,
 			source_template_key TEXT NOT NULL DEFAULT '',
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT NOT NULL,
@@ -1408,6 +1526,12 @@ func newAgentServiceTestDB(t *testing.T) *gorm.DB {
 			default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE agent_team_access (
+			agent_id TEXT NOT NULL,
+			team_id TEXT NOT NULL,
+			created_at DATETIME,
+			PRIMARY KEY (agent_id, team_id)
 		)`,
 		`CREATE TABLE workspace_agent_preset_versions (
 			id TEXT PRIMARY KEY,

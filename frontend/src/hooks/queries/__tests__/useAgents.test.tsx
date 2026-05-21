@@ -8,12 +8,6 @@ const captured = {
   agents: null as ReturnType<typeof import('@/hooks/queries/useAgents').useAgents> | null,
 }
 
-vi.mock('@/lib/services/agentService', () => ({
-  agentService: {
-    list: vi.fn(),
-  },
-}))
-
 vi.mock('@/lib/services/automationService', () => ({
   automationService: {
     listAgents: vi.fn().mockResolvedValue({
@@ -24,7 +18,7 @@ vi.mock('@/lib/services/automationService', () => ({
   },
 }))
 
-import { agentService } from '@/lib/services/agentService'
+import { automationService } from '@/lib/services/automationService'
 import { useAgents } from '@/hooks/queries/useAgents'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -40,8 +34,8 @@ describe('useAgents', () => {
     vi.clearAllMocks()
   })
 
-  it('uses the PM agent service for PM agent metadata', async () => {
-    vi.mocked(agentService.list).mockResolvedValue({
+  it('uses the filtered automation agent service for run pickers', async () => {
+    vi.mocked(automationService.listAgents).mockResolvedValue({
       data: [],
       error: null,
       status: 200,
@@ -64,7 +58,7 @@ describe('useAgents', () => {
       await captured.agents?.refetch()
     })
 
-    expect(agentService.list).toHaveBeenCalledWith('ws-1')
+    expect(automationService.listAgents).toHaveBeenCalledWith('ws-1')
 
     await act(async () => {
       root.unmount()

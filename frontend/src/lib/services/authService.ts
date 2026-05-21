@@ -11,7 +11,7 @@ import type {
 export const authService = {
   signup: (email: string, password: string, fullName: string) =>
     api.post<AuthResponse>('/auth/signup', { email, password, full_name: fullName }),
-  signin: (email: string, password: string, rememberMe = false) =>
+  signin: (email: string, password: string, rememberMe = true) =>
     api.post<SigninResponse>('/auth/signin', { email, password, remember_me: rememberMe }),
   verify2FASignin: (twoFaToken: string, code: string, useRecoveryCode = false) =>
     api.post<AuthResponse>('/auth/2fa/verify-signin', useRecoveryCode
@@ -24,8 +24,9 @@ export const authService = {
   me: () => api.get<User>('/auth/me'),
   updateProfile: (data: { full_name?: string; avatar_url?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string; default_workspace_id?: string }) =>
     api.put<User>('/auth/me', data),
-  refresh: (refreshToken: string) =>
-    api.post<AuthResponse>('/auth/refresh', { refresh_token: refreshToken }),
+  refresh: () =>
+    api.post<AuthResponse>('/auth/refresh', {}),
+  signout: () => api.post<{ message: string }>('/auth/signout', {}),
   changePassword: (currentPassword: string, newPassword: string) =>
     api.put<{ message: string }>('/auth/change-password', { current_password: currentPassword, new_password: newPassword }),
   forgotPassword: (email: string) =>
@@ -44,13 +45,12 @@ export const authService = {
   verifyEmail: (token: string) =>
     api.post<{ message: string }>('/auth/verify-email', { token }),
   uploadAvatar: async (file: File): Promise<{ data: User | null; error: string | null }> => {
-    const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('avatar', file);
     try {
       const res = await fetch(`${API_BASE}/auth/me/avatar`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
         body: formData,
       });
       if (!res.ok) {
