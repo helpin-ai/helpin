@@ -123,7 +123,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
-	if err := requireCanManage(ctx, req.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, req.TeamID); err != nil {
 		return nil, err
 	}
 	health := model.PMEpicHealthNone
@@ -271,7 +271,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if current == nil {
 		return nil, fmt.Errorf("epic not found")
 	}
-	if err := requireCanManage(ctx, current.Epic.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, current.Epic.TeamID); err != nil {
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := current.Epic
@@ -428,7 +428,7 @@ func (s *PMEpicService) Delete(ctx context.Context, id string, actorID string) e
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := s.requireAdmin(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.Delete(ctx, id); err != nil {
@@ -474,7 +474,7 @@ func (s *PMEpicService) UpdateHealth(ctx context.Context, id string, req model.U
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.UpdateHealth(ctx, id, req.Health, req.Comment); err != nil {
@@ -496,7 +496,7 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := validateLabelScope(ctx, s.labelRepo, epic.Epic.WorkspaceID, []string{labelID}, allowedTeamIDs(epic.Epic.TeamID)); err != nil {
@@ -520,7 +520,7 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.RemoveLabel(ctx, epicID, labelID); err != nil {
