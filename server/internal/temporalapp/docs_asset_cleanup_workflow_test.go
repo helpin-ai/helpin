@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/testsuite"
 )
 
 type fakeDocsAssetReferenceChecker struct {
@@ -83,5 +86,49 @@ func TestDocsAssetCleanupActivityReturnsS3DeleteErrorForRetry(t *testing.T) {
 	}
 	if len(store.deleted) != 1 {
 		t.Fatalf("delete attempts = %d, want 1", len(store.deleted))
+	}
+}
+
+func TestDocsAssetCleanupWorkflowSchedulesLaterAssetsBeforeFailedAssetRetriesExhaust(t *testing.T) {
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	deleteErr := errors.New("s3 down")
+	failedAttempts := 0
+	failedAttemptsWhenNextRan := 0
+	env.RegisterActivityWithOptions(func(_ context.Context, input DocsAssetCleanupAssetInput) error {
+		switch input.AssetKey {
+		case "docs-import/ws-1/import-1/fail.png":
+			failedAttempts++
+			return deleteErr
+		case "docs-import/ws-1/import-1/next.png":
+			failedAttemptsWhenNextRan = failedAttempts
+			return nil
+		default:
+			t.Fatalf("unexpected asset key: %s", input.AssetKey)
+			return nil
+		}
+	}, activity.RegisterOptions{Name: docsAssetCleanupActivityName})
+
+	env.ExecuteWorkflow(DocsAssetCleanupWorkflow, DocsAssetCleanupInput{
+		WorkspaceID:        "ws-1",
+		DeletedDocumentID:  "doc-1",
+		CandidateAssetKeys: []string{"docs-import/ws-1/import-1/fail.png", "docs-import/ws-1/import-1/next.png"},
+	})
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatalf("workflow error: %v", err)
+	}
+	if failedAttempts != 5 {
+		t.Fatalf("failed asset attempts = %d, want 5", failedAttempts)
+	}
+	if failedAttemptsWhenNextRan == 0 {
+		t.Fatal("next asset cleanup did not run")
+	}
+	if failedAttemptsWhenNextRan >= failedAttempts {
+		t.Fatalf("next asset ran after failed asset exhausted retries; failed attempts at next = %d, total failed attempts = %d", failedAttemptsWhenNextRan, failedAttempts)
 	}
 }

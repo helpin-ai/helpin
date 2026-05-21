@@ -46,14 +46,26 @@ func DocsAssetCleanupWorkflow(ctx workflow.Context, input DocsAssetCleanupInput)
 	ctx = workflow.WithActivityOptions(ctx, ao)
 	logger := workflow.GetLogger(ctx)
 
+	type cleanupFuture struct {
+		key    string
+		future workflow.Future
+	}
+	cleanups := make([]cleanupFuture, 0, len(input.CandidateAssetKeys))
 	for _, key := range dedupeWorkflowAssetKeys(input.CandidateAssetKeys) {
 		assetInput := DocsAssetCleanupAssetInput{
 			WorkspaceID:       input.WorkspaceID,
 			DeletedDocumentID: input.DeletedDocumentID,
 			AssetKey:          key,
 		}
-		if err := workflow.ExecuteActivity(ctx, docsAssetCleanupActivityName, assetInput).Get(ctx, nil); err != nil {
-			logger.Error("docs asset cleanup failed after retries", "workspace_id", input.WorkspaceID, "deleted_document_id", input.DeletedDocumentID, "asset_key", key, "error", err)
+		cleanups = append(cleanups, cleanupFuture{
+			key:    key,
+			future: workflow.ExecuteActivity(ctx, docsAssetCleanupActivityName, assetInput),
+		})
+	}
+
+	for _, cleanup := range cleanups {
+		if err := cleanup.future.Get(ctx, nil); err != nil {
+			logger.Error("docs asset cleanup failed after retries", "workspace_id", input.WorkspaceID, "deleted_document_id", input.DeletedDocumentID, "asset_key", cleanup.key, "error", err)
 		}
 	}
 	return nil

@@ -446,6 +446,83 @@ func TestDocsDocumentDeleteHardDeletesGraphAndExclusiveAssets(t *testing.T) {
 	}
 }
 
+func TestDocsDocumentDeleteRollsBackGraphWhenDocumentHardDeleteFails(t *testing.T) {
+	t.Parallel()
+
+	const (
+		workspaceID = "ws-delete-rollback"
+		spaceID     = "space-delete-rollback"
+		userID      = "user-delete-rollback"
+		documentID  = "doc-delete-rollback"
+	)
+	ctx := context.Background()
+	db := setupDocsDeletionTestDB(t)
+	now := time.Date(2026, 4, 16, 10, 15, 0, 0, time.UTC)
+
+	seedDocsSpace(t, db, model.DocsSpace{
+		ID:          spaceID,
+		WorkspaceID: workspaceID,
+		Name:        "Rollback",
+		Slug:        "rollback",
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Type:        model.SpaceTypeInternal,
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	seedDocsOrderingDocument(t, db, model.DocsDocument{
+		ID:          documentID,
+		WorkspaceID: workspaceID,
+		SpaceID:     spaceID,
+		Title:       "Rollback",
+		Status:      model.DocStatusDraft,
+		Visibility:  model.SpaceVisibilityWorkspaceWide,
+		Position:    0,
+		CreatedBy:   userID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	})
+	if err := db.Exec(`INSERT INTO docs_contents (id, document_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		"content-delete-rollback", documentID, []byte(`{"type":"doc","content":[]}`), now, now).Error; err != nil {
+		t.Fatalf("seed content: %v", err)
+	}
+	if err := db.Exec(`CREATE TRIGGER block_doc_delete BEFORE DELETE ON docs_documents WHEN OLD.id = '` + documentID + `' BEGIN SELECT RAISE(ABORT, 'blocked docs delete'); END`).Error; err != nil {
+		t.Fatalf("create delete blocker trigger: %v", err)
+	}
+
+	docRepo := repository.NewDocsDocumentRepository(db, false)
+	cleanup := &fakeDocsAssetCleanupEnqueuer{}
+	svc := NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil, false)
+	svc.SetDeletionDependencies(DocsDocumentDeletionDependencies{
+		ContentRepo:     repository.NewDocsContentRepository(db),
+		AssetStore:      &fakeDocsAssetStore{publicBase: "https://cdn.helpin.test"},
+		CleanupEnqueuer: cleanup,
+	})
+
+	if err := svc.Delete(ctx, documentID); err == nil {
+		t.Fatalf("Delete error = nil, want hard delete failure")
+	}
+
+	var docCount int64
+	if err := db.WithContext(ctx).Table("docs_documents").Where("id = ?", documentID).Count(&docCount).Error; err != nil {
+		t.Fatalf("count docs_documents: %v", err)
+	}
+	if docCount != 1 {
+		t.Fatalf("docs_documents rows after failed delete = %d, want 1", docCount)
+	}
+	var contentCount int64
+	if err := db.WithContext(ctx).Table("docs_contents").Where("document_id = ?", documentID).Count(&contentCount).Error; err != nil {
+		t.Fatalf("count docs_contents: %v", err)
+	}
+	if contentCount != 1 {
+		t.Fatalf("docs_contents rows after failed delete = %d, want 1", contentCount)
+	}
+	if cleanup.calls != 0 {
+		t.Fatalf("cleanup enqueue calls after failed delete = %d, want 0", cleanup.calls)
+	}
+}
+
 func TestDocsDocumentDeleteEnqueueFailureDoesNotFailDelete(t *testing.T) {
 	t.Parallel()
 

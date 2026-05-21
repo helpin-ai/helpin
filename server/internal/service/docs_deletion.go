@@ -11,6 +11,7 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 type docsAssetStore interface {
@@ -47,7 +48,10 @@ func (s *DocsDocumentService) deleteDocumentPermanently(ctx context.Context, doc
 }
 
 func (s *DocsDocumentService) deleteDocumentRows(ctx context.Context, documentIDs []string) error {
-	deps := s.deletionDeps
+	return deleteDocumentRowsWithDeps(ctx, s.deletionDeps, documentIDs)
+}
+
+func deleteDocumentRowsWithDeps(ctx context.Context, deps DocsDocumentDeletionDependencies, documentIDs []string) error {
 	if deps.PublicationRepo != nil {
 		if err := deps.PublicationRepo.DeleteArticlePublicationsByDocumentIDs(ctx, documentIDs); err != nil {
 			return err
@@ -118,14 +122,45 @@ func (s *DocsDocumentService) deleteDocumentsPermanentlySync(ctx context.Context
 	}
 	candidateKeys := sortedAssetKeys(deleteCandidates)
 
-	if err := s.deleteDocumentRows(ctx, documentIDs); err != nil {
-		return nil, err
-	}
-	if err := s.docRepo.HardDeleteByIDs(ctx, documentIDs); err != nil {
+	if err := s.docRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := deleteDocumentRowsWithDeps(ctx, docsDocumentDeletionDepsWithDB(s.deletionDeps, tx, s.useSortKey), documentIDs); err != nil {
+			return err
+		}
+		return repository.NewDocsDocumentRepository(tx, s.useSortKey).HardDeleteByIDs(ctx, documentIDs)
+	}); err != nil {
 		return nil, err
 	}
 
 	return candidateKeys, nil
+}
+
+func docsDocumentDeletionDepsWithDB(deps DocsDocumentDeletionDependencies, db *gorm.DB, useSortKey bool) DocsDocumentDeletionDependencies {
+	txDeps := deps
+	if deps.ContentRepo != nil {
+		txDeps.ContentRepo = repository.NewDocsContentRepository(db)
+	}
+	if deps.BlockRepo != nil {
+		txDeps.BlockRepo = repository.NewDocsBlockRepository(db)
+	}
+	if deps.VersionRepo != nil {
+		txDeps.VersionRepo = repository.NewDocsVersionRepository(db)
+	}
+	if deps.LinkRepo != nil {
+		txDeps.LinkRepo = repository.NewDocsLinkRepository(db)
+	}
+	if deps.ChunkRepo != nil {
+		txDeps.ChunkRepo = repository.NewDocsChunkRepository(db)
+	}
+	if deps.HelpcenterRepo != nil {
+		txDeps.HelpcenterRepo = repository.NewDocsHelpcenterRepository(db, useSortKey)
+	}
+	if deps.PublicationRepo != nil {
+		txDeps.PublicationRepo = repository.NewDocsHelpcenterPublicationRepository(db)
+	}
+	if deps.TranslationRepo != nil {
+		txDeps.TranslationRepo = repository.NewDocsHelpcenterTranslationRepository(db)
+	}
+	return txDeps
 }
 
 func (s *DocsDocumentService) collectAssetKeysForDeletedDocuments(ctx context.Context, workspaceID string, documentIDs []string) (map[string]struct{}, error) {
