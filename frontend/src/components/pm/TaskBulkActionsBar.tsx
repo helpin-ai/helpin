@@ -208,11 +208,8 @@ export function TaskBulkActionsBar({
   }, [finish, loading, selectedTasks, workspaceId]);
 
   const handleLabelSelectionChange = (nextIds: string[], mode: 'add' | 'remove') => {
-    const currentIds = mode === 'add' ? addLabelIds : removeLabelIds;
-    const changedIds = nextIds.filter((id) => !currentIds.includes(id));
     if (mode === 'add') setAddLabelIds(nextIds);
     else setRemoveLabelIds(nextIds);
-    if (changedIds.length > 0) void bulkLabelUpdate(changedIds, mode);
   };
 
   if (count === 0) return null;
@@ -317,7 +314,7 @@ export function TaskBulkActionsBar({
         </SelectContent>
       </Select>
 
-      <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+      <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
         <LabelPicker
           workspaceId={workspaceId}
           teamId={teamId ?? undefined}
@@ -329,9 +326,20 @@ export function TaskBulkActionsBar({
           triggerLabel="Add labels"
           className={loading ? 'pointer-events-none opacity-50' : undefined}
         />
+        {addLabelIds.length > 0 ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={loading}
+            onClick={() => void bulkLabelUpdate(addLabelIds, 'add')}
+          >
+            Apply
+          </Button>
+        ) : null}
       </div>
 
-      <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+      <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
         <LabelPicker
           workspaceId={workspaceId}
           teamId={teamId ?? undefined}
@@ -343,6 +351,17 @@ export function TaskBulkActionsBar({
           triggerLabel="Remove labels"
           className={loading ? 'pointer-events-none opacity-50' : undefined}
         />
+        {removeLabelIds.length > 0 ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={loading}
+            onClick={() => void bulkLabelUpdate(removeLabelIds, 'remove')}
+          >
+            Apply
+          </Button>
+        ) : null}
       </div>
 
       <Popover open={deadlineOpen} onOpenChange={setDeadlineOpen}>
