@@ -10,7 +10,7 @@ export function gitRepoURL(provider: string | undefined, repoFullName: string, b
 }
 
 export function gitBranchURL(provider: string | undefined, repoFullName: string, branch: string, baseURL?: string | null) {
-  const branchPath = encodeURIComponent(branch);
+  const branchPath = branch.split('/').map(encodeURIComponent).join('/');
   const branchSegment = provider === 'gitlab' ? '-/tree' : 'tree';
   return `${gitRepoURL(provider, repoFullName, baseURL)}/${branchSegment}/${branchPath}`;
 }
