@@ -163,6 +163,7 @@ func main() {
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db, false)
+	docsAssetReferenceRepo := repository.NewDocsAssetReferenceRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
@@ -602,13 +603,14 @@ func main() {
 	// Sprint automation activities.
 	sprintAutomationActivities := temporalapp.NewSprintAutomationActivities(pmAutomationService)
 	docsEmbeddingActivities := temporalapp.NewDocsEmbeddingActivities(docsEmbeddingService)
+	docsAssetCleanupActivities := temporalapp.NewDocsAssetCleanupActivities(docsAssetReferenceRepo, s3Client)
 	contentSourceSyncActivities := temporalapp.NewContentSourceSyncActivities(supportContentSyncService)
 	pmImportActivities := service.NewPMImportActivities(pmImportService)
 
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities, pmImportActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -647,7 +649,7 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
@@ -767,6 +769,13 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 	if docsEmbeddingActivities != nil {
 		w.RegisterActivityWithOptions(docsEmbeddingActivities.SyncSpaceActivity, activity.RegisterOptions{
 			Name: "DocsEmbeddingActivities.SyncSpaceActivity",
+		})
+	}
+
+	w.RegisterWorkflow(temporalapp.DocsAssetCleanupWorkflow)
+	if docsAssetCleanupActivities != nil {
+		w.RegisterActivityWithOptions(docsAssetCleanupActivities.CleanupAssetActivity, activity.RegisterOptions{
+			Name: "DocsAssetCleanupActivities.CleanupAssetActivity",
 		})
 	}
 
