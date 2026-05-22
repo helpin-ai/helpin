@@ -110,6 +110,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			integration_id TEXT NOT NULL,
 			provider TEXT NOT NULL DEFAULT 'github',
+			base_url TEXT,
 			external_id TEXT NOT NULL DEFAULT '',
 			full_name TEXT NOT NULL,
 			default_branch TEXT NOT NULL DEFAULT 'main',
