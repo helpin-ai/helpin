@@ -85,6 +85,7 @@ interface LabelPickerProps {
   className?: string;
   /** Show only the trigger button, no badges — used for compact inline table cells */
   triggerOnly?: boolean;
+  triggerLabel?: string;
 }
 
 export function LabelPicker({
@@ -96,6 +97,7 @@ export function LabelPicker({
   onLabelsChange,
   className,
   triggerOnly = false,
+  triggerLabel,
 }: LabelPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -165,7 +167,7 @@ export function LabelPicker({
             }}
           >
             {selectedLabels.length > 0 && <Tag01Icon className="h-3 w-3" />}
-            {selectedLabels.length === 0 ? '+ Add label' : 'Add'}
+            {triggerLabel ?? (selectedLabels.length === 0 ? '+ Add label' : 'Add')}
           </button>
         </PopoverTrigger>
         {open && (

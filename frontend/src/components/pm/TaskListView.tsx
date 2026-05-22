@@ -13,7 +13,9 @@ import {
   type Row,
   type SortingState,
   type ColumnSizingState,
+  type RowSelectionState,
 } from '@tanstack/react-table';
+import { useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowLeft02Icon, Cancel01Icon, Copy01Icon, FilterHorizontalIcon, Loading01Icon, Search01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
@@ -24,6 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
@@ -70,6 +73,7 @@ import type {
 import type { AssignableMember, TeamEstimateSettings, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
+import { TaskBulkActionsBar, type TaskBulkActionResult } from '@/components/pm/TaskBulkActionsBar';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { showTaskDuplicatedToast } from '@/components/pm/TaskDuplicatedToast';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
@@ -88,11 +92,13 @@ import {
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
   TABLE_PINNED_HEADER_RIGHT,
+  CHECKBOX_COL_SIZE,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
   dynamicCellStyle,
   pinnedStyle,
 } from '@/lib/tableStyles';
+import { queryKeys } from '@/lib/queryKeys';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
 import { getTaskListPinnedOffsets, type TaskListPinnedOffsets } from '@/components/pm/task-detail/taskListPinnedOffsets';
@@ -528,6 +534,7 @@ export function TaskListView({
   toolbarActions,
   footer,
 }: TaskListViewProps) {
+  const queryClient = useQueryClient();
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '');
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
@@ -577,6 +584,7 @@ export function TaskListView({
   const headerRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
   const [taskSearchQuery, setTaskSearchQuery] = useState('');
@@ -599,6 +607,9 @@ export function TaskListView({
   const isPerGroupMode = groupBy === 'workflow_state' && !isExternal;
   const onOpenTaskRef = useRef(onOpenTask);
   const pendingInlineUpdatesRef = useRef(0);
+  const lastSelectedTaskIdRef = useRef<string | null>(null);
+  const selectableTaskIdsRef = useRef<string[]>([]);
+  const checkboxShiftKeyRef = useRef(false);
 
   useEffect(() => {
     onOpenTaskRef.current = onOpenTask;
@@ -945,6 +956,91 @@ export function TaskListView({
     typeFilter,
   ]);
 
+  const currentPageTaskIds = useMemo(() => filteredTasks.map((task) => task.id), [filteredTasks]);
+  const currentPageTaskIdSet = useMemo(() => new Set(currentPageTaskIds), [currentPageTaskIds]);
+  const selectedTasks = useMemo(() => {
+    const taskById = new Map(tasks.map((task) => [task.id, task]));
+    return Object.keys(rowSelection)
+      .filter((taskId) => rowSelection[taskId])
+      .map((taskId) => taskById.get(taskId))
+      .filter((task): task is Task => Boolean(task));
+  }, [rowSelection, tasks]);
+  const selectedTaskCount = selectedTasks.length;
+  const allCurrentPageSelected = currentPageTaskIds.length > 0 && currentPageTaskIds.every((taskId) => rowSelection[taskId]);
+  const someCurrentPageSelected = currentPageTaskIds.some((taskId) => rowSelection[taskId]);
+
+  useEffect(() => {
+    selectableTaskIdsRef.current = currentPageTaskIds;
+  }, [currentPageTaskIds]);
+
+  useEffect(() => {
+    setRowSelection((current) => {
+      let changed = false;
+      const next: RowSelectionState = {};
+      for (const [taskId, selected] of Object.entries(current)) {
+        if (selected && currentPageTaskIdSet.has(taskId)) {
+          next[taskId] = true;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [currentPageTaskIdSet]);
+
+  const clearRowSelection = useCallback(() => {
+    setRowSelection({});
+    lastSelectedTaskIdRef.current = null;
+  }, []);
+
+  const handleSelectAllCurrentPage = useCallback((checked: boolean) => {
+    setRowSelection((current) => {
+      const next: RowSelectionState = { ...current };
+      for (const taskId of currentPageTaskIds) {
+        if (checked) next[taskId] = true;
+        else delete next[taskId];
+      }
+      return next;
+    });
+  }, [currentPageTaskIds]);
+
+  const handleRowSelectionChange = useCallback((taskId: string, checked: boolean, shiftKey: boolean) => {
+    setRowSelection((current) => {
+      const next: RowSelectionState = { ...current };
+      const ids = selectableTaskIdsRef.current;
+      const previousTaskId = lastSelectedTaskIdRef.current;
+
+      if (shiftKey && previousTaskId) {
+        const start = ids.indexOf(previousTaskId);
+        const end = ids.indexOf(taskId);
+        if (start >= 0 && end >= 0) {
+          const [from, to] = start < end ? [start, end] : [end, start];
+          for (const id of ids.slice(from, to + 1)) {
+            next[id] = true;
+          }
+          lastSelectedTaskIdRef.current = taskId;
+          return next;
+        }
+      }
+
+      if (checked) next[taskId] = true;
+      else delete next[taskId];
+      lastSelectedTaskIdRef.current = taskId;
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedTaskCount === 0) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clearRowSelection();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [clearRowSelection, selectedTaskCount]);
+
   const clearLocalTaskFieldFilters = useCallback(() => {
     setOwnerFilter(TASK_LIST_FILTER_ALL);
     setRequesterFilter(TASK_LIST_FILTER_ALL);
@@ -1094,6 +1190,39 @@ export function TaskListView({
     if (isExternal && externalTasks) setTasks(externalTasks);
   }, [isExternal, externalTasks]);
 
+  const handleBulkComplete = useCallback(
+    async (result: TaskBulkActionResult) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) });
+
+      const successfulIds = new Set(result.successfulTaskIds);
+      if (result.action === 'delete' || result.action === 'archive') {
+        applyTasksUpdate((current) => current.filter((task) => !successfulIds.has(task.id)));
+      } else if (result.updatedTasks.length > 0) {
+        const updatedById = new Map(result.updatedTasks.map((task) => [task.id, task]));
+        applyTasksUpdate((current) => current.map((task) => updatedById.get(task.id) ?? task));
+      }
+
+      if (!isExternal) {
+        if (isPerGroupMode) {
+          await fetchTasksByState();
+        } else {
+          await fetchTasksFlat(1, false);
+        }
+      }
+    },
+    [
+      applyTasksUpdate,
+      fetchTasksByState,
+      fetchTasksFlat,
+      isExternal,
+      isPerGroupMode,
+      queryClient,
+      workspaceId,
+    ],
+  );
+
   // Optimistic inline update with rollback on failure
   const updateTaskField = useCallback(
     async (taskId: string, patch: Partial<Task>) => {
@@ -1198,6 +1327,39 @@ export function TaskListView({
   // Table columns
   const tableColumns = useMemo(
     () => [
+      columnHelper.display({
+        id: 'select',
+        header: () => (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Checkbox
+              aria-label="Select all tasks on this page"
+              checked={allCurrentPageSelected ? true : someCurrentPageSelected ? 'indeterminate' : false}
+              onCheckedChange={(checked) => handleSelectAllCurrentPage(checked === true)}
+            />
+          </div>
+        ),
+        size: CHECKBOX_COL_SIZE,
+        enableGrouping: false,
+        enableSorting: false,
+        enableResizing: false,
+        cell: (info) => (
+          <div onClick={(event) => event.stopPropagation()}>
+            <Checkbox
+              aria-label={`Select ${info.row.original.task_key}`}
+              checked={info.row.getIsSelected()}
+              onClick={(event) => {
+                event.stopPropagation();
+                checkboxShiftKeyRef.current = event.shiftKey;
+              }}
+              onCheckedChange={(checked) => {
+                const shouldSelect = checkboxShiftKeyRef.current ? true : checked === true;
+                handleRowSelectionChange(info.row.original.id, shouldSelect, checkboxShiftKeyRef.current);
+                checkboxShiftKeyRef.current = false;
+              }}
+            />
+          </div>
+        ),
+      }),
       columnHelper.accessor('task_key', {
         id: 'displayId',
         header: 'ID',
@@ -1497,7 +1659,7 @@ export function TaskListView({
           ),
         }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById]
+    [allCurrentPageSelected, someCurrentPageSelected, handleSelectAllCurrentPage, handleRowSelectionChange, stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -1599,10 +1761,13 @@ export function TaskListView({
       columnVisibility,
       sorting,
       columnSizing,
+      rowSelection,
     },
     onExpandedChange: setExpanded,
     onSortingChange: setSorting,
     onColumnSizingChange: setColumnSizing,
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: true,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
     autoResetExpanded: false,
@@ -1614,6 +1779,13 @@ export function TaskListView({
   });
 
   const { rows } = table.getRowModel();
+  useEffect(() => {
+    selectableTaskIdsRef.current = rows
+      .filter((row) => !row.getIsGrouped())
+      .map((row) => row.original.id);
+  }, [rows]);
+
+  const selectWidth = table.getColumn('select')?.getSize() ?? CHECKBOX_COL_SIZE;
   const displayIdWidth = table.getColumn('displayId')?.getSize() ?? 90;
   const typeIconColumn = table.getColumn('typeIcon');
   const typeIconWidth = typeIconColumn?.getSize() ?? 40;
@@ -1621,11 +1793,12 @@ export function TaskListView({
   const pinnedOffsets = useMemo(
     () =>
       getTaskListPinnedOffsets({
+        selectWidth,
         displayIdWidth,
         typeIconWidth,
         showTypeIcon,
       }),
-    [displayIdWidth, typeIconWidth, showTypeIcon],
+    [selectWidth, displayIdWidth, typeIconWidth, showTypeIcon],
   );
 
   const getTrailingGroupStateId = useCallback(
@@ -1746,7 +1919,7 @@ export function TaskListView({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="relative flex min-h-0 flex-1 flex-col gap-2">
       {showToolbar ? (
         <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
           {showLocalTaskControls ? (
@@ -1840,10 +2013,11 @@ export function TaskListView({
                 const canSort = header.column.getCanSort();
                 const sorted = header.column.getIsSorted();
                 const colId = header.column.id;
-                const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+                const pinnedClass = colId === 'select' || colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
                   ? TABLE_PINNED_HEADER_LEFT
                   : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
-                const pinnedSt = colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
+                const pinnedSt = colId === 'select' ? pinnedStyle('left', pinnedOffsets.select)
+                  : colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
                   : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
                   : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
                   : colId === 'actions' ? pinnedStyle('right', 0) : {};
@@ -1940,6 +2114,7 @@ export function TaskListView({
                     <>
                       <MemoDataRow
                         row={row}
+                        selected={row.getIsSelected()}
                         onOpenTask={handleOpenTask}
                         columnSizingVersion={columnSizingVersion}
                         pinnedOffsets={pinnedOffsets}
@@ -1966,6 +2141,19 @@ export function TaskListView({
           )}
         </div>
       </div>
+      <TaskBulkActionsBar
+        selectedTasks={selectedTasks}
+        workspaceId={workspaceId}
+        teamId={teamId}
+        workflow={workflow}
+        assignableMembers={assignableMembers}
+        epics={epics}
+        sprints={sprints}
+        labels={allLabels}
+        onLabelsChange={setAllLabels}
+        onComplete={handleBulkComplete}
+        onClearSelection={clearRowSelection}
+      />
       {footer ? (
         <div className="border-t border-border/60 bg-card">
           {footer}
@@ -2144,6 +2332,7 @@ function StickyPinnedGroupOverlay({
 
 interface PMDataRowProps {
   row: Row<Task>;
+  selected: boolean;
   onOpenTask: (task: Task) => void;
   columnSizingVersion: string;
   pinnedOffsets: TaskListPinnedOffsets;
@@ -2153,6 +2342,7 @@ function arePMDataRowPropsEqual(prev: PMDataRowProps, next: PMDataRowProps): boo
   return (
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
+    prev.selected === next.selected &&
     prev.columnSizingVersion === next.columnSizingVersion &&
     prev.pinnedOffsets === next.pinnedOffsets &&
     prev.onOpenTask === next.onOpenTask
@@ -2161,6 +2351,7 @@ function arePMDataRowPropsEqual(prev: PMDataRowProps, next: PMDataRowProps): boo
 
 const MemoDataRow = memo(function DataRow({
   row,
+  selected,
   onOpenTask,
   columnSizingVersion,
   pinnedOffsets,
@@ -2168,7 +2359,7 @@ const MemoDataRow = memo(function DataRow({
   void columnSizingVersion; // used by arePMDataRowPropsEqual for memo comparison
   return (
     <div
-      className={TASK_LIST_ROW}
+      className={cn(TASK_LIST_ROW, selected && 'bg-muted/70')}
       onClick={() => onOpenTask(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
@@ -2179,10 +2370,11 @@ const MemoDataRow = memo(function DataRow({
         const isResized = runtimeSize !== defSize;
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
-        const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+        const pinnedClass = colId === 'select' || colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
           ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
-        const pinnedSt = colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
+        const pinnedSt = colId === 'select' ? pinnedStyle('left', pinnedOffsets.select)
+          : colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
           : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
           : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
           : colId === 'actions' ? pinnedStyle('right', 0) : {};
