@@ -239,7 +239,8 @@ type ReorderTaskRequest struct {
 
 // TaskUserLinkRequest links a user to a task as owner/follower.
 type TaskUserLinkRequest struct {
-	UserID string `json:"user_id"`
+	UserID            string `json:"user_id"`
+	WorkspaceMemberID string `json:"workspace_member_id"`
 }
 
 // TaskLabelLinkRequest links a label to a task.

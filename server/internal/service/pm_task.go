@@ -1939,7 +1939,7 @@ func (s *PMTaskService) Reorder(ctx context.Context, id string, req model.Reorde
 }
 
 // AddOwner adds an owner and auto-follows them.
-func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID string) error {
+func (s *PMTaskService) AddOwner(ctx context.Context, taskID, ownerRef, actorID string) error {
 	current, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
 		return err
@@ -1950,8 +1950,9 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
 		return err
 	}
-	if userID == "" {
-		return fmt.Errorf("user_id is required")
+	userID, err := s.resolveOwnerUserID(ctx, current.WorkspaceID, ownerRef)
+	if err != nil {
+		return err
 	}
 	if err := s.taskRepo.AddOwner(ctx, taskID, userID); err != nil {
 		return err
@@ -1996,7 +1997,7 @@ func (s *PMTaskService) AddOwner(ctx context.Context, taskID, userID, actorID st
 }
 
 // RemoveOwner removes an owner.
-func (s *PMTaskService) RemoveOwner(ctx context.Context, taskID, userID, actorID string) error {
+func (s *PMTaskService) RemoveOwner(ctx context.Context, taskID, ownerRef, actorID string) error {
 	current, err := s.taskRepo.GetRawByID(ctx, taskID)
 	if err != nil {
 		return err
@@ -2005,6 +2006,10 @@ func (s *PMTaskService) RemoveOwner(ctx context.Context, taskID, userID, actorID
 		return fmt.Errorf("task not found")
 	}
 	if err := s.requireCanEdit(ctx, current.WorkspaceID, actorID); err != nil {
+		return err
+	}
+	userID, err := s.resolveOwnerUserID(ctx, current.WorkspaceID, ownerRef)
+	if err != nil {
 		return err
 	}
 	if err := s.taskRepo.RemoveOwner(ctx, taskID, userID); err != nil {
@@ -2333,6 +2338,24 @@ func (s *PMTaskService) resolveOwnerUserIDs(ctx context.Context, workspaceID str
 		userIDs = append(userIDs, *member.UserID)
 	}
 	return dedupeIDs(userIDs), nil
+}
+
+func (s *PMTaskService) resolveOwnerUserID(ctx context.Context, workspaceID, ownerRef string) (string, error) {
+	ownerRef = strings.TrimSpace(ownerRef)
+	if ownerRef == "" {
+		return "", fmt.Errorf("workspace_member_id or user_id is required")
+	}
+	owner, err := resolveWorkspaceMemberReference(ctx, s.workspaceRepo, workspaceID, ownerRef)
+	if err != nil {
+		return "", err
+	}
+	if owner == nil {
+		return "", fmt.Errorf("workspace member not found")
+	}
+	if owner.UserID == nil || strings.TrimSpace(*owner.UserID) == "" {
+		return "", fmt.Errorf("workspace member %s does not have an active user", owner.ID)
+	}
+	return strings.TrimSpace(*owner.UserID), nil
 }
 
 func stringSet(values []string) map[string]struct{} {

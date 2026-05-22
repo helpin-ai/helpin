@@ -18,6 +18,7 @@ type taskTestEnv struct {
 	db           *gorm.DB
 	wsID         string
 	userID       string
+	memberID     string
 	wfID         string
 	stTodo       string // default "unstarted" state
 	stInProgress string
@@ -105,6 +106,7 @@ func newTaskTestEnv(t *testing.T) taskTestEnv {
 		db:           db,
 		wsID:         wsID,
 		userID:       userID,
+		memberID:     memberID,
 		wfID:         wfID,
 		stTodo:       stTodo,
 		stInProgress: stInProgress,
@@ -2009,8 +2011,8 @@ func TestPMTaskService_Owners(t *testing.T) {
 	t.Run("add and remove owner", func(t *testing.T) {
 		story := createTestTask(t, env, "Owner Test")
 
-		// Add the actor user as owner.
-		err := env.svc.AddOwner(ctx, story.Task.ID, env.userID, env.userID)
+		// Add the actor workspace member as owner.
+		err := env.svc.AddOwner(ctx, story.Task.ID, env.memberID, env.userID)
 		if err != nil {
 			t.Fatalf("AddOwner: %v", err)
 		}
@@ -2029,8 +2031,16 @@ func TestPMTaskService_Owners(t *testing.T) {
 			t.Error("expected user to be auto-followed when added as owner")
 		}
 
-		// Remove owner.
-		err = env.svc.RemoveOwner(ctx, story.Task.ID, env.userID, env.userID)
+		detail, err := env.svc.GetByID(ctx, story.Task.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got := detail.Task.OwnerMemberIDs; len(got) != 1 || got[0] != env.memberID {
+			t.Fatalf("owner_member_ids = %v, want [%s]", got, env.memberID)
+		}
+
+		// Remove owner by the same workspace member reference.
+		err = env.svc.RemoveOwner(ctx, story.Task.ID, env.memberID, env.userID)
 		if err != nil {
 			t.Fatalf("RemoveOwner: %v", err)
 		}
@@ -2041,12 +2051,29 @@ func TestPMTaskService_Owners(t *testing.T) {
 		}
 	})
 
-	t.Run("add owner requires user_id", func(t *testing.T) {
+	t.Run("add owner requires owner reference", func(t *testing.T) {
 		story := createTestTask(t, env, "Empty Owner")
 
 		err := env.svc.AddOwner(ctx, story.Task.ID, "", env.userID)
 		if err == nil {
-			t.Fatal("expected error for empty user_id")
+			t.Fatal("expected error for empty owner reference")
+		}
+	})
+
+	t.Run("add owner rejects users outside workspace", func(t *testing.T) {
+		const outsideUserID = "user-owner-outside"
+		seedUser(t, env.db, outsideUserID, "owner-outside@test.com", "Owner Outside", "hash")
+
+		story := createTestTask(t, env, "Outside Owner")
+		err := env.svc.AddOwner(ctx, story.Task.ID, outsideUserID, env.userID)
+		if err == nil {
+			t.Fatal("expected error for owner outside task workspace")
+		}
+
+		var count int64
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Task.ID, outsideUserID).Count(&count)
+		if count != 0 {
+			t.Fatalf("outside owner count = %d, want 0", count)
 		}
 	})
 

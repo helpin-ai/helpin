@@ -430,19 +430,27 @@ func (h *PMTaskHandler) AddOwner(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := h.taskService.AddOwner(r.Context(), id, req.UserID, userID); err != nil {
+	ownerRef := req.WorkspaceMemberID
+	if ownerRef == "" {
+		ownerRef = req.UserID
+	}
+	if ownerRef == "" {
+		writeError(w, http.StatusBadRequest, "workspace_member_id or user_id is required")
+		return
+	}
+	if err := h.taskService.AddOwner(r.Context(), id, ownerRef, userID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusCreated, model.MessageResponse{Message: "owner added"})
 }
 
-// RemoveOwner handles DELETE /api/pm/tasks/{id}/owners/{userId}.
+// RemoveOwner handles DELETE /api/pm/tasks/{id}/owners/{ownerRef}.
 func (h *PMTaskHandler) RemoveOwner(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
-	userID := chi.URLParam(r, "userId")
-	if err := h.taskService.RemoveOwner(r.Context(), id, userID, actorID); err != nil {
+	ownerRef := chi.URLParam(r, "userId")
+	if err := h.taskService.RemoveOwner(r.Context(), id, ownerRef, actorID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
