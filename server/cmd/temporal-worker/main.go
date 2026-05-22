@@ -24,6 +24,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
+	"github.com/helpin-ai/helpin/server/internal/gitlab"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
@@ -145,6 +146,7 @@ func main() {
 	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
+	gitCredentialRepo := repository.NewGitCredentialRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
 	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
@@ -401,6 +403,7 @@ func main() {
 	)
 	pmStoryService.SetRecurringService(pmRecurringTemplateService)
 	pmRecurringTemplateService.SetTaskService(pmStoryService)
+	gitlabClient := gitlab.NewClient(cfg.GitLabClientID, cfg.GitLabClientSecret, cfg.GitLabOAuthRedirectURL, cfg.GitLabBaseURL)
 	gitService := service.NewGitService(
 		gitIntRepo,
 		gitRepo,
@@ -416,7 +419,7 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	)
+	).SetGitLabDependencies(gitCredentialRepo, gitlabClient, resolveGitOAuthEncryptionKey(cfg))
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -566,6 +569,9 @@ func main() {
 		wsPublisher,
 		runtimes,
 		githubAppClient,
+		gitlabClient,
+		gitCredentialRepo,
+		resolveGitOAuthEncryptionKey(cfg),
 		runEngine,
 		agentService,
 	)
@@ -882,6 +888,23 @@ func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
 	}
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func resolveGitOAuthEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.GitOAuthEncryptionKey)); err != nil {
+		slog.Warn("invalid GIT_OAUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for git oauth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
 		return key
 	}

@@ -227,6 +227,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
+		r.Get("/git/gitlab/callback", h.Git.GitLabCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
 		if h.PostmarkInbound != nil {
 			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
@@ -391,6 +392,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/organizations/{id}", h.Organization.Get)
 			r.Put("/organizations/{id}", h.Organization.Update)
 			r.Delete("/organizations/{id}", h.Organization.Delete)
+			r.Get("/organizations/{id}/git/integrations", h.Git.ListOrgIntegrations)
+			r.Post("/organizations/{id}/git/integrations", h.Git.CreateOrgIntegration)
+			r.Get("/organizations/{id}/git/github/install-url", h.Git.GetOrgGitHubInstallURL)
+			r.Get("/organizations/{id}/git/gitlab/connect-url", h.Git.GetOrgGitLabConnectURL)
+			r.Get("/organizations/{id}/git/integrations/{integrationId}", h.Git.GetOrgIntegration)
+			r.Post("/organizations/{id}/git/integrations/{integrationId}/sync", h.Git.SyncOrgRepositories)
+			r.Delete("/organizations/{id}/git/integrations/{integrationId}", h.Git.DeleteOrgIntegration)
 			r.Get("/organizations/{id}/members", h.Organization.ListMembers)
 			r.Post("/organizations/{id}/members", h.Organization.AddMember)
 			r.Put("/organizations/{id}/members/{userId}", h.Organization.UpdateMember)
@@ -579,6 +587,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
 				r.With(requirePerm(authorization.PermIntegrationsConnect)).Get("/github/install-url", h.Git.GetGitHubInstallURL)
+				r.With(requirePerm(authorization.PermIntegrationsConnect)).Get("/gitlab/connect-url", h.Git.GetGitLabConnectURL)
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/integrations", h.Git.ListIntegrations)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/integrations", h.Git.CreateIntegration)
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/integrations/{id}", h.Git.GetIntegration)

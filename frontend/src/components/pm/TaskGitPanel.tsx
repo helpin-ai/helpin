@@ -4,6 +4,7 @@ import { LinkSquare01Icon, GitBranchIcon, GitCommitIcon, GitPullRequestIcon, Loa
 import { Badge } from '@/components/ui/badge';
 import { gitService } from '@/lib/services/gitService';
 import { queryKeys } from '@/lib/queryKeys';
+import { gitBranchURL, gitCommitURL, gitRepoURL } from '@/lib/gitUrls';
 import type { TaskDeliveryTarget, TaskGitLink } from '@/lib/pmTypes';
 
 const PR_STATUS_COLORS: Record<string, string> = {
@@ -130,7 +131,7 @@ export function TaskGitPanel({
 
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground">
                     <a
-                      href={`https://github.com/${link.repo}`}
+                      href={gitRepoURL(link.provider, link.repo, link.base_url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex min-w-0 items-center gap-1 transition-colors hover:text-primary"
@@ -142,7 +143,7 @@ export function TaskGitPanel({
                       <>
                         <span className="text-border">·</span>
                         <a
-                          href={`https://github.com/${link.repo}/tree/${workingBranch}`}
+                          href={gitBranchURL(link.provider, link.repo, workingBranch, link.base_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex min-w-0 items-center gap-1 transition-colors hover:text-primary"
@@ -162,7 +163,7 @@ export function TaskGitPanel({
 
                   {commitSha ? (
                     <a
-                      href={`https://github.com/${link.repo}/commit/${commitSha}`}
+                      href={gitCommitURL(link.provider, link.repo, commitSha, link.base_url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex max-w-full items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-primary"

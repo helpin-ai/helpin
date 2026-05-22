@@ -113,6 +113,12 @@ const TRIGGER_OPTIONS = [
   { value: 'github.pull_request_review_requested', label: 'GitHub review is requested', group: 'GitHub events' },
   { value: 'github.release_published', label: 'GitHub release publishes', group: 'GitHub events' },
   { value: 'github.check_suite_completed', label: 'GitHub check suite completes', group: 'GitHub events' },
+  { value: 'gitlab.push', label: 'GitLab push arrives', group: 'GitLab events' },
+  { value: 'gitlab.merge_request_opened', label: 'GitLab merge request opens', group: 'GitLab events' },
+  { value: 'gitlab.merge_request_merged', label: 'GitLab merge request merges', group: 'GitLab events' },
+  { value: 'gitlab.merge_request_closed', label: 'GitLab merge request closes without merging', group: 'GitLab events' },
+  { value: 'gitlab.release_published', label: 'GitLab release publishes', group: 'GitLab events' },
+  { value: 'gitlab.pipeline_completed', label: 'GitLab pipeline completes', group: 'GitLab events' },
   { value: 'cron', label: 'Schedule ticks', group: 'Advanced' },
 ] as const;
 
@@ -1174,7 +1180,7 @@ function allowedActions(triggerType: string): FlowDraft['actionType'][] {
 }
 
 function requiresExplicitAgentTarget(triggerType: string) {
-  return triggerType.startsWith('github.') && triggerType !== 'github.release_published';
+  return isGitProviderTrigger(triggerType) && !isReleaseTrigger(triggerType);
 }
 
 function triggerLabel(triggerType: string) {
@@ -1285,18 +1291,13 @@ function serializeDraft(draft: FlowDraft, workspaceId: string, timezone: string)
     triggerConfig = { state_id: draft.triggerStateId };
   } else if (draft.triggerType === 'agent_run.approved') {
     triggerConfig = { state_id: draft.triggerStateId };
-  } else if (draft.triggerType === 'github.push') {
+  } else if (isPushTrigger(draft.triggerType)) {
     triggerConfig = { repo_full_name: draft.repoFullName.trim(), branch: draft.branch.trim() };
-  } else if (
-    draft.triggerType === 'github.pull_request_opened'
-    || draft.triggerType === 'github.pull_request_merged'
-    || draft.triggerType === 'github.pull_request_closed'
-    || draft.triggerType === 'github.pull_request_review_requested'
-  ) {
+  } else if (isPullRequestTrigger(draft.triggerType)) {
     triggerConfig = { repo_full_name: draft.repoFullName.trim(), base_branch: draft.baseBranch.trim() };
-  } else if (draft.triggerType === 'github.release_published') {
+  } else if (isReleaseTrigger(draft.triggerType)) {
     triggerConfig = { repo_full_name: draft.repoFullName.trim(), tag_name: draft.tagName.trim() };
-  } else if (draft.triggerType === 'github.check_suite_completed') {
+  } else if (isPipelineTrigger(draft.triggerType)) {
     triggerConfig = { repo_full_name: draft.repoFullName.trim(), branch: draft.branch.trim(), conclusion: draft.conclusion.trim() };
   } else if (draft.triggerType === 'cron') {
     triggerConfig = serializeScheduleConfig(scheduleExpressionForDraftUTC(draft, timezone));
@@ -1341,23 +1342,20 @@ function validateDraft(draft: FlowDraft) {
     if (!draft.workflowId) return 'Choose a workflow';
     if (!draft.triggerStateId) return 'Choose the state that starts this flow';
   }
-  if (draft.triggerType === 'github.push' && !draft.repoFullName.trim() && !draft.branch.trim()) {
+  if (isPushTrigger(draft.triggerType) && !draft.repoFullName.trim() && !draft.branch.trim()) {
     return 'Add a repository or branch filter';
   }
   if (
-    (draft.triggerType === 'github.pull_request_opened'
-      || draft.triggerType === 'github.pull_request_merged'
-      || draft.triggerType === 'github.pull_request_closed'
-      || draft.triggerType === 'github.pull_request_review_requested')
+    isPullRequestTrigger(draft.triggerType)
     && !draft.repoFullName.trim()
     && !draft.baseBranch.trim()
   ) {
     return 'Add a repository or base branch filter';
   }
-  if (draft.triggerType === 'github.release_published' && !draft.repoFullName.trim() && !draft.tagName.trim()) {
+  if (isReleaseTrigger(draft.triggerType) && !draft.repoFullName.trim() && !draft.tagName.trim()) {
     return 'Add a repository or tag filter';
   }
-  if (draft.triggerType === 'github.check_suite_completed' && !draft.repoFullName.trim() && !draft.branch.trim() && !draft.conclusion.trim()) {
+  if (isPipelineTrigger(draft.triggerType) && !draft.repoFullName.trim() && !draft.branch.trim() && !draft.conclusion.trim()) {
     return 'Add a repository, branch, or conclusion filter';
   }
   if (draft.triggerType === 'cron' && !scheduleExpressionForDraft(draft)) {
@@ -1460,7 +1458,7 @@ function draftLogicRows(draft: FlowDraft, workflows: WorkflowWithStates[], state
 
 function triggerTargetType(triggerType: string): AgentTargetType | null {
   if (isWorkflowTrigger(triggerType)) return 'task';
-  if (triggerType.startsWith('github.')) return 'repository';
+  if (isGitProviderTrigger(triggerType)) return 'repository';
   return null;
 }
 
@@ -1533,19 +1531,19 @@ function FlowTitle({
   } else if (rule.trigger_type === 'agent_run.approved' && stateName) {
     triggerVerb = 'Approved in';
     triggerValue = stateName;
-  } else if (rule.trigger_type.startsWith('github.pull_request')) {
-    triggerVerb = rule.trigger_type === 'github.pull_request_merged' ? 'PR merged'
-      : rule.trigger_type === 'github.pull_request_opened' ? 'PR opened'
-      : rule.trigger_type === 'github.pull_request_closed' ? 'PR closed'
+  } else if (isPullRequestTrigger(rule.trigger_type)) {
+    triggerVerb = rule.trigger_type === 'github.pull_request_merged' || rule.trigger_type === 'gitlab.merge_request_merged' ? 'PR merged'
+      : rule.trigger_type === 'github.pull_request_opened' || rule.trigger_type === 'gitlab.merge_request_opened' ? 'PR opened'
+      : rule.trigger_type === 'github.pull_request_closed' || rule.trigger_type === 'gitlab.merge_request_closed' ? 'PR closed'
       : 'PR review requested';
     const baseBranch = stringValue(rule.trigger_config?.base_branch);
     triggerValue = baseBranch ? `base branch ${baseBranch}` : '';
-  } else if (rule.trigger_type === 'github.push') {
+  } else if (isPushTrigger(rule.trigger_type)) {
     triggerVerb = 'Push arrives';
-  } else if (rule.trigger_type === 'github.release_published') {
+  } else if (isReleaseTrigger(rule.trigger_type)) {
     triggerVerb = 'Release published';
-  } else if (rule.trigger_type === 'github.check_suite_completed') {
-    triggerVerb = 'Check suite completes';
+  } else if (isPipelineTrigger(rule.trigger_type)) {
+    triggerVerb = rule.trigger_type === 'gitlab.pipeline_completed' ? 'Pipeline completes' : 'Check suite completes';
   } else if (rule.trigger_type === 'cron') {
     triggerVerb = 'Schedule ticks';
   }
@@ -1847,26 +1845,48 @@ function FlowRow({
   );
 }
 
-function isGithubTrigger(triggerType: string) {
-  return triggerType.startsWith('github.');
+function isGitProviderTrigger(triggerType: string) {
+  return triggerType.startsWith('github.') || triggerType.startsWith('gitlab.');
 }
 function showRepoField(triggerType: string) {
-  return isGithubTrigger(triggerType);
+  return isGitProviderTrigger(triggerType);
 }
 function showBranchField(triggerType: string) {
-  return triggerType === 'github.push' || triggerType === 'github.check_suite_completed';
+  return isPushTrigger(triggerType) || isPipelineTrigger(triggerType);
 }
 function showBaseBranchField(triggerType: string) {
-  return triggerType.startsWith('github.pull_request_');
+  return isPullRequestTrigger(triggerType);
 }
 function showTagField(triggerType: string) {
-  return triggerType === 'github.release_published';
+  return isReleaseTrigger(triggerType);
 }
 function showConclusionField(triggerType: string) {
-  return triggerType === 'github.check_suite_completed';
+  return isPipelineTrigger(triggerType);
 }
 function showBranchOverrideFields(triggerType: string, actionType: string) {
-  return actionType === 'start_agent_run' && isGithubTrigger(triggerType);
+  return actionType === 'start_agent_run' && isGitProviderTrigger(triggerType);
+}
+
+function isPushTrigger(triggerType: string) {
+  return triggerType === 'github.push' || triggerType === 'gitlab.push';
+}
+
+function isPullRequestTrigger(triggerType: string) {
+  return triggerType === 'github.pull_request_opened'
+    || triggerType === 'github.pull_request_merged'
+    || triggerType === 'github.pull_request_closed'
+    || triggerType === 'github.pull_request_review_requested'
+    || triggerType === 'gitlab.merge_request_opened'
+    || triggerType === 'gitlab.merge_request_merged'
+    || triggerType === 'gitlab.merge_request_closed';
+}
+
+function isReleaseTrigger(triggerType: string) {
+  return triggerType === 'github.release_published' || triggerType === 'gitlab.release_published';
+}
+
+function isPipelineTrigger(triggerType: string) {
+  return triggerType === 'github.check_suite_completed' || triggerType === 'gitlab.pipeline_completed';
 }
 
 function SentenceRow({ connector, tone, children }: { connector: string; tone?: FlowLogicRow['tone']; children: ReactNode }) {

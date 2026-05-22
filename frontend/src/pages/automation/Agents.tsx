@@ -40,6 +40,7 @@ import { docsService } from '@/lib/services/docsService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
+import { buildSettingsRoutePath } from '@/lib/settingsSections';
 import { getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import type {
   Agent,
@@ -1999,6 +2000,7 @@ export function AgentsPage() {
   const navigate = useNavigate();
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id;
+  const repositoriesSettingsHref = workspace?.slug ? buildSettingsRoutePath(workspace.slug, 'repositories') : undefined;
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
   const { teams: accessibleTeams, isAdmin } = useAccessibleTeams(workspaceId ?? '');
@@ -3413,7 +3415,15 @@ export function AgentsPage() {
                         </SelectContent>
                       </Select>
                       {!runNowRepositoriesLoading && runnableRepositories.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No selected repositories are available for agent runs.</p>
+                        <p className="text-xs text-muted-foreground">
+                          No workspace repositories are available for agent runs.
+                          {repositoriesSettingsHref ? (
+                            <>
+                              {' '}
+                              <a href={repositoriesSettingsHref} className="underline underline-offset-2 hover:text-foreground">Manage repositories</a>
+                            </>
+                          ) : null}
+                        </p>
                       ) : null}
                     </div>
                     <div className="space-y-2">
