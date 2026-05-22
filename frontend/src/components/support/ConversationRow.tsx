@@ -291,6 +291,7 @@ export const ConversationRow = memo(function ConversationRow({
   const displayName = conversation.customer_name || conversation.customer_email || visitorLabel;
   const unreadCount = conversation.unread_count ?? 0;
   const isUnread = unreadCount > 0;
+  const isAwaitingReply = conversation.awaiting_reply ?? isUnread;
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsMounted, setActionsMounted] = useState(false);
   const typingState = useSupportPresenceStore((s) => s.typingIndicators[conversation.id]);
@@ -383,7 +384,7 @@ export const ConversationRow = memo(function ConversationRow({
       className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
         isSelected
           ? 'bg-muted'
-          : isUnread
+          : isAwaitingReply
             ? 'bg-blue-50/70 dark:bg-blue-950/20'
             : ''
       }`}
@@ -393,7 +394,7 @@ export const ConversationRow = memo(function ConversationRow({
         className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200 ${
           isSelected
             ? 'h-8 bg-primary'
-            : isUnread
+            : isAwaitingReply
               ? 'h-5 bg-blue-500'
               : 'h-0 bg-transparent'
         }`}
@@ -418,7 +419,7 @@ export const ConversationRow = memo(function ConversationRow({
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
           {/* Headline: name + time */}
           <div className="grid items-center gap-2" style={{ gridTemplateColumns: '1fr auto' }}>
-            <span className={`text-[13.5px] leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}`}>
+            <span className={`text-[13.5px] leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isAwaitingReply ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}`}>
               {displayName}
             </span>
             <div className="relative flex min-w-[40px] items-center justify-end">
@@ -459,7 +460,7 @@ export const ConversationRow = memo(function ConversationRow({
           {/* Context: message preview + activity */}
           <div className="grid items-center gap-1.5 mt-0.5" style={{ gridTemplateColumns: '1fr auto' }}>
             <p
-              className={`text-sm m-0 leading-[18px] ${isUnread ? 'font-medium text-foreground/80' : 'text-muted-foreground'}`}
+              className={`text-sm m-0 leading-[18px] ${isAwaitingReply ? 'font-medium text-foreground/80' : 'text-muted-foreground'}`}
               style={{ display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', maxHeight: '18px' }}
             >
               {isCustomerTyping ? (

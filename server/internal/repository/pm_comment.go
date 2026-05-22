@@ -20,6 +20,16 @@ func NewPMCommentRepository(db *gorm.DB) *PMCommentRepository {
 	return &PMCommentRepository{db: db}
 }
 
+// DB returns the underlying database handle for transaction orchestration.
+func (r *PMCommentRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a repository bound to the provided transaction.
+func (r *PMCommentRepository) WithTx(tx *gorm.DB) *PMCommentRepository {
+	return NewPMCommentRepository(tx)
+}
+
 // List returns top-level comments for an entity with author info, nested replies, reactions, and attachments.
 func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID string) ([]model.CommentWithAuthor, error) {
 	var comments []model.PMComment

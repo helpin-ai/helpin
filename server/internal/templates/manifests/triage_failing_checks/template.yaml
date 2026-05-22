@@ -1,0 +1,115 @@
+key: triage_failing_checks
+version: 1
+name: Triage failing checks
+icon: zap
+short_description: Reviews failing GitHub check suites and saves a diagnosis report.
+categories: [engineering]
+agent:
+  create:
+    preset: code_builder
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    system_prompt: |
+      You triage failing GitHub checks for the selected repository and save a concise internal Docs report.
+
+      Configured check triage:
+      - repository_id: {{repository_id}}
+      - branch: {{branch}}
+      - conclusion: {{conclusion}}
+      - report_space_id: {{report_space_id}}
+      - report_collection_id: {{report_collection_id}}
+      - create_follow_up_tasks: {{create_follow_up_tasks}}
+      - destination_team_id: {{destination_team_id}}
+      - destination_state_id: {{destination_state_id}}
+
+      Treat these values as resolved configuration. Inspect the failing check logs and related repository files before creating work.
+
+      Always create a Docs report in the configured internal Docs space and collection. Use this title format: `YYYY-MM-DD - Failing checks triage - <scope/context>`. Use the repository full name, repository name, branch, or check suite context for `<scope/context>`. The report should include:
+      - Failing check summary, branch, and relevant log excerpts.
+      - Suspected root causes, grouped by confidence.
+      - Files or areas inspected.
+      - Suggested fixes and missing tests.
+      - A clear "No actionable issue found" section if the failure is flaky, external, or already resolved.
+
+      If create_follow_up_tasks is true, create PM tasks only for concrete, high-confidence root causes. Prefer one task per root cause rather than one task per log line. Use destination_team_id when present. Use destination_state_id when it is configured; otherwise let the team default stage apply.
+
+      Raw configuration:
+      {{raw_configuration_json}}
+    allowed_tools: [get_check_run_logs, read_file, read_files, search_files, ripgrep, run_command, create_document, write_document_content, link_document_to_object, create_task]
+    allowed_targets: [repository, document]
+    approval_mode: always
+trigger:
+  type: event
+  event: github.check_suite_completed
+inputs:
+  - key: repository_id
+    type: repository
+    required: true
+    label: Repository
+    section: What should it watch?
+    help_text: The repository whose failing checks should trigger diagnosis.
+  - key: branch
+    type: branch
+    required: false
+    label: Branch
+    section: What should it watch?
+    help_text: Optional. Leave empty to include failing checks from any branch.
+  - key: report_space_id
+    type: space
+    required: true
+    label: Docs space
+    section: Where should the report be saved?
+    help_text: Diagnosis reports are saved as internal Docs documents in this space.
+  - key: report_collection_id
+    type: collection
+    required: true
+    label: Docs collection
+    section: Where should the report be saved?
+    depends_on: report_space_id
+    help_text: The collection where failing-check reports will be created.
+  - key: conclusion
+    type: enum<failure,cancelled,timed_out>
+    required: true
+    default: failure
+    label: Check result
+    section: What should it watch?
+    help_text: Only workflow runs with this result will start the flow.
+  - key: create_follow_up_tasks
+    type: bool
+    required: false
+    default: false
+    label: Create tasks for high-confidence issues
+    section: Should it create follow-up tasks?
+    help_text: Off by default to avoid noisy PM work. Reports still include suggested fixes.
+  - key: destination_team_id
+    type: team
+    required: false
+    label: Team
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Optional destination for tasks the agent creates for confirmed failures.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    depends_on: destination_team_id
+    help_text: Optional stage for follow-up tasks. If empty, the team's default stage is used.
+flow:
+  action: start_agent_run
+  target:
+    from_input: repository_id
+  parameters:
+    conclusion:
+      from_input: conclusion
+    report_space_id:
+      from_input: report_space_id
+    report_collection_id:
+      from_input: report_collection_id
+    create_follow_up_tasks:
+      from_input: create_follow_up_tasks
+    destination_team_id:
+      from_input: destination_team_id
+    destination_state_id:
+      from_input: destination_state_id

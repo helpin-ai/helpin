@@ -338,12 +338,12 @@ export default function Workspaces() {
     setInviteEmailInput('');
     setSendingInvites(true);
     let sent = 0;
-    const failedEmails: string[] = [];
+    const failures: { email: string; error: string }[] = [];
     await Promise.all(
       emails.map(async (email) => {
         const { data, error } = await inviteService.send({ workspace_id: createdWorkspace.id, email, role: inviteRole });
         if (error) {
-          failedEmails.push(email);
+          failures.push({ email, error });
         } else {
           sent++;
           // Preassign non-admin invitees to all created teams
@@ -356,12 +356,21 @@ export default function Workspaces() {
       }),
     );
     setSendingInvites(false);
-    if (sent > 0 && failedEmails.length > 0) {
-      toast.warning(`${sent} of ${emails.length} invitations sent. Failed: ${failedEmails.join(', ')}`);
+    const failureLines = failures.map((f) => `${f.email}: ${f.error}`);
+    if (sent > 0 && failures.length > 0) {
+      toast.warning(`${sent} of ${emails.length} invitations sent`, {
+        description: failureLines.join('\n'),
+      });
     } else if (sent > 0) {
       toast.success(`${sent} invitation${sent === 1 ? '' : 's'} sent`);
+    } else if (failures.length === 1) {
+      toast.error(`Failed to invite ${failures[0].email}`, {
+        description: failures[0].error,
+      });
     } else {
-      toast.error(`Failed to send invitations: ${failedEmails.join(', ')}`);
+      toast.error('Failed to send invitations', {
+        description: failureLines.join('\n'),
+      });
     }
     finishWorkspaceSetup();
   };

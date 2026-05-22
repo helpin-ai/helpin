@@ -14,7 +14,9 @@ import (
 	"go.temporal.io/sdk/temporal"
 
 	"github.com/helpin-ai/helpin/server/internal/agentskills"
+	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
+	"github.com/helpin-ai/helpin/server/internal/gitlab"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -86,6 +88,10 @@ type CommandBarPlanAdvancer interface {
 	StartReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error)
 }
 
+type gitLabTokenRefresher interface {
+	RefreshToken(ctx context.Context, refreshToken string) (*gitlab.TokenResponse, error)
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo                    *repository.AgentRunRepository
@@ -117,6 +123,7 @@ type AgentRunActivities struct {
 	docsContentRepo            *repository.DocsContentRepository
 	docsBlockRepo              *repository.DocsBlockRepository
 	docsAISectionCandidateRepo *repository.DocsAISectionCandidateRepository
+	docsChangeProposalRepo     *repository.DocsChangeProposalRepository
 	docsVersionRepo            *repository.DocsVersionRepository
 	docsLinkRepo               *repository.DocsLinkRepository
 	docsSearchRepo             *repository.DocsSearchRepository
@@ -130,6 +137,9 @@ type AgentRunActivities struct {
 	wsPublisher                websocket.EventPublisher
 	runtimes                   *workerpkg.RuntimeRegistry
 	githubApp                  *githubapp.Client
+	gitlabClient               gitLabTokenRefresher
+	gitCredentialRepo          *repository.GitCredentialRepository
+	gitOAuthEncryptionKey      []byte
 	runEngine                  *RunEngine
 	commandBarAdvancer         CommandBarPlanAdvancer
 }
@@ -165,6 +175,7 @@ func NewAgentRunActivities(
 	docsContentRepo *repository.DocsContentRepository,
 	docsBlockRepo *repository.DocsBlockRepository,
 	docsAISectionCandidateRepo *repository.DocsAISectionCandidateRepository,
+	docsChangeProposalRepo *repository.DocsChangeProposalRepository,
 	docsVersionRepo *repository.DocsVersionRepository,
 	docsLinkRepo *repository.DocsLinkRepository,
 	docsSearchRepo *repository.DocsSearchRepository,
@@ -178,6 +189,9 @@ func NewAgentRunActivities(
 	wsPublisher websocket.EventPublisher,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
+	gitlabClient gitLabTokenRefresher,
+	gitCredentialRepo *repository.GitCredentialRepository,
+	gitOAuthEncryptionKey []byte,
 	runEngine *RunEngine,
 	commandBarAdvancer CommandBarPlanAdvancer,
 ) *AgentRunActivities {
@@ -211,6 +225,7 @@ func NewAgentRunActivities(
 		docsContentRepo:            docsContentRepo,
 		docsBlockRepo:              docsBlockRepo,
 		docsAISectionCandidateRepo: docsAISectionCandidateRepo,
+		docsChangeProposalRepo:     docsChangeProposalRepo,
 		docsVersionRepo:            docsVersionRepo,
 		docsLinkRepo:               docsLinkRepo,
 		docsSearchRepo:             docsSearchRepo,
@@ -224,6 +239,9 @@ func NewAgentRunActivities(
 		wsPublisher:                wsPublisher,
 		runtimes:                   runtimes,
 		githubApp:                  githubApp,
+		gitlabClient:               gitlabClient,
+		gitCredentialRepo:          gitCredentialRepo,
+		gitOAuthEncryptionKey:      append([]byte(nil), gitOAuthEncryptionKey...),
 		runEngine:                  runEngine,
 		commandBarAdvancer:         commandBarAdvancer,
 	}
@@ -634,6 +652,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			return ExecuteRunResult{}, nonRetryableRunError(unexpectedErr)
 		}
 		bgCtx := context.Background()
+		a.salvageFailedRuntimeStateFromSnapshotStore(bgCtx, state)
 		_ = a.failRun(bgCtx, state, err.Error())
 		return ExecuteRunResult{}, nonRetryableRunError(err)
 	}
@@ -647,6 +666,7 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 			if persistWorkspace {
 				_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
 			}
+			a.salvageFailedRuntimeStateFromSnapshotStore(ctx, state)
 			_ = a.failRun(ctx, state, err.Error())
 			return ExecuteRunResult{}, nonRetryableRunError(err)
 		}
@@ -1304,19 +1324,7 @@ func (a *AgentRunActivities) latestLiveCodexUserMessage(ctx context.Context, run
 }
 
 func (a *AgentRunActivities) captureTranscriptPlanningArtifacts(ctx context.Context, state *resolvedRunState, execCtx *workerpkg.ExecutionContext, assistantMessage *model.AgentRunMessage, _ planningRunInput) error {
-	if state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
-		return nil
-	}
-	switch state.run.TargetType {
-	case "epic":
-		if state.epic == nil {
-			return nil
-		}
-	case "story", "task":
-		if state.task == nil {
-			return nil
-		}
-	default:
+	if a == nil || a.artifactRepo == nil || state == nil || state.run == nil || execCtx == nil || execCtx.LastExecutionResult == nil {
 		return nil
 	}
 
@@ -2013,10 +2021,65 @@ func (a *AgentRunActivities) mintAccessToken(ctx context.Context, integration *m
 		}
 		return a.githubApp.MintInstallationToken(ctx, *integration.InstallationID)
 	}
+	if integration.Provider == "gitlab" && integration.CredentialID != nil && strings.TrimSpace(*integration.CredentialID) != "" {
+		if a.gitCredentialRepo == nil || len(a.gitOAuthEncryptionKey) != 32 {
+			return "", fmt.Errorf("gitlab oauth credentials are not configured")
+		}
+		credential, err := a.gitCredentialRepo.GetByID(ctx, *integration.CredentialID)
+		if err != nil {
+			return "", err
+		}
+		if credential == nil || credential.AccessTokenEncrypted == nil || strings.TrimSpace(*credential.AccessTokenEncrypted) == "" {
+			return "", fmt.Errorf("gitlab credential is not available")
+		}
+		if credential.ExpiresAt != nil && time.Until(*credential.ExpiresAt) < 2*time.Minute && credential.RefreshTokenEncrypted != nil && a.gitlabClient != nil {
+			refreshToken, err := appcrypto.DecryptString(*credential.RefreshTokenEncrypted, a.gitOAuthEncryptionKey)
+			if err == nil && strings.TrimSpace(refreshToken) != "" {
+				if refreshed, refreshErr := a.gitlabClient.RefreshToken(ctx, refreshToken); refreshErr == nil && strings.TrimSpace(refreshed.AccessToken) != "" {
+					if updateErr := a.updateGitLabCredentialToken(ctx, credential, refreshed); updateErr != nil {
+						slog.WarnContext(ctx, "gitlab oauth token update failed", "credential_id", credential.ID, "error", updateErr)
+					}
+				} else if refreshErr != nil {
+					slog.WarnContext(ctx, "gitlab oauth token refresh failed", "credential_id", credential.ID, "error", refreshErr)
+				}
+			}
+			credential, err = a.gitCredentialRepo.GetByID(ctx, credential.ID)
+			if err != nil {
+				return "", err
+			}
+			if credential == nil || credential.AccessTokenEncrypted == nil || strings.TrimSpace(*credential.AccessTokenEncrypted) == "" {
+				return "", fmt.Errorf("gitlab credential is not available")
+			}
+		}
+		return appcrypto.DecryptString(*credential.AccessTokenEncrypted, a.gitOAuthEncryptionKey)
+	}
 	if integration.AccessToken != "" {
 		return integration.AccessToken, nil
 	}
 	return "", fmt.Errorf("git integration has no usable credentials")
+}
+
+func (a *AgentRunActivities) updateGitLabCredentialToken(ctx context.Context, credential *model.GitCredential, token *gitlab.TokenResponse) error {
+	if credential == nil || token == nil || strings.TrimSpace(token.AccessToken) == "" {
+		return nil
+	}
+	accessToken, err := appcrypto.EncryptString(token.AccessToken, a.gitOAuthEncryptionKey)
+	if err != nil {
+		return err
+	}
+	credential.AccessTokenEncrypted = &accessToken
+	if strings.TrimSpace(token.RefreshToken) != "" {
+		refreshToken, err := appcrypto.EncryptString(token.RefreshToken, a.gitOAuthEncryptionKey)
+		if err != nil {
+			return err
+		}
+		credential.RefreshTokenEncrypted = &refreshToken
+	}
+	if token.ExpiresIn > 0 {
+		expiresAt := time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+		credential.ExpiresAt = &expiresAt
+	}
+	return a.gitCredentialRepo.Update(ctx, credential)
 }
 
 func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
@@ -2567,6 +2630,44 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			}
 			return a.docsAISectionCandidateRepo.Create(ctx, candidate)
 		},
+		PublishDocumentChangeProposal: func(ctx context.Context, workspaceID string, req model.CreateDocsChangeProposalRequest) (*model.DocsChangeProposal, error) {
+			if a.docsChangeProposalRepo == nil {
+				return nil, fmt.Errorf("docs change proposal repository is not available")
+			}
+			doc, err := a.docsDocRepo.GetByID(ctx, strings.TrimSpace(req.DocumentID))
+			if err != nil {
+				return nil, err
+			}
+			if doc == nil || doc.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("document not found")
+			}
+			sources := req.Sources
+			if len(sources) == 0 || strings.TrimSpace(string(sources)) == "" || strings.TrimSpace(string(sources)) == "null" {
+				sources = json.RawMessage(`[]`)
+			} else {
+				normalizedSources, err := json.Marshal(model.NormalizeDocsChangeProposalSources(sources))
+				if err != nil {
+					return nil, fmt.Errorf("marshal proposal sources: %w", err)
+				}
+				sources = normalizedSources
+			}
+			proposal := &model.DocsChangeProposal{
+				WorkspaceID:     workspaceID,
+				DocumentID:      strings.TrimSpace(req.DocumentID),
+				BlockID:         trimStringPtr(req.BlockID),
+				AgentID:         trimStringPtr(req.AgentID),
+				AgentRunID:      trimStringPtr(req.AgentRunID),
+				Scope:           strings.TrimSpace(req.Scope),
+				Status:          model.DocsChangeProposalStatusPending,
+				Revision:        req.Revision,
+				Summary:         strings.TrimSpace(req.Summary),
+				ContentMarkdown: strings.TrimSpace(req.ContentMarkdown),
+				Content:         append(json.RawMessage(nil), req.Content...),
+				Sources:         append(json.RawMessage(nil), sources...),
+				CreatedBy:       strings.TrimSpace(req.CreatedBy),
+			}
+			return a.docsChangeProposalRepo.Create(ctx, proposal)
+		},
 		WriteDocumentContent: func(ctx context.Context, workspaceID, documentID string, content json.RawMessage) error {
 			if a.commandExecutor == nil {
 				return fmt.Errorf("document commands are not available")
@@ -2649,6 +2750,17 @@ func (a *AgentRunActivities) pushVisitorConversationRefresh(ctx context.Context,
 		WorkspaceID: workspaceID,
 		Data:        listJSON,
 	})
+}
+
+func trimStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func (a *AgentRunActivities) failRun(ctx context.Context, state *resolvedRunState, errMsg string) error {

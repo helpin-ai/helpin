@@ -219,6 +219,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 		r.Post("/auth/forgot-password", h.Auth.ForgotPassword)
 		r.Post("/auth/reset-password", h.Auth.ResetPassword)
 		r.Post("/auth/refresh", h.Auth.RefreshToken)
+		r.Post("/auth/signout", h.Auth.Signout)
 		r.Get("/health", h.Health.Check)
 		r.Get("/system/ensure-cors", h.Health.EnsureStorageCORS)
 		r.Get("/invitations/info", h.Invite.GetInfo)
@@ -226,6 +227,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 		// ---- Public git webhook (no JWT) ----
 		r.Get("/git/github/callback", h.Git.GitHubCallback)
+		r.Get("/git/gitlab/callback", h.Git.GitLabCallback)
 		r.Post("/git/webhook", h.Git.Webhook)
 		if h.PostmarkInbound != nil {
 			r.Post("/webhooks/postmark/inbound", h.PostmarkInbound.PostmarkInbound)
@@ -237,6 +239,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 
 		// ---- Public Gmail OAuth callback (Google redirects here without JWT) ----
 		r.Get("/crm/email/oauth/callback", h.CRMEmail.OAuthCallbackRedirect)
+
+		// Public attachment content. Inline editor images cannot send bearer auth headers,
+		// so this keeps the durable attachment ID as the app-controlled image URL.
+		r.Get("/pm/attachments/{id}/content", h.PMAttachment.Content)
 
 		// ---- Help Center domain verification (Caddy on_demand_tls) ----
 		r.Get("/hc/verify-domain", h.Docs.VerifyDomain)
@@ -386,6 +392,13 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 			r.Get("/organizations/{id}", h.Organization.Get)
 			r.Put("/organizations/{id}", h.Organization.Update)
 			r.Delete("/organizations/{id}", h.Organization.Delete)
+			r.Get("/organizations/{id}/git/integrations", h.Git.ListOrgIntegrations)
+			r.Post("/organizations/{id}/git/integrations", h.Git.CreateOrgIntegration)
+			r.Get("/organizations/{id}/git/github/install-url", h.Git.GetOrgGitHubInstallURL)
+			r.Get("/organizations/{id}/git/gitlab/connect-url", h.Git.GetOrgGitLabConnectURL)
+			r.Get("/organizations/{id}/git/integrations/{integrationId}", h.Git.GetOrgIntegration)
+			r.Post("/organizations/{id}/git/integrations/{integrationId}/sync", h.Git.SyncOrgRepositories)
+			r.Delete("/organizations/{id}/git/integrations/{integrationId}", h.Git.DeleteOrgIntegration)
 			r.Get("/organizations/{id}/members", h.Organization.ListMembers)
 			r.Post("/organizations/{id}/members", h.Organization.AddMember)
 			r.Put("/organizations/{id}/members/{userId}", h.Organization.UpdateMember)
@@ -499,6 +512,19 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					})
 				})
 
+				r.Route("/templates", func(r chi.Router) {
+					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListFlowTemplates)
+					r.Route("/{key}", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetFlowTemplate)
+						r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/install", h.Automation.InstallFlowTemplate)
+					})
+				})
+				r.Route("/template-instances", func(r chi.Router) {
+					r.Route("/{instanceID}", func(r chi.Router) {
+						r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/uninstall", h.Automation.UninstallFlowTemplate)
+					})
+				})
+
 				r.With(requirePerm(authorization.PermSettingsManage)).Get("/activity", h.Automation.ListActivity)
 
 				r.Route("/library", func(r chi.Router) {
@@ -518,19 +544,12 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Route("/agents", func(r chi.Router) {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListAgents)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/", h.Automation.CreateAgent)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/draft", h.Automation.DraftCustomAgent)
 					r.Route("/{id}", func(r chi.Router) {
 						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetAgent)
 						r.With(requirePerm(authorization.PermPMEdit)).Put("/", h.Automation.UpdateAgent)
 						r.With(requirePerm(authorization.PermPMEdit)).Delete("/", h.Automation.DeleteAgent)
 						r.With(requirePerm(authorization.PermPMRead)).Get("/usage", h.Automation.GetAgentUsage)
-					})
-				})
-
-				r.Route("/agent-templates", func(r chi.Router) {
-					r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.ListAgentTemplates)
-					r.Route("/{id}", func(r chi.Router) {
-						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetAgentTemplate)
-						r.With(requirePerm(authorization.PermPMEdit)).Post("/create-agent", h.Automation.CreateAgentFromTemplate)
 					})
 				})
 
@@ -568,6 +587,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
 				r.With(requirePerm(authorization.PermIntegrationsConnect)).Get("/github/install-url", h.Git.GetGitHubInstallURL)
+				r.With(requirePerm(authorization.PermIntegrationsConnect)).Get("/gitlab/connect-url", h.Git.GetGitLabConnectURL)
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/integrations", h.Git.ListIntegrations)
 				r.With(requirePerm(authorization.PermSettingsManage)).Post("/integrations", h.Git.CreateIntegration)
 				r.With(requirePerm(authorization.PermSettingsRead)).Get("/integrations/{id}", h.Git.GetIntegration)
@@ -592,6 +612,9 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.Use(middleware.RequireWorkspaceID)
 				r.Use(wsAccess)
 				r.With(requireCommandBarRead()).Post("/intents/parse", h.CommandBar.ParseIntent)
+				r.With(requireCommandBarRead()).Get("/chat/threads", h.CommandBar.ListChatThreads)
+				r.With(requireCommandBarRead()).Post("/chat/turns", h.CommandBar.ChatTurn)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/chat/proposals/{messageID}/create-agent", h.CommandBar.ConfirmChatCreateAgent)
 				r.With(requireCommandBarRead()).Get("/plans", h.CommandBar.ListPlans)
 				r.With(requireCommandBarRead()).Get("/plans/{planID}", h.CommandBar.GetPlan)
 				r.With(requireCommandBarRead()).Get("/agents/{agentID}/tools", h.CommandBar.ListAgentToolCatalog)
@@ -806,6 +829,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}", h.PMEpic.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/epics/{id}", h.PMEpic.Delete)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/tasks", h.PMEpic.ListTasks)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/activity", h.PMEpic.ListActivity)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				// Sprints (PM) — pm.read / pm.edit
@@ -831,6 +855,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/counts", h.PMTask.CountByState)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/display/{displayID}", h.PMTask.GetByDisplayID)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}", h.PMTask.Get)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/save-as-template", h.PMTask.SaveAsTemplate)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/duplicate", h.PMTask.Duplicate)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}", h.PMTask.Update)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/tasks/{id}", h.PMTask.Delete)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/move", h.PMTask.Move)
@@ -864,6 +890,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/attachments", h.PMAttachment.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Patch("/attachments/{id}/confirm", h.PMAttachment.ConfirmUpload)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/attachments", h.PMAttachment.List)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/attachments/{id}/content", h.PMAttachment.Content)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/attachments/{id}", h.PMAttachment.Delete)
 
 				// Objectives — pm.read / pm.edit
@@ -918,21 +945,6 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/associations", h.CRMAssociation.Create)
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/associations/{id}", h.CRMAssociation.Delete)
 
-				// Agents — pm.edit
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agents", h.Agent.ListAgents)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agents", h.Agent.CreateAgent)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-presets", h.Agent.ListAgentPresets)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-preset-versions", h.Agent.CreateWorkspacePresetVersion)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/agent-preset-versions/{id}", h.Agent.UpdateWorkspacePresetVersion)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/agent-preset-versions/{id}", h.Agent.DeleteWorkspacePresetVersion)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-model-providers", h.Agent.ListModelProviders)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/runner-health", h.Agent.GetRunnerHealth)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/tool-catalog", h.Agent.ListToolCatalog)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}", h.Agent.GetAgent)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/usage", h.Agent.GetAgentUsage)
-				r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}", h.Agent.UpdateAgent)
-				r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}", h.Agent.DeleteAgent)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
 				if h.SupportAI != nil {
 					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/knowledge-sources", h.SupportAI.GetKnowledgeSources)
 					r.With(requirePerm(authorization.PermPMRead)).Post("/agents/{id}/support-preview", h.SupportAI.PreviewSupportReply)
@@ -948,42 +960,61 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMRead)).Get("/content-sources/{contentSourceId}/pages/{pageId}", h.SupportAI.GetContentSourcePage)
 					r.With(requirePerm(authorization.PermPMEdit)).Post("/content-sources/{contentSourceId}/reindex", h.SupportAI.ReindexContentSource)
 				}
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/run-agent", h.Agent.RunTaskAgent)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs", h.Agent.StartTargetRun)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/workspace", h.Agent.ListWorkspaceRuns)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/recent", h.Agent.ListRecentRuns)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs", h.Agent.ListTargetRuns)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/messages", h.Agent.SendRunMessage)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/codex-auth/device-code/start", h.Agent.StartCodexDeviceCodeAuth)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/codex-auth/device-code/cancel", h.Agent.CancelCodexDeviceCodeAuth)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/resume", h.Agent.ResumeRun)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/continue", h.Agent.ContinueRun)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/approve", h.Agent.ApproveRun)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/request-changes", h.Agent.RequestRunChanges)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/handoff", h.Agent.HandoffRun)
-				// Run-scoped streaming endpoints. Same handlers serve the coding-session
-				// drawer and the Ask-agents dock — sessionID/runID are interchangeable.
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/snapshot", h.Agent.GetCodingSession)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/events", h.Agent.ListCodingSessionEvents)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/interactions/{interactionId}/resolve", h.Agent.ResolveCodingSessionInteraction)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}", h.Agent.GetCodingSession)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}/events", h.Agent.ListCodingSessionEvents)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}/repo", h.Agent.GetCodingSessionRepo)
-				r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}/diff", h.Agent.GetCodingSessionDiff)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/interactions/{interactionId}/resolve", h.Agent.ResolveCodingSessionInteraction)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/message", h.Agent.SendCodingSessionMessage)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/continue", h.Agent.ContinueCodingSession)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/resume", h.Agent.ResumeCodingSession)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/approve", h.Agent.ApproveCodingSession)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/request-changes", h.Agent.RequestCodingSessionChanges)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/cancel", h.Agent.CancelCodingSession)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/auth/device-code/start", h.Agent.StartCodingSessionDeviceCodeAuth)
-				r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/auth/device-code/cancel", h.Agent.CancelCodingSessionDeviceCodeAuth)
+
+				// Agents — gated by Automation module access plus PM permissions.
+				r.Group(func(r chi.Router) {
+					r.Use(requireModule(model.ModuleAutomation))
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents", h.Agent.ListAgents)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agents", h.Agent.CreateAgent)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-presets", h.Agent.ListAgentPresets)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-preset-versions", h.Agent.CreateWorkspacePresetVersion)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/agent-preset-versions/{id}", h.Agent.UpdateWorkspacePresetVersion)
+					r.With(requirePerm(authorization.PermPMEdit)).Delete("/agent-preset-versions/{id}", h.Agent.DeleteWorkspacePresetVersion)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-model-providers", h.Agent.ListModelProviders)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/runner-health", h.Agent.GetRunnerHealth)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/tool-catalog", h.Agent.ListToolCatalog)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}", h.Agent.GetAgent)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/usage", h.Agent.GetAgentUsage)
+					r.With(requirePerm(authorization.PermPMEdit)).Put("/agents/{id}", h.Agent.UpdateAgent)
+					r.With(requirePerm(authorization.PermPMEdit)).Delete("/agents/{id}", h.Agent.DeleteAgent)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agents/{id}/runs", h.Agent.ListAgentRuns)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/run-agent", h.Agent.RunTaskAgent)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/epics/{id}/run-agent", h.Agent.RunEpicAgent)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs", h.Agent.StartTargetRun)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/workspace", h.Agent.ListWorkspaceRuns)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/recent", h.Agent.ListRecentRuns)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs", h.Agent.ListTargetRuns)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}", h.Agent.GetAgentRun)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/messages", h.Agent.ListRunMessages)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/messages", h.Agent.SendRunMessage)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/codex-auth/device-code/start", h.Agent.StartCodexDeviceCodeAuth)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/codex-auth/device-code/cancel", h.Agent.CancelCodexDeviceCodeAuth)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/resume", h.Agent.ResumeRun)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/continue", h.Agent.ContinueRun)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/artifacts", h.Agent.ListRunArtifacts)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/cancel", h.Agent.CancelRun)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/approve", h.Agent.ApproveRun)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/request-changes", h.Agent.RequestRunChanges)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/handoff", h.Agent.HandoffRun)
+					// Run-scoped streaming endpoints. Same handlers serve the coding-session
+					// drawer and the Ask-agents dock — sessionID/runID are interchangeable.
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/snapshot", h.Agent.GetCodingSession)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/agent-runs/{id}/events", h.Agent.ListCodingSessionEvents)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/agent-runs/{id}/interactions/{interactionId}/resolve", h.Agent.ResolveCodingSessionInteraction)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}", h.Agent.GetCodingSession)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}/events", h.Agent.ListCodingSessionEvents)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}/repo", h.Agent.GetCodingSessionRepo)
+					r.With(requirePerm(authorization.PermPMRead)).Get("/coding-sessions/{id}/diff", h.Agent.GetCodingSessionDiff)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/interactions/{interactionId}/resolve", h.Agent.ResolveCodingSessionInteraction)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/message", h.Agent.SendCodingSessionMessage)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/continue", h.Agent.ContinueCodingSession)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/resume", h.Agent.ResumeCodingSession)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/approve", h.Agent.ApproveCodingSession)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/request-changes", h.Agent.RequestCodingSessionChanges)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/cancel", h.Agent.CancelCodingSession)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/auth/device-code/start", h.Agent.StartCodingSessionDeviceCodeAuth)
+					r.With(requirePerm(authorization.PermPMEdit)).Post("/coding-sessions/{id}/auth/device-code/cancel", h.Agent.CancelCodingSessionDeviceCodeAuth)
+				})
 			})
 
 			// Notifications module
@@ -1075,6 +1106,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/regenerate", h.Docs.RegenerateAISection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/approve", h.Docs.ApproveAISection)
 				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/blocks/{blockId}/ai-section/reject", h.Docs.RejectAISection)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/change-proposals", h.Docs.ListChangeProposals)
+				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/change-proposals/{proposalId}", h.Docs.GetChangeProposal)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/change-proposals/{proposalId}/apply", h.Docs.ApplyChangeProposal)
+				r.With(requirePerm(authorization.PermDocsEdit)).Post("/documents/{docId}/change-proposals/{proposalId}/discard", h.Docs.DiscardChangeProposal)
 
 				// Comments — docs.read / docs.edit
 				r.With(requirePerm(authorization.PermDocsRead)).Get("/documents/{docId}/comments", h.Docs.ListComments)

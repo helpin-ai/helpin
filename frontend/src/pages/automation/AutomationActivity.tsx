@@ -961,7 +961,7 @@ export function AutomationActivityPage({
         </Button>
       )}
     >
-      <div className="space-y-5">
+      <div className="space-y-5 pb-20">
         <div className="grid gap-3 lg:grid-cols-4">
           <SummaryCard
             label="Needs You"

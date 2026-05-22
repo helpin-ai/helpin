@@ -33,6 +33,8 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	seedPMSprintPlanningState(t, db, todoStateID, workflowID, "Todo", model.PMStateTypeUnstarted, 0)
 	seedPMSprintPlanningState(t, db, doingStateID, workflowID, "Doing", model.PMStateTypeStarted, 1)
 	seedPMSprintPlanningState(t, db, doneStateID, workflowID, "Done", model.PMStateTypeDone, 2)
+	seedPMSprintPlanningMember(t, db, "member-alice", workspaceID, "user-alice")
+	seedPMSprintPlanningMember(t, db, "member-bob", workspaceID, "user-bob")
 
 	activeSprintID := "sprint-active"
 	upcomingSprintNearID := "sprint-upcoming-near"
@@ -57,6 +59,9 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	seedPMSprintPlanningTask(t, db, "story-backlog-2", workspaceID, workflowID, doingStateID, "", teamAID, "Backlog two", 1007, 11, 5, now.Add(-7*time.Minute))
 	seedPMSprintPlanningTask(t, db, "story-backlog-done", workspaceID, workflowID, doneStateID, "", teamAID, "Backlog done", 1008, 12, 1, now.Add(-8*time.Minute))
 	seedPMSprintPlanningTask(t, db, "story-other-team", workspaceID, workflowID, todoStateID, "", teamBID, "Other team backlog", 1009, 13, 3, now.Add(-9*time.Minute))
+	seedPMSprintPlanningTaskOwner(t, db, "story-active-1", "user-alice", now.Add(-5*time.Minute))
+	seedPMSprintPlanningTaskOwner(t, db, "story-active-1", "user-bob", now.Add(-4*time.Minute))
+	seedPMSprintPlanningTaskOwner(t, db, "story-backlog-1", "user-bob", now.Add(-3*time.Minute))
 
 	workspace, err := repo.ListPlanningWorkspace(ctx, workspaceID, model.PMSprintPlanningFilters{
 		TeamID:           &teamA,
@@ -122,6 +127,9 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	if activeCard.PreviewTasks[0].ID != "story-active-1" || activeCard.PreviewTasks[1].ID != "story-active-2" {
 		t.Fatalf("active preview order = %#v, want story-active-1 then story-active-2", activeCard.PreviewTasks)
 	}
+	if got := activeCard.PreviewTasks[0].OwnerMemberIDs; len(got) != 2 || got[0] != "member-alice" || got[1] != "member-bob" {
+		t.Fatalf("active preview owner_member_ids = %#v, want alice then bob", got)
+	}
 
 	if workspace.BacklogTotal != 2 {
 		t.Fatalf("backlog_total = %d, want 2", workspace.BacklogTotal)
@@ -131,6 +139,9 @@ func TestPMSprintPlanningRepository(t *testing.T) {
 	}
 	if workspace.BacklogTasks[0].ID != "story-backlog-1" || workspace.BacklogTasks[1].ID != "story-backlog-2" {
 		t.Fatalf("backlog order = %#v, want backlog one then backlog two", workspace.BacklogTasks)
+	}
+	if got := workspace.BacklogTasks[0].OwnerMemberIDs; len(got) != 1 || got[0] != "member-bob" {
+		t.Fatalf("backlog owner_member_ids = %#v, want bob", got)
 	}
 }
 
@@ -171,7 +182,6 @@ func newPMSprintPlanningTestDB(t *testing.T) *gorm.DB {
 			sprint_id TEXT,
 			team_id TEXT,
 			owner_id TEXT,
-			owner_member_id TEXT,
 			requester_id TEXT,
 			requester_member_id TEXT,
 			estimate INTEGER,
@@ -198,6 +208,23 @@ func newPMSprintPlanningTestDB(t *testing.T) *gorm.DB {
 			implementation_brief TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE workspace_members (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			display_name TEXT,
+			email TEXT,
+			role TEXT,
+			status TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE pm_task_owners (
+			task_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at DATETIME,
+			PRIMARY KEY (task_id, user_id)
 		)`,
 		`CREATE TABLE pm_workflow_states (
 			id TEXT PRIMARY KEY,
@@ -244,6 +271,27 @@ func seedPMSprintPlanningTask(t *testing.T, db *gorm.DB, id, workspaceID, workfl
 		id, workspaceID, displayID, name, workflowID, stateID, sprint, teamID, estimate, position, model.PMTaskPriorityMedium, updatedAt, updatedAt,
 	).Error; err != nil {
 		t.Fatalf("seed task: %v", err)
+	}
+}
+
+func seedPMSprintPlanningMember(t *testing.T, db *gorm.DB, id, workspaceID, userID string) {
+	t.Helper()
+	now := time.Now().UTC()
+	if err := db.Exec(
+		`INSERT INTO workspace_members (id, workspace_id, user_id, display_name, email, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, workspaceID, userID, id, userID+"@example.com", model.RoleMember, model.WorkspaceMemberStatusActive, now, now,
+	).Error; err != nil {
+		t.Fatalf("seed workspace member: %v", err)
+	}
+}
+
+func seedPMSprintPlanningTaskOwner(t *testing.T, db *gorm.DB, taskID, userID string, createdAt time.Time) {
+	t.Helper()
+	if err := db.Exec(
+		`INSERT INTO pm_task_owners (task_id, user_id, created_at) VALUES (?, ?, ?)`,
+		taskID, userID, createdAt,
+	).Error; err != nil {
+		t.Fatalf("seed task owner: %v", err)
 	}
 }
 

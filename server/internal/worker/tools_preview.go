@@ -9,12 +9,13 @@ import (
 )
 
 const (
-	ToolPublishPreview     = "publish_preview"
-	ToolPreviewMarkdown    = "preview_md"
-	ToolPreviewJSON        = "preview_json"
-	ToolPublishPRDDraft    = "publish_prd_draft"
-	ToolPublishTaskPlan    = "publish_task_plan"
-	ToolPublishTaskPlanDoc = "publish_task_plan_doc"
+	ToolPublishPreview                = "publish_preview"
+	ToolPreviewMarkdown               = "preview_md"
+	ToolPreviewJSON                   = "preview_json"
+	ToolPublishPRDDraft               = "publish_prd_draft"
+	ToolPublishTaskPlan               = "publish_task_plan"
+	ToolPublishTaskPlanDoc            = "publish_task_plan_doc"
+	ToolPublishDocumentChangeProposal = "publish_document_change_proposal"
 
 	PreviewFormatMarkdown = "markdown"
 	PreviewFormatJSON     = "json"

@@ -1,10 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
+  ArrowDown01Icon,
   BotIcon,
+  File01Icon,
   Loading01Icon,
   PencilEdit01Icon,
+  RecordIcon,
   Target01Icon,
   Tick01Icon,
+  Wrench01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import type { CommandBarParseResponse, CommandBarPlan, CommandBarPlanStep } from '@/lib/pmTypes';
@@ -125,28 +129,90 @@ function GuardrailList({
 }
 
 function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
+  const [toolsOpen, setToolsOpen] = useState(false);
   const desc = describeStep(step.instructions);
+  const targetTitle = step.target?.display_title || step.target?.entity_id || '';
+  const TargetIcon = targetIcon(step.target?.entity_type);
+  const tools = step.allowed_tools ?? [];
   return (
     <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
       <div className="flex items-center gap-2">
         <BotIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate text-sm font-medium text-foreground">{step.agent_name}</span>
-        {step.target?.display_title ? (
-          <>
-            <span className="opacity-60">·</span>
-            <span className="truncate text-[11px] text-muted-foreground">
-              {step.target.display_title}
-            </span>
-          </>
-        ) : null}
       </div>
+      {targetTitle ? (
+        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded-full border border-primary/20 bg-background/80 px-2 py-1 text-[11px] text-foreground">
+          <TargetIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 rounded border border-border/70 px-1 py-0 text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+            {targetTypeLabel(step.target.entity_type)}
+          </span>
+          <span className="truncate font-medium">{targetTitle}</span>
+        </div>
+      ) : null}
       {desc ? (
-        <p className="mt-1 line-clamp-3 pl-[22px] text-xs leading-snug text-muted-foreground">
+        <p className="mt-1.5 line-clamp-3 text-xs leading-snug text-muted-foreground">
           {desc}
         </p>
       ) : null}
+      {tools.length ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-[11px] text-muted-foreground hover:bg-background/60 hover:text-foreground"
+            onClick={() => setToolsOpen((open) => !open)}
+            aria-expanded={toolsOpen}
+          >
+            <Wrench01Icon className="h-3 w-3 shrink-0" />
+            <span className="font-medium text-foreground">{tools.length} tools selected</span>
+            <ArrowDown01Icon className={cn('ml-auto h-3 w-3 transition-transform', toolsOpen && 'rotate-180')} />
+          </button>
+          {toolsOpen ? (
+            <div className="mt-1 flex flex-wrap gap-1 px-1.5">
+              {tools.map((tool) => (
+                <span key={tool} className="rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  {tool}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function targetIcon(type?: string) {
+  switch (type) {
+    case 'document':
+      return File01Icon;
+    case 'task':
+      return RecordIcon;
+    default:
+      return Target01Icon;
+  }
+}
+
+function targetTypeLabel(type?: string) {
+  switch (type) {
+    case 'crm_deal':
+      return 'Deal';
+    case 'crm_contact':
+      return 'Contact';
+    case 'support_conversation':
+      return 'Conversation';
+    case 'support_coverage_gap':
+      return 'Coverage gap';
+    case 'document':
+      return 'Document';
+    case 'task':
+      return 'Task';
+    case 'epic':
+      return 'Epic';
+    case 'workspace':
+      return 'Workspace';
+    default:
+      return type ? type.replaceAll('_', ' ') : 'Target';
+  }
 }
 
 function LayeredBody({

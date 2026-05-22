@@ -309,11 +309,8 @@ func renderNode(b *strings.Builder, n *Node) {
 	case "htmlBlock":
 		rawHTML := strAttr(n.Attrs, "html")
 		if rawHTML != "" {
-			if strAttr(n.Attrs, "renderMode") == "sandboxed" {
-				b.WriteString(`<div class="docs-html-block docs-html-block--raw">`)
-				b.WriteString("\n")
-				b.WriteString(rawHTML)
-				b.WriteString("\n</div>\n")
+			if shouldRenderHTMLBlockIsolated(rawHTML, strAttr(n.Attrs, "renderMode")) {
+				b.WriteString(renderIsolatedHTMLBlock(rawHTML))
 				break
 			}
 			sanitized := SanitizeHTMLBlock(rawHTML)

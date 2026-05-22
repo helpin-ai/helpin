@@ -45,10 +45,10 @@ describe('ConversationList presence resync', () => {
       selectedMailboxId: 'all',
       conversationListFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: [],
+        assignment: ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'],
         mailboxIds: [],
         tagIds: [],
-        aiStates: [],
+        aiStates: ['handoff'],
         sort: 'newest',
       },
       activeCustomViewId: null,
@@ -269,6 +269,53 @@ describe('ConversationList presence resync', () => {
       const button = Array.from(document.body.querySelectorAll('button')).find((item) => item.textContent === label) as HTMLButtonElement
       expect(button.className).toContain('bg-primary/10')
     }
+
+    act(() => root.unmount())
+  })
+
+  it('keeps backend-returned mentioned conversations visible in Mine', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'mine',
+      conversationListFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: ['me', 'mentioned_me', 'opened_by_me'],
+        mailboxIds: [],
+        tagIds: [],
+        aiStates: [],
+        sort: 'newest',
+      },
+    })
+    mockUseInfiniteConversations.mockReturnValue({
+      data: {
+        pages: [
+          {
+            data: [
+              {
+                id: 'mentioned-conv',
+                status: 'open',
+                subject: 'Mentioned conversation',
+                updated_at: '2026-03-27T20:00:00Z',
+              },
+            ],
+          },
+        ],
+      },
+      isLoading: false,
+      isFetchingNextPage: false,
+      hasNextPage: false,
+      fetchNextPage: vi.fn(),
+      error: null,
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(container.querySelector('[data-conversation-id="mentioned-conv"]')).not.toBeNull()
 
     act(() => root.unmount())
   })
@@ -498,10 +545,10 @@ describe('ConversationList presence resync', () => {
       selectedMailboxId: 'mailbox-billing',
       conversationListFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: [],
+        assignment: ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'],
         mailboxIds: [],
         tagIds: [],
-        aiStates: [],
+        aiStates: ['handoff'],
         sort: 'newest',
       },
     })
@@ -606,10 +653,10 @@ describe('ConversationList presence resync', () => {
     expect(useSupportInboxStore.getState().searchQuery).toBe('invoice')
     expect(useSupportInboxStore.getState().conversationListFilters).toEqual({
       states: ['open', 'waiting_on_customer'],
-      assignment: [],
+      assignment: ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'],
       mailboxIds: [],
       tagIds: [],
-      aiStates: [],
+      aiStates: ['handoff'],
       sort: 'newest',
     })
 
@@ -719,10 +766,10 @@ describe('ConversationList presence resync', () => {
       selectedMailboxId: 'mailbox-billing',
       conversationListFilters: {
         states: ['open', 'waiting_on_customer'],
-        assignment: [],
+        assignment: ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'],
         mailboxIds: [],
         tagIds: [],
-        aiStates: [],
+        aiStates: ['handoff'],
         sort: 'newest',
       },
     })

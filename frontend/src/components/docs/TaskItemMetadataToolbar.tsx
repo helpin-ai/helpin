@@ -84,14 +84,15 @@ export function TaskItemMetadataToolbar({ editor }: { editor: Editor }) {
       toast.error(error || 'Failed to create task')
       return
     }
+    const createdTask = data.task.task
     const next = {
       ...metadata,
-      pmTaskId: data.task.id,
-      taskKey: data.task.task_key || `#${data.task.display_id}`,
+      pmTaskId: createdTask.id,
+      taskKey: createdTask.task_key || `#${createdTask.display_id}`,
     }
     updateTask(next)
     toast.success('Task created')
-    openTaskRoute(navigate as never, location as never, workspace.slug, data.task.id)
+    openTaskRoute(navigate as never, location as never, workspace.slug, createdTask.id)
   }
 
   return (

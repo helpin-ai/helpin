@@ -1,5 +1,5 @@
 import type { AssignableMember } from '../types';
-import type { AgentRunPauseReason, TaskImplementationBrief } from './agents';
+import type { AgentRun, AgentRunPauseReason, TaskImplementationBrief } from './agents';
 import type { Objective } from './objectives';
 
 export type TaskType = 'feature' | 'bug' | 'chore';
@@ -93,6 +93,7 @@ export interface Epic {
   health: EpicHealth;
   health_comment?: string;
   archived: boolean;
+  assigned_agent_id?: string;
   spec_document_id?: string;
   planning_repository_id?: string;
   planning_state: string;
@@ -146,6 +147,12 @@ export interface EpicWithStats {
   objectives: RoadmapObjectiveRef[];
   stats: EpicStats;
   suggested_health: EpicHealth;
+}
+
+export interface CreateEpicResponse {
+  epic: EpicWithStats;
+  agent_run: AgentRun | null;
+  agent_run_error?: string;
 }
 
 export type RoadmapEpic = EpicWithStats;
@@ -313,6 +320,7 @@ export interface Task {
   latest_run_status?: string | null;
   latest_run_pause_reason?: AgentRunPauseReason | null;
   latest_run_at?: string | null;
+  assigned_agent_id?: string;
   template_id?: string;
   recurring_template_id?: string;
   recurring_run_id?: string;
@@ -648,8 +656,10 @@ export interface TaskTemplate {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
   checklist_items?: string;
   external_links?: string;
@@ -799,13 +809,19 @@ export interface CreateTaskTemplateRequest {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
+  attachment_ids?: string[];
   checklist_items?: string;
   external_links?: string;
 }
 
+export interface SaveTaskAsTemplateRequest {
+  name?: string;
+}
 
 export interface UpdateTaskTemplateRequest {
   team_id?: string;
@@ -817,9 +833,12 @@ export interface UpdateTaskTemplateRequest {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
+  attachment_ids?: string[];
   checklist_items?: string;
   external_links?: string;
   archived?: boolean;
@@ -842,6 +861,8 @@ export interface CreateEpicRequest {
   health_comment?: string;
   label_ids?: string[];
   planning_repository_id?: string;
+  assigned_agent_id?: string;
+  run_on_create?: boolean;
 }
 
 export interface UpdateEpicRequest {
@@ -859,6 +880,7 @@ export interface UpdateEpicRequest {
   health_comment?: string;
   label_ids?: string[];
   planning_repository_id?: string;
+  assigned_agent_id?: string;
 }
 
 export interface UpdateEpicHealthRequest {
@@ -919,6 +941,14 @@ export interface CreateTaskRequest {
   label_ids?: string[];
   checklist_items?: { text: string; position?: number }[];
   external_links?: { url: string; title?: string }[];
+  assigned_agent_id?: string;
+  run_on_create?: boolean;
+}
+
+export interface CreateTaskResponse {
+  task: TaskDetail;
+  agent_run: AgentRun | null;
+  agent_run_error?: string;
 }
 
 export interface SeedPMTasksRequest {
@@ -955,6 +985,7 @@ export interface UpdateTaskRequest {
   owner_ids?: string[];
   follower_ids?: string[];
   label_ids?: string[];
+  assigned_agent_id?: string;
 }
 
 
@@ -1036,7 +1067,7 @@ export interface UpdateExternalLinkRequest {
 export interface Attachment {
   id: string;
   workspace_id: string;
-  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'task_template' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -1054,7 +1085,7 @@ export interface AttachmentResponse {
 }
 
 export interface CreateAttachmentRequest {
-  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'task_template' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;

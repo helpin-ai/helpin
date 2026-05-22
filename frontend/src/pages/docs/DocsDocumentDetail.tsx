@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
+import { useNavigate, useParams, useRouter, useSearch } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
 import type { Editor as TiptapEditor } from '@tiptap/core'
@@ -72,8 +72,14 @@ import {
   useToggleDocShare,
   useToggleDocLock,
   useRevertDocsVersion,
+  useDocsBlocks,
+  useDocsChangeProposal,
+  useDocsChangeProposals,
+  useApplyDocsChangeProposal,
+  useDiscardDocsChangeProposal,
 } from '@/hooks/queries'
 import { timeAgo } from '@/lib/utils'
+import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
@@ -109,6 +115,8 @@ import type { TranslationRow } from '@/components/docs/helpcenter/TranslationsPa
 import { ArticleLocalePillRail } from '@/components/docs/helpcenter/ArticleLocalePillRail'
 import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/MissingArticleTranslationDialog'
 import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
+import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
+import { ProposalReviewView } from '@/components/docs/proposals/ProposalReviewView'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { CommentThread } from '@/components/pm/CommentThread'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -119,14 +127,14 @@ import { docsService } from '@/lib/services/docsService'
 import { docsCommentService } from '@/lib/services/docsCommentService'
 import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import { queryKeys } from '@/lib/queryKeys'
-import type { DocsReferenceItem, DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
-import type { CommentWithAuthor } from '@/lib/pmTypes'
+import type { DocsBlock, DocsChangeProposal, DocsDocument, DocsReferenceItem, DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import type { CommandBarPageContext, CommentWithAuthor } from '@/lib/pmTypes'
 import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
-import { useRegisterPageContext } from '@/components/command-bar/pageContext'
+import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext'
 
 function docStatusColor(status: string): string {
   switch (status) {
@@ -172,6 +180,101 @@ function collectDocumentOutline(content: JSONContent | null | undefined): Docume
 function collectJSONText(node: JSONContent): string {
   if (typeof node.text === 'string') return node.text
   return node.content?.map(collectJSONText).join('') ?? ''
+}
+
+function getFocusedEditorBlockId(editor: TiptapEditor | null): string | null {
+  if (!editor) return null
+  const { from } = editor.state.selection
+  const $from = editor.state.doc.resolve(from)
+  for (let depth = $from.depth; depth >= 0; depth -= 1) {
+    const node = $from.node(depth)
+    const blockId = typeof node.attrs?.blockId === 'string' ? node.attrs.blockId.trim() : ''
+    if (blockId) return blockId
+  }
+  return null
+}
+
+function useFocusedDocsBlockId(editor: TiptapEditor | null) {
+  const [blockId, setBlockId] = useState<string | null>(() => getFocusedEditorBlockId(editor))
+
+  useEffect(() => {
+    if (!editor) {
+      setBlockId(null)
+      return
+    }
+    const update = () => setBlockId(getFocusedEditorBlockId(editor))
+    update()
+    editor.on('selectionUpdate', update)
+    editor.on('transaction', update)
+    return () => {
+      editor.off('selectionUpdate', update)
+      editor.off('transaction', update)
+    }
+  }, [editor])
+
+  return blockId
+}
+
+function buildDocsDocumentCommandContext(doc: DocsDocument | undefined): CommandBarPageContext | null {
+  if (!doc) return null
+  return {
+    entity_type: 'document',
+    entity_id: doc.id,
+    display_title: doc.title,
+  }
+}
+
+function buildDocsBlockCommandContext(doc: DocsDocument | undefined, block: DocsBlock | null): CommandBarPageContext | null {
+  if (!doc || !block) return null
+  return {
+    entity_type: 'document',
+    entity_id: doc.id,
+    display_title: doc.title,
+    metadata: {
+      context_scope: 'block',
+      block_id: block.id,
+      block_revision: block.revision,
+      block_type: block.type,
+      block_excerpt: (block.content_text ?? '').trim().slice(0, 500),
+    },
+  }
+}
+
+function DocsPendingProposalsBanner({
+  proposal,
+  count,
+  onReview,
+}: {
+  proposal: DocsChangeProposal
+  count: number
+  onReview: () => void
+}) {
+  const scopeLabel = proposal.scope === 'block' ? 'Block change' : 'Document change'
+  return (
+    <div className="border-b border-amber-500/25 bg-amber-50/80 px-4 py-3 text-amber-950 dark:border-amber-400/20 dark:bg-amber-950/20 dark:text-amber-100">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+        <div className="flex min-w-0 flex-1 gap-3">
+          <MagicWand01Icon className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{scopeLabel} ready</span>
+              {count > 1 && <PendingProposalBadge count={count} />}
+              <span className="text-[11px] text-amber-800/70 dark:text-amber-200/70">
+                {timeAgo(proposal.created_at)}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-amber-900/85 dark:text-amber-100/85">{proposal.summary}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 lg:justify-end">
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onReview}>
+            <ViewIcon className="h-3 w-3" />
+            Review
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 interface ArticleTranslationDraftState {
@@ -256,11 +359,28 @@ export function DocsDocumentDetail({
   const router = useRouter()
   const queryClient = useQueryClient()
   const { docId } = useParams({ strict: false }) as { docId: string }
+  const routeSearch = useSearch({
+    from: '/_authenticated/w/$slug/docs/documents/$docId',
+  }) as { proposal?: string; from_gap?: string; from_suggestion?: string }
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
+  const proposalSearchId = routeSearch.proposal ?? null
+  const setProposalSearchId = useCallback((next: string | null) => {
+    if (!wsSlug || !docId) return
+    navigate({
+      to: '/w/$slug/docs/documents/$docId',
+      params: { slug: wsSlug, docId },
+      search: (prev) => ({
+        ...prev,
+        proposal: next ?? undefined,
+      }),
+      replace: false,
+    })
+  }, [docId, navigate, wsSlug])
   const coverageGapClosedRef = useRef(false)
   const editorShellRef = useRef<HTMLDivElement | null>(null)
+  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null)
   const [editorShellEl, setEditorShellEl] = useState<HTMLDivElement | null>(null)
   const setEditorShellRef = useCallback((el: HTMLDivElement | null) => {
     editorShellRef.current = el
@@ -275,16 +395,21 @@ export function DocsDocumentDetail({
   const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
-  useRegisterPageContext(doc ? {
-    entity_type: 'document',
-    entity_id: doc.id,
-    display_title: doc.title,
-  } : null, 20)
+  const { data: blocks = [] } = useDocsBlocks(wsId, docId)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
+  const { data: changeProposals = [] } = useDocsChangeProposals(wsId, docId)
+  const {
+    data: searchedChangeProposal,
+    isLoading: searchedChangeProposalLoading,
+    isError: searchedChangeProposalError,
+    error: searchedChangeProposalFetchError,
+  } = useDocsChangeProposal(wsId, docId, proposalSearchId)
   const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
 
   const saveContent = useSaveDocsContent(wsId)
+  const applyChangeProposal = useApplyDocsChangeProposal(wsId)
+  const discardChangeProposal = useDiscardDocsChangeProposal(wsId)
   const updateDoc = useUpdateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
   const unpublishDoc = useUnpublishDocsDocument(wsId)
@@ -296,10 +421,60 @@ export function DocsDocumentDetail({
   const { data: members = [] } = useAssignableMembers(wsId)
   const { teams = [] } = useWorkspaceTeams(wsId)
   const { data: workspaceAgents = [] } = useAgents(wsId)
-  const documentAgents = useMemo(
-    () => workspaceAgents.filter((agent) => agent.allowed_targets?.includes('document')),
-    [workspaceAgents],
+  const accessibleTeamIds = useMemo(
+    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
+    [access?.team_memberships],
   )
+  const documentAgents = useMemo(
+    () => workspaceAgents.filter((agent) => isAgentAvailableForTarget(agent, {
+      targetType: 'document',
+      targetTeamId: doc?.team_id,
+      accessibleTeamIds,
+      canSeeAllAgents: isAdmin,
+    })),
+    [accessibleTeamIds, doc?.team_id, isAdmin, workspaceAgents],
+  )
+  const focusedBlockId = useFocusedDocsBlockId(editorInstance)
+  const focusedBlock = useMemo(
+    () => blocks.find((block) => block.id === focusedBlockId) ?? null,
+    [blocks, focusedBlockId],
+  )
+  const visibleChangeProposal = useMemo(
+    () => changeProposals.find((proposal) => proposal.block_id === focusedBlockId) ?? changeProposals[0] ?? null,
+    [changeProposals, focusedBlockId],
+  )
+  const activeReviewProposal = proposalSearchId ? searchedChangeProposal : null
+  const documentCommandContext = useMemo(
+    () => buildDocsDocumentCommandContext(doc),
+    [doc],
+  )
+  const blockCommandContext = useMemo(
+    () => buildDocsBlockCommandContext(doc, focusedBlock),
+    [doc, focusedBlock],
+  )
+  const commandBarContext = blockCommandContext ?? documentCommandContext
+  const commandBarContextOptions = useMemo<PageContextScopeOption[]>(() => {
+    if (!documentCommandContext) return []
+    const options: PageContextScopeOption[] = [{
+      key: 'document',
+      label: 'Document',
+      description: 'Use the whole document as the edit target.',
+      context: documentCommandContext,
+    }]
+    if (blockCommandContext) {
+      options.push({
+        key: 'block',
+        label: 'Block',
+        description: 'Use the selected block as the edit target.',
+        context: blockCommandContext,
+      })
+    }
+    return options
+  }, [blockCommandContext, documentCommandContext])
+  useRegisterPageContext(commandBarContext, 20, {
+    scopeOptions: commandBarContextOptions,
+    defaultScopeKey: blockCommandContext ? 'block' : 'document',
+  })
   const remoteViewers = useDocsPresenceStore((s) => s.viewingUsers[docId] ?? EMPTY_DOC_VIEWERS)
   const remoteEditors = useDocsPresenceStore((s) => s.editingUsers[docId] ?? EMPTY_DOC_EDITORS)
   const wsSendRaw = useWSStore((s) => s.send)
@@ -434,7 +609,6 @@ export function DocsDocumentDetail({
   const [comments, setComments] = useState<CommentWithAuthor[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentAnchor, setCommentAnchor] = useState<DocsCommentAnchor | null>(null)
-  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null)
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null)
   const [references, setReferences] = useState<DocsReferenceItem[]>([])
   const [referencesLoading, setReferencesLoading] = useState(false)
@@ -449,6 +623,7 @@ export function DocsDocumentDetail({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
   const [pendingPublishLocale, setPendingPublishLocale] = useState<string | null>(null)
+  const [proposalStatusMessage, setProposalStatusMessage] = useState('')
   const { copied: linkCopied, copy: copyLink } = useCopyToClipboard()
 
   // Version preview state — when set, the editor shows version content read-only
@@ -484,6 +659,33 @@ export function DocsDocumentDetail({
       toast.error(err instanceof Error ? err.message : 'Failed to revert')
     }
   }, [previewVersion, revertVersion, docId])
+
+  const handleApplyChangeProposal = useCallback(async () => {
+    const proposal = activeReviewProposal ?? visibleChangeProposal
+    if (!proposal) return
+    try {
+      await applyChangeProposal.mutateAsync({ docId, proposalId: proposal.id })
+      toast.success('Proposal applied')
+      setProposalStatusMessage('Proposal applied. The document has been updated.')
+      if (activeReviewProposal) setProposalSearchId(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to apply proposal')
+    }
+  }, [activeReviewProposal, applyChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
+
+  const handleDiscardChangeProposal = useCallback(async () => {
+    const proposal = activeReviewProposal ?? visibleChangeProposal
+    if (!proposal) return
+    if (!window.confirm("Discard Quill's proposal? You'll lose this draft.")) return
+    try {
+      await discardChangeProposal.mutateAsync({ docId, proposalId: proposal.id })
+      toast.success('Proposal discarded')
+      setProposalStatusMessage('Proposal discarded.')
+      if (activeReviewProposal) setProposalSearchId(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to discard proposal')
+    }
+  }, [activeReviewProposal, discardChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
 
   // Title state — keep a local draft only for the active document.
   const [titleDraftState, setTitleDraftState] = useState<{ docId: string; value: string } | null>(null)
@@ -1097,6 +1299,9 @@ export function DocsDocumentDetail({
 
   return (
     <div className="flex h-full flex-col">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {proposalStatusMessage}
+      </div>
       {/* Top bar */}
       <div className="relative z-30 flex items-center gap-2 border-b border-border/60 bg-background px-3 py-1.5">
         <Button
@@ -1419,7 +1624,51 @@ export function DocsDocumentDetail({
         </div>
       )}
 
+      {!previewVersion && visibleChangeProposal && (
+        <DocsPendingProposalsBanner
+          proposal={visibleChangeProposal}
+          count={changeProposals.length}
+          onReview={() => setProposalSearchId(visibleChangeProposal.id)}
+        />
+      )}
+
       {/* Main content area */}
+      {proposalSearchId ? (
+        searchedChangeProposalLoading ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+            <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
+            Loading proposal…
+          </div>
+        ) : searchedChangeProposalError || !activeReviewProposal ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+            <div className="max-w-md text-center">
+              <h2 className="text-lg font-semibold text-foreground">This proposal is no longer available</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {searchedChangeProposalFetchError instanceof Error
+                  ? searchedChangeProposalFetchError.message
+                  : 'It may have been removed, or you may not have access to view it.'}
+              </p>
+              <Button className="mt-4" variant="outline" onClick={() => setProposalSearchId(null)}>
+                Back to document
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <ProposalReviewView
+            proposal={activeReviewProposal}
+            pendingProposals={changeProposals}
+            currentText={content?.content_text ?? ''}
+            canEdit={canEditDocs && !effectiveReadOnly}
+            applying={applyChangeProposal.isPending}
+            discarding={discardChangeProposal.isPending}
+            workspaceSlug={wsSlug}
+            onBack={() => setProposalSearchId(null)}
+            onApply={handleApplyChangeProposal}
+            onDiscard={handleDiscardChangeProposal}
+            onSelectProposal={setProposalSearchId}
+          />
+        )
+      ) : (
       <div className="flex min-h-0 flex-1">
         {/* Editor */}
         <div ref={setEditorShellRef} className="relative flex min-w-0 flex-1 flex-col">
@@ -2131,6 +2380,7 @@ export function DocsDocumentDetail({
         )}
 
       </div>
+      )}
 
       {editingTranslationLocale && (
         <EditArticleTranslationDialog

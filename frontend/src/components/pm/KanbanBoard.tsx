@@ -1,8 +1,9 @@
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   DndContext,
   DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
   closestCenter,
   useSensor,
@@ -18,7 +19,7 @@ import { ChartColumnIcon, StickyNote01Icon } from '@/lib/pmIcons';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { usePMBoardStore } from '@/stores/pmBoardStore';
+import { usePMBoardStore, type BoardFilters } from '@/stores/pmBoardStore';
 import type { CreateTaskRequest, Task, TaskMemberColumn, TaskStateColumn, Label, EpicWithStats, SprintWithStats } from '@/lib/pmTypes';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
@@ -42,8 +43,8 @@ import { ListDisplayMenu } from './ListDisplayMenu';
 import { BoardToolbarSlot } from './BoardToolbarSlot';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
-import { createPMDnDTraceID, logPMDnD } from '@/lib/pmDnDDebug';
-import { DragPreviewManager, useActiveTask, useColumnDragPreview, commitDropBeforeClearingPreview, getSameStateBoardDropIndex, getStateBoardPreviewInsertIndex, getStoredCrossColumnDropTarget, getStableCrossColumnPreviewIndex } from './KanbanBoard.dnd';
+import { createPMDnDTraceID } from '@/lib/pmDnDDebug';
+import { DragPreviewManager, PM_BOARD_DRAG_ACTIVATION_DISTANCE, PM_BOARD_DRAG_OVER_THROTTLE_MS, useActiveTask, useColumnDragPreview, useColumnDropPlaceholderIndex, useDropPlaceholderHeight, commitDropBeforeClearingPreview, getBaseDragSourceColumnId, getDragStartTaskRect, getPMBoardScrollContainerClassName, getStateColumnTaskGroupsForRender, getTaskDropPlaceholderId, getTaskDropPlaceholderPreview, hasDragPreviewChanged, resolveBoardDropTarget } from './KanbanBoard.dnd';
 import { BoardDataContext, BoardCallbacksContext, DragPreviewContext } from './KanbanBoard.contexts';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
@@ -51,26 +52,109 @@ import { getVisibleTaskListGroupOptions, type TaskListGroupByOption } from '@/co
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { toast } from 'sonner';
+import {
+  getAgentAutoRunStateChangeMessage,
+  getAgentAutoRunStateChangeToastId,
+  shouldNotifyAgentAutoRunStateChange,
+} from '@/components/pm/agentAutoRunNotification';
 
 // ── Helpers ─────────────────────────────────────────────────────────
-
-function taskListChanged(a: Task[], b: Task[]): boolean {
-  if (a.length !== b.length) return true;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i].id !== b[i].id) return true;
-  }
-  return false;
-}
 
 interface KanbanBoardProps {
   workspaceId: string;
   teamId?: string;
+  initialFilters?: BoardFilters;
 }
 
 interface ColumnProps {
   column: TaskStateColumn;
   collapsed: boolean;
   isLoadingMore: boolean;
+}
+
+const PM_BOARD_DND_MEASURING = {
+  droppable: {
+    strategy: MeasuringStrategy.Always,
+  },
+};
+
+function TaskDropPlaceholder({ columnId, index, height }: { columnId: string; index: number; height: number }) {
+  const { setNodeRef } = useDroppable({ id: getTaskDropPlaceholderId(columnId, index) });
+
+  return (
+    <div
+      ref={setNodeRef}
+      data-pm-board-drop-placeholder="true"
+      style={{ height }}
+      className="shrink-0 rounded-lg border border-dashed border-sky-500/40 bg-sky-500/10 shadow-inner dark:border-sky-400/35 dark:bg-sky-400/10"
+    />
+  );
+}
+
+function renderTaskCardsWithPlaceholder({
+  columnId,
+  tasks,
+  placeholderIndex,
+  placeholderHeight,
+  renderTask,
+}: {
+  columnId: string;
+  tasks: Task[];
+  placeholderIndex: number | null;
+  placeholderHeight: number;
+  renderTask: (task: Task) => ReactNode;
+}) {
+  const boundedIndex = placeholderIndex == null
+    ? null
+    : Math.max(0, Math.min(placeholderIndex, tasks.length));
+  const rendered: ReactNode[] = [];
+  for (let index = 0; index <= tasks.length; index++) {
+    if (boundedIndex === index) {
+      rendered.push(
+        <TaskDropPlaceholder
+          key="__pm-board-drop-placeholder"
+          columnId={columnId}
+          index={index}
+          height={placeholderHeight}
+        />,
+      );
+    }
+    if (index < tasks.length) {
+      rendered.push(renderTask(tasks[index]!));
+    }
+  }
+  return rendered;
+}
+
+function AutomatedStateIndicator({ compact = false }: { compact?: boolean }) {
+  const label = 'Tasks moved here automatically start an agent run';
+
+  if (compact) {
+    return (
+      <QuickTooltip label={label}>
+        <span
+          aria-label={label}
+          className="mb-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-emerald-300/70 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-700/70 dark:bg-emerald-950/50 dark:text-emerald-300"
+          tabIndex={0}
+        >
+          <BotIcon className="h-3.5 w-3.5" />
+        </span>
+      </QuickTooltip>
+    );
+  }
+
+  return (
+    <QuickTooltip label={label}>
+      <span
+        aria-label={label}
+        className="inline-flex h-5 shrink-0 items-center gap-1 rounded-md border border-emerald-300/70 bg-emerald-50 px-1.5 text-[10px] font-semibold leading-none text-emerald-700 shadow-sm dark:border-emerald-700/70 dark:bg-emerald-950/50 dark:text-emerald-300"
+        tabIndex={0}
+      >
+        <BotIcon className="h-3 w-3" />
+        Auto-run
+      </span>
+    </QuickTooltip>
+  );
 }
 
 const Column = memo(function Column({ column, collapsed, isLoadingMore }: ColumnProps) {
@@ -80,11 +164,18 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
 
   // Subscribe to drag preview for this column only
   const tasks = useColumnDragPreview(dragManager, column.state.id, column.tasks);
+  const dropPlaceholderIndex = useColumnDropPlaceholderIndex(dragManager, column.state.id, tasks.length);
+  const dropPlaceholderHeight = useDropPlaceholderHeight(dragManager);
+  const hasPreviewOverride = tasks !== column.tasks;
 
   const { setNodeRef, isOver } = useDroppable({ id: column.state.id });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
-  const groupedTasks = column.state.state_type === 'done' ? column.task_groups ?? [] : [];
+  const groupedTasks = getStateColumnTaskGroupsForRender({
+    stateType: column.state.state_type,
+    hasPreviewOverride,
+    taskGroups: column.task_groups,
+  });
 
   // Memoize sortable items from preview tasks
   const sortableItems = useMemo(() => tasks.map((s) => s.id), [tasks]);
@@ -125,7 +216,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         <ArrowExpandIcon className="mt-3 mb-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <StateTypeIcon stateType={column.state.state_type} className="mb-2 h-4 w-4 shrink-0" />
         {automatedStateIds?.has(column.state.id) && (
-          <BotIcon className="mb-1 h-3.5 w-3.5 shrink-0 text-violet-500" />
+          <AutomatedStateIndicator compact />
         )}
         <span className="text-xs font-medium text-muted-foreground">{column.task_count}</span>
         <div className="mt-3 flex flex-1 items-start">
@@ -149,27 +240,19 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
         )}
         <div className="min-w-0">
           {column.state.description ? (
-            <QuickTooltip label={column.state.description}>
-              <p className="flex items-center gap-1.5 truncate text-sm font-semibold cursor-default">
-                <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
-                {column.state.name}
-                {automatedStateIds?.has(column.state.id) && (
-                  <QuickTooltip label="Agent runs automatically on entry">
-                    <BotIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-                  </QuickTooltip>
-                )}
-              </p>
-            </QuickTooltip>
-          ) : (
-            <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+            <div className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
               <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
-              {column.state.name}
-              {automatedStateIds?.has(column.state.id) && (
-                <QuickTooltip label="Agent runs automatically on entry">
-                  <BotIcon className="h-3.5 w-3.5 shrink-0 text-violet-500" />
-                </QuickTooltip>
-              )}
-            </p>
+              <QuickTooltip label={column.state.description}>
+                <span className="min-w-0 truncate cursor-default">{column.state.name}</span>
+              </QuickTooltip>
+              {automatedStateIds?.has(column.state.id) && <AutomatedStateIndicator />}
+            </div>
+          ) : (
+            <div className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+              <StateTypeIcon stateType={column.state.state_type} className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 truncate">{column.state.name}</span>
+              {automatedStateIds?.has(column.state.id) && <AutomatedStateIndicator />}
+            </div>
           )}
           <p className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
             <QuickTooltip label={`${column.task_count} ${column.task_count === 1 ? 'task' : 'tasks'}`}>
@@ -191,7 +274,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 opacity-0 group-hover/header:opacity-100 transition-opacity"
+              className="h-7 w-7 opacity-0 transition-opacity group-hover/header:opacity-100"
               onClick={() => callbacksRef.current.onToggleCollapse(column.state.id)}
             >
               <ArrowShrinkIcon className="h-3.5 w-3.5" />
@@ -211,9 +294,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`scrollbar-hover min-h-0 flex-1 overflow-y-auto pl-3 pr-2 py-2 flex flex-col rounded-md transition-all duration-200 ${
-            isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'
-          }`}
+          className={getPMBoardScrollContainerClassName({ variant: 'state', isOver })}
         >
           {groupedTasks.length > 0 ? (
             groupedTasks.map((group) => (
@@ -231,13 +312,19 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
               </div>
             ))
           ) : (
-            tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                teamName={findTeamName(task.team_id)}
-              />
-            ))
+            renderTaskCardsWithPlaceholder({
+              columnId: column.state.id,
+              tasks,
+              placeholderIndex: dropPlaceholderIndex,
+              placeholderHeight: dropPlaceholderHeight,
+              renderTask: (task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  teamName={findTeamName(task.team_id)}
+                />
+              ),
+            })
           )}
 
           {column.has_more ? (
@@ -258,7 +345,7 @@ const Column = memo(function Column({ column, collapsed, isLoadingMore }: Column
 
           <Button
             variant="ghost"
-            className="w-full justify-start text-xs text-muted-foreground"
+            className="w-full justify-center text-xs text-muted-foreground"
             onClick={() => callbacksRef.current.onCreate(column.state.id)}
           >
             <PlusSignIcon className="h-3.5 w-3.5" />
@@ -286,6 +373,8 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
 
   // Subscribe to drag preview for this column only
   const tasks = useColumnDragPreview(dragManager, colKey, column.tasks);
+  const dropPlaceholderIndex = useColumnDropPlaceholderIndex(dragManager, colKey, tasks.length);
+  const dropPlaceholderHeight = useDropPlaceholderHeight(dragManager);
 
   const { setNodeRef, isOver } = useDroppable({ id: colKey });
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -387,16 +476,22 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
             setNodeRef(node);
             scrollRef.current = node;
           }}
-          className={`scrollbar-hover min-h-0 flex-1 overflow-y-auto p-2 flex flex-col rounded-md transition-all duration-200 ${isOver ? 'bg-accent ring-1 ring-inset ring-border gap-4' : 'gap-2'}`}
+          className={getPMBoardScrollContainerClassName({ variant: 'member', isOver })}
         >
-          {tasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              teamName={findTeamName(task.team_id)}
-              showStateBadge
-            />
-          ))}
+          {renderTaskCardsWithPlaceholder({
+            columnId: colKey,
+            tasks,
+            placeholderIndex: dropPlaceholderIndex,
+            placeholderHeight: dropPlaceholderHeight,
+            renderTask: (task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                teamName={findTeamName(task.team_id)}
+                showStateBadge
+              />
+            ),
+          })}
 
           {column.has_more ? (
             <div ref={loadMoreRef} className="flex h-8 items-center justify-center text-xs text-muted-foreground">
@@ -410,7 +505,7 @@ const MemberColumn = memo(function MemberColumn({ column, collapsed, isLoadingMo
 
           <Button
             variant="ghost"
-            className="w-full justify-start text-xs text-muted-foreground"
+            className="w-full justify-center text-xs text-muted-foreground"
             onClick={() => callbacksRef.current.onCreateForMember(column.member?.id ?? null)}
           >
             <PlusSignIcon className="h-3.5 w-3.5" />
@@ -445,7 +540,7 @@ const DragOverlayCard = memo(function DragOverlayCard({
 });
 DragOverlayCard.displayName = 'DragOverlayCard';
 
-export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
+export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoardProps) {
   const navigate = useNavigate();
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const workflow = usePMBoardStore((state) => state.workflow);
@@ -485,6 +580,8 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const groupBy = useBoardDisplayStore((s) => s.groupBy);
   const setGroupBy = useBoardDisplayStore((s) => s.setGroupBy);
   const initDisplay = useBoardDisplayStore((s) => s.init);
+  const initialFiltersKey = useMemo(() => JSON.stringify(initialFilters ?? {}), [initialFilters]);
+  const appliedInitialFiltersRef = useRef<string | null>(null);
 
   useEffect(() => { initDisplay(workspaceId); }, [workspaceId, initDisplay]);
 
@@ -506,6 +603,13 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     return ids;
   }, [automationRules]);
 
+  const notifyAgentAutoRunStateChange = useCallback((fromStateId: string | null | undefined, toStateId: string | null | undefined) => {
+    if (!shouldNotifyAgentAutoRunStateChange({ fromStateId, toStateId, automatedStateIds })) return;
+    if (!toStateId) return;
+    const stateName = columns.find((column) => column.state.id === toStateId)?.state.name ?? 'this state';
+    toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(toStateId) });
+  }, [automatedStateIds, columns]);
+
   // Load member board when groupBy switches to 'members'
   const activeMemberIds = useMemo(() => assignableMembers.filter((m) => m.status === 'active').map((m) => m.id), [assignableMembers]);
   useEffect(() => {
@@ -519,6 +623,14 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   useEffect(() => {
     setTeamFilter(teamId ?? null);
   }, [teamId, setTeamFilter]);
+
+  useEffect(() => {
+    if (!initialFilters || Object.keys(initialFilters).length === 0) return;
+    if (appliedInitialFiltersRef.current === initialFiltersKey) return;
+
+    appliedInitialFiltersRef.current = initialFiltersKey;
+    void setFilters(initialFilters);
+  }, [initialFilters, initialFiltersKey, setFilters]);
 
   const [refLabels, setRefLabels] = useState<Label[]>([]);
   const [refEpics, setRefEpics] = useState<EpicWithStats[]>([]);
@@ -538,6 +650,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   const dragManager = useRef(new DragPreviewManager()).current;
   const isDragging = useActiveTask(dragManager) !== null;
   const lastDragOverTime = useRef(0);
+  const activeDragTraceID = useRef<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createStateId, setCreateStateId] = useState<string>('');
   const [createOwnerMemberId, setCreateOwnerMemberId] = useState<string | undefined>(undefined);
@@ -601,7 +714,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
   }, [listFieldVis, teamId]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: PM_BOARD_DRAG_ACTIVATION_DISTANCE } }),
   );
 
   useEffect(() => {
@@ -718,36 +831,64 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
     };
   }, [groupBy, columns, patchTask, refreshBoard]);
 
-  const findStateIdByItemId = useCallback(
-    (id: string) => {
-      if (columns.some((column) => column.state.id === id)) return id;
-      for (const column of columns) {
-        if (column.tasks.some((t) => t.id === id)) {
-          return column.state.id;
-        }
-      }
-      return null;
-    },
-    [columns]
-  );
-
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
+      const traceID = createPMDnDTraceID();
+      const activeId = String(event.active.id);
+      activeDragTraceID.current = traceID;
       dragManager.clearColumnOverrides();
+      dragManager.setDropPlaceholderRect(getDragStartTaskRect({
+        activeId,
+        activatorEvent: event.activatorEvent,
+        dndRect: event.active.rect.current.initial,
+      }));
       const allTasks = groupBy === 'members'
         ? memberColumns.flatMap((col) => col.tasks)
         : columns.flatMap((column) => column.tasks);
-      const task = allTasks.find((item) => item.id === String(event.active.id));
+      const task = allTasks.find((item) => item.id === activeId);
       dragManager.setActiveTask(task ?? null);
+      if (task) {
+        if (groupBy === 'members') {
+          const sourceColumn = memberColumns.find((column) => column.tasks.some((candidate) => candidate.id === activeId));
+          const sourceColumnId = sourceColumn?.member?.id ?? (sourceColumn ? '__unassigned__' : null);
+          const sourceIndex = sourceColumn?.tasks.findIndex((candidate) => candidate.id === activeId) ?? -1;
+          if (sourceColumn && sourceColumnId && sourceIndex >= 0) {
+            const preview = getTaskDropPlaceholderPreview({
+              activeId,
+              fromColumnId: sourceColumnId,
+              toColumnId: sourceColumnId,
+              fromTasks: sourceColumn.tasks,
+              toTasks: sourceColumn.tasks,
+              toIndex: sourceIndex,
+            });
+            dragManager.updatePreview(sourceColumnId, sourceColumnId, preview.fromTasks, preview.toTasks, preview.dropTarget.toIndex);
+          }
+        } else {
+          const sourceColumn = columns.find((column) => column.tasks.some((candidate) => candidate.id === activeId));
+          const sourceColumnId = sourceColumn?.state.id;
+          const sourceIndex = sourceColumn?.tasks.findIndex((candidate) => candidate.id === activeId) ?? -1;
+          if (sourceColumn && sourceColumnId && sourceIndex >= 0) {
+            const preview = getTaskDropPlaceholderPreview({
+              activeId,
+              fromColumnId: sourceColumnId,
+              toColumnId: sourceColumnId,
+              fromTasks: sourceColumn.tasks,
+              toTasks: sourceColumn.tasks,
+              toIndex: sourceIndex,
+            });
+            dragManager.updatePreview(sourceColumnId, sourceColumnId, preview.fromTasks, preview.toTasks, preview.dropTarget.toIndex);
+          }
+        }
+      }
     },
     [columns, memberColumns, groupBy, dragManager]
   );
 
   const onDragOver = useCallback(
     (event: DragOverEvent) => {
-      // Throttle to ~20fps
+      // Keep preview work capped near frame cadence while avoiding visible lag.
       const now = performance.now();
-      if (now - lastDragOverTime.current < 50) return;
+      if (now - lastDragOverTime.current < PM_BOARD_DRAG_OVER_THROTTLE_MS) return;
       lastDragOverTime.current = now;
 
       const { active, over } = event;
@@ -757,106 +898,113 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       if (activeId === overId) return;
 
       if (groupBy === 'members') {
-        // Find source/target columns using manager overrides or base data
-        let fromKey: string | null = null;
-        let toKey: string | null = null;
-        for (const col of memberColumns) {
-          const key = col.member?.id ?? '__unassigned__';
-          const colTasks = dragManager.getColumnTasks(key) ?? col.tasks;
-          if (colTasks.some((s) => s.id === activeId)) fromKey = key;
-          if (key === overId || colTasks.some((s) => s.id === overId)) toKey = key;
-        }
-        if (!fromKey || !toKey || fromKey === toKey) {
+        const fromKey = getBaseDragSourceColumnId({
+          activeId,
+          columns: memberColumns.map((col) => ({
+            id: col.member?.id ?? '__unassigned__',
+            tasks: col.tasks,
+          })),
+        });
+        const previousTarget = dragManager.getDropTarget();
+        const r = active.rect.current.translated;
+        const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+        const target = fromKey ? resolveBoardDropTarget({
+          activeId,
+          fromColumnId: fromKey,
+          overId,
+          pointerBelowMid: belowMid,
+          previewTarget: previousTarget,
+          columns: memberColumns.map((col) => ({
+            id: col.member?.id ?? '__unassigned__',
+            tasks: col.tasks,
+          })),
+        }) : null;
+        if (!fromKey || !target) {
           dragManager.clearColumnOverrides();
           return;
         }
 
+        const toKey = target.toColumnId;
         const fromBase = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
         const toBase = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
         if (!fromBase || !toBase) return;
 
-        const fromTasks = [...(dragManager.getColumnTasks(fromKey) ?? fromBase.tasks)];
-        const toTasks = [...(dragManager.getColumnTasks(toKey) ?? toBase.tasks)];
-
-        const idx = fromTasks.findIndex((s) => s.id === activeId);
-        if (idx < 0) return;
-        const [task] = fromTasks.splice(idx, 1);
-        const previousTarget = dragManager.getDropTarget();
-        let insertIdx: number;
-        if (overId === toKey) {
-          insertIdx = getStableCrossColumnPreviewIndex({
-            previewTarget: previousTarget,
-            fromColumnId: fromKey,
-            toColumnId: toKey,
-            overId,
-            containerId: toKey,
-            computedIndex: toTasks.length,
-            columnLength: toTasks.length,
-          });
-        } else {
-          const overIdx = toTasks.findIndex((s) => s.id === overId);
-          insertIdx = overIdx >= 0 ? overIdx : toTasks.length;
-          if (overIdx >= 0) {
-            const r = active.rect.current.translated;
-            const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
-            if (belowMid) insertIdx = overIdx + 1;
-          }
-        }
-        toTasks.splice(insertIdx, 0, task);
+        const preview = getTaskDropPlaceholderPreview({
+          activeId,
+          fromColumnId: fromKey,
+          toColumnId: toKey,
+          fromTasks: fromBase.tasks,
+          toTasks: toBase.tasks,
+          toIndex: target.toIndex,
+        });
 
         // Skip no-op updates
         const currentFrom = dragManager.getColumnTasks(fromKey);
-        if (currentFrom && !taskListChanged(currentFrom, fromTasks)) return;
+        const currentTo = dragManager.getColumnTasks(toKey);
+        if (!hasDragPreviewChanged({
+          currentFrom,
+          nextFrom: preview.fromTasks,
+          currentTo,
+          nextTo: preview.toTasks,
+          currentDropTarget: previousTarget,
+          nextDropTarget: preview.dropTarget,
+        })) return;
 
-        dragManager.updatePreview(fromKey, toKey, fromTasks, toTasks, insertIdx);
+        dragManager.updatePreview(fromKey, toKey, preview.fromTasks, preview.toTasks, preview.dropTarget.toIndex);
       } else {
         // State board path
-        let fromStateId: string | null = null;
-        let toStateId: string | null = null;
-        for (const col of columns) {
-          const colTasks = dragManager.getColumnTasks(col.state.id) ?? col.tasks;
-          if (colTasks.some((s) => s.id === activeId)) fromStateId = col.state.id;
-          if (col.state.id === overId || colTasks.some((s) => s.id === overId)) toStateId = col.state.id;
-        }
-        if (!fromStateId || !toStateId || fromStateId === toStateId) {
+        const fromStateId = getBaseDragSourceColumnId({
+          activeId,
+          columns: columns.map((col) => ({
+            id: col.state.id,
+            tasks: col.tasks,
+          })),
+        });
+        const previousTarget = dragManager.getDropTarget();
+        const r = active.rect.current.translated;
+        const belowMid = r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+        const target = fromStateId ? resolveBoardDropTarget({
+          activeId,
+          fromColumnId: fromStateId,
+          overId,
+          pointerBelowMid: belowMid,
+          previewTarget: previousTarget,
+          columns: columns.map((col) => ({
+            id: col.state.id,
+            stateType: col.state.state_type,
+            tasks: col.tasks,
+          })),
+        }) : null;
+        if (!fromStateId || !target) {
           dragManager.clearColumnOverrides();
           return;
         }
 
-        const fromTasks = [...(dragManager.getColumnTasks(fromStateId) ?? columns.find((c) => c.state.id === fromStateId)!.tasks)];
-        const toTasks = [...(dragManager.getColumnTasks(toStateId) ?? columns.find((c) => c.state.id === toStateId)!.tasks)];
-
-        const idx = fromTasks.findIndex((s) => s.id === activeId);
-        if (idx < 0) return;
-        const [task] = fromTasks.splice(idx, 1);
-        const overIdx = toTasks.findIndex((s) => s.id === overId);
-        const r = active.rect.current.translated;
-        const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+        const toStateId = target.toColumnId;
+        const fromCol = columns.find((c) => c.state.id === fromStateId)!;
         const toCol = columns.find((c) => c.state.id === toStateId)!;
-        const computedInsertIdx = getStateBoardPreviewInsertIndex({
-          toStateType: toCol.state.state_type,
-          overId,
-          toStateId,
-          overIdx,
-          columnLength: toTasks.length,
-          pointerBelowMid: belowMid,
-        });
-        const insertIdx = getStableCrossColumnPreviewIndex({
-          previewTarget: dragManager.getDropTarget(),
+        const preview = getTaskDropPlaceholderPreview({
+          activeId,
           fromColumnId: fromStateId,
           toColumnId: toStateId,
-          overId,
-          containerId: toStateId,
-          computedIndex: computedInsertIdx,
-          columnLength: toTasks.length,
+          fromTasks: fromCol.tasks,
+          toTasks: toCol.tasks,
+          toIndex: target.toIndex,
         });
-        toTasks.splice(insertIdx, 0, task);
 
         // Skip no-op updates
         const currentFrom = dragManager.getColumnTasks(fromStateId);
-        if (currentFrom && !taskListChanged(currentFrom, fromTasks)) return;
+        const currentTo = dragManager.getColumnTasks(toStateId);
+        if (!hasDragPreviewChanged({
+          currentFrom,
+          nextFrom: preview.fromTasks,
+          currentTo,
+          nextTo: preview.toTasks,
+          currentDropTarget: previousTarget,
+          nextDropTarget: preview.dropTarget,
+        })) return;
 
-        dragManager.updatePreview(fromStateId, toStateId, fromTasks, toTasks, insertIdx);
+        dragManager.updatePreview(fromStateId, toStateId, preview.fromTasks, preview.toTasks, preview.dropTarget.toIndex);
       }
     },
     [groupBy, columns, memberColumns, dragManager],
@@ -864,6 +1012,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
   const clearDragPreview = useCallback(() => {
     dragManager.clear();
+    activeDragTraceID.current = null;
   }, [dragManager]);
 
   const onDragEnd = useCallback(
@@ -877,52 +1026,38 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       const overId = String(over.id);
 
       if (groupBy === 'members') {
-        // Find original column from BASE store data
-        let fromKey: string | null = null;
-        for (const col of memberColumns) {
-          const key = col.member?.id ?? '__unassigned__';
-          if (col.tasks.some((s) => s.id === activeId)) { fromKey = key; break; }
-        }
+        const fromKey = getBaseDragSourceColumnId({
+          activeId,
+          columns: memberColumns.map((col) => ({
+            id: col.member?.id ?? '__unassigned__',
+            tasks: col.tasks,
+          })),
+        });
         if (!fromKey) { clearDragPreview(); return; }
 
-        // Find target column: first check preview, then use over event
-        let toKey: string | null = null;
-        let toIdx = 0;
-        const storedMemberTarget = getStoredCrossColumnDropTarget({
+        const overColumn = memberColumns.find((col) => {
+          const key = col.member?.id ?? '__unassigned__';
+          return key === overId || col.tasks.some((s) => s.id === overId);
+        });
+        const overIdx = overColumn?.tasks.findIndex((s) => s.id === overId) ?? -1;
+        const r = active.rect.current.translated;
+        const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+        const finalTarget = resolveBoardDropTarget({
+          activeId,
           previewTarget: dragManager.getDropTarget(),
           fromColumnId: fromKey,
-          validColumnIds: memberColumns.map((col) => col.member?.id ?? '__unassigned__'),
+          overId,
+          pointerBelowMid: belowMid,
+          columns: memberColumns.map((col) => ({
+            id: col.member?.id ?? '__unassigned__',
+            tasks: col.tasks,
+          })),
         });
-
-        if (storedMemberTarget) {
-          toKey = storedMemberTarget.toColumnId;
-          toIdx = storedMemberTarget.toIndex;
-        }
-
-        // Check preview overrides for cross-column move
-        if (!toKey) {
-          for (const col of memberColumns) {
-            const key = col.member?.id ?? '__unassigned__';
-            const previewTasks = dragManager.getColumnTasks(key);
-            if (previewTasks) {
-              const idx = previewTasks.findIndex((s) => s.id === activeId);
-              if (idx >= 0 && key !== fromKey) { toKey = key; toIdx = idx; break; }
-            }
-          }
-        }
-
-        // If preview didn't capture it (throttle), compute from the over event
-        if (!toKey) {
-          for (const col of memberColumns) {
-            const key = col.member?.id ?? '__unassigned__';
-            if (key === overId || col.tasks.some((s) => s.id === overId)) {
-              if (key !== fromKey) { toKey = key; toIdx = 0; }
-              break;
-            }
-          }
-        }
+        const toKey = finalTarget?.toColumnId ?? null;
+        const toIdx = finalTarget?.toIndex ?? 0;
 
         if (toKey) {
+          if (fromKey === toKey) { clearDragPreview(); return; }
           const fromColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === fromKey);
           const toColumn = memberColumns.find((c) => (c.member?.id ?? '__unassigned__') === toKey);
           if (!fromColumn || !toColumn) { clearDragPreview(); return; }
@@ -944,108 +1079,75 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
 
       // ── State board ──
       // Find original column from BASE store data
-      let fromStateId: string | null = null;
-      for (const col of columns) {
-        if (col.tasks.some((s) => s.id === activeId)) { fromStateId = col.state.id; break; }
-      }
+      const fromStateId = getBaseDragSourceColumnId({
+        activeId,
+        columns: columns.map((col) => ({
+          id: col.state.id,
+          tasks: col.tasks,
+        })),
+      });
       if (!fromStateId) { clearDragPreview(); return; }
-      const debugTraceID = createPMDnDTraceID();
+      const debugTraceID = activeDragTraceID.current ?? createPMDnDTraceID();
 
-        // Find target: first check preview, then use over event
-        let crossStateId: string | null = null;
-        let crossIdx = 0;
-        const storedStateTarget = getStoredCrossColumnDropTarget({
-          previewTarget: dragManager.getDropTarget(),
-          fromColumnId: fromStateId,
-          validColumnIds: columns.map((col) => col.state.id),
-        });
+      const overColumn = columns.find((col) => col.state.id === overId || col.tasks.some((s) => s.id === overId));
+      const overIdx = overColumn?.tasks.findIndex((s) => s.id === overId) ?? -1;
+      const r = active.rect.current.translated;
+      const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
+      const finalTarget = resolveBoardDropTarget({
+        activeId,
+        previewTarget: dragManager.getDropTarget(),
+        fromColumnId: fromStateId,
+        overId,
+        pointerBelowMid: belowMid,
+        columns: columns.map((col) => ({
+          id: col.state.id,
+          stateType: col.state.state_type,
+          tasks: col.tasks,
+        })),
+      });
 
-        if (storedStateTarget) {
-          crossStateId = storedStateTarget.toColumnId;
-          crossIdx = storedStateTarget.toIndex;
-        }
-
-        // Check preview overrides for cross-column move
-        if (!crossStateId) {
-          for (const col of columns) {
-            const previewTasks = dragManager.getColumnTasks(col.state.id);
-            if (previewTasks) {
-              const idx = previewTasks.findIndex((s) => s.id === activeId);
-              if (idx >= 0 && col.state.id !== fromStateId) { crossStateId = col.state.id; crossIdx = idx; break; }
-            }
-          }
-        }
-
-      // If preview didn't capture it (throttle), compute from the over event
-      if (!crossStateId) {
-        for (const col of columns) {
-          if (col.state.id === overId || col.tasks.some((s) => s.id === overId)) {
-            if (col.state.id !== fromStateId) {
-              crossStateId = col.state.id;
-              // Compute insert index from the over position
-              const overIdx = col.tasks.findIndex((s) => s.id === overId);
-              const r = active.rect.current.translated;
-              const belowMid = overIdx >= 0 && r ? r.top + r.height / 2 > over.rect.top + over.rect.height / 2 : false;
-              crossIdx = getStateBoardPreviewInsertIndex({
-                toStateType: col.state.state_type,
-                overId,
-                toStateId: col.state.id,
-                overIdx,
-                columnLength: col.tasks.length,
-                pointerBelowMid: belowMid,
-              });
-            }
-            break;
-          }
-        }
+      if (!finalTarget) {
+        clearDragPreview();
+        return;
       }
 
-      if (crossStateId) {
-        logPMDnD('drag_end_cross_state', {
-          trace_id: debugTraceID,
-          task_id: activeId,
-          over_id: overId,
-          from_state_id: fromStateId,
-          to_state_id: crossStateId,
-          to_index: crossIdx,
-        });
+      const toStateId = finalTarget.toColumnId;
+      const toIndex = finalTarget.toIndex;
+      const toColumn = columns.find((c) => c.state.id === toStateId);
+      if (!toColumn) { clearDragPreview(); return; }
+
+      if (fromStateId !== toStateId) {
         await commitDropBeforeClearingPreview({
-          commit: () => moveTask({
-            workspaceId,
-            taskId: activeId,
-            fromStateId,
-            toStateId: crossStateId,
-            toIndex: crossIdx,
-            debugTraceID,
-          }),
+          commit: async () => {
+            const moved = await moveTask({
+              workspaceId,
+              taskId: activeId,
+              fromStateId,
+              toStateId,
+              toIndex,
+              debugTraceID,
+            });
+            if (moved) notifyAgentAutoRunStateChange(fromStateId, toStateId);
+          },
           clearPreview: clearDragPreview,
         });
       } else {
-        // Same-column reorder
-        if (activeId === overId) { clearDragPreview(); return; }
-        const toStateId = findStateIdByItemId(overId);
-        if (!toStateId || fromStateId !== toStateId) { clearDragPreview(); return; }
-        const fromColumn = columns.find((c) => c.state.id === fromStateId);
-        if (!fromColumn) { clearDragPreview(); return; }
-        if (fromColumn.state.state_type === 'done') {
-          logPMDnD('drag_end_done_column_noop', { trace_id: debugTraceID, task_id: activeId, state_id: fromStateId, over_id: overId });
+        if (toColumn.state.state_type === 'done') {
           clearDragPreview();
           return;
         }
-        const fromIndex = fromColumn.tasks.findIndex((s) => s.id === activeId);
-        const overIndex = overId === toStateId
-          ? fromColumn.tasks.length - 1
-          : fromColumn.tasks.findIndex((s) => s.id === overId);
-        const toIndex = getSameStateBoardDropIndex({ overId, stateId: toStateId, overIndex, columnLength: fromColumn.tasks.length });
-        if (fromIndex < 0 || overIndex < 0 || fromIndex === toIndex) { clearDragPreview(); return; }
-        logPMDnD('drag_end_same_state', { trace_id: debugTraceID, task_id: activeId, over_id: overId, state_id: toStateId, state_type: fromColumn.state.state_type, from_index: fromIndex, over_index: overIndex, to_index: toIndex });
+        const fromIndex = toColumn.tasks.findIndex((s) => s.id === activeId);
+        if (fromIndex < 0 || fromIndex === toIndex) { clearDragPreview(); return; }
         await commitDropBeforeClearingPreview({
-          commit: () => moveTask({ workspaceId, taskId: activeId, fromStateId, toStateId, toIndex, debugTraceID }),
+          commit: async () => {
+            const moved = await moveTask({ workspaceId, taskId: activeId, fromStateId, toStateId, toIndex, debugTraceID });
+            if (moved) notifyAgentAutoRunStateChange(fromStateId, toStateId);
+          },
           clearPreview: clearDragPreview,
         });
       }
     },
-    [columns, memberColumns, groupBy, findStateIdByItemId, moveTask, moveMemberTask, workspaceId, clearDragPreview, dragManager]
+    [columns, memberColumns, groupBy, moveTask, moveMemberTask, workspaceId, clearDragPreview, dragManager, notifyAgentAutoRunStateChange]
   );
 
   const handleCreate = useCallback(
@@ -1101,21 +1203,30 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
       }
       // Optimistically patch the task in member columns
       const cols = usePMBoardStore.getState().memberColumns;
+      let previousStateId: string | undefined;
       const updated = cols.map((col) => {
         const idx = col.tasks.findIndex((s) => s.id === task.id);
         if (idx < 0) return col;
+        previousStateId = col.tasks[idx]?.workflow_state_id;
         const tasks = [...col.tasks];
         tasks[idx] = { ...tasks[idx], ...task };
         return { ...col, tasks };
       });
       usePMBoardStore.setState({ memberColumns: updated });
+      notifyAgentAutoRunStateChange(previousStateId, task.workflow_state_id);
     } else {
+      const previousStateId = usePMBoardStore
+        .getState()
+        .columns
+        .flatMap((column) => column.tasks)
+        .find((candidate) => candidate.id === task.id)?.workflow_state_id;
       const patched = patchTask('updated', task.id, task);
       if (!patched) {
         refreshBoard();
       }
+      notifyAgentAutoRunStateChange(previousStateId, task.workflow_state_id);
     }
-  }, [patchTask, refreshBoard, groupBy]);
+  }, [patchTask, refreshBoard, groupBy, notifyAgentAutoRunStateChange]);
 
   // Memoize context values to avoid re-rendering all consumers
   const boardData = useMemo<import('./KanbanBoard.contexts').BoardDataContextValue>(() => ({
@@ -1216,9 +1327,6 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
               </Select>
             )}
           </BoardToolbarSlot>
-          <BoardToolbarSlot>
-            {viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}
-          </BoardToolbarSlot>
           <BoardToolbarSlot className="gap-1">
             {showSeedButton ? (
               <Button
@@ -1236,26 +1344,39 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
                 Seed 500
               </Button>
             ) : null}
-            <QuickTooltip label="Board view">
-              <Button
-                variant={viewMode === 'board' ? 'default' : 'ghost'}
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setViewMode('board')}
-              >
-                <LayoutTwoColumnIcon className="h-4 w-4" />
-              </Button>
-            </QuickTooltip>
-            <QuickTooltip label="List view">
-              <Button
-                variant={viewMode === 'list' ? 'default' : 'ghost'}
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setViewMode('list')}
-              >
-                <LayoutTable01Icon className="h-4 w-4" />
-              </Button>
-            </QuickTooltip>
+            <span className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border/70 bg-muted/30 p-0.5">
+              <QuickTooltip label="Board view">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-pressed={viewMode === 'board'}
+                  className={`h-6 w-6 rounded-sm ${viewMode === 'board'
+                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setViewMode('board')}
+                >
+                  <LayoutTwoColumnIcon className="h-3.5 w-3.5" />
+                </Button>
+              </QuickTooltip>
+              <QuickTooltip label="List view">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-pressed={viewMode === 'list'}
+                  className={`h-6 w-6 rounded-sm ${viewMode === 'list'
+                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setViewMode('list')}
+                >
+                  <LayoutTable01Icon className="h-3.5 w-3.5" />
+                </Button>
+              </QuickTooltip>
+            </span>
+          </BoardToolbarSlot>
+          <BoardToolbarSlot>
+            {viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}
           </BoardToolbarSlot>
         </div>
 
@@ -1283,6 +1404,7 @@ export function KanbanBoard({ workspaceId, teamId }: KanbanBoardProps) {
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          measuring={PM_BOARD_DND_MEASURING}
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragEnd={onDragEnd}

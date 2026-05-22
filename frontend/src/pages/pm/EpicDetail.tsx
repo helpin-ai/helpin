@@ -3,20 +3,27 @@ import { getRouteApi, useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { useTitle } from '@/hooks/useTitle';
 import {
+  Activity01Icon,
   ArchiveIcon,
   ArrowLeft02Icon,
   Calendar03Icon,
   ArrowRight01Icon,
   AttachmentIcon,
+  BotIcon,
+  ChartColumnIcon,
+  CheckListIcon,
   FavouriteIcon,
   Link01Icon,
   Loading01Icon,
+  Message01Icon,
   PencilEdit01Icon,
   PlusSignIcon,
+  SourceCodeIcon,
   Target01Icon,
   Upload01Icon,
   UserIcon,
   UserGroupIcon,
+  ViewIcon,
   ArchiveRestoreIcon,
   HashtagIcon,
   Layers01Icon,
@@ -28,6 +35,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
@@ -39,26 +47,34 @@ import {
   removeInlineImagesByAttachmentIds,
 } from '@/components/pm/editorImageAttachments';
 import { TaskListView } from '@/components/pm/TaskListView';
+import type { TaskListGroupByOption } from '@/components/pm/task-detail/taskListGrouping';
 import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
+import { agentService } from '@/lib/services/agentService';
+import { pmCommentService } from '@/lib/services/pmCommentService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
-import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
+import type { ActivityLogEntry, AttachmentResponse, CommentWithAuthor, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
+import { getEpicTaskCount } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
 import { buildAssignableMemberNameMap, findAssignableMember } from '@/lib/assignableMembers';
 import { FollowButton } from '@/components/notifications/FollowButton';
 import { AssociationsPanel } from '@/components/pm/AssociationsPanel';
+import { ActivityTimeline } from '@/components/pm/ActivityTimeline';
+import { CommentThread } from '@/components/pm/CommentThread';
+import { TaskDetailSectionHeading } from '@/components/pm/task-detail/TaskDetailSectionHeading';
 import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
+import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
@@ -67,6 +83,8 @@ import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
 import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { ExternalLinks } from '@/components/pm/ExternalLinks';
 import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
+import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -77,22 +95,32 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   at_risk: { label: 'At risk', color: 'text-yellow-600' },
   off_track: { label: 'Off track', color: 'text-red-600' },
 };
+const NO_HEALTH_DATES_TOOLTIP = 'No suggestion yet: set a start date and deadline.';
+const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and execution.';
 
 // ── Metadata Row ───────────────────────────────────────────────────
 
 function MetadataRow({
   icon: Icon,
   label,
+  tooltip,
   children,
 }: {
   icon: React.ElementType;
   label: string;
+  tooltip?: string;
   children: React.ReactNode;
 }) {
+  const labelNode = <span className="text-[12px] text-muted-foreground self-center">{label}</span>;
+
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-[12px] text-muted-foreground self-center">{label}</span>
+      {tooltip ? (
+        <QuickTooltip label={tooltip} side="left">
+          {labelNode}
+        </QuickTooltip>
+      ) : labelNode}
       <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
@@ -110,6 +138,7 @@ interface EpicFormState {
   health: EpicHealth;
   planned_start_date: string;
   deadline: string;
+  assigned_agent_id: string;
 }
 
 const buildForm = (epic: EpicWithStats): EpicFormState => ({
@@ -122,6 +151,7 @@ const buildForm = (epic: EpicWithStats): EpicFormState => ({
   health: epic.epic.health,
   planned_start_date: epic.epic.planned_start_date ?? '',
   deadline: epic.epic.deadline ? epic.epic.deadline.slice(0, 10) : '',
+  assigned_agent_id: epic.epic.assigned_agent_id ?? '',
 });
 
 function startOfDayUTC(value: string | Date): Date | null {
@@ -138,7 +168,7 @@ function getNoHealthSuggestionMessage(epic: EpicWithStats | null): string | null
   const today = startOfDayUTC(new Date());
 
   if (!start || !end) {
-    return 'No suggestion yet: set a start date and deadline.';
+    return NO_HEALTH_DATES_TOOLTIP;
   }
   if (end < start) {
     return 'No suggestion yet: fix the schedule dates.';
@@ -159,6 +189,7 @@ export function EpicDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const currentUser = useAuthStore((s) => s.user);
 
   const workspaceId = workspace?.id;
 
@@ -178,6 +209,8 @@ export function EpicDetailPage() {
   const [pendingPatch, setPendingPatch] = useState<UpdateEpicRequest>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [taskTableSaving, setTaskTableSaving] = useState(false);
+  const [taskTableSaveError, setTaskTableSaveError] = useState<string | null>(null);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [createTaskWorkflow, setCreateTaskWorkflow] = useState<WorkflowWithStates | null>(null);
@@ -193,7 +226,16 @@ export function EpicDetailPage() {
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [editingDescription, setEditingDescription] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [hasExternalLinkItems, setHasExternalLinkItems] = useState(false);
+  const [externalLinkCount, setExternalLinkCount] = useState(0);
+  const [comments, setComments] = useState<CommentWithAuthor[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(true);
+  const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const [taskListGroupBy, setTaskListGroupBy] = useState<TaskListGroupByOption>('none');
   const [panelDragging, setPanelDragging] = useState(false);
+  const [startingAgentRun, setStartingAgentRun] = useState(false);
   const savedDescriptionRef = useRef('');
   const openFilePickerRef = useRef<(() => void) | null>(null);
   const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
@@ -202,7 +244,7 @@ export function EpicDetailPage() {
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
 
-  const { teams, getTeamMembers, findTeamName } = useAccessibleTeams(workspaceId ?? '');
+  const { teams, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
   const assignableMemberNames = useMemo(
     () => buildAssignableMemberNameMap(assignableMembers),
@@ -262,13 +304,80 @@ export function EpicDetailPage() {
     fetchData();
   }, [fetchData]);
 
+  const reloadComments = useCallback(async () => {
+    if (!workspaceId) {
+      setComments([]);
+      setCommentsLoading(false);
+      return;
+    }
+    const res = await pmCommentService.list(workspaceId, 'epic', epicId);
+    setComments(res.data ?? []);
+    setCommentsLoading(false);
+  }, [workspaceId, epicId]);
+
+  const reloadActivity = useCallback(async () => {
+    if (!workspaceId) {
+      setActivity([]);
+      setActivityLoading(false);
+      return;
+    }
+    const res = await pmEpicService.listActivity(workspaceId, epicId, 1, 30);
+    setActivity(res.data?.data ?? []);
+    setActivityLoading(false);
+  }, [workspaceId, epicId]);
+
+  useEffect(() => {
+    setCommentsLoading(true);
+    setActivityLoading(true);
+    setShowAllActivity(false);
+    void reloadComments();
+    void reloadActivity();
+  }, [reloadComments, reloadActivity]);
+
+  useEffect(() => {
+    const handleEpicChildUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { entity?: string; parent_id?: string } | undefined;
+      if (detail?.parent_id !== epicId) return;
+      if (detail.entity === 'comment') {
+        void reloadComments();
+      }
+      void reloadActivity();
+    };
+
+    const handleEpicUpdated = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { entity_id?: string } | undefined;
+      if (detail?.entity_id === epicId) {
+        void reloadActivity();
+      }
+    };
+
+    window.addEventListener('epic-child-updated', handleEpicChildUpdated);
+    window.addEventListener('epic-updated', handleEpicUpdated);
+    return () => {
+      window.removeEventListener('epic-child-updated', handleEpicChildUpdated);
+      window.removeEventListener('epic-updated', handleEpicUpdated);
+    };
+  }, [epicId, reloadComments, reloadActivity]);
+
   // Auto-show external links if they exist
   useEffect(() => {
     if (!workspaceId || !epic?.epic?.id) return;
     pmExternalLinkService.listByEntity(workspaceId, 'epic', epic.epic.id).then(({ data }) => {
-      if (data && data.length > 0) setShowExternalLinks(true);
+      const count = data?.length ?? 0;
+      setHasExternalLinkItems(count > 0);
+      setExternalLinkCount(count);
+      if (count > 0) setShowExternalLinks(true);
     });
   }, [workspaceId, epic?.epic?.id]);
+
+  const handleExternalLinkContentChange = useCallback((hasContent: boolean) => {
+    setHasExternalLinkItems(hasContent);
+    if (hasContent) setShowExternalLinks(true);
+  }, []);
+
+  const handleExternalLinkCountChange = useCallback((count: number) => {
+    setExternalLinkCount(count);
+  }, []);
 
   // Auto-save debounce
   useEffect(() => {
@@ -315,6 +424,21 @@ export function EpicDetailPage() {
     setForm((current) => current ? { ...current, [key]: value } : current);
     queuePatch(patch);
   };
+
+  const handleRunAssignedAgent = useCallback(async () => {
+    if (!workspaceId || !epic || !form?.assigned_agent_id || startingAgentRun) return;
+    setStartingAgentRun(true);
+    try {
+      const { error } = await agentService.runEpic(workspaceId, epic.epic.id, { agent_id: form.assigned_agent_id });
+      if (error) throw new Error(error);
+      toast.success('Agent run started');
+      await fetchData(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to start agent');
+    } finally {
+      setStartingAgentRun(false);
+    }
+  }, [epic, fetchData, form?.assigned_agent_id, startingAgentRun, workspaceId]);
 
   const handleDescriptionAttachmentDelete = useCallback(
     async (entry: AttachmentResponse) => {
@@ -365,12 +489,18 @@ export function EpicDetailPage() {
   );
 
   // Derived data
-  const progress = useMemo(() => {
-    if (!epic) return 0;
-    const totalTasks = getEpicTaskCount(epic.stats);
-    if (totalTasks === 0) return 0;
-    return Math.round((getEpicDoneTaskCount(epic.stats) / totalTasks) * 100);
-  }, [epic]);
+  const progressSummary = useMemo(() => {
+    const totalTasks = tasks.length;
+    const doneTasks = tasks.filter((task) => task.completed).length;
+    const progress = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
+    return {
+      progress,
+      doneTasks,
+      totalTasks,
+      remainingTasks: Math.max(totalTasks - doneTasks, 0),
+    };
+  }, [tasks]);
+  const { progress, doneTasks, totalTasks, remainingTasks } = progressSummary;
 
   const defaultEpicState = epicStates.find((s) => s.is_default) ?? epicStates[0];
   const currentEpicState = useMemo(
@@ -416,34 +546,59 @@ export function EpicDetailPage() {
     return teams[0]?.id ?? '';
   }, [epic?.epic.team_id, form?.team_id, teams]);
 
-  // Resources: unique people from task owners + epic team members
+  // Task owners: task owner workload summary.
   const resources = useMemo(() => {
-    const personMap = new Map<string, { id: string; name: string; email: string }>();
+    const personMap = new Map<string, { id: string; name: string; email: string; taskCount: number; percentage: number }>();
+    const totalTasks = tasks.length;
+    let unassignedTaskCount = 0;
 
     for (const task of tasks) {
-      const ownerKey = task.owner_member_ids?.[0];
-      if (ownerKey) {
+      const ownerIds = task.owner_member_ids ?? [];
+      if (ownerIds.length === 0) {
+        unassignedTaskCount += 1;
+        continue;
+      }
+      for (const ownerKey of ownerIds) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
-          personMap.set(assignable.id, {
-            id: assignable.id,
-            name: assignableMemberNames.get(assignable.id) ?? assignable.display_name,
-            email: assignable.email,
-          });
+          const existing = personMap.get(assignable.id);
+          if (existing) {
+            existing.taskCount += 1;
+          } else {
+            personMap.set(assignable.id, {
+              id: assignable.id,
+              name: assignableMemberNames.get(assignable.id) ?? assignable.display_name,
+              email: assignable.email,
+              taskCount: 1,
+              percentage: 0,
+            });
+          }
         }
       }
     }
 
-    if (form?.team_id) {
-      for (const member of getTeamMembers(form.team_id)) {
-        if (!personMap.has(member.id)) {
-          personMap.set(member.id, { id: member.id, name: member.name, email: member.email });
-        }
-      }
+    const owners = Array.from(personMap.values())
+      .map((person) => ({
+        ...person,
+        percentage: totalTasks > 0 ? Math.round((person.taskCount / totalTasks) * 100) : 0,
+      }))
+      .sort((a, b) => b.taskCount - a.taskCount || (a.name || a.email).localeCompare(b.name || b.email));
+
+    if (unassignedTaskCount === 0) {
+      return owners;
     }
 
-    return Array.from(personMap.values());
-  }, [tasks, assignableMembers, assignableMemberNames, form?.team_id, getTeamMembers]);
+    return [
+      {
+        id: '__unassigned__',
+        name: 'Unassigned',
+        email: '',
+        taskCount: unassignedTaskCount,
+        percentage: totalTasks > 0 ? Math.round((unassignedTaskCount / totalTasks) * 100) : 0,
+      },
+      ...owners,
+    ];
+  }, [tasks, assignableMembers, assignableMemberNames]);
 
   const openTask = useCallback(
     ( task: Task) => {
@@ -482,14 +637,16 @@ export function EpicDetailPage() {
       throw new Error(err ?? 'Failed to create task');
     }
     await fetchData(false);
-    return data.task
+    const createdTask = data.task.task;
+    return createdTask
       ? {
-          id: data.task.id,
+          id: createdTask.id,
+          agent_run_error: data.agent_run_error,
           task: {
-            id: data.task.id,
-            name: data.task.name,
-            display_id: data.task.display_id,
-            task_key: data.task.task_key,
+            id: createdTask.id,
+            name: createdTask.name,
+            display_id: createdTask.display_id,
+            task_key: createdTask.task_key,
           },
         }
       : undefined;
@@ -561,22 +718,46 @@ export function EpicDetailPage() {
     search: epic?.epic.team_id ? { team: epic.epic.team_id } : {},
   });
 
+  const viewEpicTasksPage = () => {
+    if (!epic) return;
+    navigate({
+      to: '/w/$slug/pm/tasks',
+      params: { slug },
+      search: {
+        epic: epic.epic.id,
+        ...(epic.epic.team_id ? { team: epic.epic.team_id } : {}),
+      },
+    });
+  };
+
   const renderTaskHeaderAddButton = () => (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-      onClick={() => void handleStartCreateTask()}
-      disabled={!canCreateTask || openingCreateTask}
-      title={createTaskDisabledReason ?? undefined}
-    >
-      {openingCreateTask ? (
-        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <PlusSignIcon className="h-3.5 w-3.5" />
-      )}
-      Add task
-    </Button>
+    <div className="flex items-center gap-1.5">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        onClick={viewEpicTasksPage}
+      >
+        <ViewIcon className="h-3.5 w-3.5" />
+        View on Tasks page
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => void handleStartCreateTask()}
+        disabled={!canCreateTask || openingCreateTask}
+        title={createTaskDisabledReason ?? undefined}
+      >
+        {openingCreateTask ? (
+          <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <PlusSignIcon className="h-3.5 w-3.5" />
+        )}
+        Create task
+      </Button>
+    </div>
   );
 
   const renderGhostAddTaskRow = (className: string) => (
@@ -634,7 +815,7 @@ export function EpicDetailPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-1">
-          <SaveIndicator saving={saving} error={saveError} />
+          <SaveIndicator saving={saving || taskTableSaving} error={saveError || taskTableSaveError} />
           <FollowButton entityType="epic" entityId={epic.epic.id} />
           <Button
             variant="ghost"
@@ -756,19 +937,19 @@ export function EpicDetailPage() {
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                  showExternalLinks
-                    ? 'border-primary/30 bg-primary/10 text-primary'
-                    : 'border-border/60 text-muted-foreground hover:bg-accent'
-                }`}
+                className={getOptionalSectionActionClass(hasExternalLinkItems ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                disabled={hasExternalLinkItems}
                 onClick={() => setShowExternalLinks((v) => !v)}
               >
                 <Link01Icon className="h-3 w-3" />
                 External Links
+                {hasExternalLinkItems ? (
+                  <span className="text-[10px] opacity-70">{externalLinkCount}</span>
+                ) : null}
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                className={getOptionalSectionActionClass('available')}
                 onClick={() => openFilePickerRef.current?.()}
               >
                 <AttachmentIcon className="h-3 w-3" />
@@ -779,7 +960,13 @@ export function EpicDetailPage() {
 
           {showExternalLinks && (
             <div className="mt-4">
-              <ExternalLinks workspaceId={workspaceId!} entityType="epic" entityId={epic.epic.id} />
+              <ExternalLinks
+                workspaceId={workspaceId!}
+                entityType="epic"
+                entityId={epic.epic.id}
+                onContentChange={handleExternalLinkContentChange}
+                onCountChange={handleExternalLinkCountChange}
+              />
             </div>
           )}
 
@@ -795,49 +982,35 @@ export function EpicDetailPage() {
             />
           </div>
 
-          <Separator className="my-6" />
-
-          {/* Progress */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Progress</h3>
-              <span className="text-xs text-muted-foreground">{progress}%</span>
-            </div>
-            <Progress value={progress} />
-            <p className="text-xs text-muted-foreground">
-              {getEpicDoneTaskCount(epic.stats)}/{getEpicTaskCount(epic.stats)} tasks done · {epic.stats.done_points}/{epic.stats.total_points} points
-            </p>
-          </div>
-
-          <Separator className="my-6" />
-
-          {/* Resources */}
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resources</h3>
+          {/* Task owners */}
+          <div className="mt-6">
+            <TaskDetailSectionHeading title={`Task owners (${resources.length})`} icon={UserGroupIcon} />
             {resources.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No people assigned yet.</p>
+              <p className="mt-3 text-sm text-muted-foreground">No task owners yet.</p>
             ) : (
               <div className="mt-3 flex flex-wrap gap-2">
                 {resources.map((person) => (
-                  <div key={person.id} className="flex items-center gap-2 rounded-md border border-border/60 px-3 py-1.5">
+                  <div key={person.id} className="inline-flex w-fit max-w-full items-center gap-2 rounded-md border border-border/60 px-3 py-2 sm:max-w-[14rem]">
                     <UserAvatar name={person.name || person.email} className="h-6 w-6 border-border/60" />
-                    <span className="text-xs font-medium">{person.name || person.email}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium">{person.name || person.email}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {person.taskCount} {person.taskCount === 1 ? 'task' : 'tasks'} · {person.percentage}%
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <Separator className="my-6" />
-
           {/* Tasks */}
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Tasks ({tasks.length})
-              </h3>
-              {renderTaskHeaderAddButton()}
-            </div>
+          <div className="mt-6">
+            <TaskDetailSectionHeading
+              title={`Tasks (${tasks.length})`}
+              icon={CheckListIcon}
+              meta={<div className="ml-auto">{renderTaskHeaderAddButton()}</div>}
+            />
             {tasks.length === 0 ? (
               <div className="mt-3 overflow-hidden rounded-lg border border-border/60 bg-card">
                 <div className="px-3 py-3">
@@ -860,10 +1033,13 @@ export function EpicDetailPage() {
                   teamId={epic.epic.team_id ?? null}
                   epicId={epicId}
                   externalTasks={tasks}
+                  onExternalTasksChange={setTasks}
+                  onInlineUpdateSavingChange={setTaskTableSaving}
+                  onInlineUpdateError={setTaskTableSaveError}
                   onOpenTask={openTask}
-                  footer={renderGhostAddTaskRow(
-                    'flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
-                  )}
+                  groupBy={taskListGroupBy}
+                  onGroupByChange={setTaskListGroupBy}
+                  showLocalTaskControls
                 />
               </div>
             ) : (
@@ -871,29 +1047,120 @@ export function EpicDetailPage() {
             )}
           </div>
 
-          <Separator className="my-6" />
-
           {/* AI Planning */}
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Agents</h3>
+          <div className="mt-6">
+            <TaskDetailSectionHeading title="AI Agents" icon={BotIcon} />
             <div className="mt-3">
-              {workspaceId ? (
-                <EpicPlannerPanel
+              {workspaceId && form ? (
+                <AgentPickerCard
                   workspaceId={workspaceId}
-                  epicId={epicId}
-                  lastRunId={epic.epic.last_planning_run_id}
-                  canEdit={canEdit}
-                  onRunCompleted={handlePlannerRunCompleted}
+                  runnableTarget="epic"
+                  targetTeamId={form.team_id || null}
+                  value={form.assigned_agent_id || undefined}
+                  onChange={(agentId) => updateField('assigned_agent_id', agentId ?? '', { assigned_agent_id: agentId ?? '' })}
+                  hasRepoContext={Boolean(form.planning_repository_id)}
+                  disabled={!canEdit}
+                  onRun={handleRunAssignedAgent}
+                  running={startingAgentRun}
                 />
               ) : null}
+              {workspaceId ? (
+                <div className="mt-3">
+                  <EpicPlannerPanel
+                    workspaceId={workspaceId}
+                    epicId={epicId}
+                    lastRunId={epic.epic.last_planning_run_id}
+                    canEdit={canEdit}
+                    onRunCompleted={handlePlannerRunCompleted}
+                  />
+                </div>
+              ) : null}
             </div>
+          </div>
+
+          <div className={comments.length > 0 ? 'mt-10' : 'mt-8'}>
+            {commentsLoading ? (
+              <div className="space-y-3 rounded-lg border border-border/60 p-4">
+                {[1, 2].map((i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-3 w-32" />
+                      <Skeleton className="h-3 w-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
+                <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3" />
+                {workspaceId ? (
+                  <CommentThread
+                    workspaceId={workspaceId}
+                    entityType="epic"
+                    entityId={epicId}
+                    comments={comments}
+                    currentUserId={currentUser?.id}
+                    teams={mentionTeams}
+                    members={assignableMembers}
+                    onCommentsChange={setComments}
+                    hideEmptyState
+                  />
+                ) : null}
+              </>
+            )}
+
+            {activityLoading ? (
+              <div className="mt-6 space-y-3">
+                <Skeleton className="h-3 w-20" />
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-4 w-4 rounded-full shrink-0" />
+                    <Skeleton className="h-3 w-48" />
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {!activityLoading && activity.length > 0 && (
+              <div className="mt-6">
+                <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} />
+                <ActivityTimeline
+                  activity={activity}
+                  showAll={showAllActivity}
+                  onShowAll={() => setShowAllActivity(true)}
+                  entityLabel="epic"
+                />
+              </div>
+            )}
           </div>
 
         </div>
 
         {/* ── Right column — metadata sidebar ────────────────────── */}
         <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-6">
-          <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
+          <section className="rounded-lg border border-emerald-500/15 bg-emerald-500/[0.035] p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600">
+                  <ChartColumnIcon className="h-3.5 w-3.5" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-xs font-semibold text-foreground">Progress</h3>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {totalTasks > 0 ? `${doneTasks}/${totalTasks} tasks complete` : 'No tasks yet'}
+                  </p>
+                </div>
+              </div>
+              <span className="text-lg font-semibold tabular-nums leading-none text-foreground">{progress}%</span>
+            </div>
+            <Progress value={progress} className="mt-3 h-2 bg-emerald-500/15 [&>[data-slot=progress-indicator]]:bg-emerald-500" />
+            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+              <span className="tabular-nums">{doneTasks} done</span>
+              <span className="tabular-nums">{remainingTasks} remaining</span>
+            </div>
+          </section>
+
+          <div className="mt-5 grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
             {/* State */}
             <MetadataRow icon={HashtagIcon} label="State">
               <SidebarPopoverSelect
@@ -913,15 +1180,18 @@ export function EpicDetailPage() {
                   value={form.health}
                   options={healthOptions.map((h) => ({ value: h, label: healthConfig[h].label, className: healthConfig[h].color }))}
                   onChange={(v) => updateField('health', v as EpicHealth, { health: v as EpicHealth })}
-                  renderTrigger={() => (
-                    <span className={healthConfig[form.health]?.color}>{healthConfig[form.health]?.label}</span>
-                  )}
+                  renderTrigger={() => {
+                    const healthLabel = (
+                      <span className={healthConfig[form.health]?.color}>{healthConfig[form.health]?.label}</span>
+                    );
+                    return noHealthSuggestionMessage ? (
+                      <QuickTooltip label={noHealthSuggestionMessage}>
+                        {healthLabel}
+                      </QuickTooltip>
+                    ) : healthLabel;
+                  }}
                 />
-                {noHealthSuggestionMessage ? (
-                  <p className="text-[10px] text-muted-foreground">
-                    {noHealthSuggestionMessage}
-                  </p>
-                ) : epic?.suggested_health && epic.suggested_health !== form.health && (
+                {!noHealthSuggestionMessage && epic?.suggested_health && epic.suggested_health !== form.health && (
                   <button
                     type="button"
                     className="text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer text-left"
@@ -1073,8 +1343,8 @@ export function EpicDetailPage() {
               <>
                 <Separator className="col-span-3 my-1" />
 
-                {/* Planning Repo */}
-                <MetadataRow icon={Layers01Icon} label="Plan repo">
+                {/* Code repo */}
+                <MetadataRow icon={SourceCodeIcon} label="Code repo" tooltip={CODE_REPO_TOOLTIP}>
                   <SidebarPopoverSelect
                     value={form.planning_repository_id || '__none__'}
                     options={[
@@ -1109,53 +1379,6 @@ export function EpicDetailPage() {
               </div>
             </div>
           )}
-
-          <div className="mt-6">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Tasks
-                {tasks.length > 0 && <span className="ml-1.5 font-normal">{tasks.length}</span>}
-              </h4>
-              <button
-                type="button"
-                className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => void handleStartCreateTask()}
-                disabled={!canCreateTask || openingCreateTask}
-                title={createTaskDisabledReason ?? undefined}
-                aria-label="Add task to epic"
-              >
-                {openingCreateTask ? (
-                  <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <span className="text-sm leading-none">+</span>
-                )}
-              </button>
-            </div>
-            {tasks.length === 0 ? (
-              <p className="mt-2 py-2 text-[11px] italic text-muted-foreground">No tasks in this epic</p>
-            ) : (
-              <div className="mt-2 space-y-1">
-                {tasks.slice(0, 3).map((task) => (
-                  <button
-                    key={task.id}
-                    type="button"
-                    className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/40"
-                    onClick={() => openTask(task)}
-                  >
-                    <span className="min-w-0 flex-1 truncate font-medium">{task.name}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-                      {task.task_key}
-                    </span>
-                  </button>
-                ))}
-                {tasks.length > 3 ? (
-                  <p className="px-2 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {tasks.length - 3} more in task list
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </div>
 
           {workspaceId ? (
             <>

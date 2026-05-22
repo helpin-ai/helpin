@@ -527,13 +527,13 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
             title: 'Delivery defaults',
             description: repositories.length > 0 || teamRepoDefault
               ? 'Choose the team repository, default base branch, and task branch template'
-              : 'Connect GitHub in Delivery settings to configure repository defaults',
+              : 'Add workspace repositories before configuring repository defaults',
             meta: repositories.length > 0 || teamRepoDefault ? deliveryMeta : 'Not connected',
             action: () => {
               if (repositories.length > 0 || teamRepoDefault) {
                 setRepoDialogOpen(true);
               } else {
-                openSettingsSection('delivery');
+                openSettingsSection('repositories');
               }
             },
             disabled: !teamEditable,
@@ -686,7 +686,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   <div className="space-y-1">
                     <Label htmlFor="engineering-team" className="cursor-pointer leading-tight">This is an engineering / dev team</Label>
                     <p className="text-xs text-muted-foreground">
-                      Engineering teams get development workflows, GitHub integration, and pre-defined settings. Non-engineering teams start with a simpler setup.
+                      Engineering teams get development workflows, Git repository fields, and pre-defined settings. Non-engineering teams start with a simpler setup.
                     </p>
                   </div>
                 </div>
@@ -778,6 +778,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                       })}
                       {invitationPreassignments
                         .filter((pa) => pa.team_id === selectedTeam.id)
+                        .filter((pa) => invitations.some((i) => i.id === pa.invitation_id))
                         .map((pa) => {
                           const inv = invitations.find((i) => i.id === pa.invitation_id);
                           return (
@@ -1424,7 +1425,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 <div className="space-y-1">
                   <Label htmlFor="create-engineering-team" className="cursor-pointer leading-tight">This is an engineering / dev team</Label>
                   <p className="text-xs text-muted-foreground">
-                    Engineering teams get fibonacci estimates, sprints, epics, delivery tracking, and GitHub integration enabled by default. Non-engineering teams start with a simpler setup.
+                    Engineering teams get fibonacci estimates, sprints, epics, delivery tracking, and Git repository fields enabled by default. Non-engineering teams start with a simpler setup.
                   </p>
                 </div>
               </div>

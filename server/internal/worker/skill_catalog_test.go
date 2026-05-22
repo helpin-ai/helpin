@@ -26,9 +26,77 @@ func TestListBuiltInSkillsContainsExpectedKeys(t *testing.T) {
 		"support_agent",
 		"dependency_auditor",
 		"security_triage",
+		"external_help_doc_writing",
+		"api_doc_writing",
+		"internal_docs_maintenance",
+		"public_help_docs_maintenance",
+		"api_docs_maintenance",
+		"docs_information_architecture",
+		"release_to_docs_update",
+		"support_gap_to_docs",
 	} {
 		if !containsString(keys, key) {
 			t.Fatalf("expected built-in skill %q in registry, got %v", key, keys)
+		}
+	}
+}
+
+func TestDocumentationSkillsDeclareExpectedGuidance(t *testing.T) {
+	cases := map[string][]string{
+		"external_help_doc_writing": {
+			"Write for customers and end users",
+			"Do not publish directly",
+			"Place the article in the most specific existing collection",
+		},
+		"api_doc_writing": {
+			"Document authentication, permissions, request shape, response shape, errors, and examples",
+			"Do not invent endpoints, fields, limits, or SDK behavior",
+			"Include at least one realistic request example and one realistic response example",
+		},
+		"internal_docs_maintenance": {
+			"Internal docs may include implementation details",
+			"Prefer updating the existing source of truth",
+			"Preserve operational details",
+		},
+		"public_help_docs_maintenance": {
+			"Preserve stable public URLs and slugs unless a redirect plan exists",
+			"Avoid exposing internal implementation details",
+			"Do not silently publish customer-facing changes",
+		},
+		"api_docs_maintenance": {
+			"Check for changed endpoints, parameters, response fields, errors, auth, rate limits, pagination, and version notes",
+			"Mark deprecations and breaking changes explicitly",
+			"Keep examples synchronized with the documented schema",
+		},
+		"docs_information_architecture": {
+			"Organize docs into spaces, collections, and subcollections",
+			"Avoid duplicate articles unless the audience or workflow is genuinely different",
+			"Maintain naming, ordering, and related-link consistency",
+		},
+		"release_to_docs_update": {
+			"Map shipped changes to internal docs, public help docs, and API docs",
+			"Separate user-visible behavior from internal operational changes",
+			"Call out uncertainty instead of filling gaps with guesses",
+		},
+		"support_gap_to_docs": {
+			"Read the gap evidence before deciding what to write",
+			"Decide whether the gap needs a new article, an update to an existing article, or an information architecture change",
+			"Do not close or mark a gap resolved until the doc work is actually created, updated, or explicitly handed off",
+		},
+	}
+
+	for key, snippets := range cases {
+		skill, ok := GetBuiltInSkill(key)
+		if !ok {
+			t.Fatalf("expected %s built-in skill", key)
+		}
+		if !containsString(skill.SupportedRuntimes, "native_sdk") {
+			t.Fatalf("expected %s to support native_sdk, got %v", key, skill.SupportedRuntimes)
+		}
+		for _, snippet := range snippets {
+			if !strings.Contains(skill.Instructions, snippet) {
+				t.Fatalf("expected %s instructions to contain %q\n%s", key, snippet, skill.Instructions)
+			}
 		}
 	}
 }
@@ -144,6 +212,31 @@ func TestSupportAgentBundleDoesNotIncludePlannerSkills(t *testing.T) {
 		if containsString(bundle.SkillKeys, forbidden) {
 			t.Fatalf("did not expect planner skill %q in support bundle: %v", forbidden, bundle.SkillKeys)
 		}
+	}
+}
+
+func TestDocumentationAgentBundleIncludesDocumentationSkills(t *testing.T) {
+	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetDocumentationAgent)
+	if !ok {
+		t.Fatal("expected documentation agent bundle")
+	}
+	for _, expected := range []string{
+		"docs_information_architecture",
+		"external_help_doc_writing",
+		"api_doc_writing",
+		"internal_docs_maintenance",
+		"public_help_docs_maintenance",
+		"api_docs_maintenance",
+		"release_to_docs_update",
+		"support_gap_to_docs",
+		"general_agent_behavior",
+	} {
+		if !containsString(bundle.SkillKeys, expected) {
+			t.Fatalf("expected documentation skill %q in bundle: %v", expected, bundle.SkillKeys)
+		}
+	}
+	if strings.Contains(bundle.Preamble, "Helpin") || strings.Contains(bundle.Preamble, "helpin") {
+		t.Fatalf("documentation preamble must use workspace context, got %q", bundle.Preamble)
 	}
 }
 

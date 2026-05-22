@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -48,6 +47,18 @@ func (r *GitIntegrationRepository) List(ctx context.Context, workspaceID string)
 	return integrations, nil
 }
 
+// ListByOrganization returns active integrations owned by an organization.
+func (r *GitIntegrationRepository) ListByOrganization(ctx context.Context, organizationID string) ([]model.GitIntegration, error) {
+	var integrations []model.GitIntegration
+	if err := r.db.WithContext(ctx).
+		Where("organization_id = ? AND active = ?", organizationID, true).
+		Order("created_at DESC").
+		Find(&integrations).Error; err != nil {
+		return nil, fmt.Errorf("list git integrations by organization: %w", err)
+	}
+	return integrations, nil
+}
+
 // GetByID returns a single integration visible to a workspace's organization.
 func (r *GitIntegrationRepository) GetByID(ctx context.Context, workspaceID, id string) (*model.GitIntegration, error) {
 	var integration model.GitIntegration
@@ -58,6 +69,20 @@ func (r *GitIntegrationRepository) GetByID(ctx context.Context, workspaceID, id 
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get git integration: %w", err)
+	}
+	return &integration, nil
+}
+
+// GetByIDForOrganization returns a single integration owned by an organization.
+func (r *GitIntegrationRepository) GetByIDForOrganization(ctx context.Context, organizationID, id string) (*model.GitIntegration, error) {
+	var integration model.GitIntegration
+	if err := r.db.WithContext(ctx).
+		Where("organization_id = ? AND id = ?", organizationID, id).
+		First(&integration).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get git integration by organization: %w", err)
 	}
 	return &integration, nil
 }
@@ -101,6 +126,21 @@ func (r *GitIntegrationRepository) GetActiveByOrganization(ctx context.Context, 
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get active integration by organization: %w", err)
+	}
+	return &integration, nil
+}
+
+// GetActiveByCredential returns an active integration backed by a credential.
+func (r *GitIntegrationRepository) GetActiveByCredential(ctx context.Context, credentialID string) (*model.GitIntegration, error) {
+	var integration model.GitIntegration
+	if err := r.db.WithContext(ctx).
+		Where("credential_id = ? AND active = ?", credentialID, true).
+		Order("created_at DESC").
+		First(&integration).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get active integration by credential: %w", err)
 	}
 	return &integration, nil
 }
@@ -239,6 +279,20 @@ func (r *GitRepositoryRepository) GetByFullName(ctx context.Context, workspaceID
 	return &repo, nil
 }
 
+// GetByProviderFullName loads a repository by workspace, provider, and full name.
+func (r *GitRepositoryRepository) GetByProviderFullName(ctx context.Context, workspaceID, provider, fullName string) (*model.GitRepository, error) {
+	var repo model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND provider = ? AND lower(full_name) = lower(?) AND deleted_at IS NULL AND active = ?", workspaceID, provider, fullName, true).
+		First(&repo).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get git repository by provider full name: %w", err)
+	}
+	return &repo, nil
+}
+
 // GetByIDAny loads a repository by ID regardless of workspace or lifecycle state.
 func (r *GitRepositoryRepository) GetByIDAny(ctx context.Context, id string) (*model.GitRepository, error) {
 	var repo model.GitRepository
@@ -259,7 +313,7 @@ func (r *GitRepositoryRepository) Update(ctx context.Context, repo *model.GitRep
 	return nil
 }
 
-// UpsertRepository creates or reactivates a repo claim.
+// UpsertRepository creates or reactivates a workspace catalog entry.
 func (r *GitRepositoryRepository) UpsertRepository(ctx context.Context, repo *model.GitRepository) error {
 	if repo == nil {
 		return fmt.Errorf("repository is required")
@@ -268,13 +322,10 @@ func (r *GitRepositoryRepository) UpsertRepository(ctx context.Context, repo *mo
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var live model.GitRepository
 		err := tx.
-			Where("integration_id = ? AND external_id = ? AND deleted_at IS NULL", repo.IntegrationID, repo.ExternalID).
+			Where("workspace_id = ? AND integration_id = ? AND external_id = ? AND deleted_at IS NULL", repo.WorkspaceID, repo.IntegrationID, repo.ExternalID).
 			First(&live).Error
 		switch {
 		case err == nil:
-			if strings.TrimSpace(live.WorkspaceID) != strings.TrimSpace(repo.WorkspaceID) {
-				return fmt.Errorf("repository already claimed by workspace %s", live.WorkspaceID)
-			}
 			live.Provider = repo.Provider
 			live.FullName = repo.FullName
 			live.DefaultBranch = repo.DefaultBranch
@@ -389,6 +440,7 @@ func (r *GitRepositoryRepository) GetActiveByExternalID(ctx context.Context, int
 	var repo model.GitRepository
 	if err := r.db.WithContext(ctx).
 		Where("integration_id = ? AND external_id = ? AND deleted_at IS NULL AND active = ?", integrationID, externalID, true).
+		Order("updated_at DESC").
 		First(&repo).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -396,6 +448,45 @@ func (r *GitRepositoryRepository) GetActiveByExternalID(ctx context.Context, int
 		return nil, fmt.Errorf("get active git repository by external id: %w", err)
 	}
 	return &repo, nil
+}
+
+// ListActiveByExternalID returns all live workspace catalog entries for an integration repo id.
+func (r *GitRepositoryRepository) ListActiveByExternalID(ctx context.Context, integrationID, externalID string) ([]model.GitRepository, error) {
+	var repos []model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Where("integration_id = ? AND external_id = ? AND deleted_at IS NULL AND active = ?", integrationID, externalID, true).
+		Order("workspace_id ASC").
+		Find(&repos).Error; err != nil {
+		return nil, fmt.Errorf("list active git repositories by external id: %w", err)
+	}
+	return repos, nil
+}
+
+// GetActiveByProviderExternalID loads a live repository claim by provider and external ID.
+func (r *GitRepositoryRepository) GetActiveByProviderExternalID(ctx context.Context, provider, externalID string) (*model.GitRepository, error) {
+	var repo model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Where("provider = ? AND external_id = ? AND deleted_at IS NULL AND active = ?", provider, externalID, true).
+		Order("updated_at DESC").
+		First(&repo).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get active git repository by provider external id: %w", err)
+	}
+	return &repo, nil
+}
+
+// ListActiveByProviderExternalID returns all live workspace catalog entries for a provider repo id.
+func (r *GitRepositoryRepository) ListActiveByProviderExternalID(ctx context.Context, provider, externalID string) ([]model.GitRepository, error) {
+	var repos []model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Where("provider = ? AND external_id = ? AND deleted_at IS NULL AND active = ?", provider, externalID, true).
+		Order("updated_at DESC").
+		Find(&repos).Error; err != nil {
+		return nil, fmt.Errorf("list active git repositories by provider external id: %w", err)
+	}
+	return repos, nil
 }
 
 // GetClaimedByByExternalID returns the live workspace claim for an installation repo id.
@@ -408,6 +499,23 @@ func (r *GitRepositoryRepository) GetClaimedByByExternalID(ctx context.Context, 
 		Where("gr.integration_id = ? AND gr.external_id = ? AND gr.deleted_at IS NULL AND gr.active = ?", integrationID, externalID, true).
 		Scan(row).Error; err != nil {
 		return nil, fmt.Errorf("get claimed workspace by external id: %w", err)
+	}
+	if row.WorkspaceID == "" {
+		return nil, nil
+	}
+	return row, nil
+}
+
+// GetWorkspaceClaimByExternalID returns the current workspace catalog entry for an installation repo id.
+func (r *GitRepositoryRepository) GetWorkspaceClaimByExternalID(ctx context.Context, workspaceID, integrationID, externalID string) (*model.GitAvailableRepoClaim, error) {
+	row := &model.GitAvailableRepoClaim{}
+	if err := r.db.WithContext(ctx).
+		Table("git_repositories gr").
+		Select("gr.workspace_id, w.name AS workspace_name, gr.id AS repo_id").
+		Joins("JOIN workspaces w ON w.id = gr.workspace_id").
+		Where("gr.workspace_id = ? AND gr.integration_id = ? AND gr.external_id = ? AND gr.deleted_at IS NULL AND gr.active = ?", workspaceID, integrationID, externalID, true).
+		Scan(row).Error; err != nil {
+		return nil, fmt.Errorf("get workspace claim by external id: %w", err)
 	}
 	if row.WorkspaceID == "" {
 		return nil, nil
@@ -598,6 +706,18 @@ func (r *TaskGitLinkRepository) GetByBranch(ctx context.Context, workspaceID, re
 	return &link, nil
 }
 
+// GetByProviderBranch returns a link by provider+repo+branch.
+func (r *TaskGitLinkRepository) GetByProviderBranch(ctx context.Context, workspaceID, provider, repo, branch string) (*model.TaskGitLink, error) {
+	var link model.TaskGitLink
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND provider = ? AND repo = ? AND branch = ?", workspaceID, provider, repo, branch).First(&link).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get story git link by provider branch: %w", err)
+	}
+	return &link, nil
+}
+
 // GetByPR returns a link by repo+PR number.
 func (r *TaskGitLinkRepository) GetByPR(ctx context.Context, workspaceID, repo string, prNumber int) (*model.TaskGitLink, error) {
 	var link model.TaskGitLink
@@ -606,6 +726,18 @@ func (r *TaskGitLinkRepository) GetByPR(ctx context.Context, workspaceID, repo s
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get story git link by PR: %w", err)
+	}
+	return &link, nil
+}
+
+// GetByProviderPR returns a link by provider+repo+PR number.
+func (r *TaskGitLinkRepository) GetByProviderPR(ctx context.Context, workspaceID, provider, repo string, prNumber int) (*model.TaskGitLink, error) {
+	var link model.TaskGitLink
+	if err := r.db.WithContext(ctx).Where("workspace_id = ? AND provider = ? AND repo = ? AND pr_number = ?", workspaceID, provider, repo, prNumber).First(&link).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get story git link by provider PR: %w", err)
 	}
 	return &link, nil
 }

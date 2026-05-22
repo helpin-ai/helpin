@@ -26,6 +26,7 @@ import {
   UserIcon,
   UserGroupIcon,
   Cancel01Icon,
+  HelpCircleIcon,
 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -40,7 +41,9 @@ import {
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { PRIORITY_CONFIG, PriorityIcon, SEVERITY_CONFIG, SeverityIcon, SprintIcon, TASK_TYPE_CONFIG, TaskTypeIcon } from "@/lib/pmConstants";
 import type {
+  AttachmentResponse,
   CreateTaskRequest,
+  GitRepository,
   Label,
   SprintWithStats,
   Priority,
@@ -53,8 +56,10 @@ import type {
 import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmSprintService } from "@/lib/services/pmSprintService";
 import { pmLabelService } from "@/lib/services/pmLabelService";
+import { pmTaskService } from "@/lib/services/pmTaskService";
 import { pmTaskTemplateService } from "@/lib/services/pmTaskTemplateService";
 import { pmWorkflowService } from "@/lib/services/pmWorkflowService";
+import { gitService } from "@/lib/services/gitService";
 import type { TaskTemplate } from "@/lib/pmTypes";
 import { LabelPicker } from "@/components/pm/LabelPicker";
 import { EstimatePicker } from "@/components/pm/EstimatePicker";
@@ -65,7 +70,7 @@ import { useSession } from "@/hooks/queries/useSession";
 import { DatePicker } from "@/components/ui/date-picker";
 import { MemberPickerPopover, MultiMemberPickerPopover } from "@/components/pm/MemberPickerPopover";
 import { OwnerAvatarStack } from "@/components/pm/OwnerAvatarStack";
-import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
+import { SidebarPopoverSelect, type SidebarPopoverSelectGroup } from '@/components/pm/SidebarPopoverSelect';
 import { TaskStateSelectContent } from '@/components/pm/task-detail/TaskStateSelectContent';
 import { UserAvatar } from "@/components/pm/UserAvatar";
 import { filterMentionTeams } from "@/components/pm/mentionSuggestions";
@@ -84,6 +89,12 @@ import { formatRecurringRuleSummary } from "@/components/pm/recurringTemplateUti
 import { RecurringTemplateBadge } from "@/components/pm/RecurringTemplateBadge";
 import { showEntityCreatedToast } from "@/components/ui/entity-created-toast";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
+import type { TeamRepoDefault, WorkspaceTeam } from "@/lib/types";
+import { settingsService } from "@/lib/services/settingsService";
+import { normalizeTeamType } from "@/lib/teamPresets";
+import { QuickTooltip } from "@/components/ui/quick-tooltip";
+import { getOptionalSectionActionClass } from "@/components/pm/optionalSectionActionPill";
+import { AgentPickerCard } from "@/components/pm/AgentPickerCard";
 
 interface CreateTaskModalProps {
   open: boolean;
@@ -91,11 +102,16 @@ interface CreateTaskModalProps {
   workspaceId: string;
   workflow?: WorkflowWithStates;
   initialStateId?: string;
+  initialName?: string;
+  initialTaskType?: TaskType;
+  initialPriority?: Priority;
+  initialSeverity?: Severity;
   initialTeamId?: string;
   initialEpicId?: string;
   initialOwnerMemberId?: string;
   initialSprintId?: string;
   onCreate?: (payload: CreateTaskRequest) => Promise<CreatedTaskResult | void>;
+  stackedOverDrawer?: boolean;
   mode?: 'task' | 'template';
   editingTemplate?: TaskTemplate | null;
   onSaveTemplate?: (template: TaskTemplate) => void;
@@ -104,6 +120,24 @@ interface CreateTaskModalProps {
 interface CreatedTaskResult {
   id: string;
   task?: Pick<Task, 'id' | 'name' | 'display_id' | 'task_key'>;
+  agent_run_error?: string;
+}
+
+function FooterToggleHelp({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <>
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <QuickTooltip label={tooltip}>
+        <button
+          type="button"
+          aria-label={`Explain ${label}`}
+          className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <HelpCircleIcon className="h-3.5 w-3.5" />
+        </button>
+      </QuickTooltip>
+    </>
+  );
 }
 
 const priorityOptions: Priority[] = ["none", "low", "medium", "high", "urgent"];
@@ -118,6 +152,45 @@ interface ChecklistTemplateItem {
 interface ExternalLinkItem {
   url: string;
   title?: string;
+}
+
+export function buildTaskTemplateSelectGroups(
+  templates: TaskTemplate[],
+  teams: Pick<WorkspaceTeam, 'id' | 'name'>[],
+): SidebarPopoverSelectGroup[] {
+  const templatesByTeamId = new Map<string, TaskTemplate[]>();
+  const sharedTemplates: TaskTemplate[] = [];
+
+  templates.forEach((template) => {
+    if (!template.team_id) {
+      sharedTemplates.push(template);
+      return;
+    }
+    const groupTemplates = templatesByTeamId.get(template.team_id) ?? [];
+    groupTemplates.push(template);
+    templatesByTeamId.set(template.team_id, groupTemplates);
+  });
+
+  const groups: SidebarPopoverSelectGroup[] = [{ options: [{ value: '', label: 'None' }] }];
+
+  if (sharedTemplates.length > 0) {
+    groups.push({
+      label: 'Shared',
+      options: sharedTemplates.map((template) => ({ value: template.id, label: template.name })),
+    });
+  }
+
+  teams.forEach((team) => {
+    const groupTemplates = templatesByTeamId.get(team.id);
+    if (!groupTemplates || groupTemplates.length === 0) return;
+    groups.push({
+      label: team.name,
+      options: groupTemplates.map((template) => ({ value: template.id, label: template.name })),
+    });
+    templatesByTeamId.delete(team.id);
+  });
+
+  return groups;
 }
 
 const defaultState = {
@@ -138,21 +211,89 @@ const defaultState = {
   external_links: [] as ExternalLinkItem[],
 };
 
+type CreateTaskFormState = typeof defaultState;
+
+function stripHtmlForCompare(html: string) {
+  return html.replace(/<[^>]*>/g, '').trim();
+}
+
+function normalizeStringArrayForCompare(values: string[]) {
+  return [...values].filter(Boolean).sort();
+}
+
+function normalizeFormForCompare(form: CreateTaskFormState, description: string) {
+  return {
+    ...form,
+    name: form.name.trim(),
+    description: stripHtmlForCompare(description),
+    owner_member_ids: normalizeStringArrayForCompare(form.owner_member_ids),
+    label_ids: normalizeStringArrayForCompare(form.label_ids),
+    checklist_items: form.checklist_items
+      .map((item, index) => ({ text: item.text.trim(), position: item.position ?? index }))
+      .filter((item) => item.text !== ''),
+    external_links: form.external_links
+      .map((link) => ({ url: link.url.trim(), title: link.title?.trim() || undefined }))
+      .filter((link) => link.url !== ''),
+  };
+}
+
+export function isCreateTaskModalDirty({
+  mode,
+  editingTemplate,
+  form,
+  baselineForm,
+  currentDescription,
+  baselineDescription,
+  stateId,
+  baselineStateId,
+}: {
+  mode: 'task' | 'template';
+  editingTemplate: boolean;
+  form: CreateTaskFormState;
+  baselineForm: CreateTaskFormState | null;
+  currentDescription: string;
+  baselineDescription: string;
+  stateId: string;
+  baselineStateId: string;
+}) {
+  if (mode === 'template' && editingTemplate && baselineForm) {
+    return JSON.stringify({
+      form: normalizeFormForCompare(form, currentDescription),
+      stateId,
+    }) !== JSON.stringify({
+      form: normalizeFormForCompare(baselineForm, baselineDescription),
+      stateId: baselineStateId,
+    });
+  }
+
+  return form.name.trim() !== '' || stripHtmlForCompare(currentDescription) !== stripHtmlForCompare(baselineDescription);
+}
+
 // ── Metadata Row ───────────────────────────────────────────────────
+
+const CODE_REPO_TOOLTIP = "Gives agents code context for planning and execution.";
 
 function MetadataRow({
   icon: Icon,
   label,
+  tooltip,
   children,
 }: {
   icon: React.ElementType;
   label: string;
+  tooltip?: string;
   children: React.ReactNode;
 }) {
+  const labelNode = <span className="text-xs text-muted-foreground self-center">{label}</span>;
+
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-xs text-muted-foreground self-center">{label}</span>
+      {tooltip ? (
+        <QuickTooltip label={tooltip} side="left">
+          {labelNode}
+        </QuickTooltip>
+      ) : labelNode}
       <div className="min-w-0 self-center">{children}</div>
     </>
   );
@@ -255,11 +396,16 @@ export function CreateTaskModal({
   workspaceId,
   workflow,
   initialStateId,
+  initialName,
+  initialTaskType,
+  initialPriority,
+  initialSeverity,
   initialTeamId,
   initialEpicId,
   initialOwnerMemberId,
   initialSprintId,
   onCreate,
+  stackedOverDrawer = false,
   mode = 'task',
   editingTemplate,
   onSaveTemplate,
@@ -270,7 +416,7 @@ export function CreateTaskModal({
   const [form, setForm] = useState(defaultState);
   const initialDescRef = useRef('');
   const [stateId, setStateId] = useState(initialStateId ?? '');
-  const [createMore, setCreateMore] = useState(false);
+  const [saveTaskAsTemplate, setSaveTaskAsTemplate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const confirm = useConfirm();
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
@@ -289,7 +435,18 @@ export function CreateTaskModal({
   const [sprints, setSprints] = useState<SprintWithStats[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const [templateWorkflow, setTemplateWorkflow] = useState<WorkflowWithStates | null>(null);
+  const [taskWorkflowOverride, setTaskWorkflowOverride] = useState<WorkflowWithStates | null>(null);
+  const [repositories, setRepositories] = useState<GitRepository[]>([]);
+  const [teamRepoDefault, setTeamRepoDefault] = useState<TeamRepoDefault | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [assignedAgentId, setAssignedAgentId] = useState<string | undefined>();
+  const [templateAttachments, setTemplateAttachments] = useState<AttachmentResponse[]>([]);
   const descriptionEditorRef = useRef<Editor | null>(null);
+  const initialFormRef = useRef<CreateTaskFormState | null>(null);
+  const initialStateIdRef = useRef('');
   const { teams } = useAccessibleTeams(workspaceId);
   const teamsRef = useRef(teams);
   teamsRef.current = teams;
@@ -302,7 +459,13 @@ export function CreateTaskModal({
     [assignableMembers],
   );
   const selectedTeam = useMemo(() => teams.find((team) => team.id === form.team_id), [teams, form.team_id]);
+  const showPlanningRepository = !isTemplateMode && normalizeTeamType(selectedTeam?.team_type) === 'engineering';
+  const currentPlanningRepositoryName = useMemo(() => {
+    if (!teamRepoDefault?.repository_id) return 'Not configured';
+    return repositories.find((repo) => repo.id === teamRepoDefault.repository_id)?.full_name ?? 'Repo selected';
+  }, [repositories, teamRepoDefault?.repository_id]);
   const teamSprintsEnabled = selectedTeam?.sprints_enabled !== false;
+  const activeWorkflow = isTemplateMode ? templateWorkflow : (taskWorkflowOverride ?? workflow);
   const selectedTeamDefaultTaskType = useMemo(
     () => (selectedTeam?.default_task_type as TaskType | undefined) ?? 'feature',
     [selectedTeam],
@@ -320,10 +483,34 @@ export function CreateTaskModal({
   }, [form.description, workspaceId]);
 
   useEffect(() => {
+    if (!open || !showPlanningRepository || !form.team_id) {
+      setTeamRepoDefault(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadPlanRepo() {
+      const [repositoriesRes, repoDefaultRes] = await Promise.all([
+        gitService.listRepositories(workspaceId),
+        settingsService.getTeamRepoDefault(workspaceId, form.team_id),
+      ]);
+      if (cancelled) return;
+      setRepositories(repositoriesRes.data ?? []);
+      setTeamRepoDefault(repoDefaultRes.data ?? null);
+    }
+
+    void loadPlanRepo();
+    return () => {
+      cancelled = true;
+    };
+  }, [form.team_id, open, showPlanningRepository, workspaceId]);
+
+  useEffect(() => {
     if (!open) return;
     setDescriptionEditorKey((current) => current + 1);
     if (isTemplateMode && editingTemplate) {
-      setForm({
+      const nextForm: CreateTaskFormState = {
         name: editingTemplate.name,
         description: editingTemplate.description || '',
         task_type: (editingTemplate.task_type as TaskType) || 'feature',
@@ -333,36 +520,52 @@ export function CreateTaskModal({
         epic_id: editingTemplate.epic_id || '',
         sprint_id: editingTemplate.sprint_id || '',
         team_id: editingTemplate.team_id || initialTeamId || '',
-        owner_member_ids: editingTemplate.owner_member_id ? [editingTemplate.owner_member_id] : [],
+        owner_member_ids: editingTemplate.owner_member_ids
+          ? (() => { try { return JSON.parse(editingTemplate.owner_member_ids!); } catch { return editingTemplate.owner_member_id ? [editingTemplate.owner_member_id] : []; } })()
+          : editingTemplate.owner_member_id ? [editingTemplate.owner_member_id] : [],
         requester_member_id: '',
         deadline: editingTemplate.deadline || '',
         label_ids: editingTemplate.label_ids ? (() => { try { return JSON.parse(editingTemplate.label_ids!); } catch { return []; } })() : [],
         checklist_items: editingTemplate.checklist_items ? (() => { try { return JSON.parse(editingTemplate.checklist_items!); } catch { return []; } })() : [],
         external_links: editingTemplate.external_links ? (() => { try { return JSON.parse(editingTemplate.external_links!); } catch { return []; } })() : [],
-      });
+      };
+      const nextStateId = editingTemplate.workflow_state_id || initialStateId || '';
+      setForm(nextForm);
+      initialFormRef.current = nextForm;
+      initialStateIdRef.current = nextStateId;
       setTaskTypeDirty(true);
       initialDescRef.current = editingTemplate.description || '';
       // Auto-open sections that have data
       if (editingTemplate.checklist_items) { try { if (JSON.parse(editingTemplate.checklist_items).length > 0) setShowChecklist(true); } catch {} }
       if (editingTemplate.external_links) { try { if (JSON.parse(editingTemplate.external_links).length > 0) setShowExternalLinks(true); } catch {} }
+      setStateId(nextStateId);
     } else {
       const effectiveTeamId = initialTeamId ?? teamsRef.current[0]?.id ?? '';
       const initialTeam = teamsRef.current.find((team) => team.id === effectiveTeamId);
-      setForm({
+      const nextForm: CreateTaskFormState = {
         ...defaultState,
-        task_type: (initialTeam?.default_task_type as TaskType | undefined) ?? 'feature',
+        name: initialName ?? '',
+        task_type: initialTaskType ?? (initialTeam?.default_task_type as TaskType | undefined) ?? 'feature',
+        priority: initialPriority ?? defaultState.priority,
+        severity: initialSeverity ?? defaultState.severity,
         requester_member_id: isTemplateMode ? '' : currentMemberId,
         team_id: effectiveTeamId,
         epic_id: initialEpicId ?? '',
         owner_member_ids: initialOwnerMemberId ? [initialOwnerMemberId] : [],
         sprint_id: initialSprintId ?? '',
-      });
-      setTaskTypeDirty(false);
+      };
+      setForm(nextForm);
+      initialFormRef.current = null;
+      initialStateIdRef.current = initialStateId ?? '';
+      setTaskTypeDirty(Boolean(initialTaskType));
       initialDescRef.current = '';
+      setStateId(initialStateId ?? '');
     }
-    setStateId(initialStateId ?? '');
     setError(null);
     setPendingFiles([]);
+    setTemplateAttachments([]);
+    setTaskWorkflowOverride(null);
+    setSelectedTemplateId('');
     setDescriptionMode('rich');
     setSourceMarkdown('');
     setShowChecklist(isTemplateMode);
@@ -371,7 +574,90 @@ export function CreateTaskModal({
     setRecurringDraft(null);
     setRecurringDialogOpen(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `teams` excluded: only used to derive initial task type; including it causes form reset on background refetch
-  }, [open, initialStateId, initialTeamId, initialEpicId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
+  }, [open, initialStateId, initialName, initialTaskType, initialPriority, initialSeverity, initialTeamId, initialEpicId, initialOwnerMemberId, initialSprintId, currentMemberId, isTemplateMode, editingTemplate]);
+
+  useEffect(() => {
+    if (!open || !isTemplateMode) return;
+    if (!form.team_id) {
+      setTemplateWorkflow(null);
+      setStateId('');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, form.team_id);
+      if (cancelled) return;
+      if (resolved.error || !resolved.data) {
+        setTemplateWorkflow(null);
+        setStateId('');
+        return;
+      }
+      const nextWorkflow = resolved.data;
+      setTemplateWorkflow(nextWorkflow);
+      setStateId((current) => {
+        if (current && nextWorkflow.states.some((state) => state.id === current)) return current;
+        const nextStateId = nextWorkflow.workflow.default_state_id ?? nextWorkflow.states.find((state) => state.is_default)?.id ?? nextWorkflow.states[0]?.id ?? '';
+        if (editingTemplate && initialStateIdRef.current === '' && current === '') {
+          initialStateIdRef.current = nextStateId;
+        }
+        return nextStateId;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isTemplateMode, workspaceId, form.team_id, editingTemplate]);
+
+  useEffect(() => {
+    if (!open || isTemplateMode) return;
+    if (!workflow || !form.team_id || workflow.workflow.team_id === form.team_id) {
+      setTaskWorkflowOverride(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, form.team_id);
+      if (cancelled) return;
+      if (resolved.error || !resolved.data) {
+        setTaskWorkflowOverride(null);
+        return;
+      }
+
+      const nextWorkflow = resolved.data;
+      setTaskWorkflowOverride(nextWorkflow);
+      setStateId((current) => {
+        if (current && nextWorkflow.states.some((state) => state.id === current)) return current;
+        const currentState = workflow.states.find((state) => state.id === current);
+        return (
+          (currentState
+            ? nextWorkflow.states.find((state) => state.state_type === currentState.state_type)?.id ??
+              nextWorkflow.states.find((state) => state.name === currentState.name)?.id
+            : undefined) ??
+          nextWorkflow.workflow.default_state_id ??
+          nextWorkflow.states.find((state) => state.is_default)?.id ??
+          nextWorkflow.states[0]?.id ??
+          ''
+        );
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isTemplateMode, workspaceId, workflow, form.team_id]);
+
+  useEffect(() => {
+    if (!open || !isTemplateMode || !editingTemplate?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await pmAttachmentService.list(workspaceId, 'task_template', editingTemplate.id);
+      if (!cancelled) setTemplateAttachments(data ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, isTemplateMode, editingTemplate?.id, workspaceId]);
 
   useEffect(() => {
     if (taskTypeDirty || (isTemplateMode && editingTemplate)) return;
@@ -383,6 +669,7 @@ export function CreateTaskModal({
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     (async () => {
       if (isTemplateMode) {
         const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
@@ -390,23 +677,41 @@ export function CreateTaskModal({
           pmSprintService.list(workspaceId, { archived: false }),
           pmLabelService.list(workspaceId),
         ]);
+        if (cancelled) return;
         setEpics(epicsRes.data ?? []);
         setSprints(sprintsRes.data ?? []);
         setLabels(labelsRes.data ?? []);
       } else {
-        const [epicsRes, sprintsRes, labelsRes, templatesRes] = await Promise.all([
+        setTemplates([]);
+        setTemplatesLoading(false);
+        setTemplatesLoaded(false);
+        const [epicsRes, sprintsRes, labelsRes] = await Promise.all([
           pmEpicService.list(workspaceId, { archived: false }),
           pmSprintService.list(workspaceId, { archived: false }),
           pmLabelService.list(workspaceId),
-          pmTaskTemplateService.list(workspaceId, { archived: false }),
         ]);
+        if (cancelled) return;
         setEpics(epicsRes.data ?? []);
         setSprints(sprintsRes.data ?? []);
         setLabels(labelsRes.data ?? []);
-        setTemplates(templatesRes.data ?? []);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [open, workspaceId, isTemplateMode]);
+
+  const loadTemplates = useCallback(async () => {
+    if (isTemplateMode || templatesLoaded || templatesLoading) return;
+    setTemplatesLoading(true);
+    try {
+      const { data } = await pmTaskTemplateService.list(workspaceId, { archived: false });
+      setTemplates(data ?? []);
+      setTemplatesLoaded(true);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, [isTemplateMode, templatesLoaded, templatesLoading, workspaceId]);
 
   useEffect(() => {
     if (descriptionMode !== 'markdown') return;
@@ -447,13 +752,13 @@ export function CreateTaskModal({
       descriptionPendingUploads === 0 &&
       form.name.trim().length > 0 &&
       form.team_id.trim().length > 0 &&
-      (isTemplateMode || stateId.trim().length > 0),
-    [descriptionPendingUploads, form.name, form.team_id, stateId, isTemplateMode]
+      stateId.trim().length > 0,
+    [descriptionPendingUploads, form.name, form.team_id, stateId]
   );
 
   const currentStateName = useMemo(
-    () => workflow?.states.find((s) => s.id === stateId)?.name ?? "State",
-    [workflow?.states, stateId]
+    () => activeWorkflow?.states.find((s) => s.id === stateId)?.name ?? "State",
+    [activeWorkflow?.states, stateId]
   );
 
   const currentEpicName = useMemo(() => {
@@ -468,6 +773,24 @@ export function CreateTaskModal({
       ),
     [epics, form.team_id],
   );
+
+  // Group epics by lifecycle: not started → in progress → completed.
+  const epicGroups = useMemo(() => {
+    const notStarted: typeof availableEpics = [];
+    const inProgress: typeof availableEpics = [];
+    const completed: typeof availableEpics = [];
+    for (const entry of availableEpics) {
+      if (entry.epic.completed) completed.push(entry);
+      else if (entry.epic.started) inProgress.push(entry);
+      else notStarted.push(entry);
+    }
+    return [
+      { label: undefined as string | undefined, options: [{ value: "__none__", label: "No epic" }] },
+      { label: "Not started", options: notStarted.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: "In progress", options: inProgress.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+      { label: "Completed", options: completed.map((e) => ({ value: e.epic.id, label: e.epic.name })) },
+    ];
+  }, [availableEpics]);
 
   const currentSprintName = useMemo(() => {
     if (!form.sprint_id) return "None";
@@ -504,6 +827,45 @@ export function CreateTaskModal({
     return formatRecurringRuleSummary(recurringDraft.config);
   }, [recurringDraft]);
 
+  const selectedTemplateName = useMemo(
+    () => templates.find((template) => template.id === selectedTemplateId)?.name,
+    [templates, selectedTemplateId],
+  );
+  const templateGroups = useMemo(() => buildTaskTemplateSelectGroups(templates, teams), [teams, templates]);
+
+  const applyTemplate = useCallback((templateId: string) => {
+    if (!templateId) {
+      setSelectedTemplateId('');
+      return;
+    }
+    const tmpl = templates.find((t) => t.id === templateId);
+    if (!tmpl) return;
+    setSelectedTemplateId(tmpl.id);
+    setTaskTypeDirty(Boolean(tmpl.task_type));
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name.trim() ? prev.name : tmpl.name,
+      team_id: tmpl.team_id || prev.team_id,
+      description: tmpl.description || prev.description,
+      task_type: (tmpl.task_type as TaskType) || prev.task_type,
+      priority: (tmpl.priority as Priority) || prev.priority,
+      severity: (tmpl.severity as Severity) || prev.severity,
+      estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
+      label_ids: tmpl.label_ids ? (() => { try { return JSON.parse(tmpl.label_ids!); } catch { return prev.label_ids; } })() : prev.label_ids,
+      owner_member_ids: tmpl.owner_member_ids
+        ? (() => { try { return JSON.parse(tmpl.owner_member_ids!); } catch { return tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids; } })()
+        : tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids,
+      epic_id: tmpl.epic_id || prev.epic_id,
+      sprint_id: tmpl.sprint_id || prev.sprint_id,
+      deadline: tmpl.deadline || prev.deadline,
+      checklist_items: tmpl.checklist_items ? (() => { try { return JSON.parse(tmpl.checklist_items!); } catch { return prev.checklist_items; } })() : prev.checklist_items,
+      external_links: tmpl.external_links ? (() => { try { return JSON.parse(tmpl.external_links!); } catch { return prev.external_links; } })() : prev.external_links,
+    }));
+    if (tmpl.workflow_state_id) setStateId(tmpl.workflow_state_id);
+    if (tmpl.checklist_items) { try { if (JSON.parse(tmpl.checklist_items).length > 0) setShowChecklist(true); } catch {} }
+    if (tmpl.external_links) { try { if (JSON.parse(tmpl.external_links).length > 0) setShowExternalLinks(true); } catch {} }
+  }, [templates]);
+
   const openMarkdownMode = useCallback(() => {
     const editor = descriptionEditorRef.current;
     const markdown =
@@ -522,6 +884,28 @@ export function CreateTaskModal({
     setSourceMarkdown(htmlToMarkdown(form.description));
     setDescriptionMode('rich');
   }, [form.description]);
+
+  const uploadPendingFilesForEntity = useCallback(async (entityType: 'task' | 'task_template', entityId: string) => {
+    if (!entityId || pendingFiles.length === 0) return;
+    for (const file of pendingFiles) {
+      try {
+        const { data: initData } = await pmAttachmentService.initiateUpload(workspaceId, {
+          entity_type: entityType,
+          entity_id: entityId,
+          file_name: file.name,
+          file_size: file.size,
+          content_type: file.type || 'application/octet-stream',
+        });
+        if (!initData) continue;
+        const uploadResult = await uploadToS3(initData.url, file, undefined, { 'x-amz-acl': 'public-read' });
+        if (uploadResult.ok) {
+          await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
+        }
+      } catch {
+        // Non-blocking: the owning task/template was already saved.
+      }
+    }
+  }, [pendingFiles, workspaceId]);
 
   const resolveSubmitWorkflow = useCallback(async () => {
     if (!workflow) {
@@ -560,13 +944,14 @@ export function CreateTaskModal({
     };
   }, [form.team_id, workflow, stateId, workspaceId]);
 
-  const submit = useCallback(async () => {
+  const submit = useCallback(async (createAnother = false) => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
       const descriptionForSubmit =
         descriptionMode === 'markdown' ? markdownToHtml(sourceMarkdown) : form.description;
+      const inlineAttachmentIds = extractInlineAttachmentIds(descriptionForSubmit);
 
       if (isTemplateMode) {
         const labelIds = form.label_ids.length > 0 ? JSON.stringify(form.label_ids) : undefined;
@@ -584,20 +969,25 @@ export function CreateTaskModal({
           team_id: form.team_id || undefined,
           label_ids: labelIds,
           owner_member_id: form.owner_member_ids[0] || undefined,
+          owner_member_ids: form.owner_member_ids.length > 0 ? JSON.stringify(form.owner_member_ids) : undefined,
           epic_id: form.epic_id || undefined,
           sprint_id: form.sprint_id || undefined,
+          workflow_state_id: stateId || undefined,
           deadline: form.deadline || undefined,
+          attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
           checklist_items: checklistJson,
           external_links: externalLinksJson,
         };
         if (editingTemplate) {
           const { data, error: err } = await pmTaskTemplateService.update(workspaceId, editingTemplate.id, templatePayload);
           if (err) throw new Error(err);
+          if (data?.id) await uploadPendingFilesForEntity('task_template', data.id);
           if (data && onSaveTemplate) onSaveTemplate(data);
           toast.success('Template updated');
         } else {
           const { data, error: err } = await pmTaskTemplateService.create({ workspace_id: workspaceId, ...templatePayload });
           if (err) throw new Error(err);
+          if (data?.id) await uploadPendingFilesForEntity('task_template', data.id);
           if (data && onSaveTemplate) onSaveTemplate(data);
           toast.success('Template created');
         }
@@ -611,6 +1001,7 @@ export function CreateTaskModal({
           task_type: form.task_type,
           workflow_id: workflowId,
           workflow_state_id: workflowStateId,
+          template_id: selectedTemplateId || undefined,
           priority: form.priority,
           severity: form.severity !== "none" ? form.severity : undefined,
           estimate: form.estimate ? Number(form.estimate) : undefined,
@@ -620,30 +1011,23 @@ export function CreateTaskModal({
           owner_member_ids: form.owner_member_ids.length > 0 ? form.owner_member_ids : undefined,
           requester_member_id: form.requester_member_id || undefined,
           deadline: form.deadline || undefined,
+          attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
           label_ids: form.label_ids.length > 0 ? form.label_ids : undefined,
           checklist_items: (() => { const f = form.checklist_items.filter((i) => i.text.trim()); return f.length > 0 ? f : undefined; })(),
           external_links: (() => { const f = form.external_links.filter((l) => l.url.trim()); return f.length > 0 ? f : undefined; })(),
+          assigned_agent_id: assignedAgentId,
+          run_on_create: Boolean(assignedAgentId),
         });
 
-        // Upload pending files after task creation.
-        if (result?.id && pendingFiles.length > 0) {
-          for (const file of pendingFiles) {
-            try {
-              const { data: initData } = await pmAttachmentService.initiateUpload(workspaceId, {
-                entity_type: 'task',
-                entity_id: result.id,
-                file_name: file.name,
-                file_size: file.size,
-                content_type: file.type || 'application/octet-stream',
-              });
-              if (!initData) continue;
-              const uploadResult = await uploadToS3(initData.url, file, undefined, { 'x-amz-acl': 'public-read' });
-              if (uploadResult.ok) {
-                await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
-              }
-            } catch {
-              // Non-blocking — task already created
-            }
+        if (result?.id) await uploadPendingFilesForEntity('task', result.id);
+
+        let templateSaveError: string | null = null;
+        if (result?.id && saveTaskAsTemplate) {
+          const { error: saveError } = await pmTaskService.saveAsTemplate(workspaceId, result.id, {
+            name: form.name.trim(),
+          });
+          if (saveError) {
+            templateSaveError = saveError;
           }
         }
 
@@ -661,17 +1045,29 @@ export function CreateTaskModal({
           }
         }
 
-        if (recurringSetupError) {
-          toast.error(`Task created, but recurring setup failed: ${recurringSetupError}`);
+        const postCreateErrors = [
+          templateSaveError ? `template save failed: ${templateSaveError}` : null,
+          recurringSetupError ? `recurring setup failed: ${recurringSetupError}` : null,
+          result?.agent_run_error ? `agent run did not start: ${result.agent_run_error}` : null,
+        ].filter(Boolean);
+
+        if (postCreateErrors.length > 0) {
+          toast.error(`Task created, but ${postCreateErrors.join('; ')}`);
         } else {
-          if (result?.id) {
+          if (createAnother) {
+            toast.success('Task created. Ready for the next one.');
+          } else if (result?.id) {
             const createdTitle = result.task?.name || form.name.trim();
             const taskKey = result.task?.task_key
               || (result.task?.display_id !== undefined ? `#${result.task.display_id}` : undefined);
+            const successSubtitle = [
+              saveTaskAsTemplate ? 'Template saved.' : null,
+              recurringDraft ? 'Recurring schedule added.' : null,
+            ].filter(Boolean).join(' ');
             showEntityCreatedToast({
               entityLabel: 'Task',
               title: createdTitle,
-              subtitle: recurringDraft ? 'Recurring schedule added.' : undefined,
+              subtitle: successSubtitle || undefined,
               identifier: taskKey ? { label: 'Story ID', value: taskKey } : undefined,
               tone: 'pm',
               icon: TASK_TYPE_CONFIG[form.task_type].icon,
@@ -684,24 +1080,29 @@ export function CreateTaskModal({
           }
         }
 
-        if (createMore) {
+        if (createAnother) {
           const resetTeam = teams.find((team) => team.id === (initialTeamId ?? ''));
           setDescriptionEditorKey((current) => current + 1);
           setDescriptionMode('rich');
           setSourceMarkdown('');
           setForm({
             ...defaultState,
-            task_type: (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
+            name: initialName ?? '',
+            task_type: initialTaskType ?? (resetTeam?.default_task_type as TaskType | undefined) ?? 'feature',
+            priority: initialPriority ?? defaultState.priority,
+            severity: initialSeverity ?? defaultState.severity,
             requester_member_id: currentMemberId,
             team_id: initialTeamId ?? '',
             epic_id: initialEpicId ?? '',
             owner_member_ids: initialOwnerMemberId ? [initialOwnerMemberId] : [],
             sprint_id: initialSprintId ?? '',
           });
-          setTaskTypeDirty(false);
+          setTaskTypeDirty(Boolean(initialTaskType));
           setStateId(initialStateId ?? '');
           setPendingFiles([]);
           setRecurringDraft(null);
+          setSaveTaskAsTemplate(false);
+          setAssignedAgentId(undefined);
         } else {
           onOpenChange(false);
         }
@@ -717,11 +1118,17 @@ export function CreateTaskModal({
     form,
     stateId,
     descriptionMode,
-    createMore,
+    saveTaskAsTemplate,
     workspaceId,
     workflow,
+    selectedTemplateId,
+    uploadPendingFilesForEntity,
     resolveSubmitWorkflow,
     initialStateId,
+    initialName,
+    initialTaskType,
+    initialPriority,
+    initialSeverity,
     currentMemberId,
     initialTeamId,
     initialEpicId,
@@ -736,13 +1143,21 @@ export function CreateTaskModal({
     recurringDraft,
     sourceMarkdown,
     teams,
+    assignedAgentId,
   ]);
 
-  const stripHtml = (html: string) => html.replace(/<[^>]*>/g, '').trim();
   const currentDescriptionForCompare =
     descriptionMode === 'markdown' ? markdownToHtml(sourceMarkdown) : form.description;
-  const hasUnsavedChanges =
-    form.name.trim() !== '' || stripHtml(currentDescriptionForCompare) !== stripHtml(initialDescRef.current);
+  const hasUnsavedChanges = isCreateTaskModalDirty({
+    mode,
+    editingTemplate: Boolean(editingTemplate),
+    form,
+    baselineForm: initialFormRef.current,
+    currentDescription: currentDescriptionForCompare,
+    baselineDescription: initialDescRef.current,
+    stateId,
+    baselineStateId: initialStateIdRef.current,
+  });
 
   const handleOpenChange = async (nextOpen: boolean) => {
     if (!nextOpen && hasUnsavedChanges) {
@@ -763,15 +1178,56 @@ export function CreateTaskModal({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="max-w-6xl sm:max-w-6xl gap-0 overflow-hidden p-0"
+        className="max-w-6xl sm:max-w-6xl gap-0 overflow-visible p-0"
         showCloseButton={false}
       >
+        {stackedOverDrawer ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -left-2 top-3 h-14 w-2 rounded-l-md border-y border-l border-border/70 bg-background shadow-sm"
+          />
+        ) : null}
         <div className="flex h-[85vh] max-h-[960px] flex-col">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
-            <span className="text-lg font-semibold">
-              {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
-            </span>
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="text-lg font-semibold">
+                {isTemplateMode ? (editingTemplate ? 'Edit template' : 'Create template') : 'Create task'}
+              </span>
+              {!isTemplateMode && (
+                <SidebarPopoverSelect
+                  value={selectedTemplateId}
+                  groups={templatesLoaded && !templatesLoading && templates.length > 0 ? templateGroups : []}
+                  onChange={applyTemplate}
+                  onOpenChange={(nextOpen) => {
+                    if (nextOpen) void loadTemplates();
+                  }}
+                  renderTrigger={() => (
+                    <>
+                      <File01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{selectedTemplateName || 'Apply template'}</span>
+                    </>
+                  )}
+                  emptyContent={
+                    templatesLoading ? (
+                      <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+                        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                        <span>Loading task templates</span>
+                      </div>
+                    ) : templatesLoaded ? (
+                      <div className="space-y-1 px-2 py-2">
+                        <p className="text-sm font-medium text-foreground">No task templates yet</p>
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Create one with this task by enabling Save as template before saving.
+                        </p>
+                      </div>
+                    ) : null
+                  }
+                  showChevron
+                  triggerClassName="border border-border/60 bg-muted/20 px-2.5 py-1 text-xs"
+                />
+              )}
+            </div>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => handleOpenChange(false)}>
               <Cancel01Icon className="h-4 w-4" />
             </Button>
@@ -780,13 +1236,13 @@ export function CreateTaskModal({
           {/* Two-column grid */}
           <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
             {/* Left column — title + description */}
-            <div className="min-h-0 flex-1 flex flex-col overflow-y-auto px-6 py-3 gap-4">
+            <div className="min-h-0 overflow-y-auto px-6 py-3">
 
               {/* Title */}
               <Input
                 id="task-title"
                 autoFocus
-                placeholder={isTemplateMode ? "Template name" : "Title"}
+                placeholder="Title..."
                 className="h-12 shrink-0 border-border/60 text-base shadow-none focus-visible:border-border"
                 value={form.name}
                 onChange={(event) =>
@@ -802,9 +1258,9 @@ export function CreateTaskModal({
               />
 
               {/* Description — Tiptap rich text editor */}
-              <div className="relative flex flex-col min-h-0 flex-1">
+              <div className="relative mt-4 min-h-[320px]">
                 {descriptionMode === 'markdown' ? (
-                  <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-transparent bg-input/50">
+                  <div className="flex min-h-[320px] flex-col rounded-2xl border border-transparent bg-input/50">
                     <div className="flex items-center justify-between border-b border-border/40 px-3 py-2">
                       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Markdown Source
@@ -847,7 +1303,7 @@ export function CreateTaskModal({
                       setForm((prev) => ({ ...prev, description: html }))
                     }
                     placeholder="Add a description..."
-                    className="min-h-0 flex-1 flex flex-col"
+                    className="min-h-[320px]"
                     uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                     onUploadStateChange={setDescriptionPendingUploads}
                     teams={mentionTeams}
@@ -860,15 +1316,12 @@ export function CreateTaskModal({
               </div>
 
               {/* ── Action bar — toggle pills ─────────────────────── */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                      showChecklist
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:bg-accent'
-                    }`}
+                    className={getOptionalSectionActionClass(form.checklist_items.length > 0 ? 'locked' : showChecklist ? 'open' : 'available')}
+                    disabled={form.checklist_items.length > 0}
                     onClick={() => setShowChecklist((v) => !v)}
                   >
                     <CheckListIcon className="h-3 w-3" />
@@ -879,11 +1332,8 @@ export function CreateTaskModal({
                   </button>
                   <button
                     type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                      showExternalLinks
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border/60 text-muted-foreground hover:bg-accent'
-                    }`}
+                    className={getOptionalSectionActionClass(form.external_links.length > 0 ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                    disabled={form.external_links.length > 0}
                     onClick={() => setShowExternalLinks((v) => !v)}
                   >
                     <Link01Icon className="h-3 w-3" />
@@ -892,23 +1342,18 @@ export function CreateTaskModal({
                       <span className="text-[10px] opacity-70">({form.external_links.length})</span>
                     )}
                   </button>
-                  {!isTemplateMode && (
-                    <button
-                      type="button"
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                        showAttachments
-                          ? 'border-primary/30 bg-primary/10 text-primary'
-                          : 'border-border/60 text-muted-foreground hover:bg-accent'
-                      }`}
-                      onClick={() => setShowAttachments((v) => !v)}
-                    >
-                      <AttachmentIcon className="h-3 w-3" />
-                      Attach Files
-                      {pendingFiles.length > 0 && (
-                        <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
-                      )}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className={getOptionalSectionActionClass((pendingFiles.length + templateAttachments.length) > 0 ? 'locked' : showAttachments ? 'open' : 'available')}
+                    disabled={(pendingFiles.length + templateAttachments.length) > 0}
+                    onClick={() => setShowAttachments((v) => !v)}
+                  >
+                    <AttachmentIcon className="h-3 w-3" />
+                    Attach Files
+                    {(pendingFiles.length + templateAttachments.length) > 0 && (
+                      <span className="text-[10px] opacity-70">({pendingFiles.length + templateAttachments.length})</span>
+                    )}
+                  </button>
                 </div>
                 <div className="ml-auto inline-flex rounded-md border border-border/60 bg-muted/20 p-0.5">
                   <button
@@ -944,7 +1389,7 @@ export function CreateTaskModal({
 
               {/* Checklist */}
               {showChecklist && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
+                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <CheckListIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1001,7 +1446,7 @@ export function CreateTaskModal({
 
               {/* External Links */}
               {showExternalLinks && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
+                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1056,21 +1501,53 @@ export function CreateTaskModal({
                 </div>
               )}
 
-              {/* Attachments (task mode only) */}
-              {!isTemplateMode && showAttachments && (
-                <div className="shrink-0 rounded-lg border border-border/60 bg-card">
+              {showAttachments && (
+                <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
                   <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
                       <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
                       Attachments
-                      {pendingFiles.length > 0 && (
-                        <span className="text-xs text-muted-foreground font-normal">({pendingFiles.length})</span>
+                      {(pendingFiles.length + templateAttachments.length) > 0 && (
+                        <span className="text-xs text-muted-foreground font-normal">({pendingFiles.length + templateAttachments.length})</span>
                       )}
                     </div>
                   </div>
                   <div className="px-4 py-2 space-y-2">
-                    {pendingFiles.length > 0 && (
+                    {(pendingFiles.length > 0 || templateAttachments.length > 0) && (
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                        {templateAttachments.map((attachmentResponse) => {
+                          const attachment = attachmentResponse.attachment;
+                          const isImage = attachment.content_type.startsWith('image/');
+                          const imageURL = attachmentResponse.public_url || attachmentResponse.url;
+                          const ext = attachment.file_name.split('.').pop()?.toUpperCase() || 'FILE';
+                          return (
+                            <div key={attachment.id} className="group relative">
+                              <div className="overflow-hidden rounded-lg border border-border/60">
+                                {isImage && imageURL ? (
+                                  <img src={imageURL} alt={attachment.file_name} className="h-20 w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
+                                    <AttachmentIcon className="h-6 w-6 text-muted-foreground/50" />
+                                    <span className="text-[9px] font-medium uppercase text-muted-foreground tracking-wide">{ext}</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  className="flex h-6 w-6 items-center justify-center rounded bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-destructive"
+                                  onClick={async () => {
+                                    await pmAttachmentService.remove(workspaceId, attachment.id);
+                                    setTemplateAttachments((prev) => prev.filter((entry) => entry.attachment.id !== attachment.id));
+                                  }}
+                                >
+                                  <Delete01Icon className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <p className="mt-1 truncate text-[10px] text-muted-foreground" title={attachment.file_name}>{attachment.file_name}</p>
+                            </div>
+                          );
+                        })}
                         {pendingFiles.map((file, idx) => {
                           const isImage = file.type.startsWith('image/');
                           const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
@@ -1125,57 +1602,25 @@ export function CreateTaskModal({
                 </div>
               )}
 
+              {!isTemplateMode && (
+                <div className="mt-3">
+                  <AgentPickerCard
+                    workspaceId={workspaceId}
+                    runnableTarget="task"
+                    targetTeamId={form.team_id || null}
+                    value={assignedAgentId}
+                    onChange={setAssignedAgentId}
+                    hasRepoContext={!showPlanningRepository || Boolean(teamRepoDefault?.repository_id)}
+                  />
+                </div>
+              )}
+
               {error ? <p className="text-sm text-destructive">{error}</p> : null}
             </div>
 
             {/* Right sidebar — metadata */}
             <aside className="min-h-0 overflow-y-auto border-l border-border/50 px-5 py-4">
               <div className="grid grid-cols-[16px_80px_1fr] items-center gap-x-3 gap-y-3">
-                {/* Template */}
-                {!isTemplateMode && templates.length > 0 && (
-                <MetadataRow icon={File01Icon} label="Template">
-                  <SidebarPopoverSelect
-                    value=""
-                    options={[
-                      { value: '', label: 'None' },
-                      ...templates
-                        .filter((t) => !t.team_id || t.team_id === form.team_id || !form.team_id)
-                        .map((t) => ({ value: t.id, label: t.name })),
-                    ]}
-                    onChange={(templateId) => {
-                      const tmpl = templates.find((t) => t.id === templateId);
-                      if (!tmpl) return;
-                      setTaskTypeDirty(false);
-                      setForm((prev) => ({
-                        ...prev,
-                        team_id: tmpl.team_id || prev.team_id,
-                        description: tmpl.description || prev.description,
-                        task_type: (tmpl.task_type as TaskType) || prev.task_type,
-                        priority: (tmpl.priority as Priority) || prev.priority,
-                        severity: (tmpl.severity as Severity) || prev.severity,
-                        estimate: tmpl.estimate !== undefined && tmpl.estimate !== null ? String(tmpl.estimate) : prev.estimate,
-                        label_ids: tmpl.label_ids ? (() => { try { return JSON.parse(tmpl.label_ids!); } catch { return prev.label_ids; } })() : prev.label_ids,
-                        owner_member_ids: tmpl.owner_member_id ? [tmpl.owner_member_id] : prev.owner_member_ids,
-                        epic_id: tmpl.epic_id || prev.epic_id,
-                        sprint_id: tmpl.sprint_id || prev.sprint_id,
-                        deadline: tmpl.deadline || prev.deadline,
-                        checklist_items: tmpl.checklist_items ? (() => { try { return JSON.parse(tmpl.checklist_items!); } catch { return prev.checklist_items; } })() : prev.checklist_items,
-                        external_links: tmpl.external_links ? (() => { try { return JSON.parse(tmpl.external_links!); } catch { return prev.external_links; } })() : prev.external_links,
-                      }));
-                      // Auto-open sections with template data
-                      if (tmpl.checklist_items) { try { if (JSON.parse(tmpl.checklist_items).length > 0) setShowChecklist(true); } catch {} }
-                      if (tmpl.external_links) { try { if (JSON.parse(tmpl.external_links).length > 0) setShowExternalLinks(true); } catch {} }
-                    }}
-                    renderTrigger={() => (
-                      <>
-                        <File01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>Apply template</span>
-                      </>
-                    )}
-                  />
-                </MetadataRow>
-                )}
-
                 {/* Team */}
                 {teams.length > 0 && (
                   <MetadataRow icon={UserGroupIcon} label="Team *">
@@ -1200,14 +1645,14 @@ export function CreateTaskModal({
                 )}
 
                 {/* State */}
-                {!isTemplateMode && workflow && (
+                {activeWorkflow && (
                 <MetadataRow icon={HashtagIcon} label="State">
                   <SidebarPopoverSelect
                     value={stateId}
-                    options={workflow.states.map((s) => ({ value: s.id, label: s.name }))}
+                    options={activeWorkflow.states.map((s) => ({ value: s.id, label: s.name }))}
                     onChange={setStateId}
                     renderTrigger={() => {
-                      const st = workflow.states.find((s) => s.id === stateId);
+                      const st = activeWorkflow.states.find((s) => s.id === stateId);
                       return st ? (
                         <TaskStateSelectContent stateType={st.state_type} label={st.name} color={st.color} />
                       ) : (
@@ -1215,7 +1660,7 @@ export function CreateTaskModal({
                       );
                     }}
                     renderOption={(v) => {
-                      const s = workflow.states.find((st) => st.id === v);
+                      const s = activeWorkflow.states.find((st) => st.id === v);
                       return s ? (
                         <span className="inline-flex items-center gap-1.5">
                           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color || '#a1a1aa' }} />
@@ -1231,65 +1676,31 @@ export function CreateTaskModal({
                 <div className="col-span-3 h-px bg-border/40 my-1" />
 
                 {/* Owner */}
-                <MetadataRow icon={UserIcon} label={isTemplateMode ? "Owner" : "Owners"}>
-                  {isTemplateMode ? (
-                    <MemberPickerPopover
-                      value={form.owner_member_ids[0] || "__none__"}
-                      members={assignableMembers}
-                      noneLabel="No owner"
-                      onChange={(value) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          owner_member_ids: value === "__none__" ? [] : [value],
-                        }))
-                      }
-                      renderTrigger={() => {
-                        const selectedMember = findAssignableMember(assignableMembers, form.owner_member_ids[0]);
-                        return (
-                          <>
-                            {selectedMember ? (
-                              <UserAvatar
-                                name={selectedMember.display_name || selectedMember.email}
-                                avatarUrl={selectedMember.avatar_url}
-                                avatarStyle={selectedMember.avatar_style}
-                                avatarSeed={selectedMember.avatar_seed}
-                                avatarBackgroundMode={selectedMember.avatar_background_mode}
-                                avatarBackgroundColor={selectedMember.avatar_background_color}
-                                className="h-4 w-4"
-                                fallbackClassName="text-[7px]"
-                              />
-                            ) : null}
-                            <span>{currentOwnerName}</span>
-                          </>
-                        );
-                      }}
-                    />
-                  ) : (
-                    <MultiMemberPickerPopover
-                      values={form.owner_member_ids}
-                      members={assignableMembers}
-                      onChange={(nextOwnerIds) =>
-                        setForm((prev) => ({ ...prev, owner_member_ids: nextOwnerIds }))
-                      }
-                      renderTrigger={() => (
-                        <>
-                          {form.owner_member_ids.length > 0 ? (
-                            <OwnerAvatarStack
-                              memberIds={form.owner_member_ids}
-                              nameMap={memberNameMap}
-                              members={assignableMembers}
-                              size="sm"
-                              max={3}
-                              singleAvatarClassName="h-4 w-4"
-                              singleFallbackClassName="text-[7px]"
-                            />
-                          ) : (
-                            <span>{currentOwnerName}</span>
-                          )}
-                        </>
-                      )}
-                    />
-                  )}
+                <MetadataRow icon={UserIcon} label="Owners">
+                  <MultiMemberPickerPopover
+                    values={form.owner_member_ids}
+                    members={assignableMembers}
+                    onChange={(nextOwnerIds) =>
+                      setForm((prev) => ({ ...prev, owner_member_ids: nextOwnerIds }))
+                    }
+                    renderTrigger={() => (
+                      <>
+                        {form.owner_member_ids.length > 0 ? (
+                          <OwnerAvatarStack
+                            memberIds={form.owner_member_ids}
+                            nameMap={memberNameMap}
+                            members={assignableMembers}
+                            size="sm"
+                            max={3}
+                            singleAvatarClassName="h-4 w-4"
+                            singleFallbackClassName="text-[7px]"
+                          />
+                        ) : (
+                          <span>{currentOwnerName}</span>
+                        )}
+                      </>
+                    )}
+                  />
                 </MetadataRow>
 
                 {/* Requester */}
@@ -1394,7 +1805,7 @@ export function CreateTaskModal({
                 )}
 
                 {/* Labels */}
-                {fieldVis.labels && (
+                {(fieldVis.labels || (isTemplateMode && form.label_ids.length > 0)) && (
                 <MetadataRow icon={Tag01Icon} label="Labels">
                   <LabelPicker
                     workspaceId={workspaceId}
@@ -1408,17 +1819,14 @@ export function CreateTaskModal({
                 )}
 
                 {/* ── Planning ── */}
-                {(fieldVis.epic || (fieldVis.sprint && teamSprintsEnabled)) && <div className="col-span-3 h-px bg-border/40 my-1" />}
+                {(fieldVis.epic || (fieldVis.sprint && teamSprintsEnabled) || showPlanningRepository) && <div className="col-span-3 h-px bg-border/40 my-1" />}
 
                 {/* Epic */}
                 {fieldVis.epic && (
                 <MetadataRow icon={Layers01Icon} label="Epic">
                   <SidebarPopoverSelect
                     value={form.epic_id || "__none__"}
-                    options={[
-                      { value: "__none__", label: "No epic" },
-                      ...availableEpics.map((e) => ({ value: e.epic.id, label: e.epic.name })),
-                    ]}
+                    groups={epicGroups}
                     onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
@@ -1448,6 +1856,25 @@ export function CreateTaskModal({
                     renderTrigger={() => <span>{currentSprintName}</span>}
                   />
                 </MetadataRow>
+                )}
+
+                {showPlanningRepository && (
+                  <MetadataRow icon={SourceCodeIcon} label="Code repo" tooltip={CODE_REPO_TOOLTIP}>
+                    <SidebarPopoverSelect
+                      value={teamRepoDefault?.repository_id || "__none__"}
+                      options={[
+                        { value: "__none__", label: "Not configured" },
+                        ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
+                      ]}
+                      onChange={() => undefined}
+                      disabled
+                      renderTrigger={() => (
+                        <span className="block whitespace-normal break-words text-left leading-tight">
+                          {currentPlanningRepositoryName}
+                        </span>
+                      )}
+                    />
+                  </MetadataRow>
                 )}
 
                 {/* ── Tracking ── */}
@@ -1498,6 +1925,7 @@ export function CreateTaskModal({
                     </MetadataRow>
                   </>
                 )}
+
               </div>
             </aside>
           </div>
@@ -1505,27 +1933,34 @@ export function CreateTaskModal({
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
             {!isTemplateMode && (
-            <div className="mr-auto flex items-center gap-2">
-              <Switch checked={createMore} onCheckedChange={setCreateMore} />
-              <span className="text-sm text-muted-foreground">Create more</span>
-            </div>
+              <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2">
+                <div className="flex items-center gap-2">
+                  <Switch checked={saveTaskAsTemplate} onCheckedChange={setSaveTaskAsTemplate} />
+                  <FooterToggleHelp
+                    label="Save as template"
+                    tooltip="Also save this task as a reusable template after it is created."
+                  />
+                </div>
+              </div>
             )}
 
+            {!isTemplateMode && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => submit(true)}
+                disabled={!canSubmit || submitting}
+              >
+                Save & create another
+              </Button>
+            )}
             <Button
               type="button"
-              variant="outline"
-              onClick={() => handleOpenChange(false)}
-              disabled={submitting}
-            >
-              Discard
-            </Button>
-            <Button
-              type="button"
-              onClick={submit}
+              onClick={() => submit(false)}
               disabled={!canSubmit || submitting}
             >
               {submitting ? <Loading01Icon className="h-4 w-4 animate-spin" /> : null}
-              {submitting ? "Saving..." : "Save"}
+              {submitting ? "Saving..." : assignedAgentId && !isTemplateMode ? "Save & run agent" : "Save"}
             </Button>
           </div>
         </div>

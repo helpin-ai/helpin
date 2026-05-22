@@ -663,11 +663,6 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"properties": map[string]interface{}{},
 	}, toolListTaskChecklist)
 
-	r.register("list_workspace_teams", "List workspace teams that the agent can use for team selection or planning context.", map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}, toolListWorkspaceTeams)
-
 	r.register("list_team_workflows_with_stages", "List the resolved workflow and ordered stages for one team or all workspace teams. Use this to choose a valid workflow stage before creating a task.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -769,7 +764,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		},
 	}, toolListCollections)
 
-	r.register("read_document", "Read a document by ID, including metadata, plain text, and compact addressable blocks with IDs and revisions.", map[string]interface{}{
+	r.register("read_document", "Read a known document by ID. Returns metadata, a bounded plain-text excerpt, and the first page of compact addressable blocks. Use get_document_blocks with offset/limit, anchor_block_id, or block_ids for more blocks; use search_documents only to find other documents.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"document_id": map[string]interface{}{
@@ -780,7 +775,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"required": []string{"document_id"},
 	}, toolReadDocument)
 
-	r.register("get_document_blocks", "Fetch addressable blocks for a document. By default returns compact block metadata; set include_content with selected block_ids to retrieve full block JSON for precise edits.", map[string]interface{}{
+	r.register("get_document_blocks", "Fetch addressable blocks for a known document. By default returns a compact paged block list; use block_ids for known blocks, anchor_block_id with around for nearby context, or include_content with a small selected set for precise edits.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"document_id": map[string]interface{}{
@@ -795,6 +790,22 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 			"include_content": map[string]interface{}{
 				"type":        "boolean",
 				"description": "When true, include the full block node JSON. Limited to 20 blocks per call.",
+			},
+			"offset": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional zero-based block offset for paging when block_ids and anchor_block_id are omitted.",
+			},
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional page size for compact block lists (default 40, max 100).",
+			},
+			"anchor_block_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional block ID to center a window around. Use when the run context already provides a focused block ID.",
+			},
+			"around": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional number of sibling blocks before and after anchor_block_id to return (default 5, max 25).",
 			},
 		},
 		"required":             []string{"document_id"},
@@ -835,7 +846,55 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolPublishAISectionCandidate)
 
-	r.register("search_documents", "Search documents by keyword across the workspace.", map[string]interface{}{
+	r.register("publish_document_change_proposal", "Submit a proposed Docs document or block change for review in Docs. This persists a Docs proposal; after success, finish without calling request_approval.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"scope": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"document", "block"},
+				"description": "Whether the proposal replaces the whole document or one addressable block.",
+			},
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID from the run context.",
+			},
+			"block_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Required when scope is block. The stable block ID to replace.",
+			},
+			"revision": map[string]interface{}{
+				"type":        "integer",
+				"description": "Required when scope is block. The current block revision from get_document_blocks.",
+			},
+			"content": map[string]interface{}{
+				"type":        "string",
+				"description": "Replacement markdown. For document scope, provide the full document. For block scope, provide replacement markdown for the focused block only.",
+			},
+			"summary": map[string]interface{}{
+				"type":        "string",
+				"description": "Short human-readable summary of the proposed change.",
+			},
+			"sources": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional source summaries used for the proposal.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"type":  map[string]interface{}{"type": "string", "enum": []string{"conversation", "document", "url", "agent_run", "coverage_gap"}},
+						"id":    map[string]interface{}{"type": "string"},
+						"label": map[string]interface{}{"type": "string"},
+						"url":   map[string]interface{}{"type": "string"},
+					},
+					"required":             []string{"type", "label"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"scope", "document_id", "content", "summary"},
+		"additionalProperties": false,
+	}, toolPublishDocumentChangeProposal)
+
+	r.register("search_documents", "Search documents by keyword across the workspace. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"query": map[string]interface{}{
@@ -916,6 +975,46 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolFindTasksForGitChanges)
 
+	r.register("get_pull_request_diff", "Load the changed files and patches for a GitHub pull request. Defaults owner/repo from the current repository-targeted run when omitted.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"owner": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository owner. Defaults from the current run repository when omitted.",
+			},
+			"repo": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository name. Defaults from the current run repository when omitted.",
+			},
+			"pull_number": map[string]interface{}{
+				"type":        "integer",
+				"description": "Pull request number.",
+			},
+		},
+		"required":             []string{"pull_number"},
+		"additionalProperties": false,
+	}, toolGetPullRequestDiff)
+
+	r.register("get_check_run_logs", "Load a GitHub check run's conclusion, output text, and annotations for diagnosing failed checks.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"owner": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository owner. Defaults from the current run repository when omitted.",
+			},
+			"repo": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository name. Defaults from the current run repository when omitted.",
+			},
+			"check_run_id": map[string]interface{}{
+				"type":        "integer",
+				"description": "GitHub check run ID.",
+			},
+		},
+		"required":             []string{"check_run_id"},
+		"additionalProperties": false,
+	}, toolGetCheckRunLogs)
+
 	r.register("get_task_context", "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -951,6 +1050,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 	}, toolListEpicTasks)
 
 	r.registerSharedCommandTools(map[string]ToolFunc{
+		"list_workspace_teams":       toolListWorkspaceTeams,
 		"update_task_state":          toolUpdateTaskState,
 		"ensure_task_label":          toolEnsureTaskLabel,
 		"list_tasks":                 toolListTasks,

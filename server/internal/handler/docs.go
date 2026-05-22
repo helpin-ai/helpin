@@ -65,6 +65,7 @@ type DocsHandler struct {
 	contentSvc           *service.DocsContentService
 	blockSvc             *service.DocsBlockService
 	aiSectionSvc         *service.DocsAISectionService
+	changeProposalSvc    *service.DocsChangeProposalService
 	referencesSvc        *service.DocsReferencesService
 	versionSvc           *service.DocsVersionService
 	linkSvc              *service.DocsLinkService
@@ -89,6 +90,7 @@ func NewDocsHandler(
 	contentSvc *service.DocsContentService,
 	blockSvc *service.DocsBlockService,
 	aiSectionSvc *service.DocsAISectionService,
+	changeProposalSvc *service.DocsChangeProposalService,
 	referencesSvc *service.DocsReferencesService,
 	versionSvc *service.DocsVersionService,
 	linkSvc *service.DocsLinkService,
@@ -110,6 +112,7 @@ func NewDocsHandler(
 		contentSvc:           contentSvc,
 		blockSvc:             blockSvc,
 		aiSectionSvc:         aiSectionSvc,
+		changeProposalSvc:    changeProposalSvc,
 		referencesSvc:        referencesSvc,
 		versionSvc:           versionSvc,
 		linkSvc:              linkSvc,
@@ -913,6 +916,87 @@ func (h *DocsHandler) RejectAISection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *DocsHandler) ListChangeProposals(w http.ResponseWriter, r *http.Request) {
+	if h.changeProposalSvc == nil {
+		writeError(w, http.StatusInternalServerError, "docs change proposal service not configured")
+		return
+	}
+	proposals, err := h.changeProposalSvc.ListPending(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"))
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			writeError(w, http.StatusNotFound, "document not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, proposals)
+}
+
+func (h *DocsHandler) GetChangeProposal(w http.ResponseWriter, r *http.Request) {
+	if h.changeProposalSvc == nil {
+		writeError(w, http.StatusInternalServerError, "docs change proposal service not configured")
+		return
+	}
+	proposal, err := h.changeProposalSvc.Get(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"), chi.URLParam(r, "proposalId"))
+	if err != nil {
+		if errors.Is(err, service.ErrDocsChangeProposalNotFound) {
+			writeError(w, http.StatusNotFound, "proposal not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, proposal)
+}
+
+func (h *DocsHandler) ApplyChangeProposal(w http.ResponseWriter, r *http.Request) {
+	if h.changeProposalSvc == nil {
+		writeError(w, http.StatusInternalServerError, "docs change proposal service not configured")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+	docID := chi.URLParam(r, "docId")
+	proposal, content, err := h.changeProposalSvc.Apply(r.Context(), getWorkspaceID(r), docID, chi.URLParam(r, "proposalId"), userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrDocsStaleBlockRevision):
+			writeError(w, http.StatusConflict, "block revision is stale")
+		case errors.Is(err, service.ErrDocsDocumentLocked):
+			writeError(w, http.StatusForbidden, err.Error())
+		case errors.Is(err, service.ErrDocsChangeProposalNotFound):
+			writeError(w, http.StatusNotFound, "proposal not found")
+		default:
+			writeError(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	go h.versionSvc.MaybeAutoSnapshot(r.Context(), docID, userID)
+	h.queueEmbeddingSync(r.Context(), docID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"proposal": proposal,
+		"content":  content,
+	})
+}
+
+func (h *DocsHandler) DiscardChangeProposal(w http.ResponseWriter, r *http.Request) {
+	if h.changeProposalSvc == nil {
+		writeError(w, http.StatusInternalServerError, "docs change proposal service not configured")
+		return
+	}
+	userID := middleware.GetUserID(r.Context())
+	proposal, err := h.changeProposalSvc.Discard(r.Context(), getWorkspaceID(r), chi.URLParam(r, "docId"), chi.URLParam(r, "proposalId"), userID)
+	if err != nil {
+		if errors.Is(err, service.ErrDocsChangeProposalNotFound) {
+			writeError(w, http.StatusNotFound, "proposal not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, proposal)
 }
 
 // ListComments handles GET /api/docs/documents/{docId}/comments.

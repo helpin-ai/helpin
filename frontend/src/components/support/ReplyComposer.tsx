@@ -434,6 +434,7 @@ function ShortcutFormPanel({
   pending,
   deleteConfirm,
   onBack,
+  onClose,
   onChange,
   onSubmit,
   onDelete,
@@ -446,6 +447,7 @@ function ShortcutFormPanel({
   pending: boolean;
   deleteConfirm: boolean;
   onBack: () => void;
+  onClose: () => void;
   onChange: (form: ShortcutFormState) => void;
   onSubmit: () => void;
   onDelete: () => void;
@@ -563,9 +565,17 @@ function ShortcutFormPanel({
         >
           <ArrowLeft02Icon className="h-4 w-4" />
         </button>
-        <div className="min-w-0">
-          <div className="text-sm font-medium">{mode === 'create' ? 'New shortcut' : `Edit ${normalizedCode || 'shortcut'}`}</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{mode === 'create' ? 'New shortcut' : `Edit ${normalizedCode || 'shortcut'}`}</div>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label="Close shortcuts"
+        >
+          <Cancel01Icon className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="space-y-3 overflow-y-auto p-3">
@@ -752,7 +762,9 @@ function ShortcutFormPanel({
           </Button>
         ) : <span />}
         <div className="flex items-center gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={onBack}>Cancel</Button>
+          {mode === 'edit' ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onBack}>Cancel</Button>
+          ) : null}
           <Button
             type="button"
             size="sm"
@@ -963,6 +975,14 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     setShortcutsPanelOpen(true);
   }, []);
 
+  const closeShortcutsPanel = useCallback(() => {
+    setShortcutsPanelOpen(false);
+    setShortcutState(null);
+    setShortcutPanelMode('list');
+    setManualShortcutQuery('');
+    setShortcutDeleteConfirm(false);
+  }, []);
+
   useEffect(() => {
     setPanelIndex(0);
   }, [manualShortcutQuery]);
@@ -973,6 +993,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
   }, [shortcutPanelMode, shortcutState, shortcutsPanelOpen]);
 
   useEffect(() => {
+    if (shortcutOpenRequest === 0) return;
     if (shortcutOpenRequest <= handledShortcutOpenRequestRef.current) return;
     handledShortcutOpenRequestRef.current = shortcutOpenRequest;
     openShortcutCreate({
@@ -1068,7 +1089,6 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     Markdown.configure({
       html: false,
       linkify: true,
-      breaks: true,
       transformPastedText: true,
       transformCopiedText: true,
     }),
@@ -1132,8 +1152,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           }
           if (event.key === 'Escape') {
             event.preventDefault();
-            setShortcutState(null);
-            setShortcutsPanelOpen(false);
+            closeShortcutsPanel();
             return true;
           }
         }
@@ -1161,7 +1180,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           }
           if (event.key === 'Escape') {
             event.preventDefault();
-            setShortcutsPanelOpen(false);
+            closeShortcutsPanel();
             return true;
           }
         }
@@ -1274,9 +1293,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           (shortcutsPanelRef.current?.contains(active) || isShortcutPanelPortalTarget(active))
         ) return;
         setMentionState(null);
-        setShortcutState(null);
-        setShortcutsPanelOpen(false);
-        setShortcutPanelMode('list');
+        closeShortcutsPanel();
       }, 0);
     },
   });
@@ -1294,10 +1311,8 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
     } else {
       chain.insertContent(content).run();
     }
-    setShortcutState(null);
-    setShortcutsPanelOpen(false);
-    setShortcutPanelMode('list');
-  }, [resolveShortcutContent]);
+    closeShortcutsPanel();
+  }, [closeShortcutsPanel, resolveShortcutContent]);
 
   // Backup event handlers for TipTap v3 compatibility
   // Close the shortcuts panel when the user clicks anywhere outside both
@@ -1318,13 +1333,11 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
         const editorEl = editor?.view?.dom;
         if (editorEl && editorEl.contains(target)) return;
       }
-      setShortcutsPanelOpen(false);
-      setShortcutState(null);
-      setShortcutPanelMode('list');
+      closeShortcutsPanel();
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [shortcutsPanelOpen, shortcutState, editor]);
+  }, [closeShortcutsPanel, shortcutsPanelOpen, shortcutState, editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -1357,9 +1370,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
           )
         ) {
           setMentionState(null);
-          setShortcutState(null);
-          setShortcutsPanelOpen(false);
-          setShortcutPanelMode('list');
+          closeShortcutsPanel();
         }
         if (!toolbarHasPointerRef.current) {
           setEditorFocused(false);
@@ -1377,7 +1388,7 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
       editor.off('blur', handleBlur);
       editor.off('focus', handleFocus);
     };
-  }, [editor, conversationId, handleTyping, sendTyping, setDraft, setReplyMode]);
+  }, [closeShortcutsPanel, editor, conversationId, handleTyping, sendTyping, setDraft, setReplyMode]);
 
   // Load draft when switching conversations
   useEffect(() => {
@@ -1628,55 +1639,79 @@ export function ReplyComposer({ workspaceId, conversationId, emailFallbackHint }
                   onSubmit={() => { void submitShortcutForm(); }}
                   onDelete={() => { void deleteEditingShortcut(); }}
                   onDeleteConfirmChange={setShortcutDeleteConfirm}
+                  onClose={closeShortcutsPanel}
                 />
               ) : (
                 <>
                   <div className="space-y-2 border-b border-border/40 px-3 py-2">
                     {(isFiltering || manualSearchActive) ? (
                       <div className="flex items-center justify-between gap-2">
-                        {isFiltering && shortcutState ? (
-                          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">{queryToken}</span>
-                        ) : (
-                          <span />
-                        )}
-                        <span className="text-[11px] tabular-nums text-muted-foreground/70">
-                          {items.length} {items.length === 1 ? 'match' : 'matches'}
-                        </span>
+                        <div className="min-w-0">
+                          {isFiltering && shortcutState ? (
+                            <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">{queryToken}</span>
+                          ) : null}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span className="text-[11px] tabular-nums text-muted-foreground/70">
+                            {items.length} {items.length === 1 ? 'match' : 'matches'}
+                          </span>
+                          <button
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={closeShortcutsPanel}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label="Close shortcuts"
+                          >
+                            <Cancel01Icon className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     ) : null}
                     {!isFiltering ? (
-                      <div className="relative">
-                        <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                        <Input
-                          ref={shortcutSearchInputRef}
-                          value={manualShortcutQuery}
-                          onChange={(event) => setManualShortcutQuery(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'ArrowDown' && items.length > 0) {
-                              event.preventDefault();
-                              setPanelIndex((idx) => (idx + 1) % items.length);
-                              return;
-                            }
-                            if (event.key === 'ArrowUp' && items.length > 0) {
-                              event.preventDefault();
-                              setPanelIndex((idx) => (idx - 1 + items.length) % items.length);
-                              return;
-                            }
-                            if (event.key === 'Enter' && items.length > 0) {
-                              event.preventDefault();
-                              const selected = items[panelIndexRef.current];
-                              if (selected) insertShortcut(selected);
-                              return;
-                            }
-                            if (event.key === 'Escape') {
-                              event.preventDefault();
-                              setShortcutsPanelOpen(false);
-                              setManualShortcutQuery('');
-                            }
-                          }}
-                          placeholder="Search shortcuts"
-                          className="h-8 pl-8 text-sm"
-                        />
+                      <div className="flex items-center gap-2">
+                        <div className="relative min-w-0 flex-1">
+                          <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            ref={shortcutSearchInputRef}
+                            value={manualShortcutQuery}
+                            onChange={(event) => setManualShortcutQuery(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'ArrowDown' && items.length > 0) {
+                                event.preventDefault();
+                                setPanelIndex((idx) => (idx + 1) % items.length);
+                                return;
+                              }
+                              if (event.key === 'ArrowUp' && items.length > 0) {
+                                event.preventDefault();
+                                setPanelIndex((idx) => (idx - 1 + items.length) % items.length);
+                                return;
+                              }
+                              if (event.key === 'Enter' && items.length > 0) {
+                                event.preventDefault();
+                                const selected = items[panelIndexRef.current];
+                                if (selected) insertShortcut(selected);
+                                return;
+                              }
+                              if (event.key === 'Escape') {
+                                event.preventDefault();
+                                closeShortcutsPanel();
+                              }
+                            }}
+                            placeholder="Search shortcuts"
+                            className="h-8 pl-8 text-sm"
+                          />
+                        </div>
+                        {!(isFiltering || manualSearchActive) ? (
+                          <button
+                            type="button"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={closeShortcutsPanel}
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                            aria-label="Close shortcuts"
+                          >
+                            <Cancel01Icon className="h-4 w-4" />
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

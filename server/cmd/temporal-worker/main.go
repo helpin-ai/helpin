@@ -24,6 +24,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
+	"github.com/helpin-ai/helpin/server/internal/gitlab"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
@@ -145,6 +146,7 @@ func main() {
 	userNotifSettingsRepo := repository.NewUserNotificationSettingsRepository(db)
 	followerRepo := repository.NewFollowerRepository(db)
 	gitIntRepo := repository.NewGitIntegrationRepository(db)
+	gitCredentialRepo := repository.NewGitCredentialRepository(db)
 	gitRepo := repository.NewGitRepositoryRepository(db)
 	gitLinkRepo := repository.NewTaskGitLinkRepository(db)
 	deliveryRepo := repository.NewTaskDeliveryTargetRepository(db)
@@ -158,10 +160,12 @@ func main() {
 	docsContentRepo := repository.NewDocsContentRepository(db)
 	docsBlockRepo := repository.NewDocsBlockRepository(db)
 	docsAISectionCandidateRepo := repository.NewDocsAISectionCandidateRepository(db)
+	docsChangeProposalRepo := repository.NewDocsChangeProposalRepository(db)
 	docsContentRepo.SetBlockRepository(docsBlockRepo)
 	docsVersionRepo := repository.NewDocsVersionRepository(db)
 	docsLinkRepo := repository.NewDocsLinkRepository(db)
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db, false)
+	docsAssetReferenceRepo := repository.NewDocsAssetReferenceRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsChunkRepo := repository.NewDocsChunkRepository(db)
 	agentKnowledgeSourceRepo := repository.NewAgentKnowledgeSourceRepository(db)
@@ -399,6 +403,7 @@ func main() {
 	)
 	pmStoryService.SetRecurringService(pmRecurringTemplateService)
 	pmRecurringTemplateService.SetTaskService(pmStoryService)
+	gitlabClient := gitlab.NewClient(cfg.GitLabClientID, cfg.GitLabClientSecret, cfg.GitLabOAuthRedirectURL, cfg.GitLabBaseURL)
 	gitService := service.NewGitService(
 		gitIntRepo,
 		gitRepo,
@@ -414,7 +419,7 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	)
+	).SetGitLabDependencies(gitCredentialRepo, gitlabClient, resolveGitOAuthEncryptionKey(cfg))
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -550,6 +555,7 @@ func main() {
 		docsContentRepo,
 		docsBlockRepo,
 		docsAISectionCandidateRepo,
+		docsChangeProposalRepo,
 		docsVersionRepo,
 		docsLinkRepo,
 		docsSearchRepo,
@@ -563,6 +569,9 @@ func main() {
 		wsPublisher,
 		runtimes,
 		githubAppClient,
+		gitlabClient,
+		gitCredentialRepo,
+		resolveGitOAuthEncryptionKey(cfg),
 		runEngine,
 		agentService,
 	)
@@ -600,13 +609,14 @@ func main() {
 	// Sprint automation activities.
 	sprintAutomationActivities := temporalapp.NewSprintAutomationActivities(pmAutomationService)
 	docsEmbeddingActivities := temporalapp.NewDocsEmbeddingActivities(docsEmbeddingService)
+	docsAssetCleanupActivities := temporalapp.NewDocsAssetCleanupActivities(docsAssetReferenceRepo, s3Client)
 	contentSourceSyncActivities := temporalapp.NewContentSourceSyncActivities(supportContentSyncService)
 	pmImportActivities := service.NewPMImportActivities(pmImportService)
 
 	queueConfigs := selectedQueues()
 	workers := make([]tworker.Worker, 0, len(queueConfigs))
 	for _, queue := range queueConfigs {
-		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, contentSourceSyncActivities, pmImportActivities))
+		workers = append(workers, newTemporalWorker(temporalClient, queue.Name, queue.Concurrency, activities, emailSyncActivities, signalActivities, summaryActivities, coverageActivities, coverageAnalysisActivities, dealMgmtActivities, scheduledRuleActivities, recurringActivities, sprintAutomationActivities, docsEmbeddingActivities, docsAssetCleanupActivities, contentSourceSyncActivities, pmImportActivities))
 	}
 
 	for _, sharedWorker := range workers {
@@ -645,7 +655,7 @@ func parseLogLevel(value string) slog.Level {
 	}
 }
 
-func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities) tworker.Worker {
+func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int, activities *temporalapp.AgentRunActivities, emailActivities *temporalapp.EmailSyncActivities, signalActivities *temporalapp.SignalDetectionActivities, summaryActivities *temporalapp.CRMSummaryActivities, coverageActivities *temporalapp.CoverageGapActivities, coverageAnalysisActivities *temporalapp.CoverageAnalysisActivities, dealMgmtActivities *temporalapp.DealManagementActivities, scheduledRuleActivities *temporalapp.ScheduledRuleActivities, recurringActivities *service.PMRecurringTemplateActivities, sprintActivities *temporalapp.SprintAutomationActivities, docsEmbeddingActivities *temporalapp.DocsEmbeddingActivities, docsAssetCleanupActivities *temporalapp.DocsAssetCleanupActivities, contentSourceSyncActivities *temporalapp.ContentSourceSyncActivities, pmImportActivities *service.PMImportActivities) tworker.Worker {
 	options := tworker.Options{
 		MaxConcurrentActivityExecutionSize: concurrency,
 		WorkerStopTimeout:                  temporalWorkerStopTimeout,
@@ -768,6 +778,13 @@ func newTemporalWorker(client tclient.Client, taskQueue string, concurrency int,
 		})
 	}
 
+	w.RegisterWorkflow(temporalapp.DocsAssetCleanupWorkflow)
+	if docsAssetCleanupActivities != nil {
+		w.RegisterActivityWithOptions(docsAssetCleanupActivities.CleanupAssetActivity, activity.RegisterOptions{
+			Name: "DocsAssetCleanupActivities.CleanupAssetActivity",
+		})
+	}
+
 	// Register content source sync workflow and activities.
 	w.RegisterWorkflow(temporalapp.ContentSourceSyncWorkflow)
 	if contentSourceSyncActivities != nil {
@@ -871,6 +888,23 @@ func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
 	}
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func resolveGitOAuthEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.GitOAuthEncryptionKey)); err != nil {
+		slog.Warn("invalid GIT_OAUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for git oauth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
 		return key
 	}

@@ -70,6 +70,12 @@ func TestCleanMessageSnippet(t *testing.T) {
 			want:  "Hi Meni, thank you so much",
 		},
 		{
+			name:  "markdown hard-break escapes stripped",
+			raw:   "Hi Caleb,\\\n\\\nThank you for reaching out.",
+			limit: 100,
+			want:  "Hi Caleb, Thank you for reaching out.",
+		},
+		{
 			name:  "html tags stripped",
 			raw:   "Hi <b>Ryan</b>, before we move on&hellip; &amp; thanks",
 			limit: 100,

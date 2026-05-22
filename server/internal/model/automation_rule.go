@@ -20,6 +20,12 @@ const (
 	TriggerGitHubPRReviewReq    = "github.pull_request_review_requested"
 	TriggerGitHubReleasePub     = "github.release_published"
 	TriggerGitHubCheckSuite     = "github.check_suite_completed"
+	TriggerGitLabPush           = "gitlab.push"
+	TriggerGitLabMROpened       = "gitlab.merge_request_opened"
+	TriggerGitLabMRMerged       = "gitlab.merge_request_merged"
+	TriggerGitLabMRClosed       = "gitlab.merge_request_closed"
+	TriggerGitLabReleasePub     = "gitlab.release_published"
+	TriggerGitLabPipeline       = "gitlab.pipeline_completed"
 	TriggerCron                 = "cron"
 )
 
@@ -35,22 +41,25 @@ const (
 
 // AutomationRule represents a user-configured trigger → action mapping.
 type AutomationRule struct {
-	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name          string          `json:"name" gorm:"not null"`
-	Description   *string         `json:"description"`
-	Enabled       bool            `json:"enabled" gorm:"not null;default:true"`
-	TeamID        *string         `json:"team_id" gorm:"type:uuid;index"`
-	WorkflowID    *string         `json:"workflow_id" gorm:"type:uuid;index"`
-	TriggerType   string          `json:"trigger_type" gorm:"not null"`
-	TriggerConfig json.RawMessage `json:"trigger_config" gorm:"type:jsonb;not null;default:'{}'"`
-	ActionType    string          `json:"action_type" gorm:"not null"`
-	ActionConfig  json.RawMessage `json:"action_config" gorm:"type:jsonb;not null;default:'{}'"`
-	Position      int             `json:"position" gorm:"not null;default:0"`
-	StopOnMatch   bool            `json:"stop_on_match" gorm:"not null;default:false"`
-	CreatedBy     *string         `json:"created_by" gorm:"type:uuid"`
-	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                 string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID        string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name               string          `json:"name" gorm:"not null"`
+	Description        *string         `json:"description"`
+	Enabled            bool            `json:"enabled" gorm:"not null;default:true"`
+	TeamID             *string         `json:"team_id" gorm:"type:uuid;index"`
+	WorkflowID         *string         `json:"workflow_id" gorm:"type:uuid;index"`
+	TriggerType        string          `json:"trigger_type" gorm:"not null"`
+	TriggerConfig      json.RawMessage `json:"trigger_config" gorm:"type:jsonb;not null;default:'{}'"`
+	ActionType         string          `json:"action_type" gorm:"not null"`
+	ActionConfig       json.RawMessage `json:"action_config" gorm:"type:jsonb;not null;default:'{}'"`
+	TemplateKey        *string         `json:"template_key,omitempty" gorm:"index"`
+	TemplateInstanceID *string         `json:"template_instance_id,omitempty" gorm:"type:uuid;index"`
+	TemplateVersion    *int            `json:"template_version,omitempty"`
+	Position           int             `json:"position" gorm:"not null;default:0"`
+	StopOnMatch        bool            `json:"stop_on_match" gorm:"not null;default:false"`
+	CreatedBy          *string         `json:"created_by" gorm:"type:uuid"`
+	CreatedAt          time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (AutomationRule) TableName() string { return "automation_rules" }

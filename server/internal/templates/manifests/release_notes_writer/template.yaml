@@ -1,0 +1,71 @@
+key: release_notes_writer
+version: 1
+name: Release Notes Writer
+icon: scroll
+short_description: Drafts release notes from a GitHub release and prepares a Docs proposal.
+categories: [engineering, docs]
+agent:
+  create:
+    preset: documentation_agent
+    runtime_kind: native_sdk
+    name_template: "{{template_name}} agent"
+    skills: [release_notes_writer]
+    system_prompt: |
+      You are a release notes writer for the selected repository.
+
+      Configured release flow:
+      - repository_id: {{repository_id}}
+      - destination_collection_id: {{destination_collection_id}}
+      - include_prerelease: {{include_prerelease}}
+
+      Treat these configured values as already resolved and authoritative. Do not ask the user to choose a repository, Docs location, or release scope again.
+      If include_prerelease is false, this flow only runs for normal GitHub releases. If it is true, it also runs for GitHub releases marked as prerelease, such as beta, RC, or preview releases. When writing notes for a prerelease, make that release status clear.
+
+      When a GitHub release event starts the flow, use release and related task context to draft clear customer-facing release notes. Prefer concrete shipped changes over generic marketing language. Separate user-visible changes from internal implementation details. Call out breaking changes, migration steps, important fixes, and known limitations when evidence is available.
+
+      Create or propose release notes in the configured Docs collection. Use a clear title such as `YYYY-MM-DD - Release notes - <release/version>`. Link the generated document to the release or repository context when the available tools support it.
+
+      Raw configuration:
+      {{raw_configuration_json}}
+    allowed_tools:
+      - get_release_context
+      - find_tasks_for_git_changes
+      - list_documents
+      - list_collections
+      - read_document
+      - publish_document_change_proposal
+      - create_document
+    allowed_targets: [repository, document]
+    approval_mode: always
+trigger:
+  type: event
+  event: github.release_published
+inputs:
+  - key: repository_id
+    type: repository
+    required: true
+    label: Repository
+    section: What release should trigger it?
+    help_text: GitHub releases from this repository will trigger the flow.
+  - key: destination_collection_id
+    type: collection
+    required: true
+    label: Docs collection
+    section: Where should the release notes be saved?
+    help_text: Where Quill should create or propose release notes documents.
+  - key: include_prerelease
+    type: bool
+    required: false
+    default: false
+    label: Also run for prereleases
+    section: What release should trigger it?
+    help_text: Off means only normal GitHub releases start this flow. Turn on to also draft notes for releases marked prerelease in GitHub, such as beta, RC, or preview releases.
+flow:
+  action: start_agent_run
+  target:
+    from_input: repository_id
+  parameters:
+    include_prerelease:
+      from_input: include_prerelease
+    destination_collection_id:
+      from_input: destination_collection_id

@@ -5,19 +5,31 @@ import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { CodingPreviewPanels } from '@/components/pm/CodingSession/CodingPreviewPanels';
+import { CodingReviewHistoryPanel } from '@/components/pm/CodingSession/CodingReviewHistoryPanel';
 import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
 import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
 import { resolveAgentPersonaKey, type AgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { collectCodingSessionPreviews } from '@/components/pm/CodingSession/codingSessionPreviews';
-import { buildCodingSessionStreamState } from '@/components/pm/CodingSession/codingSessionStream';
+import {
+  shouldShowFailedCodingSessionRecoveryNotice,
+  shouldShowCodingSessionPlanPanel,
+  shouldShowCodingSessionSidePanel,
+} from '@/components/pm/CodingSession/codingSessionLayout';
+import {
+  buildCodingSessionStreamState,
+  mergeCodingSessionStreamSnapshotSeed,
+} from '@/components/pm/CodingSession/codingSessionStream';
+import { resolveCodingSessionComposerState } from '@/components/pm/CodingSession/codingSessionComposer';
 import { normalizeCodingSessionPreviewPanelKey } from '@/components/pm/CodingSession/previewPanelKeys';
 import {
+  codingSessionApprovalStatesByPreviewKey,
   isPersistedCodingSessionEvent,
   latestPendingCodingSessionInteraction,
   maxPersistedCodingSessionSequence,
   upsertCodingSessionEvents,
 } from '@/components/pm/CodingSession/codingSessionUtils';
+import { useWorkspaceMembers } from '@/hooks/queries';
 import type { Agent, AgentRun, AgentRunArtifact, CodingSession, CodingSessionEvent, CodingSessionStreamSnapshot } from '@/lib/pmTypes';
 import { agentService } from '@/lib/services/agentService';
 import { codingSessionService } from '@/lib/services/codingSessionService';
@@ -27,7 +39,7 @@ import { Button } from '@/components/ui/button';
 
 const STATUS_ICON = {
   queued: <Clock01Icon className="h-3.5 w-3.5" />,
-  running: <UnicodeSpinner name="braille" className="text-sm text-primary" />,
+  running: <UnicodeSpinner name="braille" className="agent-working-chroma text-sm" />,
   paused: <SecurityCheckIcon className="h-3.5 w-3.5" />,
   completed: <CheckmarkCircle02Icon className="h-3.5 w-3.5" />,
   failed: <CancelCircleIcon className="h-3.5 w-3.5" />,
@@ -59,7 +71,6 @@ export function CodingSessionSurface({
   const [handoffRuns, setHandoffRuns] = useState<AgentRun[] | null>(null);
   const [handoffRunsTargetId, setHandoffRunsTargetId] = useState<string | null>(null);
   const sequenceRef = useRef(0);
-  const seededSnapshotSessionRef = useRef<string | null>(null);
   const [streamSnapshotSeed, setStreamSnapshotSeed] = useState<CodingSessionStreamSnapshot | null>(null);
 
   useEffect(() => {
@@ -71,10 +82,7 @@ export function CodingSessionSurface({
     const sessionRes = await codingSessionService.get(workspaceId, activeSessionId);
     if (sessionRes.error) throw new Error(sessionRes.error);
     const nextSession = sessionRes.data as CodingSession;
-    if (seededSnapshotSessionRef.current !== activeSessionId) {
-      seededSnapshotSessionRef.current = activeSessionId;
-      setStreamSnapshotSeed(nextSession.stream_state_snapshot ?? null);
-    }
+    setStreamSnapshotSeed((current) => mergeCodingSessionStreamSnapshotSeed(current, nextSession.stream_state_snapshot ?? null));
     setSession(nextSession);
   }, [workspaceId, activeSessionId]);
 
@@ -116,7 +124,6 @@ export function CodingSessionSurface({
   }, [workspaceId, activeSessionId, loadSession, loadEvents, loadArtifacts]);
 
   useEffect(() => {
-    seededSnapshotSessionRef.current = null;
     setStreamSnapshotSeed(null);
     sequenceRef.current = 0;
     setEvents([]);
@@ -148,6 +155,12 @@ export function CodingSessionSurface({
           : current.parent_run_id,
         status: typeof detail.data?.status === 'string' ? detail.data.status as CodingSession['status'] : current.status,
         pause_reason: typeof detail.data?.pause_reason === 'string' ? detail.data.pause_reason as CodingSession['pause_reason'] : current.pause_reason,
+        execution_stage: typeof detail.data?.execution_stage === 'string'
+          ? detail.data.execution_stage || undefined
+          : current.execution_stage,
+        last_heartbeat_at: typeof detail.data?.last_heartbeat_at === 'string'
+          ? detail.data.last_heartbeat_at || undefined
+          : current.last_heartbeat_at,
         error_message: typeof detail.data?.error_message === 'string'
           ? detail.data.error_message || undefined
           : current.error_message,
@@ -205,10 +218,23 @@ export function CodingSessionSurface({
     () => buildCodingSessionStreamState(events, streamSnapshotSeed),
     [events, streamSnapshotSeed],
   );
+  const { data: workspaceMembers } = useWorkspaceMembers(session?.workspace_id ?? workspaceId);
   const activeInteraction = useMemo(
     () => latestPendingCodingSessionInteraction(events),
     [events],
   );
+  const approvalStatesByPreviewKey = useMemo(
+    () => codingSessionApprovalStatesByPreviewKey(events),
+    [events],
+  );
+  const resolverNamesByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const member of workspaceMembers ?? []) {
+      if (!member.user_id) continue;
+      map.set(member.user_id, member.full_name || member.email || member.user_id);
+    }
+    return map;
+  }, [workspaceMembers]);
   const previewsByKey = useMemo(
     () => collectCodingSessionPreviews(events, streamState.live_turn_segments),
     [events, streamState.live_turn_segments],
@@ -223,13 +249,30 @@ export function CodingSessionSurface({
     if (!previewPanelKey || !previewsByKey.has(previewPanelKey)) return null;
     return previewPanelKey;
   }, [activeInteraction, previewsByKey]);
+  const approvalPreview = approvalPreviewPanelKey ? previewsByKey.get(approvalPreviewPanelKey) ?? null : null;
+  const [openPreviewRequest, setOpenPreviewRequest] = useState<{ panelKey: string | null; requestId: number }>({
+    panelKey: null,
+    requestId: 0,
+  });
   const handleViewPreview = useCallback((panelKey: string) => {
+    setOpenPreviewRequest((current) => ({
+      panelKey,
+      requestId: current.requestId + 1,
+    }));
     if (typeof document === 'undefined') return;
     const target = document.querySelector<HTMLElement>(`[data-preview-panel-key="${panelKey}"]`);
     if (!target) return;
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     target.setAttribute('data-preview-flash', 'true');
     window.setTimeout(() => target.removeAttribute('data-preview-flash'), 1400);
+  }, []);
+  const handleReviewApproval = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    const target = document.querySelector<HTMLElement>('[data-coding-session-interruption-panel]');
+    if (!target) return;
+    target.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    target.setAttribute('data-review-flash', 'true');
+    window.setTimeout(() => target.removeAttribute('data-review-flash'), 1400);
   }, []);
   const promptArtifact = useMemo(() => {
     for (let index = artifacts.length - 1; index >= 0; index -= 1) {
@@ -275,6 +318,9 @@ export function CodingSessionSurface({
     },
     [artifacts],
   );
+  const showPlanPanel = shouldShowCodingSessionPlanPanel(streamState.current_plan);
+  const showSidePanel = shouldShowCodingSessionSidePanel(streamState.current_plan, previewsByKey.size, reviewArtifacts.length);
+  const showRecoveryNotice = shouldShowFailedCodingSessionRecoveryNotice(session?.status, streamState.current_plan, previewsByKey.size);
 
   const runAction = useCallback(async (name: string, fn: () => Promise<{ error: string | null }>) => {
     setActing(name);
@@ -331,16 +377,11 @@ export function CodingSessionSurface({
     }
   }, [workspaceId, activeSessionId, session, continueRun]);
 
-  const canSendMessage = session !== null && (
-    session.status === 'running'
-    || session.status === 'paused'
-    || session.status === 'failed'
-    || session.status === 'cancelled'
+  const messageComposer = useMemo(
+    () => resolveCodingSessionComposerState(session, activeInteraction, loading),
+    [activeInteraction, loading, session],
   );
   const terminalContinuation = session !== null && (session.status === 'failed' || session.status === 'cancelled');
-  const messagePlaceholder = terminalContinuation
-    ? 'This run ended. Type instructions to continue from the previous progress… (⌘↵ to send)'
-    : 'Reply to agent… (⌘↵ to send)';
 
   const canSuggestHandoff = session !== null
     && session.status === 'completed'
@@ -492,36 +533,65 @@ export function CodingSessionSurface({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 gap-4 xl:overflow-hidden xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]">
+      <div className={cn(
+        'grid min-h-0 flex-1 gap-4 xl:overflow-hidden',
+        showSidePanel
+          ? 'xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.9fr)]'
+          : 'xl:grid-cols-1',
+      )}>
         <CodingTranscriptPane
           promptArtifact={promptArtifact}
-          reviewArtifacts={reviewArtifacts}
+          reviewArtifacts={activeInteraction ? reviewArtifacts : []}
           transcriptMessages={streamState.transcript_messages}
           liveAssistantMessage={streamState.live_assistant_message}
           liveReasoningMessage={streamState.live_reasoning_message}
           liveTurnSegments={streamState.live_turn_segments}
           loading={loading}
-          onSendMessage={canSendMessage ? sendMessage : undefined}
+          onSendMessage={messageComposer.enabled ? sendMessage : undefined}
           sendingMessage={sendingMessage}
           session={session}
           activeInteraction={activeInteraction}
           acting={acting}
-          messagePlaceholder={messagePlaceholder}
+          messageComposer={messageComposer}
           availablePreviewPanelKey={approvalPreviewPanelKey}
+          attachedPreview={approvalPreview}
           onViewPreview={handleViewPreview}
           onAuthStart={() => void runAction('auth-start', () => codingSessionService.startDeviceCodeAuth(workspaceId, activeSessionId))}
           onAuthCancel={() => void runAction('auth-cancel', () => codingSessionService.cancelDeviceCodeAuth(workspaceId, activeSessionId))}
           onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
         />
 
-        <div className="min-h-0 space-y-4 overflow-y-auto">
-          <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
-          <CodingPreviewPanels
-            previewsByKey={previewsByKey}
-            acting={acting}
-            onResolveInteraction={(interactionId, responsePayload, followupMessage) => void resolveInteraction(interactionId, responsePayload, followupMessage)}
-          />
-        </div>
+        {showSidePanel ? (
+          <div
+            className="min-h-0 space-y-4 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5rem)]"
+            data-coding-session-side-panel
+          >
+            {showRecoveryNotice ? (
+              <div
+                className="rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200"
+                data-coding-session-recovered-output
+              >
+                <div className="font-medium">Recovered output before failure</div>
+                <p className="mt-0.5 text-amber-800/80 dark:text-amber-200/75">
+                  This plan or draft was captured before the run stopped. Review it as partial work, then continue or retry the run when ready.
+                </p>
+              </div>
+            ) : null}
+            {showPlanPanel ? (
+              <CodingPlanPanel plan={streamState.current_plan} runStatus={session?.status} />
+            ) : null}
+            <CodingPreviewPanels
+              previewsByKey={previewsByKey}
+              attachedApprovalInteraction={activeInteraction}
+              approvalStatesByPreviewKey={approvalStatesByPreviewKey}
+              resolverNamesByUserId={resolverNamesByUserId}
+              onReviewApproval={handleReviewApproval}
+              openPreviewPanelKey={openPreviewRequest.panelKey}
+              openPreviewRequestId={openPreviewRequest.requestId}
+            />
+            <CodingReviewHistoryPanel reviewArtifacts={reviewArtifacts} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

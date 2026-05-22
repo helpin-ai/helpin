@@ -37,6 +37,8 @@ func resolveNativeSelectivePlannerPathEnabled(run *model.AgentRun, agent *model.
 		return strings.TrimSpace(run.TargetType) == "epic"
 	case model.AgentPresetTaskPlanner:
 		return strings.TrimSpace(run.TargetType) == "task"
+	case model.AgentPresetDocumentationAgent:
+		return true
 	default:
 		return false
 	}

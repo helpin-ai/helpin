@@ -403,7 +403,7 @@ func (s *DocsDocumentService) Move(ctx context.Context, id string, req model.Mov
 	return updated, nil
 }
 
-// Delete permanently deletes a document and its owned, unreferenced imported assets.
+// Delete permanently deletes a document and enqueues cleanup for owned imported assets.
 func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 	doc, err := s.docRepo.GetByID(ctx, id)
 	if err != nil {
@@ -415,10 +415,12 @@ func (s *DocsDocumentService) Delete(ctx context.Context, id string) error {
 	if err := checkLocked(doc); err != nil {
 		return err
 	}
-	if err := s.deleteDocumentPermanently(ctx, doc); err != nil {
+	candidateKeys, err := s.deleteDocumentPermanently(ctx, doc)
+	if err != nil {
 		return err
 	}
 	publishWorkspaceEventWithParent(s.wsPublisher, "deleted", "docs_document", id, doc.WorkspaceID, "", "docs_space", doc.SpaceID, nil)
+	s.enqueueAssetCleanupBestEffort(ctx, doc.WorkspaceID, doc.ID, candidateKeys)
 	return nil
 }
 

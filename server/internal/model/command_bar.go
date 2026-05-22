@@ -19,6 +19,19 @@ const (
 	CommandBarPlanStatusCompleted = "completed"
 	CommandBarPlanStatusFailed    = "failed"
 	CommandBarPlanStatusCancelled = "cancelled"
+
+	CommandBarThreadStatusOpen     = "open"
+	CommandBarThreadStatusArchived = "archived"
+
+	CommandBarMessageRoleUser      = "user"
+	CommandBarMessageRoleAssistant = "assistant"
+
+	CommandBarProposalInlineAnswer      = "inline_answer"
+	CommandBarProposalRunPlan           = "run_plan"
+	CommandBarProposalCreateAgent       = "create_agent"
+	CommandBarProposalCreateAgentAndRun = "create_agent_and_run"
+	CommandBarProposalClarification     = "clarification"
+	CommandBarProposalNoMatch           = "no_match"
 )
 
 type CommandBarPageContext struct {
@@ -30,6 +43,12 @@ type CommandBarPageContext struct {
 }
 
 type CommandBarParseRequest struct {
+	Text        string                `json:"text"`
+	PageContext CommandBarPageContext `json:"page_context"`
+}
+
+type CommandBarChatTurnRequest struct {
+	ThreadID    *string               `json:"thread_id,omitempty"`
 	Text        string                `json:"text"`
 	PageContext CommandBarPageContext `json:"page_context"`
 }
@@ -81,6 +100,95 @@ type CommandBarDispatchResponse struct {
 	Steps    []CommandBarPlanStep `json:"steps,omitempty"`
 	RunCount int                  `json:"run_count,omitempty"`
 	Runs     []AgentRun           `json:"runs"`
+}
+
+type CommandBarThread struct {
+	ID          string    `json:"id" gorm:"type:uuid;primaryKey"`
+	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ActorID     *string   `json:"actor_id" gorm:"type:uuid;index"`
+	Title       string    `json:"title" gorm:"not null"`
+	Status      string    `json:"status" gorm:"not null;default:'open';index"`
+	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (CommandBarThread) TableName() string { return "command_bar_threads" }
+
+type CommandBarMessage struct {
+	ID           string          `json:"id" gorm:"type:uuid;primaryKey"`
+	ThreadID     string          `json:"thread_id" gorm:"type:uuid;not null;index"`
+	WorkspaceID  string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	ActorID      *string         `json:"actor_id,omitempty" gorm:"type:uuid;index"`
+	Role         string          `json:"role" gorm:"not null"`
+	Content      string          `json:"content" gorm:"not null"`
+	PageContext  json.RawMessage `json:"page_context,omitempty" gorm:"type:jsonb"`
+	ProposalJSON json.RawMessage `json:"proposal_json,omitempty" gorm:"type:jsonb"`
+	CreatedAt    time.Time       `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (CommandBarMessage) TableName() string { return "command_bar_messages" }
+
+type CommandBarProposal struct {
+	Type            string                   `json:"type"`
+	Answer          string                   `json:"answer,omitempty"`
+	Context         json.RawMessage          `json:"context,omitempty"`
+	Plan            *CommandBarPlan          `json:"plan,omitempty"`
+	Draft           *CustomAgentDraft        `json:"draft,omitempty"`
+	RunTarget       *CommandBarPageContext   `json:"run_target,omitempty"`
+	RunInstructions string                   `json:"run_instructions,omitempty"`
+	Reasons         []CustomAgentDraftReason `json:"reasons,omitempty"`
+	Warnings        []string                 `json:"warnings,omitempty"`
+	Reason          string                   `json:"reason,omitempty"`
+	Suggestions     []string                 `json:"suggestions,omitempty"`
+	Guardrails      []CommandBarGuardrail    `json:"guardrails,omitempty"`
+}
+
+type CommandBarThreadSummary struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	ActorID     *string   `json:"actor_id,omitempty"`
+	Title       string    `json:"title"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type CommandBarMessageSummary struct {
+	ID          string                `json:"id"`
+	ThreadID    string                `json:"thread_id"`
+	Role        string                `json:"role"`
+	Content     string                `json:"content"`
+	PageContext CommandBarPageContext `json:"page_context,omitempty"`
+	Proposal    *CommandBarProposal   `json:"proposal,omitempty"`
+	CreatedAt   time.Time             `json:"created_at"`
+}
+
+type CommandBarChatTurnResponse struct {
+	Thread           CommandBarThreadSummary  `json:"thread"`
+	UserMessage      CommandBarMessageSummary `json:"user_message"`
+	AssistantMessage CommandBarMessageSummary `json:"assistant_message"`
+	Proposal         *CommandBarProposal      `json:"proposal,omitempty"`
+}
+
+type CommandBarThreadDetail struct {
+	Thread   CommandBarThreadSummary    `json:"thread"`
+	Messages []CommandBarMessageSummary `json:"messages"`
+}
+
+type ListCommandBarChatThreadsResponse struct {
+	Threads []CommandBarThreadDetail `json:"threads"`
+}
+
+type ConfirmCommandBarChatProposalRequest struct {
+	Name           *string  `json:"name,omitempty"`
+	Description    *string  `json:"description,omitempty"`
+	AllowedTools   []string `json:"allowed_tools,omitempty"`
+	AllowedTargets []string `json:"allowed_targets,omitempty"`
+}
+
+type ConfirmCommandBarChatCreateAgentResponse struct {
+	Agent Agent     `json:"agent"`
+	Run   *AgentRun `json:"run,omitempty"`
 }
 
 type CommandBarPlanRecord struct {

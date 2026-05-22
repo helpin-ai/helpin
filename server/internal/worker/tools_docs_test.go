@@ -118,24 +118,31 @@ func TestToolGetDocumentBlocksReturnsCompactBlocksByDefault(t *testing.T) {
 		t.Fatalf("toolGetDocumentBlocks returned error: %v", err)
 	}
 
-	var response []struct {
-		ID          string          `json:"id"`
-		Type        string          `json:"type"`
-		Revision    int             `json:"revision"`
-		ContentText string          `json:"content_text"`
-		Content     json.RawMessage `json:"content"`
+	var response struct {
+		DocumentID string `json:"document_id"`
+		Total      int    `json:"total"`
+		Blocks     []struct {
+			ID          string          `json:"id"`
+			Type        string          `json:"type"`
+			Revision    int             `json:"revision"`
+			ContentText string          `json:"content_text"`
+			Content     json.RawMessage `json:"content"`
+		} `json:"blocks"`
 	}
 	if err := json.Unmarshal([]byte(output), &response); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
-	if len(response) != 1 {
+	if response.DocumentID != "doc-1" || response.Total != 1 {
+		t.Fatalf("unexpected response metadata %#v", response)
+	}
+	if len(response.Blocks) != 1 {
 		t.Fatalf("expected one block, got %#v", response)
 	}
-	if response[0].ID != "block-1" || response[0].Type != "paragraph" || response[0].Revision != 3 || response[0].ContentText != "First block" {
-		t.Fatalf("unexpected compact block %#v", response[0])
+	if response.Blocks[0].ID != "block-1" || response.Blocks[0].Type != "paragraph" || response.Blocks[0].Revision != 3 || response.Blocks[0].ContentText != "First block" {
+		t.Fatalf("unexpected compact block %#v", response.Blocks[0])
 	}
-	if len(response[0].Content) != 0 {
-		t.Fatalf("expected compact block to omit full content, got %s", string(response[0].Content))
+	if len(response.Blocks[0].Content) != 0 {
+		t.Fatalf("expected compact block to omit full content, got %s", string(response.Blocks[0].Content))
 	}
 }
 
@@ -265,18 +272,20 @@ func TestToolGetDocumentBlocksCanReturnSelectedFullContent(t *testing.T) {
 		t.Fatalf("toolGetDocumentBlocks returned error: %v", err)
 	}
 
-	var response []struct {
-		ID      string          `json:"id"`
-		Content json.RawMessage `json:"content"`
+	var response struct {
+		Blocks []struct {
+			ID      string          `json:"id"`
+			Content json.RawMessage `json:"content"`
+		} `json:"blocks"`
 	}
 	if err := json.Unmarshal([]byte(output), &response); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
-	if len(response) != 1 || response[0].ID != "block-2" {
+	if len(response.Blocks) != 1 || response.Blocks[0].ID != "block-2" {
 		t.Fatalf("expected selected block-2, got %#v", response)
 	}
-	if !strings.Contains(string(response[0].Content), `"level":2`) || !strings.Contains(string(response[0].Content), `"blockId":"block-2"`) {
-		t.Fatalf("expected full block JSON, got %s", string(response[0].Content))
+	if !strings.Contains(string(response.Blocks[0].Content), `"level":2`) || !strings.Contains(string(response.Blocks[0].Content), `"blockId":"block-2"`) {
+		t.Fatalf("expected full block JSON, got %s", string(response.Blocks[0].Content))
 	}
 }
 
@@ -682,5 +691,67 @@ func TestToolWriteDocumentContentUsesInternalCommandExecutorWhenAvailable(t *tes
 	}
 	if output != `{"document_id":"doc-1","content_id":"content-1"}` {
 		t.Fatalf("unexpected tool output %q", output)
+	}
+}
+
+func TestToolPublishDocumentChangeProposalRequiresDocumentTarget(t *testing.T) {
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+		Services: &ServiceBridge{
+			PublishDocumentChangeProposal: func(ctx context.Context, workspaceID string, req model.CreateDocsChangeProposalRequest) (*model.DocsChangeProposal, error) {
+				t.Fatal("publish should not be called for workspace target")
+				return nil, nil
+			},
+		},
+	}
+
+	_, err := toolPublishDocumentChangeProposal(ctx, json.RawMessage(`{
+		"scope": "document",
+		"document_id": "doc-1",
+		"summary": "Update dependencies",
+		"content": "Updated content"
+	}`))
+	if err == nil || err.Error() != "document change proposals must target a document" {
+		t.Fatalf("expected document target error, got %v", err)
+	}
+}
+
+func TestToolPublishDocumentChangeProposalAllowsMatchingDocumentTarget(t *testing.T) {
+	var captured model.CreateDocsChangeProposalRequest
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		AgentID:     "agent-1",
+		RunID:       "run-1",
+		TargetType:  "document",
+		TargetID:    "doc-1",
+		Services: &ServiceBridge{
+			PublishDocumentChangeProposal: func(ctx context.Context, workspaceID string, req model.CreateDocsChangeProposalRequest) (*model.DocsChangeProposal, error) {
+				if workspaceID != "ws-1" {
+					t.Fatalf("unexpected workspace %q", workspaceID)
+				}
+				captured = req
+				return &model.DocsChangeProposal{ID: "proposal-1"}, nil
+			},
+		},
+	}
+
+	output, err := toolPublishDocumentChangeProposal(ctx, json.RawMessage(`{
+		"scope": "document",
+		"document_id": "doc-1",
+		"summary": "Update dependencies",
+		"content": "Updated content"
+	}`))
+	if err != nil {
+		t.Fatalf("toolPublishDocumentChangeProposal returned error: %v", err)
+	}
+	if captured.DocumentID != "doc-1" || captured.Scope != "document" || captured.Summary != "Update dependencies" {
+		t.Fatalf("unexpected proposal request %#v", captured)
+	}
+	if output != `{"block_id":"","document_id":"doc-1","next_action":"Finish. The proposal is now visible in Docs for a human to apply or discard.","proposal_id":"proposal-1","scope":"document","status":"submitted"}` {
+		t.Fatalf("unexpected output %q", output)
 	}
 }

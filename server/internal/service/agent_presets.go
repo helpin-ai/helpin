@@ -26,6 +26,7 @@ func builtInPresetKeys() []string {
 		model.AgentPresetTaskPlanner,
 		model.AgentPresetCRMOperator,
 		model.AgentPresetSupportAgent,
+		model.AgentPresetDocumentationAgent,
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
 		model.AgentPresetCommandAgent,
@@ -65,6 +66,8 @@ func normalizePresetKey(key string) string {
 		return model.AgentPresetCRMOperator
 	case "support", model.AgentPresetSupportAgent:
 		return model.AgentPresetSupportAgent
+	case "docs", "documentation", model.AgentPresetDocumentationAgent:
+		return model.AgentPresetDocumentationAgent
 	case "engineer", "coder", model.AgentPresetCodeBuilder:
 		return model.AgentPresetCodeBuilder
 	case "reviewer", model.AgentPresetReviewAgent:
@@ -97,6 +100,8 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 		return "crm_operator_default"
 	case model.AgentPresetSupportAgent:
 		return "support_agent_default"
+	case model.AgentPresetDocumentationAgent:
+		return "documentation_agent_default"
 	case model.AgentPresetCodeBuilder:
 		return "code_builder_local_commit_delivery"
 	case model.AgentPresetReviewAgent:
@@ -251,7 +256,7 @@ func allowedRuntimeKindsForPresetKey(presetKey string) []string {
 	case model.AgentPresetReviewAgent:
 		// native_sdk remains available for compatibility with existing agents.
 		return []string{"opencode", "codex", "native_sdk"}
-	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent:
+	case model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, model.AgentPresetSupportAgent, model.AgentPresetDocumentationAgent:
 		return []string{"native_sdk"}
 	default:
 		if preset, ok := agentPresetDefinition(presetKey); ok && strings.TrimSpace(preset.RuntimeKind) != "" {
@@ -270,6 +275,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	engineerProfile := worker.GetRuntimeProfile(model.AgentPresetCodeBuilder)
 	reviewerProfile := worker.GetRuntimeProfile(model.AgentPresetReviewAgent)
 	supportProfile := worker.GetRuntimeProfile(model.AgentPresetSupportAgent)
+	documentationProfile := worker.GetRuntimeProfile(model.AgentPresetDocumentationAgent)
 	codeBuilderProvider := model.AgentModelProviderOpenAI
 	codeBuilderModel := "gpt-5.5"
 	reviewAgentProvider := model.AgentModelProviderOpenAI
@@ -285,6 +291,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 	taskPlannerPrompt := defaultSystemPromptForPreset(model.AgentPresetTaskPlanner)
 	crmOperatorPrompt := defaultSystemPromptForPreset(model.AgentPresetCRMOperator)
 	supportPrompt := defaultSystemPromptForPreset(model.AgentPresetSupportAgent)
+	documentationPrompt := defaultSystemPromptForPreset(model.AgentPresetDocumentationAgent)
 	codeBuilderPrompt := defaultSystemPromptForPreset(model.AgentPresetCodeBuilder)
 	reviewPrompt := defaultSystemPromptForPreset(model.AgentPresetReviewAgent)
 	commandAgentPrompt := "You are Command Agent, a one-shot workspace operator for confirmed command-bar runs. Use only the tools enabled for the current run, stay within the confirmed step instruction, and operate on the provided target context. You may research, summarize, draft, create tasks or docs, update docs, or add task/CRM notes only when the enabled tools support that action. Do not create reusable agents unless the user explicitly promotes the run afterward."
@@ -387,6 +394,26 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			SystemPrompt:          supportPrompt,
 		},
 		{
+			Key:                   model.AgentPresetDocumentationAgent,
+			FamilyKey:             model.AgentPresetDocumentationAgent,
+			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetDocumentationAgent),
+			VersionLabel:          "Default",
+			IsDefaultVersion:      true,
+			Label:                 "Documentation Agent",
+			Description:           "Keeps internal docs, public help docs, and API docs accurate, organized, and current.",
+			DefaultRole:           "Documentation Agent",
+			RuntimeKind:           documentationProfile.RuntimeKind,
+			DefaultTriggerMode:    "manual",
+			AllowedTriggerModes:   []string{"manual"},
+			AllowedTools:          slices.Clone(documentationProfile.AllowedTools),
+			AllowedCommands:       slices.Clone(documentationProfile.AllowedCommands),
+			AllowedTargetTypes:    slices.Clone(documentationProfile.AllowedTargetTypes),
+			ApprovalMode:          "never",
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			SupportedModes:        supportedModesForRuntime(documentationProfile.RuntimeKind),
+			SystemPrompt:          documentationPrompt,
+		},
+		{
 			Key:                   model.AgentPresetCodeBuilder,
 			FamilyKey:             model.AgentPresetCodeBuilder,
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder),
@@ -444,7 +471,7 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
-			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"},
+			AllowedTools:          []string{"web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "update_plan", "list_documents", "list_collections", "read_document", "get_document_blocks", "publish_document_change_proposal", "publish_ai_section_candidate", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task", "add_task_comment", "get_task_context", "list_deals", "list_contacts", "list_buyer_signals", "add_deal_note", "update_deal_stage", "ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"},
 			AllowedCommands:       []string{},
 			AllowedTargetTypes:    []string{"workspace", "document", "task", "epic", "crm_deal", "crm_contact"},
 			ApprovalMode:          "never",

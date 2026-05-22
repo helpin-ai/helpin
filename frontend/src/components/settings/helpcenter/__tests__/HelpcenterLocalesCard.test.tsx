@@ -47,8 +47,8 @@ vi.mock('@/components/ui/checkbox', () => ({
 }))
 
 vi.mock('@/components/ui/select', () => ({
-  Select: ({ value, onValueChange, children }: { value: string; onValueChange: (value: string) => void; children: ReactNode }) => (
-    <div data-select-value={value} data-on-change={onValueChange}>
+  Select: ({ value, children }: { value: string; onValueChange: (value: string) => void; children: ReactNode }) => (
+    <div data-select-value={value}>
       {children}
     </div>
   ),

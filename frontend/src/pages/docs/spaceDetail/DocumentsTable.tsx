@@ -24,6 +24,7 @@ import type { DocsDocument, DocStatus } from '@/lib/docsTypes'
 import type { AssignableMember } from '@/lib/types'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
+import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -315,6 +316,7 @@ export function DocumentsTable({
                 >
                   <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 truncate font-medium">{doc.title}</span>
+                  <PendingProposalBadge count={doc.pending_change_proposal_count ?? 0} />
                 </button>
                 <span className="w-36 shrink-0 truncate text-xs text-muted-foreground">
                   {owner ? (

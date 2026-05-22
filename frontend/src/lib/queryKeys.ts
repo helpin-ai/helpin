@@ -28,6 +28,8 @@ export const queryKeys = {
       filters ? (['automation', wsId, 'activity', filters] as const) : (['automation', wsId, 'activity'] as const),
     flows: (wsId: string) => ['automation', wsId, 'flows'] as const,
     flowsByWorkflow: (wsId: string, workflowId: string) => ['automation', wsId, 'flows', 'workflow', workflowId] as const,
+    flowTemplates: (wsId: string) => ['automation', wsId, 'templates'] as const,
+    flowTemplate: (wsId: string, key: string) => ['automation', wsId, 'templates', key] as const,
     triggerCatalog: (wsId: string) => ['automation', wsId, 'library', 'triggers'] as const,
     toolCatalog: (wsId: string) => ['automation', wsId, 'library', 'tools'] as const,
     skillCatalog: (wsId: string) => ['automation', wsId, 'library', 'skills'] as const,
@@ -131,6 +133,7 @@ export const queryKeys = {
     integrations: (wsId: string) => ['git', wsId, 'integrations'] as const,
     repositories: (wsId: string) => ['git', wsId, 'repositories'] as const,
     taskLinks: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'links'] as const,
+    taskDeliveryTarget: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'delivery-target'] as const,
   },
 
   support: {
@@ -175,6 +178,8 @@ export const queryKeys = {
     document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,
     content: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'content'] as const,
     blocks: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'blocks'] as const,
+    changeProposals: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'changeProposals'] as const,
+    changeProposal: (wsId: string, docId: string, proposalId: string) => ['docs', wsId, 'documents', docId, 'changeProposals', proposalId] as const,
     versions: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'versions'] as const,
     version: (wsId: string, docId: string, versionId: string) => ['docs', wsId, 'documents', docId, 'versions', versionId] as const,
     links: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'links'] as const,

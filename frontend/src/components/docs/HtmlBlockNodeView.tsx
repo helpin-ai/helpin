@@ -1,25 +1,42 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { SourceCodeIcon, ViewIcon, PencilEdit01Icon, Delete01Icon } from '@/lib/icons';
+import { Copy01Icon, Delete01Icon, SourceCodeIcon, Tick01Icon, ViewIcon } from '@/lib/icons';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
 import { sanitizeHtml } from './htmlSanitizer';
+import { buildHtmlBlockSrcDoc, shouldRenderHtmlBlockIsolated } from './htmlBlockRendering';
 
 export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, getPos }: NodeViewProps) {
   const { html, renderMode } = node.attrs;
   const editable = editor.isEditable;
   const hasContent = !!(html && html.trim());
-  const sandboxed = renderMode === 'sandboxed';
+  const isolated = hasContent && shouldRenderHtmlBlockIsolated(html, renderMode);
+  const frameId = useId();
   const [focused, setFocused] = useState(false);
-  const [editing, setEditing] = useState(!hasContent && editable);
+  const [mode, setMode] = useState<'rendered' | 'source'>(hasContent ? 'rendered' : 'source');
   const [draft, setDraft] = useState(html ?? '');
+  const [copied, setCopied] = useState(false);
+  const [frameHeight, setFrameHeight] = useState(720);
   const nodeViewRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Sanitize for preview
-  const sanitized = useMemo(() => hasContent && !sandboxed ? sanitizeHtml(html) : '', [html, hasContent, sandboxed]);
+  const sanitized = useMemo(() => hasContent && !isolated ? sanitizeHtml(html) : '', [html, hasContent, isolated]);
+  const srcDoc = useMemo(() => isolated ? buildHtmlBlockSrcDoc(html, frameId) : '', [frameId, html, isolated]);
 
   // Sync draft when node attrs change externally (undo/redo)
   useEffect(() => { setDraft(html ?? ''); }, [html]);
+
+  useEffect(() => {
+    if (!isolated) return;
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; id?: string; height?: number } | null;
+      if (!data || data.type !== 'helpin:html-block:resize' || data.id !== frameId) return;
+      if (typeof data.height !== 'number' || !Number.isFinite(data.height)) return;
+      setFrameHeight(Math.max(180, Math.min(Math.ceil(data.height), 2400)));
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [frameId, isolated]);
 
   // Track selection inside this node
   useEffect(() => {
@@ -44,20 +61,19 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
     if (!focused) return;
     const handleClick = (e: MouseEvent) => {
       if (nodeViewRef.current && !nodeViewRef.current.contains(e.target as Node)) {
-        if (editing) {
+        if (mode === 'source') {
           updateAttributes({ html: draft });
-          setEditing(false);
         }
         setFocused(false);
       }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [focused, editing, draft, updateAttributes]);
+  }, [focused, mode, draft, updateAttributes]);
 
   // Auto-focus and auto-resize textarea when switching to edit mode
   useEffect(() => {
-    if (editing && textareaRef.current) {
+    if (mode === 'source' && editable && textareaRef.current) {
       setTimeout(() => {
         const ta = textareaRef.current;
         if (ta) {
@@ -67,17 +83,34 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
         }
       }, 50);
     }
-  }, [editing]);
+  }, [editable, mode]);
 
-  const switchToEdit = useCallback(() => {
+  const switchToSource = useCallback(() => {
     setDraft(html ?? '');
-    setEditing(true);
+    setMode('source');
   }, [html]);
 
-  const switchToPreview = useCallback(() => {
+  const switchToRendered = useCallback(() => {
     updateAttributes({ html: draft });
-    setEditing(false);
+    setMode('rendered');
   }, [draft, updateAttributes]);
+
+  const handleCopy = useCallback(() => {
+    const value = mode === 'source' ? draft : html;
+    const write = navigator.clipboard?.writeText?.(value || '');
+    if (!write) return;
+    write.then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [draft, html, mode]);
+
+  const showChrome = editable;
+  const showSource = editable && mode === 'source';
+
+  if (!editable && !hasContent) {
+    return <NodeViewWrapper />;
+  }
 
   return (
     <NodeViewWrapper>
@@ -88,27 +121,54 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
           focused
             ? 'border border-border ring-2 ring-primary'
             : hasContent
-              ? 'border border-transparent hover:border-border'
+              ? editable ? 'border border-border/60 bg-muted/20' : 'border border-transparent'
               : 'border border-dashed border-muted-foreground/30'
         }`}
       >
-        {/* Header bar — when focused or empty */}
-        {(focused || !hasContent) && (
-          <div className="flex items-center justify-between rounded-t-lg bg-muted/50 px-3 py-1.5 text-xs">
+        {showChrome && (
+          <div className="flex items-center justify-between gap-2 rounded-t-lg border-b border-border/50 bg-muted/50 px-3 py-1.5 text-xs">
             <span className="flex items-center gap-1.5 text-muted-foreground font-medium">
               <SourceCodeIcon className="h-3.5 w-3.5" />
               HTML Block
             </span>
             {editable && (
-              <div className="flex items-center gap-0.5">
-                {(hasContent || editing) && (
-                  <QuickTooltip label={editing ? 'Preview' : 'Edit HTML'}>
+              <div className="flex items-center gap-1">
+                <div className="mr-1 flex items-center gap-1 rounded border border-border/60 bg-background/70 p-0.5" contentEditable={false}>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); switchToRendered(); }}
+                    className={`flex h-6 items-center gap-1 rounded px-2 text-xs transition-colors ${
+                      mode === 'rendered'
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    title="Show rendered HTML"
+                  >
+                    <ViewIcon className="h-3 w-3" />
+                    Rendered
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); switchToSource(); }}
+                    className={`flex h-6 items-center gap-1 rounded px-2 text-xs transition-colors ${
+                      mode === 'source'
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                    title="Show HTML source"
+                  >
+                    <SourceCodeIcon className="h-3 w-3" />
+                    Source
+                  </button>
+                </div>
+                {hasContent && (
+                  <QuickTooltip label={copied ? 'Copied' : 'Copy HTML'}>
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); editing ? switchToPreview() : switchToEdit(); }}
+                      onClick={(e) => { e.stopPropagation(); handleCopy(); }}
                       className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground cursor-pointer"
                     >
-                      {editing ? <ViewIcon className="h-3 w-3" /> : <PencilEdit01Icon className="h-3 w-3" />}
+                      {copied ? <Tick01Icon className="h-3 w-3" /> : <Copy01Icon className="h-3 w-3" />}
                     </button>
                   </QuickTooltip>
                 )}
@@ -127,8 +187,8 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
         )}
 
         {/* Inline editor or preview */}
-        <div className={focused || !hasContent ? 'px-3 py-2' : ''}>
-          {editing ? (
+        <div className={showChrome ? 'px-3 py-2' : ''}>
+          {showSource ? (
             <div className="flex rounded-md border bg-background focus-within:ring-2 focus-within:ring-primary/30 overflow-hidden">
               {/* Line numbers */}
               <div
@@ -154,7 +214,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
                     const trimmed = val.replace(/\n+$/, '');
                     updateAttributes({ html: trimmed });
                     setDraft(trimmed);
-                    setEditing(false);
+                    setMode('rendered');
                   }
                 }}
                 onBlur={() => updateAttributes({ html: draft })}
@@ -163,7 +223,7 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
                   // Escape also exits
                   if (e.key === 'Escape') {
                     updateAttributes({ html: draft });
-                    setEditing(false);
+                    setMode('rendered');
                   }
                 }}
                 className="flex-1 min-h-0 py-2 px-3 font-mono text-sm outline-none resize-none leading-[1.625rem] bg-transparent"
@@ -172,15 +232,27 @@ export function HtmlBlockNodeView({ node, updateAttributes, deleteNode, editor, 
               />
             </div>
           ) : hasContent ? (
-            <div
-              className={sandboxed ? 'docs-html-block-raw max-w-none text-sm' : 'prose prose-sm dark:prose-invert max-w-none text-sm'}
-              dangerouslySetInnerHTML={{ __html: sandboxed ? html : sanitized }}
-              onDoubleClick={editable ? switchToEdit : undefined}
-            />
+            isolated ? (
+              <iframe
+                title="Rendered HTML block"
+                className="docs-html-block-frame block w-full rounded-md border border-border bg-white"
+                sandbox="allow-scripts allow-popups allow-forms allow-presentation"
+                referrerPolicy="no-referrer"
+                srcDoc={srcDoc}
+                style={{ height: `${frameHeight}px` }}
+                onDoubleClick={editable ? switchToSource : undefined}
+              />
+            ) : (
+              <div
+                className="prose prose-sm dark:prose-invert max-w-none text-sm"
+                dangerouslySetInnerHTML={{ __html: sanitized }}
+                onDoubleClick={editable ? switchToSource : undefined}
+              />
+            )
           ) : (
             <div
               className="flex items-center justify-center gap-2 py-6 text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors"
-              onClick={editable ? switchToEdit : undefined}
+              onClick={editable ? switchToSource : undefined}
             >
               <SourceCodeIcon className="h-4 w-4" />
               <span className="text-sm">Click to add HTML</span>

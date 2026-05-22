@@ -2551,7 +2551,7 @@ func (s *SupportInboxService) UpdateConversationCRMContact(ctx context.Context, 
 
 // ListContactConversations returns support conversations linked to a CRM contact.
 func (s *SupportInboxService) ListContactConversations(ctx context.Context, workspaceID, contactID string, pagination model.PMPagination) ([]model.SupportConversation, int64, error) {
-	conversations, _, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
+	conversations, total, err := s.conversationRepo.ListByContact(ctx, workspaceID, contactID, pagination)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -2569,7 +2569,7 @@ func (s *SupportInboxService) ListContactConversations(ctx context.Context, work
 			slog.ErrorContext(ctx, "hydrate support contact conversation triage", "error", err, "workspace_id", workspaceID)
 		}
 	}
-	return filtered, int64(len(filtered)), nil
+	return filtered, total, nil
 }
 
 // matchOrCreateCRMContact looks up a CRM contact by email; if not found,

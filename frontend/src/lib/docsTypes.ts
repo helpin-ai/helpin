@@ -5,7 +5,7 @@
 export type DocStatus = 'draft' | 'published' | 'archived';
 export type SpaceType = 'internal' | 'external_capable';
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
-export type VersionType = 'manual' | 'auto' | 'publish' | 'revert';
+export type VersionType = 'manual' | 'auto' | 'publish' | 'revert' | 'proposal_apply';
 export type LinkContext = 'attached' | 'mentioned' | 'created_from' | 'linked_in_content';
 export type LinkedObjectType = 'epic' | 'task' | 'story' | 'project' | 'objective' | 'sprint' | 'support_conversation' | 'deal' | 'contact' | 'company';
 
@@ -89,6 +89,7 @@ export interface DocsDocument {
   has_unpublished_changes?: boolean;
   live_published_at?: string;
   live_slug?: string;
+  pending_change_proposal_count?: number;
 }
 
 export interface DocsContent {
@@ -166,6 +167,39 @@ export interface AISectionCandidateResponse {
   candidate: DocsAISectionCandidate | null;
   agent_run?: import('./pmTypes').AgentRun;
   content?: DocsContent;
+}
+
+export interface DocsChangeProposalSource {
+  type: 'conversation' | 'document' | 'url' | 'agent_run' | 'coverage_gap';
+  id?: string;
+  label: string;
+  url?: string;
+}
+
+export interface DocsChangeProposal {
+  id: string;
+  workspace_id: string;
+  document_id: string;
+  block_id?: string | null;
+  agent_id?: string | null;
+  agent_run_id?: string | null;
+  scope: 'document' | 'block';
+  status: 'pending' | 'applied' | 'discarded' | string;
+  revision?: number;
+  summary: string;
+  content_markdown: string;
+  content: unknown;
+  sources?: DocsChangeProposalSource[];
+  created_by: string;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocsChangeProposalApplyResponse {
+  proposal: DocsChangeProposal;
+  content: DocsContent;
 }
 
 export interface DocsReferenceItem {
@@ -791,4 +825,5 @@ export const VERSION_TYPE_LABELS: Record<VersionType, string> = {
   auto: 'Auto',
   publish: 'Published',
   revert: 'Reverted',
+  proposal_apply: 'Applied',
 };

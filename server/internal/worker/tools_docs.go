@@ -102,23 +102,35 @@ func toolReadDocument(ctx *ExecutionContext, input json.RawMessage) (string, err
 	}
 
 	type docDetail struct {
-		ID          string              `json:"id"`
-		Title       string              `json:"title"`
-		Status      string              `json:"status"`
-		TeamID      *string             `json:"team_id,omitempty"`
-		ContentText string              `json:"content_text,omitempty"`
-		Blocks      []documentBlockView `json:"blocks,omitempty"`
+		ID                   string              `json:"id"`
+		Title                string              `json:"title"`
+		Status               string              `json:"status"`
+		TeamID               *string             `json:"team_id,omitempty"`
+		ContentText          string              `json:"content_text,omitempty"`
+		ContentTextRunes     int                 `json:"content_text_runes,omitempty"`
+		ContentTextTruncated bool                `json:"content_text_truncated,omitempty"`
+		BlocksTotal          int                 `json:"blocks_total,omitempty"`
+		BlocksNextOffset     *int                `json:"blocks_next_offset,omitempty"`
+		Blocks               []documentBlockView `json:"blocks,omitempty"`
 	}
 	detail := docDetail{ID: doc.ID, Title: doc.Title, Status: doc.Status, TeamID: doc.TeamID}
 
 	if ctx.Services.GetDocumentContent != nil {
 		if text, err := ctx.Services.GetDocumentContent(ctx.Context, params.DocumentID); err == nil {
-			detail.ContentText = text
+			detail.ContentText, detail.ContentTextTruncated = truncateDocsToolTextWithFlag(text, maxReadDocumentTextRunes)
+			detail.ContentTextRunes = len([]rune(text))
 		}
 	}
 	if ctx.Services.ListDocumentBlocks != nil {
 		if blocks, err := ctx.Services.ListDocumentBlocks(ctx.Context, params.DocumentID); err == nil {
-			detail.Blocks = compactDocumentBlocks(blocks)
+			detail.BlocksTotal = len(blocks)
+			page := blocks
+			if len(page) > readDocumentBlockPreviewLimit {
+				next := readDocumentBlockPreviewLimit
+				detail.BlocksNextOffset = &next
+				page = page[:readDocumentBlockPreviewLimit]
+			}
+			detail.Blocks = compactDocumentBlocks(page)
 		}
 	}
 
@@ -140,7 +152,24 @@ type documentBlockDetailView struct {
 	Content     json.RawMessage `json:"content,omitempty"`
 }
 
-const maxFullDocumentBlocksToolFetch = 20
+type documentBlocksResponse struct {
+	DocumentID string                    `json:"document_id"`
+	Total      int                       `json:"total"`
+	Offset     int                       `json:"offset"`
+	Limit      int                       `json:"limit"`
+	NextOffset *int                      `json:"next_offset,omitempty"`
+	Blocks     []documentBlockDetailView `json:"blocks"`
+}
+
+const (
+	maxReadDocumentTextRunes       = 2400
+	readDocumentBlockPreviewLimit  = 40
+	defaultDocumentBlocksToolLimit = 40
+	maxDocumentBlocksToolLimit     = 100
+	defaultDocumentBlocksAround    = 5
+	maxDocumentBlocksAround        = 25
+	maxFullDocumentBlocksToolFetch = 20
+)
 
 func compactDocumentBlocks(blocks []model.DocsBlock) []documentBlockView {
 	out := make([]documentBlockView, 0, len(blocks))
@@ -149,18 +178,24 @@ func compactDocumentBlocks(blocks []model.DocsBlock) []documentBlockView {
 			ID:          block.ID,
 			Type:        block.Type,
 			Revision:    block.Revision,
-			ContentText: truncateDocsToolText(block.ContentText, 500),
+			ContentText: truncateDocsToolText(block.ContentText, 140),
 		})
 	}
 	return out
 }
 
 func truncateDocsToolText(value string, max int) string {
+	out, _ := truncateDocsToolTextWithFlag(value, max)
+	return out
+}
+
+func truncateDocsToolTextWithFlag(value string, max int) (string, bool) {
 	value = strings.TrimSpace(value)
-	if max <= 0 || len(value) <= max {
-		return value
+	runes := []rune(value)
+	if max <= 0 || len(runes) <= max {
+		return value, false
 	}
-	return strings.TrimSpace(value[:max]) + "..."
+	return strings.TrimSpace(string(runes[:max])) + "...", true
 }
 
 func toolGetDocumentBlocks(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -168,9 +203,13 @@ func toolGetDocumentBlocks(ctx *ExecutionContext, input json.RawMessage) (string
 		return "", fmt.Errorf("docs block access is not available for this agent")
 	}
 	var params struct {
-		DocumentID     string   `json:"document_id"`
-		BlockIDs       []string `json:"block_ids"`
-		IncludeContent bool     `json:"include_content"`
+		DocumentID    string   `json:"document_id"`
+		BlockIDs      []string `json:"block_ids"`
+		Include       bool     `json:"include_content"`
+		Offset        int      `json:"offset"`
+		Limit         int      `json:"limit"`
+		AnchorBlockID string   `json:"anchor_block_id"`
+		Around        int      `json:"around"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", fmt.Errorf("parse input: %w", err)
@@ -186,6 +225,8 @@ func toolGetDocumentBlocks(ctx *ExecutionContext, input json.RawMessage) (string
 	}
 
 	filtered := blocks
+	offset := 0
+	limit := defaultDocumentBlocksToolLimit
 	if len(params.BlockIDs) > 0 {
 		requested := make(map[string]struct{}, len(params.BlockIDs))
 		for _, id := range params.BlockIDs {
@@ -209,26 +250,91 @@ func toolGetDocumentBlocks(ctx *ExecutionContext, input json.RawMessage) (string
 				return "", fmt.Errorf("block %s not found", id)
 			}
 		}
+		offset = 0
+		limit = len(filtered)
+	} else if strings.TrimSpace(params.AnchorBlockID) != "" {
+		anchorID := strings.TrimSpace(params.AnchorBlockID)
+		anchorIndex := -1
+		for i, block := range blocks {
+			if block.ID == anchorID {
+				anchorIndex = i
+				break
+			}
+		}
+		if anchorIndex < 0 {
+			return "", fmt.Errorf("anchor block %s not found", anchorID)
+		}
+		around := params.Around
+		if around <= 0 {
+			around = defaultDocumentBlocksAround
+		}
+		if around > maxDocumentBlocksAround {
+			around = maxDocumentBlocksAround
+		}
+		start := anchorIndex - around
+		if start < 0 {
+			start = 0
+		}
+		end := anchorIndex + around + 1
+		if end > len(blocks) {
+			end = len(blocks)
+		}
+		filtered = blocks[start:end]
+		offset = start
+		limit = end - start
+	} else {
+		if params.Offset < 0 {
+			return "", fmt.Errorf("offset must be >= 0")
+		}
+		if params.Limit > 0 {
+			limit = params.Limit
+		}
+		if limit > maxDocumentBlocksToolLimit {
+			limit = maxDocumentBlocksToolLimit
+		}
+		offset = params.Offset
+		if offset >= len(blocks) {
+			filtered = nil
+		} else {
+			end := offset + limit
+			if end > len(blocks) {
+				end = len(blocks)
+			}
+			filtered = blocks[offset:end]
+		}
 	}
 
-	if !params.IncludeContent {
-		return toCompactJSONString(compactDocumentBlocks(filtered)), nil
+	nextOffset := (*int)(nil)
+	if offset+len(filtered) < len(blocks) {
+		next := offset + len(filtered)
+		nextOffset = &next
 	}
-	if len(filtered) > maxFullDocumentBlocksToolFetch {
-		return "", fmt.Errorf("include_content is limited to %d blocks; provide block_ids to fetch a smaller set", maxFullDocumentBlocksToolFetch)
+	if params.Include && len(filtered) > maxFullDocumentBlocksToolFetch {
+		return "", fmt.Errorf("include_content is limited to %d blocks; provide block_ids or a smaller limit/window", maxFullDocumentBlocksToolFetch)
 	}
 
 	out := make([]documentBlockDetailView, 0, len(filtered))
 	for _, block := range filtered {
-		out = append(out, documentBlockDetailView{
+		view := documentBlockDetailView{
 			ID:          block.ID,
 			Type:        block.Type,
 			Revision:    block.Revision,
-			ContentText: block.ContentText,
-			Content:     block.Content,
-		})
+			ContentText: truncateDocsToolText(block.ContentText, 140),
+		}
+		if params.Include {
+			view.ContentText = block.ContentText
+			view.Content = block.Content
+		}
+		out = append(out, view)
 	}
-	return toCompactJSONString(out), nil
+	return toCompactJSONString(documentBlocksResponse{
+		DocumentID: params.DocumentID,
+		Total:      len(blocks),
+		Offset:     offset,
+		Limit:      limit,
+		NextOffset: nextOffset,
+		Blocks:     out,
+	}), nil
 }
 
 func toolSearchDocuments(ctx *ExecutionContext, input json.RawMessage) (string, error) {
@@ -557,6 +663,201 @@ func toolPublishAISectionCandidate(ctx *ExecutionContext, input json.RawMessage)
 		"document_id":  candidate.DocumentID,
 		"block_id":     candidate.BlockID,
 	}), nil
+}
+
+type documentChangeProposalPreview struct {
+	Scope           string                           `json:"scope"`
+	DocumentID      string                           `json:"document_id"`
+	BlockID         string                           `json:"block_id,omitempty"`
+	Revision        int                              `json:"revision,omitempty"`
+	Summary         string                           `json:"summary"`
+	ContentMarkdown string                           `json:"content_markdown"`
+	Content         json.RawMessage                  `json:"content,omitempty"`
+	Sources         []model.DocsChangeProposalSource `json:"sources,omitempty"`
+}
+
+func toolPublishDocumentChangeProposal(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("execution context is required")
+	}
+	if ctx.Services == nil || ctx.Services.PublishDocumentChangeProposal == nil {
+		return "", fmt.Errorf("document change proposal storage is not available for this agent")
+	}
+	proposal, err := buildDocumentChangeProposal(input, ctx)
+	if err != nil {
+		return "", err
+	}
+	sources, err := json.Marshal(proposal.Sources)
+	if err != nil {
+		return "", fmt.Errorf("marshal proposal sources: %w", err)
+	}
+	created, err := ctx.Services.PublishDocumentChangeProposal(ctx.Context, ctx.WorkspaceID, model.CreateDocsChangeProposalRequest{
+		Scope:           proposal.Scope,
+		DocumentID:      proposal.DocumentID,
+		BlockID:         nilIfBlankWorker(proposal.BlockID),
+		AgentID:         nilIfBlankWorker(ctx.AgentID),
+		AgentRunID:      nilIfBlankWorker(ctx.RunID),
+		Revision:        proposal.Revision,
+		Summary:         proposal.Summary,
+		ContentMarkdown: proposal.ContentMarkdown,
+		Content:         proposal.Content,
+		Sources:         sources,
+		CreatedBy:       firstNonEmptyStringWorker(ctx.AgentID, ctx.RunID),
+	})
+	if err != nil {
+		return "", err
+	}
+	return toCompactJSONString(map[string]any{
+		"status":      "submitted",
+		"proposal_id": created.ID,
+		"scope":       proposal.Scope,
+		"document_id": proposal.DocumentID,
+		"block_id":    proposal.BlockID,
+		"next_action": "Finish. The proposal is now visible in Docs for a human to apply or discard.",
+	}), nil
+}
+
+func buildDocumentChangeProposal(input json.RawMessage, ctx *ExecutionContext) (documentChangeProposalPreview, error) {
+	var params struct {
+		Scope      string                           `json:"scope"`
+		DocumentID string                           `json:"document_id"`
+		BlockID    string                           `json:"block_id"`
+		Revision   int                              `json:"revision"`
+		Content    string                           `json:"content"`
+		Summary    string                           `json:"summary"`
+		Sources    []model.DocsChangeProposalSource `json:"sources"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return documentChangeProposalPreview{}, fmt.Errorf("parse input: %w", err)
+	}
+	params.Scope = strings.ToLower(strings.TrimSpace(params.Scope))
+	params.DocumentID = strings.TrimSpace(params.DocumentID)
+	params.BlockID = strings.TrimSpace(params.BlockID)
+	params.Content = strings.TrimSpace(params.Content)
+	params.Summary = strings.TrimSpace(params.Summary)
+	switch params.Scope {
+	case "document", "block":
+	default:
+		return documentChangeProposalPreview{}, fmt.Errorf("scope must be document or block")
+	}
+	if params.DocumentID == "" {
+		return documentChangeProposalPreview{}, fmt.Errorf("document_id is required")
+	}
+	if params.Content == "" {
+		return documentChangeProposalPreview{}, fmt.Errorf("content is required")
+	}
+	if params.Summary == "" {
+		return documentChangeProposalPreview{}, fmt.Errorf("summary is required")
+	}
+	if params.Scope == "block" {
+		if params.BlockID == "" {
+			return documentChangeProposalPreview{}, fmt.Errorf("block_id is required for block proposals")
+		}
+		if params.Revision <= 0 {
+			return documentChangeProposalPreview{}, fmt.Errorf("revision is required for block proposals")
+		}
+	}
+	if ctx != nil {
+		if ctx.TargetType != "" && ctx.TargetType != "document" {
+			return documentChangeProposalPreview{}, fmt.Errorf("document change proposals must target a document")
+		}
+		if strings.TrimSpace(ctx.TargetID) != "" && strings.TrimSpace(ctx.TargetID) != params.DocumentID {
+			return documentChangeProposalPreview{}, fmt.Errorf("document_id does not match this run target")
+		}
+	}
+	proposal := documentChangeProposalPreview{
+		Scope:           params.Scope,
+		DocumentID:      params.DocumentID,
+		BlockID:         params.BlockID,
+		Revision:        params.Revision,
+		Summary:         params.Summary,
+		ContentMarkdown: params.Content,
+		Sources:         params.Sources,
+	}
+	switch params.Scope {
+	case "document":
+		proposal.Content = tiptap.MarkdownToJSON(params.Content)
+	case "block":
+		if ctx != nil {
+			block, err := requireDocumentProposalBlock(ctx, params.DocumentID, params.BlockID, params.Revision)
+			if err != nil {
+				return documentChangeProposalPreview{}, err
+			}
+			content, err := documentProposalBlockContentFromMarkdown(block.Content, params.Content)
+			if err != nil {
+				return documentChangeProposalPreview{}, err
+			}
+			proposal.Content = content
+		}
+	}
+	return proposal, nil
+}
+
+func requireDocumentProposalBlock(ctx *ExecutionContext, documentID, blockID string, revision int) (*model.DocsBlock, error) {
+	if ctx.Services == nil || ctx.Services.ListDocumentBlocks == nil {
+		return nil, fmt.Errorf("document block access is not available for this agent")
+	}
+	blocks, err := ctx.Services.ListDocumentBlocks(ctx.Context, documentID)
+	if err != nil {
+		return nil, fmt.Errorf("load document blocks: %w", err)
+	}
+	for i := range blocks {
+		block := &blocks[i]
+		if strings.TrimSpace(block.ID) != blockID {
+			continue
+		}
+		if block.DeletedAt != nil {
+			return nil, fmt.Errorf("block not found")
+		}
+		if block.Revision != revision {
+			return nil, fmt.Errorf("revision is stale; fetch the latest block revision")
+		}
+		return block, nil
+	}
+	return nil, fmt.Errorf("block not found")
+}
+
+func documentProposalBlockContentFromMarkdown(current json.RawMessage, markdown string) (json.RawMessage, error) {
+	var currentNode map[string]any
+	if err := json.Unmarshal(current, &currentNode); err != nil {
+		return nil, fmt.Errorf("parse current block: %w", err)
+	}
+	var generated struct {
+		Content []map[string]any `json:"content"`
+	}
+	if err := json.Unmarshal(tiptap.MarkdownToJSON(markdown), &generated); err != nil {
+		return nil, fmt.Errorf("parse proposal markdown: %w", err)
+	}
+	if len(generated.Content) == 0 {
+		return nil, fmt.Errorf("content must not be empty")
+	}
+	next := generated.Content[0]
+	if currentAttrs, _ := currentNode["attrs"].(map[string]any); currentAttrs != nil {
+		attrs, _ := next["attrs"].(map[string]any)
+		if attrs == nil {
+			attrs = map[string]any{}
+			next["attrs"] = attrs
+		}
+		for _, key := range []string{"blockId", "staleState", "staleReason", "staleSource", "staleGapId", "staleMarkedAt"} {
+			if value, ok := currentAttrs[key]; ok {
+				attrs[key] = value
+			}
+		}
+	}
+	raw, err := json.Marshal(next)
+	if err != nil {
+		return nil, fmt.Errorf("marshal proposal block: %w", err)
+	}
+	return raw, nil
+}
+
+func firstNonEmptyStringWorker(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func normalizeAISectionCandidateSources(raw []map[string]any) []map[string]any {

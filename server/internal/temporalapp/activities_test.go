@@ -198,7 +198,7 @@ func TestLoadRunStateHydratesRepositoryTargetForCheckout(t *testing.T) {
 	seedRepositoryHydrationAgent(t, db)
 	seedRepositoryHydrationIntegration(t, db, &model.GitIntegration{
 		ID:             "integration-1",
-		WorkspaceID:    "ws-1",
+		WorkspaceID:    strPtr("ws-1"),
 		Provider:       "github",
 		DisplayName:    "GitHub",
 		CredentialMode: "pat",
@@ -335,7 +335,7 @@ func TestHydrateRunRepositoryTargetValidatesRepositoryAndIntegration(t *testing.
 
 			integration := tc.integration
 			integration.ID = "integration-1"
-			integration.WorkspaceID = "ws-1"
+			integration.WorkspaceID = strPtr("ws-1")
 			integration.Provider = "github"
 			integration.DisplayName = "GitHub"
 			integration.CredentialMode = "pat"
@@ -465,6 +465,7 @@ func openRepositoryHydrationTestDB(t *testing.T) *gorm.DB {
 			provider TEXT NOT NULL,
 			display_name TEXT NOT NULL,
 			credential_mode TEXT NOT NULL DEFAULT 'github_app',
+			credential_id TEXT,
 			account_login TEXT,
 			base_url TEXT,
 			installation_id TEXT,
@@ -483,6 +484,7 @@ func openRepositoryHydrationTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			integration_id TEXT NOT NULL,
 			provider TEXT NOT NULL,
+			base_url TEXT,
 			external_id TEXT NOT NULL,
 			full_name TEXT NOT NULL,
 			default_branch TEXT NOT NULL DEFAULT 'main',
@@ -3886,6 +3888,7 @@ func TestRecordPushAndEnsureDeliveryPRMarksPRFailedWhenPROpenFails(t *testing.T)
 			repository_id TEXT,
 			run_id TEXT,
 			provider TEXT NOT NULL,
+			base_url TEXT,
 			repo TEXT NOT NULL,
 			branch TEXT,
 			pr_number INTEGER,
@@ -4006,6 +4009,9 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			source_preset_version_key TEXT,
 			source_template_id TEXT,
 			source_template_key TEXT NOT NULL DEFAULT '',
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			role TEXT,
 			status TEXT NOT NULL DEFAULT 'idle',
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
@@ -4105,6 +4111,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,
 			planning_state TEXT NOT NULL DEFAULT 'not_started',
@@ -5619,6 +5626,68 @@ func TestEnsureRunConversationCreatesPromptWhenOnlyStatusMessageExists(t *testin
 	}
 }
 
+func TestCreateRunMessagePublishesStableCodingSessionMessageEvent(t *testing.T) {
+	dbName := fmt.Sprintf("file:run-message-event-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_messages (
+		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		role TEXT NOT NULL,
+		content TEXT NOT NULL,
+		message_type TEXT NOT NULL,
+		content_blocks BLOB,
+		turn_segments BLOB,
+		tool_invocations BLOB,
+		token_usage BLOB,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`).Error; err != nil {
+		t.Fatalf("create message table: %v", err)
+	}
+
+	wsPublisher := &capturedEventPublisher{}
+	runMessageRepo := repository.NewAgentRunMessageRepository(db)
+	activities := &AgentRunActivities{runMessageRepo: runMessageRepo, wsPublisher: wsPublisher}
+	run := &model.AgentRun{ID: "run-1", WorkspaceID: "ws-1", RuntimeKind: "codex"}
+
+	message, err := activities.createRunMessage(context.Background(), run, "assistant", "status", "Preparing workspace and loading run context.", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	var codingEvent *model.CodingSessionEvent
+	for _, event := range wsPublisher.events {
+		if event.Entity != "coding_session_event" {
+			continue
+		}
+		var decoded model.CodingSessionEvent
+		if err := json.Unmarshal(event.Data, &decoded); err != nil {
+			t.Fatalf("unmarshal coding event: %v", err)
+		}
+		codingEvent = &decoded
+		break
+	}
+	if codingEvent == nil {
+		t.Fatalf("expected coding session event, got %#v", wsPublisher.events)
+	}
+	if codingEvent.ID != "msg:"+message.ID {
+		t.Fatalf("coding event id = %q, want msg:%s", codingEvent.ID, message.ID)
+	}
+	if codingEvent.SequenceNo != message.SequenceNo {
+		t.Fatalf("coding event sequence = %d, want %d", codingEvent.SequenceNo, message.SequenceNo)
+	}
+	if got, _ := codingEvent.RuntimeMetadata["source"].(string); got != "agent_run_message" {
+		t.Fatalf("coding event source = %q, want agent_run_message", got)
+	}
+	if got, _ := codingEvent.Payload["message_type"].(string); got != "status" {
+		t.Fatalf("coding event message_type = %q, want status", got)
+	}
+}
+
 func TestEnsureRunConversationCreatesFallbackPromptWhenNoTargetContext(t *testing.T) {
 	dbName := fmt.Sprintf("file:run-conversation-fallback-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
@@ -6011,6 +6080,150 @@ func TestCaptureTranscriptPlanningArtifactsPersistsTaskPlannerPreview(t *testing
 	}
 	if got := metadata["assistant_message_sequence_no"]; got != float64(11) {
 		t.Fatalf("expected preview metadata to link to assistant turn, got %#v", metadata)
+	}
+}
+
+func TestCaptureTranscriptPlanningArtifactsPersistsDocumentTargetPreview(t *testing.T) {
+	dbName := fmt.Sprintf("file:document-preview-linkage-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_artifacts (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		artifact_type TEXT NOT NULL,
+		format TEXT NOT NULL,
+		storage_mode TEXT NOT NULL,
+		inline_content TEXT,
+		object_key TEXT,
+		metadata TEXT NOT NULL,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create artifact table: %v", err)
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{artifactRepo: artifactRepo}
+	run := &model.AgentRun{ID: "run-document-1", WorkspaceID: "ws-1", TargetType: "document", TargetID: "doc-1"}
+	state := &resolvedRunState{run: run}
+	execCtx := &workerpkg.ExecutionContext{
+		LastExecutionResult: &workerpkg.ExecutionResult{
+			ToolInvocations: []model.ToolInvocation{
+				{
+					ToolName: workerpkg.ToolPublishPreview,
+					Input: json.RawMessage(`{
+						"panel_key":"docs_change",
+						"title":"Docs change",
+						"format":"json",
+						"content":{"scope":"document","content_markdown":"# Updated docs"},
+						"replace":true
+					}`),
+				},
+			},
+		},
+	}
+
+	if err := activities.captureTranscriptPlanningArtifacts(context.Background(), state, execCtx, &model.AgentRunMessage{SequenceNo: 7}, planningRunInput{}); err != nil {
+		t.Fatalf("captureTranscriptPlanningArtifacts returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list preview artifacts: %v", err)
+	}
+	if len(artifacts) != 1 || artifacts[0].ArtifactType != workerpkg.RunPreviewArtifactType {
+		t.Fatalf("expected one run preview artifact, got %#v", artifacts)
+	}
+	var preview workerpkg.PublishedPreview
+	if err := json.Unmarshal([]byte(derefString(artifacts[0].InlineContent)), &preview); err != nil {
+		t.Fatalf("unmarshal preview artifact: %v", err)
+	}
+	if preview.PanelKey != "docs_change" {
+		t.Fatalf("unexpected document preview %#v", preview)
+	}
+}
+
+func TestSalvageFailedRuntimeStatePersistsPlanAndPreviewOnce(t *testing.T) {
+	dbName := fmt.Sprintf("file:failed-runtime-salvage-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE agent_run_artifacts (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		run_id TEXT NOT NULL,
+		artifact_type TEXT NOT NULL,
+		format TEXT NOT NULL,
+		storage_mode TEXT NOT NULL,
+		inline_content TEXT,
+		object_key TEXT,
+		metadata TEXT NOT NULL,
+		sequence_no INTEGER NOT NULL,
+		created_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create artifact table: %v", err)
+	}
+
+	artifactRepo := repository.NewAgentRunArtifactRepository(db)
+	activities := &AgentRunActivities{artifactRepo: artifactRepo}
+	run := &model.AgentRun{ID: "run-failed-salvage", WorkspaceID: "ws-1", TargetType: "document", TargetID: "doc-1"}
+	state := &resolvedRunState{run: run}
+	snapshot := &model.CodingSessionStreamSnapshot{
+		CurrentPlan: &model.CodingSessionRunPlan{
+			Plan: []model.CodingSessionRunPlanStep{{
+				Step:   "Draft the docs update",
+				Status: "in_progress",
+			}},
+		},
+		LiveTurnSegments: []model.CodingSessionLiveTurnSegment{{
+			SegmentID: "tool-1",
+			Kind:      "tool_call",
+			ToolCall: &model.CodingSessionLiveToolCall{
+				ToolCallID: "tool-1",
+				ToolName:   workerpkg.ToolPublishPreview,
+				ArgsText: `{
+					"panel_key":"docs_change",
+					"title":"Recovered docs draft",
+					"format":"json",
+					"content":{"scope":"document","content_markdown":"# Recovered"},
+					"replace":true
+				}`,
+				Status: "completed",
+			},
+		}},
+	}
+
+	if err := activities.salvageFailedRuntimeState(context.Background(), state, snapshot); err != nil {
+		t.Fatalf("salvageFailedRuntimeState returned error: %v", err)
+	}
+	if err := activities.salvageFailedRuntimeState(context.Background(), state, snapshot); err != nil {
+		t.Fatalf("second salvageFailedRuntimeState returned error: %v", err)
+	}
+
+	artifacts, err := artifactRepo.ListByRun(context.Background(), run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatalf("list artifacts: %v", err)
+	}
+	if len(artifacts) != 2 {
+		t.Fatalf("expected one plan and one preview artifact after idempotent salvage, got %#v", artifacts)
+	}
+	types := map[string]int{}
+	for _, artifact := range artifacts {
+		types[artifact.ArtifactType]++
+		var metadata map[string]any
+		if err := json.Unmarshal(artifact.Metadata, &metadata); err != nil {
+			t.Fatalf("unmarshal metadata: %v", err)
+		}
+		if metadata["source"] != "failure_salvage" {
+			t.Fatalf("expected failure_salvage metadata, got %#v", metadata)
+		}
+	}
+	if types[model.AgentRunArtifactTypeRunPlan] != 1 || types[workerpkg.RunPreviewArtifactType] != 1 {
+		t.Fatalf("unexpected salvaged artifact types %#v", types)
 	}
 }
 
@@ -6828,6 +7041,7 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,
 			planning_state TEXT NOT NULL DEFAULT 'not_started',
@@ -10723,6 +10937,7 @@ func TestResolvePlanningRunInputClearsDeletedEpicSpecReferences(t *testing.T) {
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,
 			planning_state TEXT NOT NULL DEFAULT 'not_started',

@@ -10,12 +10,13 @@ import (
 )
 
 const (
-	AgentPresetEpicPlanner  = "epic_planner"
-	AgentPresetTaskPlanner  = "task_planner"
-	AgentPresetCRMOperator  = "crm_operator"
-	AgentPresetSupportAgent = "support_agent"
-	AgentPresetCodeBuilder  = "code_builder"
-	AgentPresetReviewAgent  = "review_agent"
+	AgentPresetEpicPlanner        = "epic_planner"
+	AgentPresetTaskPlanner        = "task_planner"
+	AgentPresetCRMOperator        = "crm_operator"
+	AgentPresetSupportAgent       = "support_agent"
+	AgentPresetDocumentationAgent = "documentation_agent"
+	AgentPresetCodeBuilder        = "code_builder"
+	AgentPresetReviewAgent        = "review_agent"
 	// AgentPresetCommandAgent is stored under the legacy "researcher" key so
 	// existing seeded system-agent rows reconcile in place while the product
 	// surface moves to "Command Agent".
@@ -48,6 +49,9 @@ type Agent struct {
 	SourcePresetVersionKey     string          `json:"source_preset_version_key"`
 	SourceTemplateID           *string         `json:"source_template_id" gorm:"type:uuid;index"`
 	SourceTemplateKey          string          `json:"source_template_key"`
+	TemplateKey                *string         `json:"template_key,omitempty" gorm:"index"`
+	TemplateInstanceID         *string         `json:"template_instance_id,omitempty" gorm:"type:uuid;index"`
+	TemplateVersion            *int            `json:"template_version,omitempty"`
 	Role                       string          `json:"role"`
 	Status                     string          `json:"status" gorm:"not null;default:'idle'"`
 	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
@@ -63,6 +67,7 @@ type Agent struct {
 	TokensUsedThisMonth        int             `json:"tokens_used_this_month" gorm:"not null;default:0"`
 	ActiveTaskID               *string         `json:"active_task_id" gorm:"column:active_task_id;type:uuid"`
 	TeamID                     *string         `json:"team_id" gorm:"type:uuid;index"`
+	TeamIDs                    []string        `json:"team_ids" gorm:"-"`
 	AllowedTools               json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedCommands            json.RawMessage `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedTargets             json.RawMessage `json:"allowed_targets" gorm:"type:jsonb;not null;default:'[]'"`
@@ -76,6 +81,14 @@ type Agent struct {
 }
 
 func (Agent) TableName() string { return "agents" }
+
+type AgentTeamAccess struct {
+	AgentID   string    `json:"agent_id" gorm:"type:uuid;primaryKey"`
+	TeamID    string    `json:"team_id" gorm:"type:uuid;primaryKey;index"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (AgentTeamAccess) TableName() string { return "agent_team_access" }
 
 func (a *Agent) EffectivePresetKey() string {
 	if a == nil {
@@ -234,12 +247,49 @@ type CreateAgentRequest struct {
 	PlanningNotes         *string         `json:"planning_notes"`
 	MonthlyTokenBudget    *int            `json:"monthly_token_budget"`
 	TeamID                *string         `json:"team_id"`
+	TeamIDs               []string        `json:"team_ids"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+}
+
+type CustomAgentDraftRequest struct {
+	Description string `json:"description"`
+}
+
+type CustomAgentDraft struct {
+	Name                  string         `json:"name"`
+	Role                  string         `json:"role,omitempty"`
+	SystemPrompt          string         `json:"system_prompt"`
+	AllowedTargets        []string       `json:"allowed_targets"`
+	AllowedTools          []string       `json:"allowed_tools"`
+	Skills                AgentSkillRefs `json:"skills"`
+	ApprovalMode          string         `json:"approval_mode"`
+	RuntimeKind           string         `json:"runtime_kind"`
+	Provider              string         `json:"provider"`
+	Model                 string         `json:"model,omitempty"`
+	DefaultInvocationMode string         `json:"default_invocation_mode"`
+	MaxConcurrentRuns     int            `json:"max_concurrent_runs"`
+}
+
+type CustomAgentDraftReason struct {
+	Field  string `json:"field"`
+	Value  string `json:"value"`
+	Reason string `json:"reason"`
+}
+
+type CustomAgentDraftResponse struct {
+	Draft    CustomAgentDraft         `json:"draft"`
+	Reasons  []CustomAgentDraftReason `json:"reasons"`
+	Warnings []string                 `json:"warnings"`
+}
+
+type CustomAgentDraftLLMResponse struct {
+	Draft   CustomAgentDraft         `json:"draft"`
+	Reasons []CustomAgentDraftReason `json:"reasons"`
 }
 
 // UpdateAgentRequest is the payload for updating an agent.
@@ -260,6 +310,7 @@ type UpdateAgentRequest struct {
 	MonthlyTokenBudget    *int            `json:"monthly_token_budget"`
 	ActiveTaskID          *string         `json:"active_task_id"`
 	TeamID                *string         `json:"team_id"`
+	TeamIDs               *[]string       `json:"team_ids"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`

@@ -40,6 +40,8 @@ var toolCategory = map[string]string{
 	"open_pr":                    "Git",
 	"get_release_context":        "Git",
 	"find_tasks_for_git_changes": "Git",
+	"get_pull_request_diff":      "Git",
+	"get_check_run_logs":         "Git",
 
 	// PM / Tasks
 	"request_approval":                "Interaction",
@@ -72,13 +74,14 @@ var toolCategory = map[string]string{
 	"list_buyer_signals": "CRM",
 
 	// Docs
-	"list_documents":               "Docs",
-	"list_collections":             "Docs",
-	"read_document":                "Docs",
-	"get_document_blocks":          "Docs",
-	"publish_ai_section_candidate": "Docs",
-	"search_documents":             "Docs",
-	"create_document":              "Docs",
+	"list_documents":                   "Docs",
+	"list_collections":                 "Docs",
+	"read_document":                    "Docs",
+	"get_document_blocks":              "Docs",
+	"publish_ai_section_candidate":     "Docs",
+	"publish_document_change_proposal": "Docs",
+	"search_documents":                 "Docs",
+	"create_document":                  "Docs",
 }
 
 var categoryOrder = []string{

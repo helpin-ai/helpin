@@ -2,14 +2,26 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useS
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { CommandBarPageContext } from '@/lib/pmTypes';
 
+export interface PageContextScopeOption {
+  key: string;
+  label: string;
+  description?: string;
+  context: CommandBarPageContext;
+}
+
 interface RegisteredPageContext {
   id: string;
   priority: number;
   context: CommandBarPageContext;
+  scopeOptions?: PageContextScopeOption[];
+  defaultScopeKey?: string;
 }
 
 interface PageContextValue {
   pageContext: CommandBarPageContext | null;
+  scopeOptions: PageContextScopeOption[];
+  activeScopeKey: string | null;
+  setActiveScopeKey: (key: string) => void;
   register: (entry: RegisteredPageContext) => void;
   unregister: (id: string) => void;
 }
@@ -19,6 +31,7 @@ const PageContext = createContext<PageContextValue | null>(null);
 export function PageContextProvider({ children }: { children: React.ReactNode }) {
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const [entries, setEntries] = useState<RegisteredPageContext[]>([]);
+  const [selectedScopeKeys, setSelectedScopeKeys] = useState<Record<string, string>>({});
 
   const fallback = useMemo(
     () => workspace
@@ -31,9 +44,50 @@ export function PageContextProvider({ children }: { children: React.ReactNode })
     [workspace?.id, workspace?.name],
   );
 
+  const activeEntry = useMemo(() => {
+    if (entries.length === 0) return null;
+    return [...entries].sort((a, b) => b.priority - a.priority)[0] ?? null;
+  }, [entries]);
+
+  const activeScopes = useMemo<PageContextScopeOption[]>(() => {
+    if (!activeEntry) return [];
+    const scopes = activeEntry.scopeOptions?.filter((scope) => scope.key.trim() && scope.context) ?? [];
+    if (scopes.length > 0) return scopes;
+    return [{
+      key: 'current',
+      label: activeEntry.context.display_title || activeEntry.context.entity_type,
+      context: activeEntry.context,
+    }];
+  }, [activeEntry]);
+
+  const activeScopeKey = useMemo(() => {
+    if (!activeEntry || activeScopes.length === 0) return null;
+    const selected = selectedScopeKeys[activeEntry.id];
+    if (selected && activeScopes.some((scope) => scope.key === selected)) return selected;
+    if (activeEntry.defaultScopeKey && activeScopes.some((scope) => scope.key === activeEntry.defaultScopeKey)) {
+      return activeEntry.defaultScopeKey;
+    }
+    return activeScopes[0]?.key ?? null;
+  }, [activeEntry, activeScopes, selectedScopeKeys]);
+
   const pageContext = useMemo(() => {
-    if (entries.length === 0) return fallback;
-    return [...entries].sort((a, b) => b.priority - a.priority)[0]?.context ?? fallback;
+    if (!activeEntry) return fallback;
+    return activeScopes.find((scope) => scope.key === activeScopeKey)?.context ?? activeEntry.context ?? fallback;
+  }, [activeEntry, activeScopeKey, activeScopes, fallback]);
+
+  const setActiveScopeKey = useCallback((key: string) => {
+    if (!activeEntry) return;
+    const trimmed = key.trim();
+    if (!trimmed || !activeScopes.some((scope) => scope.key === trimmed)) return;
+    setSelectedScopeKeys((current) => ({ ...current, [activeEntry.id]: trimmed }));
+  }, [activeEntry, activeScopes]);
+
+  useEffect(() => {
+    setSelectedScopeKeys((current) => {
+      const activeIDs = new Set(entries.map((entry) => entry.id));
+      const next = Object.fromEntries(Object.entries(current).filter(([id]) => activeIDs.has(id)));
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
   }, [entries, fallback]);
 
   const register = useCallback((entry: RegisteredPageContext) => {
@@ -51,10 +105,13 @@ export function PageContextProvider({ children }: { children: React.ReactNode })
   const value = useMemo<PageContextValue>(
     () => ({
       pageContext,
+      scopeOptions: activeScopes,
+      activeScopeKey,
+      setActiveScopeKey,
       register,
       unregister,
     }),
-    [pageContext, register, unregister],
+    [activeScopeKey, activeScopes, pageContext, register, setActiveScopeKey, unregister],
   );
 
   return <PageContext.Provider value={value}>{children}</PageContext.Provider>;
@@ -64,22 +121,32 @@ export function usePageContext() {
   return useContext(PageContext)?.pageContext ?? null;
 }
 
-export function useRegisterPageContext(context: CommandBarPageContext | null, priority = 10) {
+export function usePageContextState() {
+  const value = useContext(PageContext);
+  return {
+    pageContext: value?.pageContext ?? null,
+    scopeOptions: value?.scopeOptions ?? [],
+    activeScopeKey: value?.activeScopeKey ?? null,
+    setActiveScopeKey: value?.setActiveScopeKey ?? (() => {}),
+  };
+}
+
+export function useRegisterPageContext(context: CommandBarPageContext | null, priority = 10, options?: { scopeOptions?: PageContextScopeOption[]; defaultScopeKey?: string }) {
   const id = useId();
   const value = useContext(PageContext);
   const register = value?.register;
   const unregister = value?.unregister;
-  const contextKey = context ? stablePageContextKey(context) : '';
+  const contextKey = context ? stableJSONStringify({
+    context,
+    scopeOptions: options?.scopeOptions,
+    defaultScopeKey: options?.defaultScopeKey,
+  }) : '';
 
   useEffect(() => {
     if (!register || !unregister || !context) return;
-    register({ id, priority, context });
+    register({ id, priority, context, scopeOptions: options?.scopeOptions, defaultScopeKey: options?.defaultScopeKey });
     return () => unregister(id);
   }, [contextKey, id, priority, register, unregister]);
-}
-
-function stablePageContextKey(context: CommandBarPageContext): string {
-  return stableJSONStringify(context);
 }
 
 function stableJSONStringify(value: unknown): string {

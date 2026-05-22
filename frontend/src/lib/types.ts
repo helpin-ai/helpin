@@ -9,6 +9,7 @@ export interface User {
   avatar_background_color?: string;
   default_workspace_id?: string;
   two_fa_enabled?: boolean;
+  mfa_satisfied_in_token?: boolean;
   created_at: string;
   updated_at: string;
 }

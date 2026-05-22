@@ -11,7 +11,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className="toaster group"
+      closeButton
+      duration={6000}
+      className="toaster group pointer-events-auto"
       icons={{
         success: (
           <HugeiconsIcon icon={CheckmarkCircle02Icon} strokeWidth={2} className="size-4" />
@@ -39,7 +41,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: "cn-toast group/toast !pointer-events-auto !items-start !gap-3 !border-border/80 !border-l-[3px] !bg-popover/95 !px-4 !py-3 !shadow-lg backdrop-blur data-[styled=false]:!border-0 data-[styled=false]:!bg-transparent data-[styled=false]:!p-0 data-[styled=false]:!shadow-none data-[styled=false]:!backdrop-blur-none data-[type=success]:!border-l-emerald-500 data-[type=info]:!border-l-sky-500 data-[type=warning]:!border-l-amber-500 data-[type=error]:!border-l-red-500",
+          icon: "mt-0.5 !h-5 !w-5 rounded-full p-0.5 group-data-[type=success]/toast:bg-emerald-50 group-data-[type=success]/toast:text-emerald-600 group-data-[type=info]/toast:bg-sky-50 group-data-[type=info]/toast:text-sky-600 group-data-[type=warning]/toast:bg-amber-50 group-data-[type=warning]/toast:text-amber-600 group-data-[type=error]/toast:bg-red-50 group-data-[type=error]/toast:text-red-600 dark:group-data-[type=success]/toast:bg-emerald-950/60 dark:group-data-[type=success]/toast:text-emerald-300 dark:group-data-[type=info]/toast:bg-sky-950/60 dark:group-data-[type=info]/toast:text-sky-300 dark:group-data-[type=warning]/toast:bg-amber-950/60 dark:group-data-[type=warning]/toast:text-amber-300 dark:group-data-[type=error]/toast:bg-red-950/60 dark:group-data-[type=error]/toast:text-red-300",
+          content: "min-w-0 gap-1",
+          title: "text-sm font-medium leading-5 text-popover-foreground",
+          description: "text-xs leading-5 text-muted-foreground",
+          closeButton: "opacity-0 transition-opacity group-hover/toast:opacity-100 group-focus-within/toast:opacity-100",
         },
       }}
       {...props}
