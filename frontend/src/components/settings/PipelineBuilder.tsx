@@ -1,32 +1,56 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import { BASE_BRANCH_TOKEN, describeMergeInto } from '@/lib/branchLabels';
 import { automationRuleService } from '@/lib/services/automationRuleService';
+import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { StateTypeIcon } from '@/lib/pmConstants';
-import type { Agent, AutomationRule, WorkflowState } from '@/lib/pmTypes';
+import type { Agent, AutomationRule, StateType, WorkflowState, WorkflowWithStates } from '@/lib/pmTypes';
+import { ColorPicker, PRESET_COLORS } from '@/components/pm/ColorPicker';
+import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { BotIcon, GitBranchIcon, Cancel01Icon, CheckmarkCircle02Icon, Loading01Icon, ZapIcon } from '@/lib/icons';
+import { BotIcon, GitBranchIcon, Cancel01Icon, CheckmarkCircle02Icon, Loading01Icon, ZapIcon, PlusSignIcon, Delete01Icon, PencilEdit01Icon, Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
-export function PipelineBuilder({
-  workspaceId,
-  workflowId,
-  states,
-  agents,
-  rules,
-  editable,
-  onChanged,
-}: {
+const STATE_TYPE_ORDER: StateType[] = ['backlog', 'unstarted', 'started', 'done'];
+const STATE_TYPE_LABEL: Record<StateType, string> = {
+  backlog: 'Backlog',
+  unstarted: 'Not started',
+  started: 'Started',
+  done: 'Done',
+};
+
+type PipelineBuilderProps = {
   workspaceId: string;
-  workflowId: string;
-  states: WorkflowState[];
+  workflowId?: string;
+  states?: WorkflowState[];
+  workflow?: WorkflowWithStates;
   agents: Agent[];
   rules: AutomationRule[];
   editable: boolean;
   onChanged: () => void;
-}) {
+  onWorkflowUpdate?: (updated: WorkflowWithStates) => void;
+};
+
+export function PipelineBuilder(props: PipelineBuilderProps) {
+  const { workspaceId, agents, rules, editable, onChanged, workflow, onWorkflowUpdate } = props;
+  const workflowId = workflow?.workflow.id ?? props.workflowId;
+  const states = useMemo(
+    () => (workflow?.states ?? props.states ?? []).slice().sort((a, b) => a.position - b.position),
+    [props.states, workflow?.states],
+  );
   const [saving, setSaving] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [addingAfterId, setAddingAfterId] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
+  const [newStateType, setNewStateType] = useState<StateType>('unstarted');
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const canManageStates = !!workflow && !!onWorkflowUpdate && !!workflowId;
 
   const stateRuleMap = useMemo(() => {
     const map = new Map<string, { runRule?: AutomationRule; advanceRule?: AutomationRule; mergeRule?: AutomationRule }>();
@@ -57,20 +81,31 @@ export function PipelineBuilder({
   }, [stateRuleMap]);
 
   const handleAgentChange = async (stateId: string, stateName: string, agentId: string) => {
+    if (!workflowId) return;
     setSaving(stateId);
     const entry = stateRuleMap.get(stateId);
     const existing = entry?.runRule;
 
     try {
       if (!agentId) {
-        if (existing) await automationRuleService.remove(workspaceId, existing.id);
+        if (existing) {
+          const { error } = await automationRuleService.remove(workspaceId, existing.id);
+          if (error) {
+            toast.error(error);
+            return;
+          }
+        }
       } else if (existing) {
-        await automationRuleService.update(workspaceId, existing.id, {
+        const { error } = await automationRuleService.update(workspaceId, existing.id, {
           action_type: 'start_agent_run',
           action_config: { agent_id: agentId },
         });
+        if (error) {
+          toast.error(error);
+          return;
+        }
       } else {
-        await automationRuleService.create(workspaceId, {
+        const { error } = await automationRuleService.create(workspaceId, {
           workspace_id: workspaceId,
           name: `Run agent on ${stateName}`,
           workflow_id: workflowId,
@@ -79,6 +114,10 @@ export function PipelineBuilder({
           action_type: 'start_agent_run',
           action_config: { agent_id: agentId },
         });
+        if (error) {
+          toast.error(error);
+          return;
+        }
       }
       onChanged();
     } finally {
@@ -87,6 +126,7 @@ export function PipelineBuilder({
   };
 
   const handleAutoAdvanceToggle = async (stateId: string, stateName: string, enabled: boolean) => {
+    if (!workflowId) return;
     setSaving(stateId);
     const existing = stateRuleMap.get(stateId)?.advanceRule;
     const stateIdx = states.findIndex((s) => s.id === stateId);
@@ -94,9 +134,13 @@ export function PipelineBuilder({
 
     try {
       if (!enabled && existing) {
-        await automationRuleService.remove(workspaceId, existing.id);
+        const { error } = await automationRuleService.remove(workspaceId, existing.id);
+        if (error) {
+          toast.error(error);
+          return;
+        }
       } else if (enabled && !existing && nextState) {
-        await automationRuleService.create(workspaceId, {
+        const { error } = await automationRuleService.create(workspaceId, {
           workspace_id: workspaceId,
           name: `Auto-advance from ${stateName}`,
           workflow_id: workflowId,
@@ -105,6 +149,10 @@ export function PipelineBuilder({
           action_type: 'move_to_state',
           action_config: { target_state_id: nextState.id },
         });
+        if (error) {
+          toast.error(error);
+          return;
+        }
       }
       onChanged();
     } finally {
@@ -113,16 +161,25 @@ export function PipelineBuilder({
   };
 
   const handleMergeBranchToggle = async (stateId: string, stateName: string, branch: string) => {
+    if (!workflowId) return;
     setSaving(stateId);
     const existing = stateRuleMap.get(stateId)?.mergeRule;
 
     try {
       if (!branch && existing) {
-        await automationRuleService.remove(workspaceId, existing.id);
+        const { error } = await automationRuleService.remove(workspaceId, existing.id);
+        if (error) {
+          toast.error(error);
+          return;
+        }
       } else if (branch && existing) {
-        await automationRuleService.update(workspaceId, existing.id, { action_config: { target_branch: branch } });
+        const { error } = await automationRuleService.update(workspaceId, existing.id, { action_config: { target_branch: branch } });
+        if (error) {
+          toast.error(error);
+          return;
+        }
       } else if (branch) {
-        await automationRuleService.create(workspaceId, {
+        const { error } = await automationRuleService.create(workspaceId, {
           workspace_id: workspaceId,
           name: `Merge task branch on ${stateName}`,
           workflow_id: workflowId,
@@ -131,6 +188,10 @@ export function PipelineBuilder({
           action_type: 'merge_branch',
           action_config: { target_branch: branch },
         });
+        if (error) {
+          toast.error(error);
+          return;
+        }
       }
       onChanged();
     } finally {
@@ -138,7 +199,372 @@ export function PipelineBuilder({
     }
   };
 
+  const updateWorkflowState = (stateId: string, updates: Partial<WorkflowState>) => {
+    if (!workflow || !onWorkflowUpdate) return;
+    onWorkflowUpdate({
+      ...workflow,
+      states: workflow.states.map((state) => state.id === stateId ? { ...state, ...updates } : state),
+    });
+  };
+
+  const handleRename = async (state: WorkflowState) => {
+    if (!workflowId) return;
+    const trimmed = editName.trim();
+    if (!trimmed || trimmed === state.name) {
+      setEditingId(null);
+      return;
+    }
+    setSaving(state.id);
+    const { error } = await pmWorkflowService.updateState(workspaceId, workflowId, state.id, { name: trimmed });
+    setSaving(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    updateWorkflowState(state.id, { name: trimmed });
+    setEditingId(null);
+  };
+
+  const handleStateTypeChange = async (state: WorkflowState, stateType: StateType) => {
+    if (!workflowId || stateType === state.state_type) return;
+    setSaving(state.id);
+    const { error } = await pmWorkflowService.updateState(workspaceId, workflowId, state.id, { state_type: stateType });
+    setSaving(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    updateWorkflowState(state.id, { state_type: stateType });
+  };
+
+  const handleColorChange = async (state: WorkflowState, color: string) => {
+    if (!workflowId) return;
+    setSaving(state.id);
+    const { error } = await pmWorkflowService.updateState(workspaceId, workflowId, state.id, { color });
+    setSaving(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    updateWorkflowState(state.id, { color });
+  };
+
+  const openAddState = (afterState?: WorkflowState) => {
+    setAddingAfterId(afterState?.id ?? '__end__');
+    setNewName('');
+    setNewStateType(afterState?.state_type ?? states[states.length - 1]?.state_type ?? 'unstarted');
+    setNewColor(PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)]);
+  };
+
+  const handleAddState = async () => {
+    if (!workflow || !onWorkflowUpdate || !workflowId) return;
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    const afterIndex = states.findIndex((state) => state.id === addingAfterId);
+    const afterState = afterIndex >= 0 ? states[afterIndex] : states[states.length - 1];
+    const position = afterState ? afterState.position + 1 : states.length;
+
+    setSaving('new-state');
+    const { data, error } = await pmWorkflowService.createState(workspaceId, workflowId, {
+      name: trimmed,
+      state_type: newStateType,
+      position,
+      color: newColor,
+    });
+    setSaving(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    if (data && typeof data === 'object' && 'id' in data && 'workflow_id' in data) {
+      onWorkflowUpdate({ ...workflow, states: [...workflow.states, data as WorkflowState] });
+    }
+    setAddingAfterId(null);
+    setNewName('');
+  };
+
+  const handleDeleteState = async (stateId: string) => {
+    if (!workflow || !onWorkflowUpdate || !workflowId) return;
+    setSaving(stateId);
+    const { error } = await pmWorkflowService.removeState(workspaceId, workflowId, stateId);
+    setSaving(null);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    onWorkflowUpdate({ ...workflow, states: workflow.states.filter((state) => state.id !== stateId) });
+    setDeleteConfirm(null);
+  };
+
   if (states.length === 0) return null;
+
+  if (canManageStates) {
+    return (
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold">Workflow</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Manage states, types, and the automation that runs when tasks enter each state.
+            </p>
+          </div>
+          <div className="rounded-full border border-border bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground">
+            {configuredCount}/{states.length} automated
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <div className="hidden border-b border-border bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid lg:grid-cols-[minmax(170px,1.25fr)_122px_minmax(150px,1fr)_150px_minmax(150px,1fr)_64px] lg:gap-3">
+            <div>State</div>
+            <div>Type</div>
+            <div>Agent</div>
+            <div>After approval</div>
+            <div>Merge</div>
+            <div className="text-right">Actions</div>
+          </div>
+
+          <div className="divide-y divide-border">
+            {states.map((state, idx) => {
+              const entry = stateRuleMap.get(state.id);
+              const runRule = entry?.runRule;
+              const selectedAgentId = (runRule?.action_config?.agent_id as string) ?? '';
+              const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
+              const hasAdvance = !!entry?.advanceRule;
+              const mergeBranch = (entry?.mergeRule?.action_config?.target_branch as string) ?? '';
+              const isLast = idx === states.length - 1;
+              const isSaving = saving === state.id;
+              const nextState = states[idx + 1];
+
+              return (
+                <div key={state.id}>
+                  <div
+                    className={cn(
+                      'grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(170px,1.25fr)_122px_minmax(150px,1fr)_150px_minmax(150px,1fr)_64px] lg:items-center',
+                      isSaving && 'opacity-70',
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">State</div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/60 transition-transform hover:scale-110 disabled:pointer-events-none"
+                              style={{ backgroundColor: state.color ?? '#9ca3af' }}
+                              disabled={!editable}
+                              aria-label="Change state color"
+                            />
+                          </PopoverTrigger>
+                          {editable && (
+                            <PopoverContent className="w-auto p-2" align="start">
+                              <ColorPicker value={state.color ?? '#9ca3af'} onChange={(color) => void handleColorChange(state, color)} />
+                            </PopoverContent>
+                          )}
+                        </Popover>
+                        {editingId === state.id ? (
+                          <Input
+                            autoFocus
+                            value={editName}
+                            onChange={(event) => setEditName(event.target.value)}
+                            onBlur={() => void handleRename(state)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') void handleRename(state);
+                              if (event.key === 'Escape') setEditingId(null);
+                            }}
+                            className="h-8 min-w-0 text-sm"
+                            disabled={isSaving}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="min-w-0 truncate text-left text-sm font-medium disabled:pointer-events-none"
+                            disabled={!editable}
+                            onClick={() => {
+                              setEditingId(state.id);
+                              setEditName(state.name);
+                            }}
+                          >
+                            {state.name}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Type</div>
+                      <Select
+                        value={state.state_type}
+                        onValueChange={(value) => void handleStateTypeChange(state, value as StateType)}
+                        disabled={!editable || isSaving}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {STATE_TYPE_ORDER.map((type) => (
+                            <SelectItem key={type} value={type}>
+                              <span className="flex items-center gap-2">
+                                <StateTypeIcon stateType={type} className="h-3.5 w-3.5" />
+                                {STATE_TYPE_LABEL[type]}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Agent</div>
+                      {editable ? (
+                        <Select
+                          value={selectedAgentId || '__none__'}
+                          onValueChange={(v) => void handleAgentChange(state.id, state.name, v === '__none__' ? '' : v)}
+                          disabled={isSaving}
+                        >
+                          <SelectTrigger className="h-8 w-full text-xs">
+                            <SelectValue placeholder="No agent" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">
+                              <span className="text-muted-foreground">No agent</span>
+                            </SelectItem>
+                            {agents.map((agent) => (
+                              <SelectItem key={agent.id} value={agent.id}>
+                                {agent.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <p className="truncate text-xs text-muted-foreground">{selectedAgent?.name ?? 'No agent'}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">After approval</div>
+                      <div className="flex h-8 items-center justify-between gap-2 rounded-md border border-border bg-background px-2">
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                          {isLast ? 'No next state' : nextState ? `Move to ${nextState.name}` : 'Move forward'}
+                        </span>
+                        <Switch
+                          checked={hasAdvance}
+                          onCheckedChange={(v) => void handleAutoAdvanceToggle(state.id, state.name, v)}
+                          disabled={!editable || !selectedAgentId || isLast || isSaving}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Merge</div>
+                      <MergeBranchInput
+                        value={mergeBranch}
+                        editable={editable && !isSaving}
+                        onChange={(v) => void handleMergeBranchToggle(state.id, state.name, v)}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1">
+                      {isSaving ? <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+                      {editable && (
+                        <>
+                          <button
+                            type="button"
+                            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                            onClick={() => {
+                              setEditingId(state.id);
+                              setEditName(state.name);
+                            }}
+                            aria-label="Rename state"
+                          >
+                            <PencilEdit01Icon className="h-3.5 w-3.5" />
+                          </button>
+                          {states.length > 1 && (
+                            <button
+                              type="button"
+                              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
+                              onClick={() => setDeleteConfirm(state.id)}
+                              aria-label="Delete state"
+                            >
+                              <Delete01Icon className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {editable && idx < states.length - 1 && addingAfterId !== state.id && (
+                    <button
+                      type="button"
+                      className="group flex h-7 w-full items-center justify-center gap-1 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                      onClick={() => openAddState(state)}
+                    >
+                      <PlusSignIcon className="h-3 w-3 opacity-60 group-hover:opacity-100" />
+                      Add state here
+                    </button>
+                  )}
+
+                  {editable && addingAfterId === state.id && (
+                    <AddStateRow
+                      name={newName}
+                      color={newColor}
+                      stateType={newStateType}
+                      saving={saving === 'new-state'}
+                      onNameChange={setNewName}
+                      onColorChange={setNewColor}
+                      onStateTypeChange={setNewStateType}
+                      onCancel={() => setAddingAfterId(null)}
+                      onSave={() => void handleAddState()}
+                    />
+                  )}
+                </div>
+              );
+            })}
+
+            {editable && addingAfterId === '__end__' && (
+              <AddStateRow
+                name={newName}
+                color={newColor}
+                stateType={newStateType}
+                saving={saving === 'new-state'}
+                onNameChange={setNewName}
+                onColorChange={setNewColor}
+                onStateTypeChange={setNewStateType}
+                onCancel={() => setAddingAfterId(null)}
+                onSave={() => void handleAddState()}
+              />
+            )}
+          </div>
+        </div>
+
+        {editable && addingAfterId === null && (
+          <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => openAddState()}>
+            <PlusSignIcon className="h-3.5 w-3.5" />
+            Add state
+          </Button>
+        )}
+
+        {!editable && (
+          <p className="text-xs text-muted-foreground">You don't have permission to edit this workflow.</p>
+        )}
+
+        <ConfirmDialog
+          open={deleteConfirm !== null}
+          onOpenChange={(open) => {
+            if (!open) setDeleteConfirm(null);
+          }}
+          title="Delete state"
+          description="Tasks in this state will need to be moved to another state. This cannot be undone."
+          confirmLabel="Delete"
+          variant="destructive"
+          onConfirm={() => {
+            if (deleteConfirm) void handleDeleteState(deleteConfirm);
+          }}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-3">
@@ -269,6 +695,101 @@ export function PipelineBuilder({
         })}
       </div>
     </section>
+  );
+}
+
+function AddStateRow({
+  name,
+  color,
+  stateType,
+  saving,
+  onNameChange,
+  onColorChange,
+  onStateTypeChange,
+  onCancel,
+  onSave,
+}: {
+  name: string;
+  color: string;
+  stateType: StateType;
+  saving: boolean;
+  onNameChange: (value: string) => void;
+  onColorChange: (value: string) => void;
+  onStateTypeChange: (value: StateType) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <div className="grid gap-3 border-t border-border bg-muted/20 px-3 py-3 lg:grid-cols-[minmax(170px,1.25fr)_122px_minmax(150px,1fr)_150px_minmax(150px,1fr)_64px] lg:items-center">
+      <div className="flex min-w-0 items-center gap-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="h-3.5 w-3.5 shrink-0 rounded-full border border-border/60 transition-transform hover:scale-110"
+              style={{ backgroundColor: color }}
+              aria-label="Choose state color"
+            />
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-2" align="start">
+            <ColorPicker value={color} onChange={onColorChange} />
+          </PopoverContent>
+        </Popover>
+        <Input
+          autoFocus
+          value={name}
+          onChange={(event) => onNameChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onSave();
+            if (event.key === 'Escape') onCancel();
+          }}
+          placeholder="State name"
+          className="h-8 min-w-0 text-sm"
+          disabled={saving}
+        />
+      </div>
+
+      <Select value={stateType} onValueChange={(value) => onStateTypeChange(value as StateType)} disabled={saving}>
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {STATE_TYPE_ORDER.map((type) => (
+            <SelectItem key={type} value={type}>
+              <span className="flex items-center gap-2">
+                <StateTypeIcon stateType={type} className="h-3.5 w-3.5" />
+                {STATE_TYPE_LABEL[type]}
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <div className="hidden text-xs text-muted-foreground lg:block">Configure agent after save</div>
+      <div className="hidden text-xs text-muted-foreground lg:block">-</div>
+      <div className="hidden text-xs text-muted-foreground lg:block">-</div>
+      <div className="flex items-center justify-end gap-1">
+        {saving ? <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-primary hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+          onClick={onSave}
+          disabled={saving || !name.trim()}
+          aria-label="Save state"
+        >
+          <Tick01Icon className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={onCancel}
+          disabled={saving}
+          aria-label="Cancel"
+        >
+          <Cancel01Icon className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
   );
 }
 

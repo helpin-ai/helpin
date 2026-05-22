@@ -42,7 +42,6 @@ import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import type { PMAutomation } from '@/lib/pmTypes';
 import { FIELD_VISIBILITY_FIELDS, FieldVisibilityForm } from './teams/FieldVisibilityForm';
 import { TeamRepoDefaultForm } from './teams/TeamRepoDefaultForm';
-import { TeamWorkflowStateEditor } from './teams/TeamWorkflowStateEditor';
 import { StoredIcon } from '@/components/ui/icon-picker';
 
 /* ── Teams Tab ── */
@@ -1082,8 +1081,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                 <>
                   <PipelineBuilder
                     workspaceId={workspaceId}
-                    workflowId={activeTeamWorkflow.workflow.id}
-                    states={activeTeamWorkflow.states.slice().sort((a, b) => a.position - b.position)}
+                    workflow={activeTeamWorkflow}
                     agents={pipelineAgents}
                     rules={pipelineRules}
                     editable={teamEditable}
@@ -1092,12 +1090,7 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                         if (res.data) setPipelineRules(res.data);
                       });
                     }}
-                  />
-                  <TeamWorkflowStateEditor
-                    workspaceId={workspaceId}
-                    workflow={activeTeamWorkflow}
-                    editable={teamEditable}
-                    onUpdate={(updated) => {
+                    onWorkflowUpdate={(updated) => {
                       setWorkflows((prev) => prev.map((w) => w.workflow.id === updated.workflow.id ? updated : w));
                     }}
                   />
