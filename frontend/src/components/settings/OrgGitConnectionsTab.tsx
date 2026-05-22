@@ -7,7 +7,7 @@ import type { GitIntegration, GitIntegrationDetail, GitIntegrationWorkspaceUsage
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import {
@@ -166,87 +166,82 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
     return gitRepoURL(integration.provider || repo.provider, repo.full_name, repo.base_url ?? integration.base_url);
   };
 
-  if (!organizationId) {
-    return (
-      <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-        Select an organization to manage Git connections.
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <GitBranchIcon className="h-4 w-4" />
-                Git Connections
-              </CardTitle>
-              <CardDescription className="mt-1.5">
-                Connect GitHub or authorize Helpin's GitLab.com OAuth app once, then choose repositories per workspace.
-              </CardDescription>
-            </div>
-            {canManage ? (
-              <div className="flex shrink-0 flex-wrap gap-2">
-                {hasGitHubIntegration ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={installingGitHub}
-                    onClick={() => void startGitHubConnect(true)}
-                  >
-                    Connect Another GitHub Org
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    disabled={installingGitHub}
-                    onClick={() => void startGitHubConnect(false)}
-                  >
-                    {installingGitHub ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                    Connect GitHub
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant={hasGitLabIntegration ? 'outline' : 'default'}
-                  size="sm"
-                  disabled={connectingGitLab}
-                  onClick={() => void startGitLabConnect()}
-                >
-                  {connectingGitLab ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                  {hasGitLabIntegration ? 'Reconnect GitLab' : 'Authorize GitLab'}
-                </Button>
-              </div>
-            ) : null}
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-semibold">
+            <GitBranchIcon className="h-4 w-4" />
+            Git Connections
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Organization provider access for repositories used across workspaces.
+          </p>
+        </div>
+        {canManage ? (
+          <div className="flex shrink-0 flex-wrap gap-2 md:justify-end">
+            {hasGitHubIntegration ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={installingGitHub || !organizationId}
+                onClick={() => void startGitHubConnect(true)}
+              >
+                Connect Another GitHub Org
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                disabled={installingGitHub || !organizationId}
+                onClick={() => void startGitHubConnect(false)}
+              >
+                {installingGitHub ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                Connect GitHub
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant={hasGitLabIntegration ? 'outline' : 'default'}
+              size="sm"
+              disabled={connectingGitLab || !organizationId}
+              onClick={() => void startGitLabConnect()}
+            >
+              {connectingGitLab ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              {hasGitLabIntegration ? 'Connect Another GitLab Account' : 'Authorize GitLab'}
+            </Button>
           </div>
-        </CardHeader>
-        <CardContent>
+        ) : null}
+      </div>
+
+      {!organizationId ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+          Select an organization to manage Git connections.
+        </div>
+      ) : (
+        <>
           {setupError ? (
-            <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {setupError}
             </div>
           ) : null}
           {!canManage ? (
-            <div className="mb-4 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
               Organization admins manage provider access. GitLab.com authorization uses Helpin's OAuth app; you can use repositories already enabled for your workspace.
             </div>
           ) : null}
           {loading ? (
             <div className="space-y-3">
-              {[1, 2].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
+              {[1, 2].map((i) => <Skeleton key={i} className="h-32 w-full" />)}
             </div>
           ) : integrations.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
               No Git providers are connected to this organization.
             </div>
           ) : (
-            <div className="divide-y divide-border rounded-lg border border-border">
+            <div className="space-y-3">
               {integrations.map((integration) => {
                 const providerLabel = integration.provider === 'gitlab' ? 'GitLab' : 'GitHub';
                 const manageURL = gitHubAccessURL(integration);
@@ -255,121 +250,123 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
                 const workspaceCount = usage.length;
                 const totalRepoCount = usage.reduce((sum, entry) => sum + entry.repo_count, 0);
                 return (
-                  <div key={integration.id} className="px-4 py-3">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={cn('h-2 w-2 rounded-full', integration.active ? 'bg-emerald-500' : 'bg-muted-foreground/50')} />
-                          <p className="truncate text-sm font-medium">{integration.display_name}</p>
-                          <Badge variant="outline" className="text-[10px] uppercase tracking-wide">{providerLabel}</Badge>
+                  <Card key={integration.id} className="gap-0 py-0">
+                    <CardContent className="px-4 py-3">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={cn('h-2 w-2 rounded-full', integration.active ? 'bg-emerald-500' : 'bg-muted-foreground/50')} />
+                            <p className="truncate text-sm font-medium">{integration.display_name}</p>
+                            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">{providerLabel}</Badge>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">
+                            {integration.account_login || 'Connected account'}
+                            {integration.last_synced_at ? ` · synced ${new Date(integration.last_synced_at).toLocaleString()}` : ''}
+                          </p>
+                          {integration.last_sync_error ? <p className="mt-1 text-xs text-destructive">{integration.last_sync_error}</p> : null}
                         </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {integration.account_login || 'Connected account'}
-                          {integration.last_synced_at ? ` · synced ${new Date(integration.last_synced_at).toLocaleString()}` : ''}
-                        </p>
-                        {integration.last_sync_error ? <p className="mt-1 text-xs text-destructive">{integration.last_sync_error}</p> : null}
-                      </div>
-                      {canManage ? (
-                        <div className="flex shrink-0 items-center gap-1">
-                          {manageURL ? (
+                        {canManage ? (
+                          <div className="flex shrink-0 items-center gap-1">
+                            {manageURL ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => window.open(manageURL, '_blank', 'noopener,noreferrer')}
+                              >
+                                Manage access
+                              </Button>
+                            ) : null}
                             <Button
                               type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => window.open(manageURL, '_blank', 'noopener,noreferrer')}
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={syncingIntegrationId === integration.id}
+                              onClick={async () => {
+                                setSyncingIntegrationId(integration.id);
+                                const { error } = await gitService.syncOrgRepositories(organizationId, integration.id);
+                                setSyncingIntegrationId(null);
+                                if (error) {
+                                  toast.error(error);
+                                  return;
+                                }
+                                toast.success('Git connection synced');
+                                await loadIntegrations();
+                              }}
                             >
-                              Manage access
+                              {syncingIntegrationId === integration.id
+                                ? <Loading01Icon className="h-4 w-4 animate-spin" />
+                                : <ArrowReloadHorizontalIcon className="h-4 w-4" />}
                             </Button>
-                          ) : null}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={syncingIntegrationId === integration.id}
-                            onClick={async () => {
-                              setSyncingIntegrationId(integration.id);
-                              const { error } = await gitService.syncOrgRepositories(organizationId, integration.id);
-                              setSyncingIntegrationId(null);
-                              if (error) {
-                                toast.error(error);
-                                return;
-                              }
-                              toast.success('Git connection synced');
-                              await loadIntegrations();
-                            }}
-                          >
-                            {syncingIntegrationId === integration.id
-                              ? <Loading01Icon className="h-4 w-4 animate-spin" />
-                              : <ArrowReloadHorizontalIcon className="h-4 w-4" />}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            disabled={disconnectingIntegrationId === integration.id}
-                            onClick={async () => {
-                              const { data, error } = await gitService.getOrgIntegration(organizationId, integration.id);
-                              if (error || !data) {
-                                toast.error(error || 'Failed to load Git connection');
-                                return;
-                              }
-                              setDisconnectConfirm(data);
-                            }}
-                          >
-                            {disconnectingIntegrationId === integration.id
-                              ? <Loading01Icon className="h-4 w-4 animate-spin" />
-                              : <Delete01Icon className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="mt-3 border-t border-border/60 pt-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <span>
-                          Used in {workspaceCount} {workspaceCount === 1 ? 'workspace' : 'workspaces'}
-                          {totalRepoCount ? ` · ${totalRepoCount} enabled ${totalRepoCount === 1 ? 'repo' : 'repos'}` : ''}
-                        </span>
-                      </div>
-                      {workspaceRepos.length > 0 ? (
-                        <div className="mt-2 space-y-1">
-                          {workspaceRepos.slice(0, 5).map((repo) => (
-                            <a
-                              key={repo.id}
-                              href={repositoryWebURL(repo, integration)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-sm px-1 py-1 text-xs text-foreground transition-colors hover:bg-muted/40"
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              disabled={disconnectingIntegrationId === integration.id}
+                              onClick={async () => {
+                                const { data, error } = await gitService.getOrgIntegration(organizationId, integration.id);
+                                if (error || !data) {
+                                  toast.error(error || 'Failed to load Git connection');
+                                  return;
+                                }
+                                setDisconnectConfirm(data);
+                              }}
                             >
-                              <span className="shrink-0 font-mono text-muted-foreground">|-</span>
-                              <span className="truncate font-medium">{repo.full_name}</span>
-                              <span className="shrink-0 font-mono text-muted-foreground">{repo.default_branch}</span>
-                              {repo.private
-                                ? <LockIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                : <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                              <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                            </a>
-                          ))}
-                          {workspaceRepos.length > 5 ? (
-                            <p className="px-1 pt-1 text-xs text-muted-foreground">
-                              +{workspaceRepos.length - 5} more in this workspace
-                            </p>
-                          ) : null}
+                              {disconnectingIntegrationId === integration.id
+                                ? <Loading01Icon className="h-4 w-4 animate-spin" />
+                                : <Delete01Icon className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 border-t border-border/60 pt-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <span>
+                            Used in {workspaceCount} {workspaceCount === 1 ? 'workspace' : 'workspaces'}
+                            {totalRepoCount ? ` · ${totalRepoCount} enabled ${totalRepoCount === 1 ? 'repo' : 'repos'}` : ''}
+                          </span>
                         </div>
-                      ) : (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          No enabled repositories from this connection in the current workspace.
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                        {workspaceRepos.length > 0 ? (
+                          <div className="mt-2 space-y-1">
+                            {workspaceRepos.slice(0, 5).map((repo) => (
+                              <a
+                                key={repo.id}
+                                href={repositoryWebURL(repo, integration)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 rounded-sm px-1 py-1 text-xs text-foreground transition-colors hover:bg-muted/40"
+                              >
+                                <span className="shrink-0 font-mono text-muted-foreground">|-</span>
+                                <span className="truncate font-medium">{repo.full_name}</span>
+                                <span className="shrink-0 font-mono text-muted-foreground">{repo.default_branch}</span>
+                                {repo.private
+                                  ? <LockIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  : <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                                <LinkSquare01Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                              </a>
+                            ))}
+                            {workspaceRepos.length > 5 ? (
+                              <p className="px-1 pt-1 text-xs text-muted-foreground">
+                                +{workspaceRepos.length - 5} more in this workspace
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            No enabled repositories from this connection in the current workspace.
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
           )}
           {workspaceSlug ? (
-            <div className="mt-4 flex justify-end">
+            <div className="flex justify-end">
               <Button
                 type="button"
                 variant="outline"
@@ -380,8 +377,8 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
               </Button>
             </div>
           ) : null}
-        </CardContent>
-      </Card>
+        </>
+      )}
 
       <ConfirmDialog
         open={disconnectConfirm !== null}
@@ -395,7 +392,7 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
         confirmLabel="Disconnect"
         variant="destructive"
         onConfirm={async () => {
-          if (!disconnectConfirm) return;
+          if (!disconnectConfirm || !organizationId) return;
           const integrationID = disconnectConfirm.integration.id;
           setDisconnectingIntegrationId(integrationID);
           const { error } = await gitService.deleteOrgIntegration(organizationId, integrationID, workspaceId);

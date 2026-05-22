@@ -11,18 +11,10 @@ export function OrgGitConnectionsSettingsPage() {
   const canManage = role === 'owner' || role === 'admin';
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold">Git Connections</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Organization provider access for repositories used across workspaces. GitLab.com uses Helpin's OAuth app.
-        </p>
-      </div>
-      <OrgGitConnectionsTab
-        organizationId={currentOrganization?.id}
-        workspaceId={workspaceId}
-        canManage={canManage}
-      />
-    </div>
+    <OrgGitConnectionsTab
+      organizationId={currentOrganization?.id}
+      workspaceId={workspaceId}
+      canManage={canManage}
+    />
   );
 }
