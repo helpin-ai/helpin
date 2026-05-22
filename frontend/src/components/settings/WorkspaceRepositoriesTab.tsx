@@ -146,8 +146,8 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
           {integrations.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
               {canManageOrgGit
-                ? 'Connect GitHub or GitLab first, then return here to enable repositories for this workspace.'
-                : 'No Git providers are connected yet. An organization admin can connect GitHub or GitLab.'}
+                ? "Connect GitHub or authorize GitLab first, then return here to enable repositories for this workspace."
+                : "No Git providers are connected yet. An organization admin can connect GitHub or authorize Helpin's GitLab app."}
             </div>
           ) : (
             <div className="divide-y divide-border/60 rounded-lg border border-border/60">
@@ -474,7 +474,7 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
             <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
               {hasIntegrations
                 ? 'No repositories are enabled for this workspace yet. Add repositories from the available list above.'
-                : 'Repositories will appear here after an organization admin connects GitHub or GitLab.'}
+                : "Repositories will appear here after an organization admin connects GitHub or authorizes Helpin's GitLab app."}
             </div>
           )}
           {hasRepositories && workspaceSlug ? (

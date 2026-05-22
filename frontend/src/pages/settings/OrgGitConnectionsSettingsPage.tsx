@@ -15,7 +15,7 @@ export function OrgGitConnectionsSettingsPage() {
       <div>
         <h2 className="text-xl font-semibold">Git Connections</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Organization provider access for repositories used across workspaces.
+          Organization provider access for repositories used across workspaces. GitLab.com uses Helpin's OAuth app.
         </p>
       </div>
       <OrgGitConnectionsTab

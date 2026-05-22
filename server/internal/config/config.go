@@ -72,7 +72,7 @@ type Config struct {
 	GitHubAppSlug       string
 	GitHubAppPrivateKey string
 
-	// GitLab OAuth (optional — required for GitLab PM delivery integration).
+	// GitLab.com OAuth (optional; Helpin-owned multi-tenant OAuth app).
 	GitLabClientID         string
 	GitLabClientSecret     string
 	GitLabOAuthRedirectURL string

@@ -185,7 +185,7 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
                 Git Connections
               </CardTitle>
               <CardDescription className="mt-1.5">
-                Connect provider accounts once, then choose repositories per workspace.
+                Connect GitHub or authorize Helpin's GitLab.com OAuth app once, then choose repositories per workspace.
               </CardDescription>
             </div>
             {canManage ? (
@@ -220,7 +220,7 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
                   onClick={() => void startGitLabConnect()}
                 >
                   {connectingGitLab ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                  {hasGitLabIntegration ? 'Reconnect GitLab' : 'Connect GitLab'}
+                  {hasGitLabIntegration ? 'Reconnect GitLab' : 'Authorize GitLab'}
                 </Button>
               </div>
             ) : null}
@@ -234,7 +234,7 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
           ) : null}
           {!canManage ? (
             <div className="mb-4 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              Organization admins manage provider access. You can use repositories already enabled for your workspace.
+              Organization admins manage provider access. GitLab.com authorization uses Helpin's OAuth app; you can use repositories already enabled for your workspace.
             </div>
           ) : null}
           {loading ? (
