@@ -33,6 +33,7 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 			provider TEXT NOT NULL DEFAULT 'github',
 			display_name TEXT NOT NULL DEFAULT '',
 			credential_mode TEXT NOT NULL DEFAULT 'github_app',
+			credential_id TEXT,
 			account_login TEXT,
 			base_url TEXT,
 			installation_id TEXT,

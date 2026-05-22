@@ -589,7 +589,8 @@ func (a *AgentRunActivities) ensureDeliveryPullRequest(ctx context.Context, stat
 	if state == nil || state.run == nil || state.task == nil || state.repository == nil || state.integration == nil || state.deliveryTarget == nil {
 		return nil, nil
 	}
-	if strings.TrimSpace(state.integration.Provider) != "github" {
+	provider := strings.TrimSpace(state.integration.Provider)
+	if provider != "github" && provider != "gitlab" {
 		return nil, nil
 	}
 
@@ -619,7 +620,13 @@ func (a *AgentRunActivities) ensureDeliveryPullRequest(ctx context.Context, stat
 	}
 
 	title, body := buildDeliveryPullRequestContent(state, baseBranch, workingBranch)
-	pr, err := ensureGitHubPullRequest(ctx, state.integration, state.accessToken, repoFullName, workingBranch, baseBranch, title, body)
+	var pr *ensuredDeliveryPR
+	var err error
+	if provider == "gitlab" {
+		pr, err = ensureGitLabMergeRequest(ctx, state.integration, state.accessToken, state.repository.ExternalID, workingBranch, baseBranch, title, body)
+	} else {
+		pr, err = ensureGitHubPullRequest(ctx, state.integration, state.accessToken, repoFullName, workingBranch, baseBranch, title, body)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -724,6 +731,87 @@ func ensureGitHubPullRequest(
 	}, nil
 }
 
+func ensureGitLabMergeRequest(
+	ctx context.Context,
+	integration *model.GitIntegration,
+	accessToken, externalProjectID, workingBranch, baseBranch, title, body string,
+) (*ensuredDeliveryPR, error) {
+	if integration == nil || strings.TrimSpace(integration.Provider) != "gitlab" {
+		return nil, nil
+	}
+	projectID, err := strconv.ParseInt(strings.TrimSpace(externalProjectID), 10, 64)
+	if err != nil || projectID == 0 {
+		return nil, fmt.Errorf("invalid gitlab project id")
+	}
+	workingBranch = strings.TrimSpace(workingBranch)
+	baseBranch = strings.TrimSpace(baseBranch)
+	accessToken = strings.TrimSpace(accessToken)
+	if workingBranch == "" || baseBranch == "" {
+		return nil, nil
+	}
+	if accessToken == "" {
+		return nil, fmt.Errorf("gitlab access token is required")
+	}
+	apiBase := model.ResolveGitLabAPIBaseURL(integration.BaseURL)
+	query := url.Values{}
+	query.Set("state", "opened")
+	query.Set("source_branch", workingBranch)
+	query.Set("target_branch", baseBranch)
+	query.Set("per_page", "1")
+
+	var existingPayload []struct {
+		IID          int    `json:"iid"`
+		Title        string `json:"title"`
+		WebURL       string `json:"web_url"`
+		SourceBranch string `json:"source_branch"`
+		TargetBranch string `json:"target_branch"`
+	}
+	if err := doGitLabAPIRequest(ctx, accessToken, http.MethodGet, fmt.Sprintf("%s/projects/%d/merge_requests?%s", apiBase, projectID, query.Encode()), nil, &existingPayload); err != nil {
+		return nil, err
+	}
+	if len(existingPayload) > 0 {
+		existing := existingPayload[0]
+		return &ensuredDeliveryPR{
+			Metadata: workerpkg.PRMetadata{
+				Provider: "gitlab",
+				URL:      strings.TrimSpace(existing.WebURL),
+				Number:   existing.IID,
+				Head:     strings.TrimSpace(existing.SourceBranch),
+				Base:     strings.TrimSpace(existing.TargetBranch),
+			},
+			Title:    strings.TrimSpace(existing.Title),
+			Existing: true,
+		}, nil
+	}
+
+	var createdPayload struct {
+		IID          int    `json:"iid"`
+		Title        string `json:"title"`
+		WebURL       string `json:"web_url"`
+		SourceBranch string `json:"source_branch"`
+		TargetBranch string `json:"target_branch"`
+	}
+	if err := doGitLabAPIRequest(ctx, accessToken, http.MethodPost, fmt.Sprintf("%s/projects/%d/merge_requests", apiBase, projectID), map[string]string{
+		"title":         title,
+		"description":   body,
+		"source_branch": workingBranch,
+		"target_branch": baseBranch,
+	}, &createdPayload); err != nil {
+		return nil, err
+	}
+	return &ensuredDeliveryPR{
+		Metadata: workerpkg.PRMetadata{
+			Provider: "gitlab",
+			URL:      strings.TrimSpace(createdPayload.WebURL),
+			Number:   createdPayload.IID,
+			Head:     strings.TrimSpace(createdPayload.SourceBranch),
+			Base:     strings.TrimSpace(createdPayload.TargetBranch),
+		},
+		Title:    strings.TrimSpace(createdPayload.Title),
+		Existing: false,
+	}, nil
+}
+
 func doGitHubAPIRequest(ctx context.Context, accessToken, method, requestURL string, payload any, out any) error {
 	var requestBody []byte
 	if payload != nil {
@@ -764,6 +852,49 @@ func doGitHubAPIRequest(ctx context.Context, accessToken, method, requestURL str
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("decode github response: %w", err)
+	}
+	return nil
+}
+
+func doGitLabAPIRequest(ctx context.Context, accessToken, method, requestURL string, payload any, out any) error {
+	var requestBody []byte
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal gitlab request payload: %w", err)
+		}
+		requestBody = data
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, githubAPIRequestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, method, requestURL, bytes.NewReader(requestBody))
+	if err != nil {
+		return fmt.Errorf("build gitlab request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(accessToken))
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request gitlab api: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		var errorPayload struct {
+			Message any    `json:"message"`
+			Error   string `json:"error"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&errorPayload)
+		return fmt.Errorf("gitlab api failed (%d): %v %s", resp.StatusCode, errorPayload.Message, strings.TrimSpace(errorPayload.Error))
+	}
+	if out == nil {
+		return nil
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode gitlab response: %w", err)
 	}
 	return nil
 }
@@ -894,6 +1025,7 @@ func (a *AgentRunActivities) upsertGitLink(ctx context.Context, state *resolvedR
 			RepositoryID:  state.deliveryTarget.RepositoryID,
 			RunID:         &state.run.ID,
 			Provider:      state.integration.Provider,
+			BaseURL:       state.integration.BaseURL,
 			Repo:          state.repository.FullName,
 			Branch:        &branch,
 		}
@@ -912,6 +1044,7 @@ func (a *AgentRunActivities) upsertGitLink(ctx context.Context, state *resolvedR
 	link.RepositoryID = state.deliveryTarget.RepositoryID
 	link.RunID = &state.run.ID
 	link.Provider = state.integration.Provider
+	link.BaseURL = state.integration.BaseURL
 	link.IntegrationID = state.integration.ID
 	if sha != "" {
 		link.CommitSHA = &sha

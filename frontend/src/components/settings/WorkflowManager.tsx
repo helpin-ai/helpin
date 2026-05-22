@@ -53,6 +53,12 @@ const TRIGGER_LABELS: Record<string, string> = {
   'github.pull_request_review_requested': 'On GitHub review requested',
   'github.release_published': 'On GitHub release published',
   'github.check_suite_completed': 'On GitHub check suite completed',
+  'gitlab.push': 'On GitLab push',
+  'gitlab.merge_request_opened': 'On GitLab merge request opened',
+  'gitlab.merge_request_merged': 'On GitLab merge request merged',
+  'gitlab.merge_request_closed': 'On GitLab merge request closed',
+  'gitlab.release_published': 'On GitLab release published',
+  'gitlab.pipeline_completed': 'On GitLab pipeline completed',
 };
 
 const WORKSPACE_EVENT_TRIGGER_OPTIONS = [
@@ -63,9 +69,41 @@ const WORKSPACE_EVENT_TRIGGER_OPTIONS = [
   { value: 'github.pull_request_review_requested', label: 'GitHub review requested' },
   { value: 'github.release_published', label: 'GitHub release published' },
   { value: 'github.check_suite_completed', label: 'GitHub check suite completed' },
+  { value: 'gitlab.push', label: 'GitLab push' },
+  { value: 'gitlab.merge_request_opened', label: 'GitLab MR opened' },
+  { value: 'gitlab.merge_request_merged', label: 'GitLab MR merged' },
+  { value: 'gitlab.merge_request_closed', label: 'GitLab MR closed' },
+  { value: 'gitlab.release_published', label: 'GitLab release published' },
+  { value: 'gitlab.pipeline_completed', label: 'GitLab pipeline completed' },
 ] as const;
 
 const WORKSPACE_EVENT_TRIGGER_IDS = new Set<string>(WORKSPACE_EVENT_TRIGGER_OPTIONS.map((option) => option.value));
+
+function isPushTrigger(triggerType: string) {
+  return triggerType === 'github.push' || triggerType === 'gitlab.push';
+}
+
+function isMergeRequestTrigger(triggerType: string) {
+  return triggerType === 'github.pull_request_opened'
+    || triggerType === 'github.pull_request_merged'
+    || triggerType === 'github.pull_request_closed'
+    || triggerType === 'github.pull_request_review_requested'
+    || triggerType === 'gitlab.merge_request_opened'
+    || triggerType === 'gitlab.merge_request_merged'
+    || triggerType === 'gitlab.merge_request_closed';
+}
+
+function isReleaseTrigger(triggerType: string) {
+  return triggerType === 'github.release_published' || triggerType === 'gitlab.release_published';
+}
+
+function isPipelineTrigger(triggerType: string) {
+  return triggerType === 'github.check_suite_completed' || triggerType === 'gitlab.pipeline_completed';
+}
+
+function showBranchFilter(triggerType: string) {
+  return isPushTrigger(triggerType) || isPipelineTrigger(triggerType);
+}
 
 export type WorkspaceEventRuleTemplate = {
   triggerType: string;
@@ -411,21 +449,11 @@ function WorkspaceEventRulesSection({
   };
 
   const buildTriggerConfig = (): Record<string, string> => {
-    switch (triggerType) {
-      case 'github.push':
-        return { repo_full_name: repoFullName.trim(), branch: branch.trim() };
-      case 'github.pull_request_opened':
-      case 'github.pull_request_merged':
-      case 'github.pull_request_closed':
-      case 'github.pull_request_review_requested':
-        return { repo_full_name: repoFullName.trim(), base_branch: baseBranch.trim() };
-      case 'github.release_published':
-        return { repo_full_name: repoFullName.trim(), tag_name: tagName.trim() };
-      case 'github.check_suite_completed':
-        return { repo_full_name: repoFullName.trim(), branch: branch.trim(), conclusion: conclusion.trim() };
-      default:
-        return {};
-    }
+    if (isPushTrigger(triggerType)) return { repo_full_name: repoFullName.trim(), branch: branch.trim() };
+    if (isMergeRequestTrigger(triggerType)) return { repo_full_name: repoFullName.trim(), base_branch: baseBranch.trim() };
+    if (isReleaseTrigger(triggerType)) return { repo_full_name: repoFullName.trim(), tag_name: tagName.trim() };
+    if (isPipelineTrigger(triggerType)) return { repo_full_name: repoFullName.trim(), branch: branch.trim(), conclusion: conclusion.trim() };
+    return {};
   };
 
   const buildActionConfig = (): Record<string, unknown> => {
@@ -438,21 +466,11 @@ function WorkspaceEventRulesSection({
   };
 
   const validateTriggerConfig = () => {
-    switch (triggerType) {
-      case 'github.push':
-        return Boolean(repoFullName.trim() || branch.trim());
-      case 'github.pull_request_opened':
-      case 'github.pull_request_merged':
-      case 'github.pull_request_closed':
-      case 'github.pull_request_review_requested':
-        return Boolean(repoFullName.trim() || baseBranch.trim());
-      case 'github.release_published':
-        return Boolean(repoFullName.trim() || tagName.trim());
-      case 'github.check_suite_completed':
-        return Boolean(repoFullName.trim() || branch.trim() || conclusion.trim());
-      default:
-        return false;
-    }
+    if (isPushTrigger(triggerType)) return Boolean(repoFullName.trim() || branch.trim());
+    if (isMergeRequestTrigger(triggerType)) return Boolean(repoFullName.trim() || baseBranch.trim());
+    if (isReleaseTrigger(triggerType)) return Boolean(repoFullName.trim() || tagName.trim());
+    if (isPipelineTrigger(triggerType)) return Boolean(repoFullName.trim() || branch.trim() || conclusion.trim());
+    return false;
   };
 
   const handleAdd = async () => {
@@ -465,7 +483,7 @@ function WorkspaceEventRulesSection({
       return;
     }
     if (!validateTriggerConfig()) {
-      toast.error('Add at least one filter for this GitHub trigger');
+      toast.error('Add at least one filter for this Git trigger');
       return;
     }
     setSaving(true);
@@ -554,7 +572,7 @@ function WorkspaceEventRulesSection({
           <p className="text-sm font-medium">Workspace Event Rules</p>
         </div>
         <p className="text-xs text-muted-foreground">
-          Author GitHub-triggered automation rules here. These rules work best when webhook branches or pull requests are already linked to tasks.
+          Author Git provider-triggered automation rules here. These rules work best when webhook branches or pull requests are already linked to tasks.
         </p>
       </div>
 
@@ -611,7 +629,7 @@ function WorkspaceEventRulesSection({
                 <Input value={repoFullName} onChange={(e) => setRepoFullName(e.target.value)} placeholder="owner/repo" className="h-8 text-xs" />
               </div>
 
-            {(triggerType === 'github.push' || triggerType === 'github.check_suite_completed') && (
+            {showBranchFilter(triggerType) && (
               <div className="space-y-2">
                 <Label className="text-xs">Branch</Label>
                 <RepositoryBranchPicker
@@ -626,7 +644,7 @@ function WorkspaceEventRulesSection({
               </div>
             )}
 
-            {(triggerType === 'github.pull_request_opened' || triggerType === 'github.pull_request_merged' || triggerType === 'github.pull_request_closed' || triggerType === 'github.pull_request_review_requested') && (
+            {isMergeRequestTrigger(triggerType) && (
               <div className="space-y-2">
                 <Label className="text-xs">Base branch</Label>
                 <RepositoryBranchPicker
@@ -641,14 +659,14 @@ function WorkspaceEventRulesSection({
               </div>
             )}
 
-            {triggerType === 'github.release_published' && (
+            {isReleaseTrigger(triggerType) && (
               <div className="space-y-2">
                 <Label className="text-xs">Tag</Label>
                 <Input value={tagName} onChange={(e) => setTagName(e.target.value)} placeholder="v1.0.0" className="h-8 text-xs" />
               </div>
             )}
 
-            {triggerType === 'github.check_suite_completed' && (
+            {isPipelineTrigger(triggerType) && (
               <div className="space-y-2">
                 <Label className="text-xs">Conclusion</Label>
                 <Input value={conclusion} onChange={(e) => setConclusion(e.target.value)} placeholder="success" className="h-8 text-xs" />

@@ -14,7 +14,9 @@ import (
 	"go.temporal.io/sdk/temporal"
 
 	"github.com/helpin-ai/helpin/server/internal/agentskills"
+	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
+	"github.com/helpin-ai/helpin/server/internal/gitlab"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -86,6 +88,10 @@ type CommandBarPlanAdvancer interface {
 	StartReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error)
 }
 
+type gitLabTokenRefresher interface {
+	RefreshToken(ctx context.Context, refreshToken string) (*gitlab.TokenResponse, error)
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo                    *repository.AgentRunRepository
@@ -131,6 +137,9 @@ type AgentRunActivities struct {
 	wsPublisher                websocket.EventPublisher
 	runtimes                   *workerpkg.RuntimeRegistry
 	githubApp                  *githubapp.Client
+	gitlabClient               gitLabTokenRefresher
+	gitCredentialRepo          *repository.GitCredentialRepository
+	gitOAuthEncryptionKey      []byte
 	runEngine                  *RunEngine
 	commandBarAdvancer         CommandBarPlanAdvancer
 }
@@ -180,6 +189,9 @@ func NewAgentRunActivities(
 	wsPublisher websocket.EventPublisher,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
+	gitlabClient gitLabTokenRefresher,
+	gitCredentialRepo *repository.GitCredentialRepository,
+	gitOAuthEncryptionKey []byte,
 	runEngine *RunEngine,
 	commandBarAdvancer CommandBarPlanAdvancer,
 ) *AgentRunActivities {
@@ -227,6 +239,9 @@ func NewAgentRunActivities(
 		wsPublisher:                wsPublisher,
 		runtimes:                   runtimes,
 		githubApp:                  githubApp,
+		gitlabClient:               gitlabClient,
+		gitCredentialRepo:          gitCredentialRepo,
+		gitOAuthEncryptionKey:      append([]byte(nil), gitOAuthEncryptionKey...),
 		runEngine:                  runEngine,
 		commandBarAdvancer:         commandBarAdvancer,
 	}
@@ -2006,10 +2021,65 @@ func (a *AgentRunActivities) mintAccessToken(ctx context.Context, integration *m
 		}
 		return a.githubApp.MintInstallationToken(ctx, *integration.InstallationID)
 	}
+	if integration.Provider == "gitlab" && integration.CredentialID != nil && strings.TrimSpace(*integration.CredentialID) != "" {
+		if a.gitCredentialRepo == nil || len(a.gitOAuthEncryptionKey) != 32 {
+			return "", fmt.Errorf("gitlab oauth credentials are not configured")
+		}
+		credential, err := a.gitCredentialRepo.GetByID(ctx, *integration.CredentialID)
+		if err != nil {
+			return "", err
+		}
+		if credential == nil || credential.AccessTokenEncrypted == nil || strings.TrimSpace(*credential.AccessTokenEncrypted) == "" {
+			return "", fmt.Errorf("gitlab credential is not available")
+		}
+		if credential.ExpiresAt != nil && time.Until(*credential.ExpiresAt) < 2*time.Minute && credential.RefreshTokenEncrypted != nil && a.gitlabClient != nil {
+			refreshToken, err := appcrypto.DecryptString(*credential.RefreshTokenEncrypted, a.gitOAuthEncryptionKey)
+			if err == nil && strings.TrimSpace(refreshToken) != "" {
+				if refreshed, refreshErr := a.gitlabClient.RefreshToken(ctx, refreshToken); refreshErr == nil && strings.TrimSpace(refreshed.AccessToken) != "" {
+					if updateErr := a.updateGitLabCredentialToken(ctx, credential, refreshed); updateErr != nil {
+						slog.WarnContext(ctx, "gitlab oauth token update failed", "credential_id", credential.ID, "error", updateErr)
+					}
+				} else if refreshErr != nil {
+					slog.WarnContext(ctx, "gitlab oauth token refresh failed", "credential_id", credential.ID, "error", refreshErr)
+				}
+			}
+			credential, err = a.gitCredentialRepo.GetByID(ctx, credential.ID)
+			if err != nil {
+				return "", err
+			}
+			if credential == nil || credential.AccessTokenEncrypted == nil || strings.TrimSpace(*credential.AccessTokenEncrypted) == "" {
+				return "", fmt.Errorf("gitlab credential is not available")
+			}
+		}
+		return appcrypto.DecryptString(*credential.AccessTokenEncrypted, a.gitOAuthEncryptionKey)
+	}
 	if integration.AccessToken != "" {
 		return integration.AccessToken, nil
 	}
 	return "", fmt.Errorf("git integration has no usable credentials")
+}
+
+func (a *AgentRunActivities) updateGitLabCredentialToken(ctx context.Context, credential *model.GitCredential, token *gitlab.TokenResponse) error {
+	if credential == nil || token == nil || strings.TrimSpace(token.AccessToken) == "" {
+		return nil
+	}
+	accessToken, err := appcrypto.EncryptString(token.AccessToken, a.gitOAuthEncryptionKey)
+	if err != nil {
+		return err
+	}
+	credential.AccessTokenEncrypted = &accessToken
+	if strings.TrimSpace(token.RefreshToken) != "" {
+		refreshToken, err := appcrypto.EncryptString(token.RefreshToken, a.gitOAuthEncryptionKey)
+		if err != nil {
+			return err
+		}
+		credential.RefreshTokenEncrypted = &refreshToken
+	}
+	if token.ExpiresIn > 0 {
+		expiresAt := time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
+		credential.ExpiresAt = &expiresAt
+	}
+	return a.gitCredentialRepo.Update(ctx, credential)
 }
 
 func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {

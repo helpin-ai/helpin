@@ -322,6 +322,8 @@ func cloneURLFor(gitIntegration *model.GitIntegration, repo string) (string, err
 		switch gitIntegration.Provider {
 		case "github":
 			baseURL = model.ResolveGitHubWebBaseURL(gitIntegration.BaseURL)
+		case "gitlab":
+			baseURL = model.ResolveGitLabWebBaseURL(gitIntegration.BaseURL)
 		default:
 			baseURL = *gitIntegration.BaseURL
 		}

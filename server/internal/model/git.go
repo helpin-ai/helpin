@@ -11,14 +11,15 @@ import (
 
 var branchTokenSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 
-// GitIntegration represents a workspace-scoped git provider configuration.
+// GitIntegration represents an organization-scoped git provider configuration.
 type GitIntegration struct {
 	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	WorkspaceID    *string    `json:"workspace_id,omitempty" gorm:"type:uuid;index"` // legacy return workspace for older installs
 	OrganizationID *string    `json:"organization_id" gorm:"type:uuid;index"`
 	Provider       string     `json:"provider" gorm:"not null"` // github, gitlab
 	DisplayName    string     `json:"display_name" gorm:"not null"`
 	CredentialMode string     `json:"credential_mode" gorm:"not null;default:'github_app'"`
+	CredentialID   *string    `json:"credential_id" gorm:"type:uuid;index"`
 	AccountLogin   *string    `json:"account_login"`
 	BaseURL        *string    `json:"base_url"`        // for self-hosted instances
 	InstallationID *string    `json:"installation_id"` // GitHub App installation ID
@@ -35,12 +36,36 @@ type GitIntegration struct {
 
 func (GitIntegration) TableName() string { return "git_integrations" }
 
+// GitCredential stores org-scoped credentials for git providers.
+type GitCredential struct {
+	ID                    string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	OrganizationID        string     `json:"organization_id" gorm:"type:uuid;not null;index"`
+	Provider              string     `json:"provider" gorm:"not null;index"`
+	BaseURL               string     `json:"base_url" gorm:"not null"`
+	AuthType              string     `json:"auth_type" gorm:"not null"` // oauth_user, project_token, group_token, ssh
+	ExternalUserID        *string    `json:"external_user_id"`
+	AccountLogin          *string    `json:"account_login"`
+	DisplayName           string     `json:"display_name" gorm:"not null"`
+	Scopes                *string    `json:"scopes"`
+	AccessTokenEncrypted  *string    `json:"-" gorm:"type:text"`
+	RefreshTokenEncrypted *string    `json:"-" gorm:"type:text"`
+	ExpiresAt             *time.Time `json:"expires_at"`
+	Status                string     `json:"status" gorm:"not null;default:'active'"`
+	ConnectedBy           *string    `json:"connected_by" gorm:"type:uuid"`
+	LastError             *string    `json:"last_error"`
+	CreatedAt             time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (GitCredential) TableName() string { return "git_credentials" }
+
 // GitRepository represents a workspace-accessible repository synced from a git provider install.
 type GitRepository struct {
 	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	IntegrationID string          `json:"integration_id" gorm:"type:uuid;not null;index"`
 	Provider      string          `json:"provider" gorm:"not null"`
+	BaseURL       *string         `json:"base_url"`
 	ExternalID    string          `json:"external_id" gorm:"not null;index"`
 	FullName      string          `json:"full_name" gorm:"not null;index"`
 	DefaultBranch string          `json:"default_branch" gorm:"not null;default:'main'"`
@@ -129,6 +154,60 @@ func ResolveGitHubWebBaseURL(baseURL *string) string {
 		parsed.Fragment = ""
 		return strings.TrimRight(parsed.String(), "/")
 	}
+}
+
+func ResolveGitLabAPIBaseURL(baseURL *string) string {
+	raw := strings.TrimSpace(derefStringPtr(baseURL))
+	if raw == "" {
+		return "https://gitlab.com/api/v4"
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	scheme := strings.TrimSpace(parsed.Scheme)
+	if scheme == "" {
+		scheme = "https"
+	}
+	path := strings.TrimRight(strings.TrimSpace(parsed.Path), "/")
+	if path == "" {
+		path = "/api/v4"
+	} else if !strings.HasSuffix(path, "/api/v4") {
+		path += "/api/v4"
+	}
+	parsed.Scheme = scheme
+	parsed.Path = path
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/")
+}
+
+func ResolveGitLabWebBaseURL(baseURL *string) string {
+	raw := strings.TrimSpace(derefStringPtr(baseURL))
+	if raw == "" {
+		return "https://gitlab.com"
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return strings.TrimRight(strings.TrimSuffix(raw, "/api/v4"), "/")
+	}
+	scheme := strings.TrimSpace(parsed.Scheme)
+	if scheme == "" {
+		scheme = "https"
+	}
+	path := strings.TrimRight(strings.TrimSpace(parsed.Path), "/")
+	if strings.HasSuffix(path, "/api/v4") {
+		path = strings.TrimSuffix(path, "/api/v4")
+	}
+	parsed.Scheme = scheme
+	parsed.Path = path
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func derefStringPtr(value *string) string {
@@ -223,6 +302,7 @@ type TaskGitLink struct {
 	RepositoryID  *string   `json:"repository_id" gorm:"type:uuid;index"`
 	RunID         *string   `json:"run_id" gorm:"type:uuid;index"`
 	Provider      string    `json:"provider" gorm:"not null"`
+	BaseURL       *string   `json:"base_url"`
 	Repo          string    `json:"repo" gorm:"not null"`
 	Branch        *string   `json:"branch"`
 	PRNumber      *int      `json:"pr_number"`
@@ -274,6 +354,10 @@ type GitHubInstallURLResponse struct {
 	IntegrationID *string `json:"integration_id,omitempty"`
 }
 
+type GitLabConnectURLResponse struct {
+	ConnectURL string `json:"connect_url"`
+}
+
 type GitAvailableRepoClaim struct {
 	WorkspaceID   string `json:"workspace_id"`
 	WorkspaceName string `json:"workspace_name"`
@@ -296,8 +380,8 @@ type WireGitRepositoriesRequest struct {
 }
 
 type WireGitRepositoriesConflict struct {
-	ExternalID            string `json:"external_id"`
-	ClaimedByWorkspaceID  string `json:"claimed_by_workspace_id"`
+	ExternalID             string `json:"external_id"`
+	ClaimedByWorkspaceID   string `json:"claimed_by_workspace_id"`
 	ClaimedByWorkspaceName string `json:"claimed_by_workspace_name,omitempty"`
 }
 
@@ -316,7 +400,7 @@ type GitIntegrationWorkspaceUsage struct {
 }
 
 type GitIntegrationDetail struct {
-	Integration       GitIntegration                 `json:"integration"`
+	Integration        GitIntegration                 `json:"integration"`
 	AffectedWorkspaces []GitIntegrationWorkspaceUsage `json:"affected_workspaces"`
 }
 

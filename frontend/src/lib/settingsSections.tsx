@@ -69,6 +69,7 @@ export type SettingsSection =
   | 'members'
   | 'teams'
   | 'access'
+  | 'repositories'
   | 'knowledge'
   | 'workflows'
   | 'labels'
@@ -86,7 +87,7 @@ export type SettingsSection =
   | 'chat-general'
   | 'inboxes-routing';
 
-export type SettingsRouteSection = SettingsSection | 'profile' | 'security' | 'notifications' | 'account';
+export type SettingsRouteSection = SettingsSection | 'profile' | 'security' | 'notifications' | 'account' | 'git-connections';
 
 export type SettingsSectionMeta<T extends SettingsRouteSection = SettingsRouteSection> = {
   id: T;
@@ -129,6 +130,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     group: 'Organization',
   },
   {
+    id: 'git-connections',
+    label: 'Git Connections',
+    description: 'Manage organization-level GitHub and GitLab provider connections.',
+    icon: Delivery,
+    group: 'Organization',
+  },
+  {
     id: 'general',
     label: 'General',
     description: '',
@@ -158,6 +166,13 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
     requiredPermission: 'module_access.manage',
   },
   {
+    id: 'repositories',
+    label: 'Repositories',
+    description: 'Choose which synced Git repositories are available to this workspace.',
+    icon: Delivery,
+    group: 'Workspace',
+  },
+  {
     id: 'knowledge',
     label: 'Knowledge',
     description: 'Manage help center docs and website content sources used across AI experiences.',
@@ -167,15 +182,15 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
   {
     id: 'workflows',
     label: 'Workflows',
-    description: 'Manage workflows, pipeline rules, and workspace-level GitHub event rules.',
+    description: 'Manage workflows, pipeline rules, and workspace-level Git provider event rules.',
     icon: Workflows,
     group: 'Projects',
     sidebar: false,
   },
   {
     id: 'delivery',
-    label: 'GitHub',
-    description: 'Connect GitHub and manage synced repositories.',
+    label: 'Delivery',
+    description: 'Configure project delivery repositories, branches, and team defaults.',
     icon: Delivery,
     group: 'Projects',
   },
@@ -275,7 +290,11 @@ export const SETTINGS_ROUTE_SECTIONS: SettingsSectionMeta[] = [
 
 export const SETTINGS_SECTIONS = SETTINGS_ROUTE_SECTIONS.filter(
   (section): section is SettingsSectionMeta<SettingsSection> =>
-    section.id !== 'profile' && section.id !== 'security' && section.id !== 'notifications' && section.id !== 'account',
+    section.id !== 'profile'
+    && section.id !== 'security'
+    && section.id !== 'notifications'
+    && section.id !== 'account'
+    && section.id !== 'git-connections',
 );
 
 export const isSettingsSection = (value: string): value is SettingsSection =>
