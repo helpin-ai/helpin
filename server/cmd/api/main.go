@@ -981,6 +981,9 @@ func main() {
 	if s3Client != nil {
 		docsDeletionDeps.AssetStore = s3Client
 	}
+	if cleanupEnqueuer := service.NewTemporalDocsAssetCleanupEnqueuer(temporalClient); cleanupEnqueuer != nil {
+		docsDeletionDeps.CleanupEnqueuer = cleanupEnqueuer
+	}
 	docsDocumentService.SetDeletionDependencies(docsDeletionDeps)
 	docsCollectionService.SetPermanentDeleteDependencies(docsDocumentRepo, docsDocumentService, docsHelpcenterTranslationRepo)
 	docsCollectionService.SetHelpcenterRepository(docsHelpcenterRepo)
