@@ -10,6 +10,10 @@ import (
 const (
 	TokenUseAccess  = "access"
 	TokenUseRefresh = "refresh"
+
+	AccessTokenTTL            = 15 * time.Minute
+	RefreshTokenTTL           = 7 * 24 * time.Hour
+	RememberMeRefreshTokenTTL = 30 * 24 * time.Hour
 )
 
 // Claims represents the JWT claims embedded in each token.
@@ -17,6 +21,7 @@ type Claims struct {
 	UserID          string `json:"user_id"`
 	Email           string `json:"email"`
 	TokenUse        string `json:"tu"`
+	RememberMe      bool   `json:"remember_me,omitempty"`
 	MFASatisfied    bool   `json:"mfa,omitempty"`
 	IsPlatformAdmin bool   `json:"pa,omitempty"`
 	jwt.RegisteredClaims
@@ -60,8 +65,8 @@ func NewJWTManager(secret string) *JWTManager {
 	return &JWTManager{secret: []byte(secret)}
 }
 
-// GenerateTokenPair creates a new access token (15 min) and refresh token.
-// When rememberMe is true, the refresh token lasts 30 days; otherwise 24 hours.
+// GenerateTokenPair creates a new access token and refresh token.
+// When rememberMe is true, the refresh token lasts 30 days; otherwise 7 days.
 func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool, options ...TokenPairOption) (accessToken, refreshToken string, err error) {
 	now := time.Now()
 	opts := tokenPairOptions{}
@@ -76,10 +81,11 @@ func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool, op
 		UserID:          userID,
 		Email:           email,
 		TokenUse:        TokenUseAccess,
+		RememberMe:      rememberMe,
 		MFASatisfied:    opts.mfaSatisfied,
 		IsPlatformAdmin: opts.isPlatformAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			Subject:   userID,
 		},
@@ -90,15 +96,16 @@ func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool, op
 		return "", "", fmt.Errorf("sign access token: %w", err)
 	}
 
-	// Refresh token: 30 days if remember me, 24 hours otherwise
-	refreshDuration := 24 * time.Hour
+	// Refresh token: 30 days if remember me, 7 days otherwise.
+	refreshDuration := RefreshTokenTTL
 	if rememberMe {
-		refreshDuration = 30 * 24 * time.Hour
+		refreshDuration = RememberMeRefreshTokenTTL
 	}
 	refreshClaims := Claims{
 		UserID:          userID,
 		Email:           email,
 		TokenUse:        TokenUseRefresh,
+		RememberMe:      rememberMe,
 		MFASatisfied:    opts.mfaSatisfied,
 		IsPlatformAdmin: opts.isPlatformAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{

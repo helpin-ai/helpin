@@ -158,6 +158,8 @@ function PlanStrip({
   const isTaskPipeline = plan.planKind === 'task_pipeline_fan_out';
   const isDAG = plan.planKind === 'dag';
   const showRail = plan.steps.length > 1 || isFanOut || isTaskPipeline || isDAG;
+  const firstRunId = Object.values(plan.runIdsByStep)[0];
+  const showHeaderOpen = !!onAction && !!(activeRunId || firstRunId);
 
   const renderRail = () => {
     if (isTaskPipeline) return <TaskPipelineRail plan={plan} runsById={runsById} />;
@@ -170,27 +172,39 @@ function PlanStrip({
 
   return (
     <div className="space-y-2">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="group flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-muted/40"
-      >
-        <StatusDot state={dot} />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
-        <span className="text-muted-foreground/60">·</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {duration != null ? formatDuration(duration) : formatDistanceToNow(ts, { addSuffix: true })}
-        </span>
-        <ArrowDown01Icon
-          className={cn(
-            'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
+      <div className="group flex w-full items-center gap-1 rounded-md px-1 py-1 transition hover:bg-muted/40">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <StatusDot state={dot} />
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            {label}
+          </span>
+          <span className="text-muted-foreground/60">·</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {duration != null ? formatDuration(duration) : formatDistanceToNow(ts, { addSuffix: true })}
+          </span>
+          <ArrowDown01Icon
+            className={cn(
+              'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+        {showHeaderOpen ? (
+          <button
+            type="button"
+            aria-label="Open agent run"
+            onClick={() => onAction?.('open')}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-background/80 hover:text-foreground"
+          >
+            <ArrowUpRight01Icon className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
 
       {showRail && !open ? renderRail() : null}
 
@@ -246,6 +260,11 @@ function PlanStrip({
           workspaceId={workspaceId}
           runId={activeRunId}
           interaction={stream.pendingInteraction}
+          onResolved={() => {
+            if (!stream.pendingInteraction) return;
+            stream.clearPendingInteraction(stream.pendingInteraction.interaction_id);
+            void stream.refetch();
+          }}
         />
       ) : null}
 
@@ -310,6 +329,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
   const awaitingApproval = display === 'awaiting_approval';
   const canCancel = ACTIVE_RUN_STATUSES.has(run.status);
   const expanded = !compact || open;
+  const showHeaderOpen = !!onAction;
 
   const body = (
     <div className="space-y-2">
@@ -353,6 +373,11 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
           workspaceId={workspaceId}
           runId={run.id}
           interaction={stream.pendingInteraction}
+          onResolved={() => {
+            if (!stream.pendingInteraction) return;
+            stream.clearPendingInteraction(stream.pendingInteraction.interaction_id);
+            void stream.refetch();
+          }}
         />
       ) : null}
 
@@ -409,37 +434,49 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="group flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition hover:bg-muted/40"
-      >
-        <StatusDot state={dot} />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          Agent
-        </span>
-        <span className="text-muted-foreground/60">·</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
-        {compact && !open ? (
-          <span
-            className={cn(
-              'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
-              pillClasses(state),
-            )}
-          >
-            {runStatusLabel(run)}
+      <div className="group flex w-full items-center gap-1 rounded-md px-1 py-1 transition hover:bg-muted/40">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <StatusDot state={dot} />
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Agent
           </span>
+          <span className="text-muted-foreground/60">·</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
+          {compact && !open ? (
+            <span
+              className={cn(
+                'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                pillClasses(state),
+              )}
+            >
+              {runStatusLabel(run)}
+            </span>
+          ) : null}
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {duration != null ? formatDuration(duration) : formatDistanceToNow(ts, { addSuffix: true })}
+          </span>
+          <ArrowDown01Icon
+            className={cn(
+              'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+          />
+        </button>
+        {showHeaderOpen ? (
+          <button
+            type="button"
+            aria-label="Open agent run"
+            onClick={() => onAction?.('open')}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition hover:bg-background/80 hover:text-foreground"
+          >
+            <ArrowUpRight01Icon className="h-3.5 w-3.5" />
+          </button>
         ) : null}
-        <span className="shrink-0 text-[11px] text-muted-foreground">
-          {duration != null ? formatDuration(duration) : formatDistanceToNow(ts, { addSuffix: true })}
-        </span>
-        <ArrowDown01Icon
-          className={cn(
-            'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
-            open && 'rotate-180',
-          )}
-        />
-      </button>
+      </div>
 
       {/* Grid-rows trick: animates intrinsic content height between 0fr and
           1fr without measuring. Wrapper stays mounted through the transition

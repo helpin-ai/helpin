@@ -176,6 +176,36 @@ vi.mock('@/hooks/queries/useSession', () => ({
   }),
 }))
 
+vi.mock('@/hooks/queries/useAgents', () => ({
+  useAgents: () => ({
+    data: [
+      {
+        id: 'agent-scribe',
+        workspace_id: 'ws-1',
+        is_system: true,
+        name: 'Scribe',
+        role: 'Task Planner',
+        status: 'idle',
+        runtime_kind: 'native_sdk',
+        skills: [],
+        tools: [],
+        allowed_tools: [],
+        allowed_commands: [],
+        allowed_targets: ['task'],
+        preset_key: 'task_planner',
+        trigger_mode: 'manual',
+        tokens_used_this_month: 0,
+        approval_mode: 'preset_default',
+        max_concurrent_runs: 1,
+        default_invocation_mode: 'interactive',
+        created_at: '',
+        updated_at: '',
+      },
+    ],
+    isLoading: false,
+  }),
+}))
+
 vi.mock('@/lib/services/pmEpicService', () => ({
   pmEpicService: { list: vi.fn(async () => ({ data: [] })) },
 }))
@@ -630,6 +660,61 @@ describe('CreateTaskModal', () => {
         entityLabel: 'Task',
         title: 'New task',
         subtitle: 'Template saved.',
+      }),
+    )
+
+    act(() => {
+      root.unmount()
+    })
+  })
+
+  it('does not assign or run an agent by default', async () => {
+    const onCreate = vi.fn(async () => ({ id: 'task-1' }))
+    const onOpenChange = vi.fn()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <CreateTaskModal
+          open
+          onOpenChange={onOpenChange}
+          workspaceId="ws-1"
+          workflow={workflow}
+          initialStateId="state-1"
+          initialTeamId="team-1"
+          onCreate={onCreate}
+        />,
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const titleInput = container.querySelector('#task-title') as HTMLInputElement | null
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Save',
+    ) as HTMLButtonElement | undefined
+
+    expect(titleInput).toBeTruthy()
+    expect(saveButton).toBeTruthy()
+    expect(container.textContent).toContain('No agent')
+
+    await act(async () => {
+      setInputValue(titleInput!, 'Manual task')
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      saveButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        assigned_agent_id: expect.any(String),
+        run_on_create: true,
       }),
     )
 

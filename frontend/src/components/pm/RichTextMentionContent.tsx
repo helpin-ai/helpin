@@ -2,7 +2,9 @@ import { createElement, useCallback, useMemo, useRef } from 'react'
 
 import { LoadingImage } from '@/components/ui/loading-image'
 import { MentionText } from '@/components/pm/MentionText'
+import { normalizeInlineAttachmentImageSrcs } from '@/components/pm/editorImageAttachments'
 import type { AssignableMember, WorkspaceTeam } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 interface RichTextMentionContentProps {
   html: string
@@ -44,6 +46,12 @@ function mapAttributes(element: HTMLElement): Record<string, unknown> {
   return props
 }
 
+const INLINE_IMAGE_ALIGNMENT_CLASS: Record<string, string> = {
+  left: 'justify-start',
+  center: 'justify-center',
+  right: 'justify-end',
+}
+
 function renderNode(
   node: ChildNode,
   key: string,
@@ -67,7 +75,16 @@ function renderNode(
   const props: Record<string, unknown> = { key, ...mapAttributes(element) }
 
   if (tag === 'img') {
-    return createElement(LoadingImage, props)
+    const alignment = element.getAttribute('data-alignment') || 'left'
+    return (
+      <span
+        key={key}
+        data-inline-image-align={alignment}
+        className={cn('my-4 flex w-full', INLINE_IMAGE_ALIGNMENT_CLASS[alignment] ?? 'justify-center')}
+      >
+        {createElement(LoadingImage, props)}
+      </span>
+    )
   }
 
   // Render checkboxes — interactive when onCheckToggle is provided
@@ -152,7 +169,8 @@ export function RichTextMentionContent({
   const content = useMemo(() => {
     if (!html || typeof DOMParser === 'undefined') return null
 
-    const parsed = new DOMParser().parseFromString(html, 'text/html')
+    const normalizedHtml = normalizeInlineAttachmentImageSrcs(html)
+    const parsed = new DOMParser().parseFromString(normalizedHtml, 'text/html')
     const counter = { current: 0 }
     return Array.from(parsed.body.childNodes)
       .map((node, index) => renderNode(node, `node-${index}`, members, teams, onHtmlChange ? handleCheckToggle : undefined, onHtmlChange ? counter : undefined))

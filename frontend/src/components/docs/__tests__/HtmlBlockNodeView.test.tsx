@@ -9,11 +9,13 @@ vi.mock('@tiptap/react', () => ({
 }))
 
 vi.mock('@/lib/icons', () => ({
+  Copy01Icon: ({ className }: { className?: string }) => <svg className={className} />,
   SourceCodeIcon: ({ className }: { className?: string }) => <svg className={className} />,
   ViewIcon: ({ className }: { className?: string }) => <svg className={className} />,
   PencilEdit01Icon: ({ className }: { className?: string }) => <svg className={className} />,
   Delete01Icon: ({ className }: { className?: string }) => <svg className={className} />,
   Alert01Icon: ({ className }: { className?: string }) => <svg className={className} />,
+  Tick01Icon: ({ className }: { className?: string }) => <svg className={className} />,
 }))
 
 vi.mock('@/components/ui/quick-tooltip', () => ({
@@ -33,8 +35,15 @@ function createEditorMock() {
   }
 }
 
+function createEditableEditorMock() {
+  return {
+    ...createEditorMock(),
+    isEditable: true,
+  }
+}
+
 describe('HtmlBlockNodeView', () => {
-  it('renders trusted raw HTML blocks inline without an iframe', () => {
+  it('renders trusted raw HTML blocks in an isolated iframe', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -57,12 +66,11 @@ describe('HtmlBlockNodeView', () => {
       )
     })
 
-    const iframes = container.querySelectorAll('iframe')
-    expect(iframes).toHaveLength(1)
-    expect(iframes[0]?.getAttribute('src')).toBe('https://www.youtube.com/embed/abc123')
-    expect(iframes[0]?.className).not.toContain('docs-html-block-frame')
-    expect(container.querySelector('#models-body')).toBeTruthy()
-    expect(container.innerHTML).toContain('<script>window.__helpinTest = true</script>')
+    const iframe = container.querySelector('iframe.docs-html-block-frame')
+    expect(iframe).toBeTruthy()
+    expect(iframe?.getAttribute('sandbox')).toBe('allow-scripts allow-popups allow-forms allow-presentation')
+    expect(iframe?.getAttribute('srcdoc')).toContain('<script>window.__helpinTest = true</script>')
+    expect(container.querySelector('#models-body')).toBeFalsy()
 
     act(() => {
       root.unmount()
@@ -70,7 +78,7 @@ describe('HtmlBlockNodeView', () => {
     container.remove()
   })
 
-  it('does not show a safety warning for sanitized inline HTML blocks', () => {
+  it('renders simple inline HTML without editor chrome when read-only', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -80,7 +88,7 @@ describe('HtmlBlockNodeView', () => {
         <HtmlBlockNodeView
           node={{
             attrs: {
-              html: '<div><p>Visible content</p><script>window.__removed = true</script></div>',
+              html: '<div><p>Visible content</p></div>',
               renderMode: 'inline',
             },
             nodeSize: 1,
@@ -94,7 +102,60 @@ describe('HtmlBlockNodeView', () => {
     })
 
     expect(container.textContent).toContain('Visible content')
-    expect(container.textContent).not.toContain('Some HTML was removed for safety')
+    expect(container.textContent).not.toContain('Rendered')
+    expect(container.textContent).not.toContain('Source')
+    expect(container.querySelector('iframe')).toBeFalsy()
+
+    act(() => {
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('shows rendered and source modes only when editable', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const updateAttributes = vi.fn()
+
+    act(() => {
+      root.render(
+        <HtmlBlockNodeView
+          node={{
+            attrs: {
+              html: '<div><strong>Visible content</strong></div>',
+              renderMode: 'inline',
+            },
+            nodeSize: 1,
+          } as never}
+          editor={createEditableEditorMock() as never}
+          updateAttributes={updateAttributes}
+          deleteNode={vi.fn()}
+          getPos={() => 1}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Rendered')
+    expect(container.textContent).toContain('Source')
+    expect(container.querySelector('strong')?.textContent).toBe('Visible content')
+
+    const buttons = Array.from(container.querySelectorAll('button'))
+    const sourceButton = buttons.find((button) => button.textContent === 'Source')
+    expect(sourceButton).toBeTruthy()
+
+    act(() => {
+      sourceButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const textarea = container.querySelector('textarea')
+    expect(textarea?.value).toBe('<div><strong>Visible content</strong></div>')
+
+    const renderedButton = buttons.find((button) => button.textContent === 'Rendered')
+    act(() => {
+      renderedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(updateAttributes).toHaveBeenCalledWith({ html: '<div><strong>Visible content</strong></div>' })
 
     act(() => {
       root.unmount()

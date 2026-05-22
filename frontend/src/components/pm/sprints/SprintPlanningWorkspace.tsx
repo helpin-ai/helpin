@@ -36,6 +36,7 @@ interface SprintPlanningWorkspaceProps {
   backlogOpen: boolean;
   onBacklogToggle: () => void;
   canEdit: boolean;
+  canCreateSprint: boolean;
   members: AssignableMember[];
   onOpenSprint: (sprintId: string) => void;
   onOpenTask: (taskId: string) => void;
@@ -51,6 +52,7 @@ export function SprintPlanningWorkspace({
   backlogOpen,
   onBacklogToggle,
   canEdit,
+  canCreateSprint,
   members,
   onOpenSprint,
   onOpenTask,
@@ -170,7 +172,7 @@ export function SprintPlanningWorkspace({
   );
 
   if (!workspace || !hasAnySprint) {
-    return <SprintPlanningEmptyState canEdit={canEdit} onCreateSprint={onCreateSprint} />;
+    return <SprintPlanningEmptyState canEdit={canEdit} canCreateSprint={canCreateSprint} onCreateSprint={onCreateSprint} />;
   }
 
   return (

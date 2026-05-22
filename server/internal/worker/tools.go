@@ -663,11 +663,6 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"properties": map[string]interface{}{},
 	}, toolListTaskChecklist)
 
-	r.register("list_workspace_teams", "List workspace teams that the agent can use for team selection or planning context.", map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}, toolListWorkspaceTeams)
-
 	r.register("list_team_workflows_with_stages", "List the resolved workflow and ordered stages for one team or all workspace teams. Use this to choose a valid workflow stage before creating a task.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -851,7 +846,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolPublishAISectionCandidate)
 
-	r.register("publish_document_change_proposal", "Submit a proposed Helpin Docs document or block change for review in Docs. This persists a Docs proposal; after success, finish without calling request_approval.", map[string]interface{}{
+	r.register("publish_document_change_proposal", "Submit a proposed Docs document or block change for review in Docs. This persists a Docs proposal; after success, finish without calling request_approval.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"scope": map[string]interface{}{
@@ -885,12 +880,13 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 				"items": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"title":       map[string]interface{}{"type": "string"},
-						"url":         map[string]interface{}{"type": "string"},
-						"source_type": map[string]interface{}{"type": "string"},
-						"excerpt":     map[string]interface{}{"type": "string"},
+						"type":  map[string]interface{}{"type": "string", "enum": []string{"conversation", "document", "url", "agent_run", "coverage_gap"}},
+						"id":    map[string]interface{}{"type": "string"},
+						"label": map[string]interface{}{"type": "string"},
+						"url":   map[string]interface{}{"type": "string"},
 					},
-					"additionalProperties": true,
+					"required":             []string{"type", "label"},
+					"additionalProperties": false,
 				},
 			},
 		},
@@ -979,6 +975,46 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"additionalProperties": false,
 	}, toolFindTasksForGitChanges)
 
+	r.register("get_pull_request_diff", "Load the changed files and patches for a GitHub pull request. Defaults owner/repo from the current repository-targeted run when omitted.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"owner": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository owner. Defaults from the current run repository when omitted.",
+			},
+			"repo": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository name. Defaults from the current run repository when omitted.",
+			},
+			"pull_number": map[string]interface{}{
+				"type":        "integer",
+				"description": "Pull request number.",
+			},
+		},
+		"required":             []string{"pull_number"},
+		"additionalProperties": false,
+	}, toolGetPullRequestDiff)
+
+	r.register("get_check_run_logs", "Load a GitHub check run's conclusion, output text, and annotations for diagnosing failed checks.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"owner": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository owner. Defaults from the current run repository when omitted.",
+			},
+			"repo": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository name. Defaults from the current run repository when omitted.",
+			},
+			"check_run_id": map[string]interface{}{
+				"type":        "integer",
+				"description": "GitHub check run ID.",
+			},
+		},
+		"required":             []string{"check_run_id"},
+		"additionalProperties": false,
+	}, toolGetCheckRunLogs)
+
 	r.register("get_task_context", "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -1014,6 +1050,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 	}, toolListEpicTasks)
 
 	r.registerSharedCommandTools(map[string]ToolFunc{
+		"list_workspace_teams":       toolListWorkspaceTeams,
 		"update_task_state":          toolUpdateTaskState,
 		"ensure_task_label":          toolEnsureTaskLabel,
 		"list_tasks":                 toolListTasks,

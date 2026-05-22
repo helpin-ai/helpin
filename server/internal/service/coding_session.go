@@ -509,7 +509,7 @@ func resumeRequestForResolvedInteraction(interaction *model.AgentRunInteraction,
 		req.Content = firstNonEmptyString(content, "Please revise and continue.")
 		return req, nil
 	case model.AgentRunInteractionKindReviewCheckpoint:
-		content := firstNonEmptyString(followupMessage, reviewCheckpointResumeContent(interaction.RequestPayload, responsePayload, intent))
+		content := firstNonEmptyString(reviewCheckpointResumeContent(interaction.RequestPayload, responsePayload, intent), followupMessage)
 		req := model.ResumeAgentRunRequest{
 			Intent:          intent,
 			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
@@ -616,8 +616,13 @@ func resolveIntentForInteraction(interaction *model.AgentRunInteraction, respons
 		var payload struct {
 			Decision string `json:"decision"`
 		}
-		if err := json.Unmarshal(responsePayload, &payload); err == nil && strings.TrimSpace(payload.Decision) == "approve" {
-			return model.AgentRunResumeIntentApprove
+		if err := json.Unmarshal(responsePayload, &payload); err == nil {
+			switch strings.TrimSpace(payload.Decision) {
+			case "approve":
+				return model.AgentRunResumeIntentApprove
+			case "skip":
+				return model.AgentRunResumeIntentReply
+			}
 		}
 		return model.AgentRunResumeIntentRequestChanges
 	case model.AgentRunInteractionKindPermissionsApproval:
@@ -689,6 +694,14 @@ func reviewCheckpointResumeContent(requestPayload, responsePayload json.RawMessa
 		return response.Message
 	}
 	selected := selectReviewFindings(request.Findings, response.SelectionMode, response.SelectedFindingIDs)
+
+	if strings.TrimSpace(response.Decision) == "skip" {
+		lines := []string{"Skipped review findings.", "Do not implement these review findings."}
+		if response.Message != "" {
+			lines = append(lines, "Human note: "+response.Message)
+		}
+		return strings.Join(lines, "\n")
+	}
 
 	switch strings.TrimSpace(intent) {
 	case model.AgentRunResumeIntentApprove:

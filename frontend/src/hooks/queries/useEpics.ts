@@ -38,7 +38,10 @@ export function useEpicTasks(wsId: string, epicId: string) {
 export function useCreateEpic(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: CreateEpicRequest) => unwrap(await pmEpicService.create(data)),
+    mutationFn: async (data: CreateEpicRequest) => {
+      const response = unwrap(await pmEpicService.create(data))
+      return response.epic
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.pm.epics(wsId) })
     },

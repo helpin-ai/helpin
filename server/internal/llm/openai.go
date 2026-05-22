@@ -61,7 +61,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, req ChatRequest) (*
 		modelName = req.Model
 	}
 
-	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode)
+	body := p.buildChatCompletionBody(modelName, messages, maxTokens, req.Temperature, req.JSONMode, req.ProviderOptions)
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
@@ -125,11 +125,15 @@ func (p *OpenAIProvider) buildChatCompletionBody(
 	maxTokens int,
 	temperature float64,
 	jsonMode bool,
+	providerOptions json.RawMessage,
 ) map[string]interface{} {
 	body := map[string]interface{}{
 		"model":       modelName,
 		"messages":    messages,
 		"temperature": temperature,
+	}
+	if len(providerOptions) > 0 && strings.TrimSpace(string(providerOptions)) != "" {
+		body["provider"] = json.RawMessage(providerOptions)
 	}
 	if p.usesMaxCompletionTokens(modelName) {
 		body["max_completion_tokens"] = maxTokens

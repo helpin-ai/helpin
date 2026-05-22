@@ -35,9 +35,20 @@ interface AttachmentsProps {
   onFilePickerReady?: (openPicker: () => void) => void;
   /** Allow parent to programmatically upload files (e.g. from drag overlay) */
   onUploadReady?: (upload: (files: FileList | File[]) => Promise<void>) => void;
+  editable?: boolean;
 }
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+
+export function getAttachmentGridDensityClasses(count: number): string {
+  if (count >= 9) {
+    return 'grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-1.5';
+  }
+  if (count >= 5) {
+    return 'grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2';
+  }
+  return 'grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2';
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -91,7 +102,7 @@ function isVideoType(contentType: string, fileName: string): boolean {
   return ['mp4', 'mov', 'webm', 'mkv', 'wmv', 'avi', 'mpeg', 'mpg'].includes(getFileExtension(fileName));
 }
 
-export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment, onFilePickerReady, onUploadReady }: AttachmentsProps) {
+export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment, onFilePickerReady, onUploadReady, editable = true }: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -133,6 +144,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
 
   const handleUpload = useCallback(
     async (files: FileList | File[]) => {
+      if (!editable) return;
       setError(null);
       const fileArray = Array.from(files);
 
@@ -173,19 +185,22 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
         setUploading(false);
       }
     },
-    [workspaceId, entityType, entityId],
+    [workspaceId, entityType, entityId, editable],
   );
 
   // Expose file picker and upload to parent
   useEffect(() => {
-    onFilePickerReady?.(() => fileInputRef.current?.click());
-  }, [onFilePickerReady]);
+    onFilePickerReady?.(() => {
+      if (editable) fileInputRef.current?.click();
+    });
+  }, [onFilePickerReady, editable]);
 
   useEffect(() => {
     onUploadReady?.(handleUpload);
   }, [onUploadReady, handleUpload]);
 
   const handleDelete = async (entry: AttachmentResponse) => {
+    if (!editable) return;
     if (onDeleteAttachment) {
       const action = await onDeleteAttachment(entry);
       if (action === 'handled') {
@@ -207,6 +222,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
 
   const isFileDrag = (e: React.DragEvent) => e.dataTransfer.types.includes('Files');
   const onDragEnter = (e: React.DragEvent) => {
+    if (!editable) return;
     if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -214,11 +230,13 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
     setDragging(true);
   };
   const onDragOver = (e: React.DragEvent) => {
+    if (!editable) return;
     if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
   };
   const onDragLeave = (e: React.DragEvent) => {
+    if (!editable) return;
     if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -226,6 +244,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
     if (dragCounterRef.current === 0) setDragging(false);
   };
   const onDrop = (e: React.DragEvent) => {
+    if (!editable) return;
     if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -250,7 +269,9 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       {hasAttachments && (
         <div className="flex items-center gap-1.5">
           <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</h3>
+          <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
+            Attachments
+          </h3>
         </div>
       )}
 
@@ -258,6 +279,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
         ref={fileInputRef}
         type="file"
         multiple
+        disabled={!editable}
         className="hidden"
         onChange={(e) => {
           if (e.target.files?.length) handleUpload(e.target.files);
@@ -266,7 +288,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       />
 
       {/* Drop zone — only visible when dragging or uploading */}
-      {(dragging || uploading) && (
+      {editable && (dragging || uploading) && (
         <div
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
@@ -293,7 +315,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
 
       {/* Unified attachment grid — images + files as consistent cards */}
       {attachments.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        <div className={getAttachmentGridDensityClasses(attachments.length)}>
           {attachments.map((entry) => {
             const isImage = isImageType(entry.attachment.content_type);
             const isVideo = isVideoType(entry.attachment.content_type, entry.attachment.file_name);
@@ -350,16 +372,18 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                       <Download04Icon className="h-3 w-3" />
                     </Button>
                   </QuickTooltip>
-                  <QuickTooltip label="Delete">
-                    <Button
-                      variant="secondary"
-                      size="icon"
-                      className="h-6 w-6 bg-background/80 backdrop-blur-sm"
-                      onClick={(e) => { e.stopPropagation(); void handleDelete(entry); }}
-                    >
-                      <Delete01Icon className="h-3 w-3 text-destructive" />
-                    </Button>
-                  </QuickTooltip>
+                  {editable && (
+                    <QuickTooltip label="Delete">
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-6 w-6 bg-background/80 backdrop-blur-sm"
+                        onClick={(e) => { e.stopPropagation(); void handleDelete(entry); }}
+                      >
+                        <Delete01Icon className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </QuickTooltip>
+                  )}
                 </div>
                 <p className="mt-1 truncate text-[10px] text-muted-foreground" title={entry.attachment.file_name}>
                   {entry.attachment.file_name}

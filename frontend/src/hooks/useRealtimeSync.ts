@@ -263,6 +263,8 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
       const docId = event.parent_id || (typeof event.data?.document_id === 'string' ? event.data.document_id : '')
       if (docId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.docs.changeProposals(workspaceId, docId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.changeProposal(workspaceId, docId, event.entity_id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(workspaceId) })
         if (event.data?.status === 'applied') {
           queryClient.invalidateQueries({ queryKey: queryKeys.docs.content(workspaceId, docId) })
           queryClient.invalidateQueries({ queryKey: queryKeys.docs.blocks(workspaceId, docId) })

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -17,15 +19,35 @@ import (
 )
 
 type scriptedCommandBarLLM struct {
-	response string
-	err      error
-	requests []llm.ChatRequest
+	response  string
+	responses []string
+	err       error
+	errors    []error
+	requests  []llm.ChatRequest
+	deadlines []time.Time
 }
 
-func (s *scriptedCommandBarLLM) ChatCompletion(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+func (s *scriptedCommandBarLLM) ChatCompletion(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	s.requests = append(s.requests, req)
+	if deadline, ok := ctx.Deadline(); ok {
+		s.deadlines = append(s.deadlines, deadline)
+	} else {
+		s.deadlines = append(s.deadlines, time.Time{})
+	}
 	if s.err != nil {
 		return nil, s.err
+	}
+	if len(s.errors) > 0 {
+		err := s.errors[0]
+		s.errors = s.errors[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(s.responses) > 0 {
+		response := s.responses[0]
+		s.responses = s.responses[1:]
+		return &llm.ChatResponse{Content: response}, nil
 	}
 	return &llm.ChatResponse{Content: s.response}, nil
 }
@@ -73,6 +95,294 @@ func TestParseExplicitNamedAgentsUsesWholeWords(t *testing.T) {
 	}
 }
 
+func TestParseIntentResolvesExplicitTaskKeyTargetForNamedAgent(t *testing.T) {
+	service, _, workspaceID, taskID := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "run forge for USE-90",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.AgentName != "Forge" {
+		t.Fatalf("expected Forge step, got %#v", step)
+	}
+	if step.Target.EntityType != "task" || step.Target.EntityID != taskID {
+		t.Fatalf("expected resolved task target, got %#v", step.Target)
+	}
+	if !strings.Contains(step.Target.DisplayTitle, "USE-90") {
+		t.Fatalf("expected task key in display title, got %q", step.Target.DisplayTitle)
+	}
+}
+
+func TestParseIntentResolvesExplicitTaskKeyTargetForMultiAgentPlan(t *testing.T) {
+	service, _, workspaceID, taskID := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "run forge then lens for USE-90",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 2 {
+		t.Fatalf("expected two-step plan, got %#v", resp)
+	}
+	for _, step := range resp.Plan.Steps {
+		if step.Target.EntityType != "task" || step.Target.EntityID != taskID {
+			t.Fatalf("expected every step to use resolved task target, got %#v", resp.Plan.Steps)
+		}
+	}
+}
+
+func TestParseIntentAsksForTargetWhenNamedAgentHasNoConcreteTarget(t *testing.T) {
+	service, _, workspaceID, _ := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "run forge",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusNoMatchingAgent {
+		t.Fatalf("expected no-match clarification, got %#v", resp)
+	}
+	if !strings.Contains(resp.Reason, "Forge needs a task target") {
+		t.Fatalf("expected task target clarification, got %q", resp.Reason)
+	}
+}
+
+func TestParseIntentDoesNotFallBackWhenExplicitTaskKeyIsMissing(t *testing.T) {
+	service, _, workspaceID, _ := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "run forge for USE-999",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusNoMatchingAgent {
+		t.Fatalf("expected no-match for missing task key, got %#v", resp)
+	}
+	if !strings.Contains(resp.Reason, "USE-999") {
+		t.Fatalf("expected missing key reason, got %q", resp.Reason)
+	}
+}
+
+func TestParseIntentResolvesExplicitDocumentIDTargetForOneShot(t *testing.T) {
+	service, _, workspaceID, documentID := setupCommandBarDocumentTargetResolutionTest(t)
+	ctx := context.Background()
+	service.llmProvider = &scriptedCommandBarLLM{responses: []string{
+		`{"status":"plan","route_kind":"one_shot_command","one_shot_tools":["read_document","web_search_exa","web_search_brave"],"tool_intent":"propose_change","rationale":"document update","confidence":0.98}`,
+		`{"status":"plan","route_kind":"one_shot_command","one_shot_tools":["read_document","web_search_exa","web_search_brave","publish_document_change_proposal"],"tool_intent":"propose_change","rationale":"document update","confidence":0.98}`,
+	}}
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check if any section needs update after online research for document id " + documentID + ". use one-shot agent",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected one-shot step, got %#v", step)
+	}
+	if step.Target.EntityType != "document" || step.Target.EntityID != documentID {
+		t.Fatalf("expected document target, got %#v", step.Target)
+	}
+	if !strings.Contains(step.Target.DisplayTitle, "Wire error tracking") {
+		t.Fatalf("expected document title in target, got %#v", step.Target)
+	}
+	if !slices.Contains(step.AllowedTools, "publish_document_change_proposal") {
+		t.Fatalf("expected proposal tool, got %#v", step.AllowedTools)
+	}
+}
+
+func TestParseIntentDoesNotAugmentOneShotToolsFromText(t *testing.T) {
+	service, _, workspaceID, documentID := setupCommandBarDocumentTargetResolutionTest(t)
+	ctx := context.Background()
+	service.llmProvider = &scriptedCommandBarLLM{response: `{"status":"plan","route_kind":"one_shot_command","one_shot_tools":["read_document","web_search_exa","web_search_brave"],"tool_intent":"read_only","rationale":"document research","confidence":0.98}`}
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check if any section needs update after online research for document id " + documentID + ". use one-shot agent",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.Target.EntityType != "document" || step.Target.EntityID != documentID {
+		t.Fatalf("expected document target, got %#v", step.Target)
+	}
+	if slices.Contains(step.AllowedTools, "publish_document_change_proposal") {
+		t.Fatalf("did not expect backend-added proposal tool, got %#v", step.AllowedTools)
+	}
+	if strings.Contains(step.Instructions, "publish_document_change_proposal") {
+		t.Fatalf("did not expect proposal instructions for read-only tools, got %q", step.Instructions)
+	}
+}
+
+func TestParseIntentRejectsInvalidOneShotToolIntentWithoutHeuristicFallback(t *testing.T) {
+	service, _, workspaceID, documentID := setupCommandBarDocumentTargetResolutionTest(t)
+	ctx := context.Background()
+	service.llmProvider = &scriptedCommandBarLLM{responses: []string{
+		`{"status":"plan","route_kind":"one_shot_command","one_shot_tools":["read_document","web_search_exa"],"tool_intent":"propose_change","rationale":"document update","confidence":0.98}`,
+		`{"status":"plan","route_kind":"one_shot_command","one_shot_tools":["read_document","web_search_exa"],"tool_intent":"propose_change","rationale":"document update","confidence":0.98}`,
+	}}
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check if any section needs update after online research for document id " + documentID + ". use one-shot agent",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusNoMatchingAgent {
+		t.Fatalf("expected invalid planner no-match, got %#v", resp)
+	}
+	if !strings.Contains(resp.Reason, "propose_change tool_intent requires publish_document_change_proposal") {
+		t.Fatalf("expected validation reason, got %q", resp.Reason)
+	}
+}
+
+func TestParseIntentRejectsDocumentMutationOneShotWithoutConcreteTarget(t *testing.T) {
+	service, _, workspaceID, _ := setupCommandBarDocumentTargetResolutionTest(t)
+	ctx := context.Background()
+	service.llmProvider = &scriptedCommandBarLLM{response: `{"status":"plan","route_kind":"one_shot_command","one_shot_tools":["read_document","web_search_exa","publish_document_change_proposal"],"rationale":"document update","confidence":0.98}`}
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check if any section needs update after online research. use one-shot agent",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusNoMatchingAgent {
+		t.Fatalf("expected clarification/no-match, got %#v", resp)
+	}
+	if !strings.Contains(resp.Reason, "Command Agent needs a document target") {
+		t.Fatalf("expected document target clarification, got %q", resp.Reason)
+	}
+}
+
+func TestParseIntentPreservesLLMOneShotStepTarget(t *testing.T) {
+	service, _, workspaceID, documentID := setupCommandBarDocumentTargetResolutionTest(t)
+	ctx := context.Background()
+	service.llmProvider = &scriptedCommandBarLLM{response: fmt.Sprintf(`{"status":"plan","route_kind":"one_shot_command","steps":[{"agent_id":"agent-command","target":{"entity_type":"document","entity_id":%q,"display_title":"Wire error tracking into metrics middleware Plan"},"instructions":"Research the document and propose updates.","allowed_tools":["read_document","web_search_exa","publish_document_change_proposal"]}],"rationale":"document update","confidence":0.98}`, documentID)}
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check if the document needs updates after web research",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.Target.EntityType != "document" || step.Target.EntityID != documentID {
+		t.Fatalf("expected LLM-provided document target to be preserved, got %#v", step.Target)
+	}
+	if step.Target.DisplayTitle != "Wire error tracking into metrics middleware Plan" {
+		t.Fatalf("expected validated document title, got %#v", step.Target)
+	}
+}
+
+func TestChatTurnInfersPriorDocumentTargetForOneShot(t *testing.T) {
+	service, db, workspaceID, documentID := setupCommandBarDocumentTargetResolutionTest(t)
+	ctx := context.Background()
+	repo := repository.NewCommandBarChatRepository(db)
+	threadID := seedCommandBarThreadWithWorkingContext(t, ctx, repo, workspaceID, "actor-1", []commandBarWorkingEntityRef{
+		{Type: "document", ID: documentID, Title: "Wire error tracking into metrics middleware Plan"},
+	})
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"route":"one_shot_command","reason":"document update check","confidence":0.98}`,
+		`{"status":"plan","route_kind":"one_shot_command","one_shot_tools":["read_document","web_search_exa","publish_document_change_proposal"],"rationale":"document update","confidence":0.98}`,
+	}}
+	service.llmProvider = fakeLLM
+	service.SetChatRepository(repo)
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		ThreadID:    &threadID,
+		Text:        "check if any section needs update after online research",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalRunPlan || resp.Proposal.Plan == nil || len(resp.Proposal.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot run plan, got %#v", resp.Proposal)
+	}
+	step := resp.Proposal.Plan.Steps[0]
+	if step.Target.EntityType != "document" || step.Target.EntityID != documentID {
+		t.Fatalf("expected prior document target, got %#v", step.Target)
+	}
+}
+
+func TestChatTurnClassifiesExplicitTaskStatusAsInlineReadOnly(t *testing.T) {
+	service, db, workspaceID, _ := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+	createCommandBarChatTablesForTest(t, db)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	commandService := NewInternalCommandService(nil, service.agentService.taskService, nil, nil, nil, nil, taskRepo, nil)
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"route":"inline_read_only","reason":"read-only task status question","confidence":0.99}`,
+		`{"type":"tool_call","tool":"list_tasks","input":{}}`,
+		`{"type":"final","answer":"USE-90 is not completed."}`,
+	}}
+	service.llmProvider = fakeLLM
+	service.SetChatRepository(repository.NewCommandBarChatRepository(db)).
+		SetInternalCommandService(commandService)
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "USE-90 is it completed?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if resp.Proposal.Plan != nil {
+		t.Fatalf("task status question should not create a run plan")
+	}
+	if resp.AssistantMessage.Content != "USE-90 is not completed." {
+		t.Fatalf("expected task status answer, got %q", resp.AssistantMessage.Content)
+	}
+	var toolContext commandBarReadOnlyToolContext
+	if err := json.Unmarshal(resp.Proposal.Context, &toolContext); err != nil {
+		t.Fatalf("decode inline context: %v", err)
+	}
+	if len(toolContext.ToolCalls) != 1 || toolContext.ToolCalls[0].Tool != "list_tasks" {
+		t.Fatalf("expected one task lookup tool call, got %#v", toolContext.ToolCalls)
+	}
+	output := string(toolContext.ToolCalls[0].Output)
+	if !strings.Contains(output, `"task_key":"USE-90"`) || !strings.Contains(output, `"completed":false`) {
+		t.Fatalf("expected resolved USE-90 task output, got %s", output)
+	}
+}
+
 func TestCommandBarAdditionalContextDoesNotIncludeRawUserRequest(t *testing.T) {
 	context := commandBarAdditionalContext(
 		"Execute your normal Forge role for the current target.",
@@ -91,7 +401,7 @@ func TestCommandBarAdditionalContextDoesNotIncludeRawUserRequest(t *testing.T) {
 	}
 }
 
-func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
+func TestParseOneShotCommandIntentForDocumentResearchIsReadOnly(t *testing.T) {
 	pageContext := model.CommandBarPageContext{
 		EntityType:   "document",
 		EntityID:     "doc-1",
@@ -107,7 +417,7 @@ func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
 		},
 	}
 
-	resp := parseOneShotCommandIntent("check the web and update stale doc sections", pageContext, candidates)
+	resp := parseOneShotCommandIntent("check the web and inspect stale doc sections", pageContext, candidates)
 	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil {
 		t.Fatalf("expected one-shot command plan, got %#v", resp)
 	}
@@ -118,10 +428,13 @@ func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
 	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
 		t.Fatalf("expected one-shot step kind, got %q", step.PlanKind)
 	}
-	for _, required := range []string{"web_search_exa", "read_document", "get_document_blocks", "publish_document_change_proposal"} {
+	for _, required := range []string{"web_search_exa", "read_document", "get_document_blocks"} {
 		if !slices.Contains(step.AllowedTools, required) {
 			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
 		}
+	}
+	if slices.Contains(step.AllowedTools, "publish_document_change_proposal") {
+		t.Fatalf("did not expect heuristic proposal tool in %#v", step.AllowedTools)
 	}
 	if slices.Contains(step.AllowedTools, "search_documents") {
 		t.Fatalf("did not expect search_documents for a known current document in %#v", step.AllowedTools)
@@ -140,8 +453,8 @@ func TestParseOneShotCommandIntentForDocumentUpdate(t *testing.T) {
 	if !strings.Contains(step.Instructions, "Read the current document") {
 		t.Fatalf("expected document-specific execution plan, got %q", step.Instructions)
 	}
-	if !strings.Contains(step.Instructions, "publish_document_change_proposal") || !strings.Contains(step.Instructions, "Do not call request_approval for Docs proposals") {
-		t.Fatalf("expected Docs proposal submission instructions, got %q", step.Instructions)
+	if strings.Contains(step.Instructions, "publish_document_change_proposal") || strings.Contains(step.Instructions, "Do not call request_approval for Docs proposals") {
+		t.Fatalf("did not expect Docs proposal submission instructions, got %q", step.Instructions)
 	}
 	if !strings.Contains(step.Instructions, "Do not use search_documents to rediscover or inspect a known current document") {
 		t.Fatalf("expected current-doc search guardrail, got %q", step.Instructions)
@@ -253,15 +566,25 @@ func TestParseIntentWithLLMRoutesOneShotAndNarrowsTools(t *testing.T) {
 			AllowedTools:   []string{"update_plan", "request_user_input", "list_workspace_teams", "list_team_workflows_with_stages", "list_tasks", "create_task"},
 		},
 	}
-	fakeLLM := &scriptedCommandBarLLM{response: `{
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{`{
 		"status":"plan",
 		"route_kind":"one_shot_command",
 		"agent_id":"agent-command",
 		"instructions":"Count engineering tasks that need attention.",
 		"one_shot_tools":["list_workspace_teams","list_tasks","create_task"],
+		"tool_intent":"read_only",
 		"rationale":"This is an ad hoc data question, not planning.",
 		"confidence":0.91
-	}`}
+	}`, `{
+		"status":"plan",
+		"route_kind":"one_shot_command",
+		"agent_id":"agent-command",
+		"instructions":"Count engineering tasks that need attention.",
+		"one_shot_tools":["list_workspace_teams","list_tasks"],
+		"tool_intent":"read_only",
+		"rationale":"This is an ad hoc data question, not planning.",
+		"confidence":0.91
+	}`}}
 	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
 		SetLLMRouterConfig("openai", "gpt-5.5", 777, time.Second)
 
@@ -279,8 +602,8 @@ func TestParseIntentWithLLMRoutesOneShotAndNarrowsTools(t *testing.T) {
 	if slices.Contains(step.AllowedTools, "create_task") {
 		t.Fatalf("did not expect mutation tool for read-only question, got %#v", step.AllowedTools)
 	}
-	if len(fakeLLM.requests) != 1 {
-		t.Fatalf("expected one LLM request, got %d", len(fakeLLM.requests))
+	if len(fakeLLM.requests) != 2 {
+		t.Fatalf("expected LLM retry after invalid read-only mutation tools, got %d requests", len(fakeLLM.requests))
 	}
 	if got := fakeLLM.requests[0].Provider; got != "openai" {
 		t.Fatalf("expected provider openai, got %q", got)
@@ -293,6 +616,173 @@ func TestParseIntentWithLLMRoutesOneShotAndNarrowsTools(t *testing.T) {
 	}
 	if fakeLLM.requests[0].JSONSchema == nil {
 		t.Fatalf("expected command router JSON schema for schema-forced providers")
+	}
+}
+
+func TestCommandBarRouterAttachesOpenRouterProviderOptions(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
+	candidates := []model.CommandBarAgent{{
+		ID:             "agent-command",
+		Name:           "Command Agent",
+		PresetKey:      model.AgentPresetCommandAgent,
+		AllowedTargets: []string{"workspace"},
+		AllowedTools:   []string{"list_tasks"},
+	}}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"one_shot_command",
+		"agent_id":"agent-command",
+		"instructions":"Count open tasks.",
+		"one_shot_tools":["list_tasks"],
+		"rationale":"Ad hoc data question.",
+		"confidence":0.91
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetLLMRouterConfig(model.AgentModelProviderOpenRouter, "openai/gpt-5.5", 777, time.Second).
+		SetCommandRouterOpenRouterProviderOptions(json.RawMessage(`{"order":["openai"],"allow_fallbacks":false}`))
+
+	resp := service.parseIntentWithLLM(context.Background(), "how many open tasks?", pageContext, candidates)
+	if resp == nil || resp.Plan == nil {
+		t.Fatalf("expected one-shot plan, got %#v", resp)
+	}
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected one LLM request, got %d", len(fakeLLM.requests))
+	}
+	if string(fakeLLM.requests[0].ProviderOptions) != `{"order":["openai"],"allow_fallbacks":false}` {
+		t.Fatalf("expected openrouter provider options, got %s", string(fakeLLM.requests[0].ProviderOptions))
+	}
+}
+
+func TestCommandBarRouterOmitsOpenRouterProviderOptionsForNonOpenRouter(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"no_matching_agent",
+		"route_kind":"no_matching_agent",
+		"reason":"No match.",
+		"confidence":0.2
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetLLMRouterConfig(model.AgentModelProviderOpenAI, "gpt-5.5", 777, time.Second).
+		SetCommandRouterOpenRouterProviderOptions(json.RawMessage(`{"order":["openai"]}`))
+
+	_ = service.parseIntentWithLLM(context.Background(), "hello", pageContext, nil)
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected one LLM request, got %d", len(fakeLLM.requests))
+	}
+	if len(fakeLLM.requests[0].ProviderOptions) != 0 {
+		t.Fatalf("did not expect provider options for openai, got %s", string(fakeLLM.requests[0].ProviderOptions))
+	}
+}
+
+func TestCommandBarRouterUsesOpenRouterMinimumTimeout(t *testing.T) {
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"no_matching_agent",
+		"route_kind":"no_matching_agent",
+		"reason":"No match.",
+		"confidence":0.2
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetLLMRouterConfig(model.AgentModelProviderOpenRouter, "z-ai/glm-4.7", 777, time.Second)
+
+	_ = service.parseIntentWithLLM(context.Background(), "hello", model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}, nil)
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected one LLM request, got %d", len(fakeLLM.requests))
+	}
+	if len(fakeLLM.deadlines) != 1 || fakeLLM.deadlines[0].IsZero() {
+		t.Fatal("expected command router request context to have a deadline")
+	}
+	if remaining := time.Until(fakeLLM.deadlines[0]); remaining < 7*time.Second {
+		t.Fatalf("expected openrouter minimum timeout near 8s, got remaining %s", remaining)
+	}
+}
+
+func TestCommandBarRouterPromptTellsOneShotToUseWebToolsForExternalEvidence(t *testing.T) {
+	pageContext := model.CommandBarPageContext{EntityType: "document", EntityID: "doc-1", DisplayTitle: "Document"}
+	candidates := []model.CommandBarAgent{{
+		ID:             "agent-command",
+		Name:           "Command Agent",
+		PresetKey:      model.AgentPresetCommandAgent,
+		AllowedTargets: []string{"document"},
+		AllowedTools:   []string{"read_document", "web_search_exa", "web_search_brave", "fetch_url"},
+	}}
+	fakeLLM := &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"one_shot_command",
+		"agent_id":"agent-command",
+		"one_shot_tools":["read_document","web_search_exa","fetch_url"],
+		"tool_intent":"read_only",
+		"rationale":"Needs current external evidence.",
+		"confidence":0.91
+	}`}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM)
+
+	resp := service.parseIntentWithLLM(context.Background(), "is that relevant to the current trend? web search", pageContext, candidates)
+	if resp == nil || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot plan, got %#v", resp)
+	}
+	prompt := fakeLLM.requests[0].SystemPrompt + "\n" + fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(prompt, "current external evidence") || !strings.Contains(prompt, "include web search/fetch tools") {
+		t.Fatalf("expected one-shot router prompt to require web tools for external evidence, got %s", prompt)
+	}
+}
+
+func TestChatTurnOpenRouterProviderOptionsApplyToClassifierAndInlineChat(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"route":"inline_read_only","reason":"settings guidance","confidence":0.98}`,
+		`{"type":"final","answer":"Open Settings."}`,
+	}}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repository.NewCommandBarChatRepository(db)).
+		SetLLMRouterConfig(model.AgentModelProviderOpenRouter, "openai/gpt-5.5", 777, time.Second).
+		SetCommandRouterOpenRouterProviderOptions(json.RawMessage(`{"order":["openai"]}`))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "How do I manage settings?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if len(fakeLLM.requests) != 2 {
+		t.Fatalf("expected classifier and inline chat requests, got %d", len(fakeLLM.requests))
+	}
+	for idx, req := range fakeLLM.requests {
+		if string(req.ProviderOptions) != `{"order":["openai"]}` {
+			t.Fatalf("request %d missing provider options: %s", idx, string(req.ProviderOptions))
+		}
+	}
+}
+
+func TestChatClassifierPromptRoutesExternalEvidenceOutsideInlineToolsToOneShot(t *testing.T) {
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	fakeLLM := &scriptedCommandBarLLM{response: `{"route":"one_shot_command","reason":"needs current web evidence","confidence":0.98}`}
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetInternalCommandService(commandService)
+
+	classification, err := service.classifyCommandBarChatIntent(ctx, workspaceID, "is that relevant to the current trend? web search", model.CommandBarPageContext{EntityType: "document", EntityID: "doc-1", DisplayTitle: "Wire error tracking into metrics middleware Plan"}, fullCommandBarChatAccess(), nil)
+	if err != nil {
+		t.Fatalf("classify command bar chat intent: %v", err)
+	}
+	if classification == nil || classification.Route != "one_shot_command" {
+		t.Fatalf("expected one-shot classification, got %#v", classification)
+	}
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected one classifier request, got %d", len(fakeLLM.requests))
+	}
+	prompt := fakeLLM.requests[0].SystemPrompt + "\n" + fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(prompt, "current external evidence") || !strings.Contains(prompt, `route "one_shot_command"`) {
+		t.Fatalf("expected classifier prompt to route external evidence outside inline tools to one-shot, got %s", prompt)
+	}
+	if strings.Contains(prompt, `"name":"web_search_exa"`) || strings.Contains(prompt, `"name":"web_search_brave"`) || strings.Contains(prompt, `"name":"fetch_url"`) {
+		t.Fatalf("test setup expected no inline web tools, got prompt %s", prompt)
 	}
 }
 
@@ -554,6 +1044,789 @@ func TestParseIntentFallsBackToOneShotAfterLLMNoMatch(t *testing.T) {
 	}
 	if !slices.Contains(step.AllowedTools, "list_tasks") {
 		t.Fatalf("expected read-only task context tools, got %#v", step.AllowedTools)
+	}
+}
+
+func TestChatTurnClassifierTimeoutDoesNotFallBackToOneShot(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+		allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, 1, 'Command Agent', ?, 'idle', 'native_sdk', ?, ?, ?, 'never', 1, 'interactive', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"22222222-2222-2222-2222-222222222222",
+		workspaceID,
+		model.AgentPresetCommandAgent,
+		[]byte(`["update_plan","request_user_input","list_workspace_teams","list_team_workflows_with_stages","list_tasks"]`),
+		[]byte(`[]`),
+		[]byte(`["workspace"]`),
+	).Error; err != nil {
+		t.Fatalf("seed command agent: %v", err)
+	}
+
+	fakeLLM := &scriptedCommandBarLLM{
+		errors: []error{context.DeadlineExceeded, nil},
+		responses: []string{
+			`{"type":"final","answer":"You have 3 open tasks assigned to you."}`,
+		},
+	}
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "how many open tasks i have assigned to me?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected classifier timeout to stay inline, got %#v", resp.Proposal)
+	}
+	if resp.Proposal.Plan != nil {
+		t.Fatalf("classifier timeout should not produce one-shot plan")
+	}
+	if resp.AssistantMessage.Content != "You have 3 open tasks assigned to you." {
+		t.Fatalf("expected inline model answer, got %q", resp.AssistantMessage.Content)
+	}
+	if len(fakeLLM.requests) != 2 {
+		t.Fatalf("expected classifier call then inline chat call, got %d", len(fakeLLM.requests))
+	}
+	if got := fakeLLM.requests[0].Messages[0].Content; !strings.Contains(got, "how many open tasks") {
+		t.Fatalf("expected classifier to receive user question, got %s", got)
+	}
+}
+
+func TestChatTurnInlineReadOnlyPersistsMessagesWithoutRunPlan(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"route":"inline_read_only","reason":"settings guidance","confidence":0.98}`,
+		`{"type":"final","answer":"Open Settings, then choose Teams to manage team configuration."}`,
+	}}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "How do I configure teams in Helpin settings?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if resp.Proposal.Plan != nil {
+		t.Fatalf("inline answer should not include a run plan")
+	}
+	if !strings.Contains(resp.AssistantMessage.Content, "Settings") {
+		t.Fatalf("expected assistant answer content, got %q", resp.AssistantMessage.Content)
+	}
+	var messageCount int64
+	if err := db.Table("command_bar_messages").Count(&messageCount).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if messageCount != 2 {
+		t.Fatalf("expected user and assistant messages, got %d", messageCount)
+	}
+}
+
+func TestChatTurnInlineReadOnlyDeniesUnavailableDomainAccess(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	fakeLLM := &scriptedCommandBarLLM{response: "Leaked CRM data"}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurnWithAccess(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "list CRM contacts",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	}, CommandBarChatAccess{CanReadPM: true, CanReadDocs: true, CanReadCRM: false})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer proposal, got %#v", resp.Proposal)
+	}
+	if strings.Contains(resp.AssistantMessage.Content, "Leaked") || !strings.Contains(resp.AssistantMessage.Content, "cannot access CRM") {
+		t.Fatalf("expected denied CRM answer without llm fallback, got %q", resp.AssistantMessage.Content)
+	}
+	if len(fakeLLM.requests) != 0 {
+		t.Fatalf("expected no llm call for denied domain access, got %d", len(fakeLLM.requests))
+	}
+}
+
+func TestInlineReadOnlyChatUsesModelRequestedTools(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-1"
+	now := time.Now()
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedWorkspace(t, db, workspaceID, "Workspace", "workspace", "actor-1")
+	seedWorkflow(t, db, "wf-1", workspaceID, "state-1")
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"team-eng", workspaceID, "Engineering", "eng", "engineering", "feature", now, now)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"team-growth", workspaceID, "Growth", "growth", "growth", "task", now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-open-eng", workspaceID, 1, "Build API", model.PMTaskTypeFeature, "wf-1", "state-1", "team-eng", "medium", "normal", false, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-done-eng", workspaceID, 2, "Ship API", model.PMTaskTypeFeature, "wf-1", "state-1", "team-eng", "medium", "normal", true, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-open-growth", workspaceID, 3, "Launch campaign", model.PMTaskTypeChore, "wf-1", "state-1", "team-growth", "medium", "normal", false, false, now, now)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	commandService := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+	commandService.SetSettingsRepository(repository.NewSettingsRepository(db))
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"type":"tool_call","tool":"list_workspace_teams","input":{}}`,
+		`{"type":"tool_call","tool":"list_tasks","input":{"team_id":"team-eng","open_only":true,"limit":10}}`,
+		`{"type":"final","answer":"Engineering has 1 open task."}`,
+	}}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetInternalCommandService(commandService)
+
+	answer, inlineContext := service.inlineReadOnlyAnswer(ctx, workspaceID, "actor-1", "how many open tasks do we have in engineering", model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID}, fullCommandBarChatAccess(), nil)
+	if answer != "Engineering has 1 open task." {
+		t.Fatalf("expected model final answer, got %q", answer)
+	}
+	if len(fakeLLM.requests) != 3 {
+		t.Fatalf("expected iterative tool chat calls, got %d", len(fakeLLM.requests))
+	}
+	var toolContext commandBarReadOnlyToolContext
+	if err := json.Unmarshal(inlineContext, &toolContext); err != nil {
+		t.Fatalf("decode inline context: %v", err)
+	}
+	if len(toolContext.ToolCalls) != 2 || toolContext.ToolCalls[0].Tool != "list_workspace_teams" || toolContext.ToolCalls[1].Tool != "list_tasks" {
+		t.Fatalf("expected workspace teams then task tools, got %#v", toolContext.ToolCalls)
+	}
+	if !strings.Contains(string(toolContext.ToolCalls[1].Output), `"total":1`) || strings.Contains(string(toolContext.ToolCalls[1].Output), "Launch campaign") {
+		t.Fatalf("expected team-filtered task output, got %s", string(toolContext.ToolCalls[1].Output))
+	}
+}
+
+func TestInlineReadOnlyChatUsesDocsToolForDocumentPublishCount(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-1"
+	now := time.Now()
+	mustExec(t, db, `CREATE TABLE docs_documents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		space_id TEXT NOT NULL,
+		collection_id TEXT,
+		title TEXT NOT NULL,
+		status TEXT NOT NULL,
+		team_id TEXT,
+		owner_id TEXT,
+		excerpt TEXT,
+		is_pinned BOOLEAN NOT NULL DEFAULT 0,
+		published_at DATETIME,
+		next_review_at DATETIME,
+		created_by TEXT NOT NULL,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`)
+	mustExec(t, db, `CREATE TABLE docs_change_proposals (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		document_id TEXT NOT NULL,
+		block_id TEXT,
+		agent_id TEXT,
+		agent_run_id TEXT,
+		scope TEXT NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending',
+		revision INTEGER NOT NULL DEFAULT 0,
+		summary TEXT NOT NULL,
+		content_markdown TEXT NOT NULL,
+		content JSON NOT NULL,
+		sources JSON NOT NULL DEFAULT '[]',
+		created_by TEXT NOT NULL,
+		resolved_by TEXT,
+		resolved_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+	for _, row := range []struct {
+		id     string
+		title  string
+		status string
+	}{
+		{"doc-draft-1", "Draft API guide", model.DocStatusDraft},
+		{"doc-draft-2", "Draft release notes", model.DocStatusDraft},
+		{"doc-published-1", "Published help article", model.DocStatusPublished},
+	} {
+		mustExec(t, db, `INSERT INTO docs_documents (id, workspace_id, space_id, title, status, is_pinned, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			row.id, workspaceID, "space-1", row.title, row.status, false, "actor-1", now)
+	}
+	docsSvc := NewDocsDocumentService(repository.NewDocsDocumentRepository(db), repository.NewDocsSpaceRepository(db), nil, false)
+	commandService := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	commandService.SetDocsCreateDependencies(docsSvc, nil)
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"type":"tool_call","tool":"list_documents","input":{"status":"draft","limit":10}}`,
+		`{"type":"final","answer":"There are 2 documents that need to be published."}`,
+	}}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetInternalCommandService(commandService)
+
+	answer, inlineContext := service.inlineReadOnlyAnswer(ctx, workspaceID, "actor-1", "how many documents require to be published?", model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID}, fullCommandBarChatAccess(), nil)
+	if answer != "There are 2 documents that need to be published." {
+		t.Fatalf("expected docs answer, got %q", answer)
+	}
+	var toolContext commandBarReadOnlyToolContext
+	if err := json.Unmarshal(inlineContext, &toolContext); err != nil {
+		t.Fatalf("decode inline context: %v", err)
+	}
+	if len(toolContext.ToolCalls) != 1 || toolContext.ToolCalls[0].Tool != "list_documents" {
+		t.Fatalf("expected list_documents tool call, got %#v", toolContext.ToolCalls)
+	}
+	output := string(toolContext.ToolCalls[0].Output)
+	if !strings.Contains(output, `"total":2`) || strings.Contains(output, "Published help article") {
+		t.Fatalf("expected draft-only docs output, got %s", output)
+	}
+	if toolContext.WorkingContext == nil || len(toolContext.WorkingContext.ResultSets) != 1 || toolContext.WorkingContext.ResultSets[0].EntityType != "document" {
+		t.Fatalf("expected document working context, got %#v", toolContext.WorkingContext)
+	}
+	prompt := fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(prompt, `"name":"list_documents"`) {
+		t.Fatalf("expected list_documents in available tools, got %s", prompt)
+	}
+}
+
+func TestInlineReadOnlyChatCanReadCurrentDocument(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-1"
+	documentID := "doc-1"
+	blockID := "block-1"
+	now := time.Now()
+	mustExec(t, db, `CREATE TABLE docs_documents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		space_id TEXT NOT NULL,
+		collection_id TEXT,
+		title TEXT NOT NULL,
+		status TEXT NOT NULL,
+		visibility TEXT NOT NULL DEFAULT 'workspace_wide',
+		team_id TEXT,
+		owner_id TEXT,
+		excerpt TEXT,
+		is_pinned BOOLEAN NOT NULL DEFAULT 0,
+		published_at DATETIME,
+		next_review_at DATETIME,
+		created_by TEXT NOT NULL,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`)
+	mustExec(t, db, `CREATE TABLE docs_contents (
+		id TEXT PRIMARY KEY,
+		document_id TEXT NOT NULL UNIQUE,
+		content JSON,
+		content_text TEXT,
+		word_count INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+	mustExec(t, db, `CREATE TABLE docs_blocks (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		document_id TEXT NOT NULL,
+		parent_id TEXT,
+		type TEXT NOT NULL,
+		content JSON NOT NULL DEFAULT '{}',
+		content_text TEXT,
+		sort_key TEXT NOT NULL DEFAULT '~',
+		revision INTEGER NOT NULL DEFAULT 1,
+		authored_by TEXT,
+		last_edited_by TEXT,
+		created_at DATETIME,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`)
+	mustExec(t, db, `INSERT INTO docs_documents (id, workspace_id, space_id, title, status, is_pinned, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		documentID, workspaceID, "space-1", "Wire error tracking into metrics middleware Plan", model.DocStatusDraft, false, "actor-1", now)
+	mustExec(t, db, `INSERT INTO docs_contents (id, document_id, content, content_text, word_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"content-1", documentID, []byte(`{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"This plan wires 5xx metrics into middleware."}]}]}`), "This plan wires 5xx metrics into middleware.", 7, now, now)
+	mustExec(t, db, `INSERT INTO docs_blocks (id, workspace_id, document_id, type, content, content_text, sort_key, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		blockID, workspaceID, documentID, "paragraph", []byte(`{"type":"paragraph","content":[{"type":"text","text":"This plan wires 5xx metrics into middleware."}]}`), "This plan wires 5xx metrics into middleware.", "a0", 2, now, now)
+	docsRepo := repository.NewDocsDocumentRepository(db)
+	docsSvc := NewDocsDocumentService(docsRepo, repository.NewDocsSpaceRepository(db), nil, false)
+	contentSvc := NewDocsContentService(repository.NewDocsContentRepository(db), docsRepo, nil)
+	blockSvc := NewDocsBlockService(repository.NewDocsBlockRepository(db), contentSvc, docsRepo)
+	commandService := NewInternalCommandService(nil, nil, nil, nil, contentSvc, nil, nil, nil)
+	commandService.SetDocsCreateDependencies(docsSvc, nil)
+	commandService.SetDocsBlockService(blockSvc)
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"type":"tool_call","tool":"read_document","input":{}}`,
+		`{"type":"final","answer":"It is a draft plan about wiring 5xx metrics into middleware."}`,
+	}}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetInternalCommandService(commandService)
+
+	answer, inlineContext := service.inlineReadOnlyAnswer(ctx, workspaceID, "actor-1", "what in this doc?", model.CommandBarPageContext{EntityType: "document", EntityID: documentID, DisplayTitle: "Wire error tracking into metrics middleware Plan"}, fullCommandBarChatAccess(), nil)
+	if answer != "It is a draft plan about wiring 5xx metrics into middleware." {
+		t.Fatalf("expected document answer, got %q", answer)
+	}
+	var toolContext commandBarReadOnlyToolContext
+	if err := json.Unmarshal(inlineContext, &toolContext); err != nil {
+		t.Fatalf("decode inline context: %v", err)
+	}
+	if len(toolContext.ToolCalls) != 1 || toolContext.ToolCalls[0].Tool != "read_document" {
+		t.Fatalf("expected read_document tool call, got %#v", toolContext.ToolCalls)
+	}
+	output := string(toolContext.ToolCalls[0].Output)
+	if !strings.Contains(output, `"title":"Wire error tracking into metrics middleware Plan"`) || !strings.Contains(output, "5xx metrics") {
+		t.Fatalf("expected document content output, got %s", output)
+	}
+	prompt := fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(prompt, `"name":"read_document"`) || !strings.Contains(prompt, `"entity_type":"document"`) {
+		t.Fatalf("expected read_document tool and document context in prompt, got %s", prompt)
+	}
+}
+
+func TestDecodeCommandBarReadOnlyToolTurnUnwrapsProviderContent(t *testing.T) {
+	raw := `{"content":"{\"type\":\"tool_call\",\"tool\":\"list_tasks\",\"input\":{\"open_only\":true,\"owned_by_actor\":true,\"detail_level\":\"summary\"}}","can_answer":false,"source_doc_ids":[],"confidence":0.95}`
+
+	turn, err := decodeCommandBarReadOnlyToolTurn(raw)
+	if err != nil {
+		t.Fatalf("decode tool turn: %v", err)
+	}
+	if turn.Type != "tool_call" || turn.Tool != "list_tasks" {
+		t.Fatalf("expected nested tool call, got %#v", turn)
+	}
+	if !strings.Contains(string(turn.Input), `"owned_by_actor":true`) {
+		t.Fatalf("expected nested tool input, got %s", string(turn.Input))
+	}
+}
+
+func TestCommandBarWorkingContextExtractsGenericResultSetsFromHistory(t *testing.T) {
+	priorContext := commandBarReadOnlyToolContext{
+		Mode: "read_only_tool_chat",
+		ToolCalls: []commandBarReadOnlyToolCall{
+			{
+				Tool:  "list_workspace_teams",
+				Input: json.RawMessage(`{}`),
+				Output: json.RawMessage(`{
+					"teams":[
+						{"id":"team-eng","name":"Engineering","handle":"eng","team_type":"engineering"},
+						{"id":"team-ops","name":"Operations","handle":"ops","team_type":"operations"}
+					]
+				}`),
+			},
+			{
+				Tool:  "list_tasks",
+				Input: json.RawMessage(`{"team_id":"team-eng","open_only":true,"limit":5}`),
+				Output: json.RawMessage(`{
+					"tasks":[
+						{"task_id":"task-90","task_key":"USE-90","name":"Add 5xx error counter metric","state_name":"To Do","priority":"urgent","severity":"normal","team_id":"team-eng"},
+						{"task_id":"task-235","task_key":"USE-235","name":"Fix critical authorization bypass","state_name":"Backlog","priority":"high","severity":"critical","team_id":"team-eng"}
+					],
+					"total":2,
+					"limit":5,
+					"detail_level":"summary"
+				}`),
+			},
+		},
+	}
+	rawContext, err := json.Marshal(priorContext)
+	if err != nil {
+		t.Fatalf("marshal prior context: %v", err)
+	}
+	history := []model.CommandBarMessage{{
+		Role:         model.CommandBarMessageRoleAssistant,
+		Content:      "Top tasks: USE-90 and USE-235.",
+		ProposalJSON: mustJSON(&model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Context: rawContext}),
+	}}
+
+	working := commandBarWorkingContextFromHistory(history)
+	if working == nil {
+		t.Fatal("expected working context")
+	}
+	if len(working.ResultSets) != 2 {
+		t.Fatalf("expected team and task result sets, got %#v", working.ResultSets)
+	}
+	if working.ActiveScope == nil || working.ActiveScope.SourceTool != "pm.list_tasks" || working.ActiveScope.EntityType != "task" {
+		t.Fatalf("expected latest task result set to become active scope, got %#v", working.ActiveScope)
+	}
+	foundTask := false
+	foundTeam := false
+	for _, entity := range working.ReferencedEntities {
+		if entity.Type == "task" && entity.ID == "task-90" && entity.Key == "USE-90" {
+			foundTask = true
+		}
+		if entity.Type == "workspace_team" && entity.ID == "team-eng" && entity.Title == "Engineering" {
+			foundTeam = true
+		}
+	}
+	if !foundTask || !foundTeam {
+		t.Fatalf("expected generic task and team refs, got %#v", working.ReferencedEntities)
+	}
+}
+
+func TestChatTurnReadOnlyToolChatLoadsThreadContext(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-1"
+	now := time.Now()
+	createCommandBarChatTablesForTest(t, db)
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedUser(t, db, "actor-2", "other@example.com", "Other", "hash")
+	seedWorkspace(t, db, workspaceID, "Workspace", "workspace", "actor-1")
+	seedWorkspaceMember(t, db, "member-1", workspaceID, "actor-1", "actor@example.com", "Actor", "admin")
+	seedWorkspaceMember(t, db, "member-2", workspaceID, "actor-2", "other@example.com", "Other", "member")
+	seedWorkflow(t, db, "wf-1", workspaceID, "state-1")
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"team-eng", workspaceID, "Engineering", "eng", "engineering", "feature", now, now)
+	for _, task := range []struct {
+		ID      string
+		Name    string
+		OwnerID string
+	}{
+		{ID: "task-owned", Name: "Owned engineering task", OwnerID: "actor-1"},
+		{ID: "task-other", Name: "Other engineering task", OwnerID: "actor-2"},
+	} {
+		mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			task.ID, workspaceID, 1, task.Name, model.PMTaskTypeFeature, "wf-1", "state-1", "team-eng", "medium", "normal", false, false, now, now)
+		mustExec(t, db, `INSERT INTO pm_task_owners (task_id, user_id, created_at) VALUES (?, ?, ?)`, task.ID, task.OwnerID, now)
+	}
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	commandService := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+	commandService.SetSettingsRepository(repository.NewSettingsRepository(db))
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"route":"inline_read_only","reason":"read-only task count","confidence":0.98}`,
+		`{"type":"tool_call","tool":"list_workspace_teams","input":{}}`,
+		`{"type":"tool_call","tool":"list_tasks","input":{"team_id":"team-eng","open_only":true,"limit":10}}`,
+		`{"type":"final","answer":"Engineering has 2 open tasks."}`,
+		`{"route":"inline_read_only","reason":"read-only follow-up count","confidence":0.98}`,
+		`{"type":"tool_call","tool":"list_tasks","input":{"team_id":"team-eng","open_only":true,"owned_by_actor":true,"limit":10}}`,
+		`{"type":"final","answer":"Of those Engineering open tasks, 1 is assigned to you."}`,
+	}}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repository.NewCommandBarChatRepository(db)).
+		SetInternalCommandService(commandService)
+
+	first, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "how many open tasks do we have in engineering",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("first chat turn: %v", err)
+	}
+	if first.AssistantMessage.Content != "Engineering has 2 open tasks." {
+		t.Fatalf("expected first model answer, got %q", first.AssistantMessage.Content)
+	}
+	second, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		ThreadID:    &first.Thread.ID,
+		Text:        "out of those, how many are pending on me?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("second chat turn: %v", err)
+	}
+	if second.AssistantMessage.Content != "Of those Engineering open tasks, 1 is assigned to you." {
+		t.Fatalf("expected follow-up model answer, got %q", second.AssistantMessage.Content)
+	}
+	if len(fakeLLM.requests) != 7 {
+		t.Fatalf("expected seven llm turns, got %d", len(fakeLLM.requests))
+	}
+	secondPrompt := fakeLLM.requests[5].Messages[0].Content
+	if !strings.Contains(secondPrompt, "Engineering has 2 open tasks.") ||
+		!strings.Contains(secondPrompt, `"referenced_entities"`) ||
+		!strings.Contains(secondPrompt, `"task-owned"`) ||
+		!strings.Contains(secondPrompt, `"team_id":"team-eng"`) {
+		t.Fatalf("expected second-turn llm prompt to include recent chat and structured working context, got %s", secondPrompt)
+	}
+	if second.Proposal == nil || len(second.Proposal.Context) == 0 {
+		t.Fatalf("expected structured inline context on follow-up proposal, got %#v", second.Proposal)
+	}
+	var toolContext commandBarReadOnlyToolContext
+	if err := json.Unmarshal(second.Proposal.Context, &toolContext); err != nil {
+		t.Fatalf("decode second context: %v", err)
+	}
+	if len(toolContext.ToolCalls) != 1 || !strings.Contains(string(toolContext.ToolCalls[0].Input), `"owned_by_actor":true`) || !strings.Contains(string(toolContext.ToolCalls[0].Output), `"total":1`) {
+		t.Fatalf("expected actor-owned task tool result, got %#v", toolContext.ToolCalls)
+	}
+	if toolContext.WorkingContext == nil || len(toolContext.WorkingContext.ReferencedEntities) == 0 || len(toolContext.WorkingContext.ResultSets) == 0 {
+		t.Fatalf("expected follow-up proposal to preserve working context, got %#v", toolContext.WorkingContext)
+	}
+}
+
+func TestChatTurnAmbiguousPriorTargetsAllowsInlineReadOnly(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-ambiguous-inline"
+	repo := repository.NewCommandBarChatRepository(db)
+	threadID := seedCommandBarThreadWithWorkingContext(t, ctx, repo, workspaceID, "actor-1", []commandBarWorkingEntityRef{
+		{Type: "task", ID: "task-90", Key: "USE-90", Title: "Add 5xx error counter metric"},
+		{Type: "task", ID: "task-239", Key: "USE-239", Title: "Fix dependency vulnerabilities"},
+	})
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"route":"inline_read_only","reason":"summarize prior set","confidence":0.98}`,
+		`{"type":"final","answer":"Here is a summary of both tasks."}`,
+	}}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repo)
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		ThreadID:    &threadID,
+		Text:        "summarize all",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalInlineAnswer {
+		t.Fatalf("expected inline answer over ambiguous prior set, got %#v", resp.Proposal)
+	}
+	if got := resp.AssistantMessage.Content; got != "Here is a summary of both tasks." {
+		t.Fatalf("expected inline answer, got %q", got)
+	}
+	if len(fakeLLM.requests) != 2 {
+		t.Fatalf("expected classifier and inline answer calls, got %d", len(fakeLLM.requests))
+	}
+	classifierPrompt := fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(classifierPrompt, `"prior_target_state":"multiple"`) || !strings.Contains(classifierPrompt, "Target resolution context") {
+		t.Fatalf("expected classifier prompt to include ambiguous target context, got %s", classifierPrompt)
+	}
+}
+
+func TestChatTurnAmbiguousPriorTargetsUsesClassifierClarificationForRun(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-ambiguous-run"
+	repo := repository.NewCommandBarChatRepository(db)
+	threadID := seedCommandBarThreadWithWorkingContext(t, ctx, repo, workspaceID, "actor-1", []commandBarWorkingEntityRef{
+		{Type: "task", ID: "task-90", Key: "USE-90", Title: "Add 5xx error counter metric"},
+		{Type: "task", ID: "task-239", Key: "USE-239", Title: "Fix dependency vulnerabilities"},
+	})
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"route":"clarification","answer":"Which task should I run Forge on: USE-90 or USE-239?","reason":"multiple prior targets","confidence":0.98}`,
+	}}
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, fakeLLM).
+		SetChatRepository(repo)
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		ThreadID:    &threadID,
+		Text:        "run forge",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalClarification {
+		t.Fatalf("expected classifier-driven clarification, got %#v", resp.Proposal)
+	}
+	if !strings.Contains(resp.AssistantMessage.Content, "USE-90") || !strings.Contains(resp.AssistantMessage.Content, "USE-239") {
+		t.Fatalf("expected clarification to preserve classifier answer, got %q", resp.AssistantMessage.Content)
+	}
+	if len(fakeLLM.requests) != 1 {
+		t.Fatalf("expected only classifier call, got %d", len(fakeLLM.requests))
+	}
+	classifierPrompt := fakeLLM.requests[0].Messages[0].Content
+	if !strings.Contains(classifierPrompt, `"prior_target_state":"multiple"`) {
+		t.Fatalf("expected classifier prompt to include multiple target state, got %s", classifierPrompt)
+	}
+}
+
+func TestChatTurnInfersPriorTaskTargetForTaskPlanningCodingReview(t *testing.T) {
+	service, db, workspaceID, taskID := setupCommandBarTargetResolutionTest(t)
+	ctx := context.Background()
+	createCommandBarChatTablesForTest(t, db)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	commandService := NewInternalCommandService(nil, service.agentService.taskService, nil, nil, nil, nil, taskRepo, nil)
+	fakeLLM := &scriptedCommandBarLLM{responses: []string{
+		`{"route":"inline_read_only","reason":"read-only planning doc lookup","confidence":0.99}`,
+		`{"type":"final","answer":"No, USE-90 does not have a planning document associated with it."}`,
+		`{"route":"one_shot_command","reason":"durable multi-agent task work","confidence":0.99}`,
+	}}
+	service.llmProvider = fakeLLM
+	service.SetChatRepository(repository.NewCommandBarChatRepository(db)).
+		SetInternalCommandService(commandService)
+
+	first, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "USE-90, does it have a planning doc associated?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("first chat turn: %v", err)
+	}
+	second, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		ThreadID:    &first.Thread.ID,
+		Text:        "then we should run task planning, coding and review",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("second chat turn: %v", err)
+	}
+	if second.Proposal == nil || second.Proposal.Type != model.CommandBarProposalRunPlan || second.Proposal.Plan == nil {
+		t.Fatalf("expected run plan proposal, got %#v", second.Proposal)
+	}
+	steps := second.Proposal.Plan.Steps
+	if len(steps) != 3 {
+		t.Fatalf("expected Scribe, Forge, Lens steps, got %#v", steps)
+	}
+	wantAgents := []string{"Scribe", "Forge", "Lens"}
+	for i, step := range steps {
+		if step.AgentName != wantAgents[i] {
+			t.Fatalf("step %d expected %s, got %#v", i, wantAgents[i], step)
+		}
+		if step.Target.EntityType != "task" || step.Target.EntityID != taskID {
+			t.Fatalf("step %d expected inferred task target, got %#v", i, step.Target)
+		}
+	}
+}
+
+func TestListChatThreadsReturnsMostRecentMessages(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, &scriptedCommandBarLLM{responses: []string{
+		`{"route":"inline_read_only","reason":"settings guidance","confidence":0.98}`,
+		`{"type":"final","answer":"Use Settings."}`,
+		`{"route":"inline_read_only","reason":"settings guidance","confidence":0.98}`,
+		`{"type":"final","answer":"Use Settings."}`,
+	}}).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	first, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "How do I manage settings?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("first chat turn: %v", err)
+	}
+	second, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		ThreadID:    &first.Thread.ID,
+		Text:        "How do I manage teams?",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID},
+	})
+	if err != nil {
+		t.Fatalf("second chat turn: %v", err)
+	}
+
+	resp, err := service.ListChatThreads(ctx, workspaceID, "actor-1", 1)
+	if err != nil {
+		t.Fatalf("list chat threads: %v", err)
+	}
+	if len(resp.Threads) != 1 {
+		t.Fatalf("expected one thread, got %d", len(resp.Threads))
+	}
+	if resp.Threads[0].Thread.ID != first.Thread.ID || second.Thread.ID != first.Thread.ID {
+		t.Fatalf("expected same thread to be returned")
+	}
+	if got := len(resp.Threads[0].Messages); got != 4 {
+		t.Fatalf("expected four persisted messages, got %d", got)
+	}
+	if resp.Threads[0].Messages[0].Content != "How do I manage settings?" {
+		t.Fatalf("expected chronological message order, got %#v", resp.Threads[0].Messages)
+	}
+}
+
+func TestConfirmChatCreateAgentRejectsDifferentActor(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	repo := repository.NewCommandBarChatRepository(db)
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, nil).SetChatRepository(repo)
+	messageID := seedCommandBarCreateAgentProposal(t, ctx, repo, workspaceID, "actor-1")
+
+	if _, err := service.ConfirmChatCreateAgent(ctx, workspaceID, "actor-2", messageID, model.ConfirmCommandBarChatProposalRequest{}); err == nil {
+		t.Fatalf("expected different actor confirmation to fail")
+	}
+}
+
+func TestConfirmChatCreateAgentRejectsToolTargetOverrides(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	repo := repository.NewCommandBarChatRepository(db)
+	service := NewCommandBarService(&AgentService{}, nil, nil, nil, nil).SetChatRepository(repo)
+	messageID := seedCommandBarCreateAgentProposal(t, ctx, repo, workspaceID, "actor-1")
+
+	_, err := service.ConfirmChatCreateAgent(ctx, workspaceID, "actor-1", messageID, model.ConfirmCommandBarChatProposalRequest{
+		AllowedTools:   []string{"create_task"},
+		AllowedTargets: []string{"workspace"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "overrides are not supported") {
+		t.Fatalf("expected override rejection, got %v", err)
+	}
+}
+
+func TestChatTurnRunPlanProposalUsesExistingParser(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+		allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, 1, 'Atlas', ?, 'idle', 'native_sdk', ?, ?, ?, 'never', 1, 'interactive', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"22222222-2222-2222-2222-222222222222",
+		workspaceID,
+		model.AgentPresetTaskPlanner,
+		[]byte(`["update_plan"]`),
+		[]byte(`[]`),
+		[]byte(`["workspace"]`),
+	).Error; err != nil {
+		t.Fatalf("seed task planner: %v", err)
+	}
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo}, nil, nil, nil, nil).
+		SetChatRepository(repository.NewCommandBarChatRepository(db))
+
+	resp, err := service.ChatTurn(ctx, workspaceID, "actor-1", model.CommandBarChatTurnRequest{
+		Text:        "break down this initiative into tasks",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Workspace"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalRunPlan || resp.Proposal.Plan == nil {
+		t.Fatalf("expected run plan proposal, got %#v", resp.Proposal)
+	}
+	if got := resp.Proposal.Plan.Steps[0].AgentName; got != "Atlas" {
+		t.Fatalf("expected Atlas plan step, got %q", got)
 	}
 }
 
@@ -1049,6 +2322,52 @@ func TestDecodeCommandBarPlanRunIDsUsesStringKeys(t *testing.T) {
 	}
 }
 
+func seedCommandBarCreateAgentProposal(t *testing.T, ctx context.Context, repo *repository.CommandBarChatRepository, workspaceID, actorID string) string {
+	t.Helper()
+	thread := &model.CommandBarThread{
+		ID:          "33333333-3333-3333-3333-333333333333",
+		WorkspaceID: workspaceID,
+		ActorID:     &actorID,
+		Title:       "Create agent",
+		Status:      model.CommandBarThreadStatusOpen,
+	}
+	if err := repo.CreateThread(ctx, thread); err != nil {
+		t.Fatalf("create chat thread: %v", err)
+	}
+	proposal := model.CommandBarProposal{
+		Type: model.CommandBarProposalCreateAgent,
+		Draft: &model.CustomAgentDraft{
+			Name:                  "Doc Reviewer",
+			Role:                  "Review docs",
+			RuntimeKind:           "native_sdk",
+			AllowedTools:          []string{"read_document"},
+			AllowedTargets:        []string{"document"},
+			ApprovalMode:          "always",
+			DefaultInvocationMode: "interactive",
+			MaxConcurrentRuns:     1,
+			SystemPrompt:          "Review docs.",
+		},
+	}
+	rawProposal, err := json.Marshal(proposal)
+	if err != nil {
+		t.Fatalf("marshal proposal: %v", err)
+	}
+	messageID := "44444444-4444-4444-4444-444444444444"
+	message := &model.CommandBarMessage{
+		ID:           messageID,
+		ThreadID:     thread.ID,
+		WorkspaceID:  workspaceID,
+		ActorID:      &actorID,
+		Role:         model.CommandBarMessageRoleAssistant,
+		Content:      "Review the draft before approving.",
+		ProposalJSON: rawProposal,
+	}
+	if err := repo.CreateMessage(ctx, message); err != nil {
+		t.Fatalf("create proposal message: %v", err)
+	}
+	return messageID
+}
+
 func TestCommandBarPlanOwnedByActor(t *testing.T) {
 	actorID := "11111111-1111-1111-1111-111111111111"
 	otherID := "22222222-2222-2222-2222-222222222222"
@@ -1096,6 +2415,202 @@ func TestValidatePromotedAgentTargetsRejectsOutsideSourceAllowlist(t *testing.T)
 	if err := validatePromotedAgentTargets([]string{"crm_deal"}, sourceAgent); err == nil {
 		t.Fatal("expected crm_deal target to be rejected")
 	}
+}
+
+func setupCommandBarTargetResolutionTest(t *testing.T) (*CommandBarService, *gorm.DB, string, string) {
+	t.Helper()
+	db := newTestDB(t)
+	ctx := context.Background()
+	workspaceID := "ws-target-resolution"
+	taskID := "task-use-90"
+	now := time.Now()
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedWorkspace(t, db, workspaceID, "Workspace", "workspace", "actor-1")
+	mustExec(t, db, `UPDATE workspaces SET workspace_key = ? WHERE id = ?`, "USE", workspaceID)
+	seedWorkspaceMember(t, db, "member-1", workspaceID, "actor-1", "actor@example.com", "Actor", "admin")
+	seedWorkflow(t, db, "wf-1", workspaceID, "state-1")
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		taskID, workspaceID, 90, "Add 5xx error counter metric", model.PMTaskTypeFeature, "wf-1", "state-1", "medium", "normal", false, false, now, now)
+	mustExec(t, db, `CREATE TABLE agents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		is_system BOOLEAN NOT NULL DEFAULT 0,
+		name TEXT NOT NULL,
+		preset_key TEXT,
+		preset_version_key TEXT,
+		source_preset_key TEXT,
+		source_preset_version_key TEXT,
+		source_template_id TEXT,
+		source_template_key TEXT,
+		template_key TEXT,
+		template_instance_id TEXT,
+		template_version INTEGER,
+		role TEXT,
+		status TEXT NOT NULL DEFAULT 'idle',
+		runtime_kind TEXT NOT NULL DEFAULT 'opencode',
+		skills BLOB NOT NULL DEFAULT '[]',
+		trigger_mode TEXT NOT NULL DEFAULT 'manual',
+		provider TEXT,
+		model TEXT,
+		execution_config BLOB NOT NULL DEFAULT '{}',
+		system_prompt TEXT,
+		instruction_template_version TEXT NOT NULL DEFAULT '',
+		planning_notes TEXT,
+		monthly_token_budget INTEGER,
+		tokens_used_this_month INTEGER NOT NULL DEFAULT 0,
+		active_task_id TEXT,
+		team_id TEXT,
+		allowed_tools BLOB NOT NULL DEFAULT '[]',
+		allowed_commands BLOB NOT NULL DEFAULT '[]',
+		allowed_targets BLOB NOT NULL DEFAULT '[]',
+		approval_mode TEXT NOT NULL DEFAULT 'preset_default',
+		max_concurrent_runs INTEGER NOT NULL DEFAULT 1,
+		default_invocation_mode TEXT NOT NULL DEFAULT 'autonomous',
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+	mustExec(t, db, `CREATE TABLE agent_team_access (
+		agent_id TEXT NOT NULL,
+		team_id TEXT NOT NULL,
+		created_at DATETIME,
+		PRIMARY KEY (agent_id, team_id)
+	)`)
+
+	agentRepo := repository.NewAgentRepository(db)
+	for _, agent := range []model.Agent{
+		{
+			ID:                    "agent-scribe",
+			WorkspaceID:           workspaceID,
+			IsSystem:              true,
+			Name:                  "Scribe",
+			PresetKey:             model.AgentPresetTaskPlanner,
+			Role:                  "Task Planner",
+			Status:                "idle",
+			RuntimeKind:           "native_sdk",
+			Skills:                model.AgentSkillRefs{},
+			TriggerMode:           "manual",
+			ExecutionConfig:       model.JSONBlob(`{}`),
+			AllowedTools:          json.RawMessage(`[]`),
+			AllowedCommands:       json.RawMessage(`[]`),
+			AllowedTargets:        json.RawMessage(`["task","epic","workspace"]`),
+			ApprovalMode:          "never",
+			MaxConcurrentRuns:     1,
+			DefaultInvocationMode: model.InvocationModeInteractive,
+		},
+		{
+			ID:                    "agent-forge",
+			WorkspaceID:           workspaceID,
+			IsSystem:              true,
+			Name:                  "Forge",
+			PresetKey:             model.AgentPresetCodeBuilder,
+			Role:                  "Code Builder",
+			Status:                "idle",
+			RuntimeKind:           "codex",
+			Skills:                model.AgentSkillRefs{},
+			TriggerMode:           "manual",
+			ExecutionConfig:       model.JSONBlob(`{}`),
+			AllowedTools:          json.RawMessage(`[]`),
+			AllowedCommands:       json.RawMessage(`[]`),
+			AllowedTargets:        json.RawMessage(`["task","workspace"]`),
+			ApprovalMode:          "never",
+			MaxConcurrentRuns:     1,
+			DefaultInvocationMode: model.InvocationModeAutonomous,
+		},
+		{
+			ID:                    "agent-lens",
+			WorkspaceID:           workspaceID,
+			IsSystem:              true,
+			Name:                  "Lens",
+			PresetKey:             model.AgentPresetReviewAgent,
+			Role:                  "Review Agent",
+			Status:                "idle",
+			RuntimeKind:           "codex",
+			Skills:                model.AgentSkillRefs{},
+			TriggerMode:           "manual",
+			ExecutionConfig:       model.JSONBlob(`{}`),
+			AllowedTools:          json.RawMessage(`[]`),
+			AllowedCommands:       json.RawMessage(`[]`),
+			AllowedTargets:        json.RawMessage(`["task","workspace"]`),
+			ApprovalMode:          "never",
+			MaxConcurrentRuns:     1,
+			DefaultInvocationMode: model.InvocationModeAutonomous,
+		},
+	} {
+		agent := agent
+		if err := agentRepo.Create(ctx, &agent); err != nil {
+			t.Fatalf("create agent %s: %v", agent.ID, err)
+		}
+	}
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	service := NewCommandBarService(&AgentService{
+		agentRepo:   agentRepo,
+		taskService: taskService,
+	}, nil, nil, nil, nil)
+	return service, db, workspaceID, taskID
+}
+
+func setupCommandBarDocumentTargetResolutionTest(t *testing.T) (*CommandBarService, *gorm.DB, string, string) {
+	t.Helper()
+	db := setupCommandBarPlanTestDB(t)
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	documentID := "40ab3137-86ea-4eed-b470-e6765abb52d5"
+	now := time.Now()
+	mustExec(t, db, `CREATE TABLE docs_documents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		space_id TEXT NOT NULL,
+		collection_id TEXT,
+		title TEXT NOT NULL,
+		status TEXT NOT NULL,
+		team_id TEXT,
+		owner_id TEXT,
+		excerpt TEXT,
+		is_pinned BOOLEAN NOT NULL DEFAULT 0,
+		published_at DATETIME,
+		next_review_at DATETIME,
+		created_by TEXT NOT NULL,
+		updated_at DATETIME,
+		deleted_at DATETIME
+	)`)
+	mustExec(t, db, `INSERT INTO docs_documents (id, workspace_id, space_id, title, status, is_pinned, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		documentID, workspaceID, "space-1", "Wire error tracking into metrics middleware Plan", model.DocStatusDraft, false, "actor-1", now)
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+		allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, 1, 'Command Agent', ?, 'idle', 'native_sdk', ?, ?, ?, 'never', 1, 'interactive', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"33333333-3333-3333-3333-333333333333",
+		workspaceID,
+		model.AgentPresetCommandAgent,
+		[]byte(`["update_plan","request_user_input","read_document","get_document_blocks","web_search_exa","fetch_url","publish_document_change_proposal"]`),
+		[]byte(`[]`),
+		[]byte(`["workspace","document"]`),
+	).Error; err != nil {
+		t.Fatalf("seed command agent: %v", err)
+	}
+	agentRepo := repository.NewAgentRepository(db)
+	docRepo := repository.NewDocsDocumentRepository(db)
+	docsSvc := NewDocsDocumentService(docRepo, repository.NewDocsSpaceRepository(db), nil, false)
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo, docsDocumentRepo: docRepo}, nil, nil, nil, nil).
+		SetReadOnlyDataServices(docsSvc, nil, nil, nil)
+	return service, db, workspaceID, documentID
 }
 
 func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
@@ -1163,6 +2678,26 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE command_bar_threads (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			actor_id TEXT,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'open',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE command_bar_messages (
+			id TEXT PRIMARY KEY,
+			thread_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			actor_id TEXT,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			page_context TEXT,
+			proposal_json TEXT,
+			created_at DATETIME
+		)`,
 		`CREATE TABLE agents (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -1174,6 +2709,9 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 			source_preset_version_key TEXT,
 			source_template_id TEXT,
 			source_template_key TEXT,
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			role TEXT,
 			status TEXT NOT NULL DEFAULT 'idle',
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
@@ -1204,4 +2742,73 @@ func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
 		}
 	}
 	return db
+}
+
+func createCommandBarChatTablesForTest(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, stmt := range []string{
+		`CREATE TABLE command_bar_threads (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			actor_id TEXT,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'open',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE command_bar_messages (
+			id TEXT PRIMARY KEY,
+			thread_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			actor_id TEXT,
+			role TEXT NOT NULL,
+			content TEXT NOT NULL,
+			page_context TEXT,
+			proposal_json TEXT,
+			created_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create command bar chat test table: %v", err)
+		}
+	}
+}
+
+func seedCommandBarThreadWithWorkingContext(t *testing.T, ctx context.Context, repo *repository.CommandBarChatRepository, workspaceID, actorID string, entities []commandBarWorkingEntityRef) string {
+	t.Helper()
+	thread := &model.CommandBarThread{
+		ID:          uuid.NewString(),
+		WorkspaceID: workspaceID,
+		ActorID:     &actorID,
+		Title:       "Prior context",
+		Status:      model.CommandBarThreadStatusOpen,
+	}
+	if err := repo.CreateThread(ctx, thread); err != nil {
+		t.Fatalf("create command bar thread: %v", err)
+	}
+	rawContext, err := json.Marshal(commandBarReadOnlyToolContext{
+		Mode: "read_only_tool_chat",
+		WorkingContext: &commandBarWorkingContext{
+			ReferencedEntities: entities,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal working context: %v", err)
+	}
+	proposalJSON := mustJSON(&model.CommandBarProposal{
+		Type:    model.CommandBarProposalInlineAnswer,
+		Context: rawContext,
+	})
+	if err := repo.CreateMessage(ctx, &model.CommandBarMessage{
+		ID:           uuid.NewString(),
+		ThreadID:     thread.ID,
+		WorkspaceID:  workspaceID,
+		ActorID:      &actorID,
+		Role:         model.CommandBarMessageRoleAssistant,
+		Content:      "Prior result set.",
+		ProposalJSON: proposalJSON,
+	}); err != nil {
+		t.Fatalf("create command bar message: %v", err)
+	}
+	return thread.ID
 }

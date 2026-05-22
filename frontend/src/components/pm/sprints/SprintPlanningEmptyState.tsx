@@ -1,12 +1,14 @@
 import { ChartColumnIcon, Calendar03Icon, CheckmarkCircle02Icon, PlusSignIcon, Timer01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface SprintPlanningEmptyStateProps {
   canEdit: boolean;
+  canCreateSprint: boolean;
   onCreateSprint: () => void;
 }
 
-export function SprintPlanningEmptyState({ canEdit, onCreateSprint }: SprintPlanningEmptyStateProps) {
+export function SprintPlanningEmptyState({ canEdit, canCreateSprint, onCreateSprint }: SprintPlanningEmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center px-4 py-16">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 mb-5">
@@ -17,10 +19,23 @@ export function SprintPlanningEmptyState({ canEdit, onCreateSprint }: SprintPlan
         Sprints are time-boxed cycles that help your team plan, focus, and deliver work in a predictable rhythm.
       </p>
       {canEdit && (
-        <Button className="gap-2 mb-8" onClick={onCreateSprint}>
-          <PlusSignIcon className="h-4 w-4" />
-          Create Sprint
-        </Button>
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="mb-8 inline-flex">
+                <Button className="gap-2" onClick={onCreateSprint} disabled={!canCreateSprint}>
+                  <PlusSignIcon className="h-4 w-4" />
+                  Create Sprint
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {!canCreateSprint && (
+              <TooltipContent side="top" className="max-w-[260px] text-xs">
+                Only team managers can create sprints. Ask your team manager for access.
+              </TooltipContent>
+            )}
+          </Tooltip>
+        </TooltipProvider>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
         {[

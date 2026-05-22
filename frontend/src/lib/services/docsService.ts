@@ -140,6 +140,8 @@ export const docsService = {
     api.post<AISectionCandidateResponse>(`/docs/documents/${docId}/blocks/${blockId}/ai-section/reject${qs(wsId)}`, {}),
   listChangeProposals: (wsId: string, docId: string) =>
     api.get<DocsChangeProposal[]>(`/docs/documents/${docId}/change-proposals${qs(wsId)}`),
+  getChangeProposal: (wsId: string, docId: string, proposalId: string) =>
+    api.get<DocsChangeProposal>(`/docs/documents/${docId}/change-proposals/${proposalId}${qs(wsId)}`),
   applyChangeProposal: (wsId: string, docId: string, proposalId: string) =>
     api.post<DocsChangeProposalApplyResponse>(`/docs/documents/${docId}/change-proposals/${proposalId}/apply${qs(wsId)}`, {}),
   discardChangeProposal: (wsId: string, docId: string, proposalId: string) =>
@@ -258,13 +260,12 @@ export const docsService = {
   markArticleTranslationReviewed: (wsId: string, docId: string, locale: string) =>
     api.post<DocsHelpcenterArticleTranslation>(`/docs/documents/${docId}/helpcenter/translations/${encodeURIComponent(locale)}/mark-reviewed${qs(wsId)}`),
   uploadHelpcenterAsset: async (wsId: string, assetType: 'logo' | 'logo_dark' | 'favicon' | 'og_image', file: File): Promise<{ data: { url: string } | null; error: string | null }> => {
-    const token = localStorage.getItem('access_token');
     const formData = new FormData();
     formData.append('file', file);
     try {
       const res = await fetch(`${API_BASE}/docs/helpcenter/upload?workspace_id=${encodeURIComponent(wsId)}&type=${assetType}`, {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
         body: formData,
       });
       if (!res.ok) {

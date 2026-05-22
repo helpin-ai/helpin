@@ -31,15 +31,13 @@ function unwrapPublicKeyOptions<T>(options: unknown): T {
   return options as T;
 }
 
-async function request<T>(path: string, options: RequestInit = {}, withAuth = false): Promise<ApiResult<T>> {
-  const token = withAuth ? localStorage.getItem('access_token') : null;
-
+async function request<T>(path: string, options: RequestInit = {}): Promise<ApiResult<T>> {
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     });
@@ -106,7 +104,6 @@ async function beginRegistration(name?: string): Promise<ApiResult<Passkey>> {
   const optionsResult = await request<PasskeyOptionsResponse>(
     '/auth/passkey/registration-options',
     { method: 'POST', body: JSON.stringify({}) },
-    true,
   );
   if (optionsResult.error || !optionsResult.data) {
     return { data: null, error: optionsResult.error || 'Failed to prepare passkey registration' };
@@ -129,7 +126,6 @@ async function beginRegistration(name?: string): Promise<ApiResult<Passkey>> {
           ...(name?.trim() ? { name: name.trim() } : {}),
         }),
       },
-      true,
     );
   } catch (error) {
     const failure = classifyPasskeyError(error);
@@ -139,7 +135,7 @@ async function beginRegistration(name?: string): Promise<ApiResult<Passkey>> {
 
 async function beginAuthentication(
   emailHint?: string,
-  rememberMe = false,
+  rememberMe = true,
   options?: { useAutofill?: boolean },
 ): Promise<ApiResult<PasskeyAuthenticationResponse>> {
   const optionsResult = await request<PasskeyOptionsResponse>('/auth/passkey/authentication-options', {
@@ -173,7 +169,7 @@ async function beginAuthentication(
 }
 
 async function listPasskeys(): Promise<ApiResult<Passkey[]>> {
-  const result = await request<PasskeyListResponse>('/auth/passkey/list', { method: 'GET' }, true);
+  const result = await request<PasskeyListResponse>('/auth/passkey/list', { method: 'GET' });
   if (result.error || !result.data) {
     return { data: null, error: result.error || 'Failed to load passkeys', status: result.status };
   }
@@ -181,7 +177,7 @@ async function listPasskeys(): Promise<ApiResult<Passkey[]>> {
 }
 
 async function deletePasskey(id: string): Promise<ApiResult<{ message: string }>> {
-  return request<{ message: string }>(`/auth/passkey/${id}`, { method: 'DELETE' }, true);
+  return request<{ message: string }>(`/auth/passkey/${id}`, { method: 'DELETE' });
 }
 
 export const passkeyService = {

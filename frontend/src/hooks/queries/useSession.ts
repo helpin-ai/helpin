@@ -45,6 +45,11 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
     const has = (perm: Permission): boolean => permSet.has(perm)
     const hasAny = (...perms: Permission[]): boolean => perms.some(p => permSet.has(p))
     const canAccessModule = (module: WorkspaceModule): boolean => moduleSet.has(module)
+    const isOwner = role === 'owner'
+    const isAdmin = role === 'owner' || role === 'admin'
+    const teamMemberships = access?.team_memberships ?? []
+    const isTeamManager = (teamId: string | null | undefined): boolean =>
+      !!teamId && teamMemberships.some(tm => tm.team_id === teamId && tm.role === 'owner')
 
     return {
       /** Check a single permission */
@@ -60,14 +65,16 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       /** The actor's workspace role */
       role,
       /** Team memberships from the /me response */
-      teamMemberships: access?.team_memberships ?? [],
+      teamMemberships,
       /** Check if user is a team manager (team owner) for a specific team */
-      isTeamManager: (teamId: string): boolean =>
-        (access?.team_memberships ?? []).some(tm => tm.team_id === teamId && tm.role === 'owner'),
+      isTeamManager,
+      /** Check if user can manage sprints/objectives in a given team */
+      canManageTeam: (teamId: string | null | undefined): boolean =>
+        isAdmin || isTeamManager(teamId),
 
       // ── Convenience booleans (backward-compatible with useSessionRole) ──
-      isOwner: role === 'owner',
-      isAdmin: role === 'owner' || role === 'admin',
+      isOwner,
+      isAdmin,
       /** Can edit PM content (member+) */
       canEdit: has('pm.edit'),
       /** Can manage settings (admin+) */

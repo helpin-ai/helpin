@@ -14,7 +14,7 @@ import (
 // PMChecklistItemService contains checklist item business logic.
 type PMChecklistItemService struct {
 	repo                *repository.PMChecklistItemRepository
-	taskRepo           *repository.PMTaskRepository
+	taskRepo            *repository.PMTaskRepository
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
 	workspaceRepo       *repository.WorkspaceRepository
@@ -30,7 +30,7 @@ func NewPMChecklistItemService(
 ) *PMChecklistItemService {
 	return &PMChecklistItemService{
 		repo:                repo,
-		taskRepo:           taskRepo,
+		taskRepo:            taskRepo,
 		wsPublisher:         wsPublisher,
 		notificationService: notificationService,
 		workspaceRepo:       workspaceRepo,
@@ -101,7 +101,12 @@ func (s *PMChecklistItemService) Update(ctx context.Context, id string, req mode
 		item.Position = *req.Position
 	}
 	if req.AssigneeID != nil {
-		item.AssigneeID = req.AssigneeID
+		assigneeID := strings.TrimSpace(*req.AssigneeID)
+		if assigneeID == "" {
+			item.AssigneeID = nil
+		} else {
+			item.AssigneeID = &assigneeID
+		}
 	}
 
 	if err := s.repo.Update(ctx, item); err != nil {

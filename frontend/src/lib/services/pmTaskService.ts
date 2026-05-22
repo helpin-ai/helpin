@@ -2,6 +2,7 @@ import { api } from '../api';
 import type {
   ActivityLogEntry,
   ColumnTasksResponse,
+  CreateTaskResponse,
   CreateTaskRequest,
   MoveTaskRequest,
   PaginatedResponse,
@@ -174,7 +175,7 @@ export const pmTaskService = {
   countByState: (workspaceId: string, workflowId: string) =>
     api.get<TaskStateCount[]>(`/pm/tasks/counts?${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
   create: (payload: CreateTaskRequest) =>
-    api.post<TaskDetail>(`/pm/tasks?${qs(payload.workspace_id)}`, {
+    api.post<CreateTaskResponse>(`/pm/tasks?${qs(payload.workspace_id)}`, {
       ...payload,
       deadline: toRFC3339(payload.deadline),
     }),

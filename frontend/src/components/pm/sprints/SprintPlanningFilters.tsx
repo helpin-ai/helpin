@@ -2,6 +2,7 @@ import { PlusSignIcon, Search01Icon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export type SprintStatusFilter = 'all' | 'upcoming' | 'active' | 'completed' | 'archived';
 
@@ -18,6 +19,7 @@ interface SprintPlanningFiltersProps {
   statusFilter: SprintStatusFilter;
   searchQuery: string;
   canEdit: boolean;
+  canCreateSprint: boolean;
   onStatusFilterChange: (value: SprintStatusFilter) => void;
   onSearchQueryChange: (value: string) => void;
   onCreateSprint: () => void;
@@ -28,6 +30,7 @@ export function SprintPlanningFilters({
   statusFilter,
   searchQuery,
   canEdit,
+  canCreateSprint,
   onStatusFilterChange,
   onSearchQueryChange,
   onCreateSprint,
@@ -69,10 +72,23 @@ export function SprintPlanningFilters({
         </Select>
 
         {canEdit && (
-          <Button size="sm" className="h-9 gap-2" onClick={onCreateSprint}>
-            <PlusSignIcon className="h-4 w-4" />
-            Create Sprint
-          </Button>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button size="sm" className="h-9 gap-2" onClick={onCreateSprint} disabled={!canCreateSprint}>
+                    <PlusSignIcon className="h-4 w-4" />
+                    Create Sprint
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!canCreateSprint && (
+                <TooltipContent side="top" className="max-w-[260px] text-xs">
+                  Only team managers can create sprints. Ask your team manager for access.
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
     </div>

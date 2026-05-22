@@ -28,11 +28,9 @@ export function useSignIn() {
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       const res = await authService.signin(email, password)
       if (res.error || !res.data) throw new Error(res.error || 'Sign in failed')
-      if (!res.data.access_token || !res.data.refresh_token) {
+      if (!res.data.user) {
         throw new Error(res.data.requires_2fa ? 'Two-factor verification required' : 'Sign in failed')
       }
-      localStorage.setItem('access_token', res.data.access_token)
-      localStorage.setItem('refresh_token', res.data.refresh_token)
       return res.data.user
     },
   })
@@ -43,11 +41,9 @@ export function useSignUp() {
     mutationFn: async ({ email, password, fullName }: { email: string; password: string; fullName: string }) => {
       const res = await authService.signup(email, password, fullName)
       if (res.error || !res.data) throw new Error(res.error || 'Sign up failed')
-      if (!res.data.access_token || !res.data.refresh_token) {
+      if (!res.data.user) {
         throw new Error('Sign up failed')
       }
-      localStorage.setItem('access_token', res.data.access_token)
-      localStorage.setItem('refresh_token', res.data.refresh_token)
       return res.data.user
     },
   })

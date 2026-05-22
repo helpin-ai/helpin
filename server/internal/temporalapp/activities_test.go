@@ -198,7 +198,7 @@ func TestLoadRunStateHydratesRepositoryTargetForCheckout(t *testing.T) {
 	seedRepositoryHydrationAgent(t, db)
 	seedRepositoryHydrationIntegration(t, db, &model.GitIntegration{
 		ID:             "integration-1",
-		WorkspaceID:    "ws-1",
+		WorkspaceID:    strPtr("ws-1"),
 		Provider:       "github",
 		DisplayName:    "GitHub",
 		CredentialMode: "pat",
@@ -335,7 +335,7 @@ func TestHydrateRunRepositoryTargetValidatesRepositoryAndIntegration(t *testing.
 
 			integration := tc.integration
 			integration.ID = "integration-1"
-			integration.WorkspaceID = "ws-1"
+			integration.WorkspaceID = strPtr("ws-1")
 			integration.Provider = "github"
 			integration.DisplayName = "GitHub"
 			integration.CredentialMode = "pat"
@@ -465,6 +465,7 @@ func openRepositoryHydrationTestDB(t *testing.T) *gorm.DB {
 			provider TEXT NOT NULL,
 			display_name TEXT NOT NULL,
 			credential_mode TEXT NOT NULL DEFAULT 'github_app',
+			credential_id TEXT,
 			account_login TEXT,
 			base_url TEXT,
 			installation_id TEXT,
@@ -483,6 +484,7 @@ func openRepositoryHydrationTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			integration_id TEXT NOT NULL,
 			provider TEXT NOT NULL,
+			base_url TEXT,
 			external_id TEXT NOT NULL,
 			full_name TEXT NOT NULL,
 			default_branch TEXT NOT NULL DEFAULT 'main',
@@ -3886,6 +3888,7 @@ func TestRecordPushAndEnsureDeliveryPRMarksPRFailedWhenPROpenFails(t *testing.T)
 			repository_id TEXT,
 			run_id TEXT,
 			provider TEXT NOT NULL,
+			base_url TEXT,
 			repo TEXT NOT NULL,
 			branch TEXT,
 			pr_number INTEGER,
@@ -4006,6 +4009,9 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			source_preset_version_key TEXT,
 			source_template_id TEXT,
 			source_template_key TEXT NOT NULL DEFAULT '',
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			role TEXT,
 			status TEXT NOT NULL DEFAULT 'idle',
 			runtime_kind TEXT NOT NULL DEFAULT 'opencode',
@@ -4105,6 +4111,7 @@ func newPlannerApprovalTestDB(t *testing.T) *gorm.DB {
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,
 			planning_state TEXT NOT NULL DEFAULT 'not_started',
@@ -7034,6 +7041,7 @@ func TestApplyApprovedInteractivePreviewReturnsPersistPRDAction(t *testing.T) {
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,
 			planning_state TEXT NOT NULL DEFAULT 'not_started',
@@ -10929,6 +10937,7 @@ func TestResolvePlanningRunInputClearsDeletedEpicSpecReferences(t *testing.T) {
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,
 			planning_state TEXT NOT NULL DEFAULT 'not_started',

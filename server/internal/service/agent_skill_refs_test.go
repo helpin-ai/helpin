@@ -45,7 +45,7 @@ func TestCreateAgentResolvesWorkspaceSkillRefs(t *testing.T) {
 		is_archived, created_at, updated_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		"skill-1", "ws-test", model.WorkspaceSkillSourceWorkspace, "workspace_skill", "v1", "Workspace Skill", "Use for workspace-specific planning.", "Follow workspace-specific planning instructions.",
-		[]byte("[]"), []byte(`["opencode"]`), []byte(`{}`), []byte(`{}`), "workspaces/ws-test/skills/skill-1/workspace_skill.zip", "workspace_skill.zip", 1, "checksum", false, now, now,
+		[]byte("[]"), []byte(`["native_sdk"]`), []byte(`{}`), []byte(`{}`), "workspaces/ws-test/skills/skill-1/workspace_skill.zip", "workspace_skill.zip", 1, "checksum", false, now, now,
 	).Error; err != nil {
 		t.Fatalf("insert workspace skill: %v", err)
 	}

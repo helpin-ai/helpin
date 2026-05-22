@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -11,6 +12,38 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
 )
+
+type fakeAttachmentStore struct {
+	getURL string
+}
+
+func (f *fakeAttachmentStore) HasPublicURL() bool { return true }
+
+func (f *fakeAttachmentStore) PublicURL(key string) string {
+	return "https://cdn.example.com/" + key
+}
+
+func (f *fakeAttachmentStore) GeneratePresignedPutURL(key, contentType string, size int64, publicRead bool) (string, error) {
+	return "https://upload.example.com/" + key, nil
+}
+
+func (f *fakeAttachmentStore) PutObject(ctx context.Context, key, contentType string, size int64, body io.Reader, publicRead bool) error {
+	return nil
+}
+
+func (f *fakeAttachmentStore) GeneratePresignedGetURL(key, filename string) (string, error) {
+	f.getURL = "https://download.example.com/" + key + "?filename=" + filename
+	return f.getURL, nil
+}
+
+func (f *fakeAttachmentStore) GeneratePresignedInlineGetURL(key string) (string, error) {
+	f.getURL = "https://inline.example.com/" + key
+	return f.getURL, nil
+}
+
+func (f *fakeAttachmentStore) DeleteObject(ctx context.Context, key string) error {
+	return nil
+}
 
 func newAttachmentTestEnv(t *testing.T) (*PMAttachmentService, *repository.PMAttachmentRepository, *gorm.DB, string, string) {
 	t.Helper()
@@ -130,6 +163,26 @@ func TestPMAttachmentService_PrepareAttachment_AllowsVideoUpTo50MB(t *testing.T)
 	}
 	if got := err.Error(); got != "file exceeds maximum size of 50MB" {
 		t.Fatalf("oversized error = %q", got)
+	}
+}
+
+func TestPMAttachmentService_ContentURLReturnsFreshDownloadURL(t *testing.T) {
+	t.Parallel()
+
+	_, repo, db, workspaceID, userID := newAttachmentTestEnv(t)
+	store := &fakeAttachmentStore{}
+	svc := NewPMAttachmentService(repo, store, nil)
+	ctx := context.Background()
+
+	seedEditorUploadAttachment(t, db, "attachment-content", workspaceID, workspaceID, userID)
+
+	got, err := svc.ContentURL(ctx, "attachment-content")
+	if err != nil {
+		t.Fatalf("ContentURL: %v", err)
+	}
+	want := "https://inline.example.com/" + workspaceID + "/tmp-attachment-content"
+	if got != want {
+		t.Fatalf("ContentURL = %q, want %q", got, want)
 	}
 }
 

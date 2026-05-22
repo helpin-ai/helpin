@@ -318,7 +318,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const location = useLocation();
   const openCreate = useGlobalCreateStore((state) => state.openCreate);
   const { data: access } = useWorkspaceAccess(workspaceId);
-  const { canEdit } = usePermissions(access);
+  const { canEdit, isAdmin, isTeamManager, teamMemberships } = usePermissions(access);
   const { teams } = useAccessibleTeams(workspaceId);
   const { members } = useAssignableWorkspaceMembers(workspaceId);
   const [backlogOpen, setBacklogOpen] = useState(false);
@@ -329,6 +329,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
 
   const teamName = teamId ? teams.find((t) => t.id === teamId)?.name : undefined;
   useTitle(teamName ? `Sprints — ${teamName}` : 'Sprints');
+  const canCreateSprint = canEdit && (isAdmin || (teamId ? isTeamManager(teamId) : teamMemberships.some((tm) => tm.role === 'owner')));
 
   const isArchived = statusFilter === 'archived';
 
@@ -448,6 +449,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           statusFilter={statusFilter}
           searchQuery={searchQuery}
           canEdit={canEdit}
+          canCreateSprint={canCreateSprint}
           onStatusFilterChange={setStatusFilter}
           onSearchQueryChange={setSearchQuery}
           onCreateSprint={() => openCreate('sprint', { teamId: teamId || undefined })}
@@ -507,6 +509,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           backlogOpen={backlogOpen}
           onBacklogToggle={() => setBacklogOpen((prev) => !prev)}
           canEdit={canEdit}
+          canCreateSprint={canCreateSprint}
           members={members}
           onOpenSprint={(sprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId } })}
           onOpenTask={handleOpenTask}
