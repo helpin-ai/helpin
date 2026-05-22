@@ -72,6 +72,13 @@ type Config struct {
 	GitHubAppSlug       string
 	GitHubAppPrivateKey string
 
+	// GitLab.com OAuth (optional; Helpin-owned multi-tenant OAuth app).
+	GitLabClientID         string
+	GitLabClientSecret     string
+	GitLabOAuthRedirectURL string
+	GitLabBaseURL          string
+	GitOAuthEncryptionKey  string
+
 	// Postmark email (optional — email sending disabled if not set)
 	PostmarkAccountToken              string
 	PostmarkAppServerToken            string
@@ -234,6 +241,11 @@ func Load() (*Config, error) {
 		GitHubAppID:                            os.Getenv("GITHUB_APP_ID"),
 		GitHubAppSlug:                          os.Getenv("GITHUB_APP_SLUG"),
 		GitHubAppPrivateKey:                    os.Getenv("GITHUB_APP_PRIVATE_KEY"),
+		GitLabClientID:                         strings.TrimSpace(os.Getenv("GITLAB_CLIENT_ID")),
+		GitLabClientSecret:                     strings.TrimSpace(os.Getenv("GITLAB_CLIENT_SECRET")),
+		GitLabOAuthRedirectURL:                 strings.TrimSpace(os.Getenv("GITLAB_OAUTH_REDIRECT_URL")),
+		GitLabBaseURL:                          strings.TrimSpace(firstNonEmpty(os.Getenv("GITLAB_BASE_URL"), "https://gitlab.com")),
+		GitOAuthEncryptionKey:                  strings.TrimSpace(os.Getenv("GIT_OAUTH_ENCRYPTION_KEY")),
 		PostmarkAccountToken:                   strings.TrimSpace(os.Getenv("POSTMARK_ACCOUNT_TOKEN")),
 		PostmarkAppServerToken:                 strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_SERVER_TOKEN"), os.Getenv("POSTMARK_SERVER_TOKEN"))),
 		PostmarkAppFromEmail:                   strings.TrimSpace(firstNonEmpty(os.Getenv("POSTMARK_APP_FROM_EMAIL"), os.Getenv("POSTMARK_FROM_EMAIL"))),

@@ -57,6 +57,128 @@ func (h *GitHandler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
+// GetGitLabConnectURL handles GET /api/git/gitlab/connect-url.
+func (h *GitHandler) GetGitLabConnectURL(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	connectURL, err := h.gitService.GetGitLabConnectURL(r.Context(), workspaceID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.GitLabConnectURLResponse{ConnectURL: connectURL})
+}
+
+func (h *GitHandler) GetOrgGitHubInstallURL(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+	forceInstall := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("force_install")), "true")
+	returnWorkspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+
+	installURL, action, integrationID, err := h.gitService.GetGitHubInstallURLForOrganization(r.Context(), orgID, returnWorkspaceID, actorID, forceInstall)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.GitHubInstallURLResponse{InstallURL: installURL, Action: action, IntegrationID: integrationID})
+}
+
+func (h *GitHandler) GetOrgGitLabConnectURL(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+	returnWorkspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+	connectURL, err := h.gitService.GetGitLabConnectURLForOrganization(r.Context(), orgID, returnWorkspaceID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, model.GitLabConnectURLResponse{ConnectURL: connectURL})
+}
+
+// GitLabCallback handles GET /api/git/gitlab/callback.
+func (h *GitHandler) GitLabCallback(w http.ResponseWriter, r *http.Request) {
+	redirectURL, err := h.gitService.CompleteGitLabOAuth(
+		r.Context(),
+		r.URL.Query().Get("state"),
+		r.URL.Query().Get("code"),
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+func (h *GitHandler) ListOrgIntegrations(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+	integrations, err := h.gitService.ListOrganizationIntegrations(r.Context(), orgID, actorID)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	if integrations == nil {
+		integrations = []model.GitIntegration{}
+	}
+	writeJSON(w, http.StatusOK, integrations)
+}
+
+func (h *GitHandler) CreateOrgIntegration(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+	returnWorkspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+	var req model.CreateGitIntegrationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	integration, err := h.gitService.CreateOrganizationIntegration(r.Context(), orgID, returnWorkspaceID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, integration)
+}
+
+func (h *GitHandler) GetOrgIntegration(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	integrationID := chi.URLParam(r, "integrationId")
+	actorID := middleware.GetUserID(r.Context())
+	detail, err := h.gitService.GetOrganizationIntegrationDetail(r.Context(), orgID, integrationID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+func (h *GitHandler) DeleteOrgIntegration(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	integrationID := chi.URLParam(r, "integrationId")
+	actorID := middleware.GetUserID(r.Context())
+	returnWorkspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+	if err := h.gitService.DeleteOrganizationIntegration(r.Context(), orgID, integrationID, actorID, returnWorkspaceID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *GitHandler) SyncOrgRepositories(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	integrationID := chi.URLParam(r, "integrationId")
+	actorID := middleware.GetUserID(r.Context())
+	repos, err := h.gitService.SyncOrganizationRepositories(r.Context(), orgID, integrationID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if repos == nil {
+		repos = []model.GitRepository{}
+	}
+	writeJSON(w, http.StatusOK, repos)
+}
+
 // ListIntegrations handles GET /api/git/integrations.
 func (h *GitHandler) ListIntegrations(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
@@ -414,7 +536,7 @@ func (h *GitHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 			writeJSON(recorder, http.StatusOK, map[string]string{"status": "ignored"})
 		}
 	} else {
-		writeJSON(recorder, http.StatusOK, map[string]string{"status": "ignored"})
+		h.handleGitLabWebhook(r, recorder, payload, &resolvedIntegrationID)
 	}
 }
 
@@ -572,12 +694,53 @@ func (h *GitHandler) resolveWebhookWorkspaceID(r *http.Request, integration *mod
 		if claimsErr != nil {
 			return "", false, claimsErr
 		}
-		if !hasClaims && strings.TrimSpace(integration.WorkspaceID) != "" {
-			return integration.WorkspaceID, true, nil
+		if !hasClaims && integration.WorkspaceID != nil && strings.TrimSpace(*integration.WorkspaceID) != "" {
+			return strings.TrimSpace(*integration.WorkspaceID), true, nil
 		}
 		return "", false, nil
 	}
 	return repo.WorkspaceID, true, nil
+}
+
+func (h *GitHandler) resolveWebhookRepositories(r *http.Request, integration *model.GitIntegration, payload map[string]interface{}) ([]model.GitRepository, bool, error) {
+	if integration == nil {
+		workspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+		if workspaceID == "" {
+			return nil, false, nil
+		}
+		repo, _ := nestedString(payload, "repository", "full_name")
+		if repo == "" {
+			return nil, false, nil
+		}
+		return []model.GitRepository{{WorkspaceID: workspaceID, Provider: "github", FullName: repo}}, true, nil
+	}
+	if !integration.Active {
+		return nil, false, nil
+	}
+	repoExternalID, ok := nestedNumber(payload, "repository", "id")
+	if !ok {
+		return nil, false, nil
+	}
+	repos, err := h.gitService.ResolveWebhookRepositories(r.Context(), integration.ID, intString(repoExternalID))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(repos) > 0 {
+		return repos, true, nil
+	}
+	hasClaims, err := h.gitService.IntegrationHasWebhookClaims(r.Context(), integration.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !hasClaims && integration.WorkspaceID != nil && strings.TrimSpace(*integration.WorkspaceID) != "" {
+		repo, _ := nestedString(payload, "repository", "full_name")
+		return []model.GitRepository{{
+			WorkspaceID: strings.TrimSpace(*integration.WorkspaceID),
+			Provider:    integration.Provider,
+			FullName:    repo,
+		}}, true, nil
+	}
+	return nil, false, nil
 }
 
 func (h *GitHandler) handleGitHubPush(r *http.Request, w http.ResponseWriter, integration *model.GitIntegration, payload map[string]interface{}) {
@@ -598,7 +761,7 @@ func (h *GitHandler) handleGitHubPush(r *http.Request, w http.ResponseWriter, in
 		return
 	}
 
-	workspaceID, routed, err := h.resolveWebhookWorkspaceID(r, integration, payload)
+	repoRecords, routed, err := h.resolveWebhookRepositories(r, integration, payload)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -608,9 +771,11 @@ func (h *GitHandler) handleGitHubPush(r *http.Request, w http.ResponseWriter, in
 		return
 	}
 
-	if err := h.gitService.ProcessWebhookPush(r.Context(), workspaceID, repo, branch, commitSHA); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	for _, repoRecord := range repoRecords {
+		if err := h.gitService.ProcessWebhookPushForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repo, branch, commitSHA); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
 }
@@ -649,7 +814,7 @@ func (h *GitHandler) handleGitHubPR(r *http.Request, w http.ResponseWriter, inte
 	}
 
 	prTitle, _ := pr["title"].(string)
-	workspaceID, routed, err := h.resolveWebhookWorkspaceID(r, integration, payload)
+	repoRecords, routed, err := h.resolveWebhookRepositories(r, integration, payload)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -659,9 +824,11 @@ func (h *GitHandler) handleGitHubPR(r *http.Request, w http.ResponseWriter, inte
 		return
 	}
 
-	if err := h.gitService.ProcessWebhookPR(r.Context(), workspaceID, repo, action, prNumber, prTitle, prURL, prStatus, branch, baseBranch); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	for _, repoRecord := range repoRecords {
+		if err := h.gitService.ProcessWebhookPRForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repo, action, prNumber, prTitle, prURL, prStatus, branch, baseBranch); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
 }
@@ -686,7 +853,7 @@ func (h *GitHandler) handleGitHubRelease(r *http.Request, w http.ResponseWriter,
 			publishedAt = &parsed
 		}
 	}
-	workspaceID, routed, err := h.resolveWebhookWorkspaceID(r, integration, payload)
+	repoRecords, routed, err := h.resolveWebhookRepositories(r, integration, payload)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -696,9 +863,11 @@ func (h *GitHandler) handleGitHubRelease(r *http.Request, w http.ResponseWriter,
 		return
 	}
 
-	if err := h.gitService.ProcessWebhookRelease(r.Context(), workspaceID, repo, action, tagName, targetCommitish, releaseName, releaseURL, publishedAt, isPrerelease); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	for _, repoRecord := range repoRecords {
+		if err := h.gitService.ProcessWebhookReleaseForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repo, action, tagName, targetCommitish, releaseName, releaseURL, publishedAt, isPrerelease); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
 }
@@ -714,7 +883,7 @@ func (h *GitHandler) handleGitHubCheckSuite(r *http.Request, w http.ResponseWrit
 
 	branch, _ := checkSuite["head_branch"].(string)
 	conclusion, _ := checkSuite["conclusion"].(string)
-	workspaceID, routed, err := h.resolveWebhookWorkspaceID(r, integration, payload)
+	repoRecords, routed, err := h.resolveWebhookRepositories(r, integration, payload)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -724,11 +893,185 @@ func (h *GitHandler) handleGitHubCheckSuite(r *http.Request, w http.ResponseWrit
 		return
 	}
 
-	if err := h.gitService.ProcessWebhookCheckSuite(r.Context(), workspaceID, repo, action, branch, conclusion); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	for _, repoRecord := range repoRecords {
+		if err := h.gitService.ProcessWebhookCheckSuiteForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repo, action, branch, conclusion); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
+}
+
+func (h *GitHandler) handleGitLabWebhook(r *http.Request, w http.ResponseWriter, payload map[string]interface{}, resolvedIntegrationID **string) {
+	projectID, ok := gitlabProjectID(payload)
+	if !ok {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	integration, repoRecords, err := h.gitService.ResolveGitLabWebhookRepositories(r.Context(), projectID, r.Header.Get("X-Gitlab-Token"))
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	if integration == nil || len(repoRecords) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	*resolvedIntegrationID = &integration.ID
+	event := strings.TrimSpace(r.Header.Get("X-Gitlab-Event"))
+	switch event {
+	case "Push Hook":
+		h.handleGitLabPush(r, w, repoRecords, payload)
+	case "Merge Request Hook":
+		h.handleGitLabMergeRequest(r, w, repoRecords, payload)
+	case "Pipeline Hook":
+		h.handleGitLabPipeline(r, w, repoRecords, payload)
+	case "Release Hook":
+		h.handleGitLabRelease(r, w, repoRecords, payload)
+	default:
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+	}
+}
+
+func (h *GitHandler) handleGitLabPush(r *http.Request, w http.ResponseWriter, repoRecords []model.GitRepository, payload map[string]interface{}) {
+	ref, _ := payload["ref"].(string)
+	branch := strings.TrimPrefix(ref, "refs/heads/")
+	commitSHA, _ := payload["checkout_sha"].(string)
+	if commitSHA == "" {
+		commitSHA, _ = payload["after"].(string)
+	}
+	if len(repoRecords) == 0 || branch == "" {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	for _, repoRecord := range repoRecords {
+		if err := h.gitService.ProcessWebhookPushForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repoRecord.FullName, branch, commitSHA); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
+}
+
+func (h *GitHandler) handleGitLabMergeRequest(r *http.Request, w http.ResponseWriter, repoRecords []model.GitRepository, payload map[string]interface{}) {
+	attrs, ok := payload["object_attributes"].(map[string]interface{})
+	if !ok || len(repoRecords) == 0 {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	action, _ := attrs["action"].(string)
+	state, _ := attrs["state"].(string)
+	prStatus := "open"
+	if action == "merge" || state == "merged" {
+		prStatus = "merged"
+	} else if action == "close" || state == "closed" {
+		prStatus = "closed"
+	}
+	iid := intFromAny(attrs["iid"])
+	title, _ := attrs["title"].(string)
+	url, _ := attrs["url"].(string)
+	sourceBranch, _ := attrs["source_branch"].(string)
+	targetBranch, _ := attrs["target_branch"].(string)
+	if iid == 0 {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	for _, repoRecord := range repoRecords {
+		if err := h.gitService.ProcessWebhookPRForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repoRecord.FullName, gitlabMRAction(action, prStatus), iid, title, url, prStatus, sourceBranch, targetBranch); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
+}
+
+func (h *GitHandler) handleGitLabPipeline(r *http.Request, w http.ResponseWriter, repoRecords []model.GitRepository, payload map[string]interface{}) {
+	attrs, _ := payload["object_attributes"].(map[string]interface{})
+	status, _ := attrs["status"].(string)
+	ref, _ := attrs["ref"].(string)
+	if len(repoRecords) == 0 || status == "" {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	if !gitlabPipelineTerminalStatus(status) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	for _, repoRecord := range repoRecords {
+		if err := h.gitService.ProcessWebhookCheckSuiteForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repoRecord.FullName, "completed", ref, status); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
+}
+
+func (h *GitHandler) handleGitLabRelease(r *http.Request, w http.ResponseWriter, repoRecords []model.GitRepository, payload map[string]interface{}) {
+	if len(repoRecords) == 0 {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	tag, _ := payload["tag"].(string)
+	name, _ := payload["name"].(string)
+	url, _ := payload["url"].(string)
+	action := "published"
+	if strings.TrimSpace(tag) == "" {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+	for _, repoRecord := range repoRecords {
+		if err := h.gitService.ProcessWebhookReleaseForProvider(r.Context(), repoRecord.WorkspaceID, repoRecord.Provider, repoRecord.FullName, action, tag, "", name, url, nil, false); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "processed"})
+}
+
+func gitlabProjectID(payload map[string]interface{}) (string, bool) {
+	if id, ok := nestedNumber(payload, "project", "id"); ok {
+		return intString(id), true
+	}
+	if id := intFromAny(payload["project_id"]); id > 0 {
+		return strconv.Itoa(id), true
+	}
+	return "", false
+}
+
+func intFromAny(value interface{}) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case int:
+		return typed
+	case string:
+		parsed, _ := strconv.Atoi(strings.TrimSpace(typed))
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func gitlabMRAction(action, status string) string {
+	switch {
+	case status == "merged":
+		return "closed"
+	case status == "closed":
+		return "closed"
+	case action == "open" || action == "reopen":
+		return "opened"
+	default:
+		return action
+	}
+}
+
+func gitlabPipelineTerminalStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "success", "failed", "canceled", "skipped":
+		return true
+	default:
+		return false
+	}
 }
 
 func nestedString(m map[string]interface{}, keys ...string) (string, bool) {
