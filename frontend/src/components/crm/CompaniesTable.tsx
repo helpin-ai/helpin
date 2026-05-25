@@ -18,7 +18,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, Building03Icon, ArrowDown01Icon, ArrowRight01Icon, MoreVerticalIcon, LinkSquare01Icon, Loading01Icon, PlusSignIcon, Delete01Icon, UserAdd01Icon } from '@/lib/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { format, parseISO } from 'date-fns';
@@ -40,10 +39,8 @@ import {
   TABLE_PINNED_HEADER_LEFT,
   TABLE_PINNED_HEADER_RIGHT,
   TABLE_HEADER_CELL_ACTIONS,
-  TABLE_CHECKBOX_HOVER,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
-  CHECKBOX_COL_SIZE,
   ACTIONS_COL_SIZE,
   dynamicCellStyle,
   pinnedStyle,
@@ -129,29 +126,6 @@ export function CompaniesTable({
 
   const tableColumns = useMemo(
     () => [
-      columnHelper.display({
-        id: 'select',
-        size: CHECKBOX_COL_SIZE,
-        enableGrouping: false,
-        enableSorting: false,
-        enableResizing: false,
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllPageRowsSelected()}
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            className={TABLE_CHECKBOX_HOVER}
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Select row"
-          />
-        ),
-      }),
       columnHelper.accessor('display_id', {
         id: 'displayId',
         header: 'ID',

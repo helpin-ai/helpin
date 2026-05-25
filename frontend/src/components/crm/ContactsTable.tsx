@@ -22,6 +22,7 @@ import { ArrowDown01Icon, ArrowRight01Icon, MoreVerticalIcon, LinkSquare01Icon, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { format, parseISO } from 'date-fns';
 import { crmContactService } from '@/lib/services/crmService';
@@ -40,7 +41,6 @@ import {
   TABLE_PINNED_HEADER_LEFT,
   TABLE_PINNED_HEADER_LEFT_NAME,
   TABLE_PINNED_HEADER_RIGHT,
-  TABLE_CHECKBOX_HOVER,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
   CHECKBOX_COL_SIZE,
@@ -261,21 +261,21 @@ export function ContactsTable({
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
-        header: ({ table }) => (
-          <input
-            type="checkbox"
-            className="h-4 w-4 rounded border border-input accent-primary"
-            checked={table.getIsAllPageRowsSelected()}
-            onChange={(e) => table.toggleAllPageRowsSelected(e.target.checked)}
-            aria-label="Select all"
-          />
-        ),
+        header: ({ table }) => {
+          const isAll = table.getIsAllPageRowsSelected();
+          const isSome = table.getIsSomePageRowsSelected();
+          return (
+            <Checkbox
+              checked={isAll ? true : isSome ? 'indeterminate' : false}
+              onCheckedChange={(value) => table.toggleAllPageRowsSelected(value === true)}
+              aria-label="Select all"
+            />
+          );
+        },
         cell: ({ row }) => (
-          <input
-            type="checkbox"
-            className={`h-4 w-4 rounded border border-input accent-primary ${row.getIsSelected() ? '' : TABLE_CHECKBOX_HOVER}`}
+          <Checkbox
             checked={row.getIsSelected()}
-            onChange={(e) => row.toggleSelected(e.target.checked)}
+            onCheckedChange={(value) => row.toggleSelected(value === true)}
             onClick={(e) => e.stopPropagation()}
             aria-label="Select row"
           />
@@ -544,6 +544,40 @@ export function ContactsTable({
     [rowSelection],
   );
 
+  const getGroupSelectionState = useCallback(
+    (groupRow: Row<CRMContact>): boolean | 'indeterminate' => {
+      const leaves = (groupRow.getLeafRows() as Row<CRMContact>[])
+        .filter((leaf) => !leaf.getIsGrouped());
+      if (leaves.length === 0) return false;
+      let selected = 0;
+      for (const leaf of leaves) {
+        if (rowSelection[leaf.id]) selected += 1;
+      }
+      if (selected === 0) return false;
+      if (selected === leaves.length) return true;
+      return 'indeterminate';
+    },
+    [rowSelection],
+  );
+
+  const toggleGroupSelection = useCallback(
+    (groupRow: Row<CRMContact>, checked: boolean) => {
+      const leafIds = (groupRow.getLeafRows() as Row<CRMContact>[])
+        .filter((leaf) => !leaf.getIsGrouped())
+        .map((leaf) => leaf.id);
+      if (leafIds.length === 0) return;
+      setRowSelection((current) => {
+        const next = { ...current };
+        for (const id of leafIds) {
+          if (checked) next[id] = true;
+          else delete next[id];
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   if (isLoading) {
     return <ContactsTableSkeleton />;
   }
@@ -668,7 +702,11 @@ export function ContactsTable({
                   style={virtualRowStyle(virtualRow.start)}
                 >
                   {isGrouped ? (
-                    <MemoGroupHeaderRow row={row} />
+                    <MemoGroupHeaderRow
+                      row={row}
+                      selectionState={getGroupSelectionState(row)}
+                      onToggleSelection={toggleGroupSelection}
+                    />
                   ) : (
                     <MemoDataRow
                       row={row}
@@ -853,7 +891,27 @@ const SortDescIcon = memo(function SortDescIcon() {
 
 // ── Group Header Row ──────────────────────────────────────────────
 
-const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMContact> }) {
+interface GroupHeaderRowProps {
+  row: Row<CRMContact>;
+  selectionState: boolean | 'indeterminate';
+  onToggleSelection: (groupRow: Row<CRMContact>, checked: boolean) => void;
+}
+
+function areGroupHeaderRowPropsEqual(prev: GroupHeaderRowProps, next: GroupHeaderRowProps): boolean {
+  return (
+    prev.row.id === next.row.id &&
+    prev.row.getIsExpanded() === next.row.getIsExpanded() &&
+    prev.row.subRows.length === next.row.subRows.length &&
+    prev.selectionState === next.selectionState &&
+    prev.onToggleSelection === next.onToggleSelection
+  );
+}
+
+const MemoGroupHeaderRow = memo(function GroupHeaderRow({
+  row,
+  selectionState,
+  onToggleSelection,
+}: GroupHeaderRowProps) {
   const subRows = row.subRows;
   const count = subRows.length;
   const groupValue = row.groupingValue as string;
@@ -863,6 +921,13 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
       className={CONTACTS_TABLE_GROUP_ROW}
       onClick={() => row.toggleExpanded()}
     >
+      <span className="flex items-center" onClick={(event) => event.stopPropagation()}>
+        <Checkbox
+          checked={selectionState}
+          onCheckedChange={(value) => onToggleSelection(row, value === true)}
+          aria-label="Select all in group"
+        />
+      </span>
       {row.getIsExpanded() ? (
         <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
       ) : (
@@ -874,7 +939,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
       </span>
     </div>
   );
-});
+}, areGroupHeaderRowPropsEqual);
 
 // ── Data Row ──────────────────────────────────────────────────────
 

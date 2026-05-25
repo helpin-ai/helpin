@@ -20,7 +20,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Checkbox } from '@/components/ui/checkbox';
 import { format, parseISO } from 'date-fns';
 import { crmDealService } from '@/lib/services/crmService';
 import { StageTypeIcon, STAGE_TYPE_CONFIG } from '@/lib/crmConstants';
@@ -42,10 +41,8 @@ import {
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
   TABLE_PINNED_HEADER_RIGHT,
-  TABLE_CHECKBOX_HOVER,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
-  CHECKBOX_COL_SIZE,
   dynamicCellStyle,
   pinnedStyle,
   resolveColumnRuntimeSize,
@@ -156,29 +153,6 @@ export function DealsTable({
 
   const tableColumns = useMemo(
     () => [
-      columnHelper.display({
-        id: 'select',
-        size: CHECKBOX_COL_SIZE,
-        enableGrouping: false,
-        enableSorting: false,
-        enableResizing: false,
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllPageRowsSelected()}
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            className={TABLE_CHECKBOX_HOVER}
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Select row"
-          />
-        ),
-      }),
       columnHelper.accessor('display_id', {
         id: 'displayId',
         header: 'ID',
