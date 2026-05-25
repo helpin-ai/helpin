@@ -71,7 +71,7 @@ function CreateObjectiveButton({
   onClick: () => void;
 }) {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="inline-flex">

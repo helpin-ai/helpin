@@ -1,5 +1,5 @@
-import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   useReactTable,
   getCoreRowModel,
@@ -13,18 +13,18 @@ import {
   type Row,
   type SortingState,
   type ColumnSizingState,
+  type RowSelectionState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowLeft02Icon, Cancel01Icon, Copy01Icon, FilterHorizontalIcon, Loading01Icon, Search01Icon } from '@/lib/icons';
+import { useQueryClient } from '@tanstack/react-query';
+import { Copy01Icon, Loading01Icon } from '@/lib/icons';
 import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
@@ -70,6 +70,8 @@ import type {
 import type { AssignableMember, TeamEstimateSettings, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
+import { TaskBulkActionsBar } from '@/components/pm/TaskBulkActionsBar';
+import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { showTaskDuplicatedToast } from '@/components/pm/TaskDuplicatedToast';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
@@ -83,18 +85,33 @@ import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import {
   TABLE_CONTAINER,
+  TABLE_HEADER,
+  TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SORTABLE,
+  TABLE_ROW,
+  TABLE_CELL,
+  TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
+  TABLE_PINNED_LEFT_NAME,
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
+  TABLE_PINNED_HEADER_LEFT_NAME,
   TABLE_PINNED_HEADER_RIGHT,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
   dynamicCellStyle,
   pinnedStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
+  TABLE_HEADER_CELL_ACTIONS,
+  TABLE_GROUP_ROW_INNER,
+  ACTIONS_COL_SIZE,
+  getGroupSelectionState as resolveGroupSelectionState,
+  toggleGroupSelection as computeGroupSelectionToggle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
-import { buildAssignableMemberNameMap, buildAssignableMemberOptions } from '@/lib/assignableMembers';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import { getTaskListPinnedOffsets, type TaskListPinnedOffsets } from '@/components/pm/task-detail/taskListPinnedOffsets';
 import {
   getVisibleTaskListGroupOptions,
@@ -103,6 +120,7 @@ import {
 import { getVisibleSprintsForTaskScope } from '@/components/pm/task-detail/taskPlanningScope';
 import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 import { toast } from 'sonner';
+import { queryKeys } from '@/lib/queryKeys';
 import {
   getAgentAutoRunStateChangeMessage,
   getAgentAutoRunStateChangeToastId,
@@ -112,34 +130,6 @@ import {
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 const LIST_AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
-const TASK_LIST_FILTER_ALL = '__all__';
-const TASK_LIST_FILTER_UNASSIGNED = '__unassigned__';
-
-type LocalTaskFilterKey =
-  | 'owner'
-  | 'requester'
-  | 'state'
-  | 'task_type'
-  | 'priority'
-  | 'severity'
-  | 'label'
-  | 'sprint'
-  | 'blocked'
-  | 'blocking';
-
-interface LocalTaskFilterOption {
-  value: string;
-  label: string;
-}
-
-interface LocalTaskFilterDefinition {
-  key: LocalTaskFilterKey;
-  label: string;
-  options: LocalTaskFilterOption[];
-  searchableValues?: boolean;
-}
-
-type LocalTaskFilterValues = Record<LocalTaskFilterKey, string>;
 
 function TaskListLatestRunAgentBadge({
   agent,
@@ -205,16 +195,7 @@ function TaskListLatestRunAgentBadge({
   );
 }
 
-const TASK_LIST_HEADER = 'sticky top-0 z-10 bg-card';
-const TASK_LIST_HEADER_CELL =
-  'relative shrink-0 border-r border-b border-border/60 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:border-r-0';
-const TASK_LIST_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
-const TASK_LIST_ROW =
-  'group/row flex h-9 cursor-pointer items-center border-b border-border/60 bg-card hover:bg-muted';
-const TASK_LIST_CELL =
-  'flex shrink-0 items-center self-stretch border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
-const TASK_LIST_GROUP_ROW =
-  'flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
+const GROUP_HEADER_REPEAT_HEIGHT = 30;
 
 interface TaskListViewProps {
   workspaceId: string;
@@ -232,17 +213,14 @@ interface TaskListViewProps {
   sprintId?: string | null;
   /** When provided, use these tasks instead of fetching internally. */
   externalTasks?: Task[];
-  /** Keeps an external owner of task state in sync with inline table edits. */
-  onExternalTasksChange?: (updater: TaskListTasksUpdater) => void;
-  onInlineUpdateSavingChange?: (saving: boolean) => void;
-  onInlineUpdateError?: (error: string | null) => void;
   onOpenTask: (task: Task) => void;
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
   showToolbar?: boolean;
-  showLocalTaskControls?: boolean;
-  toolbarActions?: React.ReactNode;
   footer?: React.ReactNode;
+  onBulkOperationComplete?: () => void | Promise<void>;
+  /** When provided, the bulk-edit trigger button portals into this element instead of rendering in the toolbar. */
+  bulkTriggerContainer?: HTMLElement | null;
 }
 
 // Column accessor ID used for each group-by option
@@ -259,249 +237,25 @@ const GROUP_COLUMN_MAP: Record<TaskListGroupByOption, string | null> = {
 
 const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
 const LIST_PAGE_SIZE = 50;
+const CHECKBOX_COL_SIZE = 42;
 const GROUP_LOAD_SENTINEL_HEIGHT = 28;
 const GROUPED_OVERSCAN = 4;
 const FLAT_OVERSCAN = 6;
 
 const columnHelper = createColumnHelper<Task>();
 
-type TaskListTasksUpdater = Task[] | ((tasks: Task[]) => Task[]);
-
-export function applyTaskListInlinePatch(tasks: Task[], taskId: string, patch: Partial<Task>): Task[] {
-  return tasks.map((task) => (task.id === taskId ? { ...task, ...patch } : task));
-}
-
-export function mergeTaskListInlineUpdate(tasks: Task[], updatedTask: Task): Task[] {
-  return tasks.map((task) => (task.id === updatedTask.id ? { ...task, ...updatedTask } : task));
-}
-
-function selectedLocalFilterCount(values: LocalTaskFilterValues) {
-  return Object.values(values).filter((value) => value !== TASK_LIST_FILTER_ALL).length;
-}
-
-function selectedLocalFilterLabel(definition: LocalTaskFilterDefinition, value: string) {
-  return definition.options.find((option) => option.value === value)?.label ?? value;
-}
-
-function LocalTaskFilterPill({
-  definition,
-  value,
-  onChange,
-}: {
-  definition: LocalTaskFilterDefinition;
-  value: string;
-  onChange: (key: LocalTaskFilterKey, value: string) => void;
-}) {
-  return (
-    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
-      <span className="font-medium text-muted-foreground">{definition.label}</span>
-      <span className="text-muted-foreground/60">is</span>
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex max-w-[11rem] items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
-          >
-            <span className="truncate">{selectedLocalFilterLabel(definition, value)}</span>
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className={`${definition.searchableValues ? 'w-72' : 'w-52'} p-0`} align="start">
-          <Command>
-            {definition.searchableValues ? (
-              <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} />
-            ) : null}
-            <CommandList>
-              <CommandEmpty>No results.</CommandEmpty>
-              <CommandGroup>
-                {definition.options.map((option) => {
-                  const isSelected = option.value === value;
-                  return (
-                    <CommandItem
-                      key={option.value}
-                      value={option.label}
-                      onSelect={() => onChange(definition.key, option.value)}
-                    >
-                      <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                        {isSelected ? <TaskListCheckIcon className="h-3 w-3" /> : null}
-                      </div>
-                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      <button
-        type="button"
-        onClick={() => onChange(definition.key, TASK_LIST_FILTER_ALL)}
-        className="ml-0.5 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-        aria-label={`Remove ${definition.label} filter`}
-      >
-        <Cancel01Icon className="h-3 w-3" />
-      </button>
-    </div>
-  );
-}
-
-function LocalTaskFilterControls({
-  definitions,
-  values,
-  onChange,
-  onClear,
-}: {
-  definitions: LocalTaskFilterDefinition[];
-  values: LocalTaskFilterValues;
-  onChange: (key: LocalTaskFilterKey, value: string) => void;
-  onClear: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<LocalTaskFilterKey | null>(null);
-  const activeCount = selectedLocalFilterCount(values);
-  const activeKeys = useMemo(
-    () =>
-      new Set(
-        Object.entries(values)
-          .filter(([, value]) => value !== TASK_LIST_FILTER_ALL)
-          .map(([key]) => key as LocalTaskFilterKey),
-      ),
-    [values],
-  );
-  const availableDefinitions = definitions.filter((definition) => !activeKeys.has(definition.key) && definition.options.length > 0);
-  const activeDefinitions = definitions.filter((definition) => activeKeys.has(definition.key));
-  const selectedDefinition = selectedKey
-    ? definitions.find((definition) => definition.key === selectedKey)
-    : undefined;
-  const canChooseFilter = availableDefinitions.length > 0 || Boolean(selectedDefinition);
-
-  const handleOpenChange = (nextOpen: boolean) => {
-    setOpen(nextOpen);
-    if (!nextOpen) {
-      setSelectedKey(null);
+function getSelectableTaskRows(rows: Row<Task>[]): Row<Task>[] {
+  const selectable: Row<Task>[] = [];
+  for (const row of rows) {
+    if (row.getIsGrouped()) {
+      if (row.getIsExpanded()) {
+        selectable.push(...getSelectableTaskRows(row.subRows as Row<Task>[]));
+      }
+    } else {
+      selectable.push(row);
     }
-  };
-
-  return (
-    <div className="contents">
-      {canChooseFilter ? (
-        <Popover open={open} onOpenChange={handleOpenChange}>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
-                <FilterHorizontalIcon className="h-3.5 w-3.5" />
-                Filters
-              </span>
-              <Badge
-                variant="secondary"
-                className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
-              >
-                {activeCount || 0}
-              </Badge>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent
-            className={`${selectedDefinition ? (selectedDefinition.searchableValues ? 'w-72' : 'w-52') : 'w-48'} p-0`}
-            align="start"
-          >
-            {selectedDefinition ? (
-              <Command>
-                <div className="flex items-center gap-1 border-b border-border/70 px-1.5 py-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    aria-label="Back to filter fields"
-                    onClick={() => setSelectedKey(null)}
-                  >
-                    <ArrowLeft02Icon className="h-3.5 w-3.5" />
-                  </Button>
-                  <span className="truncate text-xs font-medium">{selectedDefinition.label}</span>
-                </div>
-                {selectedDefinition.searchableValues ? (
-                  <CommandInput placeholder={`Search ${selectedDefinition.label.toLowerCase()}...`} />
-                ) : null}
-                <CommandList>
-                  <CommandEmpty>No results.</CommandEmpty>
-                  <CommandGroup>
-                    {selectedDefinition.options.map((option) => {
-                      const isSelected = values[selectedDefinition.key] === option.value;
-                      return (
-                        <CommandItem
-                          key={option.value}
-                          value={option.label}
-                          onSelect={() => {
-                            onChange(selectedDefinition.key, option.value);
-                            setOpen(false);
-                            setSelectedKey(null);
-                          }}
-                        >
-                          <div className={`mr-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                            {isSelected ? <TaskListCheckIcon className="h-3 w-3" /> : null}
-                          </div>
-                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            ) : (
-              <Command>
-                <CommandInput placeholder="Filter by..." />
-                <CommandList>
-                  <CommandEmpty>No filters.</CommandEmpty>
-                  <CommandGroup>
-                    {availableDefinitions.map((definition) => (
-                      <CommandItem
-                        key={definition.key}
-                        value={definition.label}
-                        onSelect={() => setSelectedKey(definition.key)}
-                      >
-                        {definition.label}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            )}
-          </PopoverContent>
-        </Popover>
-      ) : (
-        <Button variant="ghost" size="sm" className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground" disabled>
-          <span className="inline-flex items-center gap-1">
-            <FilterHorizontalIcon className="h-3.5 w-3.5" />
-            Filters
-          </span>
-          <Badge variant="secondary" className="ml-0.5 rounded-full px-1.5 py-0 text-[10px]">
-            {activeCount}
-          </Badge>
-        </Button>
-      )}
-
-      {activeCount > 0 ? (
-        <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
-          {activeDefinitions.map((definition) => (
-            <LocalTaskFilterPill
-              key={definition.key}
-              definition={definition}
-              value={values[definition.key]}
-              onChange={onChange}
-            />
-          ))}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-[10px] text-muted-foreground"
-            onClick={onClear}
-          >
-            Clear all
-          </Button>
-        </div>
-      ) : null}
-    </div>
-  );
+  }
+  return selectable;
 }
 
 export function TaskListView({
@@ -517,17 +271,15 @@ export function TaskListView({
   epicId,
   sprintId,
   externalTasks,
-  onExternalTasksChange,
-  onInlineUpdateSavingChange,
-  onInlineUpdateError,
   onOpenTask,
   groupBy: controlledGroupBy,
   onGroupByChange,
   showToolbar = true,
-  showLocalTaskControls = false,
-  toolbarActions,
   footer,
+  onBulkOperationComplete,
+  bulkTriggerContainer,
 }: TaskListViewProps) {
+  const queryClient = useQueryClient();
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '');
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
@@ -573,23 +325,12 @@ export function TaskListView({
   const setGroupBy = onGroupByChange ?? setUncontrolledGroupBy;
   const [expanded, setExpanded] = useState<ExpandedState>(true);
   const parentRef = useRef<HTMLDivElement>(null);
-  const horizontalScrollLeftRef = useRef(0);
   const headerRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
-  const [taskSearchQuery, setTaskSearchQuery] = useState('');
-  const [ownerFilter, setOwnerFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [requesterFilter, setRequesterFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [stateFilter, setStateFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [typeFilter, setTypeFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [priorityFilter, setPriorityFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [severityFilter, setSeverityFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [labelFilter, setLabelFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [sprintFilter, setSprintFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [blockedFilter, setBlockedFilter] = useState(TASK_LIST_FILTER_ALL);
-  const [blockingFilter, setBlockingFilter] = useState(TASK_LIST_FILTER_ALL);
   const { data: agents = [] } = useAgents(workspaceId);
 
   // Per-group pagination state (for workflow_state grouping)
@@ -598,7 +339,8 @@ export function TaskListView({
   const groupLoadingRef = useRef(false);
   const isPerGroupMode = groupBy === 'workflow_state' && !isExternal;
   const onOpenTaskRef = useRef(onOpenTask);
-  const pendingInlineUpdatesRef = useRef(0);
+  const lastClickedTaskIdRef = useRef<string | null>(null);
+  const checkboxShiftKeyRef = useRef(false);
 
   useEffect(() => {
     onOpenTaskRef.current = onOpenTask;
@@ -607,29 +349,6 @@ export function TaskListView({
   const handleOpenTask = useCallback((task: Task) => {
     onOpenTaskRef.current(task);
   }, []);
-
-  const applyTasksUpdate = useCallback(
-    (updater: TaskListTasksUpdater) => {
-      setTasks(updater);
-      onExternalTasksChange?.(updater);
-    },
-    [onExternalTasksChange],
-  );
-
-  const beginInlineUpdate = useCallback(() => {
-    pendingInlineUpdatesRef.current += 1;
-    if (pendingInlineUpdatesRef.current === 1) {
-      onInlineUpdateSavingChange?.(true);
-    }
-    onInlineUpdateError?.(null);
-  }, [onInlineUpdateError, onInlineUpdateSavingChange]);
-
-  const endInlineUpdate = useCallback(() => {
-    pendingInlineUpdatesRef.current = Math.max(pendingInlineUpdatesRef.current - 1, 0);
-    if (pendingInlineUpdatesRef.current === 0) {
-      onInlineUpdateSavingChange?.(false);
-    }
-  }, [onInlineUpdateSavingChange]);
 
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
@@ -720,243 +439,6 @@ export function TaskListView({
     }
     return map;
   }, [sprints]);
-
-  const taskListOwnerOptions = useMemo(() => {
-    const memberOptions = buildAssignableMemberOptions(assignableMembers)
-      .sort((a, b) => a.name.localeCompare(b.name));
-    return [{ id: TASK_LIST_FILTER_UNASSIGNED, name: 'Unassigned' }, ...memberOptions];
-  }, [assignableMembers]);
-
-  const taskListRequesterOptions = useMemo(() => {
-    return buildAssignableMemberOptions(assignableMembers)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [assignableMembers]);
-
-  const taskListStateOptions = useMemo(() => {
-    return workflow.states
-      .map((state) => ({
-        id: state.id,
-        name: state.name,
-        position: state.position,
-      }))
-      .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
-  }, [workflow.states]);
-
-  const taskListTypeOptions = useMemo(() => {
-    return (['feature', 'bug', 'chore'] as const)
-      .map((type) => ({ value: type, label: TASK_TYPE_CONFIG[type].label }));
-  }, []);
-
-  const taskListPriorityOptions = useMemo(() => {
-    return ALL_PRIORITIES
-      .map((priority) => ({ value: priority, label: PRIORITY_CONFIG[priority].label }));
-  }, []);
-
-  const taskListSeverityOptions = useMemo(() => {
-    return ALL_SEVERITIES
-      .map((severity) => ({ value: severity, label: SEVERITY_CONFIG[severity].label }));
-  }, []);
-
-  const taskListLabelOptions = useMemo(() => {
-    return allLabels
-      .map((label) => ({ value: label.id, label: label.name }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [allLabels]);
-
-  const taskListSprintOptions = useMemo(() => {
-    return getVisibleSprintsForTaskScope(sprints, { listTeamId: teamId })
-      .map((item) => ({ id: item.sprint.id, name: item.sprint.name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [sprints, teamId]);
-
-  const localTaskFilterDefinitions = useMemo<LocalTaskFilterDefinition[]>(() => {
-    return [
-      {
-        key: 'owner',
-        label: 'Owner',
-        options: taskListOwnerOptions.map((owner) => ({ value: owner.id, label: owner.name })),
-        searchableValues: true,
-      },
-      {
-        key: 'requester',
-        label: 'Requester',
-        options: taskListRequesterOptions.map((requester) => ({ value: requester.id, label: requester.name })),
-        searchableValues: true,
-      },
-      {
-        key: 'state',
-        label: 'State',
-        options: taskListStateOptions.map((state) => ({ value: state.id, label: state.name })),
-        searchableValues: true,
-      },
-      {
-        key: 'task_type',
-        label: 'Type',
-        options: taskListTypeOptions,
-      },
-      {
-        key: 'priority',
-        label: 'Priority',
-        options: taskListPriorityOptions,
-      },
-      {
-        key: 'severity',
-        label: 'Severity',
-        options: taskListSeverityOptions,
-      },
-      {
-        key: 'label',
-        label: 'Label',
-        options: taskListLabelOptions,
-        searchableValues: true,
-      },
-      {
-        key: 'sprint',
-        label: 'Sprint',
-        options: taskListSprintOptions.map((sprint) => ({ value: sprint.id, label: sprint.name })),
-        searchableValues: true,
-      },
-      {
-        key: 'blocked',
-        label: 'Blocked',
-        options: [
-          { value: 'true', label: 'Blocked' },
-          { value: 'false', label: 'Not blocked' },
-        ],
-      },
-      {
-        key: 'blocking',
-        label: 'Blocking',
-        options: [
-          { value: 'true', label: 'Blocking others' },
-          { value: 'false', label: 'Not blocking others' },
-        ],
-      },
-    ];
-  }, [
-    taskListLabelOptions,
-    taskListOwnerOptions,
-    taskListPriorityOptions,
-    taskListRequesterOptions,
-    taskListSeverityOptions,
-    taskListSprintOptions,
-    taskListStateOptions,
-    taskListTypeOptions,
-  ]);
-
-  const localTaskFilterValues = useMemo<LocalTaskFilterValues>(
-    () => ({
-      owner: ownerFilter,
-      requester: requesterFilter,
-      state: stateFilter,
-      task_type: typeFilter,
-      priority: priorityFilter,
-      severity: severityFilter,
-      label: labelFilter,
-      sprint: sprintFilter,
-      blocked: blockedFilter,
-      blocking: blockingFilter,
-    }),
-    [blockedFilter, blockingFilter, labelFilter, ownerFilter, priorityFilter, requesterFilter, severityFilter, sprintFilter, stateFilter, typeFilter],
-  );
-
-  const handleLocalTaskFilterChange = useCallback((key: LocalTaskFilterKey, value: string) => {
-    if (key === 'owner') setOwnerFilter(value);
-    if (key === 'requester') setRequesterFilter(value);
-    if (key === 'state') setStateFilter(value);
-    if (key === 'task_type') setTypeFilter(value);
-    if (key === 'priority') setPriorityFilter(value);
-    if (key === 'severity') setSeverityFilter(value);
-    if (key === 'label') setLabelFilter(value);
-    if (key === 'sprint') setSprintFilter(value);
-    if (key === 'blocked') setBlockedFilter(value);
-    if (key === 'blocking') setBlockingFilter(value);
-  }, []);
-
-  const hasLocalTaskFilters =
-    taskSearchQuery.trim() !== '' ||
-    ownerFilter !== TASK_LIST_FILTER_ALL ||
-    requesterFilter !== TASK_LIST_FILTER_ALL ||
-    stateFilter !== TASK_LIST_FILTER_ALL ||
-    typeFilter !== TASK_LIST_FILTER_ALL ||
-    priorityFilter !== TASK_LIST_FILTER_ALL ||
-    severityFilter !== TASK_LIST_FILTER_ALL ||
-    labelFilter !== TASK_LIST_FILTER_ALL ||
-    sprintFilter !== TASK_LIST_FILTER_ALL ||
-    blockedFilter !== TASK_LIST_FILTER_ALL ||
-    blockingFilter !== TASK_LIST_FILTER_ALL;
-
-  const filteredTasks = useMemo(() => {
-    if (!showLocalTaskControls || !hasLocalTaskFilters) return tasks;
-
-    const query = taskSearchQuery.trim().toLowerCase();
-    return tasks.filter((task) => {
-      if (
-        ownerFilter !== TASK_LIST_FILTER_ALL &&
-        (ownerFilter === TASK_LIST_FILTER_UNASSIGNED
-          ? (task.owner_member_ids ?? []).length > 0
-          : !(task.owner_member_ids ?? []).includes(ownerFilter))
-      ) return false;
-      if (requesterFilter !== TASK_LIST_FILTER_ALL && task.requester_member_id !== requesterFilter) return false;
-      if (stateFilter !== TASK_LIST_FILTER_ALL && task.workflow_state_id !== stateFilter) return false;
-      if (typeFilter !== TASK_LIST_FILTER_ALL && task.task_type !== typeFilter) return false;
-      if (priorityFilter !== TASK_LIST_FILTER_ALL && task.priority !== priorityFilter) return false;
-      if (severityFilter !== TASK_LIST_FILTER_ALL && task.severity !== severityFilter) return false;
-      if (labelFilter !== TASK_LIST_FILTER_ALL && !(task.labels ?? []).some((label) => label.id === labelFilter)) return false;
-      if (sprintFilter !== TASK_LIST_FILTER_ALL && task.sprint_id !== sprintFilter) return false;
-      if (blockedFilter !== TASK_LIST_FILTER_ALL && String(task.blocked || task.is_blocked_by_task) !== blockedFilter) return false;
-      if (blockingFilter !== TASK_LIST_FILTER_ALL && String(task.is_blocking_other_task) !== blockingFilter) return false;
-
-      if (!query) return true;
-
-      const ownerNames = (task.owner_member_ids ?? []).map((id) => ownerNameMap.get(id) ?? '');
-      const labels = task.labels?.map((label) => label.name) ?? [];
-      const searchableText = [
-        task.display_id,
-        task.task_key,
-        task.name,
-        TASK_TYPE_CONFIG[task.task_type]?.label,
-        stateMap.get(task.workflow_state_id)?.name,
-        stateMap.get(task.workflow_state_id)?.groupLabel,
-        task.sprint_id ? sprintMap.get(task.sprint_id) : '',
-        ...ownerNames,
-        ...labels,
-      ].filter(Boolean).join(' ').toLowerCase();
-
-      return searchableText.includes(query);
-    });
-  }, [
-    hasLocalTaskFilters,
-    blockedFilter,
-    blockingFilter,
-    labelFilter,
-    ownerFilter,
-    ownerNameMap,
-    priorityFilter,
-    requesterFilter,
-    severityFilter,
-    showLocalTaskControls,
-    sprintFilter,
-    sprintMap,
-    stateFilter,
-    stateMap,
-    taskSearchQuery,
-    tasks,
-    typeFilter,
-  ]);
-
-  const clearLocalTaskFieldFilters = useCallback(() => {
-    setOwnerFilter(TASK_LIST_FILTER_ALL);
-    setRequesterFilter(TASK_LIST_FILTER_ALL);
-    setStateFilter(TASK_LIST_FILTER_ALL);
-    setTypeFilter(TASK_LIST_FILTER_ALL);
-    setPriorityFilter(TASK_LIST_FILTER_ALL);
-    setSeverityFilter(TASK_LIST_FILTER_ALL);
-    setLabelFilter(TASK_LIST_FILTER_ALL);
-    setSprintFilter(TASK_LIST_FILTER_ALL);
-    setBlockedFilter(TASK_LIST_FILTER_ALL);
-    setBlockingFilter(TASK_LIST_FILTER_ALL);
-  }, []);
 
   const estimateSettingsByTeamId = useMemo(() => {
     const map = new Map<string, TeamEstimateSettings>();
@@ -1097,48 +579,80 @@ export function TaskListView({
   // Optimistic inline update with rollback on failure
   const updateTaskField = useCallback(
     async (taskId: string, patch: Partial<Task>) => {
-      const previousTask = tasks.find((task) => task.id === taskId) ?? null;
-      applyTasksUpdate((current) => applyTaskListInlinePatch(current, taskId, patch));
+      let snapshot: Task[] = [];
+      setTasks((current) => {
+        snapshot = current;
+        return current.map((s) => (s.id === taskId ? { ...s, ...patch } : s));
+      });
       const apiPatch = { ...patch };
       delete apiPatch.epic_name;
       delete apiPatch.labels;
-      beginInlineUpdate();
-      try {
-        const { data, error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
-        if (error) {
-          if (previousTask) {
-            applyTasksUpdate((current) => mergeTaskListInlineUpdate(current, previousTask));
-          }
-          onInlineUpdateError?.(error);
-        } else if (data?.task) {
-          applyTasksUpdate((current) => mergeTaskListInlineUpdate(current, data.task));
+      const { error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
+      if (error) setTasks(snapshot);
+      if (!error && patch.workflow_state_id !== undefined) {
+        const previousStateId = snapshot.find((task) => task.id === taskId)?.workflow_state_id;
+        if (shouldNotifyAgentAutoRunStateChange({
+          fromStateId: previousStateId,
+          toStateId: patch.workflow_state_id,
+          automatedStateIds,
+        })) {
+          const stateName = workflow.states.find((state) => state.id === patch.workflow_state_id)?.name ?? 'this state';
+          toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(patch.workflow_state_id) });
         }
-        if (!error && patch.workflow_state_id !== undefined) {
-          const previousStateId = previousTask?.workflow_state_id;
-          if (shouldNotifyAgentAutoRunStateChange({
-            fromStateId: previousStateId,
-            toStateId: patch.workflow_state_id,
-            automatedStateIds,
-          })) {
-            const stateName = workflow.states.find((state) => state.id === patch.workflow_state_id)?.name ?? 'this state';
-            toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(patch.workflow_state_id) });
-          }
-        }
-      } finally {
-        endInlineUpdate();
       }
     },
-    [
-      workspaceId,
-      automatedStateIds,
-      workflow.states,
-      applyTasksUpdate,
-      beginInlineUpdate,
-      endInlineUpdate,
-      onInlineUpdateError,
-      tasks,
-    ],
+    [workspaceId, ownerNameMap, automatedStateIds, workflow.states],
   );
+
+  const handleRowCheckboxToggle = useCallback((taskId: string, checked: boolean, shiftKey: boolean) => {
+    setRowSelection((current) => {
+      const next = { ...current };
+      const currentIndex = tasks.findIndex((task) => task.id === taskId);
+      const previousIndex = lastClickedTaskIdRef.current
+        ? tasks.findIndex((task) => task.id === lastClickedTaskIdRef.current)
+        : -1;
+
+      if (shiftKey && previousIndex >= 0 && currentIndex >= 0) {
+        const start = Math.min(previousIndex, currentIndex);
+        const end = Math.max(previousIndex, currentIndex);
+        for (const task of tasks.slice(start, end + 1)) {
+          if (checked) next[task.id] = true;
+          else delete next[task.id];
+        }
+      } else if (checked) {
+        next[taskId] = true;
+      } else {
+        delete next[taskId];
+      }
+
+      return next;
+    });
+    lastClickedTaskIdRef.current = taskId;
+  }, [tasks]);
+
+  const clearSelection = useCallback(() => {
+    setRowSelection({});
+    lastClickedTaskIdRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const taskIds = new Set(tasks.map((task) => task.id));
+    setRowSelection((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([id, selected]) => selected && taskIds.has(id)),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [tasks]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clearSelection();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [clearSelection]);
 
   // Listen for task events (only for self-fetching mode)
   useEffect(() => {
@@ -1198,6 +712,53 @@ export function TaskListView({
   // Table columns
   const tableColumns = useMemo(
     () => [
+      columnHelper.display({
+        id: 'select',
+        size: CHECKBOX_COL_SIZE,
+        enableGrouping: false,
+        enableSorting: false,
+        enableResizing: false,
+        header: ({ table }) => {
+          const selectableRows = getSelectableTaskRows(table.getRowModel().rows as Row<Task>[]);
+          const selectedCount = selectableRows.filter((row) => row.getIsSelected()).length;
+          const checked = selectedCount === 0
+            ? false
+            : selectedCount === selectableRows.length ? true : 'indeterminate';
+
+          return (
+            <Checkbox
+              checked={checked}
+              onCheckedChange={(value) => {
+                const shouldSelect = value === true;
+                setRowSelection((current) => {
+                  const next = { ...current };
+                  for (const row of selectableRows) {
+                    if (shouldSelect) next[row.id] = true;
+                    else delete next[row.id];
+                  }
+                  return next;
+                });
+              }}
+              aria-label="Select all tasks"
+              onClick={(event) => event.stopPropagation()}
+            />
+          );
+        },
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onMouseDown={(event) => {
+              checkboxShiftKeyRef.current = event.shiftKey;
+            }}
+            onCheckedChange={(value) => {
+              handleRowCheckboxToggle(row.original.id, value === true, checkboxShiftKeyRef.current);
+              checkboxShiftKeyRef.current = false;
+            }}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`Select ${row.original.task_key}`}
+          />
+        ),
+      }),
       columnHelper.accessor('task_key', {
         id: 'displayId',
         header: 'ID',
@@ -1481,7 +1042,7 @@ export function TaskListView({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 44,
+        size: ACTIONS_COL_SIZE,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -1497,7 +1058,7 @@ export function TaskListView({
           ),
         }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById, handleRowCheckboxToggle]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -1545,7 +1106,7 @@ export function TaskListView({
     if (visibleGroupOptions.some((option) => option.value === groupBy)) {
       return;
     }
-    setGroupBy(visibleGroupOptions[0]?.value ?? 'none');
+    setGroupBy('workflow_state');
   }, [groupBy, setGroupBy, visibleGroupOptions]);
 
   const columnVisibility = useMemo(() => {
@@ -1591,18 +1152,21 @@ export function TaskListView({
   const hasGroupedRows = grouping.length > 0;
 
   const table = useReactTable({
-    data: filteredTasks,
+    data: tasks,
     columns: tableColumns,
     state: {
       grouping,
       expanded,
+      rowSelection,
       columnVisibility,
       sorting,
       columnSizing,
     },
     onExpandedChange: setExpanded,
+    onRowSelectionChange: setRowSelection,
     onSortingChange: setSorting,
     onColumnSizingChange: setColumnSizing,
+    enableRowSelection: true,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
     autoResetExpanded: false,
@@ -1614,19 +1178,23 @@ export function TaskListView({
   });
 
   const { rows } = table.getRowModel();
+  const selectWidth = table.getColumn('select')?.getSize() ?? CHECKBOX_COL_SIZE;
   const displayIdWidth = table.getColumn('displayId')?.getSize() ?? 90;
   const typeIconColumn = table.getColumn('typeIcon');
   const typeIconWidth = typeIconColumn?.getSize() ?? 40;
   const showTypeIcon = typeIconColumn?.getIsVisible() ?? false;
-  const pinnedOffsets = useMemo(
-    () =>
-      getTaskListPinnedOffsets({
+  const pinnedOffsets = useMemo(() => {
+    const offsets = getTaskListPinnedOffsets({
         displayIdWidth,
         typeIconWidth,
         showTypeIcon,
-      }),
-    [displayIdWidth, typeIconWidth, showTypeIcon],
-  );
+      });
+    return {
+      displayId: offsets.displayId + selectWidth,
+      typeIcon: offsets.typeIcon + selectWidth,
+      name: offsets.name + selectWidth,
+    };
+  }, [displayIdWidth, selectWidth, typeIconWidth, showTypeIcon]);
 
   const getTrailingGroupStateId = useCallback(
     (index: number): string | null => {
@@ -1648,7 +1216,9 @@ export function TaskListView({
     (index: number) => {
       const row = rows[index];
       if (!row) return ROW_HEIGHT;
-      if (row.getIsGrouped()) return GROUP_ROW_HEIGHT;
+      if (row.getIsGrouped()) {
+        return GROUP_ROW_HEIGHT + (row.getIsExpanded() ? GROUP_HEADER_REPEAT_HEIGHT : 0);
+      }
 
       const trailingGroupStateId = getTrailingGroupStateId(index);
       const hasLoadingSentinel = trailingGroupStateId !== null && groupLoadingId === trailingGroupStateId;
@@ -1729,12 +1299,151 @@ export function TaskListView({
   }, []);
 
   // Compute total task count (including unloaded) for per-group mode
-  const totalTaskCount = isPerGroupMode && groupHasMore.size > 0
+  const displayTaskCount = isPerGroupMode && groupHasMore.size > 0
     ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
     : tasks.length;
-  const displayTaskCount = showLocalTaskControls && hasLocalTaskFilters ? filteredTasks.length : totalTaskCount;
-  const hasLocalSearchQuery = showLocalTaskControls && taskSearchQuery.trim() !== '';
-  const showTaskCount = !showLocalTaskControls || hasLocalSearchQuery;
+
+  const selectedTasks = useMemo(
+    () => tasks.filter((task) => rowSelection[task.id]),
+    [rowSelection, tasks],
+  );
+
+  const handleBulkOperationComplete = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'board'] }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) }),
+      epicId ? queryClient.invalidateQueries({ queryKey: queryKeys.pm.epicTasks(workspaceId, epicId) }) : Promise.resolve(),
+      sprintId ? queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintTasks(workspaceId, sprintId) }) : Promise.resolve(),
+    ]);
+
+    if (onBulkOperationComplete) {
+      await onBulkOperationComplete();
+      return;
+    }
+
+    if (isExternal) return;
+    if (isPerGroupMode) {
+      await fetchTasksByState();
+    } else {
+      await fetchTasksFlat(1, false);
+    }
+  }, [
+    epicId,
+    fetchTasksByState,
+    fetchTasksFlat,
+    isExternal,
+    isPerGroupMode,
+    onBulkOperationComplete,
+    queryClient,
+    sprintId,
+    workspaceId,
+  ]);
+
+  const toggleGroupSelection = useCallback(
+    (groupRow: Row<Task>, checked: boolean) => {
+      setRowSelection((current) => computeGroupSelectionToggle(groupRow, current, checked));
+    },
+    [],
+  );
+
+  const getGroupSelectionState = useCallback(
+    (groupRow: Row<Task>): boolean | 'indeterminate' =>
+      resolveGroupSelectionState(groupRow, rowSelection),
+    [rowSelection],
+  );
+
+  const renderColumnHeaderRow = (opts?: {
+    groupRow?: Row<Task>;
+    groupSelectionState?: boolean | 'indeterminate';
+  }) => {
+    const groupRow = opts?.groupRow;
+    const isGroupRepeat = !!groupRow;
+    return table.getHeaderGroups().map((headerGroup) => (
+      <div key={`${headerGroup.id}-${groupRow ? groupRow.id : 'main'}`} className="flex items-center">
+        {headerGroup.headers.map((header) => {
+          if (header.column.getIsGrouped()) return null;
+          const defSize = header.column.columnDef.size ?? 150;
+          const runtimeSize = header.getSize();
+          if (defSize === 0 && runtimeSize === 0) return null;
+          const isResized = !!columnSizing[header.column.id];
+          const canSort = header.column.getCanSort();
+          const sorted = header.column.getIsSorted();
+          const colId = header.column.id;
+          const pinnedClass = colId === 'name'
+            ? TABLE_PINNED_HEADER_LEFT_NAME
+            : colId === 'select' || colId === 'displayId' || colId === 'typeIcon'
+            ? TABLE_PINNED_HEADER_LEFT
+            : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
+          const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
+            : colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
+            : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
+            : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
+            : colId === 'actions' ? pinnedStyle('right', 0) : {};
+          const isGroupSelectCell = isGroupRepeat && colId === 'select';
+          if (colId === 'actions') {
+            return (
+              <div
+                key={header.id}
+                className={TABLE_HEADER_CELL_ACTIONS}
+                style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
+                aria-hidden="true"
+              />
+            );
+          }
+          return (
+            <div
+              key={header.id}
+              className={`${TABLE_HEADER_CELL} ${!isGroupSelectCell && canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+              style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
+              onClick={!isGroupSelectCell && canSort ? header.column.getToggleSortingHandler() : undefined}
+            >
+              {isGroupSelectCell ? (
+                <div
+                  className="flex items-center"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <Checkbox
+                    checked={opts?.groupSelectionState ?? false}
+                    onCheckedChange={(value) => {
+                      if (groupRow) toggleGroupSelection(groupRow, value === true);
+                    }}
+                    aria-label="Select all in group"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(header.column.columnDef.header, header.getContext())}
+                  {canSort && (
+                    <span className="ml-auto shrink-0">
+                      {sorted === 'asc' ? (
+                        <TaskListChevronUpIcon className="h-3 w-3 text-foreground/80" />
+                      ) : sorted === 'desc' ? (
+                        <TaskListChevronDownIcon className="h-3 w-3 text-foreground/80" />
+                      ) : (
+                        <TaskListArrowUpDownIcon className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </span>
+                  )}
+                </div>
+              )}
+              {header.column.getCanResize() && (
+                <div
+                  onMouseDown={header.getResizeHandler()}
+                  onTouchStart={header.getResizeHandler()}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    ));
+  };
 
   if (loading) {
     return (
@@ -1745,62 +1454,53 @@ export function TaskListView({
     );
   }
 
+  const bulkActionsBar = (
+    <TaskBulkActionsBar
+      selectedTasks={selectedTasks}
+      workspaceId={workspaceId}
+      teamId={teamId}
+      workflow={workflow}
+      assignableMembers={assignableMembers}
+      epics={epics}
+      sprints={sprints}
+      labels={allLabels}
+      onComplete={handleBulkOperationComplete}
+      onClearSelection={clearSelection}
+    />
+  );
+
+  const portalContainer = bulkTriggerContainer ?? null;
+  const usePortal = !!portalContainer;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="relative flex min-h-0 flex-1 flex-col gap-2">
+      {usePortal && selectedTasks.length > 0 ? createPortal(bulkActionsBar, portalContainer) : null}
       {showToolbar ? (
-        <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
-          {showLocalTaskControls ? (
-            <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
-              <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={taskSearchQuery}
-                onChange={(event) => setTaskSearchQuery(event.target.value)}
-                placeholder="Search"
-                className="h-8 pl-8 pr-8 text-sm"
-              />
-              {taskSearchQuery ? (
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  onClick={() => setTaskSearchQuery('')}
-                  aria-label="Clear search"
-                >
-                  <Cancel01Icon className="h-3.5 w-3.5" />
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {showTaskCount ? (
-            <span className="text-xs text-muted-foreground">
-              {displayTaskCount}{showLocalTaskControls && hasLocalTaskFilters ? ` of ${totalTaskCount}` : ''}{' '}
-              {totalTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
-            </span>
-          ) : null}
-          {showLocalTaskControls ? (
-            <LocalTaskFilterControls
-              definitions={localTaskFilterDefinitions}
-              values={localTaskFilterValues}
-              onChange={handleLocalTaskFilterChange}
-              onClear={clearLocalTaskFieldFilters}
-            />
-          ) : null}
-          <div className="ml-auto flex items-center gap-1.5">
-            {toolbarActions}
-            <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
-              <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] gap-1 text-xs">
-                <span className="shrink-0 text-muted-foreground">Group by</span>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {visibleGroupOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div className="flex items-center gap-2 px-3 pt-2">
+          <span className="text-xs text-muted-foreground">Group by:</span>
+          <Select value={groupBy} onValueChange={(v) => setGroupBy(v as TaskListGroupByOption)}>
+            <SelectTrigger className="h-7 w-[160px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {visibleGroupOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-xs text-muted-foreground">
+            {displayTaskCount} {displayTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            {!usePortal ? bulkActionsBar : null}
             <ListDisplayMenu disabledKeys={teamDisabledKeys} />
           </div>
+        </div>
+      ) : !usePortal && selectedTasks.length > 0 ? (
+        <div className="flex items-center justify-end gap-2 px-3 pt-2">
+          {bulkActionsBar}
         </div>
       ) : null}
 
@@ -1811,12 +1511,6 @@ export function TaskListView({
         onScroll={(e) => {
           const el = e.currentTarget;
           const scrollTop = el.scrollTop;
-          const scrollLeft = el.scrollLeft;
-
-          if (scrollLeft !== horizontalScrollLeftRef.current) {
-            horizontalScrollLeftRef.current = scrollLeft;
-            el.style.setProperty('--task-list-scroll-left', `${scrollLeft}px`);
-          }
 
           // Infinite loading (only for flat/global pagination, not per-group mode)
           if (!isExternal && !isPerGroupMode && hasMore && !loadingMore) {
@@ -1828,76 +1522,22 @@ export function TaskListView({
       >
         <div className="min-w-fit">
         {/* Header */}
-        <div ref={headerRef} className={TASK_LIST_HEADER}>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <div key={headerGroup.id} className="flex items-center">
-              {headerGroup.headers.map((header) => {
-                if (header.column.getIsGrouped()) return null;
-                const defSize = header.column.columnDef.size ?? 150;
-                const runtimeSize = header.getSize();
-                if (defSize === 0 && runtimeSize === 0) return null;
-                const isResized = !!columnSizing[header.column.id];
-                const canSort = header.column.getCanSort();
-                const sorted = header.column.getIsSorted();
-                const colId = header.column.id;
-                const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
-                  ? TABLE_PINNED_HEADER_LEFT
-                  : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
-                const pinnedSt = colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
-                  : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
-                  : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
-                  : colId === 'actions' ? pinnedStyle('right', 0) : {};
-                return (
-                  <div
-                    key={header.id}
-                    className={`${TASK_LIST_HEADER_CELL} ${canSort ? TASK_LIST_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
-                    style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
-                    onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                  >
-                    <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                      {canSort && (
-                        <span className="ml-auto shrink-0">
-                          {sorted === 'asc' ? (
-                            <TaskListChevronUpIcon className="h-3 w-3 text-foreground/80" />
-                          ) : sorted === 'desc' ? (
-                            <TaskListChevronDownIcon className="h-3 w-3 text-foreground/80" />
-                          ) : (
-                            <TaskListArrowUpDownIcon className="h-3 w-3 text-muted-foreground" />
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    {header.column.getCanResize() && (
-                      <div
-                        onMouseDown={header.getResizeHandler()}
-                        onTouchStart={header.getResizeHandler()}
-                        onClick={(e) => e.stopPropagation()}
-                        className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+        <div ref={headerRef} className={TABLE_HEADER}>
+          {hasGroupedRows ? null : renderColumnHeaderRow()}
         </div>
 
         {/* Virtualized body */}
-        {rows.length === 0 ? (
-          <div className="flex h-24 items-center justify-center border-b border-border/60 text-sm text-muted-foreground">
-            {tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the current filters.'}
-          </div>
-        ) : (
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             {hasGroupedRows ? (
               <StickyPinnedGroupOverlay
                 parentRef={parentRef}
-                rows={rows}
+                items={rows}
                 virtualizer={virtualizer}
-                groupSummaries={groupSummaries}
+                isPinnedItem={(row) => row.getIsGrouped()}
+                renderHeader={(row) => (
+                  <MemoGroupHeaderRow row={row} summary={groupSummaries.get(row.id)} />
+                )}
+                top="var(--task-list-header-height, 0px)"
               />
             ) : null}
             {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -1923,24 +1563,31 @@ export function TaskListView({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: isGrouped
-                      ? `translateX(var(--task-list-scroll-left, 0px)) translateY(${virtualRow.start}px)`
-                      : `translateY(${virtualRow.start}px)`,
-                    willChange: isGrouped ? 'transform' : undefined,
-                  }}
+                  style={virtualRowStyle(virtualRow.start)}
                 >
                   {isGrouped ? (
-                    <MemoGroupHeaderRow row={row} summary={groupSummaries.get(row.id)} />
+                    <>
+                      <MemoGroupHeaderRow
+                        row={row}
+                        summary={groupSummaries.get(row.id)}
+                      />
+                      {row.getIsExpanded() ? (
+                        <div className="border-b border-border/60 bg-card">
+                          {renderColumnHeaderRow({
+                            groupRow: row,
+                            groupSelectionState: getGroupSelectionState(row),
+                          })}
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <>
                       <MemoDataRow
                         row={row}
+                        isSelected={!!rowSelection[row.original.id]}
                         onOpenTask={handleOpenTask}
+                        onToggleSelection={handleRowCheckboxToggle}
+                        columnSizing={columnSizing}
                         columnSizingVersion={columnSizingVersion}
                         pinnedOffsets={pinnedOffsets}
                       />
@@ -1957,7 +1604,6 @@ export function TaskListView({
               );
             })}
           </div>
-        )}
           {loadingMore && !isPerGroupMode && (
             <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
               <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
@@ -2005,32 +1651,34 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 
   return (
     <button
-      className={`${TASK_LIST_GROUP_ROW} w-full text-left text-xs`}
+      className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
       onClick={row.getToggleExpandedHandler()}
     >
-      {row.getIsExpanded() ? (
-        <TaskListChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : (
-        <TaskListChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-      {stateType && <TaskListStateTypeIcon stateType={stateType} className="h-4 w-4" />}
-      <span>{groupLabel}</span>
-      <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
-        <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
-          <span className="flex items-center gap-1">
-            <TaskListNoteIcon className="h-3 w-3" /> {storyCount}
-          </span>
-        </QuickTooltip>
-        <QuickTooltip label={`${totalPoints} total ${totalPoints === 1 ? 'point' : 'points'}`}>
-          <span className="flex items-center gap-1">
-            <TaskListChartIcon className="h-3 w-3" /> {totalPoints}
-          </span>
-        </QuickTooltip>
-        <QuickTooltip label={`${completedPoints} completed ${completedPoints === 1 ? 'point' : 'points'}`}>
-          <span className="flex items-center gap-1">
-            <TaskListDoneCircleIcon className="h-3 w-3" /> {completedPoints}
-          </span>
-        </QuickTooltip>
+      <span className={TABLE_GROUP_ROW_INNER}>
+        {row.getIsExpanded() ? (
+          <TaskListChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <TaskListChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        {stateType && <TaskListStateTypeIcon stateType={stateType} className="h-4 w-4" />}
+        <span>{groupLabel}</span>
+        <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
+          <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
+            <span className="flex items-center gap-1">
+              <TaskListNoteIcon className="h-3 w-3" /> {storyCount}
+            </span>
+          </QuickTooltip>
+          <QuickTooltip label={`${totalPoints} total ${totalPoints === 1 ? 'point' : 'points'}`}>
+            <span className="flex items-center gap-1">
+              <TaskListChartIcon className="h-3 w-3" /> {totalPoints}
+            </span>
+          </QuickTooltip>
+          <QuickTooltip label={`${completedPoints} completed ${completedPoints === 1 ? 'point' : 'points'}`}>
+            <span className="flex items-center gap-1">
+              <TaskListDoneCircleIcon className="h-3 w-3" /> {completedPoints}
+            </span>
+          </QuickTooltip>
+        </span>
       </span>
     </button>
   );
@@ -2044,107 +1692,40 @@ interface PMGroupSummary {
   stateType?: StateType;
 }
 
-interface TaskListVirtualizerLike {
-  getVirtualItems: () => Array<{ index: number; start: number }>;
-}
-
-function StickyPinnedGroupOverlay({
-  parentRef,
-  rows,
-  virtualizer,
-  groupSummaries,
+function DataRowSelectCheckbox({
+  taskId,
+  taskKey,
+  isSelected,
+  onToggleSelection,
 }: {
-  parentRef: RefObject<HTMLDivElement | null>;
-  rows: Row<Task>[];
-  virtualizer: TaskListVirtualizerLike;
-  groupSummaries: Map<string, PMGroupSummary>;
+  taskId: string;
+  taskKey: string;
+  isSelected: boolean;
+  onToggleSelection: (taskId: string, checked: boolean, shiftKey: boolean) => void;
 }) {
-  const pinnedGroupRef = useRef<number | null>(null);
-  const pinnedGroupRafRef = useRef<number | null>(null);
-  const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (pinnedGroupRafRef.current !== null) {
-        cancelAnimationFrame(pinnedGroupRafRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const scrollEl = parentRef.current;
-    if (!scrollEl) return;
-
-    const syncPinnedGroup = () => {
-      const scrollTop = scrollEl.scrollTop;
-      const virtualItems = virtualizer.getVirtualItems();
-      let newPinnedIdx: number | null = null;
-
-      if (scrollTop > 10) {
-        for (const vItem of virtualItems) {
-          if (vItem.start > scrollTop) break;
-          if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
-        }
-        if (newPinnedIdx === null && virtualItems.length > 0) {
-          for (let index = virtualItems[0].index - 1; index >= 0; index -= 1) {
-            if (rows[index]?.getIsGrouped()) {
-              newPinnedIdx = index;
-              break;
-            }
-          }
-        }
-      }
-
-      if (newPinnedIdx !== pinnedGroupRef.current) {
-        pinnedGroupRef.current = newPinnedIdx;
-        startTransition(() => {
-          setPinnedGroupIdx((current) => (current === newPinnedIdx ? current : newPinnedIdx));
-        });
-      }
-    };
-
-    const handleScroll = () => {
-      if (pinnedGroupRafRef.current !== null) return;
-      pinnedGroupRafRef.current = requestAnimationFrame(() => {
-        pinnedGroupRafRef.current = null;
-        syncPinnedGroup();
-      });
-    };
-
-    syncPinnedGroup();
-    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
-
-    return () => {
-      scrollEl.removeEventListener('scroll', handleScroll);
-      if (pinnedGroupRafRef.current !== null) {
-        cancelAnimationFrame(pinnedGroupRafRef.current);
-        pinnedGroupRafRef.current = null;
-      }
-    };
-  }, [parentRef, rows, virtualizer]);
-
-  const pinnedGroupRow = pinnedGroupIdx !== null ? rows[pinnedGroupIdx] : undefined;
-
-  if (!pinnedGroupRow) return null;
-
+  const shiftRef = useRef(false);
   return (
-    <div className="sticky z-[5]" style={{ top: 'var(--task-list-header-height, 0px)', height: 0, overflow: 'visible' }}>
-      <div
-        className="border-b border-border/60 bg-background"
-        style={{
-          transform: 'translateX(var(--task-list-scroll-left, 0px))',
-          willChange: 'transform',
-        }}
-      >
-        <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
-      </div>
-    </div>
+    <Checkbox
+      checked={isSelected}
+      onMouseDown={(event) => {
+        shiftRef.current = event.shiftKey;
+      }}
+      onCheckedChange={(value) => {
+        onToggleSelection(taskId, value === true, shiftRef.current);
+        shiftRef.current = false;
+      }}
+      onClick={(event) => event.stopPropagation()}
+      aria-label={`Select ${taskKey}`}
+    />
   );
 }
 
 interface PMDataRowProps {
   row: Row<Task>;
+  isSelected: boolean;
   onOpenTask: (task: Task) => void;
+  onToggleSelection: (taskId: string, checked: boolean, shiftKey: boolean) => void;
+  columnSizing: ColumnSizingState;
   columnSizingVersion: string;
   pinnedOffsets: TaskListPinnedOffsets;
 }
@@ -2153,46 +1734,61 @@ function arePMDataRowPropsEqual(prev: PMDataRowProps, next: PMDataRowProps): boo
   return (
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
+    prev.isSelected === next.isSelected &&
     prev.columnSizingVersion === next.columnSizingVersion &&
     prev.pinnedOffsets === next.pinnedOffsets &&
-    prev.onOpenTask === next.onOpenTask
+    prev.onOpenTask === next.onOpenTask &&
+    prev.onToggleSelection === next.onToggleSelection
   );
 }
 
 const MemoDataRow = memo(function DataRow({
   row,
+  isSelected,
   onOpenTask,
+  onToggleSelection,
+  columnSizing,
   columnSizingVersion,
   pinnedOffsets,
 }: PMDataRowProps) {
   void columnSizingVersion; // used by arePMDataRowPropsEqual for memo comparison
   return (
     <div
-      className={TASK_LIST_ROW}
+      className={`${TABLE_ROW} cursor-pointer`}
       onClick={() => onOpenTask(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
         // Skip the grouped column entirely — header does the same, keeping alignment
         if (cell.column.getIsGrouped()) return null;
-        const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
-        const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+        const pinnedClass = colId === 'name'
+          ? TABLE_PINNED_LEFT_NAME
+          : colId === 'select' || colId === 'displayId' || colId === 'typeIcon'
           ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
-        const pinnedSt = colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
+        const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
+          : colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
           : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
           : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
           : colId === 'actions' ? pinnedStyle('right', 0) : {};
         return (
           <div
             key={cell.id}
-            className={`${TASK_LIST_CELL} overflow-hidden ${pinnedClass}`}
+            className={`${TABLE_CELL} overflow-hidden ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
           >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {colId === 'select' ? (
+              <DataRowSelectCheckbox
+                taskId={row.original.id}
+                taskKey={row.original.task_key}
+                isSelected={isSelected}
+                onToggleSelection={onToggleSelection}
+              />
+            ) : (
+              flexRender(cell.column.columnDef.cell, cell.getContext())
+            )}
           </div>
         );
       })}
@@ -3018,7 +2614,7 @@ function InlineActionsCell({
   const trigger = (
     <button
       type="button"
-      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/row:opacity-100 data-[state=open]:opacity-100 cursor-pointer"
+      className="rounded-md p-1 text-foreground transition-colors hover:bg-accent cursor-pointer"
       onClick={(event) => {
         event.stopPropagation();
         if (!menuOpen) {
@@ -3026,7 +2622,7 @@ function InlineActionsCell({
         }
       }}
     >
-      <TaskListMoreVerticalIcon className="h-4 w-4" />
+      <TaskListMoreVerticalIcon className="h-4 w-4" strokeWidth={2.5} />
     </button>
   );
 

@@ -61,7 +61,7 @@ function ManagerOnlyTooltip({
 }) {
   if (!disabled) return <>{children}</>;
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className={`inline-flex max-w-full ${className ?? ''}`}>{children}</span>
@@ -577,6 +577,11 @@ export function SprintDetailPage() {
                   sprintId={sprintId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
+                  onBulkOperationComplete={async () => {
+                    if (!workspaceId) return;
+                    const tasksRes = await pmSprintService.listTasks(workspaceId, sprintId);
+                    if (tasksRes.data) setTasks(tasksRes.data);
+                  }}
                 />
               </div>
             ) : (

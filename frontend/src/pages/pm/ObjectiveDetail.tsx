@@ -88,7 +88,7 @@ function ManagerOnlyTooltip({
 }) {
   if (!disabled) return <>{children}</>;
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className={`inline-flex max-w-full ${className ?? ''}`}>{children}</span>
@@ -936,7 +936,7 @@ export function ObjectiveDetailPage() {
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <HexagonIcon className="h-4 w-4 text-violet-500" />
                   Epic Progress
-                  <TooltipProvider delayDuration={200}>
+                  <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <InformationCircleIcon className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
@@ -1013,7 +1013,7 @@ export function ObjectiveDetailPage() {
               <h3 className="text-sm font-semibold text-foreground">Key Results</h3>
               <div className="flex items-center gap-2">
                 {data.key_results.length > 0 && (
-                  <TooltipProvider delayDuration={200}>
+                  <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">{krAvgProgress}% outcome progress</span>
@@ -1390,7 +1390,7 @@ export function ObjectiveDetailPage() {
               <div>
                 <div className="flex items-center gap-1">
                   <label className="text-xs font-medium text-muted-foreground">Measure as</label>
-                  <TooltipProvider delayDuration={200}>
+                  <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <InformationCircleIcon className="h-3 w-3 text-muted-foreground/60 cursor-help" />

@@ -12,6 +12,8 @@ import {
   type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
+import { EpicFilterBar } from '@/pages/pm/EpicFilterBar';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
@@ -21,24 +23,23 @@ import {
   Calendar03Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  FilterHorizontalIcon,
   PlusSignIcon,
-  Search01Icon,
   Target01Icon,
   ChartIncreaseIcon,
   ArrowUp02Icon,
   ArrowUpDownIcon,
   UserIcon,
   UserAdd01Icon,
-  Cancel01Icon,
   Layers01Icon,
   MinusSignIcon,
   Sun01Icon,
+  UserGroupIcon,
+  Tag01Icon,
+  WorkflowSquare01Icon,
+  Activity01Icon,
 } from '@/lib/icons';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
+import { StateTypeIcon } from '@/lib/pmIcons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
-import { DisplayPropertiesPopover } from '@/components/pm/DisplayPropertiesPopover';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
@@ -49,7 +50,6 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
@@ -65,12 +65,18 @@ import {
   TABLE_CELL,
   TABLE_CONTAINER,
   TABLE_GROUP_ROW,
+  TABLE_GROUP_ROW_INNER,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_RESIZE_HANDLE,
   TABLE_ROW,
+  TABLE_PINNED_LEFT_NAME,
+  TABLE_PINNED_HEADER_LEFT_NAME,
   dynamicCellStyle,
+  pinnedStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
 } from '@/lib/tableStyles';
 
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
@@ -79,6 +85,80 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
   at_risk: { label: 'At risk', color: 'text-yellow-600' },
   off_track: { label: 'Off track', color: 'text-red-600' },
 };
+
+const ARCHIVED_STATE_VALUE = '__archived__';
+const GROUP_HEADER_REPEAT_HEIGHT = 30;
+
+const FILTER_CATEGORY_ICONS: Partial<Record<EpicFilterKey, React.ComponentType<{ className?: string }>>> = {
+  state: WorkflowSquare01Icon,
+  health: Activity01Icon,
+  team: UserGroupIcon,
+  owner: UserIcon,
+  label: Tag01Icon,
+  objective: Target01Icon,
+};
+
+interface FilterOptionVisualContext {
+  epicStateMap: Map<string, EpicWorkflowState>;
+  assignableMembers: AssignableMember[];
+  allLabels: Label[];
+}
+
+interface FilterOptionVisual {
+  leading?: React.ReactNode;
+  labelClassName?: string;
+}
+
+function getFilterOptionVisual(
+  key: EpicFilterKey,
+  value: string,
+  ctx: FilterOptionVisualContext,
+): FilterOptionVisual {
+  if (key === 'state') {
+    const state = ctx.epicStateMap.get(value);
+    if (!state) return {};
+    return {
+      leading: <StateTypeIcon stateType={state.state_type} className="h-3.5 w-3.5" />,
+    };
+  }
+  if (key === 'health') {
+    const config = healthConfig[value as EpicHealth];
+    if (!config) return {};
+    return { labelClassName: config.color };
+  }
+  if (key === 'team') {
+    return { leading: <UserGroupIcon className="h-3.5 w-3.5 text-muted-foreground" /> };
+  }
+  if (key === 'owner') {
+    const member = ctx.assignableMembers.find((candidate) => candidate.id === value);
+    if (!member) return {};
+    return {
+      leading: (
+        <UserAvatar
+          name={member.display_name || member.email}
+          avatarUrl={member.avatar_url}
+          avatarStyle={member.avatar_style}
+          avatarSeed={member.avatar_seed}
+          avatarBackgroundMode={member.avatar_background_mode}
+          avatarBackgroundColor={member.avatar_background_color}
+          className="h-4 w-4"
+          fallbackClassName="text-[8px]"
+        />
+      ),
+    };
+  }
+  if (key === 'label') {
+    const label = ctx.allLabels.find((candidate) => candidate.id === value);
+    const color = label?.color ?? '#94a3b8';
+    return {
+      leading: <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />,
+    };
+  }
+  if (key === 'objective') {
+    return { leading: <Target01Icon className="h-3.5 w-3.5 text-muted-foreground" /> };
+  }
+  return {};
+}
 
 const ALL_PROPERTIES = [
   { key: 'state', label: 'State' },
@@ -119,7 +199,6 @@ const EPIC_GROUP_BY_OPTIONS = [
   { value: 'start_date', label: 'Start date' },
   { value: 'none', label: 'None' },
 ] as const;
-const FILTER_POPOVER_WIDTH = 'w-[220px]';
 
 type EpicGroupBy = (typeof EPIC_GROUP_BY_OPTIONS)[number]['value'];
 type EpicFilterKey =
@@ -415,171 +494,42 @@ function buildEpicGroups(
   });
 }
 
-function loadEpicViewState(storageKey: string | null): { groupBy: EpicGroupBy; filters: EpicFilterState } {
+interface EpicViewState {
+  groupBy: EpicGroupBy;
+  filters: EpicFilterState;
+  visibleColumns?: string[];
+}
+
+function loadEpicViewState(storageKey: string | null): EpicViewState {
   if (!storageKey) {
-    return { groupBy: 'none', filters: {} };
+    return { groupBy: 'state', filters: {} };
   }
   try {
     const raw = localStorage.getItem(storageKey);
-    if (!raw) return { groupBy: 'none', filters: {} };
-    const parsed = JSON.parse(raw) as { groupBy?: EpicGroupBy; filters?: EpicFilterState };
+    if (!raw) return { groupBy: 'state', filters: {} };
+    const parsed = JSON.parse(raw) as Partial<EpicViewState>;
     return {
-      groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'none',
+      groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'state',
       filters: parsed.filters ?? {},
+      visibleColumns: Array.isArray(parsed.visibleColumns) ? parsed.visibleColumns : undefined,
     };
   } catch {
-    return { groupBy: 'none', filters: {} };
+    return { groupBy: 'state', filters: {} };
   }
 }
 
-function saveEpicViewState(storageKey: string | null, groupBy: EpicGroupBy, filters: EpicFilterState) {
+function saveEpicViewState(
+  storageKey: string | null,
+  groupBy: EpicGroupBy,
+  filters: EpicFilterState,
+  visibleColumns: string[],
+) {
   if (!storageKey) return;
   try {
-    localStorage.setItem(storageKey, JSON.stringify({ groupBy, filters }));
+    localStorage.setItem(storageKey, JSON.stringify({ groupBy, filters, visibleColumns }));
   } catch {
     // Ignore local storage failures.
   }
-}
-
-function FilterValueSelect({
-  definition,
-  selected,
-  onToggle,
-}: {
-  definition: EpicFilterDefinition;
-  selected: string[];
-  onToggle: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const selectedLabels = selected.map((value) => definition.options.find((option) => option.value === value)?.label ?? value);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs transition-colors hover:bg-accent"
-        >
-          {selectedLabels.length === 1 ? selectedLabels[0] : `${selectedLabels.length} selected`}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className={FILTER_POPOVER_WIDTH} align="start">
-        <Command>
-          <CommandInput placeholder={`Search ${definition.label.toLowerCase()}...`} className="h-8 text-xs" />
-          <CommandList>
-            <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No results</CommandEmpty>
-            <CommandGroup>
-              {definition.options.map((option) => {
-                const isSelected = selected.includes(option.value);
-                return (
-                  <CommandItem
-                    key={option.value}
-                    value={option.label}
-                    className="flex items-center gap-2 text-xs"
-                    onSelect={() => onToggle(option.value)}
-                  >
-                    <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}`}>
-                      {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
-                    </div>
-                    <span className="truncate">{option.label}</span>
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function EpicFilterPill({
-  definition,
-  selected,
-  onToggle,
-  onRemove,
-}: {
-  definition: EpicFilterDefinition;
-  selected: string[];
-  onToggle: (value: string) => void;
-  onRemove: () => void;
-}) {
-  return (
-    <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
-      <span className="font-medium text-muted-foreground">{definition.label}</span>
-      <span className="text-muted-foreground/60">is</span>
-      <FilterValueSelect definition={definition} selected={selected} onToggle={onToggle} />
-      <button
-        type="button"
-        onClick={onRemove}
-        className="rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <Cancel01Icon className="h-3 w-3" />
-      </button>
-    </div>
-  );
-}
-
-function EpicFilterTrigger({
-  definitions,
-  visibleKeys,
-  onAdd,
-  activeCount,
-}: {
-  definitions: EpicFilterDefinition[];
-  visibleKeys: Set<EpicFilterKey>;
-  onAdd: (key: EpicFilterKey) => void;
-  activeCount: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const availableDefinitions = definitions.filter((definition) => !visibleKeys.has(definition.key));
-  const canChooseFilter = availableDefinitions.length > 0;
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 min-w-[88px] justify-between gap-2 px-2 text-xs text-muted-foreground"
-          disabled={!canChooseFilter}
-        >
-          <span className="inline-flex items-center gap-1">
-            <FilterHorizontalIcon className="h-3.5 w-3.5" />
-            Filters
-          </span>
-          <Badge
-            variant="secondary"
-            className={`rounded-full px-1.5 py-0 text-[10px] transition-opacity ${activeCount > 0 ? 'opacity-100' : 'opacity-0'}`}
-          >
-            {activeCount || 0}
-          </Badge>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-48 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Filter by..." />
-          <CommandList>
-            <CommandEmpty>No filters.</CommandEmpty>
-            <CommandGroup>
-              {availableDefinitions.map((definition) => (
-                <CommandItem
-                  key={definition.key}
-                  value={definition.label}
-                  onSelect={() => {
-                    onAdd(definition.key);
-                    setOpen(false);
-                  }}
-                >
-                  {definition.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 interface EpicVirtualGroupItem {
@@ -632,6 +582,7 @@ function EpicVirtualTable({
 }: EpicVirtualTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
+  const columnVisibilityVersion = useMemo(() => JSON.stringify(columnVisibility), [columnVisibility]);
   const table = useReactTable({
     data,
     columns,
@@ -643,7 +594,7 @@ function EpicVirtualTable({
     onSortingChange,
     onColumnSizingChange,
     enableColumnResizing: true,
-    columnResizeMode: 'onEnd',
+    columnResizeMode: 'onChange',
     manualSorting: true,
     getCoreRowModel: getCoreRowModel(),
   });
@@ -689,7 +640,14 @@ function EpicVirtualTable({
   }, [collapsedGroupKeys, data, groupBy, groups, rowByEpicId]);
 
   const estimateSize = useCallback(
-    (index: number) => (items[index]?.type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT),
+    (index: number) => {
+      const item = items[index];
+      if (!item) return ROW_HEIGHT;
+      if (item.type === 'group') {
+        return GROUP_ROW_HEIGHT + (item.collapsed ? 0 : GROUP_HEADER_REPEAT_HEIGHT);
+      }
+      return ROW_HEIGHT;
+    },
     [items],
   );
 
@@ -700,62 +658,83 @@ function EpicVirtualTable({
     overscan: groupBy === 'none' ? 8 : 5,
   });
 
-  return (
-    <div className="-mt-2 min-h-0 flex-1 rounded-lg border border-border">
-      <div
-        ref={parentRef}
-        className={TABLE_CONTAINER}
-        style={{ maxHeight: 'calc(100vh - 220px)' }}
-      >
-        <div className="min-w-fit">
-          <div className={TABLE_HEADER}>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <div key={headerGroup.id} className="flex items-center">
-                {headerGroup.headers.map((header) => {
-                  const defSize = header.column.columnDef.size ?? 150;
-                  const runtimeSize = header.getSize();
-                  const isResized = !!columnSizing[header.column.id];
-                  const canSort = header.column.getCanSort();
-                  const sorted = header.column.getIsSorted();
-                  return (
-                    <div
-                      key={header.id}
-                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''}`}
-                      style={dynamicCellStyle(defSize, runtimeSize, isResized, 200)}
-                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                    >
-                      <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
-                        {canSort ? (
-                          <span className="ml-auto shrink-0">
-                            {sorted === 'asc' ? (
-                              <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
-                            ) : sorted === 'desc' ? (
-                              <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
-                            ) : (
-                              <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
-                            )}
-                          </span>
-                        ) : null}
-                      </div>
-                      {header.column.getCanResize() ? (
-                        <div
-                          onMouseDown={header.getResizeHandler()}
-                          onTouchStart={header.getResizeHandler()}
-                          onClick={(event) => event.stopPropagation()}
-                          className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })}
+  const hasGroups = groupBy !== 'none';
+
+  const renderColumnHeaderRow = () => (
+    <>
+      {table.getHeaderGroups().map((headerGroup) => (
+        <div key={headerGroup.id} className="flex items-center">
+          {headerGroup.headers.map((header) => {
+            const defSize = header.column.columnDef.size ?? 150;
+            const runtimeSize = header.getSize();
+            const isResized = !!columnSizing[header.column.id];
+            const canSort = header.column.getCanSort();
+            const sorted = header.column.getIsSorted();
+            const colId = header.column.id;
+            const isNamePinned = colId === 'name';
+            const pinnedClass = isNamePinned ? TABLE_PINNED_HEADER_LEFT_NAME : '';
+            const pinnedSt = isNamePinned ? pinnedStyle('left', 0) : {};
+            return (
+              <div
+                key={header.id}
+                className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 200), ...pinnedSt }}
+                onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+              >
+                <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(header.column.columnDef.header, header.getContext())}
+                  {canSort ? (
+                    <span className="ml-auto shrink-0">
+                      {sorted === 'asc' ? (
+                        <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                      ) : sorted === 'desc' ? (
+                        <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                      ) : (
+                        <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                      )}
+                    </span>
+                  ) : null}
+                </div>
+                {header.column.getCanResize() ? (
+                  <div
+                    onMouseDown={header.getResizeHandler()}
+                    onTouchStart={header.getResizeHandler()}
+                    onClick={(event) => event.stopPropagation()}
+                    className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
+                  />
+                ) : null}
               </div>
-            ))}
-          </div>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={parentRef} className={TABLE_CONTAINER}>
+        <div className="min-w-fit">
+          {hasGroups ? null : (
+            <div className={TABLE_HEADER}>
+              {renderColumnHeaderRow()}
+            </div>
+          )}
 
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+            <StickyPinnedGroupOverlay
+              parentRef={parentRef}
+              items={items}
+              virtualizer={virtualizer}
+              isPinnedItem={(item) => item.type === 'group'}
+              renderHeader={(item) =>
+                item.type === 'group' ? (
+                  <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
+                ) : null
+              }
+            />
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const item = items[virtualRow.index];
               if (!item) return null;
@@ -763,21 +742,25 @@ function EpicVirtualTable({
                 <div
                   key={`${item.type}-${item.key}`}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
+                  style={virtualRowStyle(virtualRow.start)}
                 >
                   {item.type === 'group' ? (
-                    <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
+                    <>
+                      <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
+                      {item.collapsed ? null : (
+                        <div className="border-b border-border/60 bg-card">
+                          {renderColumnHeaderRow()}
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <MemoEpicDataRow
                       row={item.row}
                       onRowClick={onRowClick}
+                      columnSizing={columnSizing}
                       columnSizingVersion={columnSizingVersion}
+                      columnVisibility={columnVisibility}
+                      columnVisibilityVersion={columnVisibilityVersion}
                     />
                   )}
                 </div>
@@ -802,16 +785,18 @@ const MemoEpicGroupRow = memo(function EpicGroupRow({ item, onToggle }: EpicGrou
       className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
       onClick={() => onToggle(item.key)}
     >
-      {item.collapsed ? (
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : (
-        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-      <span className="min-w-0 truncate font-medium">{item.label}</span>
-      <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
-        <span>{item.entryCount} {item.entryCount === 1 ? 'epic' : 'epics'}</span>
-        <span>{item.totalTasks} tasks</span>
-        <span>{item.completedPoints}/{item.totalPoints} points</span>
+      <span className={TABLE_GROUP_ROW_INNER}>
+        {item.collapsed ? (
+          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        <span className="min-w-0 truncate font-medium">{item.label}</span>
+        <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
+          <span>{item.entryCount} {item.entryCount === 1 ? 'epic' : 'epics'}</span>
+          <span>{item.totalTasks} tasks</span>
+          <span>{item.completedPoints}/{item.totalPoints} points</span>
+        </span>
       </span>
     </button>
   );
@@ -820,7 +805,10 @@ const MemoEpicGroupRow = memo(function EpicGroupRow({ item, onToggle }: EpicGrou
 interface EpicDataRowProps {
   row: Row<EpicWithStats>;
   onRowClick: (entry: EpicWithStats) => void;
+  columnSizing: Record<string, number>;
   columnSizingVersion: string;
+  columnVisibility: VisibilityState;
+  columnVisibilityVersion: string;
 }
 
 function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps) {
@@ -828,6 +816,7 @@ function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
     prev.columnSizingVersion === next.columnSizingVersion &&
+    prev.columnVisibilityVersion === next.columnVisibilityVersion &&
     prev.onRowClick === next.onRowClick
   );
 }
@@ -835,23 +824,31 @@ function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps
 const MemoEpicDataRow = memo(function EpicDataRow({
   row,
   onRowClick,
+  columnSizing,
   columnSizingVersion,
+  columnVisibility,
+  columnVisibilityVersion,
 }: EpicDataRowProps) {
   void columnSizingVersion;
+  void columnVisibilityVersion;
   return (
     <div
       className={`${TABLE_ROW} cursor-pointer`}
       onClick={() => onRowClick(row.original)}
     >
-      {row.getVisibleCells().map((cell) => {
-        const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+      {row.getAllCells()
+        .filter((cell) => columnVisibility[cell.column.id] !== false)
+        .map((cell) => {
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
+        const colId = cell.column.id;
+        const isNamePinned = colId === 'name';
+        const pinnedClass = isNamePinned ? TABLE_PINNED_LEFT_NAME : '';
+        const pinnedSt = isNamePinned ? pinnedStyle('left', 0) : {};
         return (
           <div
             key={cell.id}
-            className={`${TABLE_CELL} overflow-hidden`}
-            style={dynamicCellStyle(defSize, runtimeSize, isResized, 200)}
+            className={`${TABLE_CELL} overflow-hidden ${pinnedClass}`}
+            style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 200), ...pinnedSt }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </div>
@@ -1273,7 +1270,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [groupBy, setGroupBy] = useState<EpicGroupBy>('none');
+  const [groupBy, setGroupBy] = useState<EpicGroupBy>('state');
   const [filters, setFilters] = useState<EpicFilterState>({});
   const [tableSorting, setTableSorting] = useState<SortingState>([]);
   const [tableColumnSizing, setTableColumnSizing] = useState<ColumnSizingState>({});
@@ -1381,15 +1378,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       ],
     },
   ], [allLabels, assignableMembers, epicStates, objectiveNameMap, teams]);
-
-  const activeFilterKeys = useMemo(
-    () => new Set(Object.entries(filters).filter(([, value]) => value && value.length > 0).map(([key]) => key as EpicFilterKey)),
-    [filters],
-  );
-  const visibleFilterKeys = useMemo(
-    () => new Set(Object.keys(filters).map((key) => key as EpicFilterKey)),
-    [filters],
-  );
 
   const updateEpicField = useCallback(
     async (epicId: string, patch: UpdateEpicRequest) => {
@@ -1795,15 +1783,25 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     void loadData();
   }, [loadData]);
 
+  const hasLoadedViewStateRef = useRef(false);
+
   useEffect(() => {
+    hasLoadedViewStateRef.current = false;
     const next = loadEpicViewState(storageKey);
     setGroupBy(next.groupBy);
     setFilters(next.filters);
+    if (next.visibleColumns) setVisibleColumns(next.visibleColumns);
+    hasLoadedViewStateRef.current = true;
   }, [storageKey]);
 
   useEffect(() => {
-    saveEpicViewState(storageKey, groupBy, filters);
-  }, [filters, groupBy, storageKey]);
+    if (!hasLoadedViewStateRef.current) return;
+    if (!storageKey) return;
+    // visibleColumns is persisted synchronously inside its onChange handler so
+    // we don't read it here; instead preserve whatever is currently in storage.
+    const current = loadEpicViewState(storageKey);
+    saveEpicViewState(storageKey, groupBy, filters, current.visibleColumns ?? visibleColumns);
+  }, [filters, groupBy, storageKey, visibleColumns]);
 
   // Refresh when epic is created via global modal
   useEffect(() => {
@@ -1817,27 +1815,6 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     navigate({ to: '/w/$slug/pm/epics/$epicId', params: { slug, epicId: entry.epic.id } });
   }, [navigate, slug]);
 
-  const handleAddFilter = useCallback((key: EpicFilterKey) => {
-    const definition = filterDefinitions.find((item) => item.key === key);
-    if (!definition || definition.options.length === 0) return;
-    setFilters((current) => ({ ...current, [key]: current[key] ?? [] }));
-  }, [filterDefinitions]);
-
-  const handleToggleFilterValue = useCallback((key: EpicFilterKey, value: string) => {
-    setFilters((current) => {
-      const nextValues = current[key]?.includes(value)
-        ? current[key]!.filter((item) => item !== value)
-        : [...(current[key] ?? []), value];
-      return { ...current, [key]: nextValues };
-    });
-  }, []);
-
-  const handleRemoveFilter = useCallback((key: EpicFilterKey) => {
-    setFilters((current) => {
-      const { [key]: _removed, ...rest } = current;
-      return rest;
-    });
-  }, []);
 
   const handleClearFilters = useCallback(() => {
     setFilters({});
@@ -1894,8 +1871,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <header className="flex items-center justify-between">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex items-center justify-between px-4 pt-4 md:px-6 md:pt-6">
         {showHeaderIntro ? (
           <div>
             <h2 className="text-xl font-semibold">Epics{teamLabel && <span className="text-muted-foreground font-normal"> ({teamLabel})</span>}</h2>
@@ -1911,81 +1888,90 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       </header>
 
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <div className="mx-4 mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">
           {error}
         </div>
       ) : null}
 
       {showHeaderActions ? (
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-          <div className="relative min-w-[160px] flex-1 sm:max-w-[220px]">
-            <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-8 pl-8 pr-8 text-sm"
-            />
-            {search ? (
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                onClick={() => setSearch('')}
-                aria-label="Clear search"
-              >
-                <Cancel01Icon className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
-          </div>
-          <EpicFilterTrigger
-            definitions={filterDefinitions}
-            visibleKeys={visibleFilterKeys}
-            activeCount={activeFilterKeys.size}
-            onAdd={handleAddFilter}
-          />
-          <span className="text-xs text-muted-foreground">
-            {sortedEpics.length} {sortedEpics.length === 1 ? 'epic' : 'epics'}
-          </span>
-          <div className="ml-auto flex items-center gap-1.5">
-            <Select value={groupBy} onValueChange={(value) => setGroupBy(value as EpicGroupBy)}>
-              <SelectTrigger className="h-7 w-auto min-w-[138px] max-w-[190px] gap-1 text-xs">
-                <span className="shrink-0 text-muted-foreground">Group by</span>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {EPIC_GROUP_BY_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <DisplayPropertiesPopover
-              allProperties={ALL_PROPERTIES}
-              visible={visibleColumns}
-              onChange={setVisibleColumns}
-              iconOnly
-            />
-          </div>
-          {visibleFilterKeys.size > 0 ? (
-            <div className="flex basis-full flex-wrap items-center gap-1.5 pt-0.5">
-              {filterDefinitions
-                .filter((definition) => visibleFilterKeys.has(definition.key))
-                .map((definition) => (
-                  <EpicFilterPill
-                    key={definition.key}
-                    definition={definition}
-                    selected={filters[definition.key] ?? []}
-                    onToggle={(value) => handleToggleFilterValue(definition.key, value)}
-                    onRemove={() => handleRemoveFilter(definition.key)}
-                  />
-                ))}
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-muted-foreground" onClick={handleClearFilters}>
-                Clear all
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        <EpicFilterBar
+          search={search}
+          onSearchChange={setSearch}
+          categories={filterDefinitions
+            .filter((definition) => definition.key !== 'has_target_date' && definition.key !== 'has_start_date')
+            .map((definition) => {
+            const isStateKey = definition.key === 'state';
+            const baseOptions = isStateKey
+              ? definition.options.filter((option) => option.value !== ARCHIVED_STATE_VALUE)
+              : definition.options;
+            const selected = (filters[definition.key] ?? []).filter(
+              (value) => !isStateKey || value !== ARCHIVED_STATE_VALUE,
+            );
+            const options = baseOptions.map((option) => ({
+              ...option,
+              ...getFilterOptionVisual(definition.key, option.value, {
+                epicStateMap,
+                assignableMembers,
+                allLabels,
+              }),
+            }));
+            const IconCmp = FILTER_CATEGORY_ICONS[definition.key];
+            return {
+              key: definition.key,
+              label: definition.label,
+              options,
+              selected,
+              icon: IconCmp ? <IconCmp className="h-3.5 w-3.5" /> : undefined,
+            };
+          })}
+          onCategoryChange={(key, next) => {
+            const filterKey = key as EpicFilterKey;
+            setFilters((current) => {
+              const previous = current[filterKey] ?? [];
+              const preservedArchived =
+                filterKey === 'state' && previous.includes(ARCHIVED_STATE_VALUE)
+                  ? [ARCHIVED_STATE_VALUE]
+                  : [];
+              const merged = [...next, ...preservedArchived];
+              if (merged.length === 0) {
+                const { [filterKey]: _omit, ...rest } = current;
+                return rest;
+              }
+              return { ...current, [filterKey]: merged };
+            });
+          }}
+          onClearAll={handleClearFilters}
+          showArchived={(filters.state ?? []).includes(ARCHIVED_STATE_VALUE)}
+          onToggleShowArchived={(next) => {
+            setFilters((current) => {
+              const previous = current.state ?? [];
+              const without = previous.filter((value) => value !== ARCHIVED_STATE_VALUE);
+              const updated = next ? [...without, ARCHIVED_STATE_VALUE] : without;
+              if (updated.length === 0) {
+                const { state: _omit, ...rest } = current;
+                return rest;
+              }
+              return { ...current, state: updated };
+            });
+          }}
+          groupBy={groupBy}
+          groupByOptions={EPIC_GROUP_BY_OPTIONS as unknown as { value: string; label: string }[]}
+          onGroupByChange={(value) => setGroupBy(value as EpicGroupBy)}
+          displayProperties={ALL_PROPERTIES}
+          visibleProperties={visibleColumns}
+          onVisiblePropertiesChange={(next) => {
+            setVisibleColumns(next);
+            if (storageKey) {
+              const current = loadEpicViewState(storageKey);
+              saveEpicViewState(
+                storageKey,
+                current.groupBy ?? groupBy,
+                current.filters ?? filters,
+                next,
+              );
+            }
+          }}
+        />
       ) : null}
 
       {loading ? null : epics.length === 0 ? (

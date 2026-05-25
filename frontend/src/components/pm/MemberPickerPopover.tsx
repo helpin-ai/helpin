@@ -36,6 +36,8 @@ interface MemberPickerPopoverProps extends BaseMemberPickerProps {
 interface MultiMemberPickerPopoverProps extends BaseMemberPickerProps {
   values: string[];
   onChange: (memberIds: string[]) => void;
+  /** IDs that appear on some but not all items in the selection (rendered italic + muted). */
+  partialIds?: string[];
 }
 
 const DEFAULT_TRIGGER_CLASSNAME =
@@ -71,6 +73,7 @@ function getSelectableMembers(members: AssignableMember[]) {
 function MemberList({
   members,
   selectedValues,
+  partialValues,
   onToggle,
   noneLabel,
   multiple,
@@ -78,6 +81,7 @@ function MemberList({
 }: {
   members: AssignableMember[];
   selectedValues: string[];
+  partialValues?: string[];
   onToggle: (value: string) => void;
   noneLabel?: string;
   multiple: boolean;
@@ -112,12 +116,16 @@ function MemberList({
               matchesAssignableMemberValue(member, value, getMemberValue),
             );
 
+            const isPartial = !!partialValues?.includes(memberId);
             return (
               <CommandItem
                 key={memberId}
                 value={optionValue}
                 onSelect={() => onToggle(memberId)}
-                className="flex min-w-0 items-center gap-2 text-xs"
+                className={cn(
+                  'flex min-w-0 items-center gap-2 text-xs',
+                  isPartial && 'italic text-muted-foreground',
+                )}
               >
                 <UserAvatar
                   name={member.display_name || member.email}
@@ -238,6 +246,7 @@ export function MultiMemberPickerPopover({
   getMemberValue = defaultGetMemberValue,
   disabled = false,
   lazyMount = false,
+  partialIds,
 }: MultiMemberPickerPopoverProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isOpen = open ?? uncontrolledOpen;
@@ -298,6 +307,7 @@ export function MultiMemberPickerPopover({
           <MemberList
             members={selectableMembers}
             selectedValues={values}
+            partialValues={partialIds}
             onToggle={handleToggle}
             multiple
             getMemberValue={getMemberValue}
