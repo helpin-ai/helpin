@@ -8,7 +8,7 @@ export const TABLE_HEADER = 'sticky top-0 z-10 bg-card';
 
 /** Individual header cell – compact, subtle text */
 export const TABLE_HEADER_CELL =
-  'ui-divider-bottom-fade ui-divider-right-fade relative shrink-0 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:bg-none';
+  'ui-divider-bottom-fade ui-divider-right-fade relative shrink-0 bg-card px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:bg-none';
 
 /** Sortable header cell – adds cursor pointer */
 export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
@@ -102,4 +102,35 @@ export function dynamicCellStyle(
     return { flex: '1 1 0%', minWidth: minFlexWidth };
   }
   return { width: runtimeSize };
+}
+
+/**
+ * Resolves a column's runtime width, preferring the live columnSizing entry
+ * over the column.getSize() reading. Avoids stale sizes inside memoized rows
+ * where react-table's internal column.getSize() may not have re-evaluated.
+ */
+export function resolveColumnRuntimeSize(
+  column: { id: string; columnDef: { size?: number }; getSize: () => number },
+  columnSizing: Record<string, number>,
+): { defSize: number; runtimeSize: number; isResized: boolean } {
+  const defSize = column.columnDef.size ?? 150;
+  const resized = columnSizing[column.id];
+  const runtimeSize = resized ?? column.getSize();
+  return { defSize, runtimeSize, isResized: resized !== undefined };
+}
+
+/**
+ * Style for a virtualized row's absolute container. Sized to max-content with
+ * minWidth: 100% so the row's background + bottom border extend across the
+ * full scrolled width, not just the visible viewport.
+ */
+export function virtualRowStyle(translateY: number): React.CSSProperties {
+  return {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 'max-content',
+    minWidth: '100%',
+    transform: `translateY(${translateY}px)`,
+  };
 }

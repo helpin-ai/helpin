@@ -46,6 +46,8 @@ import {
   CHECKBOX_COL_SIZE,
   dynamicCellStyle,
   pinnedStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
 } from '@/lib/tableStyles';
 import { ColumnVisibilityPopover } from '@/components/crm/ColumnVisibilityPopover';
 import { ContactsTableSkeleton } from '@/components/crm/ContactsTableSkeleton';
@@ -661,18 +663,19 @@ export function ContactsTable({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translate3d(0, ${virtualRow.start}px, 0)`,
-                  }}
+                  style={virtualRowStyle(virtualRow.start)}
                 >
                   {isGrouped ? (
                     <MemoGroupHeaderRow row={row} />
                   ) : (
-                    <MemoDataRow row={row} isSelected={row.getIsSelected()} columnSizingVersion={columnSizingVersion} columnOrderVersion={columnOrderVersion} columnVisibilityVersion={columnVisibilityVersion} />
+                    <MemoDataRow
+                      row={row}
+                      isSelected={row.getIsSelected()}
+                      columnSizing={columnSizing}
+                      columnSizingVersion={columnSizingVersion}
+                      columnOrderVersion={columnOrderVersion}
+                      columnVisibilityVersion={columnVisibilityVersion}
+                    />
                   )}
                 </div>
               );
@@ -865,6 +868,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
 interface DataRowProps {
   row: Row<CRMContact>;
   isSelected: boolean;
+  columnSizing: Record<string, number>;
   columnSizingVersion: string;
   columnOrderVersion: string;
   columnVisibilityVersion: string;
@@ -884,6 +888,7 @@ function areDataRowPropsEqual(prev: DataRowProps, next: DataRowProps): boolean {
 const MemoDataRow = memo(function DataRow({
   row,
   isSelected,
+  columnSizing,
   columnSizingVersion,
   columnOrderVersion,
   columnVisibilityVersion,
@@ -894,9 +899,7 @@ const MemoDataRow = memo(function DataRow({
     <div className={TABLE_ROW}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
-        const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' ? TABLE_PINNED_LEFT
           : colId === 'email' ? TABLE_PINNED_LEFT_NAME

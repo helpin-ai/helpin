@@ -94,6 +94,8 @@ import {
   GROUP_ROW_HEIGHT,
   dynamicCellStyle,
   pinnedStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
@@ -1037,7 +1039,7 @@ export function TaskListView({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 60,
+        size: 45,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -1397,13 +1399,20 @@ export function TaskListView({
             : colId === 'actions' ? pinnedStyle('right', 0) : {};
           const isGroupSelectCell = isGroupRepeat && colId === 'select';
           const isActionsCell = colId === 'actions';
-          const cellClass = isActionsCell
-            ? 'shrink-0 sticky right-0 z-[11]'
-            : `${TASK_LIST_HEADER_CELL} ${!isGroupSelectCell && canSort ? TASK_LIST_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`;
+          if (isActionsCell) {
+            return (
+              <div
+                key={header.id}
+                className="shrink-0 sticky right-0 z-[11] bg-card"
+                style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
+                aria-hidden="true"
+              />
+            );
+          }
           return (
             <div
               key={header.id}
-              className={cellClass}
+              className={`${TASK_LIST_HEADER_CELL} ${!isGroupSelectCell && canSort ? TASK_LIST_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
               style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
               onClick={!isGroupSelectCell && canSort ? header.column.getToggleSortingHandler() : undefined}
             >
@@ -1567,14 +1576,7 @@ export function TaskListView({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: 'max-content',
-                    minWidth: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
+                  style={virtualRowStyle(virtualRow.start)}
                 >
                   {isGrouped ? (
                     <>
@@ -1863,10 +1865,7 @@ const MemoDataRow = memo(function DataRow({
       {row.getVisibleCells().map((cell) => {
         // Skip the grouped column entirely — header does the same, keeping alignment
         if (cell.column.getIsGrouped()) return null;
-        const defSize = cell.column.columnDef.size ?? 150;
-        const resizedSize = columnSizing[cell.column.id];
-        const runtimeSize = resizedSize ?? cell.column.getSize();
-        const isResized = resizedSize !== undefined;
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' || colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
@@ -2718,7 +2717,7 @@ function InlineActionsCell({
   const trigger = (
     <button
       type="button"
-      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
+      className="rounded-md p-1 text-foreground transition-colors hover:bg-accent cursor-pointer"
       onClick={(event) => {
         event.stopPropagation();
         if (!menuOpen) {
@@ -2726,7 +2725,7 @@ function InlineActionsCell({
         }
       }}
     >
-      <TaskListMoreVerticalIcon className="h-4 w-4" />
+      <TaskListMoreVerticalIcon className="h-4 w-4" strokeWidth={2.5} />
     </button>
   );
 

@@ -71,6 +71,8 @@ import {
   TABLE_RESIZE_HANDLE,
   TABLE_ROW,
   dynamicCellStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
 } from '@/lib/tableStyles';
 
 const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
@@ -763,13 +765,7 @@ function EpicVirtualTable({
                 <div
                   key={`${item.type}-${item.key}`}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
+                  style={virtualRowStyle(virtualRow.start)}
                 >
                   {item.type === 'group' ? (
                     <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
@@ -777,6 +773,7 @@ function EpicVirtualTable({
                     <MemoEpicDataRow
                       row={item.row}
                       onRowClick={onRowClick}
+                      columnSizing={columnSizing}
                       columnSizingVersion={columnSizingVersion}
                     />
                   )}
@@ -820,6 +817,7 @@ const MemoEpicGroupRow = memo(function EpicGroupRow({ item, onToggle }: EpicGrou
 interface EpicDataRowProps {
   row: Row<EpicWithStats>;
   onRowClick: (entry: EpicWithStats) => void;
+  columnSizing: Record<string, number>;
   columnSizingVersion: string;
 }
 
@@ -835,6 +833,7 @@ function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps
 const MemoEpicDataRow = memo(function EpicDataRow({
   row,
   onRowClick,
+  columnSizing,
   columnSizingVersion,
 }: EpicDataRowProps) {
   void columnSizingVersion;
@@ -844,9 +843,7 @@ const MemoEpicDataRow = memo(function EpicDataRow({
       onClick={() => onRowClick(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
-        const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         return (
           <div
             key={cell.id}

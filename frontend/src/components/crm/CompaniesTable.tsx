@@ -45,6 +45,8 @@ import {
   CHECKBOX_COL_SIZE,
   dynamicCellStyle,
   pinnedStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
 } from '@/lib/tableStyles';
 import type { CRMCompany } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
@@ -447,20 +449,16 @@ export function CompaniesTable({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translate3d(0, ${virtualRow.start}px, 0)`,
-                    contain: 'paint',
-                    willChange: 'transform',
-                  }}
+                  style={{ ...virtualRowStyle(virtualRow.start), contain: 'paint', willChange: 'transform' }}
                 >
                   {isGrouped ? (
                     <MemoGroupHeaderRow row={row} />
                   ) : (
-                    <MemoDataRow row={row} columnSizingVersion={columnSizingVersion} />
+                    <MemoDataRow
+                      row={row}
+                      columnSizing={columnSizing}
+                      columnSizingVersion={columnSizingVersion}
+                    />
                   )}
                 </div>
               );
@@ -501,6 +499,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
 
 interface CompanyDataRowProps {
   row: Row<CRMCompany>;
+  columnSizing: Record<string, number>;
   columnSizingVersion: string;
 }
 
@@ -514,6 +513,7 @@ function areCompanyDataRowPropsEqual(prev: CompanyDataRowProps, next: CompanyDat
 
 const MemoDataRow = memo(function DataRow({
   row,
+  columnSizing,
   columnSizingVersion,
 }: CompanyDataRowProps) {
   void columnSizingVersion;
@@ -521,9 +521,7 @@ const MemoDataRow = memo(function DataRow({
     <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
-        const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
