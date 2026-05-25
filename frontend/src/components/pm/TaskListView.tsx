@@ -1594,6 +1594,7 @@ export function TaskListView({
                         isSelected={!!rowSelection[row.original.id]}
                         onOpenTask={handleOpenTask}
                         onToggleSelection={handleRowCheckboxToggle}
+                        columnSizing={columnSizing}
                         columnSizingVersion={columnSizingVersion}
                         pinnedOffsets={pinnedOffsets}
                       />
@@ -1823,6 +1824,7 @@ interface PMDataRowProps {
   isSelected: boolean;
   onOpenTask: (task: Task) => void;
   onToggleSelection: (taskId: string, checked: boolean, shiftKey: boolean) => void;
+  columnSizing: ColumnSizingState;
   columnSizingVersion: string;
   pinnedOffsets: TaskListPinnedOffsets;
 }
@@ -1844,6 +1846,7 @@ const MemoDataRow = memo(function DataRow({
   isSelected,
   onOpenTask,
   onToggleSelection,
+  columnSizing,
   columnSizingVersion,
   pinnedOffsets,
 }: PMDataRowProps) {
@@ -1857,8 +1860,9 @@ const MemoDataRow = memo(function DataRow({
         // Skip the grouped column entirely — header does the same, keeping alignment
         if (cell.column.getIsGrouped()) return null;
         const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+        const resizedSize = columnSizing[cell.column.id];
+        const runtimeSize = resizedSize ?? cell.column.getSize();
+        const isResized = resizedSize !== undefined;
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' || colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
