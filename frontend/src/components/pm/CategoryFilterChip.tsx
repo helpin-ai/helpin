@@ -14,6 +14,10 @@ import { cn } from '@/lib/utils';
 export interface FilterChipOption {
   value: string;
   label: string;
+  /** Optional visual rendered before the option label (e.g. colored dot, avatar). */
+  leading?: ReactNode;
+  /** Optional className applied to the label text (e.g. health color). */
+  labelClassName?: string;
 }
 
 interface CategoryFilterChipProps {
@@ -69,7 +73,7 @@ export function CategoryFilterChip({
 
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      <span className="text-xs font-medium text-muted-foreground">
         {label}
       </span>
       <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
@@ -78,7 +82,7 @@ export function CategoryFilterChip({
             type="button"
             disabled={disabled}
             className={cn(
-              'inline-flex h-7 items-center gap-1 rounded-md border border-input bg-transparent px-2 text-xs transition-colors',
+              'inline-flex h-7 min-w-[90px] items-center justify-between gap-1 rounded-md border border-input bg-transparent px-2 text-xs transition-colors',
               disabled
                 ? 'cursor-not-allowed opacity-60'
                 : 'hover:bg-accent',
@@ -123,7 +127,7 @@ export function CategoryFilterChip({
                     >
                       <div
                         className={cn(
-                          'flex h-4 w-4 items-center justify-center rounded-sm border',
+                          'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border',
                           isSelected
                             ? 'border-primary bg-primary text-primary-foreground'
                             : 'border-muted-foreground/40',
@@ -131,7 +135,10 @@ export function CategoryFilterChip({
                       >
                         {isSelected ? <Tick01Icon className="h-3 w-3" /> : null}
                       </div>
-                      <span className="truncate">{option.label}</span>
+                      {option.leading ? (
+                        <span className="flex shrink-0 items-center">{option.leading}</span>
+                      ) : null}
+                      <span className={cn('truncate', option.labelClassName)}>{option.label}</span>
                     </CommandItem>
                   );
                 })}

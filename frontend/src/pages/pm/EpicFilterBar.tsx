@@ -10,6 +10,8 @@ import { Search01Icon } from '@/lib/icons';
 export interface EpicFilterBarOption {
   value: string;
   label: string;
+  leading?: ReactNode;
+  labelClassName?: string;
 }
 
 export interface EpicFilterBarCategory {
@@ -75,13 +77,10 @@ export function EpicFilterBar({
   const hasAnyFilter = categories.some((cat) => cat.selected.length > 0) || search.length > 0;
 
   return (
-    <div className="flex flex-col gap-1 px-3 pt-2">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Filter
-      </span>
+    <div className="ui-divider-bottom-fade flex flex-col gap-1 px-4 pb-2 pt-2 md:px-6">
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/0">
+          <span className="text-[11px] font-medium text-muted-foreground/0">
             &nbsp;
           </span>
           <div className="relative">
@@ -107,7 +106,7 @@ export function EpicFilterBar({
         ))}
 
         <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/0">
+          <span className="text-[11px] font-medium text-muted-foreground/0">
             &nbsp;
           </span>
           <Button
@@ -123,7 +122,7 @@ export function EpicFilterBar({
         </div>
 
         <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/0">
+          <span className="text-[11px] font-medium text-muted-foreground/0">
             &nbsp;
           </span>
           <label className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent">
@@ -136,36 +135,26 @@ export function EpicFilterBar({
           </label>
         </div>
 
-        <div className="ml-auto flex items-end gap-3">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              Group By
-            </span>
-            <Select value={groupBy} onValueChange={onGroupByChange}>
-              <SelectTrigger className="h-7 w-[120px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {groupByOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              Display
-            </span>
-            <DisplayPropertiesPopover
-              allProperties={displayProperties}
-              visible={visibleProperties}
-              onChange={onVisiblePropertiesChange}
-              iconOnly
-            />
-          </div>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Group by:</span>
+          <Select value={groupBy} onValueChange={onGroupByChange}>
+            <SelectTrigger className="h-7 w-[140px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {groupByOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DisplayPropertiesPopover
+            allProperties={displayProperties}
+            visible={visibleProperties}
+            onChange={onVisiblePropertiesChange}
+            iconOnly
+          />
         </div>
       </div>
     </div>

@@ -85,10 +85,18 @@ import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import {
   TABLE_CONTAINER,
+  TABLE_HEADER,
+  TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SORTABLE,
+  TABLE_ROW,
+  TABLE_CELL,
+  TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
+  TABLE_PINNED_LEFT_NAME,
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
+  TABLE_PINNED_HEADER_LEFT_NAME,
   TABLE_PINNED_HEADER_RIGHT,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
@@ -187,16 +195,6 @@ function TaskListLatestRunAgentBadge({
   );
 }
 
-const TASK_LIST_HEADER = 'sticky top-0 z-10 bg-card';
-const TASK_LIST_HEADER_CELL =
-  'relative shrink-0 border-r border-b border-border/60 bg-card px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:border-r-0';
-const TASK_LIST_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
-const TASK_LIST_ROW =
-  'group/row flex h-9 cursor-pointer items-center border-b border-border/60 bg-card hover:bg-muted';
-const TASK_LIST_CELL =
-  'flex shrink-0 items-center self-stretch border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
-const TASK_LIST_GROUP_ROW =
-  'flex h-9 cursor-pointer items-center border-b border-border/60 bg-muted/20 text-sm font-semibold hover:bg-muted';
 const GROUP_HEADER_REPEAT_HEIGHT = 30;
 
 interface TaskListViewProps {
@@ -1373,7 +1371,9 @@ export function TaskListView({
           const canSort = header.column.getCanSort();
           const sorted = header.column.getIsSorted();
           const colId = header.column.id;
-          const pinnedClass = colId === 'select' || colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+          const pinnedClass = colId === 'name'
+            ? TABLE_PINNED_HEADER_LEFT_NAME
+            : colId === 'select' || colId === 'displayId' || colId === 'typeIcon'
             ? TABLE_PINNED_HEADER_LEFT
             : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
           const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
@@ -1395,7 +1395,7 @@ export function TaskListView({
           return (
             <div
               key={header.id}
-              className={`${TASK_LIST_HEADER_CELL} ${!isGroupSelectCell && canSort ? TASK_LIST_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+              className={`${TABLE_HEADER_CELL} ${!isGroupSelectCell && canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
               style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
               onClick={!isGroupSelectCell && canSort ? header.column.getToggleSortingHandler() : undefined}
             >
@@ -1522,7 +1522,7 @@ export function TaskListView({
       >
         <div className="min-w-fit">
         {/* Header */}
-        <div ref={headerRef} className={TASK_LIST_HEADER}>
+        <div ref={headerRef} className={TABLE_HEADER}>
           {hasGroupedRows ? null : renderColumnHeaderRow()}
         </div>
 
@@ -1651,7 +1651,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 
   return (
     <button
-      className={`${TASK_LIST_GROUP_ROW} w-full text-left text-xs`}
+      className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
       onClick={row.getToggleExpandedHandler()}
     >
       <span className={TABLE_GROUP_ROW_INNER}>
@@ -1754,7 +1754,7 @@ const MemoDataRow = memo(function DataRow({
   void columnSizingVersion; // used by arePMDataRowPropsEqual for memo comparison
   return (
     <div
-      className={TASK_LIST_ROW}
+      className={`${TABLE_ROW} cursor-pointer`}
       onClick={() => onOpenTask(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
@@ -1763,7 +1763,9 @@ const MemoDataRow = memo(function DataRow({
         const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
-        const pinnedClass = colId === 'select' || colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+        const pinnedClass = colId === 'name'
+          ? TABLE_PINNED_LEFT_NAME
+          : colId === 'select' || colId === 'displayId' || colId === 'typeIcon'
           ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
         const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
@@ -1774,7 +1776,7 @@ const MemoDataRow = memo(function DataRow({
         return (
           <div
             key={cell.id}
-            className={`${TASK_LIST_CELL} overflow-hidden ${pinnedClass}`}
+            className={`${TABLE_CELL} overflow-hidden ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
           >
             {colId === 'select' ? (

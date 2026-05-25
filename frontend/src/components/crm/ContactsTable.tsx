@@ -32,8 +32,11 @@ import { findAssignableMember } from '@/lib/assignableMembers';
 import {
   TABLE_CONTAINER,
   TABLE_HEADER,
+  TABLE_HEADER_CELL,
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_ROW,
+  TABLE_CELL,
+  TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
   TABLE_PINNED_LEFT_NAME,
@@ -105,12 +108,6 @@ const LEAD_STATUSES: { value: LeadStatus; label: string }[] = [
   { value: 'unqualified', label: 'Unqualified' },
 ];
 
-const CONTACTS_TABLE_HEADER_CELL =
-  'relative shrink-0 border-b border-r border-border/70 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:border-r-0';
-const CONTACTS_TABLE_CELL =
-  'flex shrink-0 items-center self-stretch border-b border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
-const CONTACTS_TABLE_GROUP_ROW =
-  'flex h-9 cursor-pointer items-center border-b border-border/60 bg-muted/20 text-sm font-semibold hover:bg-muted';
 
 const columnHelper = createColumnHelper<CRMContact>();
 
@@ -781,7 +778,7 @@ function renderHeaderCell(
     return (
       <div
         key={header.id}
-        className={`${CONTACTS_TABLE_HEADER_CELL} ${pinnedClass}`}
+        className={`${TABLE_HEADER_CELL} ${pinnedClass}`}
         style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
       >
         <div className="flex items-center" onClick={(event) => event.stopPropagation()}>
@@ -800,7 +797,7 @@ function renderHeaderCell(
   return (
     <div
       key={header.id}
-      className={`group/header ${CONTACTS_TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+      className={`group/header ${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
       style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
     >
@@ -931,7 +928,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: GroupHeaderRowP
 
   return (
     <div
-      className={CONTACTS_TABLE_GROUP_ROW}
+      className={TABLE_GROUP_ROW}
       onClick={() => row.toggleExpanded()}
     >
       <span className={TABLE_GROUP_ROW_INNER}>
@@ -996,7 +993,7 @@ const MemoDataRow = memo(function DataRow({
         return (
           <div
             key={cell.id}
-            className={`${CONTACTS_TABLE_CELL} ${pinnedClass}`}
+            className={`${TABLE_CELL} ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
           >
             {colId === 'select' ? (

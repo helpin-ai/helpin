@@ -33,7 +33,9 @@ import {
   Layers01Icon,
   MinusSignIcon,
   Sun01Icon,
+  UserGroupIcon,
 } from '@/lib/icons';
+import { StateTypeIcon } from '@/lib/pmIcons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
@@ -82,6 +84,69 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 };
 
 const ARCHIVED_STATE_VALUE = '__archived__';
+const GROUP_HEADER_REPEAT_HEIGHT = 30;
+
+interface FilterOptionVisualContext {
+  epicStateMap: Map<string, EpicWorkflowState>;
+  assignableMembers: AssignableMember[];
+  allLabels: Label[];
+}
+
+interface FilterOptionVisual {
+  leading?: React.ReactNode;
+  labelClassName?: string;
+}
+
+function getFilterOptionVisual(
+  key: EpicFilterKey,
+  value: string,
+  ctx: FilterOptionVisualContext,
+): FilterOptionVisual {
+  if (key === 'state') {
+    const state = ctx.epicStateMap.get(value);
+    if (!state) return {};
+    return {
+      leading: <StateTypeIcon stateType={state.state_type} className="h-3.5 w-3.5" />,
+    };
+  }
+  if (key === 'health') {
+    const config = healthConfig[value as EpicHealth];
+    if (!config) return {};
+    return { labelClassName: config.color };
+  }
+  if (key === 'team') {
+    return { leading: <UserGroupIcon className="h-3.5 w-3.5 text-muted-foreground" /> };
+  }
+  if (key === 'owner') {
+    const member = ctx.assignableMembers.find((candidate) => candidate.id === value);
+    if (!member) return {};
+    return {
+      leading: (
+        <UserAvatar
+          name={member.display_name || member.email}
+          avatarUrl={member.avatar_url}
+          avatarStyle={member.avatar_style}
+          avatarSeed={member.avatar_seed}
+          avatarBackgroundMode={member.avatar_background_mode}
+          avatarBackgroundColor={member.avatar_background_color}
+          className="h-4 w-4"
+          fallbackClassName="text-[8px]"
+        />
+      ),
+    };
+  }
+  if (key === 'label') {
+    const label = ctx.allLabels.find((candidate) => candidate.id === value);
+    const color = label?.color ?? '#94a3b8';
+    return {
+      leading: <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />,
+    };
+  }
+  if (key === 'objective') {
+    return { leading: <Target01Icon className="h-3.5 w-3.5 text-muted-foreground" /> };
+  }
+  return {};
+}
 
 const ALL_PROPERTIES = [
   { key: 'state', label: 'State' },
@@ -417,27 +482,39 @@ function buildEpicGroups(
   });
 }
 
-function loadEpicViewState(storageKey: string | null): { groupBy: EpicGroupBy; filters: EpicFilterState } {
+interface EpicViewState {
+  groupBy: EpicGroupBy;
+  filters: EpicFilterState;
+  visibleColumns?: string[];
+}
+
+function loadEpicViewState(storageKey: string | null): EpicViewState {
   if (!storageKey) {
-    return { groupBy: 'none', filters: {} };
+    return { groupBy: 'state', filters: {} };
   }
   try {
     const raw = localStorage.getItem(storageKey);
-    if (!raw) return { groupBy: 'none', filters: {} };
-    const parsed = JSON.parse(raw) as { groupBy?: EpicGroupBy; filters?: EpicFilterState };
+    if (!raw) return { groupBy: 'state', filters: {} };
+    const parsed = JSON.parse(raw) as Partial<EpicViewState>;
     return {
-      groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'none',
+      groupBy: EPIC_GROUP_BY_OPTIONS.some((option) => option.value === parsed.groupBy) ? parsed.groupBy! : 'state',
       filters: parsed.filters ?? {},
+      visibleColumns: Array.isArray(parsed.visibleColumns) ? parsed.visibleColumns : undefined,
     };
   } catch {
-    return { groupBy: 'none', filters: {} };
+    return { groupBy: 'state', filters: {} };
   }
 }
 
-function saveEpicViewState(storageKey: string | null, groupBy: EpicGroupBy, filters: EpicFilterState) {
+function saveEpicViewState(
+  storageKey: string | null,
+  groupBy: EpicGroupBy,
+  filters: EpicFilterState,
+  visibleColumns: string[],
+) {
   if (!storageKey) return;
   try {
-    localStorage.setItem(storageKey, JSON.stringify({ groupBy, filters }));
+    localStorage.setItem(storageKey, JSON.stringify({ groupBy, filters, visibleColumns }));
   } catch {
     // Ignore local storage failures.
   }
@@ -493,6 +570,7 @@ function EpicVirtualTable({
 }: EpicVirtualTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
+  const columnVisibilityVersion = useMemo(() => JSON.stringify(columnVisibility), [columnVisibility]);
   const table = useReactTable({
     data,
     columns,
@@ -550,7 +628,14 @@ function EpicVirtualTable({
   }, [collapsedGroupKeys, data, groupBy, groups, rowByEpicId]);
 
   const estimateSize = useCallback(
-    (index: number) => (items[index]?.type === 'group' ? GROUP_ROW_HEIGHT : ROW_HEIGHT),
+    (index: number) => {
+      const item = items[index];
+      if (!item) return ROW_HEIGHT;
+      if (item.type === 'group') {
+        return GROUP_ROW_HEIGHT + (item.collapsed ? 0 : GROUP_HEADER_REPEAT_HEIGHT);
+      }
+      return ROW_HEIGHT;
+    },
     [items],
   );
 
@@ -561,60 +646,70 @@ function EpicVirtualTable({
     overscan: groupBy === 'none' ? 8 : 5,
   });
 
+  const hasGroups = groupBy !== 'none';
+
+  const renderColumnHeaderRow = () => (
+    <>
+      {table.getHeaderGroups().map((headerGroup) => (
+        <div key={headerGroup.id} className="flex items-center">
+          {headerGroup.headers.map((header) => {
+            const defSize = header.column.columnDef.size ?? 150;
+            const runtimeSize = header.getSize();
+            const isResized = !!columnSizing[header.column.id];
+            const canSort = header.column.getCanSort();
+            const sorted = header.column.getIsSorted();
+            const colId = header.column.id;
+            const isNamePinned = colId === 'name';
+            const pinnedClass = isNamePinned ? TABLE_PINNED_HEADER_LEFT_NAME : '';
+            const pinnedSt = isNamePinned ? pinnedStyle('left', 0) : {};
+            return (
+              <div
+                key={header.id}
+                className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 200), ...pinnedSt }}
+                onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+              >
+                <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(header.column.columnDef.header, header.getContext())}
+                  {canSort ? (
+                    <span className="ml-auto shrink-0">
+                      {sorted === 'asc' ? (
+                        <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                      ) : sorted === 'desc' ? (
+                        <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
+                      ) : (
+                        <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
+                      )}
+                    </span>
+                  ) : null}
+                </div>
+                {header.column.getCanResize() ? (
+                  <div
+                    onMouseDown={header.getResizeHandler()}
+                    onTouchStart={header.getResizeHandler()}
+                    onClick={(event) => event.stopPropagation()}
+                    className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={parentRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
-          <div className={TABLE_HEADER}>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <div key={headerGroup.id} className="flex items-center">
-                {headerGroup.headers.map((header) => {
-                  const defSize = header.column.columnDef.size ?? 150;
-                  const runtimeSize = header.getSize();
-                  const isResized = !!columnSizing[header.column.id];
-                  const canSort = header.column.getCanSort();
-                  const sorted = header.column.getIsSorted();
-                  const colId = header.column.id;
-                  const isNamePinned = colId === 'name';
-                  const pinnedClass = isNamePinned ? TABLE_PINNED_HEADER_LEFT_NAME : '';
-                  const pinnedSt = isNamePinned ? pinnedStyle('left', 0) : {};
-                  return (
-                    <div
-                      key={header.id}
-                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
-                      style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 200), ...pinnedSt }}
-                      onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                    >
-                      <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
-                        {canSort ? (
-                          <span className="ml-auto shrink-0">
-                            {sorted === 'asc' ? (
-                              <ArrowUp02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
-                            ) : sorted === 'desc' ? (
-                              <ArrowDown02Icon className="h-3 w-3 text-foreground/80 stroke-[2.5]" />
-                            ) : (
-                              <ArrowUpDownIcon className="h-3 w-3 text-muted-foreground stroke-[2]" />
-                            )}
-                          </span>
-                        ) : null}
-                      </div>
-                      {header.column.getCanResize() ? (
-                        <div
-                          onMouseDown={header.getResizeHandler()}
-                          onTouchStart={header.getResizeHandler()}
-                          onClick={(event) => event.stopPropagation()}
-                          className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+          {hasGroups ? null : (
+            <div className={TABLE_HEADER}>
+              {renderColumnHeaderRow()}
+            </div>
+          )}
 
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
             <StickyPinnedGroupOverlay
@@ -638,13 +733,22 @@ function EpicVirtualTable({
                   style={virtualRowStyle(virtualRow.start)}
                 >
                   {item.type === 'group' ? (
-                    <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
+                    <>
+                      <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
+                      {item.collapsed ? null : (
+                        <div className="border-b border-border/60 bg-card">
+                          {renderColumnHeaderRow()}
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <MemoEpicDataRow
                       row={item.row}
                       onRowClick={onRowClick}
                       columnSizing={columnSizing}
                       columnSizingVersion={columnSizingVersion}
+                      columnVisibility={columnVisibility}
+                      columnVisibilityVersion={columnVisibilityVersion}
                     />
                   )}
                 </div>
@@ -691,6 +795,8 @@ interface EpicDataRowProps {
   onRowClick: (entry: EpicWithStats) => void;
   columnSizing: Record<string, number>;
   columnSizingVersion: string;
+  columnVisibility: VisibilityState;
+  columnVisibilityVersion: string;
 }
 
 function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps) {
@@ -698,6 +804,7 @@ function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
     prev.columnSizingVersion === next.columnSizingVersion &&
+    prev.columnVisibilityVersion === next.columnVisibilityVersion &&
     prev.onRowClick === next.onRowClick
   );
 }
@@ -707,14 +814,19 @@ const MemoEpicDataRow = memo(function EpicDataRow({
   onRowClick,
   columnSizing,
   columnSizingVersion,
+  columnVisibility,
+  columnVisibilityVersion,
 }: EpicDataRowProps) {
   void columnSizingVersion;
+  void columnVisibilityVersion;
   return (
     <div
       className={`${TABLE_ROW} cursor-pointer`}
       onClick={() => onRowClick(row.original)}
     >
-      {row.getVisibleCells().map((cell) => {
+      {row.getAllCells()
+        .filter((cell) => columnVisibility[cell.column.id] !== false)
+        .map((cell) => {
         const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         const colId = cell.column.id;
         const isNamePinned = colId === 'name';
@@ -1146,7 +1258,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [groupBy, setGroupBy] = useState<EpicGroupBy>('none');
+  const [groupBy, setGroupBy] = useState<EpicGroupBy>('state');
   const [filters, setFilters] = useState<EpicFilterState>({});
   const [tableSorting, setTableSorting] = useState<SortingState>([]);
   const [tableColumnSizing, setTableColumnSizing] = useState<ColumnSizingState>({});
@@ -1659,15 +1771,25 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
     void loadData();
   }, [loadData]);
 
+  const hasLoadedViewStateRef = useRef(false);
+
   useEffect(() => {
+    hasLoadedViewStateRef.current = false;
     const next = loadEpicViewState(storageKey);
     setGroupBy(next.groupBy);
     setFilters(next.filters);
+    if (next.visibleColumns) setVisibleColumns(next.visibleColumns);
+    hasLoadedViewStateRef.current = true;
   }, [storageKey]);
 
   useEffect(() => {
-    saveEpicViewState(storageKey, groupBy, filters);
-  }, [filters, groupBy, storageKey]);
+    if (!hasLoadedViewStateRef.current) return;
+    if (!storageKey) return;
+    // visibleColumns is persisted synchronously inside its onChange handler so
+    // we don't read it here; instead preserve whatever is currently in storage.
+    const current = loadEpicViewState(storageKey);
+    saveEpicViewState(storageKey, groupBy, filters, current.visibleColumns ?? visibleColumns);
+  }, [filters, groupBy, storageKey, visibleColumns]);
 
   // Refresh when epic is created via global modal
   useEffect(() => {
@@ -1737,8 +1859,8 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <header className="flex items-center justify-between">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex items-center justify-between px-4 pt-4 md:px-6 md:pt-6">
         {showHeaderIntro ? (
           <div>
             <h2 className="text-xl font-semibold">Epics{teamLabel && <span className="text-muted-foreground font-normal"> ({teamLabel})</span>}</h2>
@@ -1754,7 +1876,7 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
       </header>
 
       {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+        <div className="mx-4 mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive md:mx-6">
           {error}
         </div>
       ) : null}
@@ -1763,14 +1885,24 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
         <EpicFilterBar
           search={search}
           onSearchChange={setSearch}
-          categories={filterDefinitions.map((definition) => {
+          categories={filterDefinitions
+            .filter((definition) => definition.key !== 'has_target_date' && definition.key !== 'has_start_date')
+            .map((definition) => {
             const isStateKey = definition.key === 'state';
-            const options = isStateKey
+            const baseOptions = isStateKey
               ? definition.options.filter((option) => option.value !== ARCHIVED_STATE_VALUE)
               : definition.options;
             const selected = (filters[definition.key] ?? []).filter(
               (value) => !isStateKey || value !== ARCHIVED_STATE_VALUE,
             );
+            const options = baseOptions.map((option) => ({
+              ...option,
+              ...getFilterOptionVisual(definition.key, option.value, {
+                epicStateMap,
+                assignableMembers,
+                allLabels,
+              }),
+            }));
             return {
               key: definition.key,
               label: definition.label,
@@ -1813,7 +1945,18 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
           onGroupByChange={(value) => setGroupBy(value as EpicGroupBy)}
           displayProperties={ALL_PROPERTIES}
           visibleProperties={visibleColumns}
-          onVisiblePropertiesChange={setVisibleColumns}
+          onVisiblePropertiesChange={(next) => {
+            setVisibleColumns(next);
+            if (storageKey) {
+              const current = loadEpicViewState(storageKey);
+              saveEpicViewState(
+                storageKey,
+                current.groupBy ?? groupBy,
+                current.filters ?? filters,
+                next,
+              );
+            }
+          }}
         />
       ) : null}
 
