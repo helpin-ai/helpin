@@ -1037,7 +1037,7 @@ export function TaskListView({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 44,
+        size: 60,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -1396,10 +1396,14 @@ export function TaskListView({
             : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
             : colId === 'actions' ? pinnedStyle('right', 0) : {};
           const isGroupSelectCell = isGroupRepeat && colId === 'select';
+          const isActionsCell = colId === 'actions';
+          const cellClass = isActionsCell
+            ? 'shrink-0 sticky right-0 z-[11]'
+            : `${TASK_LIST_HEADER_CELL} ${!isGroupSelectCell && canSort ? TASK_LIST_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`;
           return (
             <div
               key={header.id}
-              className={`${TASK_LIST_HEADER_CELL} ${!isGroupSelectCell && canSort ? TASK_LIST_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+              className={cellClass}
               style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
               onClick={!isGroupSelectCell && canSort ? header.column.getToggleSortingHandler() : undefined}
             >
@@ -2714,7 +2718,7 @@ function InlineActionsCell({
   const trigger = (
     <button
       type="button"
-      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/row:opacity-100 data-[state=open]:opacity-100 cursor-pointer"
+      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
       onClick={(event) => {
         event.stopPropagation();
         if (!menuOpen) {
