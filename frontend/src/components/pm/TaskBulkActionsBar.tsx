@@ -12,12 +12,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { LabelPicker } from '@/components/pm/LabelPicker';
+import { LabelBadge, LabelPicker } from '@/components/pm/LabelPicker';
 import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { UserAvatar } from '@/components/pm/UserAvatar';
 import { PRIORITY_CONFIG, SEVERITY_CONFIG } from '@/lib/pmConstants';
-import { Calendar03Icon, ChevronDownIcon, UserAdd01Icon } from '@/lib/pmIcons';
-import { ArchiveIcon, Delete01Icon, Loading01Icon, PencilEdit01Icon, Tag01Icon, UserRemove01Icon } from '@/lib/icons';
+import { Calendar03Icon, ChevronDownIcon } from '@/lib/pmIcons';
+import { ArchiveIcon, Cancel01Icon, Loading01Icon, PencilEdit01Icon, PlusSignIcon } from '@/lib/icons';
 import { pmTaskService } from '@/lib/services/pmTaskService';
+import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
 import type {
   EpicWithStats,
   Label,
@@ -35,6 +37,7 @@ import { toast } from 'sonner';
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
 export const BULK_SOFT_CAP = 25;
+const MIXED = Symbol('mixed');
 
 type BulkOperationResult = Promise<{ error: string | null }>;
 
@@ -71,6 +74,50 @@ export function getOwnerIdsAfterRemove(task: Pick<Task, 'owner_member_ids'>, mem
   return (task.owner_member_ids ?? []).filter((id) => !removeSet.has(id));
 }
 
+type SetField = {
+  intersection: string[];
+  union: string[];
+  partial: string[];
+  shared: boolean;
+};
+
+export function deriveSetField(values: string[][]): SetField {
+  if (values.length === 0) {
+    return { intersection: [], union: [], partial: [], shared: true };
+  }
+  const sets = values.map((v) => new Set(v));
+  const union = Array.from(new Set(values.flat()));
+  const intersection = union.filter((id) => sets.every((s) => s.has(id)));
+  const partial = union.filter((id) => !intersection.includes(id));
+  return { intersection, union, partial, shared: partial.length === 0 };
+}
+
+type ChipState = 'shared' | 'partial' | 'pending-add';
+
+function deriveChipDisplay(
+  field: SetField,
+  pendingAdds: Set<string>,
+  pendingRemoves: Set<string>,
+): { id: string; state: ChipState }[] {
+  const result: { id: string; state: ChipState }[] = [];
+  const seen = new Set<string>();
+  // First, items from the union (in stable order).
+  for (const id of field.union) {
+    if (pendingRemoves.has(id)) continue;
+    seen.add(id);
+    if (pendingAdds.has(id)) result.push({ id, state: 'pending-add' });
+    else if (field.intersection.includes(id)) result.push({ id, state: 'shared' });
+    else result.push({ id, state: 'partial' });
+  }
+  // Then, brand-new pendingAdds that weren't in the union (added via "+ Add").
+  for (const id of pendingAdds) {
+    if (seen.has(id)) continue;
+    if (pendingRemoves.has(id)) continue;
+    result.push({ id, state: 'pending-add' });
+  }
+  return result;
+}
+
 export function TaskBulkActionsBar({
   selectedTasks,
   workspaceId,
@@ -85,19 +132,113 @@ export function TaskBulkActionsBar({
 }: TaskBulkActionsBarProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [addLabelIds, setAddLabelIds] = useState<string[]>([]);
-  const [removeLabelIds, setRemoveLabelIds] = useState<string[]>([]);
-  const [addOwnerIds, setAddOwnerIds] = useState<string[]>([]);
-  const [removeOwnerIds, setRemoveOwnerIds] = useState<string[]>([]);
+
+  // Staged scalar field changes (undefined = no change). `null` for epic/sprint/deadline = clear.
+  const [stagedStatus, setStagedStatus] = useState<string | undefined>();
+  const [stagedPriority, setStagedPriority] = useState<Priority | undefined>();
+  const [stagedSeverity, setStagedSeverity] = useState<Severity | undefined>();
+  const [stagedEpicId, setStagedEpicId] = useState<string | null | undefined>();
+  const [stagedSprintId, setStagedSprintId] = useState<string | null | undefined>();
+  const [stagedDeadline, setStagedDeadline] = useState<string | null | undefined>();
+
+  // Staged set-field deltas (owners + labels).
+  const [ownerAdds, setOwnerAdds] = useState<Set<string>>(new Set());
+  const [ownerRemoves, setOwnerRemoves] = useState<Set<string>>(new Set());
+  const [labelAdds, setLabelAdds] = useState<Set<string>>(new Set());
+  const [labelRemoves, setLabelRemoves] = useState<Set<string>>(new Set());
+
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deadlineOpen, setDeadlineOpen] = useState(false);
+  const [addOwnerOpen, setAddOwnerOpen] = useState(false);
+
   const count = selectedTasks.length;
   const overSoftCap = count >= BULK_SOFT_CAP;
   const allArchived = useMemo(
     () => selectedTasks.length > 0 && selectedTasks.every((task) => task.archived),
     [selectedTasks],
   );
+
+  const ownerNameMap = useMemo(
+    () => buildAssignableMemberNameMap(assignableMembers),
+    [assignableMembers],
+  );
+  const memberById = useMemo(() => {
+    const map = new Map<string, AssignableMember>();
+    for (const m of assignableMembers) map.set(m.id, m);
+    return map;
+  }, [assignableMembers]);
+
+  const ownersField = useMemo(
+    () => deriveSetField(selectedTasks.map((t) => t.owner_member_ids ?? [])),
+    [selectedTasks],
+  );
+  const labelsField = useMemo(
+    () => deriveSetField(selectedTasks.map((t) => (t.labels ?? []).map((l) => l.id))),
+    [selectedTasks],
+  );
+
+  const labelById = useMemo(() => {
+    const map = new Map<string, Label>();
+    for (const l of labels) map.set(l.id, l);
+    return map;
+  }, [labels]);
+
+  const ownerChips = useMemo(
+    () => deriveChipDisplay(ownersField, ownerAdds, ownerRemoves),
+    [ownersField, ownerAdds, ownerRemoves],
+  );
+  const labelChips = useMemo(
+    () => deriveChipDisplay(labelsField, labelAdds, labelRemoves),
+    [labelsField, labelAdds, labelRemoves],
+  );
+
+  const commonValues = useMemo(() => {
+    function shared<V>(getter: (task: Task) => V): V | typeof MIXED {
+      if (selectedTasks.length === 0) return MIXED;
+      const first = getter(selectedTasks[0]);
+      for (let i = 1; i < selectedTasks.length; i += 1) {
+        if (getter(selectedTasks[i]) !== first) return MIXED;
+      }
+      return first;
+    }
+    return {
+      workflow_state_id: shared((t) => t.workflow_state_id),
+      priority: shared((t) => t.priority),
+      severity: shared((t) => t.severity),
+      epic_id: shared((t) => t.epic_id ?? ''),
+      sprint_id: shared((t) => t.sprint_id ?? ''),
+      deadline: shared((t) => t.deadline ?? ''),
+    };
+  }, [selectedTasks]);
+
+  const multiplePlaceholder = (
+    <span className="italic text-muted-foreground">Multiple</span>
+  );
+
+  const resetStaged = useCallback(() => {
+    setStagedStatus(undefined);
+    setStagedPriority(undefined);
+    setStagedSeverity(undefined);
+    setStagedEpicId(undefined);
+    setStagedSprintId(undefined);
+    setStagedDeadline(undefined);
+    setOwnerAdds(new Set());
+    setOwnerRemoves(new Set());
+    setLabelAdds(new Set());
+    setLabelRemoves(new Set());
+  }, []);
+
+  const hasStagedChanges =
+    stagedStatus !== undefined
+    || stagedPriority !== undefined
+    || stagedSeverity !== undefined
+    || stagedEpicId !== undefined
+    || stagedSprintId !== undefined
+    || stagedDeadline !== undefined
+    || ownerAdds.size > 0
+    || ownerRemoves.size > 0
+    || labelAdds.size > 0
+    || labelRemoves.size > 0;
 
   const reportResults = useCallback(
     async (
@@ -123,11 +264,12 @@ export function TaskBulkActionsBar({
 
       await onComplete();
       if (successCount > 0) {
+        resetStaged();
         onClearSelection();
         setOpen(false);
       }
     },
-    [onClearSelection, onComplete],
+    [onClearSelection, onComplete, resetStaged],
   );
 
   const runBulkOperation = useCallback(
@@ -154,71 +296,108 @@ export function TaskBulkActionsBar({
     [runBulkOperation, selectedTasks, workspaceId],
   );
 
-  const bulkAddLabels = useCallback(
-    (labelIdsToAdd: string[]) => runBulkOperation(
-      'Added labels to',
-      () => Promise.allSettled(
-        selectedTasks.map((task) =>
-          pmTaskService.update(workspaceId, task.id, {
-            label_ids: getLabelIdsAfterAdd(task, labelIdsToAdd),
-          }) as BulkOperationResult,
-        ),
-      ),
-    ).then(() => setAddLabelIds([])),
-    [runBulkOperation, selectedTasks, workspaceId],
-  );
+  // Single Apply commits every staged change in one round of per-task PUTs.
+  const handleApply = useCallback(async () => {
+    if (!hasStagedChanges || loading || count === 0) return;
+    setLoading(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedTasks.map((task) => {
+          const patch: UpdateTaskRequest = {};
+          if (stagedStatus !== undefined) patch.workflow_state_id = stagedStatus;
+          if (stagedPriority !== undefined) patch.priority = stagedPriority;
+          if (stagedSeverity !== undefined) patch.severity = stagedSeverity;
+          if (stagedEpicId !== undefined) patch.epic_id = stagedEpicId ?? '';
+          if (stagedSprintId !== undefined) patch.sprint_id = stagedSprintId ?? '';
+          if (stagedDeadline !== undefined) patch.deadline = stagedDeadline ?? undefined;
+          if (ownerAdds.size > 0 || ownerRemoves.size > 0) {
+            const current = task.owner_member_ids ?? [];
+            patch.owner_member_ids = Array.from(new Set([
+              ...current.filter((id) => !ownerRemoves.has(id)),
+              ...ownerAdds,
+            ]));
+          }
+          if (labelAdds.size > 0 || labelRemoves.size > 0) {
+            const current = (task.labels ?? []).map((l) => l.id);
+            patch.label_ids = Array.from(new Set([
+              ...current.filter((id) => !labelRemoves.has(id)),
+              ...labelAdds,
+            ]));
+          }
+          return pmTaskService.update(workspaceId, task.id, patch) as BulkOperationResult;
+        }),
+      );
+      await reportResults(results, 'Updated');
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    count,
+    hasStagedChanges,
+    labelAdds,
+    labelRemoves,
+    loading,
+    ownerAdds,
+    ownerRemoves,
+    reportResults,
+    selectedTasks,
+    stagedDeadline,
+    stagedEpicId,
+    stagedPriority,
+    stagedSeverity,
+    stagedSprintId,
+    stagedStatus,
+    workspaceId,
+  ]);
 
-  const bulkRemoveLabels = useCallback(
-    (labelIdsToRemove: string[]) => runBulkOperation(
-      'Removed labels from',
-      () => Promise.allSettled(
-        selectedTasks.map((task) =>
-          pmTaskService.update(workspaceId, task.id, {
-            label_ids: getLabelIdsAfterRemove(task, labelIdsToRemove),
-          }) as BulkOperationResult,
-        ),
-      ),
-    ).then(() => setRemoveLabelIds([])),
-    [runBulkOperation, selectedTasks, workspaceId],
-  );
+  // Owner chip handlers
+  const promoteOwner = (id: string) => {
+    setOwnerAdds((prev) => new Set([...prev, id]));
+    setOwnerRemoves((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+  const removeOwnerChip = (id: string, state: ChipState) => {
+    if (state === 'pending-add') {
+      // Undo the promote (or remove the newly added). If it was originally part of union, falls back to partial display.
+      setOwnerAdds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      // If the id was NOT in the original union (i.e. it was a brand-new add), we don't need to mark it removed.
+      if (!ownersField.union.includes(id)) return;
+      // Otherwise (was originally partial), revert leaves it as partial — no remove queued.
+      return;
+    }
+    setOwnerRemoves((prev) => new Set([...prev, id]));
+  };
 
-  const bulkAddOwners = useCallback(
-    (memberIdsToAdd: string[]) => runBulkOperation(
-      'Added owners to',
-      () => Promise.allSettled(
-        selectedTasks.map((task) =>
-          pmTaskService.update(workspaceId, task.id, {
-            owner_member_ids: getOwnerIdsAfterAdd(task, memberIdsToAdd),
-          }) as BulkOperationResult,
-        ),
-      ),
-    ).then(() => setAddOwnerIds([])),
-    [runBulkOperation, selectedTasks, workspaceId],
-  );
-
-  const bulkRemoveOwners = useCallback(
-    (memberIdsToRemove: string[]) => runBulkOperation(
-      'Removed owners from',
-      () => Promise.allSettled(
-        selectedTasks.map((task) =>
-          pmTaskService.update(workspaceId, task.id, {
-            owner_member_ids: getOwnerIdsAfterRemove(task, memberIdsToRemove),
-          }) as BulkOperationResult,
-        ),
-      ),
-    ).then(() => setRemoveOwnerIds([])),
-    [runBulkOperation, selectedTasks, workspaceId],
-  );
-
-  const bulkDelete = useCallback(
-    () => runBulkOperation(
-      'Deleted',
-      () => Promise.allSettled(
-        selectedTasks.map((task) => pmTaskService.remove(workspaceId, task.id) as BulkOperationResult),
-      ),
-    ),
-    [runBulkOperation, selectedTasks, workspaceId],
-  );
+  // Label chip handlers
+  const promoteLabel = (id: string) => {
+    setLabelAdds((prev) => new Set([...prev, id]));
+    setLabelRemoves((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+  const removeLabelChip = (id: string, state: ChipState) => {
+    if (state === 'pending-add') {
+      setLabelAdds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      if (!labelsField.union.includes(id)) return;
+      return;
+    }
+    setLabelRemoves((prev) => new Set([...prev, id]));
+  };
 
   if (count === 0) return null;
 
@@ -227,7 +406,13 @@ export function TaskBulkActionsBar({
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) resetStaged();
+          setOpen(next);
+        }}
+      >
         <PopoverTrigger asChild>
           <Button
             type="button"
@@ -241,9 +426,9 @@ export function TaskBulkActionsBar({
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          align="end"
+          align="start"
           sideOffset={6}
-          className="w-[360px] p-3"
+          className="w-[400px] p-3"
           onClick={(event) => event.stopPropagation()}
         >
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -262,19 +447,6 @@ export function TaskBulkActionsBar({
                 </Badge>
               ) : null}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-muted-foreground"
-              disabled={loading}
-              onClick={() => {
-                onClearSelection();
-                setOpen(false);
-              }}
-            >
-              Cancel
-            </Button>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -283,10 +455,17 @@ export function TaskBulkActionsBar({
               <Select
                 size="sm"
                 disabled={loading}
-                onValueChange={(value) => void bulkUpdate({ workflow_state_id: value }, 'Updated')}
+                value={stagedStatus
+                  ?? (commonValues.workflow_state_id === MIXED ? undefined : (commonValues.workflow_state_id as string))}
+                onValueChange={(value) => setStagedStatus(value)}
               >
-                <SelectTrigger className="h-7 flex-1 text-xs">
-                  <SelectValue placeholder="No change" />
+                <SelectTrigger className={cn(
+                  'h-7 flex-1 text-xs',
+                  stagedStatus !== undefined && 'border-primary',
+                )}>
+                  {stagedStatus === undefined && commonValues.workflow_state_id === MIXED
+                    ? multiplePlaceholder
+                    : <SelectValue placeholder="No change" />}
                 </SelectTrigger>
                 <SelectContent>
                   {workflow.states.map((state) => (
@@ -298,39 +477,76 @@ export function TaskBulkActionsBar({
               </Select>
             </div>
 
-            <BulkOwnerActionRow
-              mode="add"
-              labelText="Add owners"
-              memberIds={addOwnerIds}
-              members={assignableMembers}
-              disabled={loading}
-              onChange={setAddOwnerIds}
-              onApply={() => void bulkAddOwners(addOwnerIds)}
-              labelClassName={fieldLabel}
-              rowClassName={fieldRow}
-            />
-
-            <BulkOwnerActionRow
-              mode="remove"
-              labelText="Remove owners"
-              memberIds={removeOwnerIds}
-              members={assignableMembers}
-              disabled={loading}
-              onChange={setRemoveOwnerIds}
-              onApply={() => void bulkRemoveOwners(removeOwnerIds)}
-              labelClassName={fieldLabel}
-              rowClassName={fieldRow}
-            />
+            <div className={fieldRow}>
+              <span className={cn(fieldLabel, 'self-start pt-1')}>Owners</span>
+              <div className="flex flex-1 flex-wrap items-center gap-1">
+                {ownerChips.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">No owners</span>
+                ) : null}
+                {ownerChips.map(({ id, state }) => (
+                  <OwnerChip
+                    key={id}
+                    memberId={id}
+                    state={state}
+                    nameMap={ownerNameMap}
+                    member={memberById.get(id)}
+                    onClick={state === 'partial' ? () => promoteOwner(id) : undefined}
+                    onRemove={() => removeOwnerChip(id, state)}
+                  />
+                ))}
+                <MultiMemberPickerPopover
+                  values={[]}
+                  members={assignableMembers}
+                  disabled={loading}
+                  open={addOwnerOpen}
+                  onOpenChange={setAddOwnerOpen}
+                  onChange={(selected) => {
+                    // Picker fires onChange per toggle; treat the last toggled id as the one to add.
+                    // Easier model: use the difference between selected and "[]" — but onChange gives us the new array.
+                    // We translate each id in `selected` as "add to all tasks".
+                    if (selected.length === 0) return;
+                    setOwnerAdds((prev) => {
+                      const next = new Set(prev);
+                      for (const id of selected) next.add(id);
+                      return next;
+                    });
+                    setOwnerRemoves((prev) => {
+                      let mutated = false;
+                      const next = new Set(prev);
+                      for (const id of selected) {
+                        if (next.delete(id)) mutated = true;
+                      }
+                      return mutated ? next : prev;
+                    });
+                    setAddOwnerOpen(false);
+                  }}
+                  triggerLabel="Add owner"
+                  contentClassName="w-[260px]"
+                  renderTrigger={() => (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-input px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground">
+                      <PlusSignIcon className="h-3 w-3" /> Add
+                    </span>
+                  )}
+                />
+              </div>
+            </div>
 
             <div className={fieldRow}>
               <span className={fieldLabel}>Priority</span>
               <Select
                 size="sm"
                 disabled={loading}
-                onValueChange={(value) => void bulkUpdate({ priority: value as Priority }, 'Updated')}
+                value={stagedPriority
+                  ?? (commonValues.priority === MIXED ? undefined : (commonValues.priority as Priority))}
+                onValueChange={(value) => setStagedPriority(value as Priority)}
               >
-                <SelectTrigger className="h-7 flex-1 text-xs">
-                  <SelectValue placeholder="No change" />
+                <SelectTrigger className={cn(
+                  'h-7 flex-1 text-xs',
+                  stagedPriority !== undefined && 'border-primary',
+                )}>
+                  {stagedPriority === undefined && commonValues.priority === MIXED
+                    ? multiplePlaceholder
+                    : <SelectValue placeholder="No change" />}
                 </SelectTrigger>
                 <SelectContent>
                   {ALL_PRIORITIES.map((priority) => (
@@ -347,10 +563,17 @@ export function TaskBulkActionsBar({
               <Select
                 size="sm"
                 disabled={loading}
-                onValueChange={(value) => void bulkUpdate({ severity: value as Severity }, 'Updated')}
+                value={stagedSeverity
+                  ?? (commonValues.severity === MIXED ? undefined : (commonValues.severity as Severity))}
+                onValueChange={(value) => setStagedSeverity(value as Severity)}
               >
-                <SelectTrigger className="h-7 flex-1 text-xs">
-                  <SelectValue placeholder="No change" />
+                <SelectTrigger className={cn(
+                  'h-7 flex-1 text-xs',
+                  stagedSeverity !== undefined && 'border-primary',
+                )}>
+                  {stagedSeverity === undefined && commonValues.severity === MIXED
+                    ? multiplePlaceholder
+                    : <SelectValue placeholder="No change" />}
                 </SelectTrigger>
                 <SelectContent>
                   {ALL_SEVERITIES.map((severity) => (
@@ -367,10 +590,20 @@ export function TaskBulkActionsBar({
               <Select
                 size="sm"
                 disabled={loading}
-                onValueChange={(value) => void bulkUpdate({ epic_id: value === '__none__' ? '' : value }, 'Updated')}
+                value={(() => {
+                  if (stagedEpicId !== undefined) return stagedEpicId === null ? '__none__' : stagedEpicId;
+                  if (commonValues.epic_id === MIXED) return undefined;
+                  return (commonValues.epic_id as string) || '__none__';
+                })()}
+                onValueChange={(value) => setStagedEpicId(value === '__none__' ? null : value)}
               >
-                <SelectTrigger className="h-7 flex-1 text-xs">
-                  <SelectValue placeholder="No change" />
+                <SelectTrigger className={cn(
+                  'h-7 flex-1 text-xs',
+                  stagedEpicId !== undefined && 'border-primary',
+                )}>
+                  {stagedEpicId === undefined && commonValues.epic_id === MIXED
+                    ? multiplePlaceholder
+                    : <SelectValue placeholder="No change" />}
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">No epic</SelectItem>
@@ -388,10 +621,20 @@ export function TaskBulkActionsBar({
               <Select
                 size="sm"
                 disabled={loading}
-                onValueChange={(value) => void bulkUpdate({ sprint_id: value === '__none__' ? '' : value }, 'Updated')}
+                value={(() => {
+                  if (stagedSprintId !== undefined) return stagedSprintId === null ? '__none__' : stagedSprintId;
+                  if (commonValues.sprint_id === MIXED) return undefined;
+                  return (commonValues.sprint_id as string) || '__none__';
+                })()}
+                onValueChange={(value) => setStagedSprintId(value === '__none__' ? null : value)}
               >
-                <SelectTrigger className="h-7 flex-1 text-xs">
-                  <SelectValue placeholder="No change" />
+                <SelectTrigger className={cn(
+                  'h-7 flex-1 text-xs',
+                  stagedSprintId !== undefined && 'border-primary',
+                )}>
+                  {stagedSprintId === undefined && commonValues.sprint_id === MIXED
+                    ? multiplePlaceholder
+                    : <SelectValue placeholder="No change" />}
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">No sprint</SelectItem>
@@ -404,33 +647,43 @@ export function TaskBulkActionsBar({
               </Select>
             </div>
 
-            <BulkLabelActionRow
-              mode="add"
-              labelText="Add labels"
-              labelIds={addLabelIds}
-              labels={labels}
-              workspaceId={workspaceId}
-              teamId={teamId ?? undefined}
-              disabled={loading}
-              onChange={setAddLabelIds}
-              onApply={() => void bulkAddLabels(addLabelIds)}
-              labelClassName={fieldLabel}
-              rowClassName={fieldRow}
-            />
-
-            <BulkLabelActionRow
-              mode="remove"
-              labelText="Remove labels"
-              labelIds={removeLabelIds}
-              labels={labels}
-              workspaceId={workspaceId}
-              teamId={teamId ?? undefined}
-              disabled={loading}
-              onChange={setRemoveLabelIds}
-              onApply={() => void bulkRemoveLabels(removeLabelIds)}
-              labelClassName={fieldLabel}
-              rowClassName={fieldRow}
-            />
+            <div className={fieldRow}>
+              <span className={cn(fieldLabel, 'self-start pt-1')}>Labels</span>
+              <div className="flex flex-1 flex-wrap items-center gap-1">
+                {labelChips.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">No labels</span>
+                ) : null}
+                {labelChips.map(({ id, state }) => {
+                  const label = labelById.get(id);
+                  if (!label) return null;
+                  return (
+                    <LabelChip
+                      key={id}
+                      label={label}
+                      state={state}
+                      onClick={state === 'partial' ? () => promoteLabel(id) : undefined}
+                      onRemove={() => removeLabelChip(id, state)}
+                    />
+                  );
+                })}
+                <LabelAdder
+                  workspaceId={workspaceId}
+                  teamId={teamId ?? undefined}
+                  labels={labels}
+                  disabled={loading}
+                  excludeIds={labelChips.map((c) => c.id)}
+                  onAdd={(id) => {
+                    setLabelAdds((prev) => new Set([...prev, id]));
+                    setLabelRemoves((prev) => {
+                      if (!prev.has(id)) return prev;
+                      const next = new Set(prev);
+                      next.delete(id);
+                      return next;
+                    });
+                  }}
+                />
+              </div>
+            </div>
 
             <div className={fieldRow}>
               <span className={fieldLabel}>Deadline</span>
@@ -440,11 +693,22 @@ export function TaskBulkActionsBar({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-7 flex-1 justify-start px-2 text-xs"
+                    className={cn(
+                      'h-7 flex-1 justify-start px-2 text-xs',
+                      stagedDeadline !== undefined && 'border-primary',
+                    )}
                     disabled={loading}
                   >
                     <Calendar03Icon className="mr-1 h-3 w-3" />
-                    Set deadline
+                    {stagedDeadline !== undefined
+                      ? (stagedDeadline === null
+                          ? 'Clear deadline'
+                          : format(new Date(stagedDeadline), 'MMM d, yyyy'))
+                      : commonValues.deadline === MIXED
+                        ? multiplePlaceholder
+                        : commonValues.deadline
+                          ? format(new Date(commonValues.deadline as string), 'MMM d, yyyy')
+                          : 'Set deadline'}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start" onClick={(event) => event.stopPropagation()}>
@@ -453,7 +717,7 @@ export function TaskBulkActionsBar({
                     onSelect={(date) => {
                       if (!date) return;
                       setDeadlineOpen(false);
-                      void bulkUpdate({ deadline: format(date, 'yyyy-MM-dd') }, 'Updated');
+                      setStagedDeadline(format(date, 'yyyy-MM-dd'));
                     }}
                   />
                 </PopoverContent>
@@ -478,26 +742,35 @@ export function TaskBulkActionsBar({
                 <ArchiveIcon className="mr-1 h-3 w-3" />
                 {allArchived ? 'Unarchive' : 'Archive'}
               </Button>
-
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="h-7 flex-1 px-2 text-xs"
-                disabled={loading}
-                onClick={() => setDeleteConfirmOpen(true)}
-              >
-                <Delete01Icon className="mr-1 h-3 w-3" />
-                Delete
-              </Button>
             </div>
 
-            {loading ? (
-              <div className="flex items-center justify-center gap-1.5 pt-1 text-xs text-muted-foreground">
-                <Loading01Icon className="h-3 w-3 animate-spin" />
-                Applying...
-              </div>
-            ) : null}
+            <div className="mt-2 flex items-center justify-end gap-2 border-t border-border/60 pt-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground"
+                disabled={loading}
+                onClick={() => {
+                  resetStaged();
+                  onClearSelection();
+                  setOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                className="h-7 px-3 text-xs"
+                disabled={loading || !hasStagedChanges}
+                onClick={() => void handleApply()}
+              >
+                {loading ? <Loading01Icon className="mr-1 h-3 w-3 animate-spin" /> : null}
+                Apply
+              </Button>
+            </div>
           </div>
         </PopoverContent>
       </Popover>
@@ -514,139 +787,143 @@ export function TaskBulkActionsBar({
         }}
       />
 
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
-        title={`Delete ${count} ${count === 1 ? 'task' : 'tasks'}?`}
-        description="This cannot be undone."
-        confirmLabel="Delete"
-        onConfirm={() => {
-          setDeleteConfirmOpen(false);
-          void bulkDelete();
-        }}
-      />
     </>
   );
 }
 
-function BulkOwnerActionRow({
-  mode,
-  labelText,
-  memberIds,
-  members,
-  disabled,
-  onChange,
-  onApply,
-  labelClassName,
-  rowClassName,
+function OwnerChip({
+  memberId,
+  state,
+  nameMap,
+  member,
+  onClick,
+  onRemove,
 }: {
-  mode: 'add' | 'remove';
-  labelText: string;
-  memberIds: string[];
-  members: AssignableMember[];
-  disabled: boolean;
-  onChange: (memberIds: string[]) => void;
-  onApply: () => void;
-  labelClassName: string;
-  rowClassName: string;
+  memberId: string;
+  state: ChipState;
+  nameMap: Map<string, string>;
+  member?: AssignableMember;
+  onClick?: () => void;
+  onRemove: () => void;
 }) {
-  const shortLabel = mode === 'add' ? 'Add' : 'Remove';
-  const Icon = mode === 'add' ? UserAdd01Icon : UserRemove01Icon;
-
+  const name = member?.display_name || member?.email || nameMap.get(memberId) || 'Owner';
   return (
-    <div className={rowClassName}>
-      <span className={labelClassName}>{labelText}</span>
-      <div className="flex flex-1 items-center gap-1">
-        <MultiMemberPickerPopover
-          values={memberIds}
-          members={members}
-          disabled={disabled}
-          onChange={onChange}
-          triggerClassName={cn(
-            'flex h-7 flex-1 items-center gap-1 rounded-md border border-input bg-transparent px-2 text-xs',
-            disabled && 'pointer-events-none opacity-50',
-          )}
-          triggerLabel={labelText}
-          contentClassName="w-[260px]"
-          renderTrigger={() => (
-            <span className="flex items-center gap-1 text-muted-foreground">
-              <Icon className="h-3 w-3" />
-              {memberIds.length > 0 ? `${memberIds.length} selected` : 'Choose members'}
-            </span>
-          )}
+    <span className="group/owner relative inline-flex">
+      <button
+        type="button"
+        title={state === 'partial' ? `${name} (some tasks) — click to add to all` : name}
+        onClick={onClick}
+        disabled={!onClick}
+        className={cn(
+          'inline-flex h-5 w-5 items-center justify-center rounded-full transition-opacity',
+          state === 'partial' && 'italic opacity-60 hover:opacity-100',
+          state === 'pending-add' && 'ring-2 ring-primary/60 ring-offset-1 ring-offset-popover',
+          onClick && 'cursor-pointer',
+          !onClick && 'cursor-default',
+        )}
+      >
+        <UserAvatar
+          name={name}
+          avatarUrl={member?.avatar_url}
+          avatarStyle={member?.avatar_style}
+          avatarSeed={member?.avatar_seed}
+          avatarBackgroundMode={member?.avatar_background_mode}
+          avatarBackgroundColor={member?.avatar_background_color}
+          className="h-5 w-5"
+          fallbackClassName="text-[8px]"
         />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-xs"
-          disabled={disabled || memberIds.length === 0}
-          onClick={onApply}
-          aria-label={labelText}
-        >
-          {memberIds.length > 0 ? `${shortLabel} ${memberIds.length}` : shortLabel}
-        </Button>
-      </div>
-    </div>
+      </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRemove();
+        }}
+        className="absolute -top-1 -right-1 hidden h-3.5 w-3.5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm group-hover/owner:flex hover:text-foreground"
+        aria-label={`Remove ${name}`}
+      >
+        <Cancel01Icon className="h-2.5 w-2.5" />
+      </button>
+    </span>
   );
 }
 
-function BulkLabelActionRow({
-  mode,
-  labelText,
-  labelIds,
-  labels,
+function LabelChip({
+  label,
+  state,
+  onClick,
+  onRemove,
+}: {
+  label: Label;
+  state: ChipState;
+  onClick?: () => void;
+  onRemove: () => void;
+}) {
+  const content = (
+    <LabelBadge
+      label={label}
+      onRemove={onRemove}
+      className={cn(
+        state === 'partial' && 'italic opacity-60',
+        state === 'pending-add' && 'ring-2 ring-primary/60',
+      )}
+    />
+  );
+  if (!onClick) return content;
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      title={`${label.name} (some tasks) — click to add to all`}
+      className="inline-flex cursor-pointer rounded-sm"
+    >
+      {content}
+    </span>
+  );
+}
+
+function LabelAdder({
   workspaceId,
   teamId,
+  labels,
   disabled,
-  onChange,
-  onApply,
-  labelClassName,
-  rowClassName,
+  excludeIds,
+  onAdd,
 }: {
-  mode: 'add' | 'remove';
-  labelText: string;
-  labelIds: string[];
-  labels: Label[];
   workspaceId: string;
   teamId?: string;
+  labels: Label[];
   disabled: boolean;
-  onChange: (labelIds: string[]) => void;
-  onApply: () => void;
-  labelClassName: string;
-  rowClassName: string;
+  excludeIds: string[];
+  onAdd: (id: string) => void;
 }) {
-  const shortLabel = mode === 'add' ? 'Add' : 'Remove';
-
   return (
-    <div className={rowClassName}>
-      <span className={labelClassName}>{labelText}</span>
-      <div className="flex flex-1 items-center gap-1">
-        <LabelPicker
-          workspaceId={workspaceId}
-          teamId={teamId}
-          selectedLabelIds={labelIds}
-          onChange={onChange}
-          labels={labels}
-          triggerOnly
-          className={cn(
-            'h-7 flex-1 rounded-md border border-input px-1',
-            disabled && 'pointer-events-none opacity-50',
-          )}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-xs"
-          disabled={disabled || labelIds.length === 0}
-          onClick={onApply}
-          aria-label={labelText}
-        >
-          <Tag01Icon className="mr-1 h-3 w-3" />
-          {labelIds.length > 0 ? `${shortLabel} ${labelIds.length}` : shortLabel}
-        </Button>
-      </div>
-    </div>
+    <LabelPicker
+      workspaceId={workspaceId}
+      teamId={teamId}
+      selectedLabelIds={excludeIds}
+      onChange={(next) => {
+        // Picker returns the new selected set. Anything in `next` that's not in excludeIds is a new add.
+        for (const id of next) {
+          if (!excludeIds.includes(id)) onAdd(id);
+        }
+      }}
+      labels={labels}
+      triggerOnly
+      className={cn(
+        'inline-flex h-5 items-center',
+        disabled && 'pointer-events-none opacity-50',
+      )}
+    />
   );
 }

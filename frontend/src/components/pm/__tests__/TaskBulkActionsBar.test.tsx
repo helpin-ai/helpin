@@ -28,6 +28,7 @@ vi.mock('@/lib/services/pmTaskService', () => ({
 import {
   TaskBulkActionsBar,
   BULK_SOFT_CAP,
+  deriveSetField,
   getLabelIdsAfterAdd,
   getLabelIdsAfterRemove,
   getOwnerIdsAfterAdd,
@@ -180,6 +181,27 @@ describe('TaskBulkActionsBar helpers', () => {
   it('exposes a soft cap', () => {
     expect(BULK_SOFT_CAP).toBe(25);
   });
+
+  it('derives intersection/union/partial for a fully-shared set', () => {
+    const f = deriveSetField([['a', 'b'], ['b', 'a']]);
+    expect([...f.intersection].sort()).toEqual(['a', 'b']);
+    expect([...f.union].sort()).toEqual(['a', 'b']);
+    expect(f.partial).toEqual([]);
+    expect(f.shared).toBe(true);
+  });
+
+  it('derives intersection/union/partial when tasks differ', () => {
+    const f = deriveSetField([['a', 'b'], ['a', 'c']]);
+    expect(f.intersection).toEqual(['a']);
+    expect([...f.union].sort()).toEqual(['a', 'b', 'c']);
+    expect([...f.partial].sort()).toEqual(['b', 'c']);
+    expect(f.shared).toBe(false);
+  });
+
+  it('handles empty inputs', () => {
+    expect(deriveSetField([])).toEqual({ intersection: [], union: [], partial: [], shared: true });
+    expect(deriveSetField([[], []])).toEqual({ intersection: [], union: [], partial: [], shared: true });
+  });
 });
 
 describe('TaskBulkActionsBar', () => {
@@ -211,6 +233,56 @@ describe('TaskBulkActionsBar', () => {
     const { container, root } = renderBar({ selectedTasks: [baseTask] });
     expect(container.textContent).toContain('Edit 1 task');
     expect(container.textContent).not.toContain('Edit 1 tasks');
+    unmount(root, container);
+  });
+
+  it('renders the union of labels as chips when label sets differ', () => {
+    const taskA = { ...baseTask, id: 'task-1', task_key: 'PM-1', labels: [labels[0], labels[1]] };
+    const taskB = { ...baseTask, id: 'task-2', task_key: 'PM-2', labels: [labels[0], labels[2]] };
+    const { container, root } = renderBar({ selectedTasks: [taskA, taskB] });
+    act(() => {
+      (container.querySelector('button') as HTMLButtonElement).click();
+    });
+    // All three labels visible as chips (intersection: Bug; partial: Frontend, Blocked).
+    expect(document.body.textContent).toContain('Bug');
+    expect(document.body.textContent).toContain('Frontend');
+    expect(document.body.textContent).toContain('Blocked');
+    unmount(root, container);
+  });
+
+  it('renders disjoint label sets all as chips', () => {
+    const taskA = { ...baseTask, id: 'task-1', task_key: 'PM-1', labels: [labels[0]] };
+    const taskB = { ...baseTask, id: 'task-2', task_key: 'PM-2', labels: [labels[1]] };
+    const { container, root } = renderBar({ selectedTasks: [taskA, taskB] });
+    act(() => {
+      (container.querySelector('button') as HTMLButtonElement).click();
+    });
+    expect(document.body.textContent).toContain('Bug');
+    expect(document.body.textContent).toContain('Frontend');
+    unmount(root, container);
+  });
+
+  it('shows "No labels" when no selected task has any labels', () => {
+    const taskA = { ...baseTask, id: 'task-1', task_key: 'PM-1', labels: [] };
+    const taskB = { ...baseTask, id: 'task-2', task_key: 'PM-2', labels: [] };
+    const { container, root } = renderBar({ selectedTasks: [taskA, taskB] });
+    act(() => {
+      (container.querySelector('button') as HTMLButtonElement).click();
+    });
+    expect(document.body.textContent).toContain('No labels');
+    unmount(root, container);
+  });
+
+  it('disables the Apply button when there are no staged changes', () => {
+    const { container, root } = renderBar();
+    act(() => {
+      (container.querySelector('button') as HTMLButtonElement).click();
+    });
+    const applyBtn = Array.from(document.querySelectorAll('button')).find(
+      (btn) => btn.textContent?.trim() === 'Apply',
+    ) as HTMLButtonElement | undefined;
+    expect(applyBtn).toBeDefined();
+    expect(applyBtn?.disabled).toBe(true);
     unmount(root, container);
   });
 });
