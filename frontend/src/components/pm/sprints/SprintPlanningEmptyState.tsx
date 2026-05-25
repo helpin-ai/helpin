@@ -19,7 +19,7 @@ export function SprintPlanningEmptyState({ canEdit, canCreateSprint, onCreateSpr
         Sprints are time-boxed cycles that help your team plan, focus, and deliver work in a predictable rhythm.
       </p>
       {canEdit && (
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="mb-8 inline-flex">

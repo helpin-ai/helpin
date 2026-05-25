@@ -1,29 +1,33 @@
 // Shared table design tokens for consistent styling across all tables
 
 /** Outer scrollable container */
-export const TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto';
+export const TABLE_CONTAINER = 'min-h-0 flex-1 overflow-auto bg-card';
 
 /** Sticky header bar */
 export const TABLE_HEADER = 'sticky top-0 z-10 bg-card';
 
 /** Individual header cell – compact, subtle text */
 export const TABLE_HEADER_CELL =
-  'ui-divider-bottom-fade ui-divider-right-fade relative shrink-0 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:bg-none';
+  'border-b border-border/60 relative shrink-0 bg-card px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground';
 
 /** Sortable header cell – adds cursor pointer */
 export const TABLE_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
 
-/** Data row – compact h-9 (36px), named group for hover-reveal actions */
+/** Data row – pixel-pinned to ROW_HEIGHT so it exactly matches the virtualizer's translateY spacing. */
 export const TABLE_ROW =
-  'group/row flex h-9 items-center bg-card hover:bg-muted';
+  'group/row flex h-[36px] cursor-pointer items-center border-b border-border/60 bg-card hover:bg-muted';
 
 /** Data cell – right border for grid lines */
 export const TABLE_CELL =
-  'ui-divider-bottom-fade ui-divider-right-fade flex shrink-0 items-center self-stretch bg-inherit px-2.5 last:bg-none';
+  'flex shrink-0 items-center self-stretch bg-inherit px-2.5';
 
-/** Group header row (for grouped/expandable tables) */
+/** Group header row (for grouped/expandable tables) – pixel-pinned to GROUP_ROW_HEIGHT */
 export const TABLE_GROUP_ROW =
-  'ui-divider-bottom-fade flex h-9 cursor-pointer items-center gap-2 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
+  'border-b border-border/60 flex h-[36px] cursor-pointer items-center bg-muted/60 text-sm font-semibold hover:bg-muted dark:bg-background/25 dark:hover:bg-background/40';
+
+/** Inner sticky wrapper for group row content – pins chevron/label to viewport left during horizontal scroll */
+export const TABLE_GROUP_ROW_INNER =
+  'sticky left-0 z-[1] flex items-center gap-2 px-3';
 
 /** Column resize handle – always-visible 1px separator, expands on hover */
 export const TABLE_RESIZE_HANDLE =
@@ -36,31 +40,38 @@ export const GROUP_ROW_HEIGHT = 36;
 /** Checkbox column width */
 export const CHECKBOX_COL_SIZE = 40;
 
-/** Actions column width */
-export const ACTIONS_COL_SIZE = 44;
+/** Actions column width (kebab menu only) */
+export const ACTIONS_COL_SIZE = 45;
+
+/**
+ * Actions header cell – sticky-right with bg-card but no border/padding/sort
+ * affordance. The actions column has no header label, so the bare TABLE_HEADER_CELL
+ * would render as a visible empty box; this strips that chrome.
+ */
+export const TABLE_HEADER_CELL_ACTIONS = 'shrink-0 sticky right-0 z-[11] bg-card border-l border-border/60';
 
 // --- Pinned column tokens ---
 
 /** Pinned cell (left) – sticky with background so content doesn't bleed through */
 export const TABLE_PINNED_LEFT =
-  'sticky z-[3] bg-inherit';
+  'sticky z-[3] bg-inherit border-r border-border/60';
 
-/** Pinned cell (left, after checkbox) – higher z so it layers above the select column */
+/** Pinned cell (left, last in the pinned group) – carries the divider against the scrollable area */
 export const TABLE_PINNED_LEFT_NAME =
-  'sticky z-[4] bg-inherit';
+  'sticky z-[4] bg-inherit border-r border-border/60';
 
 /** Pinned cell (right) – sticky right with background */
 export const TABLE_PINNED_RIGHT =
-  'sticky right-0 z-[3] bg-inherit';
+  'sticky right-0 z-[3] bg-inherit border-l border-border/60';
 
 /** Pinned header cell (left) – higher z-index than both header and pinned cells */
-export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-card';
+export const TABLE_PINNED_HEADER_LEFT = 'sticky z-[11] bg-card border-r border-border/60';
 
-/** Pinned header cell (left, after checkbox) – sticky name header */
-export const TABLE_PINNED_HEADER_LEFT_NAME = 'sticky z-[12] bg-card';
+/** Pinned header cell (left, last in the pinned group) – carries the divider against the scrollable area */
+export const TABLE_PINNED_HEADER_LEFT_NAME = 'sticky z-[12] bg-card border-r border-border/60';
 
 /** Pinned header cell (right) – higher z-index, sticky right */
-export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-card';
+export const TABLE_PINNED_HEADER_RIGHT = 'sticky right-0 z-[11] bg-card border-l border-border/60';
 
 /** Checkbox hover-reveal – hidden by default, visible on row hover or when checked */
 export const TABLE_CHECKBOX_HOVER =
@@ -102,4 +113,79 @@ export function dynamicCellStyle(
     return { flex: '1 1 0%', minWidth: minFlexWidth };
   }
   return { width: runtimeSize };
+}
+
+/**
+ * Resolves a column's runtime width, preferring the live columnSizing entry
+ * over the column.getSize() reading. Avoids stale sizes inside memoized rows
+ * where react-table's internal column.getSize() may not have re-evaluated.
+ */
+export function resolveColumnRuntimeSize(
+  column: { id: string; columnDef: { size?: number }; getSize: () => number },
+  columnSizing: Record<string, number>,
+): { defSize: number; runtimeSize: number; isResized: boolean } {
+  const defSize = column.columnDef.size ?? 150;
+  const resized = columnSizing[column.id];
+  const runtimeSize = resized ?? column.getSize();
+  return { defSize, runtimeSize, isResized: resized !== undefined };
+}
+
+/**
+ * Style for a virtualized row's absolute container. Sized to max-content with
+ * minWidth: 100% so the row's background + bottom border extend across the
+ * full scrolled width, not just the visible viewport.
+ */
+export function virtualRowStyle(translateY: number): React.CSSProperties {
+  return {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 'max-content',
+    minWidth: '100%',
+    transform: `translateY(${translateY}px)`,
+  };
+}
+
+/**
+ * Resolves the collective selection state for a grouped row.
+ * Returns 'indeterminate' when only some leaf rows are selected.
+ */
+export function getGroupSelectionState<T>(
+  groupRow: {
+    getLeafRows: () => Array<{ id: string; getIsGrouped: () => boolean; original?: T }>;
+  },
+  rowSelection: Record<string, boolean>,
+): boolean | 'indeterminate' {
+  const leaves = groupRow.getLeafRows().filter((leaf) => !leaf.getIsGrouped());
+  if (leaves.length === 0) return false;
+  let selected = 0;
+  for (const leaf of leaves) {
+    if (rowSelection[leaf.id]) selected += 1;
+  }
+  if (selected === 0) return false;
+  if (selected === leaves.length) return true;
+  return 'indeterminate';
+}
+
+/**
+ * Returns the next rowSelection state after toggling all leaves under a group.
+ * Pass this to setRowSelection: `setRowSelection((s) => toggleGroupSelection(groupRow, s, checked))`
+ */
+export function toggleGroupSelection<T>(
+  groupRow: {
+    getLeafRows: () => Array<{ id: string; getIsGrouped: () => boolean; original?: T }>;
+  },
+  rowSelection: Record<string, boolean>,
+  checked: boolean,
+): Record<string, boolean> {
+  const leafIds = groupRow.getLeafRows()
+    .filter((leaf) => !leaf.getIsGrouped())
+    .map((leaf) => leaf.id);
+  if (leafIds.length === 0) return rowSelection;
+  const next = { ...rowSelection };
+  for (const id of leafIds) {
+    if (checked) next[id] = true;
+    else delete next[id];
+  }
+  return next;
 }

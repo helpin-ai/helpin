@@ -1260,7 +1260,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <Label htmlFor="hc-theme-mode">Theme Mode</Label>
-                <TooltipProvider delayDuration={200}>
+                <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <InformationCircleIcon className="h-3.5 w-3.5 text-muted-foreground cursor-help" />

@@ -658,6 +658,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const [isSeeding, setIsSeeding] = useState(false);
   const showSeedButton = import.meta.env.DEV;
   const VIEW_MODE_KEY = `pm_view_mode_${workspaceId}`;
+  const [bulkTriggerSlot, setBulkTriggerSlot] = useState<HTMLSpanElement | null>(null);
   const [viewMode, setViewModeState] = useState<'board' | 'list'>(() => {
     try {
       const saved = localStorage.getItem(VIEW_MODE_KEY);
@@ -1273,6 +1274,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
       <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
+        <span ref={setBulkTriggerSlot} className="contents" />
         <TaskFilterTrigger />
         <TaskOwnerAvatarFilterRow />
 
@@ -1460,6 +1462,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
           groupBy={listGroupBy}
           onGroupByChange={setListGroupBy}
           showToolbar={false}
+          bulkTriggerContainer={bulkTriggerSlot}
         />
       ) : null}
 
