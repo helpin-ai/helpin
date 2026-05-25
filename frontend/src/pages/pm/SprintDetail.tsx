@@ -61,7 +61,7 @@ function ManagerOnlyTooltip({
 }) {
   if (!disabled) return <>{children}</>;
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className={`inline-flex max-w-full ${className ?? ''}`}>{children}</span>

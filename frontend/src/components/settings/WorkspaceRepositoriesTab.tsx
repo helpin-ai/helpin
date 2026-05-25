@@ -265,7 +265,7 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
                   const checked = claimedByThisWorkspace || selectedRepoIDs.includes(repo.external_id);
                   return (
                     <div key={repo.external_id} className="rounded-lg border border-border/60 p-4">
-                      <TooltipProvider delayDuration={200}>
+                      <TooltipProvider>
                         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                           <div className="flex min-w-0 items-start gap-3">
                             <Checkbox
@@ -390,7 +390,7 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
         </CardHeader>
         <CardContent>
           {hasRepositories ? (
-            <TooltipProvider delayDuration={200}>
+            <TooltipProvider>
               <div className="space-y-2">
                 {repositories.map((repo) => {
                   const integration = integrations.find((item) => item.id === repo.integration_id);

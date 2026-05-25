@@ -72,7 +72,7 @@ export function SprintPlanningFilters({
         </Select>
 
         {canEdit && (
-          <TooltipProvider delayDuration={200}>
+          <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="inline-flex">
