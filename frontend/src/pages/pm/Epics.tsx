@@ -34,6 +34,9 @@ import {
   MinusSignIcon,
   Sun01Icon,
   UserGroupIcon,
+  Tag01Icon,
+  WorkflowSquare01Icon,
+  Activity01Icon,
 } from '@/lib/icons';
 import { StateTypeIcon } from '@/lib/pmIcons';
 import { UserAvatar } from '@/components/pm/UserAvatar';
@@ -85,6 +88,15 @@ const healthConfig: Record<EpicHealth, { label: string; color: string }> = {
 
 const ARCHIVED_STATE_VALUE = '__archived__';
 const GROUP_HEADER_REPEAT_HEIGHT = 30;
+
+const FILTER_CATEGORY_ICONS: Partial<Record<EpicFilterKey, React.ComponentType<{ className?: string }>>> = {
+  state: WorkflowSquare01Icon,
+  health: Activity01Icon,
+  team: UserGroupIcon,
+  owner: UserIcon,
+  label: Tag01Icon,
+  objective: Target01Icon,
+};
 
 interface FilterOptionVisualContext {
   epicStateMap: Map<string, EpicWorkflowState>;
@@ -1903,11 +1915,13 @@ export function EpicsPage({ teamId }: EpicsPageProps) {
                 allLabels,
               }),
             }));
+            const IconCmp = FILTER_CATEGORY_ICONS[definition.key];
             return {
               key: definition.key,
               label: definition.label,
               options,
               selected,
+              icon: IconCmp ? <IconCmp className="h-3.5 w-3.5" /> : undefined,
             };
           })}
           onCategoryChange={(key, next) => {
