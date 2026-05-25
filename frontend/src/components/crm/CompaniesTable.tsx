@@ -39,10 +39,12 @@ import {
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
   TABLE_PINNED_HEADER_RIGHT,
+  TABLE_HEADER_CELL_ACTIONS,
   TABLE_CHECKBOX_HOVER,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
   CHECKBOX_COL_SIZE,
+  ACTIONS_COL_SIZE,
   dynamicCellStyle,
   pinnedStyle,
   resolveColumnRuntimeSize,
@@ -273,7 +275,7 @@ export function CompaniesTable({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 44,
+        size: ACTIONS_COL_SIZE,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -403,6 +405,16 @@ export function CompaniesTable({
                     : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
                   const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
                     : colId === 'actions' ? pinnedStyle('right', 0) : {};
+                  if (colId === 'actions') {
+                    return (
+                      <div
+                        key={header.id}
+                        className={TABLE_HEADER_CELL_ACTIONS}
+                        style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
+                        aria-hidden="true"
+                      />
+                    );
+                  }
                   return (
                     <div
                       key={header.id}
@@ -604,10 +616,10 @@ function InlineActionsCell({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-muted group-hover/row:opacity-100"
+          className="flex h-6 w-6 items-center justify-center rounded text-foreground hover:bg-muted"
           onClick={(e) => e.stopPropagation()}
         >
-          <MoreVerticalIcon className="h-3.5 w-3.5" />
+          <MoreVerticalIcon className="h-4 w-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[140px]">

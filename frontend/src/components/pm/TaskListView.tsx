@@ -96,6 +96,8 @@ import {
   pinnedStyle,
   resolveColumnRuntimeSize,
   virtualRowStyle,
+  TABLE_HEADER_CELL_ACTIONS,
+  ACTIONS_COL_SIZE,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
@@ -1039,7 +1041,7 @@ export function TaskListView({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 45,
+        size: ACTIONS_COL_SIZE,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -1398,12 +1400,11 @@ export function TaskListView({
             : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
             : colId === 'actions' ? pinnedStyle('right', 0) : {};
           const isGroupSelectCell = isGroupRepeat && colId === 'select';
-          const isActionsCell = colId === 'actions';
-          if (isActionsCell) {
+          if (colId === 'actions') {
             return (
               <div
                 key={header.id}
-                className="shrink-0 sticky right-0 z-[11] bg-card"
+                className={TABLE_HEADER_CELL_ACTIONS}
                 style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
                 aria-hidden="true"
               />

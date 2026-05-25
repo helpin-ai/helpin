@@ -48,6 +48,8 @@ import {
   pinnedStyle,
   resolveColumnRuntimeSize,
   virtualRowStyle,
+  TABLE_HEADER_CELL_ACTIONS,
+  ACTIONS_COL_SIZE,
 } from '@/lib/tableStyles';
 import { ColumnVisibilityPopover } from '@/components/crm/ColumnVisibilityPopover';
 import { ContactsTableSkeleton } from '@/components/crm/ContactsTableSkeleton';
@@ -441,7 +443,7 @@ export function ContactsTable({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 44,
+        size: ACTIONS_COL_SIZE,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -724,6 +726,17 @@ function renderHeaderCell(
   const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
     : colId === 'email' ? pinnedStyle('left', CHECKBOX_COL_SIZE)
     : colId === 'actions' ? pinnedStyle('right', 0) : {};
+
+  if (colId === 'actions') {
+    return (
+      <div
+        key={header.id}
+        className={TABLE_HEADER_CELL_ACTIONS}
+        style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
+        aria-hidden="true"
+      />
+    );
+  }
 
   return (
     <div
@@ -1082,10 +1095,10 @@ const InlineActionsCell = memo(function InlineActionsCell({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-muted group-hover/row:opacity-100"
+          className="flex h-6 w-6 items-center justify-center rounded text-foreground hover:bg-muted"
           onClick={(e) => e.stopPropagation()}
         >
-          <MoreVerticalIcon className="h-3.5 w-3.5" />
+          <MoreVerticalIcon className="h-4 w-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[140px]">

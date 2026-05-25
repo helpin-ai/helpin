@@ -36,8 +36,15 @@ export const GROUP_ROW_HEIGHT = 36;
 /** Checkbox column width */
 export const CHECKBOX_COL_SIZE = 40;
 
-/** Actions column width */
-export const ACTIONS_COL_SIZE = 44;
+/** Actions column width (kebab menu only) */
+export const ACTIONS_COL_SIZE = 45;
+
+/**
+ * Actions header cell – sticky-right with bg-card but no border/padding/sort
+ * affordance. The actions column has no header label, so the bare TABLE_HEADER_CELL
+ * would render as a visible empty box; this strips that chrome.
+ */
+export const TABLE_HEADER_CELL_ACTIONS = 'shrink-0 sticky right-0 z-[11] bg-card';
 
 // --- Pinned column tokens ---
 
