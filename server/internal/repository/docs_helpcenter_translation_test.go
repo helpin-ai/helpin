@@ -100,6 +100,14 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE docs_change_proposals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE docs_helpcenter_configs (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL UNIQUE,

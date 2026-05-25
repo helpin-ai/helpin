@@ -3,6 +3,7 @@ import type {
   GitIntegration,
   GitIntegrationDetail,
   GitHubInstallURLResponse,
+  GitLabConnectURLResponse,
   GitBranch,
   GitAvailableRepo,
   GitRepository,
@@ -18,15 +19,15 @@ import type {
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
+const orgQs = (workspaceId?: string) => workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : '';
 
 async function gitRawRequest<T>(path: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('access_token');
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     });
@@ -53,8 +54,26 @@ async function gitRawRequest<T>(path: string, options: RequestInit = {}) {
 }
 
 export const gitService = {
+  getOrgGitHubInstallURL: (organizationId: string, workspaceId?: string, options?: { forceInstall?: boolean }) =>
+    api.get<GitHubInstallURLResponse>(
+      `/organizations/${organizationId}/git/github/install-url${orgQs(workspaceId)}${options?.forceInstall ? `${workspaceId ? '&' : '?'}force_install=true` : ''}`,
+    ),
+  getOrgGitLabConnectURL: (organizationId: string, workspaceId?: string) =>
+    api.get<GitLabConnectURLResponse>(`/organizations/${organizationId}/git/gitlab/connect-url${orgQs(workspaceId)}`),
+  listOrgIntegrations: (organizationId: string) =>
+    api.get<GitIntegration[]>(`/organizations/${organizationId}/git/integrations`),
+  getOrgIntegration: (organizationId: string, integrationId: string) =>
+    api.get<GitIntegrationDetail>(`/organizations/${organizationId}/git/integrations/${integrationId}`),
+  createOrgIntegration: (organizationId: string, workspaceId: string | undefined, payload: CreateGitIntegrationRequest) =>
+    api.post<GitIntegration>(`/organizations/${organizationId}/git/integrations${orgQs(workspaceId)}`, payload),
+  deleteOrgIntegration: (organizationId: string, integrationId: string, workspaceId?: string) =>
+    api.del<{ status: string }>(`/organizations/${organizationId}/git/integrations/${integrationId}${orgQs(workspaceId)}`),
+  syncOrgRepositories: (organizationId: string, integrationId: string) =>
+    api.post<GitRepository[]>(`/organizations/${organizationId}/git/integrations/${integrationId}/sync`, {}),
   getGitHubInstallURL: (workspaceId: string, options?: { forceInstall?: boolean }) =>
     api.get<GitHubInstallURLResponse>(`/git/github/install-url${qs(workspaceId)}${options?.forceInstall ? '&force_install=true' : ''}`),
+  getGitLabConnectURL: (workspaceId: string) =>
+    api.get<GitLabConnectURLResponse>(`/git/gitlab/connect-url${qs(workspaceId)}`),
   listIntegrations: (workspaceId: string) =>
     api.get<GitIntegration[]>(`/git/integrations${qs(workspaceId)}`),
   getIntegration: (workspaceId: string, integrationId: string) =>

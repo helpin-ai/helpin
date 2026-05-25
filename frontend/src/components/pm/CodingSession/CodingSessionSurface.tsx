@@ -5,6 +5,7 @@ import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 
 import { CodingPlanPanel } from '@/components/pm/CodingSession/CodingPlanPanel';
 import { CodingPreviewPanels } from '@/components/pm/CodingSession/CodingPreviewPanels';
+import { CodingReviewHistoryPanel } from '@/components/pm/CodingSession/CodingReviewHistoryPanel';
 import { CodingSessionHeader } from '@/components/pm/CodingSession/CodingSessionHeader';
 import { CodingTranscriptPane } from '@/components/pm/CodingSession/CodingTranscriptPane';
 import { NextAgentHint } from '@/components/agents/NextAgentHint';
@@ -238,9 +239,6 @@ export function CodingSessionSurface({
     () => collectCodingSessionPreviews(events, streamState.live_turn_segments),
     [events, streamState.live_turn_segments],
   );
-  const showPlanPanel = shouldShowCodingSessionPlanPanel(streamState.current_plan);
-  const showSidePanel = shouldShowCodingSessionSidePanel(streamState.current_plan, previewsByKey.size);
-  const showRecoveryNotice = shouldShowFailedCodingSessionRecoveryNotice(session?.status, streamState.current_plan, previewsByKey.size);
   const approvalPreviewPanelKey = useMemo<string | null>(() => {
     if (!activeInteraction || activeInteraction.interaction_kind !== 'approval_request') return null;
     const previewPanelKey = normalizeCodingSessionPreviewPanelKey(
@@ -320,6 +318,9 @@ export function CodingSessionSurface({
     },
     [artifacts],
   );
+  const showPlanPanel = shouldShowCodingSessionPlanPanel(streamState.current_plan);
+  const showSidePanel = shouldShowCodingSessionSidePanel(streamState.current_plan, previewsByKey.size, reviewArtifacts.length);
+  const showRecoveryNotice = shouldShowFailedCodingSessionRecoveryNotice(session?.status, streamState.current_plan, previewsByKey.size);
 
   const runAction = useCallback(async (name: string, fn: () => Promise<{ error: string | null }>) => {
     setActing(name);
@@ -540,7 +541,7 @@ export function CodingSessionSurface({
       )}>
         <CodingTranscriptPane
           promptArtifact={promptArtifact}
-          reviewArtifacts={reviewArtifacts}
+          reviewArtifacts={activeInteraction ? reviewArtifacts : []}
           transcriptMessages={streamState.transcript_messages}
           liveAssistantMessage={streamState.live_assistant_message}
           liveReasoningMessage={streamState.live_reasoning_message}
@@ -588,6 +589,7 @@ export function CodingSessionSurface({
               openPreviewPanelKey={openPreviewRequest.panelKey}
               openPreviewRequestId={openPreviewRequest.requestId}
             />
+            <CodingReviewHistoryPanel reviewArtifacts={reviewArtifacts} />
           </div>
         ) : null}
       </div>

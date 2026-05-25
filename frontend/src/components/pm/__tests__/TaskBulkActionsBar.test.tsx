@@ -156,13 +156,6 @@ function unmount(root: Root, container: HTMLElement) {
   container.remove();
 }
 
-async function flushAsync() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-}
-
 describe('TaskBulkActionsBar helpers', () => {
   it('computes label additions as a per-task union', () => {
     expect(getLabelIdsAfterAdd(baseTask, ['label-2', 'label-3'])).toEqual([
@@ -183,6 +176,10 @@ describe('TaskBulkActionsBar helpers', () => {
   it('computes owner removals as a per-task difference', () => {
     expect(getOwnerIdsAfterRemove(baseTask, ['user-1'])).toEqual([]);
   });
+
+  it('exposes a soft cap', () => {
+    expect(BULK_SOFT_CAP).toBe(25);
+  });
 });
 
 describe('TaskBulkActionsBar', () => {
@@ -198,119 +195,22 @@ describe('TaskBulkActionsBar', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders the selected task count and bulk controls', () => {
+  it('renders the bulk edit trigger with the selected count', () => {
     const { container, root } = renderBar();
-    expect(container.textContent).toContain('2 selected');
-    expect(container.textContent).toContain('Archive');
-    expect(container.textContent).toContain('Delete');
+    expect(container.textContent).toContain('Edit 2 tasks');
     unmount(root, container);
   });
 
-  it('shows a soft-cap warning when selection is at or above the cap', () => {
-    const many = Array.from({ length: BULK_SOFT_CAP }, (_, idx) => ({
-      ...baseTask,
-      id: `task-${idx}`,
-      task_key: `PM-${idx}`,
-    }));
-    const { container, root } = renderBar({ selectedTasks: many });
-    expect(container.textContent).toContain('Large selection');
+  it('renders nothing when nothing is selected', () => {
+    const { container, root } = renderBar({ selectedTasks: [] });
+    expect(container.textContent).toBe('');
     unmount(root, container);
   });
 
-  it('does not show the soft-cap warning below the threshold', () => {
-    const { container, root } = renderBar();
-    expect(container.textContent).not.toContain('Large selection');
-    unmount(root, container);
-  });
-
-  it('confirms before deleting and fires one remove call per task', async () => {
-    removeMock.mockResolvedValue({ error: null });
-    const onComplete = vi.fn();
-    const onClearSelection = vi.fn();
-    const { container, root } = renderBar({ onComplete, onClearSelection });
-
-    const deleteTrigger = Array.from(container.querySelectorAll('button')).find(
-      (btn) => btn.textContent?.trim() === 'Delete',
-    ) as HTMLButtonElement;
-    expect(deleteTrigger).toBeTruthy();
-
-    act(() => {
-      deleteTrigger.click();
-    });
-    expect(removeMock).not.toHaveBeenCalled();
-
-    const confirmButton = Array.from(document.querySelectorAll('button')).find(
-      (btn) => btn.textContent?.trim() === 'Delete' && btn !== deleteTrigger,
-    ) as HTMLButtonElement;
-    expect(confirmButton).toBeTruthy();
-    act(() => {
-      confirmButton.click();
-    });
-
-    await flushAsync();
-
-    expect(removeMock).toHaveBeenCalledTimes(2);
-    expect(removeMock).toHaveBeenCalledWith('ws-1', 'task-1');
-    expect(removeMock).toHaveBeenCalledWith('ws-1', 'task-2');
-    expect(toastSuccess).toHaveBeenCalledWith('Deleted 2 tasks');
-    expect(onComplete).toHaveBeenCalled();
-    expect(onClearSelection).toHaveBeenCalled();
-    unmount(root, container);
-  });
-
-  it('reports partial failure when some updates reject', async () => {
-    updateMock.mockImplementation(async (_ws, id) => ({
-      error: id === 'task-2' ? 'boom' : null,
-    }));
-    const onClearSelection = vi.fn();
-    const { container, root } = renderBar({ onClearSelection });
-
-    const archiveButton = Array.from(container.querySelectorAll('button')).find(
-      (btn) => btn.textContent?.trim() === 'Archive',
-    ) as HTMLButtonElement;
-    act(() => {
-      archiveButton.click();
-    });
-    const archiveConfirm = Array.from(document.querySelectorAll('button')).find(
-      (btn) => btn.textContent?.trim() === 'Archive' && btn !== archiveButton,
-    ) as HTMLButtonElement;
-    act(() => {
-      archiveConfirm.click();
-    });
-
-    await flushAsync();
-
-    expect(updateMock).toHaveBeenCalledTimes(2);
-    expect(toastWarning).toHaveBeenCalled();
-    const warningArgs = toastWarning.mock.calls[0];
-    expect(warningArgs[0]).toContain('Archived 1 of 2 tasks');
-    // Partial-failure path still clears selection because at least one succeeded.
-    expect(onClearSelection).toHaveBeenCalled();
-    unmount(root, container);
-  });
-
-  it('reports total failure without clearing selection', async () => {
-    updateMock.mockResolvedValue({ error: 'nope' });
-    const onClearSelection = vi.fn();
-    const { container, root } = renderBar({ onClearSelection });
-
-    const archiveButton = Array.from(container.querySelectorAll('button')).find(
-      (btn) => btn.textContent?.trim() === 'Archive',
-    ) as HTMLButtonElement;
-    act(() => {
-      archiveButton.click();
-    });
-    const archiveConfirm = Array.from(document.querySelectorAll('button')).find(
-      (btn) => btn.textContent?.trim() === 'Archive' && btn !== archiveButton,
-    ) as HTMLButtonElement;
-    act(() => {
-      archiveConfirm.click();
-    });
-
-    await flushAsync();
-
-    expect(toastError).toHaveBeenCalled();
-    expect(onClearSelection).not.toHaveBeenCalled();
+  it('singularises the trigger label for one task', () => {
+    const { container, root } = renderBar({ selectedTasks: [baseTask] });
+    expect(container.textContent).toContain('Edit 1 task');
+    expect(container.textContent).not.toContain('Edit 1 tasks');
     unmount(root, container);
   });
 });

@@ -15,8 +15,8 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { PRIORITY_CONFIG, SEVERITY_CONFIG } from '@/lib/pmConstants';
-import { Calendar03Icon, UserAdd01Icon } from '@/lib/pmIcons';
-import { ArchiveIcon, Delete01Icon, Loading01Icon, Tag01Icon, UserRemove01Icon } from '@/lib/icons';
+import { Calendar03Icon, ChevronDownIcon, UserAdd01Icon } from '@/lib/pmIcons';
+import { ArchiveIcon, Delete01Icon, Loading01Icon, PencilEdit01Icon, Tag01Icon, UserRemove01Icon } from '@/lib/icons';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import type {
   EpicWithStats,
@@ -83,6 +83,7 @@ export function TaskBulkActionsBar({
   onComplete,
   onClearSelection,
 }: TaskBulkActionsBarProps) {
+  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [addLabelIds, setAddLabelIds] = useState<string[]>([]);
   const [removeLabelIds, setRemoveLabelIds] = useState<string[]>([]);
@@ -123,6 +124,7 @@ export function TaskBulkActionsBar({
       await onComplete();
       if (successCount > 0) {
         onClearSelection();
+        setOpen(false);
       }
     },
     [onClearSelection, onComplete],
@@ -220,217 +222,285 @@ export function TaskBulkActionsBar({
 
   if (count === 0) return null;
 
+  const fieldRow = 'flex items-center gap-2';
+  const fieldLabel = 'w-24 shrink-0 text-xs text-muted-foreground';
+
   return (
     <>
-      <div className="animate-in slide-in-from-bottom-2 absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 overflow-x-auto rounded-lg border bg-card px-3 py-2 shadow-lg">
-        <Badge variant="secondary" className="shrink-0 text-xs">
-          {count} selected
-        </Badge>
-        {overSoftCap ? (
-          <Badge
-            variant="outline"
-            className="shrink-0 border-amber-300 bg-amber-50 text-[10px] text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200"
-            role="status"
-            aria-label="Large selection warning"
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
           >
-            Large selection — {count} parallel requests
-          </Badge>
-        ) : null}
-
-        <Select
-          size="sm"
-          disabled={loading}
-          onValueChange={(value) => void bulkUpdate({ workflow_state_id: value }, 'Updated')}
+            <PencilEdit01Icon className="h-3.5 w-3.5" />
+            Edit {count} {count === 1 ? 'task' : 'tasks'}
+            <ChevronDownIcon className="h-3 w-3 opacity-70" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          sideOffset={6}
+          className="w-[360px] p-3"
+          onClick={(event) => event.stopPropagation()}
         >
-          <SelectTrigger className="h-7 w-[130px] text-xs">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            {workflow.states.map((state) => (
-              <SelectItem key={state.id} value={state.id}>
-                {state.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <BulkOwnerAction
-          mode="add"
-          memberIds={addOwnerIds}
-          members={assignableMembers}
-          disabled={loading}
-          onChange={setAddOwnerIds}
-          onApply={() => void bulkAddOwners(addOwnerIds)}
-        />
-
-        <BulkOwnerAction
-          mode="remove"
-          memberIds={removeOwnerIds}
-          members={assignableMembers}
-          disabled={loading}
-          onChange={setRemoveOwnerIds}
-          onApply={() => void bulkRemoveOwners(removeOwnerIds)}
-        />
-
-        <Select
-          size="sm"
-          disabled={loading}
-          onValueChange={(value) => void bulkUpdate({ priority: value as Priority }, 'Updated')}
-        >
-          <SelectTrigger className="h-7 w-[105px] text-xs">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent>
-            {ALL_PRIORITIES.map((priority) => (
-              <SelectItem key={priority} value={priority}>
-                {PRIORITY_CONFIG[priority].label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          size="sm"
-          disabled={loading}
-          onValueChange={(value) => void bulkUpdate({ severity: value as Severity }, 'Updated')}
-        >
-          <SelectTrigger className="h-7 w-[105px] text-xs">
-            <SelectValue placeholder="Severity" />
-          </SelectTrigger>
-          <SelectContent>
-            {ALL_SEVERITIES.map((severity) => (
-              <SelectItem key={severity} value={severity}>
-                {SEVERITY_CONFIG[severity].label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          size="sm"
-          disabled={loading}
-          onValueChange={(value) => void bulkUpdate({ epic_id: value === '__none__' ? '' : value }, 'Updated')}
-        >
-          <SelectTrigger className="h-7 w-[110px] text-xs">
-            <SelectValue placeholder="Epic" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">No epic</SelectItem>
-            {epics.map((entry) => (
-              <SelectItem key={entry.epic.id} value={entry.epic.id}>
-                {entry.epic.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          size="sm"
-          disabled={loading}
-          onValueChange={(value) => void bulkUpdate({ sprint_id: value === '__none__' ? '' : value }, 'Updated')}
-        >
-          <SelectTrigger className="h-7 w-[110px] text-xs">
-            <SelectValue placeholder="Sprint" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">No sprint</SelectItem>
-            {sprints.map((entry) => (
-              <SelectItem key={entry.sprint.id} value={entry.sprint.id}>
-                {entry.sprint.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <BulkLabelAction
-          mode="add"
-          labelIds={addLabelIds}
-          labels={labels}
-          workspaceId={workspaceId}
-          teamId={teamId ?? undefined}
-          disabled={loading}
-          onChange={setAddLabelIds}
-          onApply={() => void bulkAddLabels(addLabelIds)}
-        />
-
-        <BulkLabelAction
-          mode="remove"
-          labelIds={removeLabelIds}
-          labels={labels}
-          workspaceId={workspaceId}
-          teamId={teamId ?? undefined}
-          disabled={loading}
-          onChange={setRemoveLabelIds}
-          onApply={() => void bulkRemoveLabels(removeLabelIds)}
-        />
-
-        <Popover open={deadlineOpen} onOpenChange={setDeadlineOpen}>
-          <PopoverTrigger asChild>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="shrink-0 text-xs">
+                {count} selected
+              </Badge>
+              {overSoftCap ? (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 border-amber-300 bg-amber-50 text-[10px] text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200"
+                  role="status"
+                  aria-label="Large selection warning"
+                >
+                  {count} parallel requests
+                </Badge>
+              ) : null}
+            </div>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-7 shrink-0 px-2 text-xs"
+              className="h-6 px-2 text-xs text-muted-foreground"
               disabled={loading}
-            >
-              <Calendar03Icon className="mr-1 h-3 w-3" />
-              Deadline
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="center" onClick={(event) => event.stopPropagation()}>
-            <Calendar
-              mode="single"
-              onSelect={(date) => {
-                if (!date) return;
-                setDeadlineOpen(false);
-                void bulkUpdate({ deadline: format(date, 'yyyy-MM-dd') }, 'Updated');
+              onClick={() => {
+                onClearSelection();
+                setOpen(false);
               }}
+            >
+              Cancel
+            </Button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className={fieldRow}>
+              <span className={fieldLabel}>Status</span>
+              <Select
+                size="sm"
+                disabled={loading}
+                onValueChange={(value) => void bulkUpdate({ workflow_state_id: value }, 'Updated')}
+              >
+                <SelectTrigger className="h-7 flex-1 text-xs">
+                  <SelectValue placeholder="No change" />
+                </SelectTrigger>
+                <SelectContent>
+                  {workflow.states.map((state) => (
+                    <SelectItem key={state.id} value={state.id}>
+                      {state.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <BulkOwnerActionRow
+              mode="add"
+              labelText="Add owners"
+              memberIds={addOwnerIds}
+              members={assignableMembers}
+              disabled={loading}
+              onChange={setAddOwnerIds}
+              onApply={() => void bulkAddOwners(addOwnerIds)}
+              labelClassName={fieldLabel}
+              rowClassName={fieldRow}
             />
-          </PopoverContent>
-        </Popover>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-xs"
-          disabled={loading}
-          onClick={() => {
-            if (allArchived) {
-              void bulkUpdate({ archived: false }, 'Unarchived');
-            } else {
-              setArchiveConfirmOpen(true);
-            }
-          }}
-        >
-          <ArchiveIcon className="mr-1 h-3 w-3" />
-          {allArchived ? 'Unarchive' : 'Archive'}
-        </Button>
+            <BulkOwnerActionRow
+              mode="remove"
+              labelText="Remove owners"
+              memberIds={removeOwnerIds}
+              members={assignableMembers}
+              disabled={loading}
+              onChange={setRemoveOwnerIds}
+              onApply={() => void bulkRemoveOwners(removeOwnerIds)}
+              labelClassName={fieldLabel}
+              rowClassName={fieldRow}
+            />
 
-        <Button
-          type="button"
-          variant="destructive"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-xs"
-          disabled={loading}
-          onClick={() => setDeleteConfirmOpen(true)}
-        >
-          <Delete01Icon className="mr-1 h-3 w-3" />
-          Delete
-        </Button>
+            <div className={fieldRow}>
+              <span className={fieldLabel}>Priority</span>
+              <Select
+                size="sm"
+                disabled={loading}
+                onValueChange={(value) => void bulkUpdate({ priority: value as Priority }, 'Updated')}
+              >
+                <SelectTrigger className="h-7 flex-1 text-xs">
+                  <SelectValue placeholder="No change" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_PRIORITIES.map((priority) => (
+                    <SelectItem key={priority} value={priority}>
+                      {PRIORITY_CONFIG[priority].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
-          disabled={loading}
-          onClick={onClearSelection}
-        >
-          {loading ? <Loading01Icon className="mr-1 h-3 w-3 animate-spin" /> : null}
-          Cancel
-        </Button>
-      </div>
+            <div className={fieldRow}>
+              <span className={fieldLabel}>Severity</span>
+              <Select
+                size="sm"
+                disabled={loading}
+                onValueChange={(value) => void bulkUpdate({ severity: value as Severity }, 'Updated')}
+              >
+                <SelectTrigger className="h-7 flex-1 text-xs">
+                  <SelectValue placeholder="No change" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_SEVERITIES.map((severity) => (
+                    <SelectItem key={severity} value={severity}>
+                      {SEVERITY_CONFIG[severity].label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className={fieldRow}>
+              <span className={fieldLabel}>Epic</span>
+              <Select
+                size="sm"
+                disabled={loading}
+                onValueChange={(value) => void bulkUpdate({ epic_id: value === '__none__' ? '' : value }, 'Updated')}
+              >
+                <SelectTrigger className="h-7 flex-1 text-xs">
+                  <SelectValue placeholder="No change" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No epic</SelectItem>
+                  {epics.map((entry) => (
+                    <SelectItem key={entry.epic.id} value={entry.epic.id}>
+                      {entry.epic.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className={fieldRow}>
+              <span className={fieldLabel}>Sprint</span>
+              <Select
+                size="sm"
+                disabled={loading}
+                onValueChange={(value) => void bulkUpdate({ sprint_id: value === '__none__' ? '' : value }, 'Updated')}
+              >
+                <SelectTrigger className="h-7 flex-1 text-xs">
+                  <SelectValue placeholder="No change" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No sprint</SelectItem>
+                  {sprints.map((entry) => (
+                    <SelectItem key={entry.sprint.id} value={entry.sprint.id}>
+                      {entry.sprint.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <BulkLabelActionRow
+              mode="add"
+              labelText="Add labels"
+              labelIds={addLabelIds}
+              labels={labels}
+              workspaceId={workspaceId}
+              teamId={teamId ?? undefined}
+              disabled={loading}
+              onChange={setAddLabelIds}
+              onApply={() => void bulkAddLabels(addLabelIds)}
+              labelClassName={fieldLabel}
+              rowClassName={fieldRow}
+            />
+
+            <BulkLabelActionRow
+              mode="remove"
+              labelText="Remove labels"
+              labelIds={removeLabelIds}
+              labels={labels}
+              workspaceId={workspaceId}
+              teamId={teamId ?? undefined}
+              disabled={loading}
+              onChange={setRemoveLabelIds}
+              onApply={() => void bulkRemoveLabels(removeLabelIds)}
+              labelClassName={fieldLabel}
+              rowClassName={fieldRow}
+            />
+
+            <div className={fieldRow}>
+              <span className={fieldLabel}>Deadline</span>
+              <Popover open={deadlineOpen} onOpenChange={setDeadlineOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 flex-1 justify-start px-2 text-xs"
+                    disabled={loading}
+                  >
+                    <Calendar03Icon className="mr-1 h-3 w-3" />
+                    Set deadline
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start" onClick={(event) => event.stopPropagation()}>
+                  <Calendar
+                    mode="single"
+                    onSelect={(date) => {
+                      if (!date) return;
+                      setDeadlineOpen(false);
+                      void bulkUpdate({ deadline: format(date, 'yyyy-MM-dd') }, 'Updated');
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="mt-2 flex items-center gap-2 border-t border-border/60 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 flex-1 px-2 text-xs"
+                disabled={loading}
+                onClick={() => {
+                  if (allArchived) {
+                    void bulkUpdate({ archived: false }, 'Unarchived');
+                  } else {
+                    setArchiveConfirmOpen(true);
+                  }
+                }}
+              >
+                <ArchiveIcon className="mr-1 h-3 w-3" />
+                {allArchived ? 'Unarchive' : 'Archive'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-7 flex-1 px-2 text-xs"
+                disabled={loading}
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                <Delete01Icon className="mr-1 h-3 w-3" />
+                Delete
+              </Button>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center gap-1.5 pt-1 text-xs text-muted-foreground">
+                <Loading01Icon className="h-3 w-3 animate-spin" />
+                Applying...
+              </div>
+            ) : null}
+          </div>
+        </PopoverContent>
+      </Popover>
 
       <ConfirmDialog
         open={archiveConfirmOpen}
@@ -459,63 +529,71 @@ export function TaskBulkActionsBar({
   );
 }
 
-function BulkOwnerAction({
+function BulkOwnerActionRow({
   mode,
+  labelText,
   memberIds,
   members,
   disabled,
   onChange,
   onApply,
+  labelClassName,
+  rowClassName,
 }: {
   mode: 'add' | 'remove';
+  labelText: string;
   memberIds: string[];
   members: AssignableMember[];
   disabled: boolean;
   onChange: (memberIds: string[]) => void;
   onApply: () => void;
+  labelClassName: string;
+  rowClassName: string;
 }) {
-  const label = mode === 'add' ? 'Add owners' : 'Remove owners';
   const shortLabel = mode === 'add' ? 'Add' : 'Remove';
   const Icon = mode === 'add' ? UserAdd01Icon : UserRemove01Icon;
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      <MultiMemberPickerPopover
-        values={memberIds}
-        members={members}
-        disabled={disabled}
-        onChange={onChange}
-        triggerClassName={cn(
-          'flex h-7 items-center gap-1 rounded-md border border-input bg-transparent px-2 text-xs',
-          disabled && 'pointer-events-none opacity-50',
-        )}
-        triggerLabel={label}
-        contentClassName="w-[240px]"
-        renderTrigger={() => (
-          <span className="flex items-center gap-1 text-muted-foreground">
-            <Icon className="h-3 w-3" />
-            {mode === 'add' ? 'Owners' : 'Unassign'}
-          </span>
-        )}
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 px-2 text-xs"
-        disabled={disabled || memberIds.length === 0}
-        onClick={onApply}
-        aria-label={label}
-      >
-        <Icon className="mr-1 h-3 w-3" />
-        {memberIds.length > 0 ? `${shortLabel} ${memberIds.length}` : shortLabel}
-      </Button>
+    <div className={rowClassName}>
+      <span className={labelClassName}>{labelText}</span>
+      <div className="flex flex-1 items-center gap-1">
+        <MultiMemberPickerPopover
+          values={memberIds}
+          members={members}
+          disabled={disabled}
+          onChange={onChange}
+          triggerClassName={cn(
+            'flex h-7 flex-1 items-center gap-1 rounded-md border border-input bg-transparent px-2 text-xs',
+            disabled && 'pointer-events-none opacity-50',
+          )}
+          triggerLabel={labelText}
+          contentClassName="w-[260px]"
+          renderTrigger={() => (
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <Icon className="h-3 w-3" />
+              {memberIds.length > 0 ? `${memberIds.length} selected` : 'Choose members'}
+            </span>
+          )}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs"
+          disabled={disabled || memberIds.length === 0}
+          onClick={onApply}
+          aria-label={labelText}
+        >
+          {memberIds.length > 0 ? `${shortLabel} ${memberIds.length}` : shortLabel}
+        </Button>
+      </div>
     </div>
   );
 }
 
-function BulkLabelAction({
+function BulkLabelActionRow({
   mode,
+  labelText,
   labelIds,
   labels,
   workspaceId,
@@ -523,8 +601,11 @@ function BulkLabelAction({
   disabled,
   onChange,
   onApply,
+  labelClassName,
+  rowClassName,
 }: {
   mode: 'add' | 'remove';
+  labelText: string;
   labelIds: string[];
   labels: Label[];
   workspaceId: string;
@@ -532,36 +613,40 @@ function BulkLabelAction({
   disabled: boolean;
   onChange: (labelIds: string[]) => void;
   onApply: () => void;
+  labelClassName: string;
+  rowClassName: string;
 }) {
-  const label = mode === 'add' ? 'Add labels' : 'Remove labels';
   const shortLabel = mode === 'add' ? 'Add' : 'Remove';
 
   return (
-    <div className="flex shrink-0 items-center gap-1">
-      <LabelPicker
-        workspaceId={workspaceId}
-        teamId={teamId}
-        selectedLabelIds={labelIds}
-        onChange={onChange}
-        labels={labels}
-        triggerOnly
-        className={cn(
-          'h-7 rounded-md border border-input px-1',
-          disabled && 'pointer-events-none opacity-50',
-        )}
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 px-2 text-xs"
-        disabled={disabled || labelIds.length === 0}
-        onClick={onApply}
-        aria-label={label}
-      >
-        <Tag01Icon className="mr-1 h-3 w-3" />
-        {labelIds.length > 0 ? `${shortLabel} ${labelIds.length}` : shortLabel}
-      </Button>
+    <div className={rowClassName}>
+      <span className={labelClassName}>{labelText}</span>
+      <div className="flex flex-1 items-center gap-1">
+        <LabelPicker
+          workspaceId={workspaceId}
+          teamId={teamId}
+          selectedLabelIds={labelIds}
+          onChange={onChange}
+          labels={labels}
+          triggerOnly
+          className={cn(
+            'h-7 flex-1 rounded-md border border-input px-1',
+            disabled && 'pointer-events-none opacity-50',
+          )}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 px-2 text-xs"
+          disabled={disabled || labelIds.length === 0}
+          onClick={onApply}
+          aria-label={labelText}
+        >
+          <Tag01Icon className="mr-1 h-3 w-3" />
+          {labelIds.length > 0 ? `${shortLabel} ${labelIds.length}` : shortLabel}
+        </Button>
+      </div>
     </div>
   );
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
+	"github.com/helpin-ai/helpin/server/internal/gitlab"
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
@@ -43,6 +44,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/service"
 	"github.com/helpin-ai/helpin/server/internal/storage"
 	syncpkg "github.com/helpin-ai/helpin/server/internal/sync"
+	flowtemplates "github.com/helpin-ai/helpin/server/internal/templates"
 	"github.com/helpin-ai/helpin/server/internal/temporalapp"
 	appwebauthn "github.com/helpin-ai/helpin/server/internal/webauthn"
 	ws "github.com/helpin-ai/helpin/server/internal/websocket"
@@ -192,6 +194,7 @@ func main() {
 			&model.PMTeamEstimateSettings{},
 			&model.PMTeamFieldVisibility{},
 			&model.Agent{},
+			&model.AgentTeamAccess{},
 			&model.AgentTemplate{},
 			&model.WorkspaceAgentPresetVersion{},
 			&model.WorkspaceSkill{},
@@ -203,6 +206,8 @@ func main() {
 			&model.CommandBarPlanRecord{},
 			&model.CommandBarUnmetIntent{},
 			&model.CommandBarPlanDismissal{},
+			&model.CommandBarThread{},
+			&model.CommandBarMessage{},
 			&model.CodingSessionStateSnapshot{},
 			&model.CodexWorkspaceAuth{},
 			&model.PMTaskLink{},
@@ -238,6 +243,7 @@ func main() {
 			&model.SupportAIRetrievalTrace{},
 			&model.SupportCoverageRecommendation{},
 			&model.GitIntegration{},
+			&model.GitCredential{},
 			&model.GitRepository{},
 			&model.PMTeamRepoDefault{},
 			&model.TaskDeliveryTarget{},
@@ -559,6 +565,7 @@ func main() {
 	commandBarPlanRepo := repository.NewCommandBarPlanRepository(db)
 	commandBarUnmetIntentRepo := repository.NewCommandBarUnmetIntentRepository(db)
 	commandBarPlanDismissalRepo := repository.NewCommandBarPlanDismissalRepository(db)
+	commandBarChatRepo := repository.NewCommandBarChatRepository(db)
 	codingSessionStateSnapshotRepo := repository.NewCodingSessionStateSnapshotRepository(db)
 	codexWorkspaceAuthRepo := repository.NewCodexWorkspaceAuthRepository(db)
 	pmTaskLinkRepo := repository.NewPMTaskLinkRepository(db)
@@ -579,6 +586,7 @@ func main() {
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
+	gitCredentialRepo := repository.NewGitCredentialRepository(db)
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
 	taskDeliveryTargetRepo := repository.NewTaskDeliveryTargetRepository(db)
 	taskGitLinkRepo := repository.NewTaskGitLinkRepository(db)
@@ -667,7 +675,9 @@ func main() {
 	pmAttachmentService := service.NewPMAttachmentService(pmAttachmentRepo, s3Client, wsPublisher)
 	pmObjectiveService := service.NewPMObjectiveService(pmObjectiveRepo, pmKeyResultRepo, pmLabelRepo, pmAttachmentRepo, workspaceRepo, pmActivityService, wsPublisher, notificationService)
 	pmChecklistItemService := service.NewPMChecklistItemService(pmChecklistItemRepo, pmTaskRepo, wsPublisher, notificationService, workspaceRepo)
+	docsEmbedResolverService := service.NewDocsEmbedResolverService(cfg.CrawlerProxyURLs)
 	pmExternalLinkService := service.NewPMExternalLinkService(pmExternalLinkRepo, wsPublisher)
+	pmExternalLinkService.SetMetadataResolver(docsEmbedResolverService)
 	pmViewService := service.NewPMViewService(pmViewRepo, wsPublisher)
 	pmImportService := service.NewPMImportService(db, workspaceRepo, pmWorkflowRepo, pmAttachmentService, resolvePMImportEncryptionKey(cfg))
 	pmImportService.SetPublisher(wsPublisher)
@@ -679,7 +689,6 @@ func main() {
 	supportInboxService := service.NewSupportInboxService(supportConversationRepo, supportMailboxRepo, supportMessageRepo, agentRepo, crmAssociationRepo, supportInstallRepo, supportSessionRepo, cannedResponseRepo, pmActivityService, wsPublisher, crmContactRepo, userRepo, docsSpaceRepo, docsCollectionRepo, docsHelpcenterRepo)
 	supportInboxService.SetSupportTagRepo(supportTagRepo)
 	supportLinkPreviewService := service.NewSupportLinkPreviewService(cfg.CrawlerProxyURLs)
-	docsEmbedResolverService := service.NewDocsEmbedResolverService(cfg.CrawlerProxyURLs)
 	emailFallbackService := service.NewEmailFallbackService(
 		redisClient,
 		wsHub,
@@ -751,6 +760,7 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
+	gitlabClient := gitlab.NewClient(cfg.GitLabClientID, cfg.GitLabClientSecret, cfg.GitLabOAuthRedirectURL, cfg.GitLabBaseURL)
 
 	var temporalClient tclient.Client
 	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
@@ -794,7 +804,7 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	)
+	).SetGitLabDependencies(gitCredentialRepo, gitlabClient, resolveGitOAuthEncryptionKey(cfg))
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -830,14 +840,16 @@ func main() {
 		cfg.CodexEnableChatGPTOAuth,
 		cfg.CodexChatGPTAccessToken,
 		cfg.CodexChatGPTAccountID,
-	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo)
+	).SetCodexAuthManager(codexAuthManager).SetTriggerExecutionRepository(agentTriggerExecutionRepo).SetCommandBarPlanRepository(commandBarPlanRepo).SetUserRepository(userRepo).SetWorkspaceSkillStore(workspaceSkillRepo, s3Client).SetNotificationService(notificationService).SetAgentTemplateRepository(agentTemplateRepo).SetCRMRepositories(crmContactRepo, crmDealRepo).SetAgentDraftLLM(supportLLMRouter)
 	commandBarService := service.NewCommandBarService(agentService, commandBarPlanRepo, commandBarUnmetIntentRepo, commandBarPlanDismissalRepo, supportLLMRouter).
+		SetChatRepository(commandBarChatRepo).
 		SetLLMRouterConfig(
 			cfg.CommandRouterLLMProvider,
 			cfg.CommandRouterLLMModel,
 			cfg.CommandRouterLLMMaxTokens,
 			time.Duration(cfg.CommandRouterLLMTimeoutMS)*time.Millisecond,
-		)
+		).
+		SetCommandRouterOpenRouterProviderOptions(cfg.CommandRouterOpenRouterProviderOptions)
 	supportInboxService.SetConversationAgentRunner(agentService.RunConversationAgentAuto)
 	supportInboxService.SetNotificationService(notificationService, workspaceRepo)
 	emailFallbackService.SetNotificationService(notificationService)
@@ -861,6 +873,7 @@ func main() {
 	gitService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetRuleEngine(ruleEngine)
 	pmTaskService.SetAgentService(agentService)
+	pmEpicService.SetAgentService(agentService)
 	pmTaskService.SetRecurringService(pmRecurringTemplateService)
 	pmRecurringTemplateService.SetTaskService(pmTaskService)
 	agentService.SetRuleEngine(ruleEngine)
@@ -917,11 +930,11 @@ func main() {
 	docsAISectionService := service.NewDocsAISectionService(docsAISectionCandidateRepo, docsBlockRepo, docsBlockService, docsDocumentRepo, docsSearchService, supportConversationRepo, agentService, llmProvider, cfg.CrawlerProxyURLs)
 	docsAISectionService.SetRuleEngine(ruleEngine)
 	docsAISectionService.SetActivityService(pmActivityService)
-	docsChangeProposalService := service.NewDocsChangeProposalService(docsChangeProposalRepo, docsDocumentRepo, docsContentService, docsBlockService, wsPublisher)
+	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
+	docsChangeProposalService := service.NewDocsChangeProposalService(docsChangeProposalRepo, docsDocumentRepo, docsContentService, docsBlockService, docsVersionService, wsPublisher)
 	docsReferencesService := service.NewDocsReferencesService(docsLinkRepo, docsBlockRepo, docsDocumentRepo, pmCommentService, agentService)
 	var docsEntityReferenceResolverService *service.DocsEntityReferenceResolverService
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
-	docsVersionService := service.NewDocsVersionService(docsVersionRepo, docsContentRepo, docsDocumentRepo, wsPublisher)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
 
@@ -967,6 +980,9 @@ func main() {
 	}
 	if s3Client != nil {
 		docsDeletionDeps.AssetStore = s3Client
+	}
+	if cleanupEnqueuer := service.NewTemporalDocsAssetCleanupEnqueuer(temporalClient); cleanupEnqueuer != nil {
+		docsDeletionDeps.CleanupEnqueuer = cleanupEnqueuer
 	}
 	docsDocumentService.SetDeletionDependencies(docsDeletionDeps)
 	docsCollectionService.SetPermanentDeleteDependencies(docsDocumentRepo, docsDocumentService, docsHelpcenterTranslationRepo)
@@ -1065,9 +1081,12 @@ func main() {
 	commandService.SetPMLabelService(pmLabelService)
 	commandService.SetPMCommentService(pmCommentService)
 	commandService.SetGitService(gitService)
+	commandService.SetSettingsRepository(settingsRepo)
 	commandService.SetCRMEnrichmentService(crmEnrichmentService)
 	commandService.SetDocsCreateDependencies(docsDocumentService, docsContentRepo)
 	commandService.SetDocsBlockService(docsBlockService)
+	commandBarService.SetInternalCommandService(commandService).
+		SetReadOnlyDataServices(docsDocumentService, crmDealService, crmContactService, crmCompanyService)
 	ruleEngine.SetCommandService(commandService)
 
 	signalDetectionService := service.NewSignalDetectionService(llmProvider, crmSignalRepo, crmSummaryService)
@@ -1097,6 +1116,7 @@ func main() {
 	supportCoverageRepo := repository.NewSupportCoverageRepository(db)
 	supportCoverageAnalysisRepo := repository.NewSupportCoverageAnalysisRepository(db)
 	supportCoverageService := service.NewSupportCoverageService(supportCoverageRepo)
+	agentService.SetSupportCoverageService(supportCoverageService)
 	supportCoverageService.SetDocsBlockService(docsBlockService)
 	supportCoverageService.SetTemporalClient(temporalClient)
 	supportCoverageKnowledgeMatcher := service.NewCoverageKnowledgeMatcher(docsChunkRepo, supportContentChunkRepo, supportEmbeddingProvider, cfg.OpenAIEmbeddingModel)
@@ -1124,6 +1144,14 @@ func main() {
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
 	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, pmTaskRepo, supportInstallRepo)
+	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
+	if err != nil {
+		fatalWithSentry("failed to load flow templates", err)
+	}
+	flowTemplateInstaller := flowtemplates.NewInstaller(db, flowTemplateRegistry)
+	flowTemplateInstaller.SetScheduleManager(ruleEngine).SetAgentValidator(agentService)
+	flowTemplateUninstaller := flowtemplates.NewUninstaller(db)
+	flowTemplateUninstaller.SetScheduleManager(ruleEngine)
 	if err := pmRecurringTemplateService.EnsureScheduler(context.Background()); err != nil {
 		slog.Error("failed to ensure PM recurring scheduler", "error", err)
 	}
@@ -1179,7 +1207,7 @@ func main() {
 		Organization:        handler.NewOrganizationHandler(orgService),
 		Workspace:           handler.NewWorkspaceHandler(workspaceService, authzService),
 		Settings:            handler.NewSettingsHandler(settingsService, automationInventoryService),
-		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService),
+		Automation:          handler.NewAutomationHandler(automationInventoryService, ruleEngine, agentService, flowTemplateRegistry, flowTemplateInstaller, flowTemplateUninstaller),
 		Invite:              handler.NewInviteHandler(inviteService),
 		PMWorkflow:          handler.NewPMWorkflowHandler(pmWorkflowService),
 		PMImport:            handler.NewPMImportHandler(pmImportService),
@@ -1195,7 +1223,7 @@ func main() {
 		PMExternalLink:      handler.NewPMExternalLinkHandler(pmExternalLinkService),
 		PMView:              handler.NewPMViewHandler(pmViewService),
 		Search:              handler.NewSearchHandler(searchService),
-		CommandBar:          handler.NewCommandBarHandler(commandBarService),
+		CommandBar:          handler.NewCommandBarHandler(commandBarService, authzService),
 		PMAutomation:        handler.NewPMAutomationHandler(pmAutomationService),
 		AutomationRule:      handler.NewAutomationRuleHandler(ruleEngine),
 		PMTaskTemplate:      handler.NewPMTaskTemplateHandler(pmTaskTemplateService),
@@ -1603,6 +1631,23 @@ func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
 	}
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func resolveGitOAuthEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.GitOAuthEncryptionKey)); err != nil {
+		slog.Warn("invalid GIT_OAUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for git oauth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
 		return key
 	}

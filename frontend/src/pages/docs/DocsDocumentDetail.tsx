@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
+import { useNavigate, useParams, useRouter, useSearch } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
 import type { Editor as TiptapEditor } from '@tiptap/core'
@@ -73,11 +73,13 @@ import {
   useToggleDocLock,
   useRevertDocsVersion,
   useDocsBlocks,
+  useDocsChangeProposal,
   useDocsChangeProposals,
   useApplyDocsChangeProposal,
   useDiscardDocsChangeProposal,
 } from '@/hooks/queries'
 import { timeAgo } from '@/lib/utils'
+import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
@@ -113,6 +115,8 @@ import type { TranslationRow } from '@/components/docs/helpcenter/TranslationsPa
 import { ArticleLocalePillRail } from '@/components/docs/helpcenter/ArticleLocalePillRail'
 import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/MissingArticleTranslationDialog'
 import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
+import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
+import { ProposalReviewView } from '@/components/docs/proposals/ProposalReviewView'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
 import { CommentThread } from '@/components/pm/CommentThread'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -236,25 +240,16 @@ function buildDocsBlockCommandContext(doc: DocsDocument | undefined, block: Docs
   }
 }
 
-function DocsChangeProposalBanner({
+function DocsPendingProposalsBanner({
   proposal,
   count,
-  canEdit,
-  applying,
-  discarding,
-  onApply,
-  onDiscard,
+  onReview,
 }: {
   proposal: DocsChangeProposal
   count: number
-  canEdit: boolean
-  applying: boolean
-  discarding: boolean
-  onApply: () => void
-  onDiscard: () => void
+  onReview: () => void
 }) {
   const scopeLabel = proposal.scope === 'block' ? 'Block change' : 'Document change'
-  const preview = proposal.content_markdown.trim()
   return (
     <div className="border-b border-amber-500/25 bg-amber-50/80 px-4 py-3 text-amber-950 dark:border-amber-400/20 dark:bg-amber-950/20 dark:text-amber-100">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
@@ -263,46 +258,20 @@ function DocsChangeProposalBanner({
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium">{scopeLabel} ready</span>
-              {count > 1 && (
-                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-800 dark:bg-amber-900/50 dark:text-amber-200">
-                  {count} pending
-                </span>
-              )}
+              {count > 1 && <PendingProposalBadge count={count} />}
               <span className="text-[11px] text-amber-800/70 dark:text-amber-200/70">
                 {timeAgo(proposal.created_at)}
               </span>
             </div>
             <p className="mt-1 text-sm text-amber-900/85 dark:text-amber-100/85">{proposal.summary}</p>
-            {preview && (
-              <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap rounded border border-amber-500/20 bg-background/80 p-2 text-xs leading-relaxed text-foreground">
-                {preview}
-              </pre>
-            )}
           </div>
         </div>
-        {canEdit && (
-          <div className="flex shrink-0 items-center gap-2 lg:justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 border-amber-500/30 bg-background/80 text-xs"
-              onClick={onDiscard}
-              disabled={applying || discarding}
-            >
-              {discarding ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <Cancel01Icon className="h-3 w-3" />}
-              Discard
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={onApply}
-              disabled={applying || discarding}
-            >
-              {applying ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <Tick01Icon className="h-3 w-3" />}
-              Apply
-            </Button>
-          </div>
-        )}
+        <div className="flex shrink-0 items-center gap-2 lg:justify-end">
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onReview}>
+            <ViewIcon className="h-3 w-3" />
+            Review
+          </Button>
+        </div>
       </div>
     </div>
   )
@@ -390,9 +359,25 @@ export function DocsDocumentDetail({
   const router = useRouter()
   const queryClient = useQueryClient()
   const { docId } = useParams({ strict: false }) as { docId: string }
+  const routeSearch = useSearch({
+    from: '/_authenticated/w/$slug/docs/documents/$docId',
+  }) as { proposal?: string; from_gap?: string; from_suggestion?: string }
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
+  const proposalSearchId = routeSearch.proposal ?? null
+  const setProposalSearchId = useCallback((next: string | null) => {
+    if (!wsSlug || !docId) return
+    navigate({
+      to: '/w/$slug/docs/documents/$docId',
+      params: { slug: wsSlug, docId },
+      search: (prev) => ({
+        ...prev,
+        proposal: next ?? undefined,
+      }),
+      replace: false,
+    })
+  }, [docId, navigate, wsSlug])
   const coverageGapClosedRef = useRef(false)
   const editorShellRef = useRef<HTMLDivElement | null>(null)
   const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null)
@@ -413,6 +398,12 @@ export function DocsDocumentDetail({
   const { data: blocks = [] } = useDocsBlocks(wsId, docId)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
   const { data: changeProposals = [] } = useDocsChangeProposals(wsId, docId)
+  const {
+    data: searchedChangeProposal,
+    isLoading: searchedChangeProposalLoading,
+    isError: searchedChangeProposalError,
+    error: searchedChangeProposalFetchError,
+  } = useDocsChangeProposal(wsId, docId, proposalSearchId)
   const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
 
@@ -430,9 +421,18 @@ export function DocsDocumentDetail({
   const { data: members = [] } = useAssignableMembers(wsId)
   const { teams = [] } = useWorkspaceTeams(wsId)
   const { data: workspaceAgents = [] } = useAgents(wsId)
+  const accessibleTeamIds = useMemo(
+    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
+    [access?.team_memberships],
+  )
   const documentAgents = useMemo(
-    () => workspaceAgents.filter((agent) => agent.allowed_targets?.includes('document')),
-    [workspaceAgents],
+    () => workspaceAgents.filter((agent) => isAgentAvailableForTarget(agent, {
+      targetType: 'document',
+      targetTeamId: doc?.team_id,
+      accessibleTeamIds,
+      canSeeAllAgents: isAdmin,
+    })),
+    [accessibleTeamIds, doc?.team_id, isAdmin, workspaceAgents],
   )
   const focusedBlockId = useFocusedDocsBlockId(editorInstance)
   const focusedBlock = useMemo(
@@ -443,6 +443,7 @@ export function DocsDocumentDetail({
     () => changeProposals.find((proposal) => proposal.block_id === focusedBlockId) ?? changeProposals[0] ?? null,
     [changeProposals, focusedBlockId],
   )
+  const activeReviewProposal = proposalSearchId ? searchedChangeProposal : null
   const documentCommandContext = useMemo(
     () => buildDocsDocumentCommandContext(doc),
     [doc],
@@ -622,6 +623,7 @@ export function DocsDocumentDetail({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
   const [pendingPublishLocale, setPendingPublishLocale] = useState<string | null>(null)
+  const [proposalStatusMessage, setProposalStatusMessage] = useState('')
   const { copied: linkCopied, copy: copyLink } = useCopyToClipboard()
 
   // Version preview state — when set, the editor shows version content read-only
@@ -659,24 +661,31 @@ export function DocsDocumentDetail({
   }, [previewVersion, revertVersion, docId])
 
   const handleApplyChangeProposal = useCallback(async () => {
-    if (!visibleChangeProposal) return
+    const proposal = activeReviewProposal ?? visibleChangeProposal
+    if (!proposal) return
     try {
-      await applyChangeProposal.mutateAsync({ docId, proposalId: visibleChangeProposal.id })
+      await applyChangeProposal.mutateAsync({ docId, proposalId: proposal.id })
       toast.success('Proposal applied')
+      setProposalStatusMessage('Proposal applied. The document has been updated.')
+      if (activeReviewProposal) setProposalSearchId(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to apply proposal')
     }
-  }, [applyChangeProposal, docId, visibleChangeProposal])
+  }, [activeReviewProposal, applyChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
 
   const handleDiscardChangeProposal = useCallback(async () => {
-    if (!visibleChangeProposal) return
+    const proposal = activeReviewProposal ?? visibleChangeProposal
+    if (!proposal) return
+    if (!window.confirm("Discard Quill's proposal? You'll lose this draft.")) return
     try {
-      await discardChangeProposal.mutateAsync({ docId, proposalId: visibleChangeProposal.id })
+      await discardChangeProposal.mutateAsync({ docId, proposalId: proposal.id })
       toast.success('Proposal discarded')
+      setProposalStatusMessage('Proposal discarded.')
+      if (activeReviewProposal) setProposalSearchId(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to discard proposal')
     }
-  }, [discardChangeProposal, docId, visibleChangeProposal])
+  }, [activeReviewProposal, discardChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
 
   // Title state — keep a local draft only for the active document.
   const [titleDraftState, setTitleDraftState] = useState<{ docId: string; value: string } | null>(null)
@@ -1290,6 +1299,9 @@ export function DocsDocumentDetail({
 
   return (
     <div className="flex h-full flex-col">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {proposalStatusMessage}
+      </div>
       {/* Top bar */}
       <div className="relative z-30 flex items-center gap-2 border-b border-border/60 bg-background px-3 py-1.5">
         <Button
@@ -1613,18 +1625,50 @@ export function DocsDocumentDetail({
       )}
 
       {!previewVersion && visibleChangeProposal && (
-        <DocsChangeProposalBanner
+        <DocsPendingProposalsBanner
           proposal={visibleChangeProposal}
           count={changeProposals.length}
-          canEdit={canEditDocs && !effectiveReadOnly}
-          applying={applyChangeProposal.isPending}
-          discarding={discardChangeProposal.isPending}
-          onApply={handleApplyChangeProposal}
-          onDiscard={handleDiscardChangeProposal}
+          onReview={() => setProposalSearchId(visibleChangeProposal.id)}
         />
       )}
 
       {/* Main content area */}
+      {proposalSearchId ? (
+        searchedChangeProposalLoading ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+            <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
+            Loading proposal…
+          </div>
+        ) : searchedChangeProposalError || !activeReviewProposal ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+            <div className="max-w-md text-center">
+              <h2 className="text-lg font-semibold text-foreground">This proposal is no longer available</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {searchedChangeProposalFetchError instanceof Error
+                  ? searchedChangeProposalFetchError.message
+                  : 'It may have been removed, or you may not have access to view it.'}
+              </p>
+              <Button className="mt-4" variant="outline" onClick={() => setProposalSearchId(null)}>
+                Back to document
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <ProposalReviewView
+            proposal={activeReviewProposal}
+            pendingProposals={changeProposals}
+            currentText={content?.content_text ?? ''}
+            canEdit={canEditDocs && !effectiveReadOnly}
+            applying={applyChangeProposal.isPending}
+            discarding={discardChangeProposal.isPending}
+            workspaceSlug={wsSlug}
+            onBack={() => setProposalSearchId(null)}
+            onApply={handleApplyChangeProposal}
+            onDiscard={handleDiscardChangeProposal}
+            onSelectProposal={setProposalSearchId}
+          />
+        )
+      ) : (
       <div className="flex min-h-0 flex-1">
         {/* Editor */}
         <div ref={setEditorShellRef} className="relative flex min-w-0 flex-1 flex-col">
@@ -2336,6 +2380,7 @@ export function DocsDocumentDetail({
         )}
 
       </div>
+      )}
 
       {editingTranslationLocale && (
         <EditArticleTranslationDialog

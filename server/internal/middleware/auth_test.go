@@ -50,6 +50,39 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 	}
 }
 
+func TestRequireAuth_ValidTokenCookie(t *testing.T) {
+	jwtMgr := auth.NewJWTManager("test-secret")
+	accessToken, _, err := jwtMgr.GenerateTokenPair("user-cookie", "cookie@example.com", false)
+	if err != nil {
+		t.Fatalf("GenerateTokenPair() error: %v", err)
+	}
+
+	var capturedUserID, capturedEmail string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedUserID = GetUserID(r.Context())
+		capturedEmail = GetUserEmail(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := RequireAuth(jwtMgr)(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: accessTokenCookieName, Value: accessToken})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if capturedUserID != "user-cookie" {
+		t.Errorf("UserID = %q, want %q", capturedUserID, "user-cookie")
+	}
+	if capturedEmail != "cookie@example.com" {
+		t.Errorf("Email = %q, want %q", capturedEmail, "cookie@example.com")
+	}
+}
+
 func TestRequireAuth_RejectsRefreshToken(t *testing.T) {
 	jwtMgr := auth.NewJWTManager("test-secret")
 	_, refreshToken, err := jwtMgr.GenerateTokenPair("user-abc", "alice@example.com", false)

@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
 import { gitService } from '@/lib/services/gitService';
+import { gitCommitURL, gitRepoURL } from '@/lib/gitUrls';
 import type {
   GitRepository,
   TaskDeliveryTarget,
@@ -101,6 +102,8 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
 
   const resolvedBaseBranch = baseBranch.trim() || selectedRepository?.default_branch || 'main';
   const branchPreview = target?.working_branch || buildBranchPreview(taskDetail.task.task_key, taskDetail.task.name);
+  const repoProvider = selectedRepository?.provider;
+  const repoBaseURL = selectedRepository?.base_url;
   const isConfigured = Boolean(target?.repository_id);
   const deliveryTargetSaved =
     repositoryId === (target?.repository_id ?? '') &&
@@ -225,6 +228,8 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
     deliveryTargetSaved,
     deliveryStateCfg,
     selectedRepository,
+    repoProvider,
+    repoBaseURL,
     handleSaveDelivery,
     handleBaseBranchChange,
     handleRepoChange,
@@ -365,7 +370,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
                   <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Repository</p>
                   {d.target?.repo_full_name || d.selectedRepository?.full_name ? (
                     <a
-                      href={`https://github.com/${d.target?.repo_full_name || d.selectedRepository?.full_name}`}
+                      href={gitRepoURL(d.repoProvider, d.target?.repo_full_name || d.selectedRepository?.full_name || '', d.repoBaseURL)}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 text-xs font-medium text-foreground transition-colors hover:text-primary"
@@ -381,7 +386,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
                   <p className="mb-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Last Commit</p>
                   {d.target?.last_commit_sha && d.target?.repo_full_name ? (
                     <a
-                      href={`https://github.com/${d.target.repo_full_name}/commit/${d.target.last_commit_sha}`}
+                      href={gitCommitURL(d.repoProvider, d.target.repo_full_name, d.target.last_commit_sha, d.repoBaseURL)}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 font-mono text-xs text-foreground transition-colors hover:text-primary"

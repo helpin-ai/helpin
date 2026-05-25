@@ -14,37 +14,38 @@ const (
 
 // PMEpic represents an epic.
 type PMEpic struct {
-	ID                      string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID             string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name                    string          `json:"name" gorm:"not null"`
-	Description             *string         `json:"description"`
-	ExternalID              *string         `json:"external_id" gorm:"index"`
-	EpicStateID             *string         `json:"epic_state_id" gorm:"type:uuid;index"`
-	OwnerID                 *string         `json:"owner_id" gorm:"type:uuid;index"`
-	OwnerMemberID           *string         `json:"owner_member_id" gorm:"type:uuid;index"`
-	TeamID                  *string         `json:"team_id" gorm:"type:uuid;index"`
-	PlannedStartDate        *time.Time      `json:"planned_start_date" gorm:"type:date"`
-	Deadline                *time.Time      `json:"deadline" gorm:"type:date"`
-	Started                 bool            `json:"started" gorm:"not null;default:false"`
-	StartedAt               *time.Time      `json:"started_at"`
-	Completed               bool            `json:"completed" gorm:"not null;default:false"`
-	CompletedAt             *time.Time      `json:"completed_at"`
-	Position                int             `json:"position" gorm:"not null;default:0"`
-	Color                   *string         `json:"color"`
-	Health                  string          `json:"health" gorm:"not null;default:'no_health'"`
-	HealthComment           *string         `json:"health_comment"`
-	Archived                bool            `json:"archived" gorm:"not null;default:false"`
-	SpecDocumentID          *string         `json:"spec_document_id" gorm:"type:uuid;index"`
-	PlanningRepositoryID    *string         `json:"planning_repository_id" gorm:"type:uuid;index"`
-	PlanningState           string          `json:"planning_state" gorm:"not null;default:'not_started'"`
-	SpecClarifications      json.RawMessage `json:"spec_clarifications" gorm:"type:jsonb;not null;default:'[]'"`
-	SpecClarifiedAt         *time.Time      `json:"spec_clarified_at"`
-	SpecClarifiedBy         *string         `json:"spec_clarified_by" gorm:"type:uuid"`
-	ApprovedSpecVersionID   *string         `json:"approved_spec_version_id" gorm:"type:uuid;index"`
-	LastPlanningRunID       *string         `json:"last_planning_run_id" gorm:"type:uuid;index"`
-	CreatedBy               *string         `json:"created_by" gorm:"type:uuid"`
-	CreatedAt               time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt               time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                    string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID           string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name                  string          `json:"name" gorm:"not null"`
+	Description           *string         `json:"description"`
+	ExternalID            *string         `json:"external_id" gorm:"index"`
+	EpicStateID           *string         `json:"epic_state_id" gorm:"type:uuid;index"`
+	OwnerID               *string         `json:"owner_id" gorm:"type:uuid;index"`
+	OwnerMemberID         *string         `json:"owner_member_id" gorm:"type:uuid;index"`
+	TeamID                *string         `json:"team_id" gorm:"type:uuid;index"`
+	PlannedStartDate      *time.Time      `json:"planned_start_date" gorm:"type:date"`
+	Deadline              *time.Time      `json:"deadline" gorm:"type:date"`
+	Started               bool            `json:"started" gorm:"not null;default:false"`
+	StartedAt             *time.Time      `json:"started_at"`
+	Completed             bool            `json:"completed" gorm:"not null;default:false"`
+	CompletedAt           *time.Time      `json:"completed_at"`
+	Position              int             `json:"position" gorm:"not null;default:0"`
+	Color                 *string         `json:"color"`
+	Health                string          `json:"health" gorm:"not null;default:'no_health'"`
+	HealthComment         *string         `json:"health_comment"`
+	Archived              bool            `json:"archived" gorm:"not null;default:false"`
+	AssignedAgentID       *string         `json:"assigned_agent_id" gorm:"type:uuid;index"`
+	SpecDocumentID        *string         `json:"spec_document_id" gorm:"type:uuid;index"`
+	PlanningRepositoryID  *string         `json:"planning_repository_id" gorm:"type:uuid;index"`
+	PlanningState         string          `json:"planning_state" gorm:"not null;default:'not_started'"`
+	SpecClarifications    json.RawMessage `json:"spec_clarifications" gorm:"type:jsonb;not null;default:'[]'"`
+	SpecClarifiedAt       *time.Time      `json:"spec_clarified_at"`
+	SpecClarifiedBy       *string         `json:"spec_clarified_by" gorm:"type:uuid"`
+	ApprovedSpecVersionID *string         `json:"approved_spec_version_id" gorm:"type:uuid;index"`
+	LastPlanningRunID     *string         `json:"last_planning_run_id" gorm:"type:uuid;index"`
+	CreatedBy             *string         `json:"created_by" gorm:"type:uuid"`
+	CreatedAt             time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt             time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (PMEpic) TableName() string { return "pm_epics" }
@@ -96,6 +97,8 @@ type CreateEpicRequest struct {
 	LabelIDs             []string   `json:"label_ids"`
 	AttachmentIDs        []string   `json:"attachment_ids,omitempty"`
 	PlanningRepositoryID *string    `json:"planning_repository_id"`
+	AssignedAgentID      *string    `json:"assigned_agent_id"`
+	RunOnCreate          bool       `json:"run_on_create"`
 }
 
 // UpdateEpicRequest is the payload for updating an epic.
@@ -115,6 +118,7 @@ type UpdateEpicRequest struct {
 	HealthComment        *string    `json:"health_comment"`
 	LabelIDs             []string   `json:"label_ids"`
 	PlanningRepositoryID *string    `json:"planning_repository_id"`
+	AssignedAgentID      *string    `json:"assigned_agent_id"`
 }
 
 // UpdateEpicHealthRequest updates epic health fields.
@@ -140,4 +144,11 @@ type EpicWithStats struct {
 	Objectives      []RoadmapObjectiveRef `json:"objectives"`
 	Stats           PMEpicStats           `json:"stats"`
 	SuggestedHealth string                `json:"suggested_health"`
+}
+
+// CreateEpicResponse returns the created epic and any best-effort run result.
+type CreateEpicResponse struct {
+	Epic          EpicWithStats `json:"epic"`
+	AgentRun      *AgentRun     `json:"agent_run"`
+	AgentRunError *string       `json:"agent_run_error,omitempty"`
 }

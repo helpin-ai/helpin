@@ -13,6 +13,7 @@ import {
   ArchiveRestoreIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
@@ -46,6 +47,37 @@ import { SprintCloseoutSummary } from '@/components/pm/sprints/SprintCloseoutSum
 import { SprintRolledInBanner } from '@/components/pm/sprints/SprintRolledInBanner';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/sprints/$sprintId');
+
+const SPRINT_MANAGER_TOOLTIP = 'Only team managers can edit sprints. Ask your team manager for access.';
+
+function ManagerOnlyTooltip({
+  disabled,
+  className,
+  children,
+}: {
+  disabled: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  if (!disabled) return <>{children}</>;
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className={`inline-flex max-w-full ${className ?? ''}`}>{children}</span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[260px] text-xs">
+          {SPRINT_MANAGER_TOOLTIP}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function formatSprintDateLabel(value: string) {
+  if (!value) return 'None';
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 
 // ── Metadata Row ───────────────────────────────────────────────────
@@ -113,7 +145,7 @@ export function SprintDetailPage() {
   const savedDescriptionRef = useRef('');
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
-  const { canEdit } = usePermissions(access);
+  const { canEdit, canManageTeam } = usePermissions(access);
   const closeoutQuery = useSprintCloseout(workspaceId ?? '', sprintId);
 
   const { teams, findTeamName, getTeamMembers } = useAccessibleTeams(workspaceId ?? '');
@@ -341,6 +373,8 @@ export function SprintDetailPage() {
     );
   }
 
+  const canManageSprint = canEdit && canManageTeam(form.team_id);
+
   return (
     <div className="flex h-full flex-col max-w-7xl 2xl:max-w-[1600px] min-[2560px]:max-w-[2000px] mx-auto">
       {/* ── Header bar ──────────────────────────────────────────── */}
@@ -360,29 +394,32 @@ export function SprintDetailPage() {
 
         <div className="ml-auto flex items-center gap-1">
           <SaveIndicator saving={saving} error={saveError} />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 text-xs text-muted-foreground"
-            onClick={async () => {
-              if (!workspaceId || !sprint) return;
-              if (!sprint.sprint.archived) {
-                setArchiveConfirmOpen(true);
-                return;
-              }
-              setSaving(true);
-              const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, { archived: false });
-              if (err || !data) {
-                setSaveError(err ?? 'Failed to update');
-              } else {
-                setSprint(data);
-                setSaveError(null);
-              }
-              setSaving(false);
-            }}
-          >
-            {sprint.sprint.archived ? <><ArchiveRestoreIcon className="h-3.5 w-3.5" /> Unarchive</> : <><ArchiveIcon className="h-3.5 w-3.5" /> Archive</>}
-          </Button>
+          <ManagerOnlyTooltip disabled={!canManageSprint}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-xs text-muted-foreground"
+              disabled={!canManageSprint}
+              onClick={async () => {
+                if (!workspaceId || !sprint) return;
+                if (!sprint.sprint.archived) {
+                  setArchiveConfirmOpen(true);
+                  return;
+                }
+                setSaving(true);
+                const { data, error: err } = await pmSprintService.update(workspaceId, sprint.sprint.id, { archived: false });
+                if (err || !data) {
+                  setSaveError(err ?? 'Failed to update');
+                } else {
+                  setSprint(data);
+                  setSaveError(null);
+                }
+                setSaving(false);
+              }}
+            >
+              {sprint.sprint.archived ? <><ArchiveRestoreIcon className="h-3.5 w-3.5" /> Unarchive</> : <><ArchiveIcon className="h-3.5 w-3.5" /> Archive</>}
+            </Button>
+          </ManagerOnlyTooltip>
         </div>
       </div>
 
@@ -391,14 +428,17 @@ export function SprintDetailPage() {
         {/* ── Left column ────────────────────────────────────────── */}
         <div className="min-h-0 overflow-y-auto px-8 py-6">
           {/* Title */}
-          <input
-            type="text"
-            aria-label="Sprint title"
-            value={form.name}
-            onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
-            className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-            placeholder="Untitled"
-          />
+          <ManagerOnlyTooltip disabled={!canManageSprint} className="w-full">
+            <input
+              type="text"
+              aria-label="Sprint title"
+              value={form.name}
+              disabled={!canManageSprint}
+              onChange={(e) => updateField('name', e.target.value, { name: e.target.value })}
+              className="w-full bg-transparent text-2xl font-bold text-foreground placeholder:text-muted-foreground/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
+              placeholder="Untitled"
+            />
+          </ManagerOnlyTooltip>
 
           {closeoutQuery.data?.rolled_in_from && closeoutQuery.data.rolled_in_from.length > 0 && (
             <div className="mt-4">
@@ -442,14 +482,17 @@ export function SprintDetailPage() {
                   <p className="text-sm text-muted-foreground">{canEdit ? 'No description yet' : 'No description'}</p>
                 )}
                 {canEdit && (
-                  <button
-                    type="button"
-                    className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer"
-                    onClick={() => setEditingDescription(true)}
-                  >
-                    <PencilEdit01Icon className="h-3 w-3" />
-                    Edit description
-                  </button>
+                  <ManagerOnlyTooltip disabled={!canManageSprint}>
+                    <button
+                      type="button"
+                      disabled={!canManageSprint}
+                      className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+                      onClick={() => setEditingDescription(true)}
+                    >
+                      <PencilEdit01Icon className="h-3 w-3" />
+                      Edit description
+                    </button>
+                  </ManagerOnlyTooltip>
                 )}
               </div>
             )}
@@ -462,6 +505,7 @@ export function SprintDetailPage() {
               entityId={sprint.sprint.id}
               memberNameMap={assignableMemberNames}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
+              editable={canManageSprint}
             />
           </div>
 
@@ -569,50 +613,63 @@ export function SprintDetailPage() {
                   updateField('team_id', val, { team_id: val || undefined });
                 }}
                 renderTrigger={() => <span>{currentTeamName}</span>}
+                disabled={!canManageSprint}
               />
             </MetadataRow>
 
             {/* Start Date */}
             <MetadataRow icon={Calendar03Icon} label="Start date">
-              <DatePicker
-                value={form.start_date}
-                onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}
-                kind="start"
-                label="Start date"
-                linkedDate={{
-                  label: 'End date',
-                  kind: 'end',
-                  value: form.end_date,
-                  onChange: (v) => updateField('end_date', v, { end_date: v || undefined }),
-                  placeholder: 'None',
-                }}
-                placeholder="None"
-                hideIcon
-                className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
-              />
+              {canManageSprint ? (
+                <DatePicker
+                  value={form.start_date}
+                  onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'End date',
+                    kind: 'end',
+                    value: form.end_date,
+                    onChange: (v) => updateField('end_date', v, { end_date: v || undefined }),
+                    placeholder: 'None',
+                  }}
+                  placeholder="None"
+                  hideIcon
+                  className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+                />
+              ) : (
+                <ManagerOnlyTooltip disabled>
+                  <span className="px-1.5 py-0.5 text-xs text-muted-foreground">{formatSprintDateLabel(form.start_date)}</span>
+                </ManagerOnlyTooltip>
+              )}
             </MetadataRow>
 
             {/* End Date */}
             <MetadataRow icon={Calendar03Icon} label="End date">
-              <DatePicker
-                value={form.start_date}
-                onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}
-                kind="start"
-                label="Start date"
-                linkedDate={{
-                  label: 'End date',
-                  kind: 'end',
-                  value: form.end_date,
-                  onChange: (v) => updateField('end_date', v, { end_date: v || undefined }),
-                  placeholder: 'None',
-                }}
-                triggerField="linked"
-                defaultActiveField="linked"
-                placeholder="None"
-                hideIcon
-                urgencyColor
-                className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
-              />
+              {canManageSprint ? (
+                <DatePicker
+                  value={form.start_date}
+                  onChange={(v) => updateField('start_date', v, { start_date: v || undefined })}
+                  kind="start"
+                  label="Start date"
+                  linkedDate={{
+                    label: 'End date',
+                    kind: 'end',
+                    value: form.end_date,
+                    onChange: (v) => updateField('end_date', v, { end_date: v || undefined }),
+                    placeholder: 'None',
+                  }}
+                  triggerField="linked"
+                  defaultActiveField="linked"
+                  placeholder="None"
+                  hideIcon
+                  urgencyColor
+                  className="h-auto border-0 bg-transparent px-1.5 py-0.5 text-xs shadow-none hover:bg-accent"
+                />
+              ) : (
+                <ManagerOnlyTooltip disabled>
+                  <span className="px-1.5 py-0.5 text-xs text-muted-foreground">{formatSprintDateLabel(form.end_date)}</span>
+                </ManagerOnlyTooltip>
+              )}
             </MetadataRow>
 
           </div>

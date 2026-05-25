@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CodingTranscriptPane } from '../CodingTranscriptPane';
-import type { CodingSession, CodingSessionInteraction, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
+import type { AgentRunArtifact, CodingSession, CodingSessionInteraction, CodingSessionTranscriptMessage } from '@/lib/pmTypes';
 
 const scrollToIndexMock = vi.hoisted(() => vi.fn());
 
@@ -127,6 +127,28 @@ function buildTranscriptMessage(overrides: Partial<CodingSessionTranscriptMessag
   };
 }
 
+function buildReviewArtifact(overrides: Partial<AgentRunArtifact> = {}): AgentRunArtifact {
+  return {
+    id: 'review-artifact-1',
+    workspace_id: 'workspace-1',
+    run_id: 'run-1',
+    artifact_type: 'review_findings',
+    format: 'json',
+    storage_mode: 'inline',
+    inline_content: JSON.stringify({
+      findings: [{
+        id: 'finding-1',
+        title: 'Fix null handling',
+        priority: 'P1',
+      }],
+    }),
+    metadata: {},
+    sequence_no: 1,
+    created_at: '2026-05-07T08:15:00Z',
+    ...overrides,
+  };
+}
+
 describe('CodingTranscriptPane', () => {
   it('opens an existing run with breathing room after the latest activity', () => {
     act(() => {
@@ -205,6 +227,27 @@ describe('CodingTranscriptPane', () => {
     expect(composer?.className).toContain('focus-visible:ring-ring/15');
   });
 
+  it('does not append review history artifacts to the main transcript', () => {
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          reviewArtifacts={[{ artifact: buildReviewArtifact() }]}
+          transcriptMessages={[
+            buildTranscriptMessage({ content: 'Implemented the requested changes.' }),
+          ]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'completed', pause_reason: 'none' })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Implemented the requested changes.');
+    expect(container.textContent).not.toContain('Review history');
+  });
+
   it('renders a disabled composer when messages cannot be delivered', () => {
     const onSendMessage = vi.fn(async () => {});
     act(() => {
@@ -239,6 +282,7 @@ describe('CodingTranscriptPane', () => {
   });
 
   it('renders the running state as the latest activity row with the colorful spinner', () => {
+    vi.useFakeTimers();
     act(() => {
       root.render(
         <CodingTranscriptPane
@@ -255,7 +299,24 @@ describe('CodingTranscriptPane', () => {
     const runningActivity = container.querySelector('[data-coding-session-running-activity]');
     expect(runningActivity?.textContent).toContain('Agent running');
     expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('agent-working-chroma');
+    expect(runningActivity?.querySelector('[data-agent-working-spinner]')?.className).toContain('text-base');
+    expect(runningActivity?.querySelector('[data-agent-running-halo]')?.className).toContain('animate-ping');
+    const ellipsis = runningActivity?.querySelector('[data-agent-running-ellipsis]');
+    expect(ellipsis?.textContent).toBe('.');
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(ellipsis?.textContent).toBe('..');
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(ellipsis?.textContent).toBe('...');
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(ellipsis?.textContent).toBe('.');
     expect(container.querySelector('[data-coding-session-running-footer]')).toBeNull();
+    vi.useRealTimers();
   });
 
   it('auto-grows the main composer while typing', () => {
@@ -320,5 +381,41 @@ describe('CodingTranscriptPane', () => {
 
     expect(container.textContent).toContain('John Doe requested changes');
     expect(container.textContent).toContain('Split it into two tasks.');
+  });
+
+  it('renders a visible expand control for long user transcript messages', () => {
+    const longUserMessage = Array.from({ length: 80 }, (_, index) => `Line ${index + 1}: Review this implementation detail carefully.`).join('\n');
+
+    act(() => {
+      root.render(
+        <CodingTranscriptPane
+          transcriptMessages={[
+            buildTranscriptMessage({
+              event_id: 'event-user-long-message',
+              message_id: 'message-user-long-message',
+              role: 'user',
+              content: longUserMessage,
+              user_id: 'user-1',
+            }),
+          ]}
+          liveAssistantMessage={null}
+          liveReasoningMessage={null}
+          liveTurnSegments={[]}
+          loading={false}
+          session={buildSession({ status: 'completed', pause_reason: 'none' })}
+        />,
+      );
+    });
+
+    const expandButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Show more');
+    expect(expandButton).toBeTruthy();
+    expect(expandButton?.className).not.toContain('text-white/80');
+
+    act(() => {
+      expandButton?.click();
+    });
+
+    expect(expandButton?.textContent).toBe('Show less');
   });
 });

@@ -484,12 +484,12 @@ export function EpicDetailPage() {
     await fetchData(false);
     return data.task
       ? {
-          id: data.task.id,
+          id: data.task.task.id,
           task: {
-            id: data.task.id,
-            name: data.task.name,
-            display_id: data.task.display_id,
-            task_key: data.task.task_key,
+            id: data.task.task.id,
+            name: data.task.task.name,
+            display_id: data.task.task.display_id,
+            task_key: data.task.task.task_key,
           },
         }
       : undefined;

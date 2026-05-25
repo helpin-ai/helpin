@@ -663,6 +663,23 @@ func TestPMTaskService_Create(t *testing.T) {
 		}
 	})
 
+	t.Run("create stores assigned agent", func(t *testing.T) {
+		agentID := "agent-task-planner-001"
+		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "Agent-backed Story",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+			AssignedAgentID: &agentID,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if story.Task.AssignedAgentID == nil || *story.Task.AssignedAgentID != agentID {
+			t.Fatalf("assigned_agent_id = %v, want %q", story.Task.AssignedAgentID, agentID)
+		}
+	})
+
 	t.Run("create with explicit type bug", func(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
@@ -1249,6 +1266,19 @@ func TestPMTaskService_Update(t *testing.T) {
 		}
 		if updated.Task.Description == nil || *updated.Task.Description != desc {
 			t.Errorf("description mismatch")
+		}
+	})
+
+	t.Run("update assigned agent", func(t *testing.T) {
+		agentID := "agent-task-planner-002"
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
+			AssignedAgentID: &agentID,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update assigned agent: %v", err)
+		}
+		if updated.Task.AssignedAgentID == nil || *updated.Task.AssignedAgentID != agentID {
+			t.Fatalf("assigned_agent_id = %v, want %q", updated.Task.AssignedAgentID, agentID)
 		}
 	})
 

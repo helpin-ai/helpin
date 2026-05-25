@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
+	"unicode"
 
 	"gorm.io/gorm"
 
@@ -20,8 +22,26 @@ func NewSearchRepository(db *gorm.DB) *SearchRepository {
 
 const searchLimit = 20
 
+func normalizeSearchText(value string) string {
+	var b strings.Builder
+	previousWasSpace := true
+	for _, r := range strings.ToLower(value) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			previousWasSpace = false
+			continue
+		}
+		if !previousWasSpace {
+			b.WriteByte(' ')
+			previousWasSpace = true
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
 func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string, taskKeyDisplayID int) (*model.SearchResponse, error) {
-	if query == "" {
+	normalizedQuery := normalizeSearchText(query)
+	if normalizedQuery == "" && taskKeyDisplayID <= 0 {
 		return &model.SearchResponse{
 			Tasks:      []model.SearchResult{},
 			Epics:      []model.SearchResult{},
@@ -32,7 +52,10 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 		}, nil
 	}
 
-	pattern := "%" + query + "%"
+	pattern := "%" + normalizedQuery + "%"
+	normalizedText := func(column string) string {
+		return "regexp_replace(lower(coalesce(" + column + ", '')), '[^[:alnum:]]+', ' ', 'g')"
+	}
 
 	var (
 		stories    []model.SearchResult
@@ -80,7 +103,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 			Raw(`SELECT id, name, 'task' AS type, display_id, team_id
 				FROM pm_tasks
 				WHERE workspace_id = ? AND archived = false
-				  AND (name ILIKE ? OR CAST(display_id AS TEXT) ILIKE ?)
+				  AND (`+normalizedText("name")+` LIKE ? OR CAST(display_id AS TEXT) LIKE ?)
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, pattern, searchLimit).
 			Scan(&textResults).Error; err != nil {
@@ -109,7 +132,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 			Raw(`SELECT id, name, 'epic' AS type
 				FROM pm_epics
 				WHERE workspace_id = ? AND archived = false
-				  AND name ILIKE ?
+				  AND `+normalizedText("name")+` LIKE ?
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, searchLimit).
 			Scan(&epics).Error; err != nil {
@@ -123,7 +146,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 			Raw(`SELECT id, name, 'sprint' AS type
 				FROM pm_sprints
 				WHERE workspace_id = ? AND archived = false
-				  AND name ILIKE ?
+				  AND `+normalizedText("name")+` LIKE ?
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, searchLimit).
 			Scan(&sprints).Error; err != nil {
@@ -137,7 +160,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 			Raw(`SELECT id, name, 'objective' AS type
 				FROM pm_objectives
 				WHERE workspace_id = ? AND archived = false
-				  AND name ILIKE ?
+				  AND `+normalizedText("name")+` LIKE ?
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, searchLimit).
 			Scan(&objectives).Error; err != nil {
@@ -149,13 +172,14 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 		defer wg.Done()
 		if err := r.db.WithContext(ctx).
 			Raw(`SELECT wm.id, wm.display_name AS name, 'member' AS type,
-					COALESCE(twm.team_id::text, '') AS team_id,
-					COALESCE(wt.name, '') AS team_name
+					COALESCE(string_agg(DISTINCT twm.team_id::text, ', '), '') AS team_id,
+					COALESCE(string_agg(DISTINCT wt.name, ', '), '') AS team_name
 				FROM workspace_members wm
 				LEFT JOIN team_workspace_memberships twm ON twm.workspace_member_id = wm.id
 				LEFT JOIN workspace_teams wt ON wt.id = twm.team_id
 				WHERE wm.workspace_id = ? AND wm.status IN ('active', 'pending')
-				  AND (wm.display_name ILIKE ? OR wm.email ILIKE ?)
+				  AND (`+normalizedText("wm.display_name")+` LIKE ? OR `+normalizedText("wm.email")+` LIKE ?)
+				GROUP BY wm.id, wm.display_name
 				ORDER BY wm.display_name ASC
 				LIMIT ?`, workspaceID, pattern, pattern, searchLimit).
 			Scan(&members).Error; err != nil {
@@ -170,7 +194,7 @@ func (r *SearchRepository) Search(ctx context.Context, workspaceID, query string
 				FROM docs_documents
 				WHERE workspace_id = ? AND deleted_at IS NULL
 				  AND status != 'archived'
-				  AND title ILIKE ?
+				  AND `+normalizedText("title")+` LIKE ?
 				ORDER BY updated_at DESC
 				LIMIT ?`, workspaceID, pattern, searchLimit).
 			Scan(&documents).Error; err != nil {

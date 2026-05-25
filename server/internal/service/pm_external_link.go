@@ -13,13 +13,23 @@ import (
 
 // PMExternalLinkService contains external link business logic.
 type PMExternalLinkService struct {
-	repo        *repository.PMExternalLinkRepository
-	wsPublisher *websocket.Publisher
+	repo             *repository.PMExternalLinkRepository
+	wsPublisher      *websocket.Publisher
+	metadataResolver externalLinkMetadataResolver
 }
 
 // NewPMExternalLinkService creates a new PMExternalLinkService.
 func NewPMExternalLinkService(repo *repository.PMExternalLinkRepository, wsPublisher *websocket.Publisher) *PMExternalLinkService {
 	return &PMExternalLinkService{repo: repo, wsPublisher: wsPublisher}
+}
+
+type externalLinkMetadataResolver interface {
+	Resolve(ctx context.Context, rawURL string) (*DocsResolvedEmbed, error)
+}
+
+// SetMetadataResolver configures page metadata fetching for external links.
+func (s *PMExternalLinkService) SetMetadataResolver(resolver externalLinkMetadataResolver) {
+	s.metadataResolver = resolver
 }
 
 var allowedExternalLinkEntityTypes = map[string]bool{
@@ -45,17 +55,14 @@ func (s *PMExternalLinkService) Create(ctx context.Context, storyID string, req 
 		return nil, fmt.Errorf("url is required")
 	}
 
-	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		title = deriveTitle(rawURL)
-	}
+	resolvedURL, title := s.resolveLinkMetadata(ctx, rawURL, req.Title)
 
 	link := &model.PMExternalLink{
 		TaskID:      &storyID,
 		EntityType:  "task",
 		EntityID:    storyID,
 		Title:       title,
-		URL:         rawURL,
+		URL:         resolvedURL,
 		CreatedByID: userID,
 	}
 	if err := s.repo.Create(ctx, link); err != nil {
@@ -80,10 +87,11 @@ func (s *PMExternalLinkService) Update(ctx context.Context, id string, req model
 		if rawURL == "" {
 			return nil, fmt.Errorf("url cannot be empty")
 		}
-		link.URL = rawURL
 		// Re-derive title if URL changed and no explicit title given.
 		if req.Title == nil {
-			link.Title = deriveTitle(rawURL)
+			link.URL, link.Title = s.resolveLinkMetadata(ctx, rawURL, "")
+		} else {
+			link.URL = rawURL
 		}
 	}
 	if req.Title != nil {
@@ -137,16 +145,13 @@ func (s *PMExternalLinkService) CreateForEntity(ctx context.Context, entityType,
 		return nil, fmt.Errorf("url is required")
 	}
 
-	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		title = deriveTitle(rawURL)
-	}
+	resolvedURL, title := s.resolveLinkMetadata(ctx, rawURL, req.Title)
 
 	link := &model.PMExternalLink{
 		EntityType:  entityType,
 		EntityID:    entityID,
 		Title:       title,
-		URL:         rawURL,
+		URL:         resolvedURL,
 		CreatedByID: userID,
 	}
 	if entityType == "task" {
@@ -162,6 +167,30 @@ func (s *PMExternalLinkService) CreateForEntity(ctx context.Context, entityType,
 		ParentType: entityType, ParentID: entityID,
 	})
 	return link, nil
+}
+
+func (s *PMExternalLinkService) resolveLinkMetadata(ctx context.Context, rawURL, providedTitle string) (string, string) {
+	rawURL = strings.TrimSpace(rawURL)
+	title := strings.TrimSpace(providedTitle)
+	if title != "" {
+		return rawURL, title
+	}
+
+	if s.metadataResolver != nil {
+		if resolved, err := s.metadataResolver.Resolve(ctx, rawURL); err == nil && resolved != nil {
+			resolvedURL := strings.TrimSpace(resolved.URL)
+			resolvedTitle := strings.TrimSpace(resolved.Title)
+			if resolvedURL == "" {
+				resolvedURL = rawURL
+			}
+			if resolvedTitle != "" {
+				return resolvedURL, resolvedTitle
+			}
+			return resolvedURL, deriveTitle(resolvedURL)
+		}
+	}
+
+	return rawURL, deriveTitle(rawURL)
 }
 
 // deriveTitle extracts hostname from a URL for use as the title.

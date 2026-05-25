@@ -52,6 +52,12 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE agent_team_access (
+			agent_id TEXT NOT NULL,
+			team_id TEXT NOT NULL,
+			created_at DATETIME,
+			PRIMARY KEY (agent_id, team_id)
+		)`,
 		`CREATE TABLE crm_email_accounts (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -83,6 +89,9 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			source_preset_version_key TEXT,
 			source_template_id TEXT,
 			source_template_key TEXT NOT NULL DEFAULT '',
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			role TEXT,
 			status TEXT NOT NULL,
 			runtime_kind TEXT,
@@ -158,6 +167,9 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			trigger_config TEXT NOT NULL DEFAULT '{}',
 			action_type TEXT NOT NULL,
 			action_config TEXT NOT NULL DEFAULT '{}',
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			position INTEGER NOT NULL DEFAULT 0,
 			stop_on_match BOOLEAN NOT NULL DEFAULT 0,
 			created_by TEXT,
@@ -401,6 +413,10 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			name TEXT NOT NULL,
 			preset_key TEXT,
+			source_template_key TEXT NOT NULL DEFAULT '',
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			status TEXT NOT NULL,
 			runtime_kind TEXT,
 			skills BLOB NOT NULL DEFAULT x'5b5d',

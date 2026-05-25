@@ -1,0 +1,151 @@
+key: public_help_freshness_sweep
+version: 1
+name: Public help freshness sweep
+icon: file-text
+short_description: Checks public help docs and saves a customer-facing freshness report.
+categories: [docs, support]
+agent:
+  reuse_system: documentation_agent
+trigger:
+  type: cron
+inputs:
+  - key: schedule
+    type: cron
+    required: true
+    label: Run schedule
+    section: When should it run
+    help_text: How often Quill should check public help docs freshness.
+  - key: docs_scope
+    type: enum<space,collection>
+    required: true
+    default: space
+    label: Public help area
+    section: What should it review?
+    help_text: Review a whole public help space or limit the sweep to one collection.
+    options:
+      - { value: space, label: Entire help space }
+      - { value: collection, label: One help collection }
+  - key: space_id
+    type: space
+    required: true
+    label: Help space
+    section: What should it review?
+    space_type: external_capable
+    show_if: docs_scope=space|collection
+    help_text: The public help space Quill should review.
+  - key: collection_id
+    type: collection
+    required: true
+    label: Help collection
+    section: What should it review?
+    show_if: docs_scope=collection
+    depends_on: space_id
+    help_text: Limit the sweep to one public help collection.
+  - key: source_repository_id
+    type: repository
+    required: false
+    label: Repository
+    section: What should it review?
+    help_text: Optional but recommended. Select the product repository Quill should use to verify customer-facing product behavior.
+  - key: report_space_id
+    type: space
+    required: true
+    label: Docs space
+    section: Where should the report be saved?
+    space_type: internal
+    help_text: Internal Docs space where public help review reports will be saved.
+  - key: report_collection_id
+    type: collection
+    required: true
+    label: Docs collection
+    section: Where should the report be saved?
+    depends_on: report_space_id
+    help_text: Internal collection where Quill should create each public help freshness report.
+  - key: create_follow_up_tasks
+    type: bool
+    required: false
+    default: false
+    label: Create tasks for high-confidence fixes
+    section: Should it create follow-up tasks?
+    help_text: Off by default. The report still includes prioritized help-doc recommendations.
+  - key: destination_team_id
+    type: team
+    required: false
+    label: Team
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    help_text: Team for optional tasks Quill creates from concrete, high-confidence customer-doc fixes.
+  - key: destination_state_id
+    type: workflow_state
+    required: false
+    label: Stage
+    section: Should it create follow-up tasks?
+    show_if: create_follow_up_tasks
+    depends_on: destination_team_id
+    help_text: Optional stage for follow-up tasks. If empty, the team's default stage is used.
+flow:
+  action: start_agent_run
+  target:
+    from_input: source_repository_id
+  additional_context: |
+    Run a public help freshness sweep with Quill.
+
+    Review scope:
+    - docs_scope: {{docs_scope}}
+    - space_id: {{space_id}}
+    - collection_id: {{collection_id}}
+    - source_repository_id: {{source_repository_id}}
+
+    Report destination:
+    - report_space_id: {{report_space_id}}
+    - report_collection_id: {{report_collection_id}}
+
+    Follow-up tasks:
+    - create_follow_up_tasks: {{create_follow_up_tasks}}
+    - destination_team_id: {{destination_team_id}}
+    - destination_state_id: {{destination_state_id}}
+
+    Review the selected public help area from a customer perspective. Look for outdated product behavior, missing help for common support gaps, confusing troubleshooting, missing setup steps, broken information architecture, duplicate articles, unsafe promises, stale screenshots or UI language, and gaps between support conversations and public documentation.
+
+    Source verification:
+    - If source_repository_id is configured, use read-only repository inspection to verify customer-facing behavior, routes, feature names, settings, limits, integrations, and setup flows before marking help docs accurate or stale.
+    - If source_repository_id is not configured, do not claim product behavior is verified. Label those findings as "needs source verification" and focus on support gaps, article structure, clarity, duplication, navigation, and obvious stale language.
+
+    Always create a new public help freshness report in the configured internal Docs report space and collection. Use this title format: `YYYY-MM-DD - Public help freshness sweep - <scope/context>`. Use the selected collection name, selected help space name, or another concise scope label for `<scope/context>`. The report should include:
+    - Scope reviewed and source-verification status.
+    - Customer-impact findings grouped by severity.
+    - Missing, stale, duplicated, confusing, or misplaced public help content.
+    - Support gaps that should become new or updated public help docs.
+    - Suggested article updates or new articles, with evidence and likely owner/team when inferable.
+    - A clear "No actionable public help issues found" section when the sweep is clean.
+
+    Prefer document change proposals for edits to existing public help docs. Do not directly rewrite existing public help docs unless explicitly instructed. New internal report documents may be created directly.
+
+    If create_follow_up_tasks is true, create PM tasks only for concrete, high-confidence fixes that need human execution. Use destination_team_id when present. Use destination_state_id when configured; otherwise let the team default stage apply. Combine related article fixes into one task when they share a root cause. Do not create tasks for every wording nit or speculative improvement.
+
+    Do not sweep outside the configured review scope.
+
+    Additional user instructions:
+    {{additional_instructions}}
+
+    Raw configuration:
+    {{raw_configuration_json}}
+  parameters:
+    docs_scope:
+      from_input: docs_scope
+    space_id:
+      from_input: space_id
+    collection_id:
+      from_input: collection_id
+    source_repository_id:
+      from_input: source_repository_id
+    report_space_id:
+      from_input: report_space_id
+    report_collection_id:
+      from_input: report_collection_id
+    create_follow_up_tasks:
+      from_input: create_follow_up_tasks
+    destination_team_id:
+      from_input: destination_team_id
+    destination_state_id:
+      from_input: destination_state_id

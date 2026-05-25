@@ -47,6 +47,10 @@ just frontend   # Frontend only
 just build      # Production build
 ```
 
+## Refactors and Migrations
+
+When replacing or moving an existing feature, do a capability parity audit before implementation: entry points, required/optional inputs, generated defaults, editable fields before save, backend side effects, validation, permissions, navigation, and tests. If any old capability is removed or changed, call it out as an explicit product decision before coding.
+
 ## Project Structure
 
 ```

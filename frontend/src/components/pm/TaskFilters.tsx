@@ -86,7 +86,9 @@ interface FilterContextValue {
   activeTeamId?: string | null;
   userMemberships: TeamUserMembership[];
   activeKeys: Set<FilterKey>;
+  visibleKeys: Set<FilterKey>;
   activeCount: number;
+  visibleCount: number;
   handleAdd: (key: FilterKey) => void;
   handleToggle: (key: FilterKey, value: string) => void;
   handleRemove: (key: FilterKey) => void;
@@ -107,12 +109,10 @@ function FilterValueSelect({
   definition,
   selected,
   onToggle,
-  onEmptyClose,
 }: {
   definition: FilterDefinition;
   selected: string[];
   onToggle: (value: string) => void;
-  onEmptyClose: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const selectedLabels = selected.map((value) =>
@@ -120,15 +120,7 @@ function FilterValueSelect({
   );
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (!nextOpen && selected.length === 0) {
-          onEmptyClose();
-        }
-      }}
-    >
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-xs hover:bg-accent transition-colors">
           {selectedLabels.length === 0
@@ -175,19 +167,17 @@ function FilterPill({
   selected,
   onToggle,
   onRemove,
-  onEmptyClose,
 }: {
   definition: FilterDefinition;
   selected: string[];
   onToggle: (value: string) => void;
   onRemove: () => void;
-  onEmptyClose: () => void;
 }) {
   return (
     <div className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs">
       <span className="font-medium text-muted-foreground">{definition.label}</span>
       <span className="text-muted-foreground/60">is</span>
-      <FilterValueSelect definition={definition} selected={selected} onToggle={onToggle} onEmptyClose={onEmptyClose} />
+      <FilterValueSelect definition={definition} selected={selected} onToggle={onToggle} />
       <button
         onClick={onRemove}
         className="ml-0.5 rounded p-0.5 text-muted-foreground/60 hover:bg-accent hover:text-foreground transition-colors"
@@ -347,13 +337,18 @@ export function TaskFilterProvider({
 
   const activeKeys = useMemo(() => {
     const keys = new Set<FilterKey>();
-    for (const key of Object.keys(filterState)) {
-      if (filterState[key as FilterKey]) {
+    for (const [key, values] of Object.entries(filterState)) {
+      if (values && values.length > 0) {
         keys.add(key as FilterKey);
       }
     }
     return keys;
   }, [filterState]);
+
+  const visibleKeys = useMemo(
+    () => new Set(Object.keys(filterState).map((key) => key as FilterKey)),
+    [filterState],
+  );
 
   const emitChange = useCallback(
     (next: FilterState) => {
@@ -366,7 +361,8 @@ export function TaskFilterProvider({
   const handleAdd = useCallback(
     (key: FilterKey) => {
       const def = definitions.find((d) => d.key === key);
-      if (!def) return;
+      if (!def || def.options.length === 0) return;
+      setFilterState((current) => ({ ...current, [key]: current[key] ?? [] }));
     },
     [definitions]
   );
@@ -418,12 +414,14 @@ export function TaskFilterProvider({
     activeTeamId,
     userMemberships,
     activeKeys,
+    visibleKeys,
     activeCount: activeKeys.size,
+    visibleCount: visibleKeys.size,
     handleAdd,
     handleToggle,
     handleRemove,
     handleClearAll,
-  }), [workspaceId, filterState, definitions, assignableMembers, activeTeamId, userMemberships, activeKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
+  }), [workspaceId, filterState, definitions, assignableMembers, activeTeamId, userMemberships, activeKeys, visibleKeys, handleAdd, handleToggle, handleRemove, handleClearAll]);
 
   return <FilterContext.Provider value={value}>{children}</FilterContext.Provider>;
 }
@@ -431,10 +429,10 @@ export function TaskFilterProvider({
 // ── Trigger button (goes in the header row) ────────────────────────
 
 export function TaskFilterTrigger() {
-  const { definitions, filterState, activeKeys, activeCount, handleAdd, handleToggle } = useFilterContext();
+  const { definitions, filterState, visibleKeys, activeCount, handleAdd, handleToggle } = useFilterContext();
   const [open, setOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState<FilterKey | null>(null);
-  const available = definitions.filter((d) => !activeKeys.has(d.key) && d.options.length > 0);
+  const available = definitions.filter((d) => !visibleKeys.has(d.key) && d.options.length > 0);
   const selectedDefinition = selectedKey
     ? definitions.find((definition) => definition.key === selectedKey)
     : undefined;
@@ -575,18 +573,18 @@ function suggestViewName(
 }
 
 export function TaskFilterBar() {
-  const { workspaceId, filterState, definitions, activeKeys, activeCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
+  const { workspaceId, filterState, definitions, visibleKeys, activeCount, visibleCount, handleToggle, handleRemove, handleClearAll } = useFilterContext();
   const { activeViewId, saveCurrentAsView } = usePMBoardStore();
   const [saveOpen, setSaveOpen] = useState(false);
 
   const canSaveAsView = !activeViewId || isDefaultView(activeViewId);
 
-  if (activeCount === 0) return null;
+  if (visibleCount === 0) return null;
 
   return (
     <div className="ui-divider-bottom-fade flex flex-wrap items-center gap-1.5 px-3 py-1.5">
       {definitions
-        .filter((def) => activeKeys.has(def.key))
+        .filter((def) => visibleKeys.has(def.key))
         .map((def) => (
           <FilterPill
             key={def.key}
@@ -594,11 +592,6 @@ export function TaskFilterBar() {
             selected={filterState[def.key] ?? []}
             onToggle={(value) => handleToggle(def.key, value)}
             onRemove={() => handleRemove(def.key)}
-            onEmptyClose={() => {
-              if ((filterState[def.key] ?? []).length === 0) {
-                handleRemove(def.key);
-              }
-            }}
           />
         ))}
       <Button
@@ -609,7 +602,7 @@ export function TaskFilterBar() {
       >
         Clear all
       </Button>
-      {canSaveAsView && (
+      {canSaveAsView && activeCount > 0 && (
         <>
           <button
             type="button"

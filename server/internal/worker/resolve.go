@@ -97,6 +97,8 @@ func defaultProfileNameForPreset(presetKey string, isSystem bool) string {
 		return model.AgentPresetEpicPlanner
 	case model.AgentPresetSupportAgent:
 		return model.AgentPresetSupportAgent
+	case model.AgentPresetDocumentationAgent:
+		return model.AgentPresetDocumentationAgent
 	case model.AgentPresetReviewAgent:
 		return model.AgentPresetReviewAgent
 	case model.AgentPresetCodeBuilder:
