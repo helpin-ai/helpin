@@ -632,6 +632,13 @@ export function ContactsTable({
           {(totalCount ?? deferredContacts.length) === 1 ? 'contact' : 'contacts'}
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <BulkActionsBar
+            selectedIds={selectedIds}
+            workspaceId={workspaceId}
+            assignableMembers={assignableMembers}
+            onComplete={() => onContactUpdated?.()}
+            onClearSelection={() => setRowSelection({})}
+          />
           <Button
             type="button"
             size="sm"
@@ -732,14 +739,6 @@ export function ContactsTable({
         )}
       </div>
 
-      {/* Bulk actions */}
-      <BulkActionsBar
-        selectedIds={selectedIds}
-        workspaceId={workspaceId}
-        assignableMembers={assignableMembers}
-        onComplete={() => onContactUpdated?.()}
-        onClearSelection={() => setRowSelection({})}
-      />
     </div>
   );
 }
