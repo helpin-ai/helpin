@@ -35,6 +35,7 @@ import {
   TABLE_ROW,
   TABLE_CELL,
   TABLE_GROUP_ROW,
+  TABLE_GROUP_ROW_INNER,
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
@@ -530,16 +531,18 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       className={TABLE_GROUP_ROW}
       onClick={() => row.toggleExpanded()}
     >
-      {row.getIsExpanded() ? (
-        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : (
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-      {icon}
-      <span>{groupValue}</span>
-      <span className="ml-2 text-xs font-normal text-muted-foreground">
-        {dealCount} {dealCount === 1 ? 'deal' : 'deals'}
-        {totalAmount > 0 && ` \u00B7 $${new Intl.NumberFormat().format(totalAmount)}`}
+      <span className={TABLE_GROUP_ROW_INNER}>
+        {row.getIsExpanded() ? (
+          <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        {icon}
+        <span>{groupValue}</span>
+        <span className="ml-2 text-xs font-normal text-muted-foreground">
+          {dealCount} {dealCount === 1 ? 'deal' : 'deals'}
+          {totalAmount > 0 && ` \u00B7 $${new Intl.NumberFormat().format(totalAmount)}`}
+        </span>
       </span>
     </div>
   );

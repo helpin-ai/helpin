@@ -49,6 +49,7 @@ import {
   resolveColumnRuntimeSize,
   virtualRowStyle,
   TABLE_HEADER_CELL_ACTIONS,
+  TABLE_GROUP_ROW_INNER,
   ACTIONS_COL_SIZE,
 } from '@/lib/tableStyles';
 import { ColumnVisibilityPopover } from '@/components/crm/ColumnVisibilityPopover';
@@ -107,7 +108,7 @@ const CONTACTS_TABLE_HEADER_CELL =
 const CONTACTS_TABLE_CELL =
   'flex shrink-0 items-center self-stretch border-b border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
 const CONTACTS_TABLE_GROUP_ROW =
-  'flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
+  'flex h-9 cursor-pointer items-center border-b border-border/60 bg-muted/20 text-sm font-semibold hover:bg-muted';
 
 const columnHelper = createColumnHelper<CRMContact>();
 
@@ -920,21 +921,23 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       className={CONTACTS_TABLE_GROUP_ROW}
       onClick={() => row.toggleExpanded()}
     >
-      <span className="flex items-center" onClick={(event) => event.stopPropagation()}>
-        <Checkbox
-          checked={selectionState}
-          onCheckedChange={(value) => onToggleSelection(row, value === true)}
-          aria-label="Select all in group"
-        />
-      </span>
-      {row.getIsExpanded() ? (
-        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : (
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-      <span className="capitalize">{groupValue}</span>
-      <span className="ml-2 text-xs font-normal text-muted-foreground">
-        {count} {count === 1 ? 'contact' : 'contacts'}
+      <span className={TABLE_GROUP_ROW_INNER}>
+        <span className="flex items-center" onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            checked={selectionState}
+            onCheckedChange={(value) => onToggleSelection(row, value === true)}
+            aria-label="Select all in group"
+          />
+        </span>
+        {row.getIsExpanded() ? (
+          <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        <span className="capitalize">{groupValue}</span>
+        <span className="ml-2 text-xs font-normal text-muted-foreground">
+          {count} {count === 1 ? 'contact' : 'contacts'}
+        </span>
       </span>
     </div>
   );

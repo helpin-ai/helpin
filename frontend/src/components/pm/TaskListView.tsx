@@ -97,6 +97,7 @@ import {
   resolveColumnRuntimeSize,
   virtualRowStyle,
   TABLE_HEADER_CELL_ACTIONS,
+  TABLE_GROUP_ROW_INNER,
   ACTIONS_COL_SIZE,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
@@ -1668,7 +1669,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       className={`${TASK_LIST_GROUP_ROW} w-full text-left text-xs`}
       onClick={row.getToggleExpandedHandler()}
     >
-      <span className="sticky left-0 z-[1] flex items-center gap-2 px-3">
+      <span className={TABLE_GROUP_ROW_INNER}>
         {row.getIsExpanded() ? (
           <TaskListChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
         ) : (

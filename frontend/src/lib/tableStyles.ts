@@ -23,7 +23,11 @@ export const TABLE_CELL =
 
 /** Group header row (for grouped/expandable tables) */
 export const TABLE_GROUP_ROW =
-  'ui-divider-bottom-fade flex h-9 cursor-pointer items-center gap-2 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
+  'ui-divider-bottom-fade flex h-9 cursor-pointer items-center bg-muted/20 text-sm font-semibold hover:bg-muted';
+
+/** Inner sticky wrapper for group row content – pins chevron/label to viewport left during horizontal scroll */
+export const TABLE_GROUP_ROW_INNER =
+  'sticky left-0 z-[1] flex items-center gap-2 px-3';
 
 /** Column resize handle – always-visible 1px separator, expands on hover */
 export const TABLE_RESIZE_HANDLE =

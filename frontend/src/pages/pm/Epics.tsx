@@ -65,6 +65,7 @@ import {
   TABLE_CELL,
   TABLE_CONTAINER,
   TABLE_GROUP_ROW,
+  TABLE_GROUP_ROW_INNER,
   TABLE_HEADER,
   TABLE_HEADER_CELL,
   TABLE_HEADER_CELL_SORTABLE,
@@ -799,16 +800,18 @@ const MemoEpicGroupRow = memo(function EpicGroupRow({ item, onToggle }: EpicGrou
       className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
       onClick={() => onToggle(item.key)}
     >
-      {item.collapsed ? (
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : (
-        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-      <span className="min-w-0 truncate font-medium">{item.label}</span>
-      <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
-        <span>{item.entryCount} {item.entryCount === 1 ? 'epic' : 'epics'}</span>
-        <span>{item.totalTasks} tasks</span>
-        <span>{item.completedPoints}/{item.totalPoints} points</span>
+      <span className={TABLE_GROUP_ROW_INNER}>
+        {item.collapsed ? (
+          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        <span className="min-w-0 truncate font-medium">{item.label}</span>
+        <span className="ml-1 flex items-center gap-3 font-normal text-muted-foreground">
+          <span>{item.entryCount} {item.entryCount === 1 ? 'epic' : 'epics'}</span>
+          <span>{item.totalTasks} tasks</span>
+          <span>{item.completedPoints}/{item.totalPoints} points</span>
+        </span>
       </span>
     </button>
   );
