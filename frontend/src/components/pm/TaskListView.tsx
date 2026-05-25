@@ -1567,7 +1567,8 @@ export function TaskListView({
                     position: 'absolute',
                     top: 0,
                     left: 0,
-                    width: '100%',
+                    width: 'max-content',
+                    minWidth: '100%',
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
