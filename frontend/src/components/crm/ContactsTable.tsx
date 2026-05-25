@@ -972,7 +972,7 @@ const MemoDataRow = memo(function DataRow({
   columnVisibilityVersion,
 }: DataRowProps) {
   // These are used by areDataRowPropsEqual for memo comparison
-  void isSelected; void columnSizingVersion; void columnOrderVersion; void columnVisibilityVersion;
+  void columnSizingVersion; void columnOrderVersion; void columnVisibilityVersion;
   return (
     <div className={TABLE_ROW}>
       {row.getVisibleCells().map((cell) => {
@@ -991,7 +991,16 @@ const MemoDataRow = memo(function DataRow({
             className={`${CONTACTS_TABLE_CELL} ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
           >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {colId === 'select' ? (
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={(value) => row.toggleSelected(value === true)}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="Select row"
+              />
+            ) : (
+              flexRender(cell.column.columnDef.cell, cell.getContext())
+            )}
           </div>
         );
       })}
