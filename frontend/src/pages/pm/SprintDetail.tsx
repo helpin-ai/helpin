@@ -533,6 +533,11 @@ export function SprintDetailPage() {
                   sprintId={sprintId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
+                  onBulkOperationComplete={async () => {
+                    if (!workspaceId) return;
+                    const tasksRes = await pmSprintService.listTasks(workspaceId, sprintId);
+                    if (tasksRes.data) setTasks(tasksRes.data);
+                  }}
                 />
               </div>
             ) : (

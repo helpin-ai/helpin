@@ -861,6 +861,7 @@ export function EpicDetailPage() {
                   epicId={epicId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
+                  onBulkOperationComplete={() => fetchData(false)}
                   footer={renderGhostAddTaskRow(
                     'flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
                   )}
