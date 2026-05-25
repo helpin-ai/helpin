@@ -12,6 +12,7 @@ import {
   type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { format, parseISO } from 'date-fns';
 import { useNavigate } from '@tanstack/react-router';
 import { useTitle } from '@/hooks/useTitle';
@@ -71,7 +72,10 @@ import {
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_RESIZE_HANDLE,
   TABLE_ROW,
+  TABLE_PINNED_LEFT_NAME,
+  TABLE_PINNED_HEADER_LEFT_NAME,
   dynamicCellStyle,
+  pinnedStyle,
   resolveColumnRuntimeSize,
   virtualRowStyle,
 } from '@/lib/tableStyles';
@@ -646,7 +650,7 @@ function EpicVirtualTable({
     onSortingChange,
     onColumnSizingChange,
     enableColumnResizing: true,
-    columnResizeMode: 'onEnd',
+    columnResizeMode: 'onChange',
     manualSorting: true,
     getCoreRowModel: getCoreRowModel(),
   });
@@ -704,12 +708,8 @@ function EpicVirtualTable({
   });
 
   return (
-    <div className="-mt-2 min-h-0 flex-1 rounded-lg border border-border">
-      <div
-        ref={parentRef}
-        className={TABLE_CONTAINER}
-        style={{ maxHeight: 'calc(100vh - 220px)' }}
-      >
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div ref={parentRef} className={TABLE_CONTAINER}>
         <div className="min-w-fit">
           <div className={TABLE_HEADER}>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -720,11 +720,15 @@ function EpicVirtualTable({
                   const isResized = !!columnSizing[header.column.id];
                   const canSort = header.column.getCanSort();
                   const sorted = header.column.getIsSorted();
+                  const colId = header.column.id;
+                  const isNamePinned = colId === 'name';
+                  const pinnedClass = isNamePinned ? TABLE_PINNED_HEADER_LEFT_NAME : '';
+                  const pinnedSt = isNamePinned ? pinnedStyle('left', 0) : {};
                   return (
                     <div
                       key={header.id}
-                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''}`}
-                      style={dynamicCellStyle(defSize, runtimeSize, isResized, 200)}
+                      className={`${TABLE_HEADER_CELL} ${canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+                      style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 200), ...pinnedSt }}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
                     >
                       <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
@@ -759,6 +763,17 @@ function EpicVirtualTable({
           </div>
 
           <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+            <StickyPinnedGroupOverlay
+              parentRef={parentRef}
+              items={items}
+              virtualizer={virtualizer}
+              isPinnedItem={(item) => item.type === 'group'}
+              renderHeader={(item) =>
+                item.type === 'group' ? (
+                  <MemoEpicGroupRow item={item} onToggle={onToggleGroup} />
+                ) : null
+              }
+            />
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const item = items[virtualRow.index];
               if (!item) return null;
@@ -847,11 +862,15 @@ const MemoEpicDataRow = memo(function EpicDataRow({
     >
       {row.getVisibleCells().map((cell) => {
         const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
+        const colId = cell.column.id;
+        const isNamePinned = colId === 'name';
+        const pinnedClass = isNamePinned ? TABLE_PINNED_LEFT_NAME : '';
+        const pinnedSt = isNamePinned ? pinnedStyle('left', 0) : {};
         return (
           <div
             key={cell.id}
-            className={`${TABLE_CELL} overflow-hidden`}
-            style={dynamicCellStyle(defSize, runtimeSize, isResized, 200)}
+            className={`${TABLE_CELL} overflow-hidden ${pinnedClass}`}
+            style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 200), ...pinnedSt }}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </div>

@@ -1,6 +1,5 @@
-import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { RefObject } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -72,6 +71,7 @@ import type { AssignableMember, TeamEstimateSettings, WorkspaceTeam } from '@/li
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
 import { TaskBulkActionsBar } from '@/components/pm/TaskBulkActionsBar';
+import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { showTaskDuplicatedToast } from '@/components/pm/TaskDuplicatedToast';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
@@ -1531,9 +1531,13 @@ export function TaskListView({
             {hasGroupedRows ? (
               <StickyPinnedGroupOverlay
                 parentRef={parentRef}
-                rows={rows}
+                items={rows}
                 virtualizer={virtualizer}
-                groupSummaries={groupSummaries}
+                isPinnedItem={(row) => row.getIsGrouped()}
+                renderHeader={(row) => (
+                  <MemoGroupHeaderRow row={row} summary={groupSummaries.get(row.id)} />
+                )}
+                top="var(--task-list-header-height, 0px)"
               />
             ) : null}
             {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -1686,98 +1690,6 @@ interface PMGroupSummary {
   totalPoints: number;
   completedPoints: number;
   stateType?: StateType;
-}
-
-interface TaskListVirtualizerLike {
-  getVirtualItems: () => Array<{ index: number; start: number }>;
-}
-
-function StickyPinnedGroupOverlay({
-  parentRef,
-  rows,
-  virtualizer,
-  groupSummaries,
-}: {
-  parentRef: RefObject<HTMLDivElement | null>;
-  rows: Row<Task>[];
-  virtualizer: TaskListVirtualizerLike;
-  groupSummaries: Map<string, PMGroupSummary>;
-}) {
-  const pinnedGroupRef = useRef<number | null>(null);
-  const pinnedGroupRafRef = useRef<number | null>(null);
-  const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (pinnedGroupRafRef.current !== null) {
-        cancelAnimationFrame(pinnedGroupRafRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const scrollEl = parentRef.current;
-    if (!scrollEl) return;
-
-    const syncPinnedGroup = () => {
-      const scrollTop = scrollEl.scrollTop;
-      const virtualItems = virtualizer.getVirtualItems();
-      let newPinnedIdx: number | null = null;
-
-      if (scrollTop > 10) {
-        for (const vItem of virtualItems) {
-          if (vItem.start > scrollTop) break;
-          if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
-        }
-        if (newPinnedIdx === null && virtualItems.length > 0) {
-          for (let index = virtualItems[0].index - 1; index >= 0; index -= 1) {
-            if (rows[index]?.getIsGrouped()) {
-              newPinnedIdx = index;
-              break;
-            }
-          }
-        }
-      }
-
-      if (newPinnedIdx !== pinnedGroupRef.current) {
-        pinnedGroupRef.current = newPinnedIdx;
-        startTransition(() => {
-          setPinnedGroupIdx((current) => (current === newPinnedIdx ? current : newPinnedIdx));
-        });
-      }
-    };
-
-    const handleScroll = () => {
-      if (pinnedGroupRafRef.current !== null) return;
-      pinnedGroupRafRef.current = requestAnimationFrame(() => {
-        pinnedGroupRafRef.current = null;
-        syncPinnedGroup();
-      });
-    };
-
-    syncPinnedGroup();
-    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
-
-    return () => {
-      scrollEl.removeEventListener('scroll', handleScroll);
-      if (pinnedGroupRafRef.current !== null) {
-        cancelAnimationFrame(pinnedGroupRafRef.current);
-        pinnedGroupRafRef.current = null;
-      }
-    };
-  }, [parentRef, rows, virtualizer]);
-
-  const pinnedGroupRow = pinnedGroupIdx !== null ? rows[pinnedGroupIdx] : undefined;
-
-  if (!pinnedGroupRow) return null;
-
-  return (
-    <div className="sticky z-[5]" style={{ top: 'var(--task-list-header-height, 0px)', height: 0, overflow: 'visible' }}>
-      <div className="border-b border-border/60 bg-background">
-        <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
-      </div>
-    </div>
-  );
 }
 
 function DataRowSelectCheckbox({
