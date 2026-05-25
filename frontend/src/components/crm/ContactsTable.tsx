@@ -50,6 +50,8 @@ import {
   virtualRowStyle,
   TABLE_HEADER_CELL_ACTIONS,
   TABLE_GROUP_ROW_INNER,
+  getGroupSelectionState as resolveGroupSelectionState,
+  toggleGroupSelection as computeGroupSelectionToggle,
   ACTIONS_COL_SIZE,
 } from '@/lib/tableStyles';
 import { ColumnVisibilityPopover } from '@/components/crm/ColumnVisibilityPopover';
@@ -546,35 +548,14 @@ export function ContactsTable({
   );
 
   const getGroupSelectionState = useCallback(
-    (groupRow: Row<CRMContact>): boolean | 'indeterminate' => {
-      const leaves = (groupRow.getLeafRows() as Row<CRMContact>[])
-        .filter((leaf) => !leaf.getIsGrouped());
-      if (leaves.length === 0) return false;
-      let selected = 0;
-      for (const leaf of leaves) {
-        if (rowSelection[leaf.id]) selected += 1;
-      }
-      if (selected === 0) return false;
-      if (selected === leaves.length) return true;
-      return 'indeterminate';
-    },
+    (groupRow: Row<CRMContact>): boolean | 'indeterminate' =>
+      resolveGroupSelectionState(groupRow, rowSelection),
     [rowSelection],
   );
 
   const toggleGroupSelection = useCallback(
     (groupRow: Row<CRMContact>, checked: boolean) => {
-      const leafIds = (groupRow.getLeafRows() as Row<CRMContact>[])
-        .filter((leaf) => !leaf.getIsGrouped())
-        .map((leaf) => leaf.id);
-      if (leafIds.length === 0) return;
-      setRowSelection((current) => {
-        const next = { ...current };
-        for (const id of leafIds) {
-          if (checked) next[id] = true;
-          else delete next[id];
-        }
-        return next;
-      });
+      setRowSelection((current) => computeGroupSelectionToggle(groupRow, current, checked));
     },
     [],
   );
@@ -710,11 +691,24 @@ export function ContactsTable({
                   style={virtualRowStyle(virtualRow.start)}
                 >
                   {isGrouped ? (
-                    <MemoGroupHeaderRow
-                      row={row}
-                      selectionState={getGroupSelectionState(row)}
-                      onToggleSelection={toggleGroupSelection}
-                    />
+                    <>
+                      <MemoGroupHeaderRow row={row} />
+                      {row.getIsExpanded() ? (
+                        <div className="border-b border-border/60 bg-card">
+                          {table.getHeaderGroups().map((headerGroup) => (
+                            <div key={`${headerGroup.id}-${row.id}`} className="flex items-center">
+                              {headerGroup.headers.map((header) =>
+                                renderHeaderCell(header, columnSizing, resetColumnSize, false, {
+                                  groupRow: row,
+                                  groupSelectionState: getGroupSelectionState(row),
+                                  onToggleGroupSelection: toggleGroupSelection,
+                                }),
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <MemoDataRow
                       row={row}
@@ -744,18 +738,25 @@ export function ContactsTable({
   );
 }
 
+interface GroupContext {
+  groupRow: Row<CRMContact>;
+  groupSelectionState: boolean | 'indeterminate';
+  onToggleGroupSelection: (groupRow: Row<CRMContact>, checked: boolean) => void;
+}
+
 function renderHeaderCell(
   header: Header<CRMContact, unknown>,
   columnSizing: Record<string, number>,
   resetColumnSize: (columnId: string) => void,
   isReorderMode: boolean,
+  groupContext?: GroupContext,
 ) {
   if (header.column.getIsGrouped()) return null;
 
   const defSize = header.column.columnDef.size ?? 150;
   const runtimeSize = header.getSize();
   const isResized = !!columnSizing[header.column.id];
-  const canSort = header.column.getCanSort();
+  const canSort = !groupContext && header.column.getCanSort();
   const sorted = header.column.getIsSorted();
   const colId = header.column.id;
   const pinnedClass = colId === 'select' ? TABLE_PINNED_HEADER_LEFT
@@ -773,6 +774,26 @@ function renderHeaderCell(
         style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
         aria-hidden="true"
       />
+    );
+  }
+
+  if (groupContext && colId === 'select') {
+    return (
+      <div
+        key={header.id}
+        className={`${CONTACTS_TABLE_HEADER_CELL} ${pinnedClass}`}
+        style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
+      >
+        <div className="flex items-center" onClick={(event) => event.stopPropagation()}>
+          <Checkbox
+            checked={groupContext.groupSelectionState}
+            onCheckedChange={(value) =>
+              groupContext.onToggleGroupSelection(groupContext.groupRow, value === true)
+            }
+            aria-label="Select all in group"
+          />
+        </div>
+      </div>
     );
   }
 
@@ -893,25 +914,17 @@ const SortDescIcon = memo(function SortDescIcon() {
 
 interface GroupHeaderRowProps {
   row: Row<CRMContact>;
-  selectionState: boolean | 'indeterminate';
-  onToggleSelection: (groupRow: Row<CRMContact>, checked: boolean) => void;
 }
 
 function areGroupHeaderRowPropsEqual(prev: GroupHeaderRowProps, next: GroupHeaderRowProps): boolean {
   return (
     prev.row.id === next.row.id &&
     prev.row.getIsExpanded() === next.row.getIsExpanded() &&
-    prev.row.subRows.length === next.row.subRows.length &&
-    prev.selectionState === next.selectionState &&
-    prev.onToggleSelection === next.onToggleSelection
+    prev.row.subRows.length === next.row.subRows.length
   );
 }
 
-const MemoGroupHeaderRow = memo(function GroupHeaderRow({
-  row,
-  selectionState,
-  onToggleSelection,
-}: GroupHeaderRowProps) {
+const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: GroupHeaderRowProps) {
   const subRows = row.subRows;
   const count = subRows.length;
   const groupValue = row.groupingValue as string;
@@ -922,13 +935,6 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       onClick={() => row.toggleExpanded()}
     >
       <span className={TABLE_GROUP_ROW_INNER}>
-        <span className="flex items-center" onClick={(event) => event.stopPropagation()}>
-          <Checkbox
-            checked={selectionState}
-            onCheckedChange={(value) => onToggleSelection(row, value === true)}
-            aria-label="Select all in group"
-          />
-        </span>
         {row.getIsExpanded() ? (
           <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
         ) : (

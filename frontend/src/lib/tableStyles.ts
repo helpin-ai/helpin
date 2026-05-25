@@ -145,3 +145,47 @@ export function virtualRowStyle(translateY: number): React.CSSProperties {
     transform: `translateY(${translateY}px)`,
   };
 }
+
+/**
+ * Resolves the collective selection state for a grouped row.
+ * Returns 'indeterminate' when only some leaf rows are selected.
+ */
+export function getGroupSelectionState<T>(
+  groupRow: {
+    getLeafRows: () => Array<{ id: string; getIsGrouped: () => boolean; original?: T }>;
+  },
+  rowSelection: Record<string, boolean>,
+): boolean | 'indeterminate' {
+  const leaves = groupRow.getLeafRows().filter((leaf) => !leaf.getIsGrouped());
+  if (leaves.length === 0) return false;
+  let selected = 0;
+  for (const leaf of leaves) {
+    if (rowSelection[leaf.id]) selected += 1;
+  }
+  if (selected === 0) return false;
+  if (selected === leaves.length) return true;
+  return 'indeterminate';
+}
+
+/**
+ * Returns the next rowSelection state after toggling all leaves under a group.
+ * Pass this to setRowSelection: `setRowSelection((s) => toggleGroupSelection(groupRow, s, checked))`
+ */
+export function toggleGroupSelection<T>(
+  groupRow: {
+    getLeafRows: () => Array<{ id: string; getIsGrouped: () => boolean; original?: T }>;
+  },
+  rowSelection: Record<string, boolean>,
+  checked: boolean,
+): Record<string, boolean> {
+  const leafIds = groupRow.getLeafRows()
+    .filter((leaf) => !leaf.getIsGrouped())
+    .map((leaf) => leaf.id);
+  if (leafIds.length === 0) return rowSelection;
+  const next = { ...rowSelection };
+  for (const id of leafIds) {
+    if (checked) next[id] = true;
+    else delete next[id];
+  }
+  return next;
+}

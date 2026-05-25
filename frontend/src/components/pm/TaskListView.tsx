@@ -99,6 +99,8 @@ import {
   TABLE_HEADER_CELL_ACTIONS,
   TABLE_GROUP_ROW_INNER,
   ACTIONS_COL_SIZE,
+  getGroupSelectionState as resolveGroupSelectionState,
+  toggleGroupSelection as computeGroupSelectionToggle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
@@ -1343,35 +1345,14 @@ export function TaskListView({
 
   const toggleGroupSelection = useCallback(
     (groupRow: Row<Task>, checked: boolean) => {
-      const leafIds = (groupRow.getLeafRows() as Row<Task>[])
-        .filter((leaf) => !leaf.getIsGrouped())
-        .map((leaf) => leaf.original.id);
-      if (leafIds.length === 0) return;
-      setRowSelection((current) => {
-        const next = { ...current };
-        for (const id of leafIds) {
-          if (checked) next[id] = true;
-          else delete next[id];
-        }
-        return next;
-      });
+      setRowSelection((current) => computeGroupSelectionToggle(groupRow, current, checked));
     },
     [],
   );
 
   const getGroupSelectionState = useCallback(
-    (groupRow: Row<Task>): boolean | 'indeterminate' => {
-      const leaves = (groupRow.getLeafRows() as Row<Task>[])
-        .filter((leaf) => !leaf.getIsGrouped());
-      if (leaves.length === 0) return false;
-      let selected = 0;
-      for (const leaf of leaves) {
-        if (rowSelection[leaf.original.id]) selected += 1;
-      }
-      if (selected === 0) return false;
-      if (selected === leaves.length) return true;
-      return 'indeterminate';
-    },
+    (groupRow: Row<Task>): boolean | 'indeterminate' =>
+      resolveGroupSelectionState(groupRow, rowSelection),
     [rowSelection],
   );
 
