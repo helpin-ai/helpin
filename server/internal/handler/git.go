@@ -57,18 +57,6 @@ func (h *GitHandler) GitHubCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
-// GetGitLabConnectURL handles GET /api/git/gitlab/connect-url.
-func (h *GitHandler) GetGitLabConnectURL(w http.ResponseWriter, r *http.Request) {
-	workspaceID := getWorkspaceID(r)
-	actorID := middleware.GetUserID(r.Context())
-	connectURL, err := h.gitService.GetGitLabConnectURL(r.Context(), workspaceID, actorID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, model.GitLabConnectURLResponse{ConnectURL: connectURL})
-}
-
 func (h *GitHandler) GetOrgGitHubInstallURL(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
@@ -83,30 +71,37 @@ func (h *GitHandler) GetOrgGitHubInstallURL(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, model.GitHubInstallURLResponse{InstallURL: installURL, Action: action, IntegrationID: integrationID})
 }
 
-func (h *GitHandler) GetOrgGitLabConnectURL(w http.ResponseWriter, r *http.Request) {
+// ConnectOrgGitLab handles POST /api/organizations/{id}/git/gitlab/connect.
+// Stores an org-scoped GitLab Personal/Group/Project Access Token after verifying
+// it against the customer's GitLab instance.
+func (h *GitHandler) ConnectOrgGitLab(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
 	returnWorkspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
-	connectURL, err := h.gitService.GetGitLabConnectURLForOrganization(r.Context(), orgID, returnWorkspaceID, actorID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, model.GitLabConnectURLResponse{ConnectURL: connectURL})
-}
 
-// GitLabCallback handles GET /api/git/gitlab/callback.
-func (h *GitHandler) GitLabCallback(w http.ResponseWriter, r *http.Request) {
-	redirectURL, err := h.gitService.CompleteGitLabOAuth(
-		r.Context(),
-		r.URL.Query().Get("state"),
-		r.URL.Query().Get("code"),
-	)
+	var req model.GitLabConnectTokenRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	integration, err := h.gitService.ConnectGitLabWithToken(r.Context(), orgID, returnWorkspaceID, actorID, req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	http.Redirect(w, r, redirectURL, http.StatusFound)
+	login := ""
+	if integration.AccountLogin != nil {
+		login = strings.TrimSpace(*integration.AccountLogin)
+	}
+	baseURL := ""
+	if integration.BaseURL != nil {
+		baseURL = strings.TrimSpace(*integration.BaseURL)
+	}
+	writeJSON(w, http.StatusOK, model.GitLabConnectResponse{
+		IntegrationID: integration.ID,
+		AccountLogin:  login,
+		BaseURL:       baseURL,
+	})
 }
 
 func (h *GitHandler) ListOrgIntegrations(w http.ResponseWriter, r *http.Request) {
@@ -245,12 +240,18 @@ func (h *GitHandler) GetIntegration(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListAvailableRepos handles GET /api/git/integrations/{id}/available-repos.
+// Accepts optional `search` (server-side filter passed to GitLab) and
+// `nocache=1` (bypass the in-memory cache, used by the manual Refresh button).
 func (h *GitHandler) ListAvailableRepos(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	integrationID := chi.URLParam(r, "id")
 	actorID := middleware.GetUserID(r.Context())
+	opts := service.ListAvailableReposOptions{
+		Search:  strings.TrimSpace(r.URL.Query().Get("search")),
+		NoCache: r.URL.Query().Get("nocache") == "1",
+	}
 
-	repos, err := h.gitService.ListAvailableRepos(r.Context(), workspaceID, integrationID, actorID)
+	repos, err := h.gitService.ListAvailableRepos(r.Context(), workspaceID, integrationID, actorID, opts)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "forbidden") {
 			writeError(w, http.StatusForbidden, err.Error())

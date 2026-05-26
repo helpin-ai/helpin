@@ -32,7 +32,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/email"
 	"github.com/helpin-ai/helpin/server/internal/geoip"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
-	"github.com/helpin-ai/helpin/server/internal/gitlab"
 	"github.com/helpin-ai/helpin/server/internal/handler"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/middleware"
@@ -760,8 +759,6 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
-	gitlabClient := gitlab.NewClient(cfg.GitLabClientID, cfg.GitLabClientSecret, cfg.GitLabOAuthRedirectURL, cfg.GitLabBaseURL)
-
 	var temporalClient tclient.Client
 	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
@@ -804,7 +801,7 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	).SetGitLabDependencies(gitCredentialRepo, gitlabClient, resolveGitOAuthEncryptionKey(cfg))
+	).SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -1142,7 +1139,8 @@ func main() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
-	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher)
+	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher).
+		SetGitRepositoryRepository(gitRepositoryRepo)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, pmTaskRepo, supportInstallRepo)
 	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
 	if err != nil {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { gitBranchURL, gitRepoURL } from '@/lib/gitUrls';
@@ -28,7 +28,9 @@ import {
   LinkSquare01Icon,
   Loading01Icon,
   LockIcon,
+  Search01Icon,
 } from '@/lib/icons';
+import { Input } from '@/components/ui/input';
 import { LINEAR_CARD_CLASS } from './settingsConstants';
 
 type WorkspaceRepositoriesTabProps = {
@@ -48,6 +50,9 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
   const [selectedRepoIDs, setSelectedRepoIDs] = useState<string[]>([]);
   const [loadingAvailableRepos, setLoadingAvailableRepos] = useState(false);
   const [wiringRepos, setWiringRepos] = useState(false);
+  const [repoSearchInput, setRepoSearchInput] = useState('');
+  const [debouncedRepoSearch, setDebouncedRepoSearch] = useState('');
+  const availableReposAbortRef = useRef<AbortController | null>(null);
 
   const hasIntegrations = integrations.length > 0;
   const hasRepositories = repositories.length > 0;
@@ -84,11 +89,23 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
     void navigate({ to: '/w/$slug/settings/$section', params: { slug: workspaceSlug, section } });
   }, [navigate, workspaceSlug]);
 
-  const loadAvailableRepos = useCallback(async (integrationId: string) => {
+  const loadAvailableRepos = useCallback(async (
+    integrationId: string,
+    options?: { search?: string; noCache?: boolean },
+  ) => {
+    availableReposAbortRef.current?.abort();
+    const controller = new AbortController();
+    availableReposAbortRef.current = controller;
     setLoadingAvailableRepos(true);
-    const { data, error, status } = await gitService.listAvailableRepos(workspaceId, integrationId);
+    const { data, error, status } = await gitService.listAvailableRepos(workspaceId, integrationId, {
+      search: options?.search,
+      noCache: options?.noCache,
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted) return;
     setLoadingAvailableRepos(false);
     if (error) {
+      if (controller.signal.aborted) return;
       if (status === 403) {
         toast.error("You don't have access to this organization's integrations.");
       } else {
@@ -114,12 +131,27 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
     void loadGitStatus();
   }, [loadGitStatus]);
 
+  const defaultPickerIntegrationId = repoProviderIntegrations[0]?.id ?? null;
   useEffect(() => {
-    if (repoPickerIntegrationId || repoProviderIntegrations.length === 0) {
-      return;
-    }
-    void loadAvailableRepos(repoProviderIntegrations[0].id);
-  }, [repoProviderIntegrations, loadAvailableRepos, repoPickerIntegrationId]);
+    if (repoPickerIntegrationId || !defaultPickerIntegrationId) return;
+    void loadAvailableRepos(defaultPickerIntegrationId);
+    // intentionally depend only on the primitive id to avoid re-firing when
+    // integrations re-fetch and produce a new array reference.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultPickerIntegrationId]);
+
+  // Debounce the search input.
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedRepoSearch(repoSearchInput.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [repoSearchInput]);
+
+  // Re-fetch when the debounced search changes (after a picker integration is selected).
+  useEffect(() => {
+    if (!repoPickerIntegrationId) return;
+    void loadAvailableRepos(repoPickerIntegrationId, { search: debouncedRepoSearch || undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedRepoSearch]);
 
   return (
     <div className="space-y-6">
@@ -188,7 +220,11 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
                 <div className="mt-3 max-w-sm">
                   <Select
                     value={repoPickerIntegrationId ?? undefined}
-                    onValueChange={(value) => void loadAvailableRepos(value)}
+                    onValueChange={(value) => {
+                      setRepoSearchInput('');
+                      setDebouncedRepoSearch('');
+                      void loadAvailableRepos(value);
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select a Git connection" />
@@ -202,6 +238,17 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
                     </SelectContent>
                   </Select>
                 </div>
+                {selectedRepoPickerIntegration?.provider === 'gitlab' ? (
+                  <div className="relative mt-3 max-w-sm">
+                    <Search01Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={repoSearchInput}
+                      onChange={(e) => setRepoSearchInput(e.target.value)}
+                      placeholder="Search GitLab projects by name"
+                      className="h-8 pl-8 text-xs"
+                    />
+                  </div>
+                ) : null}
               </div>
               <div className="flex gap-2">
                 {canManageOrgGit && workspaceSlug ? (
@@ -218,7 +265,9 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
                   size="sm"
                   className="gap-1.5"
                   disabled={loadingAvailableRepos || !repoPickerIntegrationId}
-                  onClick={() => repoPickerIntegrationId ? void loadAvailableRepos(repoPickerIntegrationId) : undefined}
+                  onClick={() => repoPickerIntegrationId
+                    ? void loadAvailableRepos(repoPickerIntegrationId, { search: debouncedRepoSearch || undefined, noCache: true })
+                    : undefined}
                 >
                   {loadingAvailableRepos ? <Loading01Icon className="h-3.5 w-3.5 animate-spin" /> : <ArrowReloadHorizontalIcon className="h-3.5 w-3.5" />}
                   {loadingAvailableRepos ? 'Refreshing...' : 'Refresh'}
@@ -358,6 +407,12 @@ export function WorkspaceRepositoriesTab({ workspaceId, editable }: WorkspaceRep
                     </div>
                   );
                 })}
+                {selectedRepoPickerIntegration?.provider === 'gitlab'
+                  && availableRepos.length >= (debouncedRepoSearch ? 300 : 100) ? (
+                  <p className="px-1 pt-1 text-xs text-muted-foreground">
+                    Showing the first {availableRepos.length} projects. {debouncedRepoSearch ? 'Refine your search to narrow further.' : 'Type above to find more.'}
+                  </p>
+                ) : null}
               </div>
             ) : !repoPickerIntegrationId ? (
               <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
