@@ -3,7 +3,8 @@ import type {
   GitIntegration,
   GitIntegrationDetail,
   GitHubInstallURLResponse,
-  GitLabConnectURLResponse,
+  GitLabConnectTokenRequest,
+  GitLabConnectResponse,
   GitBranch,
   GitAvailableRepo,
   GitRepository,
@@ -58,8 +59,8 @@ export const gitService = {
     api.get<GitHubInstallURLResponse>(
       `/organizations/${organizationId}/git/github/install-url${orgQs(workspaceId)}${options?.forceInstall ? `${workspaceId ? '&' : '?'}force_install=true` : ''}`,
     ),
-  getOrgGitLabConnectURL: (organizationId: string, workspaceId?: string) =>
-    api.get<GitLabConnectURLResponse>(`/organizations/${organizationId}/git/gitlab/connect-url${orgQs(workspaceId)}`),
+  connectOrgGitLab: (organizationId: string, workspaceId: string | undefined, payload: GitLabConnectTokenRequest) =>
+    api.post<GitLabConnectResponse>(`/organizations/${organizationId}/git/gitlab/connect${orgQs(workspaceId)}`, payload),
   listOrgIntegrations: (organizationId: string) =>
     api.get<GitIntegration[]>(`/organizations/${organizationId}/git/integrations`),
   getOrgIntegration: (organizationId: string, integrationId: string) =>
@@ -72,8 +73,6 @@ export const gitService = {
     api.post<GitRepository[]>(`/organizations/${organizationId}/git/integrations/${integrationId}/sync`, {}),
   getGitHubInstallURL: (workspaceId: string, options?: { forceInstall?: boolean }) =>
     api.get<GitHubInstallURLResponse>(`/git/github/install-url${qs(workspaceId)}${options?.forceInstall ? '&force_install=true' : ''}`),
-  getGitLabConnectURL: (workspaceId: string) =>
-    api.get<GitLabConnectURLResponse>(`/git/gitlab/connect-url${qs(workspaceId)}`),
   listIntegrations: (workspaceId: string) =>
     api.get<GitIntegration[]>(`/git/integrations${qs(workspaceId)}`),
   getIntegration: (workspaceId: string, integrationId: string) =>
@@ -84,8 +83,19 @@ export const gitService = {
     api.del<{ status: string }>(`/git/integrations/${integrationId}${qs(workspaceId)}`),
   syncRepositories: (workspaceId: string, integrationId: string) =>
     api.post<GitRepository[]>(`/git/integrations/${integrationId}/sync${qs(workspaceId)}`, {}),
-  listAvailableRepos: (workspaceId: string, integrationId: string) =>
-    api.get<GitAvailableRepo[]>(`/git/integrations/${integrationId}/available-repos${qs(workspaceId)}`),
+  listAvailableRepos: (
+    workspaceId: string,
+    integrationId: string,
+    options?: { search?: string; noCache?: boolean; signal?: AbortSignal },
+  ) => {
+    const params = new URLSearchParams({ workspace_id: workspaceId });
+    if (options?.search) params.set('search', options.search);
+    if (options?.noCache) params.set('nocache', '1');
+    return api.get<GitAvailableRepo[]>(
+      `/git/integrations/${integrationId}/available-repos?${params.toString()}`,
+      { signal: options?.signal },
+    );
+  },
   wireRepositories: (workspaceId: string, integrationId: string, payload: WireGitRepositoriesRequest) =>
     gitRawRequest<WireGitRepositoriesResponse | WireGitRepositoriesConflictResponse>(
       `/git/integrations/${integrationId}/repositories${qs(workspaceId)}`,

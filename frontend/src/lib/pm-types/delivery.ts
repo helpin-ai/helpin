@@ -156,8 +156,19 @@ export interface GitHubInstallURLResponse {
   integration_id?: string;
 }
 
-export interface GitLabConnectURLResponse {
-  connect_url: string;
+export type GitLabTokenAuthType = 'personal_token' | 'group_token' | 'project_token';
+
+export interface GitLabConnectTokenRequest {
+  base_url: string;
+  token: string;
+  auth_type: GitLabTokenAuthType;
+  label?: string;
+}
+
+export interface GitLabConnectResponse {
+  integration_id: string;
+  account_login: string;
+  base_url: string;
 }
 
 export interface UpdateGitRepositoryRequest {

@@ -546,7 +546,7 @@ func TestListAvailableReposRejectsActorWithoutAdminRoleAnywhereInOrg(t *testing.
 		orgRepo:         repository.NewOrganizationRepository(db),
 	}
 
-	_, err := svc.ListAvailableRepos(context.Background(), "ws-1", "gi-1", "viewer-1")
+	_, err := svc.ListAvailableRepos(context.Background(), "ws-1", "gi-1", "viewer-1", ListAvailableReposOptions{})
 	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "forbidden") {
 		t.Fatalf("expected forbidden error, got %v", err)
 	}
@@ -611,7 +611,7 @@ func TestListAvailableReposAllowsAdminOnSiblingWorkspaceInOrg(t *testing.T) {
 		orgRepo:         repository.NewOrganizationRepository(db),
 	}
 
-	_, err := svc.ListAvailableRepos(context.Background(), "ws-a", "gi-1", "user-1")
+	_, err := svc.ListAvailableRepos(context.Background(), "ws-a", "gi-1", "user-1", ListAvailableReposOptions{})
 	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "github app credentials are not configured") {
 		t.Fatalf("expected auth to pass and github app config error to surface, got %v", err)
 	}
@@ -1011,6 +1011,37 @@ func TestUpdateDeliveryStatusAfterMergeUpdatesTargetLinkAndTaskState(t *testing.
 	}
 	if task.WorkflowStateID != "state-done" {
 		t.Fatalf("workflow_state_id = %q, want state-done", task.WorkflowStateID)
+	}
+}
+
+func TestUpdateTaskDeliveryTargetRejectsUnselectedRepository(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	mustExec(t, db, `INSERT INTO git_repositories (
+		id, workspace_id, integration_id, provider, external_id, full_name, default_branch,
+		permissions, private, archived, selected, active, created_at, updated_at
+	) VALUES (?, ?, ?, 'gitlab', '202', 'acme/disabled', 'main', ?, 1, 0, 0, 1, datetime('now'), datetime('now'))`,
+		"repo-disabled", "ws-1", "gi-1", []byte("{}"))
+
+	svc := newGitDeliveryStatusService(db, nil)
+	repoID := "repo-disabled"
+	_, err := svc.UpdateTaskDeliveryTarget(context.Background(), "ws-1", "task-1", model.UpdateTaskDeliveryTargetRequest{
+		RepositoryID: &repoID,
+	}, "actor-1")
+	if err == nil || !strings.Contains(err.Error(), "repository is not available for PM delivery") {
+		t.Fatalf("expected unavailable repository error, got %v", err)
+	}
+}
+
+func TestResolveTaskDeliveryTargetForRunRejectsUnselectedRepository(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	mustExec(t, db, `UPDATE git_repositories SET selected = 0 WHERE id = ?`, "repo-1")
+
+	svc := newGitDeliveryStatusService(db, nil)
+	_, err := svc.ResolveTaskDeliveryTargetForRun(context.Background(), "ws-1", "task-1", true)
+	if err == nil || !strings.Contains(err.Error(), "repository is not available for PM delivery") {
+		t.Fatalf("expected unavailable repository error, got %v", err)
 	}
 }
 

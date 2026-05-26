@@ -354,8 +354,20 @@ type GitHubInstallURLResponse struct {
 	IntegrationID *string `json:"integration_id,omitempty"`
 }
 
-type GitLabConnectURLResponse struct {
-	ConnectURL string `json:"connect_url"`
+// GitLabConnectTokenRequest is the payload an org admin submits to connect GitLab
+// using a Personal/Group/Project Access Token (no OAuth flow).
+type GitLabConnectTokenRequest struct {
+	BaseURL  string `json:"base_url"`            // e.g. https://gitlab.com or https://gitlab.acme.io
+	Token    string `json:"token"`               // PAT, Group Access Token, or Project Access Token
+	AuthType string `json:"auth_type"`           // "personal_token" | "group_token" | "project_token"
+	Label    string `json:"label,omitempty"`     // optional display label
+}
+
+// GitLabConnectResponse summarizes the resulting connection.
+type GitLabConnectResponse struct {
+	IntegrationID string `json:"integration_id"`
+	AccountLogin  string `json:"account_login"`
+	BaseURL       string `json:"base_url"`
 }
 
 type GitAvailableRepoClaim struct {

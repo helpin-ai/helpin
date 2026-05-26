@@ -1,3 +1,6 @@
+// Package gitlab is a minimal GitLab REST API client used with a caller-supplied
+// access token (Personal/Group/Project Access Token). It is per-connection: callers
+// construct a Client for a specific GitLab base URL and pass the token on each call.
 package gitlab
 
 import (
@@ -12,24 +15,14 @@ import (
 	"time"
 )
 
+// Client targets a single GitLab instance (gitlab.com or self-hosted).
 type Client struct {
-	clientID     string
-	clientSecret string
-	redirectURL  string
-	webBaseURL   string
-	apiBaseURL   string
-	httpClient   *http.Client
+	webBaseURL string
+	apiBaseURL string
+	httpClient *http.Client
 }
 
-type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	RefreshToken string `json:"refresh_token"`
-	Scope        string `json:"scope"`
-	CreatedAt    int64  `json:"created_at"`
-	ExpiresIn    int64  `json:"expires_in"`
-}
-
+// User represents the authenticated GitLab user.
 type User struct {
 	ID       int64  `json:"id"`
 	Username string `json:"username"`
@@ -37,6 +30,7 @@ type User struct {
 	WebURL   string `json:"web_url"`
 }
 
+// Project is a GitLab project listing entry.
 type Project struct {
 	ID                int64  `json:"id"`
 	PathWithNamespace string `json:"path_with_namespace"`
@@ -56,10 +50,12 @@ type Project struct {
 	} `json:"permissions"`
 }
 
+// Branch is a GitLab repository branch.
 type Branch struct {
 	Name string `json:"name"`
 }
 
+// MergeRequest is a GitLab merge request.
 type MergeRequest struct {
 	IID       int    `json:"iid"`
 	Title     string `json:"title"`
@@ -73,30 +69,27 @@ type MergeRequest struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
+// ProjectWebhook is a GitLab project webhook.
 type ProjectWebhook struct {
 	ID  int64  `json:"id"`
 	URL string `json:"url"`
 }
 
-func NewClient(clientID, clientSecret, redirectURL, baseURL string) *Client {
+// NewClient constructs a Client for the given GitLab base URL. Empty defaults to
+// https://gitlab.com.
+func NewClient(baseURL string) *Client {
 	webBaseURL := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if webBaseURL == "" {
 		webBaseURL = "https://gitlab.com"
 	}
 	return &Client{
-		clientID:     strings.TrimSpace(clientID),
-		clientSecret: strings.TrimSpace(clientSecret),
-		redirectURL:  strings.TrimSpace(redirectURL),
-		webBaseURL:   webBaseURL,
-		apiBaseURL:   strings.TrimRight(webBaseURL, "/") + "/api/v4",
-		httpClient:   &http.Client{Timeout: 30 * time.Second},
+		webBaseURL: webBaseURL,
+		apiBaseURL: webBaseURL + "/api/v4",
+		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
-func (c *Client) Configured() bool {
-	return c != nil && c.clientID != "" && c.clientSecret != "" && c.redirectURL != ""
-}
-
+// WebBaseURL returns the configured GitLab web base URL.
 func (c *Client) WebBaseURL() string {
 	if c == nil || strings.TrimSpace(c.webBaseURL) == "" {
 		return "https://gitlab.com"
@@ -104,64 +97,7 @@ func (c *Client) WebBaseURL() string {
 	return strings.TrimRight(c.webBaseURL, "/")
 }
 
-func (c *Client) AuthorizeURL(state string, scopes []string) string {
-	u, _ := url.Parse(c.webBaseURL + "/oauth/authorize")
-	q := u.Query()
-	q.Set("client_id", c.clientID)
-	q.Set("redirect_uri", c.redirectURL)
-	q.Set("response_type", "code")
-	q.Set("state", state)
-	q.Set("scope", strings.Join(scopes, " "))
-	u.RawQuery = q.Encode()
-	return u.String()
-}
-
-func (c *Client) ExchangeCode(ctx context.Context, code string) (*TokenResponse, error) {
-	return c.tokenRequest(ctx, url.Values{
-		"client_id":     {c.clientID},
-		"client_secret": {c.clientSecret},
-		"code":          {strings.TrimSpace(code)},
-		"grant_type":    {"authorization_code"},
-		"redirect_uri":  {c.redirectURL},
-	})
-}
-
-func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
-	return c.tokenRequest(ctx, url.Values{
-		"client_id":     {c.clientID},
-		"client_secret": {c.clientSecret},
-		"refresh_token": {strings.TrimSpace(refreshToken)},
-		"grant_type":    {"refresh_token"},
-		"redirect_uri":  {c.redirectURL},
-	})
-}
-
-func (c *Client) tokenRequest(ctx context.Context, form url.Values) (*TokenResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.webBaseURL+"/oauth/token", strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request gitlab oauth token: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		var payload struct {
-			Error            string `json:"error"`
-			ErrorDescription string `json:"error_description"`
-		}
-		_ = json.NewDecoder(resp.Body).Decode(&payload)
-		return nil, fmt.Errorf("gitlab oauth token failed (%d): %s %s", resp.StatusCode, payload.Error, payload.ErrorDescription)
-	}
-	var token TokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
-		return nil, fmt.Errorf("decode gitlab oauth token: %w", err)
-	}
-	return &token, nil
-}
-
+// CurrentUser returns the GitLab user the supplied access token belongs to.
 func (c *Client) CurrentUser(ctx context.Context, accessToken string) (*User, error) {
 	var user User
 	if err := c.do(ctx, accessToken, http.MethodGet, c.apiBaseURL+"/user", nil, &user); err != nil {
@@ -170,18 +106,29 @@ func (c *Client) CurrentUser(ctx context.Context, accessToken string) (*User, er
 	return &user, nil
 }
 
+// ListProjects returns projects the access token has at least Reporter access to,
+// optionally filtered by search. Pagination is capped: 1 page (100 projects) for
+// the empty default list, 3 pages (300) when the caller supplies a search term.
+// Users with broader access surface them via the search box.
 func (c *Client) ListProjects(ctx context.Context, accessToken, search string) ([]Project, error) {
+	search = strings.TrimSpace(search)
+	maxPages := 1
+	if search != "" {
+		maxPages = 3
+	}
 	projects := make([]Project, 0, 128)
-	for page := 1; ; page++ {
+	for page := 1; page <= maxPages; page++ {
 		u, _ := url.Parse(c.apiBaseURL + "/projects")
 		q := u.Query()
-		q.Set("membership", "true")
+		// min_access_level=20 (Reporter) includes projects accessible via group
+		// inheritance. membership=true would exclude those on many GitLab versions.
+		q.Set("min_access_level", "20")
 		q.Set("simple", "false")
 		q.Set("per_page", "100")
 		q.Set("page", strconv.Itoa(page))
 		q.Set("order_by", "last_activity_at")
-		if strings.TrimSpace(search) != "" {
-			q.Set("search", strings.TrimSpace(search))
+		if search != "" {
+			q.Set("search", search)
 		}
 		u.RawQuery = q.Encode()
 		var batch []Project
@@ -196,6 +143,18 @@ func (c *Client) ListProjects(ctx context.Context, accessToken, search string) (
 	return projects, nil
 }
 
+// GetProject fetches a single project by numeric ID. Used to verify a repo the
+// caller wants to wire is accessible, without re-listing all projects.
+func (c *Client) GetProject(ctx context.Context, accessToken string, projectID int64) (*Project, error) {
+	var project Project
+	if err := c.do(ctx, accessToken, http.MethodGet,
+		fmt.Sprintf("%s/projects/%d", c.apiBaseURL, projectID), nil, &project); err != nil {
+		return nil, err
+	}
+	return &project, nil
+}
+
+// ListBranches returns the project's branches.
 func (c *Client) ListBranches(ctx context.Context, accessToken string, projectID int64) ([]Branch, error) {
 	branches := make([]Branch, 0, 64)
 	for page := 1; ; page++ {
@@ -212,6 +171,7 @@ func (c *Client) ListBranches(ctx context.Context, accessToken string, projectID
 	return branches, nil
 }
 
+// ListMergeRequests returns open merge requests matching the source/target branches.
 func (c *Client) ListMergeRequests(ctx context.Context, accessToken string, projectID int64, sourceBranch, targetBranch string) ([]MergeRequest, error) {
 	u, _ := url.Parse(fmt.Sprintf("%s/projects/%d/merge_requests", c.apiBaseURL, projectID))
 	q := u.Query()
@@ -227,6 +187,7 @@ func (c *Client) ListMergeRequests(ctx context.Context, accessToken string, proj
 	return items, nil
 }
 
+// CreateMergeRequest creates a merge request authored by the token owner.
 func (c *Client) CreateMergeRequest(ctx context.Context, accessToken string, projectID int64, sourceBranch, targetBranch, title, description string) (*MergeRequest, error) {
 	payload := map[string]string{
 		"source_branch": sourceBranch,
@@ -241,6 +202,7 @@ func (c *Client) CreateMergeRequest(ctx context.Context, accessToken string, pro
 	return &mr, nil
 }
 
+// UpsertProjectWebhook installs a webhook for the project if it is not already present.
 func (c *Client) UpsertProjectWebhook(ctx context.Context, accessToken string, projectID int64, hookURL, secret string) (*ProjectWebhook, error) {
 	var existing []ProjectWebhook
 	if err := c.do(ctx, accessToken, http.MethodGet, fmt.Sprintf("%s/projects/%d/hooks", c.apiBaseURL, projectID), nil, &existing); err != nil {
