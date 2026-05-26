@@ -265,6 +265,20 @@ func (r *GitRepositoryRepository) GetByID(ctx context.Context, workspaceID, id s
 	return &repo, nil
 }
 
+// GetEnabledByID loads a repository that is available for PM delivery and agents.
+func (r *GitRepositoryRepository) GetEnabledByID(ctx context.Context, workspaceID, id string) (*model.GitRepository, error) {
+	var repo model.GitRepository
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND id = ? AND deleted_at IS NULL AND active = ? AND archived = ? AND selected = ?", workspaceID, id, true, false, true).
+		First(&repo).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get enabled git repository: %w", err)
+	}
+	return &repo, nil
+}
+
 // GetByFullName loads a repository by workspace-scoped full name.
 func (r *GitRepositoryRepository) GetByFullName(ctx context.Context, workspaceID, fullName string) (*model.GitRepository, error) {
 	var repo model.GitRepository

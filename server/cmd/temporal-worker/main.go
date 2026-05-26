@@ -24,7 +24,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/config"
 	"github.com/helpin-ai/helpin/server/internal/crawler"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
-	"github.com/helpin-ai/helpin/server/internal/gitlab"
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/oauth"
 	"github.com/helpin-ai/helpin/server/internal/observability"
@@ -403,7 +402,6 @@ func main() {
 	)
 	pmStoryService.SetRecurringService(pmRecurringTemplateService)
 	pmRecurringTemplateService.SetTaskService(pmStoryService)
-	gitlabClient := gitlab.NewClient(cfg.GitLabClientID, cfg.GitLabClientSecret, cfg.GitLabOAuthRedirectURL, cfg.GitLabBaseURL)
 	gitService := service.NewGitService(
 		gitIntRepo,
 		gitRepo,
@@ -419,7 +417,7 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	).SetGitLabDependencies(gitCredentialRepo, gitlabClient, resolveGitOAuthEncryptionKey(cfg))
+	).SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -569,7 +567,6 @@ func main() {
 		wsPublisher,
 		runtimes,
 		githubAppClient,
-		gitlabClient,
 		gitCredentialRepo,
 		resolveGitOAuthEncryptionKey(cfg),
 		runEngine,

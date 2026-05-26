@@ -8,8 +8,13 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import type { GitLabTokenAuthType } from '@/lib/pmTypes';
 import {
   ArrowReloadHorizontalIcon,
   Delete01Icon,
@@ -36,6 +41,11 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
   const [loading, setLoading] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [installingGitHub, setInstallingGitHub] = useState(false);
+  const [gitlabDialogOpen, setGitlabDialogOpen] = useState(false);
+  const [gitlabBaseURL, setGitlabBaseURL] = useState('https://gitlab.com');
+  const [gitlabToken, setGitlabToken] = useState('');
+  const [gitlabAuthType, setGitlabAuthType] = useState<GitLabTokenAuthType>('personal_token');
+  const [gitlabLabel, setGitlabLabel] = useState('');
   const [connectingGitLab, setConnectingGitLab] = useState(false);
   const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
   const [disconnectingIntegrationId, setDisconnectingIntegrationId] = useState<string | null>(null);
@@ -88,24 +98,15 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
     const url = new URL(window.location.href);
     const githubStatus = url.searchParams.get('github_app');
     const githubMessage = url.searchParams.get('github_message');
-    const gitlabStatus = url.searchParams.get('gitlab_oauth');
-    const gitlabMessage = url.searchParams.get('gitlab_message');
-    if (!githubStatus && !gitlabStatus) return;
+    if (!githubStatus) return;
 
     if (githubStatus === 'connected') {
       toast.success(githubMessage || 'GitHub connected');
-    } else if (githubStatus) {
+    } else {
       toast.error(githubMessage || 'GitHub connection failed');
-    }
-    if (gitlabStatus === 'connected') {
-      toast.success(gitlabMessage || 'GitLab connected');
-    } else if (gitlabStatus) {
-      toast.error(gitlabMessage || 'GitLab connection failed');
     }
     url.searchParams.delete('github_app');
     url.searchParams.delete('github_message');
-    url.searchParams.delete('gitlab_oauth');
-    url.searchParams.delete('gitlab_message');
     url.searchParams.delete('integration_id');
     window.history.replaceState({}, '', `${url.pathname}${url.search ? url.search : ''}${url.hash}`);
     void loadIntegrations();
@@ -140,16 +141,37 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
     window.location.assign(data.install_url);
   };
 
-  const startGitLabConnect = async () => {
+  const openGitLabDialog = () => {
+    setGitlabBaseURL('https://gitlab.com');
+    setGitlabToken('');
+    setGitlabAuthType('personal_token');
+    setGitlabLabel('');
+    setGitlabDialogOpen(true);
+  };
+
+  const submitGitLabConnect = async () => {
     if (!organizationId) return;
-    setConnectingGitLab(true);
-    const { data, error } = await gitService.getOrgGitLabConnectURL(organizationId, workspaceId);
-    setConnectingGitLab(false);
-    if (error || !data?.connect_url) {
-      toast.error(error || 'GitLab connect URL is not available');
+    if (!gitlabToken.trim()) {
+      toast.error('Paste a GitLab access token to continue');
       return;
     }
-    window.location.assign(data.connect_url);
+    setConnectingGitLab(true);
+    const { data, error } = await gitService.connectOrgGitLab(organizationId, workspaceId, {
+      base_url: gitlabBaseURL.trim(),
+      token: gitlabToken.trim(),
+      auth_type: gitlabAuthType,
+      label: gitlabLabel.trim() || undefined,
+    });
+    setConnectingGitLab(false);
+    if (error || !data) {
+      toast.error(error || 'GitLab connection failed');
+      return;
+    }
+    toast.success(data.account_login
+      ? `GitLab connected as ${data.account_login}`
+      : 'GitLab connected');
+    setGitlabDialogOpen(false);
+    await loadIntegrations();
   };
 
   const gitHubAccessURL = (integration: GitIntegration) => {
@@ -206,11 +228,10 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
               type="button"
               variant={hasGitLabIntegration ? 'outline' : 'default'}
               size="sm"
-              disabled={connectingGitLab || !organizationId}
-              onClick={() => void startGitLabConnect()}
+              disabled={!organizationId}
+              onClick={openGitLabDialog}
             >
-              {connectingGitLab ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-              {hasGitLabIntegration ? 'Connect Another GitLab Account' : 'Authorize GitLab'}
+              {hasGitLabIntegration ? 'Connect Another GitLab Account' : 'Connect GitLab'}
             </Button>
           </div>
         ) : null}
@@ -229,7 +250,7 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
           ) : null}
           {!canManage ? (
             <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-              Organization admins manage provider access. GitLab.com authorization uses Helpin's OAuth app; you can use repositories already enabled for your workspace.
+              Organization admins manage provider access. You can still use repositories already enabled for your workspace.
             </div>
           ) : null}
           {loading ? (
@@ -379,6 +400,78 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
           ) : null}
         </>
       )}
+
+      <Dialog open={gitlabDialogOpen} onOpenChange={(open) => { if (!connectingGitLab) setGitlabDialogOpen(open); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect GitLab</DialogTitle>
+            <DialogDescription>
+              Paste a GitLab access token. The token must have <code>api</code>, <code>read_repository</code>, and <code>write_repository</code> scopes, plus Maintainer access on the projects you want to connect. Helpin acts as the token's owner for branches, merge requests, and webhooks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="gitlab-base-url">GitLab URL</Label>
+              <Input
+                id="gitlab-base-url"
+                value={gitlabBaseURL}
+                onChange={(e) => setGitlabBaseURL(e.target.value)}
+                placeholder="https://gitlab.com"
+                disabled={connectingGitLab}
+              />
+              <p className="text-xs text-muted-foreground">Use https://gitlab.com or your self-hosted GitLab URL.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="gitlab-auth-type">Token type</Label>
+              <Select
+                value={gitlabAuthType}
+                onValueChange={(value) => setGitlabAuthType(value as GitLabTokenAuthType)}
+                disabled={connectingGitLab}
+              >
+                <SelectTrigger id="gitlab-auth-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="personal_token">Personal Access Token</SelectItem>
+                  <SelectItem value="group_token">Group Access Token</SelectItem>
+                  <SelectItem value="project_token">Project Access Token</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="gitlab-token">Token</Label>
+              <Input
+                id="gitlab-token"
+                type="password"
+                value={gitlabToken}
+                onChange={(e) => setGitlabToken(e.target.value)}
+                placeholder="glpat-..."
+                disabled={connectingGitLab}
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="gitlab-label">Label (optional)</Label>
+              <Input
+                id="gitlab-label"
+                value={gitlabLabel}
+                onChange={(e) => setGitlabLabel(e.target.value)}
+                placeholder="GitLab acme"
+                disabled={connectingGitLab}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setGitlabDialogOpen(false)} disabled={connectingGitLab}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitGitLabConnect()} disabled={connectingGitLab || !gitlabToken.trim()}>
+              {connectingGitLab ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              Connect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={disconnectConfirm !== null}

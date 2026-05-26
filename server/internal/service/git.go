@@ -43,8 +43,9 @@ type GitService struct {
 	wsPublisher     *websocket.Publisher
 	ruleEngine      *AutomationRuleEngine
 	githubApp       gitHubAppClient
-	gitlabClient    gitLabClient
+	gitlabFactory   gitLabClientFactory
 	encryptionKey   []byte
+	availableRepos  *availableReposCache
 	appBaseURL      string
 	githubAppSlug   string
 	stateSecret     string
@@ -60,18 +61,26 @@ type gitHubAppClient interface {
 	MergeBranch(ctx context.Context, installationID, owner, repo, base, head, commitMessage string) error
 }
 
+// gitLabClient is the API surface backed by gitlab.Client. Constructed per-credential
+// using the credential's base URL.
 type gitLabClient interface {
-	Configured() bool
 	WebBaseURL() string
-	AuthorizeURL(state string, scopes []string) string
-	ExchangeCode(ctx context.Context, code string) (*gitlab.TokenResponse, error)
-	RefreshToken(ctx context.Context, refreshToken string) (*gitlab.TokenResponse, error)
 	CurrentUser(ctx context.Context, accessToken string) (*gitlab.User, error)
 	ListProjects(ctx context.Context, accessToken, search string) ([]gitlab.Project, error)
+	GetProject(ctx context.Context, accessToken string, projectID int64) (*gitlab.Project, error)
 	ListBranches(ctx context.Context, accessToken string, projectID int64) ([]gitlab.Branch, error)
 	ListMergeRequests(ctx context.Context, accessToken string, projectID int64, sourceBranch, targetBranch string) ([]gitlab.MergeRequest, error)
 	CreateMergeRequest(ctx context.Context, accessToken string, projectID int64, sourceBranch, targetBranch, title, description string) (*gitlab.MergeRequest, error)
 	UpsertProjectWebhook(ctx context.Context, accessToken string, projectID int64, hookURL, secret string) (*gitlab.ProjectWebhook, error)
+}
+
+// newGitLabClient builds a per-call client for the credential's GitLab instance.
+// The result is a *gitlab.Client; the indirection through gitLabClientFactory lets
+// tests inject a fake.
+type gitLabClientFactory func(baseURL string) gitLabClient
+
+func defaultGitLabClientFactory(baseURL string) gitLabClient {
+	return gitlab.NewClient(baseURL)
 }
 
 // NewGitService creates a new GitService.
@@ -110,16 +119,35 @@ func NewGitService(
 		appBaseURL:      strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
 		githubAppSlug:   strings.TrimSpace(githubAppSlug),
 		stateSecret:     strings.TrimSpace(stateSecret),
+		availableRepos:  newAvailableReposCache(),
 	}
 }
 
-func (s *GitService) SetGitLabDependencies(credentialRepo *repository.GitCredentialRepository, gitlabClient *gitlab.Client, encryptionKey []byte) *GitService {
+// SetGitLabDependencies wires the GitLab credential store and token encryption key.
+// GitLab API calls construct a per-request client from each credential's base URL.
+func (s *GitService) SetGitLabDependencies(credentialRepo *repository.GitCredentialRepository, encryptionKey []byte) *GitService {
 	s.credentialRepo = credentialRepo
-	if gitlabClient != nil {
-		s.gitlabClient = gitlabClient
+	if s.gitlabFactory == nil {
+		s.gitlabFactory = defaultGitLabClientFactory
 	}
 	s.encryptionKey = append([]byte(nil), encryptionKey...)
 	return s
+}
+
+// SetGitLabClientFactory overrides the GitLab client factory (used by tests).
+func (s *GitService) SetGitLabClientFactory(factory gitLabClientFactory) *GitService {
+	if factory != nil {
+		s.gitlabFactory = factory
+	}
+	return s
+}
+
+func (s *GitService) gitLabClientFor(baseURL string) gitLabClient {
+	factory := s.gitlabFactory
+	if factory == nil {
+		factory = defaultGitLabClientFactory
+	}
+	return factory(baseURL)
 }
 
 // SetRuleEngine sets the automation rule engine used for webhook-derived triggers.
@@ -224,6 +252,7 @@ func (s *GitService) DeleteOrganizationIntegration(ctx context.Context, organiza
 	if err := s.integrationRepo.SoftDeleteByID(ctx, integrationID); err != nil {
 		return err
 	}
+	s.availableRepos.InvalidateIntegration(integrationID)
 	publishWorkspaceID := strings.TrimSpace(eventWorkspaceID)
 	if publishWorkspaceID == "" {
 		publishWorkspaceID = workspaceIDForIntegration(existing)
@@ -384,7 +413,7 @@ func (s *GitService) SyncRepositories(ctx context.Context, workspaceID, integrat
 			}
 		}
 	case "gitlab":
-		repos, err := s.ListAvailableRepos(ctx, workspaceID, integrationID, actorID)
+		repos, err := s.ListAvailableRepos(ctx, workspaceID, integrationID, actorID, ListAvailableReposOptions{NoCache: true})
 		if err != nil {
 			integration.LastSyncError = strPtr(err.Error())
 			_ = s.integrationRepo.Update(ctx, integration)
@@ -495,6 +524,17 @@ func (s *GitService) GetRepositoryByID(ctx context.Context, workspaceID, repoID 
 	return s.repoRepo.GetByID(ctx, workspaceID, repoID)
 }
 
+// GetEnabledRepositoryByID returns a repository that is available for PM delivery and agents.
+func (s *GitService) GetEnabledRepositoryByID(ctx context.Context, workspaceID, repoID string) (*model.GitRepository, error) {
+	if workspaceID == "" {
+		return nil, fmt.Errorf("workspace_id is required")
+	}
+	if strings.TrimSpace(repoID) == "" {
+		return nil, fmt.Errorf("repository_id is required")
+	}
+	return s.repoRepo.GetEnabledByID(ctx, workspaceID, repoID)
+}
+
 // GetRepositoryByFullName returns a synced repository record for a workspace.
 func (s *GitService) GetRepositoryByFullName(ctx context.Context, workspaceID, repoFullName string) (*model.GitRepository, error) {
 	if workspaceID == "" {
@@ -601,9 +641,6 @@ func (s *GitService) ListRepositoryBranches(ctx context.Context, workspaceID, re
 		}
 		return items, nil
 	case "gitlab":
-		if s.gitlabClient == nil {
-			return nil, fmt.Errorf("gitlab oauth is not configured")
-		}
 		projectID, err := strconv.ParseInt(repo.ExternalID, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("gitlab project id is invalid")
@@ -612,7 +649,7 @@ func (s *GitService) ListRepositoryBranches(ctx context.Context, workspaceID, re
 		if err != nil {
 			return nil, err
 		}
-		branches, err := s.gitlabClient.ListBranches(ctx, token, projectID)
+		branches, err := s.gitLabClientFor(derefString(integration.BaseURL)).ListBranches(ctx, token, projectID)
 		if err != nil {
 			return nil, err
 		}
@@ -757,80 +794,97 @@ func (s *GitService) CompleteGitHubInstall(ctx context.Context, stateToken, inst
 	return withGitHubInstallStatus(redirectURL, "connected", fmt.Sprintf("GitHub App connected to %s.", defaultAccountLogin(integration.AccountLogin)), params), nil
 }
 
-func (s *GitService) GetGitLabConnectURL(ctx context.Context, workspaceID, actorID string) (string, error) {
-	if strings.TrimSpace(workspaceID) == "" {
-		return "", fmt.Errorf("workspace_id is required")
+// ConnectGitLabWithToken stores an org-scoped GitLab access token (PAT, Group, or
+// Project Access Token), verifies it by calling /user, and upserts the integration.
+// Returns the resulting integration. There is no OAuth flow.
+func (s *GitService) ConnectGitLabWithToken(
+	ctx context.Context,
+	organizationID, returnWorkspaceID, actorID string,
+	req model.GitLabConnectTokenRequest,
+) (*model.GitIntegration, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	if organizationID == "" {
+		return nil, fmt.Errorf("organization_id is required")
 	}
-	if s.workspaceRepo == nil {
-		return "", fmt.Errorf("workspace repository is not configured")
-	}
-	workspace, err := s.workspaceRepo.GetByID(ctx, strings.TrimSpace(workspaceID))
-	if err != nil {
-		return "", err
-	}
-	if workspace == nil || workspace.OrganizationID == nil || strings.TrimSpace(*workspace.OrganizationID) == "" {
-		return "", fmt.Errorf("workspace organization is required")
-	}
-	return s.GetGitLabConnectURLForOrganization(ctx, strings.TrimSpace(*workspace.OrganizationID), workspaceID, actorID)
-}
-
-func (s *GitService) GetGitLabConnectURLForOrganization(ctx context.Context, organizationID, returnWorkspaceID, actorID string) (string, error) {
-	if strings.TrimSpace(organizationID) == "" {
-		return "", fmt.Errorf("organization_id is required")
-	}
-	if s.gitlabClient == nil || !s.gitlabClient.Configured() {
-		return "", fmt.Errorf("gitlab oauth is not configured")
+	if s.credentialRepo == nil || len(s.encryptionKey) != 32 {
+		return nil, fmt.Errorf("gitlab credential storage is not configured")
 	}
 	if !s.isOrgAdminOrOwner(ctx, organizationID, actorID) {
-		return "", fmt.Errorf("only organization owners or admins can connect git integrations")
+		return nil, fmt.Errorf("only organization owners or admins can connect git integrations")
 	}
-	state, err := s.signGitLabOAuthState(organizationID, returnWorkspaceID, actorID)
+
+	baseURL, err := validateGitLabBaseURL(req.BaseURL)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return s.gitlabClient.AuthorizeURL(state, []string{"api", "read_user", "read_repository", "write_repository"}), nil
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
+		return nil, fmt.Errorf("token is required")
+	}
+	authType, err := normalizeGitLabTokenAuthType(req.AuthType)
+	if err != nil {
+		return nil, err
+	}
+
+	workspace, _, err := s.resolveReturnWorkspace(ctx, organizationID, returnWorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	client := s.gitLabClientFor(baseURL)
+	user, err := client.CurrentUser(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("verify gitlab token: %w", err)
+	}
+	if user == nil || user.ID == 0 {
+		return nil, fmt.Errorf("gitlab token did not return a user")
+	}
+
+	credential, err := s.upsertGitLabTokenCredential(ctx, organizationID, actorID, baseURL, authType, token, req.Label, user)
+	if err != nil {
+		return nil, err
+	}
+	integration, err := s.upsertGitLabIntegration(ctx, organizationID, workspace, credential, actorID)
+	if err != nil {
+		return nil, err
+	}
+	return integration, nil
 }
 
-func (s *GitService) CompleteGitLabOAuth(ctx context.Context, stateToken, code string) (string, error) {
-	state, workspace, redirectURL, err := s.resolveGitLabOAuthState(ctx, stateToken)
+func validateGitLabBaseURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "https://gitlab.com", nil
+	}
+	parsed, err := url.Parse(trimmed)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("invalid base_url: %w", err)
 	}
-	if strings.TrimSpace(code) == "" {
-		return withGitLabConnectStatus(redirectURL, "error", "GitLab did not return an authorization code.", nil), nil
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return "", fmt.Errorf("base_url must use http or https")
 	}
-	if s.gitlabClient == nil || !s.gitlabClient.Configured() {
-		return withGitLabConnectStatus(redirectURL, "error", "GitLab OAuth is not configured on the server.", nil), nil
+	if parsed.Host == "" {
+		return "", fmt.Errorf("base_url must include a host")
 	}
-	if s.credentialRepo == nil {
-		return withGitLabConnectStatus(redirectURL, "error", "Git credential storage is not configured.", nil), nil
-	}
-	if len(s.encryptionKey) != 32 {
-		return withGitLabConnectStatus(redirectURL, "error", "Git OAuth encryption key is not configured.", nil), nil
-	}
-	if strings.TrimSpace(state.OrganizationID) == "" {
-		return withGitLabConnectStatus(redirectURL, "error", "Organization is required.", nil), nil
-	}
+	// Strip path/query/fragment — GitLab API is mounted at /api/v4 from root.
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/"), nil
+}
 
-	token, err := s.gitlabClient.ExchangeCode(ctx, code)
-	if err != nil {
-		return withGitLabConnectStatus(redirectURL, "error", err.Error(), nil), nil
+func normalizeGitLabTokenAuthType(raw string) (string, error) {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	switch value {
+	case "", "personal_token":
+		return "personal_token", nil
+	case "group_token":
+		return "group_token", nil
+	case "project_token":
+		return "project_token", nil
+	default:
+		return "", fmt.Errorf("auth_type must be personal_token, group_token, or project_token")
 	}
-	user, err := s.gitlabClient.CurrentUser(ctx, token.AccessToken)
-	if err != nil {
-		return withGitLabConnectStatus(redirectURL, "error", err.Error(), nil), nil
-	}
-	credential, err := s.upsertGitLabOAuthCredential(ctx, strings.TrimSpace(state.OrganizationID), state.ActorID, token, user)
-	if err != nil {
-		return withGitLabConnectStatus(redirectURL, "error", err.Error(), nil), nil
-	}
-	integration, err := s.upsertGitLabIntegration(ctx, strings.TrimSpace(state.OrganizationID), workspace, credential, state.ActorID)
-	if err != nil {
-		return withGitLabConnectStatus(redirectURL, "error", err.Error(), nil), nil
-	}
-	return withGitLabConnectStatus(redirectURL, "connected", fmt.Sprintf("GitLab connected to %s.", defaultAccountLogin(integration.AccountLogin)), map[string]string{
-		"integration_id": integration.ID,
-	}), nil
 }
 
 // ResolveGitHubWebhookIntegration verifies the webhook signature and resolves the installation.
@@ -855,7 +909,13 @@ func (s *GitService) ResolveGitHubWebhookIntegration(ctx context.Context, instal
 	return integration, nil
 }
 
-func (s *GitService) ListAvailableRepos(ctx context.Context, workspaceID, integrationID, actorID string) ([]model.GitAvailableRepo, error) {
+// ListAvailableReposOptions tunes a single ListAvailableRepos call.
+type ListAvailableReposOptions struct {
+	Search  string // optional GitLab search term
+	NoCache bool   // bypass the in-memory cache (manual Refresh)
+}
+
+func (s *GitService) ListAvailableRepos(ctx context.Context, workspaceID, integrationID, actorID string, opts ListAvailableReposOptions) ([]model.GitAvailableRepo, error) {
 	if err := s.assertCanEnumerateAvailableRepos(ctx, workspaceID, actorID); err != nil {
 		return nil, err
 	}
@@ -869,15 +929,18 @@ func (s *GitService) ListAvailableRepos(ctx context.Context, workspaceID, integr
 	if !integration.Active {
 		return nil, fmt.Errorf("integration is inactive")
 	}
+	search := strings.TrimSpace(opts.Search)
 	if integration.Provider == "gitlab" {
-		if s.gitlabClient == nil {
-			return nil, fmt.Errorf("gitlab oauth is not configured")
+		if opts.NoCache {
+			s.availableRepos.InvalidateIntegration(integration.ID)
+		} else if cached, ok := s.availableRepos.Get(integration.ID, search); ok {
+			return cached, nil
 		}
 		token, err := s.gitlabAccessToken(ctx, integration)
 		if err != nil {
 			return nil, err
 		}
-		projects, err := s.gitlabClient.ListProjects(ctx, token, "")
+		projects, err := s.gitLabClientFor(derefString(integration.BaseURL)).ListProjects(ctx, token, search)
 		if err != nil {
 			return nil, err
 		}
@@ -901,6 +964,7 @@ func (s *GitService) ListAvailableRepos(ctx context.Context, workspaceID, integr
 		sort.Slice(items, func(i, j int) bool {
 			return strings.ToLower(items[i].FullName) < strings.ToLower(items[j].FullName)
 		})
+		s.availableRepos.Set(integration.ID, search, items)
 		return items, nil
 	}
 	if integration.Provider != "github" {
@@ -987,12 +1051,35 @@ func (s *GitService) WireRepositories(ctx context.Context, currentWorkspaceID, i
 			}
 		}
 	case "gitlab":
-		available, err := s.ListAvailableRepos(ctx, currentWorkspaceID, integrationID, actorID)
+		token, err := s.gitlabAccessToken(ctx, integration)
 		if err != nil {
 			return nil, nil, err
 		}
-		for _, repo := range available {
-			availableByID[repo.ExternalID] = repo
+		client := s.gitLabClientFor(derefString(integration.BaseURL))
+		for _, repoID := range req.RepoIDs {
+			repoID = strings.TrimSpace(repoID)
+			if repoID == "" {
+				continue
+			}
+			if _, ok := availableByID[repoID]; ok {
+				continue
+			}
+			projectID, parseErr := strconv.ParseInt(repoID, 10, 64)
+			if parseErr != nil {
+				return nil, nil, fmt.Errorf("gitlab project id %q is invalid", repoID)
+			}
+			project, fetchErr := client.GetProject(ctx, token, projectID)
+			if fetchErr != nil {
+				return nil, nil, fmt.Errorf("gitlab project %s is not accessible: %w", repoID, fetchErr)
+			}
+			availableByID[repoID] = model.GitAvailableRepo{
+				ExternalID:    repoID,
+				FullName:      project.PathWithNamespace,
+				DefaultBranch: defaultBranch(project.DefaultBranch),
+				Private:       project.Visibility != "public",
+				Archived:      project.Archived,
+				Permissions:   gitlabProjectPermissions(*project),
+			}
 		}
 	default:
 		return nil, nil, fmt.Errorf("repo wiring is not supported for %s", integration.Provider)
@@ -1306,7 +1393,7 @@ func (s *GitService) GetTaskDeliveryTarget(ctx context.Context, workspaceID, sto
 			return nil, err
 		}
 		if teamDefault != nil {
-			repo, err := s.repoRepo.GetByID(ctx, workspaceID, teamDefault.RepositoryID)
+			repo, err := s.repoRepo.GetEnabledByID(ctx, workspaceID, teamDefault.RepositoryID)
 			if err != nil {
 				return nil, err
 			}
@@ -1338,12 +1425,12 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 	}
 
 	if req.RepositoryID != nil && *req.RepositoryID != "" {
-		repo, err := s.repoRepo.GetByID(ctx, workspaceID, *req.RepositoryID)
+		repo, err := s.repoRepo.GetEnabledByID(ctx, workspaceID, *req.RepositoryID)
 		if err != nil {
 			return nil, err
 		}
 		if repo == nil {
-			return nil, fmt.Errorf("repository not found")
+			return nil, fmt.Errorf("repository is not available for PM delivery")
 		}
 		target.RepositoryID = &repo.ID
 		target.RepoFullName = &repo.FullName
@@ -1360,6 +1447,18 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 	if req.WorkingBranch != nil && *req.WorkingBranch != "" {
 		workingBranch := strings.TrimSpace(*req.WorkingBranch)
 		target.WorkingBranch = &workingBranch
+	}
+	if target.RepositoryID != nil && strings.TrimSpace(*target.RepositoryID) != "" {
+		repo, err := s.repoRepo.GetEnabledByID(ctx, workspaceID, *target.RepositoryID)
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository is not available for PM delivery")
+		}
+		target.RepositoryID = &repo.ID
+		target.RepoFullName = &repo.FullName
+		target.IntegrationID = &repo.IntegrationID
 	}
 	if target.RepositoryID != nil && target.BaseBranch != nil {
 		target.DeliveryState = "ready"
@@ -1394,6 +1493,15 @@ func (s *GitService) ResolveTaskDeliveryTargetForRun(ctx context.Context, worksp
 	}
 	if requiresRepo && (target.RepositoryID == nil || target.RepoFullName == nil || target.BaseBranch == nil) {
 		return nil, ErrTaskDeliveryTargetRequired
+	}
+	if target.RepositoryID != nil && strings.TrimSpace(*target.RepositoryID) != "" {
+		repo, err := s.repoRepo.GetEnabledByID(ctx, workspaceID, *target.RepositoryID)
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository is not available for PM delivery")
+		}
 	}
 	return target, nil
 }
@@ -2269,13 +2377,6 @@ type gitHubInstallState struct {
 	jwt.RegisteredClaims
 }
 
-type gitLabOAuthState struct {
-	OrganizationID string `json:"organization_id"`
-	WorkspaceID    string `json:"workspace_id,omitempty"`
-	ActorID        string `json:"actor_id,omitempty"`
-	jwt.RegisteredClaims
-}
-
 func (s *GitService) signGitHubInstallState(organizationID, workspaceID, actorID string) (string, error) {
 	if s.stateSecret == "" {
 		return "", fmt.Errorf("github app state secret is not configured")
@@ -2325,103 +2426,41 @@ func (s *GitService) resolveGitHubInstallState(ctx context.Context, stateToken s
 	return claims, workspace, redirectURL, nil
 }
 
-func (s *GitService) signGitLabOAuthState(organizationID, workspaceID, actorID string) (string, error) {
-	if s.stateSecret == "" {
-		return "", fmt.Errorf("gitlab oauth state secret is not configured")
-	}
-	if strings.TrimSpace(organizationID) == "" {
-		return "", fmt.Errorf("organization_id is required")
-	}
-	buf := make([]byte, 16)
-	_, _ = rand.Read(buf)
-	claims := gitLabOAuthState{
-		OrganizationID: strings.TrimSpace(organizationID),
-		WorkspaceID:    strings.TrimSpace(workspaceID),
-		ActorID:        strings.TrimSpace(actorID),
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ID:        hex.EncodeToString(buf),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(s.stateSecret))
-}
-
-func (s *GitService) resolveGitLabOAuthState(ctx context.Context, stateToken string) (*gitLabOAuthState, *model.Workspace, string, error) {
-	stateToken = strings.TrimSpace(stateToken)
-	if stateToken == "" {
-		return nil, nil, "", fmt.Errorf("gitlab oauth callback state is missing")
-	}
-	claims := &gitLabOAuthState{}
-	token, err := jwt.ParseWithClaims(stateToken, claims, func(token *jwt.Token) (interface{}, error) {
-		if token.Method != jwt.SigningMethodHS256 {
-			return nil, fmt.Errorf("unexpected signing method")
-		}
-		return []byte(s.stateSecret), nil
-	})
-	if err != nil || token == nil || !token.Valid {
-		return nil, nil, "", fmt.Errorf("invalid gitlab oauth callback state")
-	}
-	if strings.TrimSpace(claims.OrganizationID) == "" {
-		return nil, nil, "", fmt.Errorf("gitlab oauth callback organization is missing")
-	}
-	workspace, redirectURL, err := s.resolveReturnWorkspace(ctx, claims.OrganizationID, claims.WorkspaceID)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	return claims, workspace, redirectURL, nil
-}
-
-func (s *GitService) upsertGitLabOAuthCredential(ctx context.Context, organizationID, actorID string, token *gitlab.TokenResponse, user *gitlab.User) (*model.GitCredential, error) {
-	if token == nil || strings.TrimSpace(token.AccessToken) == "" {
-		return nil, fmt.Errorf("gitlab access token is required")
-	}
+func (s *GitService) upsertGitLabTokenCredential(
+	ctx context.Context,
+	organizationID, actorID, baseURL, authType, token, label string,
+	user *gitlab.User,
+) (*model.GitCredential, error) {
 	if user == nil || user.ID == 0 {
 		return nil, fmt.Errorf("gitlab user is required")
 	}
-	accessToken, err := appcrypto.EncryptString(token.AccessToken, s.encryptionKey)
+	if strings.TrimSpace(token) == "" {
+		return nil, fmt.Errorf("gitlab token is required")
+	}
+	encryptedToken, err := appcrypto.EncryptString(token, s.encryptionKey)
 	if err != nil {
-		return nil, fmt.Errorf("encrypt gitlab access token: %w", err)
-	}
-	var refreshToken *string
-	if strings.TrimSpace(token.RefreshToken) != "" {
-		encrypted, err := appcrypto.EncryptString(token.RefreshToken, s.encryptionKey)
-		if err != nil {
-			return nil, fmt.Errorf("encrypt gitlab refresh token: %w", err)
-		}
-		refreshToken = &encrypted
-	}
-	var expiresAt *time.Time
-	if token.ExpiresIn > 0 {
-		exp := time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
-		expiresAt = &exp
+		return nil, fmt.Errorf("encrypt gitlab token: %w", err)
 	}
 	externalUserID := strconv.FormatInt(user.ID, 10)
 	accountLogin := strings.TrimSpace(user.Username)
-	displayName := "GitLab"
-	if accountLogin != "" {
-		displayName = "GitLab " + accountLogin
-	}
-	scopes := strings.TrimSpace(token.Scope)
-	baseURL := "https://gitlab.com"
-	if s.gitlabClient != nil && strings.TrimSpace(s.gitlabClient.WebBaseURL()) != "" {
-		baseURL = strings.TrimRight(s.gitlabClient.WebBaseURL(), "/")
+	displayName := strings.TrimSpace(label)
+	if displayName == "" {
+		displayName = "GitLab"
+		if accountLogin != "" {
+			displayName = "GitLab " + accountLogin
+		}
 	}
 	credential := &model.GitCredential{
-		OrganizationID:        organizationID,
-		Provider:              "gitlab",
-		BaseURL:               baseURL,
-		AuthType:              "oauth_user",
-		ExternalUserID:        &externalUserID,
-		AccountLogin:          trimPtr(&accountLogin),
-		DisplayName:           displayName,
-		Scopes:                trimPtr(&scopes),
-		AccessTokenEncrypted:  &accessToken,
-		RefreshTokenEncrypted: refreshToken,
-		ExpiresAt:             expiresAt,
-		Status:                "active",
-		ConnectedBy:           trimPtr(&actorID),
+		OrganizationID:       organizationID,
+		Provider:             "gitlab",
+		BaseURL:              baseURL,
+		AuthType:             authType,
+		ExternalUserID:       &externalUserID,
+		AccountLogin:         trimPtr(&accountLogin),
+		DisplayName:          displayName,
+		AccessTokenEncrypted: &encryptedToken,
+		Status:               "active",
+		ConnectedBy:          trimPtr(&actorID),
 	}
 	return s.credentialRepo.UpsertOAuthUser(ctx, credential)
 }
@@ -2491,7 +2530,7 @@ func (s *GitService) gitlabAccessToken(ctx context.Context, integration *model.G
 		return "", fmt.Errorf("gitlab integration has no credential")
 	}
 	if s.credentialRepo == nil || len(s.encryptionKey) != 32 {
-		return "", fmt.Errorf("gitlab oauth credentials are not configured")
+		return "", fmt.Errorf("gitlab credential storage is not configured")
 	}
 	credential, err := s.credentialRepo.GetByID(ctx, *integration.CredentialID)
 	if err != nil {
@@ -2500,23 +2539,11 @@ func (s *GitService) gitlabAccessToken(ctx context.Context, integration *model.G
 	if credential == nil || credential.AccessTokenEncrypted == nil || strings.TrimSpace(*credential.AccessTokenEncrypted) == "" {
 		return "", fmt.Errorf("gitlab credential is not available")
 	}
-	if credential.ExpiresAt != nil && time.Until(*credential.ExpiresAt) < 2*time.Minute && credential.RefreshTokenEncrypted != nil && s.gitlabClient != nil {
-		refreshToken, err := appcrypto.DecryptString(*credential.RefreshTokenEncrypted, s.encryptionKey)
-		if err == nil && strings.TrimSpace(refreshToken) != "" {
-			if refreshed, refreshErr := s.gitlabClient.RefreshToken(ctx, refreshToken); refreshErr == nil && strings.TrimSpace(refreshed.AccessToken) != "" {
-				_ = s.updateGitLabCredentialToken(ctx, credential, refreshed)
-			}
-		}
-	}
-	credential, err = s.credentialRepo.GetByID(ctx, credential.ID)
-	if err != nil {
-		return "", err
-	}
 	return appcrypto.DecryptString(*credential.AccessTokenEncrypted, s.encryptionKey)
 }
 
 func (s *GitService) tryInstallGitLabWebhook(ctx context.Context, integration *model.GitIntegration, externalID string, permissions map[string]bool) {
-	if s.gitlabClient == nil || integration == nil || !permissions["manage_webhooks"] || integration.WebhookSecret == nil || strings.TrimSpace(*integration.WebhookSecret) == "" {
+	if integration == nil || !permissions["manage_webhooks"] || integration.WebhookSecret == nil || strings.TrimSpace(*integration.WebhookSecret) == "" {
 		return
 	}
 	projectID, err := strconv.ParseInt(strings.TrimSpace(externalID), 10, 64)
@@ -2528,32 +2555,10 @@ func (s *GitService) tryInstallGitLabWebhook(ctx context.Context, integration *m
 		return
 	}
 	hookURL := strings.TrimRight(s.appBaseURL, "/") + "/api/git/webhook"
-	if _, err := s.gitlabClient.UpsertProjectWebhook(ctx, token, projectID, hookURL, *integration.WebhookSecret); err != nil {
+	client := s.gitLabClientFor(derefString(integration.BaseURL))
+	if _, err := client.UpsertProjectWebhook(ctx, token, projectID, hookURL, *integration.WebhookSecret); err != nil {
 		slog.WarnContext(ctx, "gitlab webhook auto-install failed", "integration_id", integration.ID, "project_id", externalID, "error", err)
 	}
-}
-
-func (s *GitService) updateGitLabCredentialToken(ctx context.Context, credential *model.GitCredential, token *gitlab.TokenResponse) error {
-	if credential == nil || token == nil || strings.TrimSpace(token.AccessToken) == "" {
-		return nil
-	}
-	accessToken, err := appcrypto.EncryptString(token.AccessToken, s.encryptionKey)
-	if err != nil {
-		return err
-	}
-	credential.AccessTokenEncrypted = &accessToken
-	if strings.TrimSpace(token.RefreshToken) != "" {
-		refreshToken, err := appcrypto.EncryptString(token.RefreshToken, s.encryptionKey)
-		if err != nil {
-			return err
-		}
-		credential.RefreshTokenEncrypted = &refreshToken
-	}
-	if token.ExpiresIn > 0 {
-		expiresAt := time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second)
-		credential.ExpiresAt = &expiresAt
-	}
-	return s.credentialRepo.Update(ctx, credential)
 }
 
 func (s *GitService) upsertGitHubIntegration(
@@ -2755,26 +2760,6 @@ func withGitHubInstallStatus(baseURL, status, message string, params map[string]
 	query.Set("github_app", status)
 	if strings.TrimSpace(message) != "" {
 		query.Set("github_message", message)
-	}
-	for key, value := range params {
-		if strings.TrimSpace(value) == "" {
-			continue
-		}
-		query.Set(key, value)
-	}
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
-func withGitLabConnectStatus(baseURL, status, message string, params map[string]string) string {
-	parsed, err := url.Parse(baseURL)
-	if err != nil {
-		return baseURL
-	}
-	query := parsed.Query()
-	query.Set("gitlab_oauth", status)
-	if strings.TrimSpace(message) != "" {
-		query.Set("gitlab_message", message)
 	}
 	for key, value := range params {
 		if strings.TrimSpace(value) == "" {
