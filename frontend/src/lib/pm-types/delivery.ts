@@ -12,6 +12,8 @@ export interface GitIntegration {
   base_url?: string;
   installation_id?: string;
   app_id?: string;
+  default_commit_author_name?: string;
+  default_commit_author_email?: string;
   last_synced_at?: string;
   last_sync_error?: string;
   active: boolean;
@@ -148,6 +150,13 @@ export interface CreateGitIntegrationRequest {
   app_id?: string;
   webhook_secret?: string;
   access_token?: string;
+  default_commit_author_name?: string;
+  default_commit_author_email?: string;
+}
+
+export interface UpdateGitIntegrationRequest {
+  default_commit_author_name?: string;
+  default_commit_author_email?: string;
 }
 
 export interface GitHubInstallURLResponse {
@@ -163,6 +172,8 @@ export interface GitLabConnectTokenRequest {
   token: string;
   auth_type: GitLabTokenAuthType;
   label?: string;
+  default_commit_author_name?: string;
+  default_commit_author_email?: string;
 }
 
 export interface GitLabConnectResponse {

@@ -13,25 +13,27 @@ var branchTokenSanitizer = regexp.MustCompile(`[^a-z0-9]+`)
 
 // GitIntegration represents an organization-scoped git provider configuration.
 type GitIntegration struct {
-	ID             string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    *string    `json:"workspace_id,omitempty" gorm:"type:uuid;index"` // legacy return workspace for older installs
-	OrganizationID *string    `json:"organization_id" gorm:"type:uuid;index"`
-	Provider       string     `json:"provider" gorm:"not null"` // github, gitlab
-	DisplayName    string     `json:"display_name" gorm:"not null"`
-	CredentialMode string     `json:"credential_mode" gorm:"not null;default:'github_app'"`
-	CredentialID   *string    `json:"credential_id" gorm:"type:uuid;index"`
-	AccountLogin   *string    `json:"account_login"`
-	BaseURL        *string    `json:"base_url"`        // for self-hosted instances
-	InstallationID *string    `json:"installation_id"` // GitHub App installation ID
-	AppID          *string    `json:"app_id"`
-	WebhookSecret  *string    `json:"-" gorm:"column:webhook_secret"`
-	AccessToken    string     `json:"-" gorm:"not null"` // deprecated PAT field retained for migration compatibility
-	Active         bool       `json:"active" gorm:"not null;default:true"`
-	DeletedAt      *time.Time `json:"deleted_at"`
-	LastSyncedAt   *time.Time `json:"last_synced_at"`
-	LastSyncError  *string    `json:"last_sync_error"`
-	CreatedAt      time.Time  `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                       string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID              *string    `json:"workspace_id,omitempty" gorm:"type:uuid;index"` // legacy return workspace for older installs
+	OrganizationID           *string    `json:"organization_id" gorm:"type:uuid;index"`
+	Provider                 string     `json:"provider" gorm:"not null"` // github, gitlab
+	DisplayName              string     `json:"display_name" gorm:"not null"`
+	CredentialMode           string     `json:"credential_mode" gorm:"not null;default:'github_app'"`
+	CredentialID             *string    `json:"credential_id" gorm:"type:uuid;index"`
+	AccountLogin             *string    `json:"account_login"`
+	BaseURL                  *string    `json:"base_url"`        // for self-hosted instances
+	InstallationID           *string    `json:"installation_id"` // GitHub App installation ID
+	AppID                    *string    `json:"app_id"`
+	WebhookSecret            *string    `json:"-" gorm:"column:webhook_secret"`
+	AccessToken              string     `json:"-" gorm:"not null"` // deprecated PAT field retained for migration compatibility
+	DefaultCommitAuthorName  *string    `json:"default_commit_author_name,omitempty"`
+	DefaultCommitAuthorEmail *string    `json:"default_commit_author_email,omitempty"`
+	Active                   bool       `json:"active" gorm:"not null;default:true"`
+	DeletedAt                *time.Time `json:"deleted_at"`
+	LastSyncedAt             *time.Time `json:"last_synced_at"`
+	LastSyncError            *string    `json:"last_sync_error"`
+	CreatedAt                time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (GitIntegration) TableName() string { return "git_integrations" }
@@ -318,16 +320,24 @@ func (TaskGitLink) TableName() string { return "task_git_links" }
 
 // CreateGitIntegrationRequest is the payload for creating a git integration.
 type CreateGitIntegrationRequest struct {
-	WorkspaceID    string  `json:"workspace_id"`
-	Provider       string  `json:"provider"`
-	DisplayName    string  `json:"display_name"`
-	CredentialMode *string `json:"credential_mode"`
-	AccountLogin   *string `json:"account_login"`
-	BaseURL        *string `json:"base_url"`
-	InstallationID *string `json:"installation_id"`
-	AppID          *string `json:"app_id"`
-	WebhookSecret  *string `json:"webhook_secret"`
-	AccessToken    string  `json:"access_token"`
+	WorkspaceID              string  `json:"workspace_id"`
+	Provider                 string  `json:"provider"`
+	DisplayName              string  `json:"display_name"`
+	CredentialMode           *string `json:"credential_mode"`
+	AccountLogin             *string `json:"account_login"`
+	BaseURL                  *string `json:"base_url"`
+	InstallationID           *string `json:"installation_id"`
+	AppID                    *string `json:"app_id"`
+	WebhookSecret            *string `json:"webhook_secret"`
+	AccessToken              string  `json:"access_token"`
+	DefaultCommitAuthorName  *string `json:"default_commit_author_name"`
+	DefaultCommitAuthorEmail *string `json:"default_commit_author_email"`
+}
+
+// UpdateGitIntegrationRequest updates mutable integration settings.
+type UpdateGitIntegrationRequest struct {
+	DefaultCommitAuthorName  *string `json:"default_commit_author_name"`
+	DefaultCommitAuthorEmail *string `json:"default_commit_author_email"`
 }
 
 // UpdateTaskDeliveryTargetRequest updates the selected delivery target for a task.
@@ -357,10 +367,12 @@ type GitHubInstallURLResponse struct {
 // GitLabConnectTokenRequest is the payload an org admin submits to connect GitLab
 // using a Personal/Group/Project Access Token (no OAuth flow).
 type GitLabConnectTokenRequest struct {
-	BaseURL  string `json:"base_url"`            // e.g. https://gitlab.com or https://gitlab.acme.io
-	Token    string `json:"token"`               // PAT, Group Access Token, or Project Access Token
-	AuthType string `json:"auth_type"`           // "personal_token" | "group_token" | "project_token"
-	Label    string `json:"label,omitempty"`     // optional display label
+	BaseURL                  string  `json:"base_url"`        // e.g. https://gitlab.com or https://gitlab.acme.io
+	Token                    string  `json:"token"`           // PAT, Group Access Token, or Project Access Token
+	AuthType                 string  `json:"auth_type"`       // "personal_token" | "group_token" | "project_token"
+	Label                    string  `json:"label,omitempty"` // optional display label
+	DefaultCommitAuthorName  *string `json:"default_commit_author_name,omitempty"`
+	DefaultCommitAuthorEmail *string `json:"default_commit_author_email,omitempty"`
 }
 
 // GitLabConnectResponse summarizes the resulting connection.
