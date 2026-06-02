@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { BASE_BRANCH_TOKEN, describeMergeInto } from '@/lib/branchLabels';
+import { BASE_BRANCH_TOKEN, describeMergeDestination } from '@/lib/branchLabels';
 import { automationRuleService } from '@/lib/services/automationRuleService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { StateTypeIcon } from '@/lib/pmConstants';
@@ -331,10 +331,11 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
         </div>
 
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <div className="hidden border-b border-border bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid lg:grid-cols-[minmax(170px,1fr)_122px_minmax(360px,2.4fr)_64px] lg:gap-3">
+          <div className="hidden border-b border-border bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid lg:grid-cols-[minmax(170px,1fr)_122px_minmax(340px,2fr)_minmax(220px,1.15fr)_64px] lg:gap-3">
             <div>State</div>
             <div>Type</div>
             <div>Automation</div>
+            <div>Branch</div>
             <div className="text-right">Actions</div>
           </div>
 
@@ -357,7 +358,7 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                 <div key={state.id}>
                   <div
                     className={cn(
-                      'grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(170px,1fr)_122px_minmax(360px,2.4fr)_64px] lg:items-start',
+                      'grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(170px,1fr)_122px_minmax(340px,2fr)_minmax(220px,1.15fr)_64px] lg:items-start',
                       isSaving && 'opacity-70',
                     )}
                   >
@@ -462,20 +463,19 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span className="w-28 font-medium">On run completion</span>
-                        <span>move to</span>
+                        <span className="w-40 font-medium">On run completion, move to</span>
                         {editable ? (
                           <Select
                             value={selectedTargetStateId || '__none__'}
                             onValueChange={(value) => void handleMoveOnCompletionChange(state.id, state.name, value === '__none__' ? null : value)}
                             disabled={!selectedAgentId || isSaving || destinationOptions.length === 0}
                           >
-                            <SelectTrigger className="h-8 min-w-36 max-w-full text-xs">
-                              <SelectValue placeholder="No movement" />
+                            <SelectTrigger className="h-8 min-w-36 max-w-full text-xs text-foreground">
+                              <SelectValue placeholder="State" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="__none__">
-                                <span className="text-muted-foreground">No movement</span>
+                                <span className="text-muted-foreground">State</span>
                               </SelectItem>
                               {destinationOptions.map((candidate) => (
                                 <SelectItem key={candidate.id} value={candidate.id}>
@@ -485,19 +485,20 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                             </SelectContent>
                           </Select>
                         ) : (
-                          <span className="font-medium text-foreground">{hasAdvance ? targetState?.name ?? defaultTargetState?.name ?? 'next state' : 'No movement'}</span>
+                          <span className="font-medium text-foreground">{hasAdvance ? targetState?.name ?? defaultTargetState?.name ?? 'State' : 'State'}</span>
                         )}
                       </div>
+                    </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="w-28 text-xs font-medium text-muted-foreground">Branch</span>
-                        <div className="min-w-44 flex-1">
-                          <MergeBranchInput
-                            value={mergeBranch}
-                            editable={editable && !isSaving}
-                            onChange={(v) => void handleMergeBranchToggle(state.id, state.name, v)}
-                          />
-                        </div>
+                    <div className="min-w-0">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Branch</div>
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground">On task entry, merge into</p>
+                        <MergeBranchInput
+                          value={mergeBranch}
+                          editable={editable && !isSaving}
+                          onChange={(v) => void handleMergeBranchToggle(state.id, state.name, v)}
+                        />
                       </div>
                     </div>
 
@@ -862,7 +863,7 @@ function MergeBranchInput({ value, editable, onChange }: { value: string; editab
   if (!editable) {
     return (
       <p className="truncate text-xs text-muted-foreground">
-        {value ? describeMergeInto(value) : 'No merge action'}
+        {value ? describeMergeDestination(value) : 'Branch'}
       </p>
     );
   }
@@ -871,11 +872,11 @@ function MergeBranchInput({ value, editable, onChange }: { value: string; editab
     return (
       <button
         type="button"
-        className="inline-flex h-8 w-full items-center justify-start gap-1.5 rounded-md border border-dashed border-border px-2 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
+        className="inline-flex h-8 w-full items-center justify-start gap-1.5 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         onClick={() => { onChange(BASE_BRANCH_TOKEN); }}
       >
         <GitBranchIcon className="h-3.5 w-3.5" />
-        Add merge action
+        Branch
       </button>
     );
   }
@@ -883,8 +884,8 @@ function MergeBranchInput({ value, editable, onChange }: { value: string; editab
   if (!editing) {
     return (
       <div className="flex h-8 min-w-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs">
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-          {describeMergeInto(value)}
+        <span className="min-w-0 flex-1 truncate text-foreground">
+          {describeMergeDestination(value)}
         </span>
         <button type="button" className="shrink-0 rounded px-1 text-muted-foreground hover:text-foreground" onClick={() => setEditing(true)}>
           Edit
