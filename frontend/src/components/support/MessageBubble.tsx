@@ -118,6 +118,54 @@ function parseForwardedAttributionMetadata(metadata?: string): SupportForwardedA
   }
 }
 
+function isForwardedHeaderMarker(line: string): boolean {
+  const normalized = line.trim().replace(/^>+\s*/, '').toLowerCase();
+  return normalized.includes('forwarded message') || normalized.includes('begin forwarded message') || normalized.includes('original message');
+}
+
+function isForwardedMetadataLine(line: string): boolean {
+  return /^(from|date|sent|subject|to|cc|bcc):\s*/i.test(line.trim().replace(/^>+\s*/, ''));
+}
+
+function cleanForwardedDisplayContent(content: string): string {
+  const normalized = content.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const markerIndex = lines.findIndex(isForwardedHeaderMarker);
+  if (markerIndex < 0) return content;
+
+  const note = lines.slice(0, markerIndex).join('\n').trim();
+  let bodyStart = -1;
+  let sawMetadata = false;
+
+  for (let i = markerIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (isForwardedMetadataLine(line)) {
+      sawMetadata = true;
+      continue;
+    }
+    if (sawMetadata && line.trim() === '') {
+      continue;
+    }
+    if (sawMetadata) {
+      bodyStart = i;
+      break;
+    }
+  }
+
+  if (bodyStart < 0) return note || content;
+
+  const bodyLines: string[] = [];
+  for (let i = bodyStart; i < lines.length; i += 1) {
+    if (i !== bodyStart && isForwardedHeaderMarker(lines[i])) {
+      break;
+    }
+    bodyLines.push(lines[i]);
+  }
+
+  const body = bodyLines.join('\n').trim();
+  return [note, body].filter(Boolean).join('\n\n') || content;
+}
+
 function formatCountdown(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -260,13 +308,18 @@ export const MessageBubble = memo(function MessageBubble({
 
     return message.content;
   }, [message.content]);
-  const hasTableContent = useMemo(() => containsMarkdownTable(displayContent), [displayContent]);
+  const forwardedDisplayContent = useMemo(() => {
+    if (!forwardedAttribution) return '';
+    return cleanForwardedDisplayContent(displayContent).trim();
+  }, [displayContent, forwardedAttribution]);
+  const visibleContent = forwardedDisplayContent || displayContent;
+  const hasTableContent = useMemo(() => containsMarkdownTable(visibleContent), [visibleContent]);
 
   // Highlight @mentions in internal notes
   const mentionParts = useMemo(() => {
     if (!isInternal) return null;
-    return renderMentionHighlights(displayContent);
-  }, [displayContent, isInternal]);
+    return renderMentionHighlights(visibleContent);
+  }, [visibleContent, isInternal]);
 
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -284,9 +337,10 @@ export const MessageBubble = memo(function MessageBubble({
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
-  const hasDisplayContent = displayContent.trim().length > 0;
-  const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
+  const hasDisplayContent = visibleContent.trim().length > 0;
+  const showBubble = !!visibleContent || fileAttachments.length > 0 || linkPreviews.length > 0;
   const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
+  const renderEmailBodyAsForwardedText = hasEmailBody && !!forwardedDisplayContent;
 
   const verb = isCustomer ? 'Received' : 'Sent';
   const relativeTime = timeAgo(message.created_at);
@@ -332,24 +386,24 @@ export const MessageBubble = memo(function MessageBubble({
   }, [deleteMutation, message.id]);
 
   const handleCopy = useCallback(() => {
-    void navigator.clipboard?.writeText(displayContent);
+    void navigator.clipboard?.writeText(visibleContent);
     toast.success('Message copied');
-  }, [displayContent]);
+  }, [visibleContent]);
 
-  const canSaveAsShortcut = displayContent.trim().length > 0 && message.message_type !== 'system';
+  const canSaveAsShortcut = visibleContent.trim().length > 0 && message.message_type !== 'system';
   const openShortcutComposer = useShortcutComposerStore((s) => s.openCreate);
   const handleSaveAsShortcut = useCallback(
-    () => openShortcutComposer({ seedContent: sanitizeSupportShortcutSeed(displayContent) }),
-    [openShortcutComposer, displayContent],
+    () => openShortcutComposer({ seedContent: sanitizeSupportShortcutSeed(visibleContent) }),
+    [openShortcutComposer, visibleContent],
   );
 
   const handleQuoteReply = useCallback(() => {
-    const quoted = displayContent
+    const quoted = visibleContent
       .split('\n')
       .map((line) => `> ${line}`)
       .join('\n');
     restoreComposerDraft(`${quoted}\n\n`);
-  }, [displayContent, restoreComposerDraft]);
+  }, [visibleContent, restoreComposerDraft]);
 
   const renderFileAttachments = (tone: 'default' | 'note' = 'default', className = '') => {
     if (fileAttachments.length === 0) return null;
@@ -580,7 +634,7 @@ export const MessageBubble = memo(function MessageBubble({
                       {mentionParts ? (
                         <p className="whitespace-pre-wrap">{mentionParts}</p>
                       ) : (
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
                       )}
                     </div>
                   )}
@@ -623,7 +677,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const hasEmailBadge = message.via_channel === 'email';
   const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
-  const bubbleWidthClass = hasEmailBody
+  const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
       ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
@@ -673,28 +727,28 @@ export const MessageBubble = memo(function MessageBubble({
                     isCustomer
                       ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  } ${hasTableContent || hasEmailBody ? 'overflow-hidden' : ''}`}
+                  } ${hasTableContent || (hasEmailBody && !renderEmailBodyAsForwardedText) ? 'overflow-hidden' : ''}`}
                 >
-                  {hasEmailBody ? (
+                  {hasEmailBody && !renderEmailBodyAsForwardedText ? (
                     <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
                       <EmailBodyRenderer html={message.html_body ?? ''} />
                     </div>
                   ) : (
-                    displayContent && (
+                    visibleContent && (
                       <div
                         className="prose-chat"
                         data-chat-tone={isCustomer ? 'customer' : 'agent'}
                         data-has-table={hasTableContent ? 'true' : 'false'}
                       >
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
                       </div>
                     )
                   )}
                   {fileAttachments.length > 0 && (
-                    renderFileAttachments('default', displayContent ? 'mt-2' : '')
+                    renderFileAttachments('default', visibleContent ? 'mt-2' : '')
                   )}
                   {linkPreviews.length > 0 && (
-                    <div className={`${displayContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
+                    <div className={`${visibleContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
                       {linkPreviews.map((preview) => (
                         <LinkPreviewCard
                           key={`${message.id}:${preview.url}`}
@@ -757,18 +811,6 @@ export const MessageBubble = memo(function MessageBubble({
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
             <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
-              {forwardedAttribution && isCustomer && (
-                <div className="text-[11px] text-muted-foreground">
-                  Forwarded by {forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}
-                  <span className="opacity-70"> · originally from </span>
-                  <span className="font-medium text-foreground/80">
-                    {forwardedAttribution.original_sender_name || forwardedAttribution.original_sender_email}
-                  </span>
-                  {forwardedAttribution.original_sender_name ? (
-                    <span className="opacity-70"> &lt;{forwardedAttribution.original_sender_email}&gt;</span>
-                  ) : null}
-                </div>
-              )}
               <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>
                 <button
                   type="button"
@@ -776,7 +818,9 @@ export const MessageBubble = memo(function MessageBubble({
                   className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
                 >
                   <Mail01Icon className="h-3 w-3" />
-                  {isCustomer ? 'Received via email' : 'Sent via email'}
+                  {forwardedAttribution && isCustomer
+                    ? `Forwarded by ${forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}`
+                    : isCustomer ? 'Received via email' : 'Sent via email'}
                   <span className="opacity-60">· View details</span>
                 </button>
               </div>
