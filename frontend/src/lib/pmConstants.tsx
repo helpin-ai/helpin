@@ -116,7 +116,7 @@ export const STATE_TYPE_ICON_CONFIG: Record<
     icon: (props) => <PMStateTypeIcon stateType="unstarted" {...props} />,
   },
   started: {
-    color: 'text-amber-500',
+    color: 'text-zinc-500',
     icon: (props) => <PMStateTypeIcon stateType="started" {...props} />,
   },
   done: {
