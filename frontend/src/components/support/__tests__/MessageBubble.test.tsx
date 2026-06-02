@@ -173,6 +173,34 @@ describe('MessageBubble', () => {
     queryClient.clear()
   })
 
+  it('renders forwarded attribution metadata for inbound email messages', () => {
+    const message: SupportMessage = {
+      id: 'msg-forwarded-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Jane Customer',
+      content: 'I need help with my invoice.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      metadata: JSON.stringify({
+        forwarded_by_email: 'founder@company.com',
+        forwarded_by_name: 'Founder',
+        original_sender_email: 'jane@customer.example',
+        original_sender_name: 'Jane Customer',
+        sender_attribution_confidence_level: 'high',
+      }),
+      created_at: '2026-06-02T10:14:00.000Z',
+      updated_at: '2026-06-02T10:14:00.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(rendered.container.textContent).toContain('Forwarded by Founder')
+    expect(rendered.container.textContent).toContain('jane@customer.example')
+    rendered.cleanup()
+  })
+
   it('renders outbound fallback email delivery receipt states', () => {
     const message: SupportMessage = {
       id: 'msg-email-status-1',

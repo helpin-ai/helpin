@@ -533,6 +533,17 @@ export interface SupportMessageEmailDetail {
   bounced_at?: string;
   error_message?: string;
   created_at: string;
+  forwarded_attribution?: SupportForwardedAttribution;
+}
+
+export interface SupportForwardedAttribution {
+  original_sender_email: string;
+  original_sender_name?: string;
+  forwarded_by_email: string;
+  forwarded_by_name?: string;
+  confidence: number;
+  confidence_level: string;
+  source: string;
 }
 
 export interface SupportAIPreviewHistoryTurn {
@@ -866,6 +877,9 @@ export interface SupportInboxSettings {
   email_fallback_delay_secs: number;
   email_fallback_from_name: string;
   email_fallback_max_delivery_age_secs: number;
+  forwarded_email_detection_enabled: boolean;
+  forwarded_email_detection_mode: string;
+  forwarded_email_min_confidence: number;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;

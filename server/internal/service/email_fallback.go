@@ -2414,16 +2414,55 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		senderName = fromEmail
 	}
 
-	subject := strings.TrimSpace(payload.Subject)
-	if subject == "" {
-		subject = fmt.Sprintf("Email from %s", senderName)
+	settings, err := s.loadSettings(ctx, route.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	routeDomain := ""
+	if s.supportInboxService != nil {
+		routeDomain = s.supportInboxService.routeDomain
+	}
+	forwardedAttribution := forwardedEmailDetectionResult{}
+	if settings.ForwardedEmailDetectionEnabled && strings.TrimSpace(settings.ForwardedEmailDetectionMode) == "high_confidence_any_sender" {
+		forwardedAttribution = detectForwardedEmailAttribution(forwardedEmailDetectionInput{
+			ForwarderEmail: fromEmail,
+			ForwarderName:  senderName,
+			RecipientEmails: []string{
+				payload.To,
+				payload.OriginalRecipient,
+				route.InboundAddress,
+				inboundRecipientAddress(payload),
+			},
+			ReplyDomain:   s.InboundDomain(),
+			RouteDomain:   routeDomain,
+			Text:          content,
+			MinConfidence: settings.ForwardedEmailMinConfidence,
+		})
+	}
+	effectiveSenderName := senderName
+	effectiveSenderEmail := fromEmail
+	if forwardedAttribution.Applied {
+		effectiveSenderName = strings.TrimSpace(forwardedAttribution.OriginalName)
+		effectiveSenderEmail = strings.TrimSpace(forwardedAttribution.OriginalEmail)
+		if effectiveSenderName == "" {
+			effectiveSenderName = effectiveSenderEmail
+		}
 	}
 
-	customerName := senderName
-	customerEmail := fromEmail
+	subject := strings.TrimSpace(payload.Subject)
+	if subject == "" {
+		subject = fmt.Sprintf("Email from %s", effectiveSenderName)
+	}
+
+	customerName := effectiveSenderName
+	customerEmail := effectiveSenderEmail
 	viaEmail := "email"
 	now := s.now()
 	spamSignals := postmarkInboundSpamSignalsFromHeaders(payload.Headers)
+	messageMetadata := spamSignals.messageMetadata()
+	if forwardedAttribution.Applied {
+		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
+	}
 	status := model.SupportConversationStatusOpen
 	var closedAt *time.Time
 	if spamSignals.shouldAutoSpamNewConversation() {
@@ -2452,13 +2491,13 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	var (
-		mailbox *model.SupportMailbox
-		err     error
+		mailbox    *model.SupportMailbox
+		mailboxErr error
 	)
 	if conversation.Status != model.SupportConversationStatusSpam && route.MailboxID != nil && strings.TrimSpace(*route.MailboxID) != "" && s.supportInboxService.mailboxRepo != nil {
-		mailbox, err = s.supportInboxService.mailboxRepo.GetByID(ctx, route.WorkspaceID, strings.TrimSpace(*route.MailboxID))
-		if err != nil {
-			return err
+		mailbox, mailboxErr = s.supportInboxService.mailboxRepo.GetByID(ctx, route.WorkspaceID, strings.TrimSpace(*route.MailboxID))
+		if mailboxErr != nil {
+			return mailboxErr
 		}
 	}
 	if mailbox != nil {
@@ -2477,7 +2516,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		Content:           content,
 		IsInternal:        false,
 		MessageType:       "reply",
-		Metadata:          spamSignals.messageMetadata(),
+		Metadata:          messageMetadata,
 		ViaChannel:        &viaEmail,
 	}
 

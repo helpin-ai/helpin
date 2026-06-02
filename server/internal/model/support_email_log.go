@@ -33,21 +33,34 @@ func (SupportEmailLog) TableName() string { return "support_email_logs" }
 
 // SupportMessageEmailDetail is the API response returned for a single message's email details.
 type SupportMessageEmailDetail struct {
-	ID               string     `json:"id"`
-	MessageID        string     `json:"message_id"`
-	Direction        string     `json:"direction"`
-	Subject          string     `json:"subject"`
-	FromEmail        string     `json:"from_email"`
-	ToEmail          string     `json:"to_email"`
-	RFCMessageID     string     `json:"rfc_message_id,omitempty"`
-	InReplyTo        string     `json:"in_reply_to,omitempty"`
-	ReferencesHeader string     `json:"references_header,omitempty"`
-	StrippedText     string     `json:"stripped_text,omitempty"`
-	HTMLBody         string     `json:"html_body,omitempty"`
-	Status           string     `json:"status"`
-	DeliveredAt      *time.Time `json:"delivered_at,omitempty"`
-	OpenedAt         *time.Time `json:"opened_at,omitempty"`
-	BouncedAt        *time.Time `json:"bounced_at,omitempty"`
-	ErrorMessage     string     `json:"error_message,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
+	ID                   string                       `json:"id"`
+	MessageID            string                       `json:"message_id"`
+	Direction            string                       `json:"direction"`
+	Subject              string                       `json:"subject"`
+	FromEmail            string                       `json:"from_email"`
+	ToEmail              string                       `json:"to_email"`
+	RFCMessageID         string                       `json:"rfc_message_id,omitempty"`
+	InReplyTo            string                       `json:"in_reply_to,omitempty"`
+	ReferencesHeader     string                       `json:"references_header,omitempty"`
+	StrippedText         string                       `json:"stripped_text,omitempty"`
+	HTMLBody             string                       `json:"html_body,omitempty"`
+	Status               string                       `json:"status"`
+	DeliveredAt          *time.Time                   `json:"delivered_at,omitempty"`
+	OpenedAt             *time.Time                   `json:"opened_at,omitempty"`
+	BouncedAt            *time.Time                   `json:"bounced_at,omitempty"`
+	ErrorMessage         string                       `json:"error_message,omitempty"`
+	CreatedAt            time.Time                    `json:"created_at"`
+	ForwardedAttribution *SupportForwardedAttribution `json:"forwarded_attribution,omitempty"`
+}
+
+// SupportForwardedAttribution describes an inbound email whose customer identity
+// was inferred from a forwarded-message block while preserving the real forwarder.
+type SupportForwardedAttribution struct {
+	OriginalSenderEmail string `json:"original_sender_email"`
+	OriginalSenderName  string `json:"original_sender_name,omitempty"`
+	ForwardedByEmail    string `json:"forwarded_by_email"`
+	ForwardedByName     string `json:"forwarded_by_name,omitempty"`
+	Confidence          int    `json:"confidence"`
+	ConfidenceLevel     string `json:"confidence_level"`
+	Source              string `json:"source"`
 }

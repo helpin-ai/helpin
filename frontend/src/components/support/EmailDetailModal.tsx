@@ -49,6 +49,7 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
   const htmlBody = (data?.html_body && data.html_body.trim()) || '';
   const textBody = (data?.stripped_text && data.stripped_text.trim()) || message.content || '';
   const timestamp = data?.created_at ?? message.created_at;
+  const forwardedAttribution = data?.forwarded_attribution;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -110,6 +111,22 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                 <dt className="text-muted-foreground">Date</dt>
                 <dd className="text-foreground">{formatFullTimestamp(timestamp)}</dd>
               </dl>
+
+              {forwardedAttribution && (
+                <div className="mt-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  Forwarded by{' '}
+                  <span className="font-medium text-foreground">
+                    {forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}
+                  </span>
+                  <span> and attributed to </span>
+                  <span className="font-medium text-foreground">
+                    {forwardedAttribution.original_sender_name || forwardedAttribution.original_sender_email}
+                  </span>
+                  {forwardedAttribution.original_sender_name ? (
+                    <span> &lt;{forwardedAttribution.original_sender_email}&gt;</span>
+                  ) : null}
+                </div>
+              )}
 
               <div className="mt-6 border-t border-border/60 pt-6">
                 {htmlBody ? (
