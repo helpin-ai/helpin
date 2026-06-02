@@ -113,18 +113,28 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
               </dl>
 
               {forwardedAttribution && (
-                <div className="mt-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  Forwarded by{' '}
-                  <span className="font-medium text-foreground">
-                    {forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}
-                  </span>
-                  <span> and attributed to </span>
-                  <span className="font-medium text-foreground">
-                    {forwardedAttribution.original_sender_name || forwardedAttribution.original_sender_email}
-                  </span>
-                  {forwardedAttribution.original_sender_name ? (
-                    <span> &lt;{forwardedAttribution.original_sender_email}&gt;</span>
-                  ) : null}
+                <div className="mt-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 text-xs">
+                  <div className="mb-2 font-medium text-foreground">Forwarded email</div>
+                  <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5">
+                    <dt className="text-muted-foreground">Original sender</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere]">
+                      <span className="font-medium text-foreground">
+                        {forwardedAttribution.original_sender_name || forwardedAttribution.original_sender_email}
+                      </span>
+                      {forwardedAttribution.original_sender_name ? (
+                        <span className="ml-1 text-muted-foreground">&lt;{forwardedAttribution.original_sender_email}&gt;</span>
+                      ) : null}
+                    </dd>
+                    <dt className="text-muted-foreground">Forwarded by</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere]">
+                      <span className="font-medium text-foreground">
+                        {forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}
+                      </span>
+                      {forwardedAttribution.forwarded_by_name ? (
+                        <span className="ml-1 text-muted-foreground">&lt;{forwardedAttribution.forwarded_by_email}&gt;</span>
+                      ) : null}
+                    </dd>
+                  </dl>
                 </div>
               )}
 
