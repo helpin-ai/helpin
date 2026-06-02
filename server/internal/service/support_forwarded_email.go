@@ -21,6 +21,7 @@ var (
 		"original message",
 	}
 	forwardedEmailFromLineRE = regexp.MustCompile(`(?i)^[\s>]*from:\s*(.+?)\s*$`)
+	forwardedEmailAddressRE  = regexp.MustCompile(`(?i)([a-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)`)
 )
 
 type forwardedEmailDetectionInput struct {
@@ -145,18 +146,41 @@ func forwardedEmailCandidatesAfterMarker(lines []string, markerIndex int) []forw
 		if len(match) != 2 {
 			continue
 		}
-		addr, err := mail.ParseAddress(strings.TrimSpace(match[1]))
-		if err != nil || strings.TrimSpace(addr.Address) == "" {
+		candidate := parseForwardedEmailFromValue(match[1])
+		if strings.TrimSpace(candidate.email) == "" {
 			continue
 		}
-		candidates = append(candidates, forwardedEmailCandidate{
-			email: strings.ToLower(strings.TrimSpace(addr.Address)),
-			name:  strings.TrimSpace(addr.Name),
-			line:  i,
-			raw:   strings.TrimSpace(match[1]),
-		})
+		candidate.line = i
+		candidates = append(candidates, candidate)
 	}
 	return candidates
+}
+
+func parseForwardedEmailFromValue(value string) forwardedEmailCandidate {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return forwardedEmailCandidate{}
+	}
+	normalized := strings.ReplaceAll(raw, "mailto:", "")
+	if addr, err := mail.ParseAddress(normalized); err == nil && strings.TrimSpace(addr.Address) != "" {
+		return forwardedEmailCandidate{
+			email: strings.ToLower(strings.TrimSpace(addr.Address)),
+			name:  strings.TrimSpace(addr.Name),
+			raw:   raw,
+		}
+	}
+	match := forwardedEmailAddressRE.FindStringSubmatch(normalized)
+	if len(match) != 2 {
+		return forwardedEmailCandidate{}
+	}
+	email := strings.ToLower(strings.TrimSpace(match[1]))
+	name := strings.TrimSpace(strings.Replace(normalized, match[1], "", 1))
+	name = strings.TrimSpace(strings.Trim(name, "<>[]()\"'"))
+	return forwardedEmailCandidate{
+		email: email,
+		name:  name,
+		raw:   raw,
+	}
 }
 
 func hasConflictingForwardedEmailCandidates(candidates []forwardedEmailCandidate) bool {
