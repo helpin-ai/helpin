@@ -106,6 +106,29 @@ func inboundForwardedEmailScanText(payload model.PostmarkInboundPayload, fallbac
 	return strings.Join(parts, "\n\n")
 }
 
+func inboundForwardedEmailDisplaySource(payload model.PostmarkInboundPayload, fallback string, attribution forwardedEmailDetectionResult) string {
+	if !attribution.Applied {
+		return fallback
+	}
+	for _, candidate := range []string{
+		payload.TextBody,
+		payload.StrippedTextReply,
+		fallback,
+	} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(candidate), strings.ToLower(strings.TrimSpace(attribution.OriginalEmail))) {
+			continue
+		}
+		if markerIndex, _ := firstForwardedEmailMarker(strings.Split(strings.ReplaceAll(candidate, "\r\n", "\n"), "\n")); markerIndex >= 0 {
+			return candidate
+		}
+	}
+	return fallback
+}
+
 const postmarkInboundAutoSpamScoreThreshold = 5.0
 
 type postmarkInboundSpamSignals struct {
@@ -677,6 +700,12 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 			senderName = strings.TrimSpace(forwardedAttribution.OriginalName)
 		} else if conv.CustomerName != nil && strings.TrimSpace(*conv.CustomerName) != "" {
 			senderName = strings.TrimSpace(*conv.CustomerName)
+		}
+	}
+	if forwardedAttribution.Applied {
+		content = inboundForwardedEmailDisplaySource(payload, content, forwardedAttribution)
+		if len(content) > 50_000 {
+			content = content[:50_000]
 		}
 	}
 
@@ -2511,6 +2540,10 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	effectiveSenderName := senderName
 	effectiveSenderEmail := fromEmail
 	if forwardedAttribution.Applied {
+		content = inboundForwardedEmailDisplaySource(payload, content, forwardedAttribution)
+		if len(content) > 50_000 {
+			content = content[:50_000]
+		}
 		effectiveSenderName = strings.TrimSpace(forwardedAttribution.OriginalName)
 		effectiveSenderEmail = strings.TrimSpace(forwardedAttribution.OriginalEmail)
 		if effectiveSenderName == "" {

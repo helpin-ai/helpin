@@ -2085,7 +2085,7 @@ func TestEmailFallbackProcessInboundEmailRouteUsesForwardedOriginalSender(t *tes
 		OriginalRecipient: route.InboundAddress,
 		Subject:           "Fwd: Billing question",
 		MessageID:         "pm-route-forwarded-1",
-		StrippedTextReply: `Can someone handle this?
+		TextBody: `Can someone handle this?
 
 ---------- Forwarded message ---------
 From: Jane Customer <jane@customer.example>
@@ -2093,7 +2093,15 @@ Date: Tue, Jun 2, 2026 at 10:14 AM
 Subject: Billing question
 To: Founder <founder@company.com>
 
-I need help with my invoice.`,
+I need help with my invoice.
+
+--
+Jane Customer
+
+--
+Founder
+Company`,
+		HtmlBody: `<div dir="ltr">Can someone handle this?<br><br><div class="gmail_quote gmail_quote_container"><div class="gmail_attr">---------- Forwarded message ---------<br>From: <strong>Jane Customer</strong> &lt;<a href="mailto:jane@customer.example">jane@customer.example</a>&gt;<br>Date: Tue, Jun 2, 2026 at 10:14 AM<br>Subject: Billing question<br>To: Founder &lt;<a href="mailto:founder@company.com">founder@company.com</a>&gt;<br></div><br><div>I need help with my invoice.</div><div class="gmail_signature">Jane Customer</div></div><span class="gmail_signature_prefix">-- </span><br><div class="gmail_signature">Founder<br>Company</div></div>`,
 	}
 
 	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-forwarded-1"}`); err != nil {
@@ -2124,6 +2132,12 @@ I need help with my invoice.`,
 	}
 	if messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != "Jane Customer" {
 		t.Fatalf("sender display name = %#v, want Jane Customer", messages[0].SenderDisplayName)
+	}
+	if !strings.Contains(messages[0].Content, "I need help with my invoice.") {
+		t.Fatalf("message content did not include forwarded customer body: %q", messages[0].Content)
+	}
+	if strings.TrimSpace(messages[0].Content) == "Founder\nCompany" || !strings.Contains(messages[0].Content, "Forwarded message") {
+		t.Fatalf("message content should be based on forwarded text body, got %q", messages[0].Content)
 	}
 	var metadata map[string]any
 	if err := json.Unmarshal([]byte(messages[0].Metadata), &metadata); err != nil {
