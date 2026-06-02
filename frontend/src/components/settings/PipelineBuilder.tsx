@@ -63,7 +63,7 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
       const entry = map.get(stateId)!;
       if (rule.trigger_type === 'task.state_entered' && rule.action_type === 'start_agent_run') {
         entry.runRule = rule;
-      } else if (rule.trigger_type === 'agent_run.approved' && rule.action_type === 'move_to_state') {
+      } else if ((rule.trigger_type === 'agent_run.completed' || rule.trigger_type === 'agent_run.approved') && rule.action_type === 'move_to_state') {
         entry.advanceRule = rule;
       } else if (rule.trigger_type === 'task.state_entered' && rule.action_type === 'merge_branch') {
         entry.mergeRule = rule;
@@ -85,11 +85,19 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
     setSaving(stateId);
     const entry = stateRuleMap.get(stateId);
     const existing = entry?.runRule;
+    const existingAdvance = entry?.advanceRule;
 
     try {
       if (!agentId) {
         if (existing) {
           const { error } = await automationRuleService.remove(workspaceId, existing.id);
+          if (error) {
+            toast.error(error);
+            return;
+          }
+        }
+        if (existingAdvance) {
+          const { error } = await automationRuleService.remove(workspaceId, existingAdvance.id);
           if (error) {
             toast.error(error);
             return;
@@ -125,29 +133,38 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
     }
   };
 
-  const handleAutoAdvanceToggle = async (stateId: string, stateName: string, enabled: boolean) => {
+  const handleMoveOnCompletionChange = async (stateId: string, stateName: string, targetStateId: string | null) => {
     if (!workflowId) return;
     setSaving(stateId);
     const existing = stateRuleMap.get(stateId)?.advanceRule;
-    const stateIdx = states.findIndex((s) => s.id === stateId);
-    const nextState = states[stateIdx + 1];
 
     try {
-      if (!enabled && existing) {
+      if (!targetStateId && existing) {
         const { error } = await automationRuleService.remove(workspaceId, existing.id);
         if (error) {
           toast.error(error);
           return;
         }
-      } else if (enabled && !existing && nextState) {
-        const { error } = await automationRuleService.create(workspaceId, {
-          workspace_id: workspaceId,
-          name: `Auto-advance from ${stateName}`,
-          workflow_id: workflowId,
-          trigger_type: 'agent_run.approved',
+      } else if (targetStateId && existing) {
+        const { error } = await automationRuleService.update(workspaceId, existing.id, {
+          trigger_type: 'agent_run.completed',
           trigger_config: { state_id: stateId },
           action_type: 'move_to_state',
-          action_config: { target_state_id: nextState.id },
+          action_config: { target_state_id: targetStateId },
+        });
+        if (error) {
+          toast.error(error);
+          return;
+        }
+      } else if (targetStateId) {
+        const { error } = await automationRuleService.create(workspaceId, {
+          workspace_id: workspaceId,
+          name: `Move task after agent completes in ${stateName}`,
+          workflow_id: workflowId,
+          trigger_type: 'agent_run.completed',
+          trigger_config: { state_id: stateId },
+          action_type: 'move_to_state',
+          action_config: { target_state_id: targetStateId },
         });
         if (error) {
           toast.error(error);
@@ -314,12 +331,10 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
         </div>
 
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <div className="hidden border-b border-border bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid lg:grid-cols-[minmax(170px,1.25fr)_122px_minmax(150px,1fr)_150px_minmax(150px,1fr)_64px] lg:gap-3">
+          <div className="hidden border-b border-border bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid lg:grid-cols-[minmax(170px,1fr)_122px_minmax(360px,2.4fr)_64px] lg:gap-3">
             <div>State</div>
             <div>Type</div>
-            <div>Agent</div>
-            <div>After approval</div>
-            <div>Merge</div>
+            <div>Automation</div>
             <div className="text-right">Actions</div>
           </div>
 
@@ -330,16 +345,19 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
               const selectedAgentId = (runRule?.action_config?.agent_id as string) ?? '';
               const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
               const hasAdvance = !!entry?.advanceRule;
+              const selectedTargetStateId = (entry?.advanceRule?.action_config?.target_state_id as string | undefined) ?? '';
+              const targetState = states.find((candidate) => candidate.id === selectedTargetStateId) ?? null;
               const mergeBranch = (entry?.mergeRule?.action_config?.target_branch as string) ?? '';
-              const isLast = idx === states.length - 1;
               const isSaving = saving === state.id;
               const nextState = states[idx + 1];
+              const defaultTargetState = nextState ?? states.find((candidate) => candidate.id !== state.id) ?? null;
+              const destinationOptions = states.filter((candidate) => candidate.id !== state.id);
 
               return (
                 <div key={state.id}>
                   <div
                     className={cn(
-                      'grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(170px,1.25fr)_122px_minmax(150px,1fr)_150px_minmax(150px,1fr)_64px] lg:items-center',
+                      'grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(170px,1fr)_122px_minmax(360px,2.4fr)_64px] lg:items-start',
                       isSaving && 'opacity-70',
                     )}
                   >
@@ -414,54 +432,73 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                       </Select>
                     </div>
 
-                    <div className="min-w-0">
-                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Agent</div>
-                      {editable ? (
-                        <Select
-                          value={selectedAgentId || '__none__'}
-                          onValueChange={(v) => void handleAgentChange(state.id, state.name, v === '__none__' ? '' : v)}
-                          disabled={isSaving}
-                        >
-                          <SelectTrigger className="h-8 w-full text-xs">
-                            <SelectValue placeholder="No agent" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">
-                              <span className="text-muted-foreground">No agent</span>
-                            </SelectItem>
-                            {agents.map((agent) => (
-                              <SelectItem key={agent.id} value={agent.id}>
-                                {agent.name}
+                    <div className="min-w-0 space-y-2">
+                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Automation</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="w-28 text-xs font-medium text-muted-foreground">On task entry, start</span>
+                        {editable ? (
+                          <Select
+                            value={selectedAgentId || '__none__'}
+                            onValueChange={(v) => void handleAgentChange(state.id, state.name, v === '__none__' ? '' : v)}
+                            disabled={isSaving}
+                          >
+                            <SelectTrigger className="h-8 min-w-44 max-w-full text-xs">
+                              <SelectValue placeholder="No agent" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">
+                                <span className="text-muted-foreground">No agent</span>
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <p className="truncate text-xs text-muted-foreground">{selectedAgent?.name ?? 'No agent'}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">After approval</div>
-                      <div className="flex h-8 items-center justify-between gap-2 rounded-md border border-border bg-background px-2">
-                        <span className="min-w-0 truncate text-xs text-muted-foreground">
-                          {isLast ? 'No next state' : nextState ? `Move to ${nextState.name}` : 'Move forward'}
-                        </span>
-                        <Switch
-                          checked={hasAdvance}
-                          onCheckedChange={(v) => void handleAutoAdvanceToggle(state.id, state.name, v)}
-                          disabled={!editable || !selectedAgentId || isLast || isSaving}
-                        />
+                              {agents.map((agent) => (
+                                <SelectItem key={agent.id} value={agent.id}>
+                                  {agent.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="truncate text-xs text-muted-foreground">{selectedAgent?.name ?? 'No agent'}</span>
+                        )}
                       </div>
-                    </div>
 
-                    <div className="min-w-0">
-                      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:hidden">Merge</div>
-                      <MergeBranchInput
-                        value={mergeBranch}
-                        editable={editable && !isSaving}
-                        onChange={(v) => void handleMergeBranchToggle(state.id, state.name, v)}
-                      />
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="w-28 font-medium">On run completion</span>
+                        <span>move to</span>
+                        {editable ? (
+                          <Select
+                            value={selectedTargetStateId || '__none__'}
+                            onValueChange={(value) => void handleMoveOnCompletionChange(state.id, state.name, value === '__none__' ? null : value)}
+                            disabled={!selectedAgentId || isSaving || destinationOptions.length === 0}
+                          >
+                            <SelectTrigger className="h-8 min-w-36 max-w-full text-xs">
+                              <SelectValue placeholder="No movement" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">
+                                <span className="text-muted-foreground">No movement</span>
+                              </SelectItem>
+                              {destinationOptions.map((candidate) => (
+                                <SelectItem key={candidate.id} value={candidate.id}>
+                                  {candidate.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="font-medium text-foreground">{hasAdvance ? targetState?.name ?? defaultTargetState?.name ?? 'next state' : 'No movement'}</span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="w-28 text-xs font-medium text-muted-foreground">Branch</span>
+                        <div className="min-w-44 flex-1">
+                          <MergeBranchInput
+                            value={mergeBranch}
+                            editable={editable && !isSaving}
+                            onChange={(v) => void handleMergeBranchToggle(state.id, state.name, v)}
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-end gap-1">
@@ -590,11 +627,13 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
           const selectedAgentId = (runRule?.action_config?.agent_id as string) ?? '';
           const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
           const hasAdvance = !!entry?.advanceRule;
+          const selectedTargetStateId = (entry?.advanceRule?.action_config?.target_state_id as string | undefined) ?? '';
+          const targetState = states.find((candidate) => candidate.id === selectedTargetStateId) ?? null;
           const mergeBranch = (entry?.mergeRule?.action_config?.target_branch as string) ?? '';
-          const isLast = idx === states.length - 1;
           const isSaving = saving === state.id;
           const hasExecution = !!selectedAgentId;
           const nextState = states[idx + 1];
+          const defaultTargetState = nextState ?? states.find((candidate) => candidate.id !== state.id) ?? null;
 
           return (
             <div
@@ -661,18 +700,25 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                   <div className="rounded-md border border-border/60 bg-background/60 p-2.5">
                     <div className="mb-2 flex items-center gap-1.5 text-xs font-medium">
                       <CheckmarkCircle02Icon className="h-3.5 w-3.5 text-emerald-500" />
-                      After approval
+                      Move when done
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-xs text-muted-foreground">
-                          {isLast ? 'No next state' : nextState ? `Move to ${nextState.name}` : 'Move forward'}
+                          {hasAdvance
+                            ? `Move to ${targetState?.name ?? defaultTargetState?.name ?? 'next state'} when agent run completes`
+                            : defaultTargetState
+                              ? `Can move to ${defaultTargetState.name} when agent run completes`
+                              : 'No other state'}
                         </p>
                       </div>
                       <Switch
                         checked={hasAdvance}
-                        onCheckedChange={(v) => void handleAutoAdvanceToggle(state.id, state.name, v)}
-                        disabled={!editable || !hasExecution || isLast || isSaving}
+                        onCheckedChange={(checked) => {
+                          const fallbackTargetId = selectedTargetStateId || defaultTargetState?.id || '';
+                          void handleMoveOnCompletionChange(state.id, state.name, checked ? fallbackTargetId : null);
+                        }}
+                        disabled={!editable || !hasExecution || !defaultTargetState || isSaving}
                       />
                     </div>
                   </div>
@@ -720,7 +766,7 @@ function AddStateRow({
   onSave: () => void;
 }) {
   return (
-    <div className="grid gap-3 border-t border-border bg-muted/20 px-3 py-3 lg:grid-cols-[minmax(170px,1.25fr)_122px_minmax(150px,1fr)_150px_minmax(150px,1fr)_64px] lg:items-center">
+    <div className="grid gap-3 border-t border-border bg-muted/20 px-3 py-3 lg:grid-cols-[minmax(170px,1fr)_122px_minmax(360px,2.4fr)_64px] lg:items-center">
       <div className="flex min-w-0 items-center gap-2">
         <Popover>
           <PopoverTrigger asChild>
@@ -765,9 +811,7 @@ function AddStateRow({
         </SelectContent>
       </Select>
 
-      <div className="hidden text-xs text-muted-foreground lg:block">Configure agent after save</div>
-      <div className="hidden text-xs text-muted-foreground lg:block">-</div>
-      <div className="hidden text-xs text-muted-foreground lg:block">-</div>
+      <div className="hidden text-xs text-muted-foreground lg:block">Configure automation after save</div>
       <div className="flex items-center justify-end gap-1">
         {saving ? <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
         <button

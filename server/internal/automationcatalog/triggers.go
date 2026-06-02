@@ -308,6 +308,26 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			},
 		},
 		{
+			catalogID:        "agent_run.completed",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerAgentRunCompleted,
+			title:            "Agent Run Completed",
+			description:      "Fires when a task agent run completes successfully.",
+			sourceSurface:    "Agent run completion",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerAgentRunCompleted),
+				ShowTriggerTitle: strPtr("Agent Run Completed"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				Template:            strPtr(model.TriggerAgentRunCompleted),
+				TemplateTitle:       strPtr("Agent Run Completed template"),
+				TemplateDescription: strPtr("Choose a workflow state and follow-up action in Flows to create an agent_run.completed automation for the selected state."),
+			},
+		},
+		{
 			catalogID:        "doc.published",
 			bindingKind:      "automation_rule",
 			category:         "automation_rule",

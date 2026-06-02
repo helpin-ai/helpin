@@ -258,6 +258,13 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 		}
 		return cfg.StateID != "" && cfg.StateID == event.StateID
 
+	case model.TriggerAgentRunCompleted:
+		var cfg model.TriggerConfigRunCompleted
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return cfg.StateID != "" && cfg.StateID == event.StateID
+
 	case model.TriggerDocPublished, model.TriggerAISectionRegenerated, model.TriggerAISectionApproved:
 		return strings.TrimSpace(event.TargetType) != "" && strings.TrimSpace(event.TargetID) != ""
 
@@ -1086,6 +1093,14 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		}
 	case model.TriggerAgentRunApproved:
 		var cfg model.TriggerConfigRunApproved
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if cfg.StateID == "" {
+			return fmt.Errorf("state_id is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerAgentRunCompleted:
+		var cfg model.TriggerConfigRunCompleted
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 		}
