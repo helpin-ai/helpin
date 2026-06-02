@@ -63,6 +63,38 @@ type PullRequest struct {
 	MergedAt  *time.Time
 }
 
+type PullRequestFile struct {
+	Filename  string
+	Status    string
+	Additions int
+	Deletions int
+	Changes   int
+	Patch     string
+}
+
+type CheckRunAnnotation struct {
+	Path            string
+	StartLine       int
+	EndLine         int
+	AnnotationLevel string
+	Message         string
+	Title           string
+}
+
+type CheckRun struct {
+	ID            int64
+	Name          string
+	HTMLURL       string
+	Status        string
+	Conclusion    string
+	StartedAt     *time.Time
+	CompletedAt   *time.Time
+	OutputTitle   string
+	OutputSummary string
+	OutputText    string
+	Annotations   []CheckRunAnnotation
+}
+
 type ListReleasesOptions struct {
 	IncludeDrafts      bool
 	IncludePrereleases bool
@@ -694,6 +726,163 @@ func (c *Client) GetPullRequest(ctx context.Context, installationID, owner, repo
 		UpdatedAt: payload.UpdatedAt,
 		MergedAt:  payload.MergedAt,
 	}, nil
+}
+
+// GetPullRequestFiles returns changed files for a pull request.
+func (c *Client) GetPullRequestFiles(ctx context.Context, installationID, owner, repo string, number int) ([]PullRequestFile, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github app is not configured")
+	}
+	token, err := c.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/pulls/%d/files?per_page=100", c.apiBaseURL, owner, repo, number), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build github pull request files request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request github pull request files: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var payload []struct {
+		Filename  string `json:"filename"`
+		Status    string `json:"status"`
+		Additions int    `json:"additions"`
+		Deletions int    `json:"deletions"`
+		Changes   int    `json:"changes"`
+		Patch     string `json:"patch"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode github pull request files response: %w", err)
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("github pull request files lookup failed (%d)", resp.StatusCode)
+	}
+	files := make([]PullRequestFile, 0, len(payload))
+	for _, file := range payload {
+		files = append(files, PullRequestFile{
+			Filename:  file.Filename,
+			Status:    file.Status,
+			Additions: file.Additions,
+			Deletions: file.Deletions,
+			Changes:   file.Changes,
+			Patch:     file.Patch,
+		})
+	}
+	return files, nil
+}
+
+// GetCheckRun returns a check run with output and annotations.
+func (c *Client) GetCheckRun(ctx context.Context, installationID, owner, repo string, checkRunID int64) (*CheckRun, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github app is not configured")
+	}
+	token, err := c.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/check-runs/%d", c.apiBaseURL, owner, repo, checkRunID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build github check run request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request github check run: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		ID          int64      `json:"id"`
+		Name        string     `json:"name"`
+		HTMLURL     string     `json:"html_url"`
+		Status      string     `json:"status"`
+		Conclusion  string     `json:"conclusion"`
+		StartedAt   *time.Time `json:"started_at"`
+		CompletedAt *time.Time `json:"completed_at"`
+		Output      struct {
+			Title   string `json:"title"`
+			Summary string `json:"summary"`
+			Text    string `json:"text"`
+		} `json:"output"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode github check run response: %w", err)
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("github check run lookup failed (%d): %s", resp.StatusCode, payload.Message)
+	}
+
+	annotations, err := c.getCheckRunAnnotations(ctx, token, owner, repo, checkRunID)
+	if err != nil {
+		return nil, err
+	}
+	return &CheckRun{
+		ID:            payload.ID,
+		Name:          payload.Name,
+		HTMLURL:       payload.HTMLURL,
+		Status:        payload.Status,
+		Conclusion:    payload.Conclusion,
+		StartedAt:     payload.StartedAt,
+		CompletedAt:   payload.CompletedAt,
+		OutputTitle:   payload.Output.Title,
+		OutputSummary: payload.Output.Summary,
+		OutputText:    payload.Output.Text,
+		Annotations:   annotations,
+	}, nil
+}
+
+func (c *Client) getCheckRunAnnotations(ctx context.Context, token, owner, repo string, checkRunID int64) ([]CheckRunAnnotation, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/check-runs/%d/annotations?per_page=50", c.apiBaseURL, owner, repo, checkRunID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build github check run annotations request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request github check run annotations: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var payload []struct {
+		Path            string `json:"path"`
+		StartLine       int    `json:"start_line"`
+		EndLine         int    `json:"end_line"`
+		AnnotationLevel string `json:"annotation_level"`
+		Message         string `json:"message"`
+		Title           string `json:"title"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode github check run annotations response: %w", err)
+	}
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("github check run annotations lookup failed (%d)", resp.StatusCode)
+	}
+	annotations := make([]CheckRunAnnotation, 0, len(payload))
+	for _, annotation := range payload {
+		annotations = append(annotations, CheckRunAnnotation{
+			Path:            annotation.Path,
+			StartLine:       annotation.StartLine,
+			EndLine:         annotation.EndLine,
+			AnnotationLevel: annotation.AnnotationLevel,
+			Message:         annotation.Message,
+			Title:           annotation.Title,
+		})
+	}
+	return annotations, nil
 }
 
 func (c *Client) createAppJWT() (string, error) {

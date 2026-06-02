@@ -296,7 +296,7 @@ export function GeneralTab({ workspaceId, editable }: {
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <Label htmlFor="ws-key">Task Key Prefix</Label>
-                <TooltipProvider delayDuration={200}>
+                <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="text-muted-foreground cursor-help">
@@ -385,7 +385,7 @@ export function GeneralTab({ workspaceId, editable }: {
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <Label htmlFor="ws-tz">Timezone</Label>
-                <TooltipProvider delayDuration={200}>
+                <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="text-muted-foreground cursor-help">

@@ -61,7 +61,7 @@ func (h *PMEpicHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WorkspaceID == "" {
 		req.WorkspaceID = getWorkspaceID(r)
 	}
-	epic, err := h.epicService.Create(r.Context(), req, userID)
+	epic, err := h.epicService.CreateWithAgentRun(r.Context(), req, userID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

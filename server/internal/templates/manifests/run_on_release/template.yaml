@@ -1,0 +1,34 @@
+key: run_on_release
+version: 1
+name: Run on release
+icon: tag
+short_description: Starts an existing agent when a GitHub release is published.
+categories: [engineering]
+agent:
+  pick_existing:
+    required: true
+    constraints:
+      targets: [repository]
+trigger:
+  type: event
+  event: github.release_published
+inputs:
+  - key: agent_id
+    type: agent
+    required: true
+    label: Agent
+    section: What should run?
+    help_text: Select the agent that should run when a GitHub release is published.
+  - key: repository_id
+    type: repository
+    required: true
+    label: Repository
+    section: What release should trigger it?
+    help_text: GitHub releases from this repository will trigger the selected agent.
+flow:
+  action: start_agent_run
+  target:
+    from_input: repository_id
+  parameters:
+    agent_id:
+      from_input: agent_id

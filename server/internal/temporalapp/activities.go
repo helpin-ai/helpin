@@ -14,6 +14,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 
 	"github.com/helpin-ai/helpin/server/internal/agentskills"
+	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/githubapp"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
@@ -131,6 +132,8 @@ type AgentRunActivities struct {
 	wsPublisher                websocket.EventPublisher
 	runtimes                   *workerpkg.RuntimeRegistry
 	githubApp                  *githubapp.Client
+	gitCredentialRepo          *repository.GitCredentialRepository
+	gitOAuthEncryptionKey      []byte
 	runEngine                  *RunEngine
 	commandBarAdvancer         CommandBarPlanAdvancer
 }
@@ -180,6 +183,8 @@ func NewAgentRunActivities(
 	wsPublisher websocket.EventPublisher,
 	runtimes *workerpkg.RuntimeRegistry,
 	githubApp *githubapp.Client,
+	gitCredentialRepo *repository.GitCredentialRepository,
+	gitOAuthEncryptionKey []byte,
 	runEngine *RunEngine,
 	commandBarAdvancer CommandBarPlanAdvancer,
 ) *AgentRunActivities {
@@ -227,6 +232,8 @@ func NewAgentRunActivities(
 		wsPublisher:                wsPublisher,
 		runtimes:                   runtimes,
 		githubApp:                  githubApp,
+		gitCredentialRepo:          gitCredentialRepo,
+		gitOAuthEncryptionKey:      append([]byte(nil), gitOAuthEncryptionKey...),
 		runEngine:                  runEngine,
 		commandBarAdvancer:         commandBarAdvancer,
 	}
@@ -1424,13 +1431,14 @@ func (a *AgentRunActivities) loadRunState(ctx context.Context, runID string) (*r
 			if err != nil {
 				return nil, err
 			}
-			if repo != nil {
-				if repo.WorkspaceID != run.WorkspaceID {
-					return nil, fmt.Errorf("delivery target repository does not belong to this workspace")
-				}
-				if repo.DeletedAt != nil || !repo.Active {
-					return nil, fmt.Errorf("delivery target repository is inactive")
-				}
+			if repo == nil {
+				return nil, fmt.Errorf("delivery target repository is not available")
+			}
+			if repo.WorkspaceID != run.WorkspaceID {
+				return nil, fmt.Errorf("delivery target repository does not belong to this workspace")
+			}
+			if repo.DeletedAt != nil || !repo.Active || repo.Archived || !repo.Selected {
+				return nil, fmt.Errorf("delivery target repository is not available")
 			}
 			state.repository = repo
 		}
@@ -1599,7 +1607,7 @@ func (a *AgentRunActivities) resolveDeliveryTarget(ctx context.Context, workspac
 			return nil, nil, err
 		}
 		if teamDefault != nil {
-			repo, err := a.gitRepo.GetByID(ctx, workspaceID, teamDefault.RepositoryID)
+			repo, err := a.gitRepo.GetEnabledByID(ctx, workspaceID, teamDefault.RepositoryID)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -2005,6 +2013,19 @@ func (a *AgentRunActivities) mintAccessToken(ctx context.Context, integration *m
 			return "", fmt.Errorf("github app credentials are not configured")
 		}
 		return a.githubApp.MintInstallationToken(ctx, *integration.InstallationID)
+	}
+	if integration.Provider == "gitlab" && integration.CredentialID != nil && strings.TrimSpace(*integration.CredentialID) != "" {
+		if a.gitCredentialRepo == nil || len(a.gitOAuthEncryptionKey) != 32 {
+			return "", fmt.Errorf("gitlab credential storage is not configured")
+		}
+		credential, err := a.gitCredentialRepo.GetByID(ctx, *integration.CredentialID)
+		if err != nil {
+			return "", err
+		}
+		if credential == nil || credential.AccessTokenEncrypted == nil || strings.TrimSpace(*credential.AccessTokenEncrypted) == "" {
+			return "", fmt.Errorf("gitlab credential is not available")
+		}
+		return appcrypto.DecryptString(*credential.AccessTokenEncrypted, a.gitOAuthEncryptionKey)
 	}
 	if integration.AccessToken != "" {
 		return integration.AccessToken, nil
@@ -2574,6 +2595,12 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 			sources := req.Sources
 			if len(sources) == 0 || strings.TrimSpace(string(sources)) == "" || strings.TrimSpace(string(sources)) == "null" {
 				sources = json.RawMessage(`[]`)
+			} else {
+				normalizedSources, err := json.Marshal(model.NormalizeDocsChangeProposalSources(sources))
+				if err != nil {
+					return nil, fmt.Errorf("marshal proposal sources: %w", err)
+				}
+				sources = normalizedSources
 			}
 			proposal := &model.DocsChangeProposal{
 				WorkspaceID:     workspaceID,

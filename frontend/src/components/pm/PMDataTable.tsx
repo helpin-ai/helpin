@@ -22,6 +22,8 @@ import {
   TABLE_RESIZE_HANDLE,
   ROW_HEIGHT,
   dynamicCellStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
 } from '@/lib/tableStyles';
 
 interface PMDataTableProps<T> {
@@ -150,18 +152,10 @@ export function PMDataTable<T>({
                 data-index={virtualRow.index}
                 className={`${TABLE_ROW}${onRowClick ? ' cursor-pointer' : ''}`}
                 onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
+                style={virtualRowStyle(virtualRow.start)}
               >
                 {row.getVisibleCells().map((cell) => {
-                  const defSize = cell.column.columnDef.size ?? 150;
-                  const runtimeSize = cell.column.getSize();
-                  const isResized = !!resolvedColumnSizing[cell.column.id];
+                  const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, resolvedColumnSizing);
                   return (
                     <div
                       key={cell.id}

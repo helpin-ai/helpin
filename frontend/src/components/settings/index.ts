@@ -4,6 +4,8 @@ export { TeamsTab } from './TeamsTab';
 export { ModuleAccessTab } from './ModuleAccessTab';
 export { KnowledgeTab } from './KnowledgeTab';
 export { ProjectDeliveryTab } from './ProjectDeliveryTab';
+export { OrgGitConnectionsTab } from './OrgGitConnectionsTab';
+export { WorkspaceRepositoriesTab } from './WorkspaceRepositoriesTab';
 export { WorkflowManager } from './WorkflowManager';
 export type { WorkspaceEventRuleTemplate } from './WorkflowManager';
 export { AutomationsTab } from './AutomationsTab';

@@ -178,6 +178,7 @@ interface FormState {
   owner_member_ids: string[];
   requester_member_id: string;
   blocker: string;
+  assigned_agent_id: string;
 }
 
 interface DuplicateNoticeState {
@@ -208,6 +209,7 @@ const buildFormState = (detail: TaskDetail): FormState => ({
   owner_member_ids: detail.task.owner_member_ids ?? [],
   requester_member_id: detail.task.requester_member_id ?? '',
   blocker: detail.task.blocker ?? '',
+  assigned_agent_id: detail.task.assigned_agent_id ?? '',
 });
 
 const isInsideSonnerToast = (target: EventTarget | null) => (
@@ -1442,22 +1444,23 @@ function TaskDetailPanelBody({
             />
           </div>
 
-          {/* Git Links & Agent Runs */}
+          {/* Development */}
           {hasGitIntegration && fieldVis.dev_history && (
-            <>
-              <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
-              <AgentRunPanel
-                taskId={taskDetail.task.id}
-                workspaceId={workspaceId}
-                latestRunAgentId={taskDetail.task.latest_run_agent_id}
-                delivery={delivery}
-                canEditDelivery={canEdit && fieldVis.delivery}
-              />
-            </>
+            <TaskGitPanel taskId={taskDetail.task.id} workspaceId={workspaceId} />
           )}
 
+          {/* Agent Runs */}
+          <AgentRunPanel
+            taskId={taskDetail.task.id}
+            workspaceId={workspaceId}
+            taskTeamId={taskDetail.task.team_id}
+            latestRunAgentId={taskDetail.task.latest_run_agent_id}
+            delivery={delivery}
+            canEditDelivery={canEdit && fieldVis.delivery}
+          />
+
           {/* Comments + Activity */}
-          <div className={comments.length > 0 ? 'mt-10' : 'mt-6'}>
+          <div className="mt-6">
             {/* Comments card */}
             {commentsLoading ? (
               <div className="space-y-3 rounded-lg border border-border/60 p-4">
@@ -1473,7 +1476,7 @@ function TaskDetailPanelBody({
               </div>
             ) : (
               <>
-                <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3" />
+                <TaskDetailSectionHeading title="Comments" icon={Message01Icon} className="mb-3 text-xs font-semibold uppercase tracking-wide text-foreground/70" />
               <CommentThread
                 workspaceId={workspaceId}
                 entityType="task"
@@ -1502,7 +1505,7 @@ function TaskDetailPanelBody({
             ) : null}
             {!activityLoading && activity.length > 0 && (
               <div className="mt-6">
-                <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} />
+                <TaskDetailSectionHeading title="Activity" icon={Activity01Icon} className="text-xs font-semibold text-foreground/70 uppercase tracking-wide" />
                 <ActivityTimeline
                   activity={activity}
                   states={states}

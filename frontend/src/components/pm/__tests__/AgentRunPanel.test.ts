@@ -4,6 +4,7 @@ import {
   getTaskAgentRunExecutionContextLockReason,
   getTaskAgentRunLaunchState,
   getTaskAgentRunPickerLabel,
+  getTaskAgentRunPrimaryAction,
   getTaskAgentRunSuggestedAgent,
 } from '../AgentRunPanel';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
@@ -35,6 +36,69 @@ function run(overrides: Partial<AgentRun>): AgentRun {
     ...overrides,
   };
 }
+
+describe('getTaskAgentRunPrimaryAction', () => {
+  it('opens the active task run instead of offering another start', () => {
+    expect(
+      getTaskAgentRunPrimaryAction({
+        selectedAgentName: 'Forge',
+        activeRun: run({ id: 'run-active', status: 'running' }),
+        activeRunAgentName: 'Atlas',
+        triggering: false,
+      }),
+    ).toMatchObject({
+      kind: 'open',
+      runId: 'run-active',
+      label: 'Open Atlas run',
+      status: 'Atlas is running.',
+    });
+  });
+
+  it('uses pause-specific labels for active task runs', () => {
+    expect(
+      getTaskAgentRunPrimaryAction({
+        selectedAgentName: 'Forge',
+        activeRun: run({ status: 'paused', pause_reason: 'human_approval' }),
+        activeRunAgentName: 'Forge',
+        triggering: false,
+      }).label,
+    ).toBe('Review Forge request');
+
+    expect(
+      getTaskAgentRunPrimaryAction({
+        selectedAgentName: 'Forge',
+        activeRun: run({ status: 'paused', pause_reason: 'human_input' }),
+        activeRunAgentName: 'Forge',
+        triggering: false,
+      }).label,
+    ).toBe('Reply to Forge');
+
+    expect(
+      getTaskAgentRunPrimaryAction({
+        selectedAgentName: 'Forge',
+        activeRun: run({ status: 'paused', pause_reason: 'authentication' }),
+        activeRunAgentName: 'Forge',
+        triggering: false,
+      }).label,
+    ).toBe('Complete Forge sign-in');
+  });
+
+  it('starts the selected task agent when there is no active run', () => {
+    expect(
+      getTaskAgentRunPrimaryAction({
+        selectedAgentName: 'Forge',
+        activeRun: null,
+        activeRunAgentName: null,
+        triggering: false,
+      }),
+    ).toMatchObject({
+      kind: 'start',
+      runId: null,
+      label: 'Run',
+      status: 'Choose an agent to run on this task.',
+    });
+  });
+});
 
 function agent(overrides: Partial<Agent>): Agent {
   return {

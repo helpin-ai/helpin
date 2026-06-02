@@ -34,6 +34,7 @@ import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const healthConfig: Record<string, { label: string; className: string }> = {
   on_track: { label: 'On Track', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
@@ -57,6 +58,38 @@ const healthFilterOptions: { value: string; label: string }[] = [
   { value: 'at_risk', label: 'At Risk' },
   { value: 'off_track', label: 'Off Track' },
 ];
+
+const OBJECTIVE_CREATE_TOOLTIP = 'Only team managers can create objectives. Ask your team manager for access.';
+
+function CreateObjectiveButton({
+  className,
+  disabled,
+  onClick,
+}: {
+  className?: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button size="sm" className={`gap-2 ${className ?? ''}`} onClick={onClick} disabled={disabled}>
+              <PlusSignIcon className="h-4 w-4" />
+              Create Objective
+            </Button>
+          </span>
+        </TooltipTrigger>
+        {disabled && (
+          <TooltipContent side="top" className="max-w-[260px] text-xs">
+            {OBJECTIVE_CREATE_TOOLTIP}
+          </TooltipContent>
+        )}
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function FilterChip({
   label,
@@ -122,7 +155,7 @@ export function ObjectivesPage() {
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
   const { data: access } = useWorkspaceAccess(workspaceId);
-  const { canEdit, isAdmin } = usePermissions(access);
+  const { canEdit, isAdmin, isTeamManager, teamMemberships } = usePermissions(access);
   const { teams } = useAccessibleTeams(workspaceId || '');
 
   // Filters
@@ -158,6 +191,7 @@ export function ObjectivesPage() {
   }, [navigate, workspace?.slug]);
 
   const activeFilterCount = [filterState, filterTeam, filterType, filterHealth].filter(Boolean).length;
+  const canCreateObjective = canEdit && (isAdmin || (filterTeam ? isTeamManager(filterTeam) : teamMemberships.some((tm) => tm.role === 'owner')));
 
   const clearAllFilters = () => {
     setFilterState('');
@@ -190,10 +224,11 @@ export function ObjectivesPage() {
           Objectives align your team around measurable goals with key results, keeping everyone focused on outcomes that matter.
         </p>
         {canEdit && (
-          <Button className="gap-2 mb-8" onClick={() => openCreate('objective')}>
-            <PlusSignIcon className="h-4 w-4" />
-            Create Objective
-          </Button>
+          <CreateObjectiveButton
+            className="mb-8"
+            disabled={!canCreateObjective}
+            onClick={() => openCreate('objective')}
+          />
         )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
           {[
@@ -220,10 +255,10 @@ export function ObjectivesPage() {
           <p className="text-sm text-muted-foreground">Set measurable goals and track key results across your team.</p>
         </div>
         {canEdit && (
-          <Button size="sm" className="gap-2" onClick={() => openCreate('objective')}>
-            <PlusSignIcon className="h-4 w-4" />
-            Create Objective
-          </Button>
+          <CreateObjectiveButton
+            disabled={!canCreateObjective}
+            onClick={() => openCreate('objective')}
+          />
         )}
       </div>
 

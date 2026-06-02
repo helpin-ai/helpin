@@ -698,7 +698,7 @@ func (s *AuthService) DeleteAvatar(ctx context.Context, userID string) (*model.U
 	return &profile, nil
 }
 
-// RefreshToken validates a refresh token and issues a new token pair.
+// RefreshToken validates a refresh token and issues a fresh token pair.
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*model.AuthResponse, error) {
 	claims, err := s.jwtManager.ValidateToken(refreshToken)
 	if err != nil {
@@ -720,7 +720,13 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*m
 		return nil, fmt.Errorf("user not found")
 	}
 
-	accessToken, newRefresh, err := s.generateTokenPairForUser(user, false, claims.MFASatisfied)
+	// Refresh tokens are stateless JWTs, so issuing a new cookie extends active
+	// sessions without invalidating another tab that still has the previous token.
+	rememberMe := claims.RememberMe
+	if !rememberMe && claims.ExpiresAt != nil && time.Until(claims.ExpiresAt.Time) > auth.RefreshTokenTTL {
+		rememberMe = true
+	}
+	accessToken, newRefresh, err := s.generateTokenPairForUser(user, rememberMe, claims.MFASatisfied)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens during refresh", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)

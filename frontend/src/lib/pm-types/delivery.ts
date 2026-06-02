@@ -2,11 +2,12 @@
 
 export interface GitIntegration {
   id: string;
-  workspace_id: string;
+  workspace_id?: string;
   organization_id?: string;
   provider: string;
   display_name: string;
   credential_mode?: string;
+  credential_id?: string;
   account_login?: string;
   base_url?: string;
   installation_id?: string;
@@ -24,6 +25,7 @@ export interface GitRepository {
   workspace_id: string;
   integration_id: string;
   provider: string;
+  base_url?: string;
   external_id: string;
   full_name: string;
   default_branch: string;
@@ -121,6 +123,7 @@ export interface TaskGitLink {
   repository_id?: string;
   run_id?: string;
   provider: string;
+  base_url?: string;
   repo: string;
   branch?: string;
   pr_number?: number;
@@ -151,6 +154,21 @@ export interface GitHubInstallURLResponse {
   install_url: string;
   action: 'install' | 'pick_repos';
   integration_id?: string;
+}
+
+export type GitLabTokenAuthType = 'personal_token' | 'group_token' | 'project_token';
+
+export interface GitLabConnectTokenRequest {
+  base_url: string;
+  token: string;
+  auth_type: GitLabTokenAuthType;
+  label?: string;
+}
+
+export interface GitLabConnectResponse {
+  integration_id: string;
+  account_login: string;
+  base_url: string;
 }
 
 export interface UpdateGitRepositoryRequest {

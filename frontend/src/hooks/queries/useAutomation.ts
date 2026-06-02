@@ -11,6 +11,8 @@ import type {
   CreateAgentFromTemplateRequest,
   CreateAgentRequest,
   CreateAutomationRuleRequest,
+  InstallFlowTemplateRequest,
+  UninstallFlowTemplateRequest,
   UpdateAgentRequest,
   UpdateAutomationRuleRequest,
 } from '@/lib/pmTypes';
@@ -70,6 +72,41 @@ export function useAutomationFlowsByWorkflow(wsId?: string, workflowId?: string)
     queryFn: async () => unwrap(await automationService.listFlowsByWorkflow(wsId!, workflowId!)),
     enabled: !!wsId && !!workflowId,
     staleTime: 30_000,
+  });
+}
+
+export function useAutomationFlowTemplates(wsId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.automation.flowTemplates(wsId),
+    queryFn: async () => unwrap(await automationService.listFlowTemplates(wsId)),
+    enabled: !!wsId && enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useInstallAutomationFlowTemplate(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ templateKey, payload }: { templateKey: string; payload: InstallFlowTemplateRequest }) =>
+      unwrap(await automationService.installFlowTemplate(wsId, templateKey, payload)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+    },
+  });
+}
+
+export function useUninstallAutomationFlowTemplate(wsId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ instanceId, payload }: { instanceId: string; payload: UninstallFlowTemplateRequest }) =>
+      unwrap(await automationService.uninstallFlowTemplate(wsId, instanceId, payload)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.automation.flows(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.automation.overview(wsId) });
+      qc.invalidateQueries({ queryKey: queryKeys.automation.agents(wsId) });
+    },
   });
 }
 

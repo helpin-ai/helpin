@@ -97,7 +97,7 @@ describe('TaskFilters', () => {
     expect(onChange).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain('Urgent');
     expect(document.body.textContent).toContain('High');
-    expect(rendered.container.textContent).not.toContain('Choose value');
+    expect(rendered.container.textContent).toContain('Choose value');
     expect(document.body.querySelector('input[placeholder="Search priority..."]')).toBeFalsy();
     expect(document.body.textContent).not.toContain('Back');
     expect(document.body.querySelector('button[aria-label="Back to filter fields"]')).toBeTruthy();

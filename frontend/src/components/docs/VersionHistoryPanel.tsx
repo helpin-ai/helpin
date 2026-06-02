@@ -49,6 +49,7 @@ const TYPE_BADGE_STYLES: Record<VersionType, string> = {
   auto: 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20',
   publish: 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20',
   revert: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+  proposal_apply: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/20',
 }
 
 const TYPE_ICONS: Record<VersionType, React.ComponentType<{ className?: string }>> = {
@@ -56,6 +57,7 @@ const TYPE_ICONS: Record<VersionType, React.ComponentType<{ className?: string }
   auto: ZapIcon,
   publish: GlobeIcon,
   revert: Clock03Icon,
+  proposal_apply: Tick01Icon,
 }
 
 export function VersionTypeBadge({ type }: { type: VersionType }) {

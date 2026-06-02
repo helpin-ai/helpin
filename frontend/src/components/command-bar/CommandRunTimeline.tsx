@@ -296,6 +296,7 @@ function CommandRunNode({
   const isOneShot = step.plan_kind === 'one_shot_command';
   const awaitingApproval = run && getAgentRunDisplayStatus(run) === 'awaiting_approval';
   const canPromote = !!run && run.status === 'completed' && isOneShot && !!onPromoteRun;
+  const showPersistentOpen = !!run && isOneShot && ACTIVE_RUN_STATUSES.has(run.status);
   const description = stepDescription(step, run);
   const target = run ? targetLabel(run) : step.target.display_title || step.target.entity_id;
 
@@ -316,7 +317,21 @@ function CommandRunNode({
               {!branch && total > 1 ? <span className="shrink-0">· step {index + 1}</span> : null}
             </div>
           </div>
-          <span className={cn('shrink-0 pt-0.5 text-[11px] leading-5 tabular-nums', statusTone(state))}>{statusText}</span>
+          <div className="flex shrink-0 items-center gap-1">
+            <span className={cn('pt-0.5 text-[11px] leading-5 tabular-nums', statusTone(state))}>{statusText}</span>
+            {showPersistentOpen ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                aria-label={`Open ${step.agent_name || 'agent'} run`}
+                onClick={() => onOpenRun(run.id)}
+              >
+                <ArrowUpRight01Icon className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         {awaitingApproval ? (

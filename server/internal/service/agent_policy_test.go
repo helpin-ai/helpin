@@ -205,6 +205,36 @@ func TestListAgentPresetsIncludesInteractiveReviewAgent(t *testing.T) {
 	t.Fatal("expected review agent preset in catalog")
 }
 
+func TestListAgentPresetsIncludesDocumentationAgent(t *testing.T) {
+	presets := ListAgentPresets()
+	for _, preset := range presets {
+		if preset.Key != model.AgentPresetDocumentationAgent {
+			continue
+		}
+		if preset.VersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetDocumentationAgent) {
+			t.Fatalf("expected documentation default version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetDocumentationAgent), preset.VersionKey)
+		}
+		if preset.RuntimeKind != "native_sdk" {
+			t.Fatalf("expected documentation runtime native_sdk, got %q", preset.RuntimeKind)
+		}
+		if preset.DefaultInvocationMode != model.InvocationModeInteractive {
+			t.Fatalf("expected documentation default mode interactive, got %q", preset.DefaultInvocationMode)
+		}
+		for _, targetType := range []string{"workspace", "document", "support_conversation", "support_coverage_gap", "task", "epic", "repository"} {
+			if !slices.Contains(preset.AllowedTargetTypes, targetType) {
+				t.Fatalf("expected documentation target %q in %v", targetType, preset.AllowedTargetTypes)
+			}
+		}
+		for _, toolName := range []string{"list_documents", "create_document", "write_document_content", "publish_document_change_proposal", "list_conversation_messages", "get_release_context"} {
+			if !slices.Contains(preset.AllowedTools, toolName) {
+				t.Fatalf("expected documentation tool %q in %v", toolName, preset.AllowedTools)
+			}
+		}
+		return
+	}
+	t.Fatal("expected documentation agent preset in catalog")
+}
+
 func TestListAgentPresetsTaskPlannerExcludesListEpicTasks(t *testing.T) {
 	presets := ListAgentPresets()
 	for _, preset := range presets {

@@ -85,7 +85,7 @@ const FIELD_LABELS: Record<string, string> = {
   epic_id: 'epic',
   planned_start_date: 'start date',
   deadline: 'due date',
-  planning_repository_id: 'planning repository',
+  planning_repository_id: 'code repo',
   task_type: 'type',
   health_comment: 'health comment',
 };

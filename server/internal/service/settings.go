@@ -17,6 +17,7 @@ import (
 type SettingsService struct {
 	settingsRepo      *repository.SettingsRepository
 	moduleGrantRepo   *repository.WorkspaceModuleGrantRepository
+	gitRepo           *repository.GitRepositoryRepository
 	pmWorkflowService *PMWorkflowService
 	wsPublisher       *websocket.Publisher
 	logger            *slog.Logger
@@ -58,6 +59,12 @@ func NewSettingsService(settingsRepo *repository.SettingsRepository, moduleGrant
 		wsPublisher:       wsPublisher,
 		logger:            slog.Default().With("service", "settings"),
 	}
+}
+
+// SetGitRepositoryRepository wires repository validation for PM delivery settings.
+func (s *SettingsService) SetGitRepositoryRepository(gitRepo *repository.GitRepositoryRepository) *SettingsService {
+	s.gitRepo = gitRepo
+	return s
 }
 
 // GetAll returns the full workspace configuration.
@@ -641,6 +648,23 @@ func (s *SettingsService) GetTeamRepoDefault(ctx context.Context, teamID string)
 func (s *SettingsService) UpdateTeamRepoDefault(ctx context.Context, teamID string, req model.UpdateTeamRepoDefaultRequest) (*model.PMTeamRepoDefault, error) {
 	if strings.TrimSpace(req.RepositoryID) == "" {
 		return nil, fmt.Errorf("repository_id is required")
+	}
+	team, err := s.settingsRepo.GetTeamByID(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	if team == nil {
+		return nil, fmt.Errorf("team not found")
+	}
+	if s.gitRepo == nil {
+		return nil, fmt.Errorf("git repository repository is not configured")
+	}
+	repo, err := s.gitRepo.GetEnabledByID(ctx, team.WorkspaceID, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	if repo == nil {
+		return nil, fmt.Errorf("repository is not available for PM delivery")
 	}
 	if req.BaseBranch != nil {
 		trimmed := strings.TrimSpace(*req.BaseBranch)

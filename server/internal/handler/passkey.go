@@ -83,6 +83,7 @@ func (h *PasskeyHandler) Authenticate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
 	writeJSON(w, http.StatusOK, resp)
 }
 

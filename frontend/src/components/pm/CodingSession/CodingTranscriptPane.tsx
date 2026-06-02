@@ -41,6 +41,7 @@ import type { CodingSessionComposerState } from './codingSessionComposer';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
 import type { PublishedPreview } from '@/components/pm/runPreviews';
 import { CodingInteractionCard } from './CodingInteractionCard';
+import { CodingReviewHistoryPanel, type CodingReviewHistoryItem } from './CodingReviewHistoryPanel';
 import { MarkdownContent } from './MarkdownContent';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
 import { describeToolCall } from './toolCallPresentation';
@@ -89,6 +90,7 @@ function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): Segmen
 
 export function CodingTranscriptPane({
   promptArtifact,
+  reviewArtifacts = [],
   transcriptMessages,
   liveAssistantMessage,
   liveReasoningMessage,
@@ -109,10 +111,7 @@ export function CodingTranscriptPane({
   onResolveInteraction,
 }: {
   promptArtifact?: AgentRunArtifact | null;
-  reviewArtifacts?: Array<{
-    artifact: AgentRunArtifact;
-    decisionArtifact?: AgentRunArtifact | null;
-  }>;
+  reviewArtifacts?: CodingReviewHistoryItem[];
   transcriptMessages: CodingSessionTranscriptMessage[];
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
   liveReasoningMessage: CodingSessionLiveReasoningMessage | null;
@@ -460,6 +459,7 @@ export function CodingTranscriptPane({
           acting={acting ?? null}
           availablePreviewPanelKey={availablePreviewPanelKey ?? null}
           attachedPreview={attachedPreview ?? null}
+          reviewArtifacts={reviewArtifacts}
           onViewPreview={onViewPreview}
           onAuthStart={onAuthStart ?? (() => {})}
           onAuthCancel={onAuthCancel ?? (() => {})}
@@ -537,6 +537,7 @@ function InterruptionOverlay({
   availablePreviewPanelKey,
   attachedPreview,
   onViewPreview,
+  reviewArtifacts,
   onAuthStart,
   onAuthCancel,
   onResolveInteraction,
@@ -546,6 +547,7 @@ function InterruptionOverlay({
   acting: string | null;
   availablePreviewPanelKey?: string | null;
   attachedPreview?: PublishedPreview | null;
+  reviewArtifacts: CodingReviewHistoryItem[];
   onViewPreview?: (panelKey: string) => void;
   onAuthStart: () => void;
   onAuthCancel: () => void;
@@ -629,6 +631,9 @@ function InterruptionOverlay({
           onViewPreview={onViewPreview}
           compact
         />
+      ) : null}
+      {activeInteraction && reviewArtifacts.length > 0 ? (
+        <CodingReviewHistoryPanel reviewArtifacts={reviewArtifacts} />
       ) : null}
           <div
             aria-hidden="true"

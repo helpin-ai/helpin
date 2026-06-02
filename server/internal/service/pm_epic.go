@@ -23,6 +23,7 @@ type PMEpicService struct {
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
+	agentService        *AgentService
 	logger              *slog.Logger
 }
 
@@ -40,6 +41,11 @@ func NewPMEpicService(epicRepo *repository.PMEpicRepository, taskRepo *repositor
 		notificationService: notificationService,
 		logger:              slog.Default().With("service", "pm_epic"),
 	}
+}
+
+// SetAgentService sets the agent service (breaks circular dependency).
+func (s *PMEpicService) SetAgentService(svc *AgentService) {
+	s.agentService = svc
 }
 
 // requireAdmin checks that the actor has owner or admin role.
@@ -117,7 +123,7 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
 	}
-	if err := requireCanManage(ctx, req.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, req.TeamID); err != nil {
 		return nil, err
 	}
 	health := model.PMEpicHealthNone
@@ -146,9 +152,15 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 		Health:               health,
 		HealthComment:        req.HealthComment,
 		PlanningRepositoryID: req.PlanningRepositoryID,
+		AssignedAgentID:      nullableString(req.AssignedAgentID),
 	}
 	if err := s.validatePlanningRepository(ctx, req.WorkspaceID, epic.PlanningRepositoryID); err != nil {
 		return nil, err
+	}
+	if epic.AssignedAgentID != nil && s.agentService != nil {
+		if err := s.agentService.ValidateRunnableTargetAgent(ctx, req.WorkspaceID, *epic.AssignedAgentID, "epic", epic.TeamID); err != nil {
+			return nil, err
+		}
 	}
 	if req.Position != nil {
 		epic.Position = *req.Position
@@ -221,6 +233,35 @@ func (s *PMEpicService) Create(ctx context.Context, req model.CreateEpicRequest,
 	return s.epicRepo.GetWithStats(ctx, epic.ID)
 }
 
+// CreateWithAgentRun creates an epic and optionally starts the assigned agent.
+func (s *PMEpicService) CreateWithAgentRun(ctx context.Context, req model.CreateEpicRequest, actorID string) (*model.CreateEpicResponse, error) {
+	epic, err := s.Create(ctx, req, actorID)
+	if err != nil {
+		return nil, err
+	}
+	resp := &model.CreateEpicResponse{Epic: *epic}
+
+	assignedAgentID := nullableString(req.AssignedAgentID)
+	if !req.RunOnCreate || assignedAgentID == nil {
+		return resp, nil
+	}
+	if s.agentService == nil {
+		msg := "agent service is not configured"
+		resp.AgentRunError = &msg
+		return resp, nil
+	}
+	run, err := s.agentService.RunEpicAgent(ctx, epic.Epic.WorkspaceID, epic.Epic.ID, actorID, model.StartAgentRunRequest{
+		AgentID: *assignedAgentID,
+	})
+	if err != nil {
+		msg := err.Error()
+		resp.AgentRunError = &msg
+		return resp, nil
+	}
+	resp.AgentRun = run
+	return resp, nil
+}
+
 // Update updates an epic.
 func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateEpicRequest, actorID string) (*model.EpicWithStats, error) {
 	current, err := s.epicRepo.GetWithStats(ctx, id)
@@ -230,7 +271,7 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 	if current == nil {
 		return nil, fmt.Errorf("epic not found")
 	}
-	if err := requireCanManage(ctx, current.Epic.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, current.Epic.TeamID); err != nil {
 		return nil, fmt.Errorf("epic not found")
 	}
 	epic := current.Epic
@@ -288,6 +329,15 @@ func (s *PMEpicService) Update(ctx context.Context, id string, req model.UpdateE
 			return nil, err
 		}
 		epic.PlanningRepositoryID = req.PlanningRepositoryID
+	}
+	if req.AssignedAgentID != nil {
+		nextAgentID := nullableString(req.AssignedAgentID)
+		if nextAgentID != nil && s.agentService != nil {
+			if err := s.agentService.ValidateRunnableTargetAgent(ctx, epic.WorkspaceID, *nextAgentID, "epic", epic.TeamID); err != nil {
+				return nil, err
+			}
+		}
+		epic.AssignedAgentID = nextAgentID
 	}
 
 	if err := s.epicRepo.Update(ctx, &epic); err != nil {
@@ -378,7 +428,7 @@ func (s *PMEpicService) Delete(ctx context.Context, id string, actorID string) e
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := s.requireAdmin(ctx, epic.Epic.WorkspaceID, actorID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.Delete(ctx, id); err != nil {
@@ -424,7 +474,7 @@ func (s *PMEpicService) UpdateHealth(ctx context.Context, id string, req model.U
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.UpdateHealth(ctx, id, req.Health, req.Comment); err != nil {
@@ -446,7 +496,7 @@ func (s *PMEpicService) AddLabel(ctx context.Context, epicID, labelID, actorID s
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := validateLabelScope(ctx, s.labelRepo, epic.Epic.WorkspaceID, []string{labelID}, allowedTeamIDs(epic.Epic.TeamID)); err != nil {
@@ -470,7 +520,7 @@ func (s *PMEpicService) RemoveLabel(ctx context.Context, epicID, labelID, actorI
 	if epic == nil {
 		return fmt.Errorf("epic not found")
 	}
-	if err := requireCanManage(ctx, epic.Epic.TeamID); err != nil {
+	if err := requireCanEditTeamEpics(ctx, epic.Epic.TeamID); err != nil {
 		return err
 	}
 	if err := s.epicRepo.RemoveLabel(ctx, epicID, labelID); err != nil {

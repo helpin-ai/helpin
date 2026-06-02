@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -35,6 +36,7 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -52,6 +54,7 @@ func (h *AuthHandler) Signin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -108,6 +111,9 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
+	}
+	if claims := middleware.ClaimsFrom(r.Context()); claims != nil {
+		profile.MFASatisfiedInToken = claims.MFASatisfied
 	}
 
 	writeJSON(w, http.StatusOK, profile)
@@ -197,18 +203,32 @@ func (h *AuthHandler) DeleteAvatar(w http.ResponseWriter, r *http.Request) {
 // RefreshToken handles POST /api/auth/refresh.
 func (h *AuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var req model.RefreshTokenRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(r, &req); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	resp, err := h.authService.RefreshToken(r.Context(), req.RefreshToken)
+	refreshToken := strings.TrimSpace(req.RefreshToken)
+	if refreshToken == "" {
+		if cookie, err := r.Cookie(refreshTokenCookieName); err == nil {
+			refreshToken = strings.TrimSpace(cookie.Value)
+		}
+	}
+
+	resp, err := h.authService.RefreshToken(r.Context(), refreshToken)
 	if err != nil {
 		writeAuthError(w, err)
 		return
 	}
 
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// Signout handles POST /api/auth/signout.
+func (h *AuthHandler) Signout(w http.ResponseWriter, r *http.Request) {
+	clearAuthCookies(w, r)
+	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "signed out"})
 }
 
 // Get2FAStatus handles GET /api/auth/2fa/status.
@@ -275,6 +295,7 @@ func (h *AuthHandler) Verify2FASignin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setAuthCookies(w, r, resp.AccessToken, resp.RefreshToken)
 	writeJSON(w, http.StatusOK, resp)
 }
 

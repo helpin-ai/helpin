@@ -1,6 +1,7 @@
 import { api } from '../api';
 import type {
   ActivityLogEntry,
+  CreateEpicResponse,
   CreateEpicRequest,
   EpicWithStats,
   PaginatedResponse,
@@ -36,7 +37,7 @@ export const pmEpicService = {
     }
   ) => api.get<EpicWithStats[]>(`/pm/epics${qs(workspaceId)}${filterQuery(filters ?? {})}`),
   create: (payload: CreateEpicRequest) =>
-    api.post<EpicWithStats>(`/pm/epics${qs(payload.workspace_id)}`, {
+    api.post<CreateEpicResponse>(`/pm/epics${qs(payload.workspace_id)}`, {
       ...payload,
       planned_start_date: toRFC3339(payload.planned_start_date),
       deadline: toRFC3339(payload.deadline),

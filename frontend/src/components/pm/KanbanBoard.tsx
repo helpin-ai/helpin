@@ -658,6 +658,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
   const [isSeeding, setIsSeeding] = useState(false);
   const showSeedButton = import.meta.env.DEV;
   const VIEW_MODE_KEY = `pm_view_mode_${workspaceId}`;
+  const [bulkTriggerSlot, setBulkTriggerSlot] = useState<HTMLSpanElement | null>(null);
   const [viewMode, setViewModeState] = useState<'board' | 'list'>(() => {
     try {
       const saved = localStorage.getItem(VIEW_MODE_KEY);
@@ -1273,6 +1274,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
         <ViewBar workspaceId={workspaceId} currentUserId={currentUser.id} />
       )}
       <header className="ui-divider-bottom-fade flex min-h-11 flex-wrap items-center gap-2 px-3 py-2">
+        <span ref={setBulkTriggerSlot} className="contents" />
         <TaskFilterTrigger />
         <TaskOwnerAvatarFilterRow />
 
@@ -1327,9 +1329,6 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
               </Select>
             )}
           </BoardToolbarSlot>
-          <BoardToolbarSlot>
-            {viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}
-          </BoardToolbarSlot>
           <BoardToolbarSlot className="gap-1">
             {showSeedButton ? (
               <Button
@@ -1347,26 +1346,39 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
                 Seed 500
               </Button>
             ) : null}
-            <QuickTooltip label="Board view">
-              <Button
-                variant={viewMode === 'board' ? 'default' : 'ghost'}
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setViewMode('board')}
-              >
-                <LayoutTwoColumnIcon className="h-4 w-4" />
-              </Button>
-            </QuickTooltip>
-            <QuickTooltip label="List view">
-              <Button
-                variant={viewMode === 'list' ? 'default' : 'ghost'}
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setViewMode('list')}
-              >
-                <LayoutTable01Icon className="h-4 w-4" />
-              </Button>
-            </QuickTooltip>
+            <span className="inline-flex h-7 items-center gap-0.5 rounded-md border border-border/70 bg-muted/30 p-0.5">
+              <QuickTooltip label="Board view">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-pressed={viewMode === 'board'}
+                  className={`h-6 w-6 rounded-sm ${viewMode === 'board'
+                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setViewMode('board')}
+                >
+                  <LayoutTwoColumnIcon className="h-3.5 w-3.5" />
+                </Button>
+              </QuickTooltip>
+              <QuickTooltip label="List view">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-pressed={viewMode === 'list'}
+                  className={`h-6 w-6 rounded-sm ${viewMode === 'list'
+                    ? 'bg-background text-foreground shadow-sm hover:bg-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setViewMode('list')}
+                >
+                  <LayoutTable01Icon className="h-3.5 w-3.5" />
+                </Button>
+              </QuickTooltip>
+            </span>
+          </BoardToolbarSlot>
+          <BoardToolbarSlot>
+            {viewMode === 'board' ? <BoardDisplayMenu /> : <ListDisplayMenu disabledKeys={listDisabledKeys} />}
           </BoardToolbarSlot>
         </div>
 
@@ -1450,6 +1462,7 @@ export function KanbanBoard({ workspaceId, teamId, initialFilters }: KanbanBoard
           groupBy={listGroupBy}
           onGroupByChange={setListGroupBy}
           showToolbar={false}
+          bulkTriggerContainer={bulkTriggerSlot}
         />
       ) : null}
 

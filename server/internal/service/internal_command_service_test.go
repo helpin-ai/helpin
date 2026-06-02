@@ -114,6 +114,129 @@ func TestCreateTaskCommandMetadataAndTargets(t *testing.T) {
 	}
 }
 
+func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now()
+	handle := "eng"
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"team-1", "ws-1", "Engineering", handle, "engineering", "feature", now, now)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"team-2", "ws-1", "Growth", "growth", "task", now, now)
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSettingsRepository(repository.NewSettingsRepository(db))
+	def, ok := svc.Definition("workspace.list_teams")
+	if !ok {
+		t.Fatal("expected workspace.list_teams definition")
+	}
+	if !def.ExposesTool() {
+		t.Fatal("expected workspace.list_teams to expose a runtime tool")
+	}
+	if def.Tool == nil || def.Tool.Alias != "list_workspace_teams" || def.Tool.Category != "Workspace" {
+		t.Fatalf("unexpected tool metadata %#v", def.Tool)
+	}
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "workspace.list_teams", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("workspace.list_teams returned error: %v", err)
+	}
+	var teams []struct {
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		Handle          string `json:"handle"`
+		TeamType        string `json:"team_type"`
+		DefaultTaskType string `json:"default_task_type"`
+	}
+	if err := json.Unmarshal(output, &teams); err != nil {
+		t.Fatalf("unmarshal output: %v\n%s", err, string(output))
+	}
+	if len(teams) != 2 || teams[0].ID != "team-1" || teams[0].Handle != "eng" || teams[1].Name != "Growth" {
+		t.Fatalf("unexpected teams output %#v", teams)
+	}
+}
+
+func TestListTasksSupportsOptionalOwnerFilters(t *testing.T) {
+	db := newTestDB(t)
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedUser(t, db, "actor-2", "other@example.com", "Other", "hash")
+	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
+	seedWorkspaceMember(t, db, "member-1", "ws-1", "actor-1", "actor@example.com", "Actor", "admin")
+	seedWorkspaceMember(t, db, "member-2", "ws-1", "actor-2", "other@example.com", "Other", "member")
+	seedWorkflow(t, db, "wf-1", "ws-1", "state-1")
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-owned", "ws-1", 1, "Owned by actor", model.PMTaskTypeFeature, "wf-1", "state-1", "medium", "normal", false, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-other", "ws-1", 2, "Owned by other", model.PMTaskTypeFeature, "wf-1", "state-1", "medium", "normal", false, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_task_owners (task_id, user_id, created_at) VALUES (?, ?, ?)`, "task-owned", "actor-1", now)
+	mustExec(t, db, `INSERT INTO pm_task_owners (task_id, user_id, created_at) VALUES (?, ?, ?)`, "task-other", "actor-2", now)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+
+	allOutput, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "pm.list_tasks", json.RawMessage(`{"open_only":true}`))
+	if err != nil {
+		t.Fatalf("pm.list_tasks without owner filter returned error: %v", err)
+	}
+	var allResult struct {
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(allOutput, &allResult); err != nil {
+		t.Fatalf("unmarshal all output: %v", err)
+	}
+	if allResult.Total != 2 {
+		t.Fatalf("expected existing unfiltered behavior to return 2 tasks, got %d", allResult.Total)
+	}
+
+	ownedOutput, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "pm.list_tasks", json.RawMessage(`{"open_only":true,"owned_by_actor":true}`))
+	if err != nil {
+		t.Fatalf("pm.list_tasks owned_by_actor returned error: %v", err)
+	}
+	var ownedResult struct {
+		Total int64 `json:"total"`
+		Tasks []struct {
+			Name string `json:"name"`
+		} `json:"tasks"`
+	}
+	if err := json.Unmarshal(ownedOutput, &ownedResult); err != nil {
+		t.Fatalf("unmarshal owned output: %v", err)
+	}
+	if ownedResult.Total != 1 || len(ownedResult.Tasks) != 1 || ownedResult.Tasks[0].Name != "Owned by actor" {
+		t.Fatalf("expected actor-owned task only, got %#v", ownedResult)
+	}
+}
+
 func TestNormalizeTaskDescriptionRichTextConvertsMarkdownToHTML(t *testing.T) {
 	input := `<!-- sentinel:root_cause=test finding_ids=["sentinel:v1:test"] -->` + "\n\n## Summary\n\n- first\n- second"
 

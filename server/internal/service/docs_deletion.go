@@ -11,11 +11,16 @@ import (
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"gorm.io/gorm"
 )
 
 type docsAssetStore interface {
 	PublicURL(key string) string
 	DeleteObject(ctx context.Context, key string) error
+}
+
+type DocsAssetCleanupEnqueuer interface {
+	EnqueueDocsAssetCleanup(ctx context.Context, workspaceID, deletedDocumentID string, candidateAssetKeys []string) error
 }
 
 // DocsDocumentDeletionDependencies wires the repositories needed for permanent
@@ -32,17 +37,21 @@ type DocsDocumentDeletionDependencies struct {
 	PublicationRepo *repository.DocsHelpcenterPublicationRepository
 	TranslationRepo *repository.DocsHelpcenterTranslationRepository
 	AssetStore      docsAssetStore
+	CleanupEnqueuer DocsAssetCleanupEnqueuer
 }
 
 var docsAssetTokenRE = regexp.MustCompile(`[^\s"'<>]+`)
 
-func (s *DocsDocumentService) deleteDocumentPermanently(ctx context.Context, doc *model.DocsDocument) error {
-	// Delegate to the batch path so there's a single deletion code path.
-	return s.DeleteDocumentsPermanently(ctx, doc.WorkspaceID, []string{doc.ID})
+func (s *DocsDocumentService) deleteDocumentPermanently(ctx context.Context, doc *model.DocsDocument) ([]string, error) {
+	// Delegate to the batch path so there's a single synchronous deletion code path.
+	return s.deleteDocumentsPermanentlySync(ctx, doc.WorkspaceID, []string{doc.ID})
 }
 
 func (s *DocsDocumentService) deleteDocumentRows(ctx context.Context, documentIDs []string) error {
-	deps := s.deletionDeps
+	return deleteDocumentRowsWithDeps(ctx, s.deletionDeps, documentIDs)
+}
+
+func deleteDocumentRowsWithDeps(ctx context.Context, deps DocsDocumentDeletionDependencies, documentIDs []string) error {
 	if deps.PublicationRepo != nil {
 		if err := deps.PublicationRepo.DeleteArticlePublicationsByDocumentIDs(ctx, documentIDs); err != nil {
 			return err
@@ -87,36 +96,71 @@ func (s *DocsDocumentService) deleteDocumentRows(ctx context.Context, documentID
 }
 
 // DeleteDocumentsPermanently hard-deletes a batch of documents in one pass.
-// Collects asset keys, runs the survivor scan once with all batch ids excluded
-// (eliminating the O(N^2) behavior of per-doc deletion), executes bulk row
-// deletes via deleteDocumentRows, hard-deletes all docs at once, then best-
-// effort cleans unreferenced S3 assets.
+// It collects candidate asset keys only from documents being deleted, executes
+// bulk row deletes via deleteDocumentRows, hard-deletes all docs at once, then
+// enqueues eventual asset cleanup. The HTTP path must stay bounded and must not
+// hydrate surviving workspace rows.
 //
 // All docs in the batch must belong to the same workspace.
 func (s *DocsDocumentService) DeleteDocumentsPermanently(ctx context.Context, workspaceID string, documentIDs []string) error {
+	candidateKeys, err := s.deleteDocumentsPermanentlySync(ctx, workspaceID, documentIDs)
+	if err != nil {
+		return err
+	}
+	s.enqueueAssetCleanupBestEffort(ctx, workspaceID, cleanupDeletedDocumentID(documentIDs), candidateKeys)
+	return nil
+}
+
+func (s *DocsDocumentService) deleteDocumentsPermanentlySync(ctx context.Context, workspaceID string, documentIDs []string) ([]string, error) {
 	if len(documentIDs) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	deleteCandidates, err := s.collectAssetKeysForDeletedDocuments(ctx, workspaceID, documentIDs)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	survivorRefs, err := s.collectAssetKeysForSurvivingDocuments(ctx, workspaceID, documentIDs)
-	if err != nil {
-		return err
-	}
-	keysToDelete := unreferencedAssetKeys(deleteCandidates, survivorRefs)
+	candidateKeys := sortedAssetKeys(deleteCandidates)
 
-	if err := s.deleteDocumentRows(ctx, documentIDs); err != nil {
-		return err
-	}
-	if err := s.docRepo.HardDeleteByIDs(ctx, documentIDs); err != nil {
-		return err
+	if err := s.docRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := deleteDocumentRowsWithDeps(ctx, docsDocumentDeletionDepsWithDB(s.deletionDeps, tx, s.useSortKey), documentIDs); err != nil {
+			return err
+		}
+		return repository.NewDocsDocumentRepository(tx, s.useSortKey).HardDeleteByIDs(ctx, documentIDs)
+	}); err != nil {
+		return nil, err
 	}
 
-	s.deleteAssetKeysBestEffort(ctx, workspaceID, keysToDelete)
-	return nil
+	return candidateKeys, nil
+}
+
+func docsDocumentDeletionDepsWithDB(deps DocsDocumentDeletionDependencies, db *gorm.DB, useSortKey bool) DocsDocumentDeletionDependencies {
+	txDeps := deps
+	if deps.ContentRepo != nil {
+		txDeps.ContentRepo = repository.NewDocsContentRepository(db)
+	}
+	if deps.BlockRepo != nil {
+		txDeps.BlockRepo = repository.NewDocsBlockRepository(db)
+	}
+	if deps.VersionRepo != nil {
+		txDeps.VersionRepo = repository.NewDocsVersionRepository(db)
+	}
+	if deps.LinkRepo != nil {
+		txDeps.LinkRepo = repository.NewDocsLinkRepository(db)
+	}
+	if deps.ChunkRepo != nil {
+		txDeps.ChunkRepo = repository.NewDocsChunkRepository(db)
+	}
+	if deps.HelpcenterRepo != nil {
+		txDeps.HelpcenterRepo = repository.NewDocsHelpcenterRepository(db, useSortKey)
+	}
+	if deps.PublicationRepo != nil {
+		txDeps.PublicationRepo = repository.NewDocsHelpcenterPublicationRepository(db)
+	}
+	if deps.TranslationRepo != nil {
+		txDeps.TranslationRepo = repository.NewDocsHelpcenterTranslationRepository(db)
+	}
+	return txDeps
 }
 
 func (s *DocsDocumentService) collectAssetKeysForDeletedDocuments(ctx context.Context, workspaceID string, documentIDs []string) (map[string]struct{}, error) {
@@ -156,51 +200,6 @@ func (s *DocsDocumentService) collectAssetKeysForDeletedDocuments(ctx context.Co
 	}
 	if deps.TranslationRepo != nil {
 		translations, err := deps.TranslationRepo.ListArticleTranslationsByDocumentIDs(ctx, documentIDs)
-		if err != nil {
-			return nil, err
-		}
-		addArticleTranslationAssetRefs(keys, workspaceID, deps.AssetStore, translations)
-	}
-	return keys, nil
-}
-
-func (s *DocsDocumentService) collectAssetKeysForSurvivingDocuments(ctx context.Context, workspaceID string, excludeDocumentIDs []string) (map[string]struct{}, error) {
-	deps := s.deletionDeps
-	keys := map[string]struct{}{}
-	if deps.AssetStore == nil {
-		return keys, nil
-	}
-
-	if deps.ContentRepo != nil {
-		contents, err := deps.ContentRepo.ListByWorkspaceExcludingDocuments(ctx, workspaceID, excludeDocumentIDs)
-		if err != nil {
-			return nil, err
-		}
-		addDocsContentAssetRefs(keys, workspaceID, deps.AssetStore, contents)
-	}
-	if deps.BlockRepo != nil {
-		blocks, err := deps.BlockRepo.ListByWorkspaceExcludingDocuments(ctx, workspaceID, excludeDocumentIDs)
-		if err != nil {
-			return nil, err
-		}
-		addDocsBlockAssetRefs(keys, workspaceID, deps.AssetStore, blocks)
-	}
-	if deps.VersionRepo != nil {
-		versions, err := deps.VersionRepo.ListByWorkspaceExcludingDocuments(ctx, workspaceID, excludeDocumentIDs)
-		if err != nil {
-			return nil, err
-		}
-		addDocsVersionAssetRefs(keys, workspaceID, deps.AssetStore, versions)
-	}
-	if deps.PublicationRepo != nil {
-		publications, err := deps.PublicationRepo.ListArticlePublicationsByWorkspaceExcludingDocuments(ctx, workspaceID, excludeDocumentIDs)
-		if err != nil {
-			return nil, err
-		}
-		addArticlePublicationAssetRefs(keys, workspaceID, deps.AssetStore, publications)
-	}
-	if deps.TranslationRepo != nil {
-		translations, err := deps.TranslationRepo.ListArticleTranslationsByWorkspaceExcludingDocuments(ctx, workspaceID, excludeDocumentIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -281,24 +280,27 @@ func addOwnedDocsAssetRefs(out map[string]struct{}, workspaceID string, store do
 	}
 }
 
-func unreferencedAssetKeys(candidates, survivors map[string]struct{}) []string {
+func sortedAssetKeys(candidates map[string]struct{}) []string {
 	keys := make([]string, 0, len(candidates))
 	for key := range candidates {
-		if _, stillReferenced := survivors[key]; !stillReferenced {
-			keys = append(keys, key)
-		}
+		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 	return keys
 }
 
-func (s *DocsDocumentService) deleteAssetKeysBestEffort(ctx context.Context, workspaceID string, keys []string) {
-	if s.deletionDeps.AssetStore == nil || len(keys) == 0 {
+func cleanupDeletedDocumentID(documentIDs []string) string {
+	if len(documentIDs) == 0 {
+		return ""
+	}
+	return documentIDs[0]
+}
+
+func (s *DocsDocumentService) enqueueAssetCleanupBestEffort(ctx context.Context, workspaceID, deletedDocumentID string, keys []string) {
+	if s.deletionDeps.CleanupEnqueuer == nil || len(keys) == 0 {
 		return
 	}
-	for _, key := range keys {
-		if err := s.deletionDeps.AssetStore.DeleteObject(ctx, key); err != nil {
-			slog.WarnContext(ctx, "failed to delete docs asset", "workspace_id", workspaceID, "asset_key", key, "error", err)
-		}
+	if err := s.deletionDeps.CleanupEnqueuer.EnqueueDocsAssetCleanup(ctx, workspaceID, deletedDocumentID, keys); err != nil {
+		slog.WarnContext(ctx, "docs_asset_cleanup_enqueue_failed", "workspace_id", workspaceID, "deleted_document_id", deletedDocumentID, "candidate_asset_count", len(keys), "error", err)
 	}
 }
