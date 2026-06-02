@@ -81,6 +81,31 @@ func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlB
 	return strings.TrimSpace(payload.TextBody), htmlBody
 }
 
+func inboundForwardedEmailScanText(payload model.PostmarkInboundPayload, fallback string) string {
+	var parts []string
+	for _, part := range []string{
+		payload.TextBody,
+		payload.StrippedTextReply,
+		fallback,
+	} {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		duplicate := false
+		for _, existing := range parts {
+			if existing == part {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 const postmarkInboundAutoSpamScoreThreshold = 5.0
 
 type postmarkInboundSpamSignals struct {
@@ -592,14 +617,6 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	}
 
 	fromEmail := inboundEmailAddress(payload)
-	if conv.CustomerEmail == nil || !strings.EqualFold(strings.TrimSpace(*conv.CustomerEmail), fromEmail) {
-		s.logger.InfoContext(ctx, "postmark inbound sender mismatch",
-			"message_id", strings.TrimSpace(payload.MessageID),
-			"conversation_id", conv.ID,
-		)
-		return nil
-	}
-
 	content, htmlBody := inboundPayloadBodies(payload)
 	if content == "" {
 		return nil
@@ -608,11 +625,6 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		content = content[:50_000]
 	}
 
-	rfcMessageID := inboundRFCMessageID(payload)
-	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
-	referencesHeader := strings.TrimSpace(inboundHeaderValue(payload.Headers, "References"))
-	recipientAddress := inboundRecipientAddress(payload)
-
 	senderName := strings.TrimSpace(payload.FromFull.Name)
 	if senderName == "" && conv.CustomerName != nil {
 		senderName = strings.TrimSpace(*conv.CustomerName)
@@ -620,8 +632,65 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 	if senderName == "" {
 		senderName = "Customer"
 	}
+
+	settings, err := s.loadSettings(ctx, conv.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	routeDomain := ""
+	if s.supportInboxService != nil {
+		routeDomain = s.supportInboxService.routeDomain
+	}
+	forwardedAttribution := forwardedEmailDetectionResult{}
+	if settings.ForwardedEmailDetectionEnabled && strings.TrimSpace(settings.ForwardedEmailDetectionMode) == "high_confidence_any_sender" {
+		recipientEmails := []string{
+			payload.To,
+			payload.OriginalRecipient,
+			inboundRecipientAddress(payload),
+		}
+		if route != nil {
+			recipientEmails = append(recipientEmails, route.InboundAddress)
+		}
+		forwardedAttribution = detectForwardedEmailAttribution(forwardedEmailDetectionInput{
+			ForwarderEmail:  fromEmail,
+			ForwarderName:   senderName,
+			RecipientEmails: recipientEmails,
+			ReplyDomain:     s.InboundDomain(),
+			RouteDomain:     routeDomain,
+			Text:            inboundForwardedEmailScanText(payload, content),
+			MinConfidence:   settings.ForwardedEmailMinConfidence,
+		})
+	}
+	customerEmail := ""
+	if conv.CustomerEmail != nil {
+		customerEmail = strings.TrimSpace(*conv.CustomerEmail)
+	}
+	if !strings.EqualFold(customerEmail, fromEmail) {
+		if !forwardedAttribution.Applied || !strings.EqualFold(customerEmail, strings.TrimSpace(forwardedAttribution.OriginalEmail)) {
+			s.logger.InfoContext(ctx, "postmark inbound sender mismatch",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"conversation_id", conv.ID,
+			)
+			return nil
+		}
+		if strings.TrimSpace(forwardedAttribution.OriginalName) != "" {
+			senderName = strings.TrimSpace(forwardedAttribution.OriginalName)
+		} else if conv.CustomerName != nil && strings.TrimSpace(*conv.CustomerName) != "" {
+			senderName = strings.TrimSpace(*conv.CustomerName)
+		}
+	}
+
+	rfcMessageID := inboundRFCMessageID(payload)
+	inReplyTo := normalizeRFCHeaderValue(inboundHeaderValue(payload.Headers, "In-Reply-To"))
+	referencesHeader := strings.TrimSpace(inboundHeaderValue(payload.Headers, "References"))
+	recipientAddress := inboundRecipientAddress(payload)
+
 	viaEmail := "email"
 	spamSignals := postmarkInboundSpamSignalsFromHeaders(payload.Headers)
+	messageMetadata := spamSignals.messageMetadata()
+	if forwardedAttribution.Applied {
+		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
+	}
 	msg := &model.SupportMessage{
 		WorkspaceID:       conv.WorkspaceID,
 		ConversationID:    conv.ID,
@@ -630,7 +699,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		Content:           content,
 		IsInternal:        false,
 		MessageType:       "reply",
-		Metadata:          spamSignals.messageMetadata(),
+		Metadata:          messageMetadata,
 		ViaChannel:        &viaEmail,
 	}
 
@@ -2435,7 +2504,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 			},
 			ReplyDomain:   s.InboundDomain(),
 			RouteDomain:   routeDomain,
-			Text:          content,
+			Text:          inboundForwardedEmailScanText(payload, content),
 			MinConfidence: settings.ForwardedEmailMinConfidence,
 		})
 	}
