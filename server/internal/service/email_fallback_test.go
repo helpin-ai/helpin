@@ -2451,6 +2451,115 @@ func TestEmailFallbackProcessInboundEmailRouteThreadsReply(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailRouteThreadsForwardedReplyFromOriginalSender(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "99999999-9999-9999-9999-999999999998"
+	customerEmail := "jason@the-web-dev.com"
+	customerName := "Jason Smith"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Data Export",
+		Status:        "open",
+		Channel:       "email",
+		Source:        "email",
+		CustomerEmail: &customerEmail,
+		CustomerName:  &customerName,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	threadLog := &model.SupportEmailLog{
+		ID:             "b2222222-2222-2222-2222-222222222229",
+		WorkspaceID:    workspaceID,
+		ConversationID: conversationID,
+		Direction:      "inbound",
+		FromEmail:      customerEmail,
+		ToEmail:        "waqar@usermaven.com",
+		Subject:        "Data Export",
+		RFCMessageID:   "<CAGW4uJr8a1GgA=7UEudEYTZj-xL85o1kyA1gPboMQyrw3=Z2iQ@mail.gmail.com>",
+		Status:         "sent",
+	}
+	if err := env.emailLogRepo.Create(ctx, threadLog); err != nil {
+		t.Fatalf("create thread log: %v", err)
+	}
+
+	route := &model.SupportEmailRoute{
+		ID:             "c3333333-3333-3333-3333-333333333338",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-threadfwd",
+		InboundAddress: "support@usermaven.com",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "waqar@usermaven.com", Name: "Waqar Azeem"},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Fwd: Data Export",
+		MessageID:         "pm-route-forwarded-thread-1",
+		StrippedTextReply: "---------- Forwarded message ---------\n\nData Export",
+		TextBody: `---------- Forwarded message ---------
+From: Jason Smith <jason@the-web-dev.com>
+Date: Sun, May 31, 2026 at 2:38 PM
+Subject: Data Export
+To: Waqar from Usermaven <waqar@usermaven.com>
+
+Can I export my data?`,
+		Headers: []model.PostmarkHeader{
+			{Name: "Message-ID", Value: "<CAKs2i=G6cwV+L7jpWNuFsbJrYQwTRPryJcmTmp32HK+2JKCy-A@mail.gmail.com>"},
+			{Name: "In-Reply-To", Value: "<CAGW4uJr8a1GgA=7UEudEYTZj-xL85o1kyA1gPboMQyrw3=Z2iQ@mail.gmail.com>"},
+			{Name: "References", Value: "<CAGW4uJr8a1GgA=7UEudEYTZj-xL85o1kyA1gPboMQyrw3=Z2iQ@mail.gmail.com>"},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-forwarded-thread-1"}`); err != nil {
+		t.Fatalf("process routed forwarded reply: %v", err)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conversationID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected forwarded reply to stay in existing conversation, got %d messages", len(messages))
+	}
+	if messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != customerName {
+		t.Fatalf("sender display name = %#v, want %q", messages[0].SenderDisplayName, customerName)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal([]byte(messages[0].Metadata), &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata["forwarded_by_email"] != "waqar@usermaven.com" {
+		t.Fatalf("forwarded_by_email metadata = %#v", metadata["forwarded_by_email"])
+	}
+	if metadata["original_sender_email"] != customerEmail {
+		t.Fatalf("original_sender_email metadata = %#v", metadata["original_sender_email"])
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("expected original thread log and forwarded inbound log, got %d", len(logs))
+	}
+	if logs[1].FromEmail != "waqar@usermaven.com" {
+		t.Fatalf("log from email = %q, want waqar@usermaven.com", logs[1].FromEmail)
+	}
+}
+
 func TestEmailFallbackRenderBodiesIncludesUnsubscribeLink(t *testing.T) {
 	svc := &EmailFallbackService{}
 	htmlBody, textBody := svc.renderBodies(

@@ -77,3 +77,26 @@ Subject: Billing question`,
 		t.Fatalf("expected conflicting candidates to be rejected, got %#v", result)
 	}
 }
+
+func TestDetectForwardedEmailAttributionMailtoFromLine(t *testing.T) {
+	result := detectForwardedEmailAttribution(forwardedEmailDetectionInput{
+		ForwarderEmail: "founder@company.com",
+		ReplyDomain:    "replies.helpin.ai",
+		RouteDomain:    "on.helpin.email",
+		Text: `-----Original Message-----
+From: Jane Customer [mailto:jane@customer.example]
+Date: Tue, Jun 2, 2026 at 10:14 AM
+Subject: Billing question
+To: Founder <founder@company.com>`,
+	})
+
+	if !result.Applied {
+		t.Fatalf("expected mailto forwarded attribution to apply, got %#v", result)
+	}
+	if result.OriginalEmail != "jane@customer.example" {
+		t.Fatalf("original email = %q, want jane@customer.example", result.OriginalEmail)
+	}
+	if result.OriginalName != "Jane Customer" {
+		t.Fatalf("original name = %q, want Jane Customer", result.OriginalName)
+	}
+}
