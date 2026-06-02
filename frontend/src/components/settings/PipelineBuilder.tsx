@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { BASE_BRANCH_TOKEN, describeMergeDestination } from '@/lib/branchLabels';
 import { automationRuleService } from '@/lib/services/automationRuleService';
@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { BotIcon, GitBranchIcon, Cancel01Icon, CheckmarkCircle02Icon, Loading01Icon, ZapIcon, PlusSignIcon, Delete01Icon, PencilEdit01Icon, Tick01Icon } from '@/lib/icons';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { BotIcon, GitBranchIcon, Cancel01Icon, CheckmarkCircle02Icon, Loading01Icon, ZapIcon, PlusSignIcon, Delete01Icon, Tick01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
 const STATE_TYPE_ORDER: StateType[] = ['backlog', 'unstarted', 'started', 'done'];
@@ -22,6 +23,33 @@ const STATE_TYPE_LABEL: Record<StateType, string> = {
   started: 'Started',
   done: 'Done',
 };
+const REQUIRED_STATE_TYPES: StateType[] = ['unstarted', 'started', 'done'];
+
+function getStateTypeBlockReason(states: WorkflowState[], state: WorkflowState, nextType: StateType) {
+  if (state.state_type === nextType) return null;
+
+  const updatedStates = states.map((candidate) => (
+    candidate.id === state.id ? { ...candidate, state_type: nextType } : candidate
+  ));
+  for (const requiredType of REQUIRED_STATE_TYPES) {
+    if (!updatedStates.some((candidate) => candidate.state_type === requiredType)) {
+      return `Keep at least one ${STATE_TYPE_LABEL[requiredType].toLowerCase()} state.`;
+    }
+  }
+
+  return null;
+}
+
+function normalizeStatePositions(states: WorkflowState[]) {
+  return states
+    .slice()
+    .sort((a, b) => {
+      const typeDelta = STATE_TYPE_ORDER.indexOf(a.state_type) - STATE_TYPE_ORDER.indexOf(b.state_type);
+      if (typeDelta !== 0) return typeDelta;
+      return a.position - b.position;
+    })
+    .map((state, position) => ({ ...state, position }));
+}
 
 type PipelineBuilderProps = {
   workspaceId: string;
@@ -33,10 +61,16 @@ type PipelineBuilderProps = {
   editable: boolean;
   onChanged: () => void;
   onWorkflowUpdate?: (updated: WorkflowWithStates) => void;
+  onUnsavedChange?: (hasUnsavedChanges: boolean) => void;
+  onSaved?: () => void;
 };
 
-export function PipelineBuilder(props: PipelineBuilderProps) {
-  const { workspaceId, agents, rules, editable, onChanged, workflow, onWorkflowUpdate } = props;
+export type PipelineBuilderHandle = {
+  hasUnsavedChanges: () => boolean;
+};
+
+export const PipelineBuilder = forwardRef<PipelineBuilderHandle, PipelineBuilderProps>(function PipelineBuilder(props, ref) {
+  const { workspaceId, agents, rules, editable, onChanged, workflow, onWorkflowUpdate, onUnsavedChange, onSaved } = props;
   const workflowId = workflow?.workflow.id ?? props.workflowId;
   const states = useMemo(
     () => (workflow?.states ?? props.states ?? []).slice().sort((a, b) => a.position - b.position),
@@ -51,6 +85,18 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
   const [newStateType, setNewStateType] = useState<StateType>('unstarted');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const canManageStates = !!workflow && !!onWorkflowUpdate && !!workflowId;
+
+  const hasPendingRename = useMemo(() => {
+    if (!editingId) return false;
+    const state = states.find((candidate) => candidate.id === editingId);
+    return !!state && editName.trim() !== state.name;
+  }, [editName, editingId, states]);
+  const hasPendingNewState = addingAfterId !== null && newName.trim() !== '';
+  const hasUnsavedChanges = hasPendingRename || hasPendingNewState;
+
+  useEffect(() => {
+    onUnsavedChange?.(hasUnsavedChanges);
+  }, [hasUnsavedChanges, onUnsavedChange]);
 
   const stateRuleMap = useMemo(() => {
     const map = new Map<string, { runRule?: AutomationRule; advanceRule?: AutomationRule; mergeRule?: AutomationRule }>();
@@ -71,14 +117,6 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
     }
     return map;
   }, [states, rules]);
-
-  const configuredCount = useMemo(() => {
-    let count = 0;
-    for (const entry of stateRuleMap.values()) {
-      if (entry.runRule || entry.advanceRule || entry.mergeRule) count += 1;
-    }
-    return count;
-  }, [stateRuleMap]);
 
   const handleAgentChange = async (stateId: string, stateName: string, agentId: string) => {
     if (!workflowId) return;
@@ -128,6 +166,7 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
         }
       }
       onChanged();
+      onSaved?.();
     } finally {
       setSaving(null);
     }
@@ -172,6 +211,7 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
         }
       }
       onChanged();
+      onSaved?.();
     } finally {
       setSaving(null);
     }
@@ -211,6 +251,7 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
         }
       }
       onChanged();
+      onSaved?.();
     } finally {
       setSaving(null);
     }
@@ -224,34 +265,69 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
     });
   };
 
-  const handleRename = async (state: WorkflowState) => {
-    if (!workflowId) return;
-    const trimmed = editName.trim();
-    if (!trimmed || trimmed === state.name) {
-      setEditingId(null);
+  const replaceAndNormalizeWorkflowState = (updatedState: WorkflowState) => {
+    if (!workflow || !onWorkflowUpdate) return;
+    onWorkflowUpdate({
+      ...workflow,
+      states: normalizeStatePositions(
+        workflow.states.map((state) => state.id === updatedState.id ? { ...state, ...updatedState } : state),
+      ),
+    });
+  };
+
+  const startRename = (state: WorkflowState) => {
+    if (hasPendingNewState) {
+      toast.error('Save the new state first');
       return;
+    }
+    setEditingId(state.id);
+    setEditName(state.name);
+  };
+
+  const handleRename = async (state: WorkflowState) => {
+    if (!workflowId) return false;
+    const trimmed = editName.trim();
+    if (!trimmed) {
+      toast.error('State name is required');
+      return false;
+    }
+    if (trimmed === state.name) {
+      setEditingId(null);
+      return true;
     }
     setSaving(state.id);
     const { error } = await pmWorkflowService.updateState(workspaceId, workflowId, state.id, { name: trimmed });
     setSaving(null);
     if (error) {
       toast.error(error);
-      return;
+      return false;
     }
     updateWorkflowState(state.id, { name: trimmed });
     setEditingId(null);
+    onSaved?.();
+    return true;
   };
 
   const handleStateTypeChange = async (state: WorkflowState, stateType: StateType) => {
     if (!workflowId || stateType === state.state_type) return;
+    const blockReason = getStateTypeBlockReason(states, state, stateType);
+    if (blockReason) {
+      toast.error(blockReason);
+      return;
+    }
     setSaving(state.id);
-    const { error } = await pmWorkflowService.updateState(workspaceId, workflowId, state.id, { state_type: stateType });
+    const { data, error } = await pmWorkflowService.updateState(workspaceId, workflowId, state.id, { state_type: stateType });
     setSaving(null);
     if (error) {
       toast.error(error);
       return;
     }
-    updateWorkflowState(state.id, { state_type: stateType });
+    if (data && typeof data === 'object' && 'id' in data) {
+      replaceAndNormalizeWorkflowState(data as WorkflowState);
+    } else {
+      replaceAndNormalizeWorkflowState({ ...state, state_type: stateType });
+    }
+    onSaved?.();
   };
 
   const handleColorChange = async (state: WorkflowState, color: string) => {
@@ -264,9 +340,15 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
       return;
     }
     updateWorkflowState(state.id, { color });
+    onSaved?.();
   };
 
   const openAddState = (afterState?: WorkflowState) => {
+    if (hasPendingRename) {
+      toast.error('Save the current state name first');
+      return;
+    }
+    setEditingId(null);
     setAddingAfterId(afterState?.id ?? '__end__');
     setNewName('');
     setNewStateType(afterState?.state_type ?? states[states.length - 1]?.state_type ?? 'unstarted');
@@ -274,9 +356,9 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
   };
 
   const handleAddState = async () => {
-    if (!workflow || !onWorkflowUpdate || !workflowId) return;
+    if (!workflow || !onWorkflowUpdate || !workflowId) return false;
     const trimmed = newName.trim();
-    if (!trimmed) return;
+    if (!trimmed) return true;
     const afterIndex = states.findIndex((state) => state.id === addingAfterId);
     const afterState = afterIndex >= 0 ? states[afterIndex] : states[states.length - 1];
     const position = afterState ? afterState.position + 1 : states.length;
@@ -291,14 +373,20 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
     setSaving(null);
     if (error) {
       toast.error(error);
-      return;
+      return false;
     }
     if (data && typeof data === 'object' && 'id' in data && 'workflow_id' in data) {
-      onWorkflowUpdate({ ...workflow, states: [...workflow.states, data as WorkflowState] });
+      onWorkflowUpdate({ ...workflow, states: normalizeStatePositions([...workflow.states, data as WorkflowState]) });
     }
     setAddingAfterId(null);
     setNewName('');
+    onSaved?.();
+    return true;
   };
+
+  useImperativeHandle(ref, () => ({
+    hasUnsavedChanges: () => hasUnsavedChanges,
+  }));
 
   const handleDeleteState = async (stateId: string) => {
     if (!workflow || !onWorkflowUpdate || !workflowId) return;
@@ -311,6 +399,7 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
     }
     onWorkflowUpdate({ ...workflow, states: workflow.states.filter((state) => state.id !== stateId) });
     setDeleteConfirm(null);
+    onSaved?.();
   };
 
   if (states.length === 0) return null;
@@ -318,25 +407,13 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
   if (canManageStates) {
     return (
       <section className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold">Workflow</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Manage states, types, and the automation that runs when tasks enter each state.
-            </p>
-          </div>
-          <div className="rounded-full border border-border bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground">
-            {configuredCount}/{states.length} automated
-          </div>
-        </div>
-
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <div className="hidden border-b border-border bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid lg:grid-cols-[minmax(170px,1fr)_122px_minmax(340px,2fr)_minmax(220px,1.15fr)_64px] lg:gap-3">
+          <div className="hidden border-b border-border bg-muted/30 px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:grid lg:grid-cols-[minmax(145px,0.85fr)_150px_minmax(340px,2fr)_minmax(220px,1.15fr)_40px] lg:gap-3">
             <div>State</div>
             <div>Type</div>
             <div>Automation</div>
             <div>Branch</div>
-            <div className="text-right">Actions</div>
+            <div aria-hidden="true" />
           </div>
 
           <div className="divide-y divide-border">
@@ -353,12 +430,16 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
               const nextState = states[idx + 1];
               const defaultTargetState = nextState ?? states.find((candidate) => candidate.id !== state.id) ?? null;
               const destinationOptions = states.filter((candidate) => candidate.id !== state.id);
+              const stateTypeBlockReasons = STATE_TYPE_ORDER.reduce<Record<StateType, string | null>>((acc, type) => {
+                acc[type] = getStateTypeBlockReason(states, state, type);
+                return acc;
+              }, {} as Record<StateType, string | null>);
 
               return (
-                <div key={state.id}>
+                <div key={state.id} className="group/state-row">
                   <div
                     className={cn(
-                      'grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(170px,1fr)_122px_minmax(340px,2fr)_minmax(220px,1.15fr)_64px] lg:items-start',
+                      'grid gap-3 px-3 py-3 transition-colors lg:grid-cols-[minmax(145px,0.85fr)_150px_minmax(340px,2fr)_minmax(220px,1.15fr)_40px] lg:items-start',
                       isSaving && 'opacity-70',
                     )}
                   >
@@ -399,10 +480,7 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                             type="button"
                             className="min-w-0 truncate text-left text-sm font-medium disabled:pointer-events-none"
                             disabled={!editable}
-                            onClick={() => {
-                              setEditingId(state.id);
-                              setEditName(state.name);
-                            }}
+                            onClick={() => startRename(state)}
                           >
                             {state.name}
                           </button>
@@ -421,14 +499,17 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {STATE_TYPE_ORDER.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              <span className="flex items-center gap-2">
-                                <StateTypeIcon stateType={type} className="h-3.5 w-3.5" />
-                                {STATE_TYPE_LABEL[type]}
-                              </span>
-                            </SelectItem>
-                          ))}
+                          {STATE_TYPE_ORDER.map((type) => {
+                            const blockReason = stateTypeBlockReasons[type];
+                            return (
+                              <SelectItem key={type} value={type} disabled={!!blockReason} title={blockReason ?? undefined}>
+                                <span className="flex items-center gap-2">
+                                  <StateTypeIcon stateType={type} className="h-3.5 w-3.5" />
+                                  {STATE_TYPE_LABEL[type]}
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
                         </SelectContent>
                       </Select>
                     </div>
@@ -506,26 +587,20 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                       {isSaving ? <Loading01Icon className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
                       {editable && (
                         <>
-                          <button
-                            type="button"
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                            onClick={() => {
-                              setEditingId(state.id);
-                              setEditName(state.name);
-                            }}
-                            aria-label="Rename state"
-                          >
-                            <PencilEdit01Icon className="h-3.5 w-3.5" />
-                          </button>
                           {states.length > 1 && (
-                            <button
-                              type="button"
-                              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
-                              onClick={() => setDeleteConfirm(state.id)}
-                              aria-label="Delete state"
-                            >
-                              <Delete01Icon className="h-3.5 w-3.5" />
-                            </button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-destructive focus-visible:opacity-100 group-hover/state-row:opacity-100"
+                                  onClick={() => setDeleteConfirm(state.id)}
+                                  aria-label="Remove state"
+                                >
+                                  <Delete01Icon className="h-3.5 w-3.5" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">Remove state</TooltipContent>
+                            </Tooltip>
                           )}
                         </>
                       )}
@@ -535,10 +610,10 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
                   {editable && idx < states.length - 1 && addingAfterId !== state.id && (
                     <button
                       type="button"
-                      className="group flex h-7 w-full items-center justify-center gap-1 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                      className="flex h-5 w-full items-center justify-start gap-1 px-3 text-xs text-muted-foreground opacity-0 transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:opacity-100 group-hover/state-row:opacity-100"
                       onClick={() => openAddState(state)}
                     >
-                      <PlusSignIcon className="h-3 w-3 opacity-60 group-hover:opacity-100" />
+                      <PlusSignIcon className="h-3 w-3 opacity-60 group-hover/state-row:opacity-100" />
                       Add state here
                     </button>
                   )}
@@ -606,19 +681,16 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <ZapIcon className="h-4 w-4 text-violet-500" />
+        <div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <ZapIcon className="h-4 w-4 text-violet-500" />
             <h3 className="text-sm font-semibold">Pipeline automation</h3>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Configure what happens when tasks enter each workflow state.
-          </p>
-        </div>
-        <div className="rounded-full border border-border bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground">
-          {configuredCount}/{states.length} configured
-        </div>
+              Configure what happens when tasks enter each workflow state.
+            </p>
+          </div>
       </div>
 
       <div className="space-y-2">
@@ -743,7 +815,7 @@ export function PipelineBuilder(props: PipelineBuilderProps) {
       </div>
     </section>
   );
-}
+});
 
 function AddStateRow({
   name,
@@ -855,10 +927,8 @@ function StatusPill({ children, tone = 'muted' }: { children: ReactNode; tone?: 
 }
 
 function MergeBranchInput({ value, editable, onChange }: { value: string; editable: boolean; onChange: (v: string) => void }) {
-  const [editing, setEditing] = useState(false);
   const isBaseBranch = value === BASE_BRANCH_TOKEN;
-  const mode = isBaseBranch ? BASE_BRANCH_TOKEN : value ? '__custom__' : '';
-  const [customDraft, setCustomDraft] = useState(isBaseBranch ? '' : value);
+  const mode = isBaseBranch ? BASE_BRANCH_TOKEN : '__none__';
 
   if (!editable) {
     return (
@@ -868,70 +938,28 @@ function MergeBranchInput({ value, editable, onChange }: { value: string; editab
     );
   }
 
-  if (!editing && !value) {
-    return (
-      <button
-        type="button"
-        className="inline-flex h-8 w-full items-center justify-start gap-1.5 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        onClick={() => { onChange(BASE_BRANCH_TOKEN); }}
-      >
-        <GitBranchIcon className="h-3.5 w-3.5" />
-        Branch
-      </button>
-    );
-  }
-
-  if (!editing) {
-    return (
-      <div className="flex h-8 min-w-0 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs">
-        <span className="min-w-0 flex-1 truncate text-foreground">
-          {describeMergeDestination(value)}
-        </span>
-        <button type="button" className="shrink-0 rounded px-1 text-muted-foreground hover:text-foreground" onClick={() => setEditing(true)}>
-          Edit
-        </button>
-        <button type="button" className="shrink-0 text-muted-foreground hover:text-destructive" onClick={() => onChange('')} aria-label="Remove merge action">
-          <Cancel01Icon className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-2">
       <Select
-        value={mode || BASE_BRANCH_TOKEN}
+        value={mode}
         onValueChange={(v) => {
-          if (v === BASE_BRANCH_TOKEN) {
-            onChange(BASE_BRANCH_TOKEN);
-            setEditing(false);
+          if (v === '__none__') {
+            onChange('');
           } else {
-            setCustomDraft('');
+            onChange(BASE_BRANCH_TOKEN);
           }
         }}
       >
-        <SelectTrigger className="h-8 text-xs">
-          <SelectValue />
+        <SelectTrigger className="h-8 w-full text-xs">
+          <SelectValue placeholder="Branch" />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="__none__">
+            <span className="text-muted-foreground">Branch</span>
+          </SelectItem>
           <SelectItem value={BASE_BRANCH_TOKEN}>Task base branch</SelectItem>
-          <SelectItem value="__custom__">Custom branch</SelectItem>
         </SelectContent>
       </Select>
-      {mode === '__custom__' && (
-        <Input
-          className="h-8 text-xs"
-          value={customDraft}
-          onChange={(e) => setCustomDraft(e.target.value)}
-          placeholder="Branch name"
-          autoFocus
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && customDraft.trim()) { onChange(customDraft.trim()); setEditing(false); }
-            if (e.key === 'Escape') setEditing(false);
-          }}
-          onBlur={() => { if (customDraft.trim()) { onChange(customDraft.trim()); setEditing(false); } }}
-        />
-      )}
     </div>
   );
 }

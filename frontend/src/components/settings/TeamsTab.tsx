@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { settingsService } from '@/lib/services/settingsService';
 import { gitService } from '@/lib/services/gitService';
@@ -7,7 +7,7 @@ import { inviteService } from '@/lib/services/inviteService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { automationRuleService } from '@/lib/services/automationRuleService';
 import { agentService } from '@/lib/services/agentService';
-import { PipelineBuilder } from './PipelineBuilder';
+import { PipelineBuilder, type PipelineBuilderHandle } from './PipelineBuilder';
 import { SCALE_LABELS } from '@/lib/estimateScales';
 import type { WorkspaceTeam, MemberWithUser, Invitation, TeamUserMembership, InvitationTeamPreassignment, TeamEstimateSettings, TeamFieldVisibility, TeamRepoDefault } from '@/lib/types';
 import type { Agent, AutomationRule, GitRepository, WorkflowWithStates } from '@/lib/pmTypes';
@@ -113,6 +113,11 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
   const [repositoriesLoading, setRepositoriesLoading] = useState(false);
   const [workflows, setWorkflows] = useState<WorkflowWithStates[]>([]);
   const [workflowDialogOpen, setWorkflowDialogOpen] = useState(false);
+  const [workflowHasUnsavedChanges, setWorkflowHasUnsavedChanges] = useState(false);
+  const [workflowJustSaved, setWorkflowJustSaved] = useState(false);
+  const [workflowCloseConfirmOpen, setWorkflowCloseConfirmOpen] = useState(false);
+  const workflowBuilderRef = useRef<PipelineBuilderHandle | null>(null);
+  const workflowSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pipelineRules, setPipelineRules] = useState<AutomationRule[]>([]);
   const [pipelineAgents, setPipelineAgents] = useState<Agent[]>([]);
 
@@ -353,6 +358,40 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
     });
   };
 
+  useEffect(() => {
+    return () => {
+      if (workflowSavedTimerRef.current) clearTimeout(workflowSavedTimerRef.current);
+    };
+  }, []);
+
+  const markWorkflowSaved = () => {
+    setWorkflowJustSaved(true);
+    if (workflowSavedTimerRef.current) clearTimeout(workflowSavedTimerRef.current);
+    workflowSavedTimerRef.current = setTimeout(() => {
+      setWorkflowJustSaved(false);
+      workflowSavedTimerRef.current = null;
+    }, 2200);
+  };
+
+  const closeWorkflowDialog = () => {
+    setWorkflowDialogOpen(false);
+    setWorkflowCloseConfirmOpen(false);
+    setWorkflowHasUnsavedChanges(false);
+    setWorkflowJustSaved(false);
+  };
+
+  const handleWorkflowDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setWorkflowDialogOpen(true);
+      return;
+    }
+    if (workflowHasUnsavedChanges || workflowBuilderRef.current?.hasUnsavedChanges()) {
+      setWorkflowCloseConfirmOpen(true);
+      return;
+    }
+    closeWorkflowDialog();
+  };
+
   // ── Detail view (team selected) ──
   if (selectedTeam) {
     const invitedCount = invitationPreassignments.filter((pa) => pa.team_id === selectedTeam.id).length;
@@ -455,6 +494,8 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                   });
                 }
               }
+              setWorkflowHasUnsavedChanges(false);
+              setWorkflowJustSaved(false);
               setWorkflowDialogOpen(true);
               const wf = teamOwnWorkflow ?? workflows.find((w) => !w.workflow.team_id);
               if (wf) {
@@ -1071,15 +1112,34 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
         </Dialog>
 
         {/* Workflow States Editor Dialog */}
-        <Dialog open={workflowDialogOpen} onOpenChange={setWorkflowDialogOpen}>
+        <Dialog open={workflowDialogOpen} onOpenChange={handleWorkflowDialogOpenChange}>
           <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
             <DialogHeader className="border-b border-border px-5 py-4">
-              <DialogTitle>Workflow States</DialogTitle>
+              <div className="flex min-h-8 items-start justify-between gap-4 pr-14">
+                <div className="min-w-0">
+                  <DialogTitle>Workflow states</DialogTitle>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Manage states, types, and the automation that runs when tasks enter each state.
+                  </p>
+                </div>
+                {(workflowHasUnsavedChanges || workflowJustSaved) && (
+                  <p
+                    className={cn(
+                      'mt-0.5 text-xs',
+                      workflowHasUnsavedChanges && 'text-amber-600 dark:text-amber-400',
+                      !workflowHasUnsavedChanges && workflowJustSaved && 'text-emerald-600 dark:text-emerald-400',
+                    )}
+                  >
+                    {workflowHasUnsavedChanges ? 'Unsaved changes' : 'Saved'}
+                  </p>
+                )}
+              </div>
             </DialogHeader>
             <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4">
               {activeTeamWorkflow ? (
                 <>
                   <PipelineBuilder
+                    ref={workflowBuilderRef}
                     workspaceId={workspaceId}
                     workflow={activeTeamWorkflow}
                     agents={pipelineAgents}
@@ -1093,17 +1153,28 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                     onWorkflowUpdate={(updated) => {
                       setWorkflows((prev) => prev.map((w) => w.workflow.id === updated.workflow.id ? updated : w));
                     }}
+                    onUnsavedChange={setWorkflowHasUnsavedChanges}
+                    onSaved={markWorkflowSaved}
                   />
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground py-2">No workflow configured for this team.</p>
               )}
             </div>
-            <DialogFooter className="border-t border-border px-5 py-3">
-              <Button onClick={() => setWorkflowDialogOpen(false)}>Done</Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
+        <ConfirmDialog
+          open={workflowCloseConfirmOpen}
+          onOpenChange={(open) => {
+            if (!open) setWorkflowCloseConfirmOpen(false);
+          }}
+          title="Discard unsaved changes?"
+          description="You have a pending workflow edit that has not been saved yet."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          variant="destructive"
+          onConfirm={closeWorkflowDialog}
+        />
 
       <Dialog open={spacesDialogOpen} onOpenChange={setSpacesDialogOpen}>
         <DialogContent className="max-w-md">
@@ -1317,33 +1388,64 @@ export function TeamsTab({ workspaceId, teams, userMemberships, invitationPreass
                           <span className="text-xs text-muted-foreground/50">&mdash;</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        {(() => {
-                          const managers = teamMembers.filter(({ membership }) => membership.role === 'owner');
-                          if (managers.length === 0) return <span className="text-xs text-muted-foreground/50">&mdash;</span>;
-                          return (
-                            <div className="flex items-center gap-1.5">
-                              <div className="flex -space-x-1.5">
-                                {managers.map(({ membership, user }) => (
-                                  <UserAvatar
-                                    key={membership.id}
-                                    name={user?.full_name ?? user?.email ?? '?'}
+	                      <TableCell>
+	                        {(() => {
+	                          const managers = teamMembers.filter(({ membership }) => membership.role === 'owner');
+	                          if (managers.length === 0) return <span className="text-xs text-muted-foreground/50">&mdash;</span>;
+	                          const managerAvatars = (
+	                            <div className="flex items-center gap-1.5">
+	                              <div className="flex -space-x-1.5">
+	                                {managers.slice(0, 4).map(({ membership, user }) => (
+	                                  <UserAvatar
+	                                    key={membership.id}
+	                                    name={user?.full_name ?? user?.email ?? '?'}
                                     avatarUrl={user?.avatar_url ?? undefined}
                                     avatarStyle={user?.avatar_style ?? undefined}
                                     avatarSeed={user?.avatar_seed ?? undefined}
                                     avatarBackgroundMode={user?.avatar_background_mode ?? undefined}
                                     avatarBackgroundColor={user?.avatar_background_color ?? undefined}
-                                    className="h-5 w-5 ring-1 ring-background"
-                                  />
-                                ))}
-                              </div>
-                              <span className="text-sm text-muted-foreground truncate">
-                                {managers.map(({ user }) => user?.full_name || user?.email || 'Unknown').join(', ')}
-                              </span>
-                            </div>
-                          );
-                        })()}
-                      </TableCell>
+	                                    className="h-5 w-5 ring-1 ring-background"
+	                                  />
+	                                ))}
+	                              </div>
+	                              {managers.length > 4 && (
+	                                <span className="text-xs text-muted-foreground">+{managers.length - 4}</span>
+	                              )}
+	                              {managers.length === 1 && (
+	                                <span className="truncate text-sm text-muted-foreground">
+	                                  {managers[0].user?.full_name || managers[0].user?.email || 'Unknown'}
+	                                </span>
+	                              )}
+	                            </div>
+	                          );
+	                          if (managers.length === 1) return managerAvatars;
+	                          return (
+	                            <Tooltip>
+	                              <TooltipTrigger asChild>
+	                                <div className="inline-flex cursor-default">{managerAvatars}</div>
+	                              </TooltipTrigger>
+	                              <TooltipContent side="bottom" className="p-2">
+	                                <div className="space-y-1.5">
+	                                  {managers.map(({ membership, user }) => (
+	                                    <div key={membership.id} className="flex items-center gap-2">
+	                                      <UserAvatar
+	                                        name={user?.full_name ?? user?.email ?? '?'}
+	                                        avatarUrl={user?.avatar_url ?? undefined}
+	                                        avatarStyle={user?.avatar_style ?? undefined}
+	                                        avatarSeed={user?.avatar_seed ?? undefined}
+	                                        avatarBackgroundMode={user?.avatar_background_mode ?? undefined}
+	                                        avatarBackgroundColor={user?.avatar_background_color ?? undefined}
+	                                        className="h-5 w-5"
+	                                      />
+	                                      <span className="text-xs">{user?.full_name ?? user?.email ?? '?'}</span>
+	                                    </div>
+	                                  ))}
+	                                </div>
+	                              </TooltipContent>
+	                            </Tooltip>
+	                          );
+	                        })()}
+	                      </TableCell>
                       <TableCell>
                         {(() => {
                           const wf = workflows.find((w) => w.workflow.team_id === team.id);
