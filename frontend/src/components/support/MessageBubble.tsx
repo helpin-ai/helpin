@@ -15,6 +15,7 @@ import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
+import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -116,54 +117,6 @@ function parseForwardedAttributionMetadata(metadata?: string): SupportForwardedA
   } catch {
     return null;
   }
-}
-
-function isForwardedHeaderMarker(line: string): boolean {
-  const normalized = line.trim().replace(/^>+\s*/, '').toLowerCase();
-  return normalized.includes('forwarded message') || normalized.includes('begin forwarded message') || normalized.includes('original message');
-}
-
-function isForwardedMetadataLine(line: string): boolean {
-  return /^(from|date|sent|subject|to|cc|bcc):\s*/i.test(line.trim().replace(/^>+\s*/, ''));
-}
-
-function cleanForwardedDisplayContent(content: string): string {
-  const normalized = content.replace(/\r\n/g, '\n');
-  const lines = normalized.split('\n');
-  const markerIndex = lines.findIndex(isForwardedHeaderMarker);
-  if (markerIndex < 0) return content;
-
-  const note = lines.slice(0, markerIndex).join('\n').trim();
-  let bodyStart = -1;
-  let sawMetadata = false;
-
-  for (let i = markerIndex + 1; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (isForwardedMetadataLine(line)) {
-      sawMetadata = true;
-      continue;
-    }
-    if (sawMetadata && line.trim() === '') {
-      continue;
-    }
-    if (sawMetadata) {
-      bodyStart = i;
-      break;
-    }
-  }
-
-  if (bodyStart < 0) return note || content;
-
-  const bodyLines: string[] = [];
-  for (let i = bodyStart; i < lines.length; i += 1) {
-    if (i !== bodyStart && isForwardedHeaderMarker(lines[i])) {
-      break;
-    }
-    bodyLines.push(lines[i]);
-  }
-
-  const body = bodyLines.join('\n').trim();
-  return [note, body].filter(Boolean).join('\n\n') || content;
 }
 
 function formatCountdown(ms: number): string {
@@ -310,6 +263,7 @@ export const MessageBubble = memo(function MessageBubble({
   }, [message.content]);
   const forwardedDisplayContent = useMemo(() => {
     if (!forwardedAttribution) return '';
+    if (!hasForwardedHeaderMarker(displayContent)) return '';
     return cleanForwardedDisplayContent(displayContent).trim();
   }, [displayContent, forwardedAttribution]);
   const visibleContent = forwardedDisplayContent || displayContent;
@@ -731,7 +685,7 @@ export const MessageBubble = memo(function MessageBubble({
                 >
                   {hasEmailBody && !renderEmailBodyAsForwardedText ? (
                     <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                      <EmailBodyRenderer html={message.html_body ?? ''} />
+                      <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault={!forwardedAttribution} />
                     </div>
                   ) : (
                     visibleContent && (

@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify';
 interface EmailBodyRendererProps {
   /** Backend-sanitized HTML. Still re-sanitized here as defense-in-depth. */
   html: string;
+  collapsedByDefault?: boolean;
 }
 
 // Matches the attribute the backend (server/internal/email/inboundhtml) uses
@@ -98,16 +99,23 @@ function hasCollapsibleContent(doc: Document): boolean {
   return doc.querySelector(`[${QUOTE_ATTR}], .gmail_signature`) !== null;
 }
 
-export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
+export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBodyRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [height, setHeight] = useState(40);
   const [ready, setReady] = useState(false);
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(collapsedByDefault);
   const [hasCollapsible, setHasCollapsible] = useState(false);
   const collapseSheetRef = useRef<HTMLStyleElement | null>(null);
 
   const sanitized = useMemo(() => sanitize(html), [html]);
   const srcDoc = useMemo(() => buildSrcDoc(sanitized), [sanitized]);
+
+  useEffect(() => {
+    setCollapsed(collapsedByDefault);
+    setReady(false);
+    setHasCollapsible(false);
+    setHeight(40);
+  }, [collapsedByDefault, srcDoc]);
 
   const measure = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
@@ -127,16 +135,18 @@ export function EmailBodyRenderer({ html }: EmailBodyRendererProps) {
       a.setAttribute('rel', 'noopener noreferrer nofollow');
     });
 
-    // Inject collapse stylesheet (enabled by default).
+    // Inject collapse stylesheet; forwarded messages can opt into showing
+    // quoted sections immediately.
     const sheet = doc.createElement('style');
     sheet.textContent = COLLAPSE_STYLES;
     doc.head.appendChild(sheet);
     collapseSheetRef.current = sheet;
+    sheet.disabled = !collapsed;
 
     setHasCollapsible(hasCollapsibleContent(doc));
     setReady(true);
     measure();
-  }, [measure]);
+  }, [collapsed, measure]);
 
   // Toggle collapse stylesheet on/off.
   useEffect(() => {
