@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -131,7 +132,8 @@ func newSettingsService(t *testing.T) (*SettingsService, *gorm.DB) {
 	db := newTestDB(t)
 	addSettingsExtraTables(t, db)
 	repo := repository.NewSettingsRepository(db)
-	svc := NewSettingsService(repo, nil, nil, nil)
+	svc := NewSettingsService(repo, nil, nil, nil).
+		SetGitRepositoryRepository(repository.NewGitRepositoryRepository(db))
 	return svc, db
 }
 
@@ -780,7 +782,7 @@ func TestUpdateTeamRepoDefault_TrimsBranch(t *testing.T) {
 			id, workspace_id, integration_id, provider, external_id, full_name, default_branch,
 			permissions, private, archived, selected, active, created_at, updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-		"repo1", "ws1", "gi1", "github", "123", "org/repo", "main", "{}", 1, 0, 1, 1)
+		"repo1", "ws1", "gi1", "github", "123", "org/repo", "main", []byte("{}"), 1, 0, 1, 1)
 
 	branch := "  develop  "
 	tmpl := "  feat-{display_id}  "
@@ -802,6 +804,33 @@ func TestUpdateTeamRepoDefault_TrimsBranch(t *testing.T) {
 	}
 	if result.ClosedStateID == nil || *result.ClosedStateID != closedStateID {
 		t.Fatalf("expected closed_state_id %q, got %#v", closedStateID, result.ClosedStateID)
+	}
+}
+
+func TestUpdateTeamRepoDefault_RejectsUnselectedRepository(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	team, err := svc.CreateTeam(ctx, model.CreateTeamRequest{
+		WorkspaceID: "ws1",
+		Name:        "Backend",
+	}, "")
+	if err != nil {
+		t.Fatalf("CreateTeam: %v", err)
+	}
+	mustExec(t, db, `INSERT INTO git_repositories (
+			id, workspace_id, integration_id, provider, external_id, full_name, default_branch,
+			permissions, private, archived, selected, active, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		"repo-disabled", "ws1", "gi1", "gitlab", "123", "org/disabled", "main", []byte("{}"), 1, 0, 0, 1)
+
+	_, err = svc.UpdateTeamRepoDefault(ctx, team.ID, model.UpdateTeamRepoDefaultRequest{
+		RepositoryID: "repo-disabled",
+	})
+	if err == nil || !strings.Contains(err.Error(), "repository is not available for PM delivery") {
+		t.Fatalf("expected unavailable repository error, got %v", err)
 	}
 }
 

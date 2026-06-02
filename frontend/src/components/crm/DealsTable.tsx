@@ -20,7 +20,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Checkbox } from '@/components/ui/checkbox';
 import { format, parseISO } from 'date-fns';
 import { crmDealService } from '@/lib/services/crmService';
 import { StageTypeIcon, STAGE_TYPE_CONFIG } from '@/lib/crmConstants';
@@ -36,18 +35,21 @@ import {
   TABLE_ROW,
   TABLE_CELL,
   TABLE_GROUP_ROW,
+  TABLE_GROUP_ROW_INNER,
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
   TABLE_PINNED_HEADER_RIGHT,
-  TABLE_CHECKBOX_HOVER,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
-  CHECKBOX_COL_SIZE,
   dynamicCellStyle,
   pinnedStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
+  TABLE_HEADER_CELL_ACTIONS,
+  ACTIONS_COL_SIZE,
 } from '@/lib/tableStyles';
 import type { CRMDeal, CRMPipeline, CRMPipelineStage } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
@@ -152,29 +154,6 @@ export function DealsTable({
 
   const tableColumns = useMemo(
     () => [
-      columnHelper.display({
-        id: 'select',
-        size: CHECKBOX_COL_SIZE,
-        enableGrouping: false,
-        enableSorting: false,
-        enableResizing: false,
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllPageRowsSelected()}
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            className={TABLE_CHECKBOX_HOVER}
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Select row"
-          />
-        ),
-      }),
       columnHelper.accessor('display_id', {
         id: 'displayId',
         header: 'ID',
@@ -303,7 +282,7 @@ export function DealsTable({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 44,
+        size: ACTIONS_COL_SIZE,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -445,6 +424,16 @@ export function DealsTable({
                     : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
                   const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
                     : colId === 'actions' ? pinnedStyle('right', 0) : {};
+                  if (colId === 'actions') {
+                    return (
+                      <div
+                        key={header.id}
+                        className={TABLE_HEADER_CELL_ACTIONS}
+                        style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
+                        aria-hidden="true"
+                      />
+                    );
+                  }
                   return (
                     <div
                       key={header.id}
@@ -491,20 +480,16 @@ export function DealsTable({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translate3d(0, ${virtualRow.start}px, 0)`,
-                    contain: 'paint',
-                    willChange: 'transform',
-                  }}
+                  style={{ ...virtualRowStyle(virtualRow.start), contain: 'paint', willChange: 'transform' }}
                 >
                   {isGrouped ? (
                     <MemoGroupHeaderRow row={row} stageMap={stageMap} groupBy={groupBy} />
                   ) : (
-                    <MemoDataRow row={row} columnSizingVersion={columnSizingVersion} />
+                    <MemoDataRow
+                      row={row}
+                      columnSizing={columnSizing}
+                      columnSizingVersion={columnSizingVersion}
+                    />
                   )}
                 </div>
               );
@@ -546,16 +531,18 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
       className={TABLE_GROUP_ROW}
       onClick={() => row.toggleExpanded()}
     >
-      {row.getIsExpanded() ? (
-        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : (
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-      {icon}
-      <span>{groupValue}</span>
-      <span className="ml-2 text-xs font-normal text-muted-foreground">
-        {dealCount} {dealCount === 1 ? 'deal' : 'deals'}
-        {totalAmount > 0 && ` \u00B7 $${new Intl.NumberFormat().format(totalAmount)}`}
+      <span className={TABLE_GROUP_ROW_INNER}>
+        {row.getIsExpanded() ? (
+          <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        {icon}
+        <span>{groupValue}</span>
+        <span className="ml-2 text-xs font-normal text-muted-foreground">
+          {dealCount} {dealCount === 1 ? 'deal' : 'deals'}
+          {totalAmount > 0 && ` \u00B7 $${new Intl.NumberFormat().format(totalAmount)}`}
+        </span>
       </span>
     </div>
   );
@@ -565,6 +552,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
 
 interface DealDataRowProps {
   row: Row<CRMDeal>;
+  columnSizing: Record<string, number>;
   columnSizingVersion: string;
 }
 
@@ -578,6 +566,7 @@ function areDealDataRowPropsEqual(prev: DealDataRowProps, next: DealDataRowProps
 
 const MemoDataRow = memo(function DataRow({
   row,
+  columnSizing,
   columnSizingVersion,
 }: DealDataRowProps) {
   void columnSizingVersion;
@@ -585,9 +574,7 @@ const MemoDataRow = memo(function DataRow({
     <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
-        const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
@@ -869,10 +856,10 @@ function InlineActionsCell({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-muted group-hover/row:opacity-100"
+          className="flex h-6 w-6 items-center justify-center rounded text-foreground hover:bg-muted"
           onClick={(e) => e.stopPropagation()}
         >
-          <MoreVerticalIcon className="h-3.5 w-3.5" />
+          <MoreVerticalIcon className="h-4 w-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[140px]">

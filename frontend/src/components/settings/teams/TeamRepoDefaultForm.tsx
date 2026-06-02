@@ -160,7 +160,7 @@ export function TeamRepoDefaultForm({
       </div>
       {repositories.length === 0 && !loading && (
         <p className="text-xs text-muted-foreground">
-          No repositories are synced yet. Connect GitHub and sync repositories before setting a team delivery default.
+          No workspace repositories are available yet. Add repositories in Workspace Settings before setting a team delivery default.
         </p>
       )}
       <DialogFooter>

@@ -21,6 +21,12 @@ const (
 	TriggerGitHubPRReviewReq    = "github.pull_request_review_requested"
 	TriggerGitHubReleasePub     = "github.release_published"
 	TriggerGitHubCheckSuite     = "github.check_suite_completed"
+	TriggerGitLabPush           = "gitlab.push"
+	TriggerGitLabMROpened       = "gitlab.merge_request_opened"
+	TriggerGitLabMRMerged       = "gitlab.merge_request_merged"
+	TriggerGitLabMRClosed       = "gitlab.merge_request_closed"
+	TriggerGitLabReleasePub     = "gitlab.release_published"
+	TriggerGitLabPipeline       = "gitlab.pipeline_completed"
 	TriggerCron                 = "cron"
 )
 

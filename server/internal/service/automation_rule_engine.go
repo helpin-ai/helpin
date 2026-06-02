@@ -268,28 +268,28 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 	case model.TriggerDocPublished, model.TriggerAISectionRegenerated, model.TriggerAISectionApproved:
 		return strings.TrimSpace(event.TargetType) != "" && strings.TrimSpace(event.TargetID) != ""
 
-	case model.TriggerGitHubPush:
+	case model.TriggerGitHubPush, model.TriggerGitLabPush:
 		var cfg model.TriggerConfigGitHubPush
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
 		}
 		return matchGitHubPushConfig(cfg, event)
 
-	case model.TriggerGitHubPROpened:
+	case model.TriggerGitHubPROpened, model.TriggerGitLabMROpened:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
 		}
 		return matchGitHubPullRequestConfig(cfg, event)
 
-	case model.TriggerGitHubPRMerged:
+	case model.TriggerGitHubPRMerged, model.TriggerGitLabMRMerged:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
 		}
 		return matchGitHubPullRequestConfig(cfg, event)
 
-	case model.TriggerGitHubPRClosed:
+	case model.TriggerGitHubPRClosed, model.TriggerGitLabMRClosed:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
@@ -303,7 +303,7 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 		}
 		return matchGitHubPullRequestConfig(cfg, event)
 
-	case model.TriggerGitHubReleasePub:
+	case model.TriggerGitHubReleasePub, model.TriggerGitLabReleasePub:
 		var cfg model.TriggerConfigGitHubReleasePublished
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
@@ -323,7 +323,7 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 		}
 		return matchGitHubReleaseConfig(cfg, event)
 
-	case model.TriggerGitHubCheckSuite:
+	case model.TriggerGitHubCheckSuite, model.TriggerGitLabPipeline:
 		var cfg model.TriggerConfigGitHubCheckSuiteCompleted
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
@@ -1114,7 +1114,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 				return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 			}
 		}
-	case model.TriggerGitHubPush:
+	case model.TriggerGitHubPush, model.TriggerGitLabPush:
 		var cfg model.TriggerConfigGitHubPush
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -1122,7 +1122,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.Branch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
 			return fmt.Errorf("branch or repo_full_name is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubPROpened:
+	case model.TriggerGitHubPROpened, model.TriggerGitLabMROpened:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -1130,7 +1130,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
 			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubPRMerged:
+	case model.TriggerGitHubPRMerged, model.TriggerGitLabMRMerged:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -1138,7 +1138,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
 			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubPRClosed:
+	case model.TriggerGitHubPRClosed, model.TriggerGitLabMRClosed:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -1154,7 +1154,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
 			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubReleasePub:
+	case model.TriggerGitHubReleasePub, model.TriggerGitLabReleasePub:
 		var cfg model.TriggerConfigGitHubReleasePublished
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -1162,7 +1162,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.TagName) == "" && strings.TrimSpace(cfg.RepoFullName) == "" && strings.TrimSpace(cfg.TagPattern) == "" && len(cfg.ReleaseKinds) == 0 {
 			return fmt.Errorf("repo_full_name, tag_name, tag_pattern, or release_kinds is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubCheckSuite:
+	case model.TriggerGitHubCheckSuite, model.TriggerGitLabPipeline:
 		var cfg model.TriggerConfigGitHubCheckSuiteCompleted
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -1245,7 +1245,13 @@ func isGitHubAutomationTrigger(triggerType string) bool {
 		model.TriggerGitHubPRClosed,
 		model.TriggerGitHubPRReviewReq,
 		model.TriggerGitHubReleasePub,
-		model.TriggerGitHubCheckSuite:
+		model.TriggerGitHubCheckSuite,
+		model.TriggerGitLabPush,
+		model.TriggerGitLabMROpened,
+		model.TriggerGitLabMRMerged,
+		model.TriggerGitLabMRClosed,
+		model.TriggerGitLabReleasePub,
+		model.TriggerGitLabPipeline:
 		return true
 	default:
 		return false

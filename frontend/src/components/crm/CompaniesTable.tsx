@@ -18,7 +18,6 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon, Building03Icon, ArrowDown01Icon, ArrowRight01Icon, MoreVerticalIcon, LinkSquare01Icon, Loading01Icon, PlusSignIcon, Delete01Icon, UserAdd01Icon } from '@/lib/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Favicon } from '@/components/ui/favicon';
 import { format, parseISO } from 'date-fns';
@@ -33,18 +32,21 @@ import {
   TABLE_ROW,
   TABLE_CELL,
   TABLE_GROUP_ROW,
+  TABLE_GROUP_ROW_INNER,
   TABLE_HEADER_CELL_SORTABLE,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
   TABLE_PINNED_HEADER_RIGHT,
-  TABLE_CHECKBOX_HOVER,
+  TABLE_HEADER_CELL_ACTIONS,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
-  CHECKBOX_COL_SIZE,
+  ACTIONS_COL_SIZE,
   dynamicCellStyle,
   pinnedStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
 } from '@/lib/tableStyles';
 import type { CRMCompany } from '@/lib/crmTypes';
 import type { AssignableMember } from '@/lib/types';
@@ -125,29 +127,6 @@ export function CompaniesTable({
 
   const tableColumns = useMemo(
     () => [
-      columnHelper.display({
-        id: 'select',
-        size: CHECKBOX_COL_SIZE,
-        enableGrouping: false,
-        enableSorting: false,
-        enableResizing: false,
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllPageRowsSelected()}
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label="Select all"
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            className={TABLE_CHECKBOX_HOVER}
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Select row"
-          />
-        ),
-      }),
       columnHelper.accessor('display_id', {
         id: 'displayId',
         header: 'ID',
@@ -271,7 +250,7 @@ export function CompaniesTable({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 44,
+        size: ACTIONS_COL_SIZE,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -401,6 +380,16 @@ export function CompaniesTable({
                     : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
                   const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
                     : colId === 'actions' ? pinnedStyle('right', 0) : {};
+                  if (colId === 'actions') {
+                    return (
+                      <div
+                        key={header.id}
+                        className={TABLE_HEADER_CELL_ACTIONS}
+                        style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 300), ...pinnedSt }}
+                        aria-hidden="true"
+                      />
+                    );
+                  }
                   return (
                     <div
                       key={header.id}
@@ -447,20 +436,16 @@ export function CompaniesTable({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translate3d(0, ${virtualRow.start}px, 0)`,
-                    contain: 'paint',
-                    willChange: 'transform',
-                  }}
+                  style={{ ...virtualRowStyle(virtualRow.start), contain: 'paint', willChange: 'transform' }}
                 >
                   {isGrouped ? (
                     <MemoGroupHeaderRow row={row} />
                   ) : (
-                    <MemoDataRow row={row} columnSizingVersion={columnSizingVersion} />
+                    <MemoDataRow
+                      row={row}
+                      columnSizing={columnSizing}
+                      columnSizingVersion={columnSizingVersion}
+                    />
                   )}
                 </div>
               );
@@ -484,14 +469,16 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
       className={TABLE_GROUP_ROW}
       onClick={() => row.toggleExpanded()}
     >
-      {row.getIsExpanded() ? (
-        <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : (
-        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-      <span>{groupValue}</span>
-      <span className="ml-2 text-xs font-normal text-muted-foreground">
-        {count} {count === 1 ? 'company' : 'companies'}
+      <span className={TABLE_GROUP_ROW_INNER}>
+        {row.getIsExpanded() ? (
+          <ArrowDown01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        <span>{groupValue}</span>
+        <span className="ml-2 text-xs font-normal text-muted-foreground">
+          {count} {count === 1 ? 'company' : 'companies'}
+        </span>
       </span>
     </div>
   );
@@ -501,6 +488,7 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({ row }: { row: Row<CRMC
 
 interface CompanyDataRowProps {
   row: Row<CRMCompany>;
+  columnSizing: Record<string, number>;
   columnSizingVersion: string;
 }
 
@@ -514,6 +502,7 @@ function areCompanyDataRowPropsEqual(prev: CompanyDataRowProps, next: CompanyDat
 
 const MemoDataRow = memo(function DataRow({
   row,
+  columnSizing,
   columnSizingVersion,
 }: CompanyDataRowProps) {
   void columnSizingVersion;
@@ -521,9 +510,7 @@ const MemoDataRow = memo(function DataRow({
     <div className={TABLE_ROW} data-column-sizing={columnSizingVersion}>
       {row.getVisibleCells().map((cell) => {
         if (cell.column.getIsGrouped()) return null;
-        const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         const colId = cell.column.id;
         const pinnedClass = colId === 'select' ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
@@ -606,10 +593,10 @@ function InlineActionsCell({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-muted group-hover/row:opacity-100"
+          className="flex h-6 w-6 items-center justify-center rounded text-foreground hover:bg-muted"
           onClick={(e) => e.stopPropagation()}
         >
-          <MoreVerticalIcon className="h-3.5 w-3.5" />
+          <MoreVerticalIcon className="h-4 w-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[140px]">

@@ -58,7 +58,7 @@ export function WorkspaceSelector({ workspaces }: WorkspaceSelectorProps) {
   };
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider>
       <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {workspaces.map((ws) => {
           const isDefault = defaultWsId === ws.id;

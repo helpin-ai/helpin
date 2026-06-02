@@ -1,3 +1,5 @@
+export const REDIRECT_AFTER_LOGIN_KEY = 'helpin_redirect_after_login';
+
 type RouterLocationLike = {
   pathname?: string
   searchStr?: string
@@ -78,4 +80,27 @@ export function buildLoginPathForRedirect(redirect: string | null | undefined): 
 
 export function buildLoginPathForCurrentLocation(location?: RouterLocationLike): string {
   return buildLoginPathForRedirect(currentPathForLoginRedirect(location))
+}
+
+export function storeRedirectAfterLogin(path = currentPathForLoginRedirect()): void {
+  const normalized = normalizeSafeAppRedirect(path)
+  if (!normalized) return
+
+  try {
+    sessionStorage.setItem(REDIRECT_AFTER_LOGIN_KEY, normalized)
+  } catch {
+    // Ignore storage access failures; login can still fall back normally.
+  }
+}
+
+export function consumeRedirectAfterLogin(): string | null {
+  try {
+    const path = sessionStorage.getItem(REDIRECT_AFTER_LOGIN_KEY)
+    if (path) {
+      sessionStorage.removeItem(REDIRECT_AFTER_LOGIN_KEY)
+    }
+    return normalizeSafeAppRedirect(path)
+  } catch {
+    return null
+  }
 }

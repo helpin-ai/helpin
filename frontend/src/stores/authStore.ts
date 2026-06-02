@@ -18,7 +18,7 @@ interface AuthState {
   ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
   verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
 }
 
@@ -42,9 +42,15 @@ export function clearClientSession() {
 }
 
 export function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
-  localStorage.setItem('access_token', accessToken);
-  localStorage.setItem('refresh_token', refreshToken);
-  localStorage.setItem('remember_me', rememberMe ? '1' : '0');
+  void accessToken;
+  void refreshToken;
+  try {
+    localStorage.setItem('remember_me', rememberMe ? '1' : '0');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+  } catch {
+    // Ignore storage access failures after cookie-based login.
+  }
   useAuthStore.setState({ user, serverUnreachable: false });
 }
 
@@ -57,44 +63,42 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (_initializing) return;
     _initializing = true;
     try {
-      const token = localStorage.getItem('access_token');
-      if (token) {
-        const { data, error, isNetworkError } = await authService.me();
-        if (data && !error) {
-          set({ user: data, loading: false, serverUnreachable: false });
-        } else if (isNetworkError) {
-          // Server unreachable / CORS error — keep tokens, don't log out
-          set({ loading: false, serverUnreachable: true });
-        } else {
-          // Genuine auth failure (401, invalid token, etc.) — clear session
+      const { data, error, isNetworkError } = await authService.me();
+      if (data && !error) {
+        set({ user: data, loading: false, serverUnreachable: false });
+      } else if (isNetworkError) {
+        // Server unreachable / CORS error — preserve the browser cookie session.
+        set({ loading: false, serverUnreachable: true });
+      } else {
+        try {
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
-          set({ loading: false, serverUnreachable: false });
+        } catch {
+          // Ignore storage access failures.
         }
-      } else {
-        set({ loading: false });
+        set({ user: null, loading: false, serverUnreachable: false });
       }
     } finally {
       _initializing = false;
     }
   },
 
-  signIn: async (email: string, password: string, rememberMe = false) => {
+  signIn: async (email: string, password: string, rememberMe = true) => {
     const { data, error } = await authService.signin(email, password, rememberMe);
     if (error || !data) return { error: error || 'Sign in failed' };
 
     if (data.requires_2fa && data.two_fa_token) {
       return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
     }
-    if (!data.user || !data.access_token || !data.refresh_token) {
+    if (!data.user) {
       return { error: 'Sign in failed' };
     }
 
-    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
+    persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
     return { error: null };
   },
 
-  signInWithPasskey: async (emailHint?: string, rememberMe = false, options?: { useAutofill?: boolean }) => {
+  signInWithPasskey: async (emailHint?: string, rememberMe = true, options?: { useAutofill?: boolean }) => {
     const { data, error, cancelled } = await passkeyService.beginAuthentication(emailHint, rememberMe, options);
     if (cancelled) return { error: null, cancelled: true };
     if (error || !data) return { error: error || 'Passkey sign in failed' };
@@ -102,15 +106,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (data.requires_2fa && data.two_fa_token) {
       return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
     }
-    if (!data.user || !data.access_token || !data.refresh_token) {
+    if (!data.user) {
       return { error: 'Passkey sign in failed' };
     }
 
-    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
+    persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
     return { error: null };
   },
 
-  verify2FASignIn: async (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe = false) => {
+  verify2FASignIn: async (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe = true) => {
     const { data, error } = await authService.verify2FASignin(twoFaToken, code, useRecoveryCode);
     if (error || !data) return { error: error || 'Verification failed' };
 
@@ -125,7 +129,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     return { error: null };
   },
 
-  signOut: () => {
+  signOut: async () => {
+    await authService.signout();
     clearClientSession();
     set({ user: null });
     window.location.replace('/login');

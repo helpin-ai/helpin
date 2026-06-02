@@ -242,6 +242,7 @@ func main() {
 			&model.SupportAIRetrievalTrace{},
 			&model.SupportCoverageRecommendation{},
 			&model.GitIntegration{},
+			&model.GitCredential{},
 			&model.GitRepository{},
 			&model.PMTeamRepoDefault{},
 			&model.TaskDeliveryTarget{},
@@ -584,6 +585,7 @@ func main() {
 	supportSessionRepo := repository.NewSupportInboxSessionRepository(db)
 	supportAttachmentRepo := repository.NewSupportAttachmentRepository(db)
 	gitIntegrationRepo := repository.NewGitIntegrationRepository(db)
+	gitCredentialRepo := repository.NewGitCredentialRepository(db)
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
 	taskDeliveryTargetRepo := repository.NewTaskDeliveryTargetRepository(db)
 	taskGitLinkRepo := repository.NewTaskGitLinkRepository(db)
@@ -757,7 +759,6 @@ func main() {
 	if err != nil {
 		fatalWithSentry("failed to initialize github app client", err)
 	}
-
 	var temporalClient tclient.Client
 	temporalClient, err = tclient.Dial(temporalapp.BuildClientOptions(cfg))
 	if err != nil {
@@ -800,7 +801,7 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	)
+	).SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
@@ -977,6 +978,9 @@ func main() {
 	if s3Client != nil {
 		docsDeletionDeps.AssetStore = s3Client
 	}
+	if cleanupEnqueuer := service.NewTemporalDocsAssetCleanupEnqueuer(temporalClient); cleanupEnqueuer != nil {
+		docsDeletionDeps.CleanupEnqueuer = cleanupEnqueuer
+	}
 	docsDocumentService.SetDeletionDependencies(docsDeletionDeps)
 	docsCollectionService.SetPermanentDeleteDependencies(docsDocumentRepo, docsDocumentService, docsHelpcenterTranslationRepo)
 	docsCollectionService.SetHelpcenterRepository(docsHelpcenterRepo)
@@ -1135,7 +1139,8 @@ func main() {
 	workspaceService := service.NewWorkspaceService(workspaceRepo, pmAttachmentRepo, s3Client, compositeDefaults)
 	workspaceService.SetPresenceProvider(wsHub.Presence)
 	workspaceService.SetStatusOverrideRepo(supportTeammateStatusOverrideRepo)
-	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher)
+	settingsService := service.NewSettingsService(settingsRepo, moduleGrantRepo, pmWorkflowService, wsPublisher).
+		SetGitRepositoryRepository(gitRepositoryRepo)
 	automationInventoryService := service.NewAutomationInventoryService(settingsRepo, pmAutomationRepo, crmEmailRepo, automationHealthRepo, automationRuleRepo, agentTriggerExecutionRepo, agentRunRepo, agentRepo, pmTaskRepo, supportInstallRepo)
 	flowTemplateRegistry, err := flowtemplates.LoadSystemRegistry()
 	if err != nil {
@@ -1624,6 +1629,23 @@ func resolvePMImportEncryptionKey(cfg *config.Config) []byte {
 	}
 	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
 		slog.Warn("invalid CRM_ENCRYPTION_KEY for PM import fallback (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	return nil
+}
+
+func resolveGitOAuthEncryptionKey(cfg *config.Config) []byte {
+	if cfg == nil {
+		return nil
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.GitOAuthEncryptionKey)); err != nil {
+		slog.Warn("invalid GIT_OAUTH_ENCRYPTION_KEY (must be a 32-byte hex-encoded AES key)", "error", err)
+	} else if len(key) == 32 {
+		return key
+	}
+	if key, err := decodeOptionalAES256HexKey(strings.TrimSpace(cfg.CRMEncryptionKey)); err != nil {
+		slog.Warn("invalid CRM_ENCRYPTION_KEY for git oauth fallback (must be a 32-byte hex-encoded AES key)", "error", err)
 	} else if len(key) == 32 {
 		return key
 	}

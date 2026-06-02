@@ -1001,6 +1001,7 @@ func setupInstallerTestDB(t *testing.T) *gorm.DB {
 			workspace_id text NOT NULL,
 			integration_id text NOT NULL,
 			provider text NOT NULL DEFAULT 'github',
+			base_url text,
 			external_id text NOT NULL DEFAULT '',
 			full_name text NOT NULL,
 			default_branch text NOT NULL DEFAULT 'main',
