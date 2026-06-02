@@ -4,6 +4,7 @@ import { AttachmentIcon, Download04Icon, ArrowDown01Icon, ArrowUp01Icon, Informa
 import { useMessageEmailDetail } from '@/hooks/queries/useSupport';
 import type { SupportMessage } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
+import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 
 interface EmailDetailModalProps {
   workspaceId: string;
@@ -50,6 +51,9 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
   const textBody = (data?.stripped_text && data.stripped_text.trim()) || message.content || '';
   const timestamp = data?.created_at ?? message.created_at;
   const forwardedAttribution = data?.forwarded_attribution;
+  const forwardedTextBody = forwardedAttribution && hasForwardedHeaderMarker(textBody)
+    ? cleanForwardedDisplayContent(textBody).trim()
+    : '';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -139,8 +143,12 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
               )}
 
               <div className="mt-6 border-t border-border/60 pt-6">
-                {htmlBody ? (
-                  <EmailBodyRenderer html={htmlBody} />
+                {forwardedTextBody ? (
+                  <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
+                    {forwardedTextBody}
+                  </div>
+                ) : htmlBody ? (
+                  <EmailBodyRenderer html={htmlBody} collapsedByDefault={!forwardedAttribution} />
                 ) : textBody ? (
                   <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
                     {textBody}
