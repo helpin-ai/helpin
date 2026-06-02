@@ -967,6 +967,9 @@ type SupportInboxSettings struct {
 	EmailFallbackDelaySecs          int    `json:"email_fallback_delay_secs"`
 	EmailFallbackFromName           string `json:"email_fallback_from_name"`
 	EmailFallbackMaxDeliveryAgeSecs int    `json:"email_fallback_max_delivery_age_secs"`
+	ForwardedEmailDetectionEnabled  bool   `json:"forwarded_email_detection_enabled"`
+	ForwardedEmailDetectionMode     string `json:"forwarded_email_detection_mode"`
+	ForwardedEmailMinConfidence     int    `json:"forwarded_email_min_confidence"`
 
 	// Widget Identity
 	WidgetName         string   `json:"widget_name"`           // display name in widget header (defaults to workspace name)
@@ -1046,6 +1049,9 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 		EmailFallbackDelaySecs:          180,
 		EmailFallbackFromName:           "",
 		EmailFallbackMaxDeliveryAgeSecs: 600,
+		ForwardedEmailDetectionEnabled:  true,
+		ForwardedEmailDetectionMode:     "high_confidence_any_sender",
+		ForwardedEmailMinConfidence:     80,
 		WidgetName:                      "",
 		WidgetAvatarURL:                 "",
 		WidgetHelpSpaceIDs:              []string{},
@@ -1107,6 +1113,9 @@ type UpdateInstallationSettingsRequest struct {
 	EmailFallbackDelaySecs          *int                        `json:"email_fallback_delay_secs,omitempty"`
 	EmailFallbackFromName           *string                     `json:"email_fallback_from_name,omitempty"`
 	EmailFallbackMaxDeliveryAgeSecs *int                        `json:"email_fallback_max_delivery_age_secs,omitempty"`
+	ForwardedEmailDetectionEnabled  *bool                       `json:"forwarded_email_detection_enabled,omitempty"`
+	ForwardedEmailDetectionMode     *string                     `json:"forwarded_email_detection_mode,omitempty"`
+	ForwardedEmailMinConfidence     *int                        `json:"forwarded_email_min_confidence,omitempty"`
 	WidgetName                      *string                     `json:"widget_name,omitempty"`
 	WidgetAvatarURL                 *string                     `json:"widget_avatar_url,omitempty"`
 	WidgetHelpSpaceIDs              []string                    `json:"widget_help_space_ids,omitempty"`

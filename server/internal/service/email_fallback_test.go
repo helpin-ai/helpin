@@ -123,6 +123,7 @@ func setupEmailFallbackTestEnvWithRedis(t *testing.T, settings model.SupportInbo
 	supportInboxService.SetEmailRouteRepository(routeRepo)
 	supportInboxService.SetEmailSenderRepository(senderRepo)
 	supportInboxService.SetWorkspaceRepo(workspaceRepo)
+	supportInboxService.SetEmailLogRepo(emailLogRepo)
 	supportInboxService.SetRouteDomain("on.helpin.email")
 	service.SetSupportInboxService(supportInboxService)
 
@@ -2056,6 +2057,105 @@ func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) 
 	}
 	if logs[0].RFCMessageID != "<customer-thread-1@example.com>" {
 		t.Fatalf("unexpected rfc message id: %q", logs[0].RFCMessageID)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRouteUsesForwardedOriginalSender(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	route := &model.SupportEmailRoute{
+		ID:             "a1111111-1111-1111-1111-111111111118",
+		WorkspaceID:    workspaceID,
+		RouteKey:       "route-forwarded123",
+		InboundAddress: "support@acme.on.helpin.email",
+		ProviderType:   "forwarding",
+		Active:         true,
+		CreatedByID:    "22222222-2222-2222-2222-222222222222",
+	}
+	if err := env.routeRepo.Create(ctx, route); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: "founder@company.com", Name: "Founder"},
+		To:                route.InboundAddress,
+		OriginalRecipient: route.InboundAddress,
+		Subject:           "Fwd: Billing question",
+		MessageID:         "pm-route-forwarded-1",
+		StrippedTextReply: `Can someone handle this?
+
+---------- Forwarded message ---------
+From: Jane Customer <jane@customer.example>
+Date: Tue, Jun 2, 2026 at 10:14 AM
+Subject: Billing question
+To: Founder <founder@company.com>
+
+I need help with my invoice.`,
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-route-forwarded-1"}`); err != nil {
+		t.Fatalf("process routed inbound email: %v", err)
+	}
+
+	resp, total, err := env.convRepo.List(ctx, supportConversationListParams(workspaceID, "", "", model.PMPagination{Page: 1, PerPage: 10}, "", model.RoleOwner, nil, "", ""))
+	if err != nil {
+		t.Fatalf("list conversations: %v", err)
+	}
+	if total != 1 || len(resp) != 1 {
+		t.Fatalf("expected 1 conversation, got total=%d len=%d", total, len(resp))
+	}
+	conv := resp[0]
+	if conv.CustomerEmail == nil || *conv.CustomerEmail != "jane@customer.example" {
+		t.Fatalf("customer email = %#v, want jane@customer.example", conv.CustomerEmail)
+	}
+	if conv.CustomerName == nil || *conv.CustomerName != "Jane Customer" {
+		t.Fatalf("customer name = %#v, want Jane Customer", conv.CustomerName)
+	}
+
+	messages, err := env.messageRepo.ListByConversation(ctx, workspaceID, conv.ID, false)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message, got %#v", messages)
+	}
+	if messages[0].SenderDisplayName == nil || *messages[0].SenderDisplayName != "Jane Customer" {
+		t.Fatalf("sender display name = %#v, want Jane Customer", messages[0].SenderDisplayName)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal([]byte(messages[0].Metadata), &metadata); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if metadata["forwarded_by_email"] != "founder@company.com" {
+		t.Fatalf("forwarded_by_email metadata = %#v", metadata["forwarded_by_email"])
+	}
+	if metadata["original_sender_email"] != "jane@customer.example" {
+		t.Fatalf("original_sender_email metadata = %#v", metadata["original_sender_email"])
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conv.ID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 email log, got %d", len(logs))
+	}
+	if logs[0].FromEmail != "founder@company.com" {
+		t.Fatalf("log from email = %q, want founder@company.com", logs[0].FromEmail)
+	}
+
+	detail, err := env.service.supportInboxService.GetMessageEmailDetail(ctx, workspaceID, messages[0].ID)
+	if err != nil {
+		t.Fatalf("get message email detail: %v", err)
+	}
+	if detail == nil || detail.ForwardedAttribution == nil {
+		t.Fatalf("expected forwarded attribution in email detail, got %#v", detail)
+	}
+	if detail.ForwardedAttribution.OriginalSenderEmail != "jane@customer.example" {
+		t.Fatalf("email detail original sender = %#v", detail.ForwardedAttribution)
 	}
 }
 

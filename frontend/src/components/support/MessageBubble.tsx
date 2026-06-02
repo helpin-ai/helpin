@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
+import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
 import { timeAgo } from '@/lib/utils';
@@ -94,6 +94,27 @@ function previewHostLabel(preview: SupportLinkPreview): string {
     return new URL(preview.url).hostname.replace(/^www\./, '') || preview.host;
   } catch {
     return preview.host.replace(/^www\./, '');
+  }
+}
+
+function parseForwardedAttributionMetadata(metadata?: string): SupportForwardedAttribution | null {
+  if (!metadata) return null;
+  try {
+    const parsed = JSON.parse(metadata) as Record<string, unknown>;
+    const originalEmail = typeof parsed.original_sender_email === 'string' ? parsed.original_sender_email.trim() : '';
+    const forwardedByEmail = typeof parsed.forwarded_by_email === 'string' ? parsed.forwarded_by_email.trim() : '';
+    if (!originalEmail || !forwardedByEmail) return null;
+    return {
+      original_sender_email: originalEmail,
+      original_sender_name: typeof parsed.original_sender_name === 'string' ? parsed.original_sender_name.trim() : undefined,
+      forwarded_by_email: forwardedByEmail,
+      forwarded_by_name: typeof parsed.forwarded_by_name === 'string' ? parsed.forwarded_by_name.trim() : undefined,
+      confidence: typeof parsed.sender_attribution_confidence === 'number' ? parsed.sender_attribution_confidence : 0,
+      confidence_level: typeof parsed.sender_attribution_confidence_level === 'string' ? parsed.sender_attribution_confidence_level : '',
+      source: typeof parsed.sender_attribution_source === 'string' ? parsed.sender_attribution_source : 'forwarded_body',
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -196,6 +217,7 @@ export const MessageBubble = memo(function MessageBubble({
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
   const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
+  const forwardedAttribution = useMemo(() => parseForwardedAttributionMetadata(message.metadata), [message.metadata]);
   const effectiveSenderType = getEffectiveSenderType(message);
   const isCustomer = effectiveSenderType === 'customer';
   const isAI = effectiveSenderType === 'ai';
@@ -734,16 +756,30 @@ export const MessageBubble = memo(function MessageBubble({
       {(hasStatusBelow || hasCancellableFooter) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
-            <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
-              <button
-                type="button"
-                onClick={() => setEmailDetailOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
-              >
-                <Mail01Icon className="h-3 w-3" />
-                {isCustomer ? 'Received via email' : 'Sent via email'}
-                <span className="opacity-60">· View details</span>
-              </button>
+            <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
+              {forwardedAttribution && isCustomer && (
+                <div className="text-[11px] text-muted-foreground">
+                  Forwarded by {forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}
+                  <span className="opacity-70"> · originally from </span>
+                  <span className="font-medium text-foreground/80">
+                    {forwardedAttribution.original_sender_name || forwardedAttribution.original_sender_email}
+                  </span>
+                  {forwardedAttribution.original_sender_name ? (
+                    <span className="opacity-70"> &lt;{forwardedAttribution.original_sender_email}&gt;</span>
+                  ) : null}
+                </div>
+              )}
+              <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>
+                <button
+                  type="button"
+                  onClick={() => setEmailDetailOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                >
+                  <Mail01Icon className="h-3 w-3" />
+                  {isCustomer ? 'Received via email' : 'Sent via email'}
+                  <span className="opacity-60">· View details</span>
+                </button>
+              </div>
             </div>
           )}
 
