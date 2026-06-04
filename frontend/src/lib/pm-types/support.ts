@@ -505,6 +505,8 @@ export interface SupportMessageInfo {
   from: string;
   origin: string;
   type: string;
+  email_delivery_status?: string;
+  email_delivery_status_label?: string;
   delivered?: {
     channel: string;
     delivered_at: string;
