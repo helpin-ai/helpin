@@ -3,7 +3,9 @@ import { Clock01Icon, Loading01Icon, CheckmarkCircle02Icon, Key01Icon, MessagePr
 import { Badge } from '@/components/ui/badge';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
+import { formatRunTokenUsageBreakdown, formatRunTokenUsageTotal } from '@/lib/agentTokenUsage';
 import { TABLE_HEADER, TABLE_HEADER_CELL, TABLE_ROW, TABLE_CELL } from '@/lib/tableStyles';
 import { getAgentRunDisplayStatus, STATUS_META } from './agentRunConstants';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
@@ -17,7 +19,8 @@ interface Props {
   loading: boolean;
 }
 
-const BRANCH_MAX_CHARS = 28;
+const BRANCH_MAX_CHARS = 40;
+const TOKEN_COLUMN_WIDTH = 100;
 
 function truncateMiddle(value: string, max: number) {
   if (value.length <= max) return value;
@@ -56,7 +59,7 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
 
   if (runs.length === 0) {
     return (
-      <p className="px-3 py-4 text-xs text-muted-foreground">No runs yet. Click "Run Agent" to start.</p>
+      <p className="px-3 py-4 text-xs text-muted-foreground">No runs yet. Choose an agent and click Run.</p>
     );
   }
 
@@ -66,9 +69,9 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
       <div className={`${TABLE_HEADER} flex`}>
         <div className={TABLE_HEADER_CELL} style={{ width: 120 }}>Status</div>
         <div className={TABLE_HEADER_CELL} style={{ width: 150 }}>Agent</div>
-        <div className={TABLE_HEADER_CELL} style={{ flex: '1 1 0%', minWidth: 100 }}>Branch</div>
+        <div className={TABLE_HEADER_CELL} style={{ flex: '1 1 0%', minWidth: 140 }}>Branch</div>
         <div className={TABLE_HEADER_CELL} style={{ width: 130 }}>Time</div>
-        <div className={`${TABLE_HEADER_CELL} text-right`} style={{ width: 70 }}>Tokens</div>
+        <div className={TABLE_HEADER_CELL} style={{ width: TOKEN_COLUMN_WIDTH }}>Tokens</div>
       </div>
 
       {/* Rows */}
@@ -80,6 +83,8 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
         const branchDisplay = branch ? truncateMiddle(branch, BRANCH_MAX_CHARS) : '-';
         const agent = agentsById.get(run.agent_id);
         const agentName = agent?.name ?? AGENT_RUNTIME_LABELS[run.runtime_kind] ?? run.runtime_kind;
+        const totalTokens = formatRunTokenUsageTotal(run);
+        const tokenBreakdown = formatRunTokenUsageBreakdown(run).filter((line) => !line.startsWith('Total:'));
 
         return (
           <button
@@ -90,18 +95,34 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
             }`}
           >
             <div className={TABLE_CELL} style={{ width: 120 }}>
-              <Badge variant={meta.variant} className={`gap-1 px-1.5 py-0 text-[10px] ${meta.className ?? ''}`}>
-                {STATUS_ICONS[displayStatus]}
-                {meta.label}
-              </Badge>
+              {run.error_message ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant={meta.variant} className={`cursor-help gap-1 px-1.5 py-0 text-[10px] ${meta.className ?? ''}`}>
+                      {STATUS_ICONS[displayStatus]}
+                      {meta.label}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start" className="max-w-[360px] whitespace-pre-wrap break-words px-3 py-2 text-xs leading-relaxed">
+                    {run.error_message}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <QuickTooltip label="View run">
+                  <Badge variant={meta.variant} className={`gap-1 px-1.5 py-0 text-[10px] ${meta.className ?? ''}`}>
+                    {STATUS_ICONS[displayStatus]}
+                    {meta.label}
+                  </Badge>
+                </QuickTooltip>
+              )}
             </div>
             <div className={`${TABLE_CELL} text-foreground`} style={{ width: 150 }}>
               <div className="flex min-w-0 items-center gap-1.5">
-                <AgentAvatar agent={agent} className="h-4 w-4" />
+                <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
                 <span className="truncate">{agentName}</span>
               </div>
             </div>
-            <div className={`${TABLE_CELL} text-muted-foreground`} style={{ flex: '1 1 0%', minWidth: 100 }}>
+            <div className={`${TABLE_CELL} text-muted-foreground`} style={{ flex: '1 1 0%', minWidth: 140 }}>
               {branch ? (
                 <QuickTooltip label={branch}>
                   <span className="truncate font-mono text-[11px]">{branchDisplay}</span>
@@ -113,8 +134,21 @@ export function AgentRunTable({ runs, agents, selectedRunId, onSelectRun, loadin
             <div className={`${TABLE_CELL} text-muted-foreground`} style={{ width: 130 }}>
               {formatDistanceToNow(parseISO(run.created_at), { addSuffix: true })}
             </div>
-            <div className={`${TABLE_CELL} justify-end text-muted-foreground`} style={{ width: 70 }}>
-              {run.tokens_used > 0 ? `${(run.tokens_used / 1000).toFixed(1)}k` : '-'}
+            <div className={`${TABLE_CELL} text-muted-foreground`} style={{ width: TOKEN_COLUMN_WIDTH }}>
+              {tokenBreakdown.length > 0 ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help tabular-nums">{totalTokens}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" align="start" className="space-y-1 px-3 py-2 text-xs">
+                    {tokenBreakdown.map((line) => (
+                      <div key={line}>{line}</div>
+                    ))}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <span className="tabular-nums">{totalTokens}</span>
+              )}
             </div>
           </button>
         );

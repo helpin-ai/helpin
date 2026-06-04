@@ -40,6 +40,18 @@ func AllRuntimeToolMetadata() []RuntimeToolMetadata {
 
 var sharedRuntimeTools = []RuntimeToolMetadata{
 	{
+		CommandName: "workspace.list_teams",
+		Alias:       "list_workspace_teams",
+		Category:    "Workspace",
+		Description: "List workspace teams that the agent can use for team selection, task filtering, or planning context.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+	},
+	{
 		CommandName: "docs.ensure_spec_doc",
 		Alias:       "ensure_epic_spec_doc",
 		Category:    "Docs",
@@ -82,17 +94,41 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		InputSchema: createTaskBatchSchema(),
 	},
 	{
+		CommandName: "pm.create_task",
+		Alias:       "create_task",
+		Category:    "PM / Tasks",
+		Description: "Create a single task for a team, optionally targeting a specific workflow and stage. If workflow_id or state_id are omitted, they are resolved from the team workflow defaults.",
+		InputSchema: createTaskSchema(),
+	},
+	{
+		CommandName: "pm.ensure_label",
+		Alias:       "ensure_task_label",
+		Category:    "PM / Tasks",
+		Description: "Create or return a PM task label in the current workspace. Use this before creating tasks that must carry a stable label.",
+		InputSchema: ensureTaskLabelSchema(),
+	},
+	{
+		CommandName: "pm.list_tasks",
+		Alias:       "list_tasks",
+		Category:    "PM / Tasks",
+		Description: "List tasks in the current workspace with optional label, team, open-only, description, and comment filters.",
+		InputSchema: listTasksSchema(),
+	},
+	{
+		CommandName: "pm.add_task_comment",
+		Alias:       "add_task_comment",
+		Category:    "PM / Tasks",
+		Description: "Add a markdown comment to a task. If task_id is omitted, defaults to the current task target when available.",
+		InputSchema: addTaskCommentSchema(),
+	},
+	{
 		CommandName: "pm.assign_task_agent",
 		Alias:       "assign_task_agent",
 		Category:    "PM / Tasks",
-		Description: "Assign or reassign an agent to an existing task.",
+		Description: "Deprecated. Task agent assignment was removed; use workflow automation rules or start a run explicitly with an agent.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"story_id": map[string]any{
-					"type":        "string",
-					"description": "Legacy alias for the task ID to assign",
-				},
 				"task_id": map[string]any{
 					"type":        "string",
 					"description": "The task ID to assign",
@@ -118,10 +154,8 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"source_story_id": map[string]any{"type": "string"},
-							"target_story_id": map[string]any{"type": "string"},
-							"source_task_id":  map[string]any{"type": "string"},
-							"target_task_id":  map[string]any{"type": "string"},
+							"source_task_id": map[string]any{"type": "string"},
+							"target_task_id": map[string]any{"type": "string"},
 						},
 					},
 				},
@@ -170,6 +204,72 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 				},
 			},
 			"required": []string{"document_id", "content"},
+		},
+	},
+	{
+		CommandName: "docs.create_document",
+		Alias:       "create_document",
+		Category:    "Docs",
+		Description: "Create a new document in Helpin Docs. Accepts optional markdown content that will be auto-converted to rich text.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"space_id": map[string]any{
+					"type":        "string",
+					"description": "The space ID where the document will be created",
+				},
+				"title": map[string]any{
+					"type":        "string",
+					"description": "The document title",
+				},
+				"collection_id": map[string]any{
+					"type":        "string",
+					"description": "Optional collection ID to place the document in",
+				},
+				"content": map[string]any{
+					"type":        "string",
+					"description": "Optional initial document content as a markdown string. Will be auto-converted to rich text.",
+				},
+				"icon": map[string]any{
+					"type":        "string",
+					"description": "Optional icon for the document",
+				},
+				"tags": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Optional tags for the document",
+				},
+			},
+			"required":             []string{"space_id", "title"},
+			"additionalProperties": false,
+		},
+	},
+	{
+		CommandName: "docs.update_document_block",
+		Alias:       "update_document_block",
+		Category:    "Docs",
+		Description: "Update one addressable block in a Helpin Docs document using its current revision.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"document_id": map[string]any{
+					"type":        "string",
+					"description": "The document ID to update",
+				},
+				"block_id": map[string]any{
+					"type":        "string",
+					"description": "The stable block ID to update",
+				},
+				"revision": map[string]any{
+					"type":        "integer",
+					"description": "The current block revision from read_document",
+				},
+				"content": map[string]any{
+					"type":        "object",
+					"description": "The replacement block node JSON",
+				},
+			},
+			"required": []string{"document_id", "block_id", "revision", "content"},
 		},
 	},
 	{
@@ -240,6 +340,125 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 			"required": []string{"deal_id", "content"},
 		},
 	},
+	{
+		CommandName: "crm.enrich_contact",
+		Alias:       "enrich_crm_contact",
+		Category:    "CRM",
+		Description: "Safely enrich a CRM contact with sourced public data. Names and existing email/phone are protected; core fields are fill-only and agent-owned metadata is namespaced.",
+		InputSchema: crmEnrichmentSchema("contact_id", []string{"email", "phone", "job_title", "avatar_url", "linkedin_url", "location", "enrichment_note"}),
+	},
+	{
+		CommandName: "crm.enrich_company",
+		Alias:       "enrich_crm_company",
+		Category:    "CRM",
+		Description: "Safely enrich a CRM company with sourced public data. Company name and existing domain are protected; core fields are fill-only and agent-owned metadata is namespaced.",
+		InputSchema: crmEnrichmentSchema("company_id", []string{"domain", "industry", "employee_count", "annual_revenue", "description", "logo_url", "linkedin_url", "headquarters", "enrichment_note"}),
+	},
+	{
+		CommandName: "crm.ensure_contact_company",
+		Alias:       "ensure_crm_contact_company",
+		Category:    "CRM",
+		Description: "Create or reuse a CRM company and associate it with a contact. Does not modify existing company identity fields.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"contact_id": map[string]any{
+					"type":        "string",
+					"description": "The contact ID to associate with a company. Defaults to the current CRM contact target when omitted by the runtime.",
+				},
+				"company_name": map[string]any{
+					"type":        "string",
+					"description": "The company name to create or match.",
+				},
+				"domain": map[string]any{
+					"type":        "string",
+					"description": "Optional company domain to match or set on a newly-created company.",
+				},
+				"source_url": map[string]any{
+					"type":        "string",
+					"description": "Public source URL supporting the company/contact relationship.",
+				},
+				"evidence": map[string]any{
+					"type":        "string",
+					"description": "Short explanation of the evidence for the relationship.",
+				},
+				"confidence": map[string]any{
+					"type":        "number",
+					"description": "Confidence from 0.0 to 1.0. Values below 0.70 are rejected.",
+					"minimum":     0,
+					"maximum":     1,
+				},
+				"association_label": map[string]any{
+					"type":        "string",
+					"description": "Optional association label. Defaults to primary.",
+				},
+				"dry_run": map[string]any{
+					"type":        "boolean",
+					"description": "When true, returns whether it would create/reuse/link without writing CRM records.",
+				},
+			},
+			"required":             []string{"contact_id", "company_name", "source_url", "evidence", "confidence"},
+			"additionalProperties": false,
+		},
+	},
+}
+
+func crmEnrichmentSchema(idField string, fieldEnum []string) map[string]any {
+	fieldItem := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"field": map[string]any{
+				"type":        "string",
+				"enum":        fieldEnum,
+				"description": "The guarded CRM field to enrich. Identity fields such as names are intentionally unavailable.",
+			},
+			"value": map[string]any{
+				"description": "The proposed field value. Use a string for text/url fields, an integer for employee_count, and a number for annual_revenue.",
+			},
+			"source_url": map[string]any{
+				"type":        "string",
+				"description": "Public source URL that supports the value.",
+			},
+			"evidence": map[string]any{
+				"type":        "string",
+				"description": "Short explanation of the evidence from the source.",
+			},
+			"confidence": map[string]any{
+				"type":        "number",
+				"description": "Confidence from 0.0 to 1.0. Values below 0.70 are rejected.",
+				"minimum":     0,
+				"maximum":     1,
+			},
+		},
+		"required":             []string{"field", "value", "source_url", "evidence", "confidence"},
+		"additionalProperties": false,
+	}
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			idField: map[string]any{
+				"type":        "string",
+				"description": "The CRM object ID to enrich.",
+			},
+			"fields": map[string]any{
+				"type":        "array",
+				"description": "Guarded field updates to apply. Existing protected values are skipped, not overwritten.",
+				"items":       fieldItem,
+				"minItems":    1,
+				"maxItems":    20,
+			},
+			"evidence_summary": map[string]any{
+				"type":        "string",
+				"description": "Brief summary of the researched evidence.",
+			},
+			"dry_run": map[string]any{
+				"type":        "boolean",
+				"description": "When true, returns what would be applied/skipped without writing CRM fields.",
+			},
+		},
+		"required":             []string{idField, "fields"},
+		"additionalProperties": false,
+	}
 }
 
 func createTaskBatchSchema() map[string]any {
@@ -314,18 +533,8 @@ func createTaskBatchSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"stories": map[string]any{
-				"description": "Legacy compatibility field. The list of tasks to create.",
-				"type":        "array",
-				"items":       taskSchema,
-			},
-			"proposed_stories": map[string]any{
-				"description": "Legacy compatibility alias for older task-plan payloads. If present, it is treated the same as tasks.",
-				"type":        "array",
-				"items":       taskSchema,
-			},
 			"tasks": map[string]any{
-				"description": "Preferred field. The list of tasks to create.",
+				"description": "The list of tasks to create.",
 				"type":        "array",
 				"items":       taskSchema,
 			},
@@ -335,5 +544,162 @@ func createTaskBatchSchema() map[string]any {
 				"items":       taskSchema,
 			},
 		},
+	}
+}
+
+func createTaskSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Task title",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "Optional task description",
+			},
+			"task_type": map[string]any{
+				"type":        "string",
+				"description": "Optional task type such as feature, bug, or chore",
+			},
+			"estimate": map[string]any{
+				"type":        "integer",
+				"description": "Optional estimate value",
+			},
+			"priority": map[string]any{
+				"type":        "string",
+				"description": "Optional priority such as low, medium, high, or urgent",
+			},
+			"epic_id": map[string]any{
+				"type":        "string",
+				"description": "Optional epic ID to link the task to",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Team ID that owns the task",
+			},
+			"workflow_id": map[string]any{
+				"type":        "string",
+				"description": "Optional workflow ID override. Defaults to the resolved team workflow.",
+			},
+			"state_id": map[string]any{
+				"type":        "string",
+				"description": "Optional workflow state ID override. Defaults to the resolved workflow default state.",
+			},
+			"owner_member_ids": map[string]any{
+				"type":        "array",
+				"description": "Optional workspace member IDs to assign as owners",
+				"items":       map[string]any{"type": "string"},
+			},
+			"label_ids": map[string]any{
+				"type":        "array",
+				"description": "Optional label IDs to attach to the task",
+				"items":       map[string]any{"type": "string"},
+			},
+			"deadline": map[string]any{
+				"type":        "string",
+				"description": "Optional deadline as YYYY-MM-DD or RFC3339",
+			},
+		},
+		"required":             []string{"name", "team_id"},
+		"additionalProperties": false,
+	}
+}
+
+func ensureTaskLabelSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name": map[string]any{
+				"type":        "string",
+				"description": "Label name to create or return, for example security.",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Optional team scope. Omit for a shared workspace label.",
+			},
+			"description": map[string]any{
+				"type":        "string",
+				"description": "Optional description used when the label is first created.",
+			},
+			"color": map[string]any{
+				"type":        "string",
+				"description": "Optional hex color used when the label is first created.",
+			},
+		},
+		"required":             []string{"name"},
+		"additionalProperties": false,
+	}
+}
+
+func listTasksSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"label_id": map[string]any{
+				"type":        "string",
+				"description": "Optional label ID filter.",
+			},
+			"team_id": map[string]any{
+				"type":        "string",
+				"description": "Optional team ID filter.",
+			},
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "Optional task ID. Omit to use the current task target when available.",
+			},
+			"owner_member_ids": map[string]any{
+				"type":        "array",
+				"description": "Optional workspace member IDs. When present, only tasks owned by at least one of these members are returned.",
+				"items": map[string]any{
+					"type": "string",
+				},
+			},
+			"owned_by_actor": map[string]any{
+				"type":        "boolean",
+				"description": "When true, filter to tasks owned by the current workspace actor.",
+			},
+			"open_only": map[string]any{
+				"type":        "boolean",
+				"description": "When true, only return non-completed, non-archived tasks.",
+			},
+			"include_descriptions": map[string]any{
+				"type":        "boolean",
+				"description": "When true, include task descriptions in the response.",
+			},
+			"include_comments": map[string]any{
+				"type":        "boolean",
+				"description": "When true, include recent task comments in the response.",
+			},
+			"detail_level": map[string]any{
+				"type":        "string",
+				"description": "Optional response shape. Use compact for bounded task rows with short description/comment excerpts.",
+				"enum":        []string{"summary", "compact", "full"},
+			},
+			"limit": map[string]any{
+				"type":        "integer",
+				"description": "Maximum tasks to return. Defaults to 50, max 100.",
+			},
+		},
+		"additionalProperties": false,
+	}
+}
+
+func addTaskCommentSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{
+				"type":        "string",
+				"description": "Optional task ID. Omit to use the current task target when available.",
+			},
+			"content": map[string]any{
+				"type":        "string",
+				"description": "The markdown comment body.",
+			},
+		},
+		"required":             []string{"content"},
+		"additionalProperties": false,
 	}
 }

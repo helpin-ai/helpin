@@ -19,17 +19,19 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
+import { Cancel01Icon, Copy01Icon, PlusSignIcon, ArrowReloadHorizontalIcon, Search01Icon, Delete01Icon, UserGroupIcon, SecurityCheckIcon, Shield01Icon } from '@/lib/icons';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 
-export function MembersTab({ workspaceId, organizationId, editable, teams, userMemberships }: {
+export function MembersTab({ workspaceId, organizationId, editable, canManageTeams = false, teams, userMemberships, onRefresh }: {
   workspaceId: string;
   organizationId?: string;
   editable: boolean;
+  canManageTeams?: boolean;
   teams: WorkspaceTeam[];
   userMemberships: TeamUserMembership[];
+  onRefresh?: () => void | Promise<void>;
 }) {
   const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -45,6 +47,8 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [removeMemberConfirm, setRemoveMemberConfirm] = useState<MemberWithUser | null>(null);
+  const [teamMutation, setTeamMutation] = useState<{ userId: string; teamId: string } | null>(null);
+  const [openTeamPickerUserId, setOpenTeamPickerUserId] = useState<string | null>(null);
   const { user } = useAuthStore();
 
   const { data: orgMembers } = useOrganizationMembers(organizationId);
@@ -62,20 +66,20 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     );
   }, [orgMembers, members, invitations]);
 
-  const teamNamesByUserId = useMemo(() => {
-    const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
-    const memberships = new Map<string, string[]>();
+  const teamsByUserId = useMemo(() => {
+    const teamById = new Map(teams.map((team) => [team.id, team]));
+    const memberships = new Map<string, { id: string; name: string }[]>();
 
     userMemberships.forEach((membership) => {
-      const teamName = teamNameById.get(membership.team_id);
-      if (!teamName) return;
+      const team = teamById.get(membership.team_id);
+      if (!team) return;
       const current = memberships.get(membership.user_id) ?? [];
-      current.push(teamName);
+      current.push({ id: team.id, name: team.name });
       memberships.set(membership.user_id, current);
     });
 
-    memberships.forEach((names, userId) => {
-      memberships.set(userId, [...names].sort((a, b) => a.localeCompare(b)));
+    memberships.forEach((teamList, userId) => {
+      memberships.set(userId, [...teamList].sort((a, b) => a.name.localeCompare(b.name)));
     });
 
     return memberships;
@@ -150,14 +154,14 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
     setInvEmailInput('');
     setSending(true);
     let sent = 0;
-    const failedEmails: string[] = [];
+    const failures: { email: string; error: string }[] = [];
     let lastJoinUrl: string | null = null;
 
     await Promise.all(
       emails.map(async (email) => {
         const { data, error } = await inviteService.send({ workspace_id: workspaceId, email, role: invRole });
         if (error) {
-          failedEmails.push(email);
+          failures.push({ email, error });
         } else {
           if (data?.id && selectedTeamIds.length > 0) {
             await Promise.all(
@@ -172,12 +176,22 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
 
     setSending(false);
 
-    if (sent > 0 && failedEmails.length > 0) {
-      toast.warning(`${sent} of ${emails.length} invitations sent. Failed: ${failedEmails.join(', ')}`);
+    const failureLines = failures.map((f) => `${f.email}: ${f.error}`);
+
+    if (sent > 0 && failures.length > 0) {
+      toast.warning(`${sent} of ${emails.length} invitations sent`, {
+        description: failureLines.join('\n'),
+      });
     } else if (sent > 0) {
       toast.success(`${sent} invitation${sent === 1 ? '' : 's'} sent`);
+    } else if (failures.length === 1) {
+      toast.error(`Failed to invite ${failures[0].email}`, {
+        description: failures[0].error,
+      });
     } else {
-      toast.error(`Failed to send invitations: ${failedEmails.join(', ')}`);
+      toast.error('Failed to send invitations', {
+        description: failureLines.join('\n'),
+      });
     }
 
     if (sent > 0) {
@@ -209,6 +223,65 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
       toast.success('Invitation revoked');
       setInvitations((prev) => prev.filter((inv) => inv.id !== id));
     }
+  };
+
+  const undoAddMemberToTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
+    const { error } = await settingsService.removeTeamMember(workspaceId, team.id, member.user_id);
+    if (error) {
+      toast.error(`Couldn't undo`, { description: error });
+      return;
+    }
+    await onRefresh?.();
+  };
+
+  const undoRemoveMemberFromTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
+    const { error } = await settingsService.addTeamMember(workspaceId, team.id, {
+      user_id: member.user_id,
+      role: 'member',
+    });
+    if (error) {
+      toast.error(`Couldn't undo`, { description: error });
+      return;
+    }
+    await onRefresh?.();
+  };
+
+  const handleAddMemberToTeam = async (member: MemberWithUser, team: WorkspaceTeam) => {
+    setTeamMutation({ userId: member.user_id, teamId: team.id });
+    const { error } = await settingsService.addTeamMember(workspaceId, team.id, {
+      user_id: member.user_id,
+      role: 'member',
+    });
+    setTeamMutation(null);
+    if (error) {
+      toast.error(`Couldn't add to ${team.name}`, { description: error });
+      return;
+    }
+    toast.success(`Added to ${team.name}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => void undoAddMemberToTeam(member, { id: team.id, name: team.name }),
+      },
+    });
+    setOpenTeamPickerUserId(null);
+    await onRefresh?.();
+  };
+
+  const handleRemoveMemberFromTeam = async (member: MemberWithUser, team: { id: string; name: string }) => {
+    setTeamMutation({ userId: member.user_id, teamId: team.id });
+    const { error } = await settingsService.removeTeamMember(workspaceId, team.id, member.user_id);
+    setTeamMutation(null);
+    if (error) {
+      toast.error(`Couldn't remove from ${team.name}`, { description: error });
+      return;
+    }
+    toast.success(`Removed from ${team.name}`, {
+      action: {
+        label: 'Undo',
+        onClick: () => void undoRemoveMemberFromTeam(member, team),
+      },
+    });
+    await onRefresh?.();
   };
 
   const canEditMemberRole = (member: MemberWithUser) => {
@@ -295,133 +368,6 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
           </div>
         </div>
 
-        {members.length === 0 ? (
-          <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border text-center">
-            <div className="space-y-1">
-              <p className="font-medium">No members yet</p>
-              <p className="text-sm text-muted-foreground">
-                Invite teammates to give them access to this workspace.
-              </p>
-            </div>
-            {editable && (
-              <Button onClick={openInviteDialog}>
-                <PlusSignIcon className="h-4 w-4 mr-1" />
-                Invite Member
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead className="w-[280px]">Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teams</TableHead>
-                  <TableHead className="w-[120px]">Role</TableHead>
-                  {editable && <TableHead className="w-[72px] text-right">Actions</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredMembers.map((m) => {
-                  const teamNames = teamNamesByUserId.get(m.user_id) ?? [];
-                  const hasWorkspaceWideTeamAccess = m.role === 'owner' || m.role === 'admin';
-                  const hasAllTeams = hasWorkspaceWideTeamAccess || (teams.length > 0 && teamNames.length === teams.length);
-                  const presenceStatus = memberPresenceByUserId?.get(m.user_id)?.status ?? null;
-
-                  return (
-                    <TableRow key={m.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <UserAvatar
-                            name={m.full_name || m.email}
-                            avatarUrl={m.avatar_url}
-                            avatarStyle={m.avatar_style}
-                            avatarSeed={m.avatar_seed}
-                            avatarBackgroundMode={m.avatar_background_mode}
-                            avatarBackgroundColor={m.avatar_background_color}
-                            presenceStatus={presenceStatus}
-                            className="h-8 w-8"
-                            fallbackClassName="text-[10px]"
-                          />
-                          <div className="min-w-0">
-                            <p className="truncate font-medium">{m.full_name || '—'}</p>
-                            {!m.full_name && (
-                              <p className="truncate text-xs text-muted-foreground">{m.email}</p>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{m.email}</TableCell>
-                      <TableCell>
-                        {hasAllTeams ? (
-                          <Badge variant="outline" className="text-xs font-normal">
-                            All teams
-                          </Badge>
-                        ) : teamNames.length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {teamNames.map((teamName) => (
-                              <Badge key={`${m.user_id}-${teamName}`} variant="outline" className="text-xs font-normal">
-                                {teamName}
-                              </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {canEditMemberRole(m) ? (
-                          <Select
-                            value={m.role}
-                            onValueChange={(value) => void handleUpdateRole(m, value as 'owner' | 'admin' | 'member' | 'viewer')}
-                            disabled={updatingMemberId === m.id}
-                          >
-                            <SelectTrigger size="sm" className="h-7 w-[116px] px-2.5 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="text-xs">
-                              {roleOptions(m).map((option) => (
-                                <SelectItem key={`${m.id}-${option.value}`} value={option.value} className="py-1 text-xs">
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
-                        )}
-                      </TableCell>
-                      {editable && (
-                        <TableCell className="text-right">
-                          {canRemoveMember(m) ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                              disabled={removingMemberId === m.id}
-                              onClick={() => setRemoveMemberConfirm(m)}
-                            >
-                              <Delete01Icon className="h-3.5 w-3.5" />
-                            </Button>
-                          ) : null}
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  );
-                })}
-                {filteredMembers.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={editable ? 5 : 4} className="py-8 text-center text-sm text-muted-foreground">
-                      No members match your search.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-
         {editable && pendingInvitations.length > 0 && (
           <div className="space-y-3">
             <div>
@@ -474,6 +420,222 @@ export function MembersTab({ workspaceId, organizationId, editable, teams, userM
                 </TableBody>
               </Table>
             </div>
+          </div>
+        )}
+
+        {members.length === 0 ? (
+          <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border text-center">
+            <div className="space-y-1">
+              <p className="font-medium">No members yet</p>
+              <p className="text-sm text-muted-foreground">
+                Invite teammates to give them access to this workspace.
+              </p>
+            </div>
+            {editable && (
+              <Button onClick={openInviteDialog}>
+                <PlusSignIcon className="h-4 w-4 mr-1" />
+                Invite Member
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-[280px]">Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Teams</TableHead>
+                  <TableHead className="w-[88px] text-center">2FA</TableHead>
+                  <TableHead className="w-[120px]">Role</TableHead>
+                  {editable && <TableHead className="w-[72px] text-right">Actions</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredMembers.map((m) => {
+                  const memberTeams = teamsByUserId.get(m.user_id) ?? [];
+                  const hasWorkspaceWideTeamAccess = m.role === 'owner' || m.role === 'admin';
+                  const memberTeamIds = new Set(memberTeams.map((t) => t.id));
+                  const availableTeams = teams.filter((t) => !memberTeamIds.has(t.id));
+                  const canEditTeams = editable && canManageTeams && !hasWorkspaceWideTeamAccess;
+                  const presenceStatus = memberPresenceByUserId?.get(m.user_id)?.status ?? null;
+
+                  return (
+                    <TableRow key={m.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <UserAvatar
+                            name={m.full_name || m.email}
+                            avatarUrl={m.avatar_url}
+                            avatarStyle={m.avatar_style}
+                            avatarSeed={m.avatar_seed}
+                            avatarBackgroundMode={m.avatar_background_mode}
+                            avatarBackgroundColor={m.avatar_background_color}
+                            presenceStatus={presenceStatus}
+                            className="h-8 w-8"
+                            fallbackClassName="text-[10px]"
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{m.full_name || '—'}</p>
+                            {!m.full_name && (
+                              <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{m.email}</TableCell>
+                      <TableCell>
+                        {hasWorkspaceWideTeamAccess ? (
+                          <Badge variant="outline" className="text-xs font-normal">
+                            All teams
+                          </Badge>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {memberTeams.map((team) => {
+                              const isRemoving =
+                                teamMutation?.userId === m.user_id && teamMutation?.teamId === team.id;
+                              return (
+                                <Badge
+                                  key={`${m.user_id}-${team.id}`}
+                                  variant="outline"
+                                  className={cn(
+                                    'text-xs font-normal',
+                                    canEditTeams && 'pr-1 gap-1',
+                                  )}
+                                >
+                                  <span>{team.name}</span>
+                                  {canEditTeams && (
+                                    <QuickTooltip label="Remove from team">
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleRemoveMemberFromTeam(m, team)}
+                                        disabled={isRemoving}
+                                        aria-label={`Remove from ${team.name}`}
+                                        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                                      >
+                                        <Cancel01Icon className="h-3 w-3" />
+                                      </button>
+                                    </QuickTooltip>
+                                  )}
+                                </Badge>
+                              );
+                            })}
+                            {memberTeams.length === 0 && !canEditTeams && (
+                              <span className="text-sm text-muted-foreground">-</span>
+                            )}
+                            {canEditTeams && availableTeams.length > 0 && (
+                              <Popover
+                                open={openTeamPickerUserId === m.user_id}
+                                onOpenChange={(open) =>
+                                  setOpenTeamPickerUserId(open ? m.user_id : null)
+                                }
+                              >
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+                                  >
+                                    <PlusSignIcon className="h-3 w-3" />
+                                    Add team
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent align="start" className="w-56 p-0">
+                                  <Command>
+                                    <CommandInput placeholder="Search teams..." />
+                                    <CommandList>
+                                      <CommandEmpty>No teams found.</CommandEmpty>
+                                      <CommandGroup>
+                                        {availableTeams.map((team) => {
+                                          const isAdding =
+                                            teamMutation?.userId === m.user_id &&
+                                            teamMutation?.teamId === team.id;
+                                          return (
+                                            <CommandItem
+                                              key={team.id}
+                                              value={team.name}
+                                              onSelect={() => void handleAddMemberToTeam(m, team)}
+                                              disabled={isAdding}
+                                            >
+                                              {team.name}
+                                            </CommandItem>
+                                          );
+                                        })}
+                                      </CommandGroup>
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {m.two_fa_enabled ? (
+                          <QuickTooltip label="Enabled">
+                            <span className="inline-flex items-center justify-center text-emerald-600">
+                              <SecurityCheckIcon className="h-4 w-4" />
+                            </span>
+                          </QuickTooltip>
+                        ) : (
+                          <QuickTooltip label="Not enabled">
+                            <span className="inline-flex items-center justify-center text-muted-foreground">
+                              <Shield01Icon className="h-4 w-4" />
+                            </span>
+                          </QuickTooltip>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {canEditMemberRole(m) ? (
+                          <Select
+                            value={m.role}
+                            onValueChange={(value) => void handleUpdateRole(m, value as 'owner' | 'admin' | 'member' | 'viewer')}
+                            disabled={updatingMemberId === m.id}
+                          >
+                            <SelectTrigger size="sm" className="h-7 w-[116px] px-2.5 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="text-xs">
+                              {roleOptions(m).map((option) => (
+                                <SelectItem key={`${m.id}-${option.value}`} value={option.value} className="py-1 text-xs">
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge variant={m.role === 'owner' ? 'default' : 'outline'} className="text-xs">{m.role}</Badge>
+                        )}
+                      </TableCell>
+                      {editable && (
+                        <TableCell className="text-right">
+                          {canRemoveMember(m) ? (
+                            <QuickTooltip label="Remove from workspace">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                                disabled={removingMemberId === m.id}
+                                onClick={() => setRemoveMemberConfirm(m)}
+                                aria-label="Remove from workspace"
+                              >
+                                <Delete01Icon className="h-3.5 w-3.5" />
+                              </Button>
+                            </QuickTooltip>
+                          ) : null}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
+                {filteredMembers.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={editable ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">
+                      No members match your search.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

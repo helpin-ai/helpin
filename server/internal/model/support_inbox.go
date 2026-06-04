@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // SupportConversation represents a support conversation (renamed from SupportTicket).
@@ -42,22 +44,28 @@ type SupportConversation struct {
 	AIResolutionType         *string    `json:"ai_resolution_type"` // "confirmed", "assumed", null
 	AITurnCount              int        `json:"ai_turn_count" gorm:"not null;default:0"`
 	CustomerRequestedHumanAt *time.Time `json:"customer_requested_human_at" gorm:"type:timestamptz"`
+	HumanTakeover            *bool      `json:"human_takeover" gorm:"default:false;index"`
 
 	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
-	LastMessage         *string                    `json:"last_message,omitempty" gorm:"->"`
-	UnreadCount         int                        `json:"unread_count" gorm:"->"`
-	CountryCode         *string                    `json:"country_code,omitempty" gorm:"->"`
-	CountryName         *string                    `json:"country_name,omitempty" gorm:"->"`
-	OpenedByDisplayName *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
-	OpenedByAvatarURL   *string                    `json:"opened_by_avatar_url,omitempty" gorm:"-"`
-	OpenedByStatus      *string                    `json:"opened_by_status,omitempty" gorm:"-"`
-	MailboxName         *string                    `json:"mailbox_name,omitempty" gorm:"->"`
-	MailboxHandle       *string                    `json:"mailbox_handle,omitempty" gorm:"->"`
-	MailboxIcon         *string                    `json:"mailbox_icon,omitempty" gorm:"->"`
-	Triage              *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
+	LastMessage                  *string                    `json:"last_message,omitempty" gorm:"->"`
+	LastMessageSenderType        *string                    `json:"last_message_sender_type,omitempty" gorm:"->"`
+	LastMessageSenderDisplayName *string                    `json:"last_message_sender_display_name,omitempty" gorm:"->"`
+	UnreadCount                  int                        `json:"unread_count" gorm:"->"`
+	AwaitingReply                bool                       `json:"awaiting_reply" gorm:"->"`
+	CountryCode                  *string                    `json:"country_code,omitempty" gorm:"->"`
+	CountryName                  *string                    `json:"country_name,omitempty" gorm:"->"`
+	OpenedByDisplayName          *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
+	OpenedByAvatarURL            *string                    `json:"opened_by_avatar_url,omitempty" gorm:"-"`
+	OpenedByStatus               *string                    `json:"opened_by_status,omitempty" gorm:"-"`
+	MailboxName                  *string                    `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle                *string                    `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon                  *string                    `json:"mailbox_icon,omitempty" gorm:"->"`
+	Triage                       *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
+	Tags                         []SupportTag               `json:"tags,omitempty" gorm:"-"`
+	SystemTags                   []string                   `json:"system_tags,omitempty" gorm:"-"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }
@@ -75,6 +83,13 @@ const (
 	SupportConversationFlowStateAssignedToHuman = "assigned_to_human"
 	SupportConversationFlowStateResolvedByAI    = "resolved_by_ai"
 	SupportConversationFlowStateResolvedByHuman = "resolved_by_human"
+)
+
+const (
+	SupportConversationListFilterInbox    = "inbox"
+	SupportConversationListFilterMine     = "mine"
+	SupportConversationListFilterMentions = "mentions"
+	SupportConversationListFilterResolved = "resolved"
 )
 
 func NormalizeSupportConversationStatus(status string) string {
@@ -144,10 +159,17 @@ type UpdateSupportTeammatePresenceRequest struct {
 
 // UnreadStats holds aggregate unread conversation counts for sidebar badges.
 type UnreadStats struct {
-	Total      int `json:"total"`
-	MyInbox    int `json:"my_inbox"`
-	Unassigned int `json:"unassigned"`
-	AIActive   int `json:"ai_active"`
+	Inbox         int `json:"inbox"`
+	Mine          int `json:"mine"`
+	Waiting       int `json:"waiting"`
+	AIActive      int `json:"ai_active"`
+	Total         int `json:"total"`
+	MyInbox       int `json:"my_inbox"`
+	Unassigned    int `json:"unassigned"`
+	InboxTotal    int `json:"inbox_total"`
+	MineTotal     int `json:"mine_total"`
+	WaitingTotal  int `json:"waiting_total"`
+	AIActiveTotal int `json:"ai_active_total"`
 }
 
 type SupportInboxScope struct {
@@ -157,6 +179,7 @@ type SupportInboxScope struct {
 	Icon         string  `json:"icon"`
 	IsShared     bool    `json:"is_shared"`
 	IsDefault    bool    `json:"is_default"`
+	TotalCount   int     `json:"total_count"`
 	UnreadCount  int     `json:"unread_count"`
 	Active       bool    `json:"active"`
 	LinkedTeamID *string `json:"linked_team_id,omitempty"`
@@ -165,6 +188,13 @@ type SupportInboxScope struct {
 type SupportInboxScopeListResponse struct {
 	SharedInbox SupportInboxScope   `json:"shared_inbox"`
 	Mailboxes   []SupportInboxScope `json:"mailboxes"`
+}
+
+// SupportWorkspaceUnreadCount is the per-workspace unread aggregate returned by
+// the workspace-switcher badge endpoint.
+type SupportWorkspaceUnreadCount struct {
+	WorkspaceID string `json:"workspace_id"`
+	UnreadCount int    `json:"unread_count"`
 }
 
 // ConversationListMeta holds metadata returned alongside paginated conversation lists.
@@ -189,6 +219,7 @@ type SupportMessage struct {
 	ConversationID    string     `json:"conversation_id" gorm:"type:uuid;index"`
 	SenderType        string     `json:"sender_type" gorm:"not null"`                  // customer, user, agent, ai
 	MessageType       string     `json:"message_type" gorm:"not null;default:'reply'"` // reply, csat_survey, system
+	SystemEventType   *string    `json:"system_event_type,omitempty" gorm:"size:40;index:idx_support_messages_system_event,where:system_event_type IS NOT NULL"`
 	SenderUserID      *string    `json:"sender_user_id" gorm:"type:uuid"`
 	SenderAgentID     *string    `json:"sender_agent_id" gorm:"type:uuid"`
 	SenderDisplayName *string    `json:"sender_display_name"`
@@ -201,9 +232,31 @@ type SupportMessage struct {
 	EmailReadAt       *time.Time `json:"email_read_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+	// CancellableUntil is the moment the email-fallback timer fires for an
+	// outbound agent reply. Until this passes, the agent can soft-delete the
+	// message and the queued email is removed from the per-conversation Redis
+	// outbox. NULL for messages that aren't subject to email fallback.
+	CancellableUntil *time.Time `json:"cancellable_until,omitempty" gorm:"index"`
+	// DeletedAt enables GORM soft-delete: removed messages keep their row
+	// (auditability) but are filtered out of every read path automatically.
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 
-	// Virtual field — populated by service layer, not stored in DB.
+	// Virtual fields — populated by service layer, not stored in DB.
 	Attachments []SupportAttachmentPayload `json:"attachments,omitempty" gorm:"-"`
+	// HTMLBody is the sanitized HTML variant of an inbound email's body, loaded
+	// from the linked support_email_logs row. Only populated for messages
+	// where ViaChannel == "email" and an email log exists.
+	HTMLBody string `json:"html_body,omitempty" gorm:"-"`
+	// StrippedText is the markdown-friendly plaintext variant of an inbound
+	// email's body. Same population rules as HTMLBody.
+	StrippedText string `json:"stripped_text,omitempty" gorm:"-"`
+	// EmailDeliveryStatus mirrors the linked outbound support_email_log's status
+	// ("sent", "delivered", "opened", "bounced", "spam_complaint"). Only set
+	// when an email log exists for the message.
+	EmailDeliveryStatus string `json:"email_delivery_status,omitempty" gorm:"-"`
+	// EmailDeliveryError surfaces the bounce/complaint description when the
+	// email's delivery failed. Empty otherwise.
+	EmailDeliveryError string `json:"email_delivery_error,omitempty" gorm:"-"`
 }
 
 func (SupportMessage) TableName() string { return "support_messages" }
@@ -222,9 +275,9 @@ type SupportLinkPreview struct {
 type SupportCannedResponse struct {
 	ID          string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	ShortCode   string    `json:"short_code" gorm:"not null"` // e.g., "greeting", "thanks"
-	Title       string    `json:"title" gorm:"not null"`
+	ShortCode   string    `json:"short_code" gorm:"not null"` // e.g., "!greeting", "!thanks"
 	Content     string    `json:"content" gorm:"not null"`
+	Tag         string    `json:"tag" gorm:"not null;default:'General'"`
 	CreatedByID string    `json:"created_by_id" gorm:"type:uuid"`
 	CreatedAt   time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt   time.Time `json:"updated_at" gorm:"autoUpdateTime"`
@@ -275,22 +328,27 @@ type SupportWidgetSession struct {
 func (SupportWidgetSession) TableName() string { return "support_widget_sessions" }
 
 type SupportMailbox struct {
-	ID             string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID    string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name           string    `json:"name" gorm:"not null"`
-	Handle         string    `json:"handle" gorm:"not null"`
-	Icon           string    `json:"icon" gorm:"not null;default:'inbox'"`
-	Description    *string   `json:"description"`
-	RoutingPrompt  *string   `json:"routing_prompt"`
-	TriageEligible bool      `json:"triage_eligible" gorm:"not null;default:true"`
-	LinkedTeamID   *string   `json:"linked_team_id" gorm:"type:uuid"`
-	VisibilityMode string    `json:"visibility_mode" gorm:"not null;default:'members_only'"`
-	AssignmentMode string    `json:"assignment_mode" gorm:"not null;default:'manual'"`
-	Position       int       `json:"position" gorm:"not null;default:0"`
-	Active         bool      `json:"active" gorm:"not null;default:true"`
-	CreatedByID    string    `json:"created_by_id" gorm:"type:uuid;not null"`
-	CreatedAt      time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt      time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	ID             string  `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID    string  `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name           string  `json:"name" gorm:"not null"`
+	Handle         string  `json:"handle" gorm:"not null"`
+	Icon           string  `json:"icon" gorm:"not null;default:'inbox'"`
+	Description    *string `json:"description"`
+	RoutingPrompt  *string `json:"routing_prompt"`
+	TriageEligible bool    `json:"triage_eligible" gorm:"not null;default:true"`
+	LinkedTeamID   *string `json:"linked_team_id" gorm:"type:uuid"`
+	VisibilityMode string  `json:"visibility_mode" gorm:"not null;default:'members_only'"`
+	AssignmentMode string  `json:"assignment_mode" gorm:"not null;default:'manual'"`
+	// ReplyTimePreset / ReplyTimeCustomMinutes override the workspace-wide
+	// reply-time expectation for conversations routed into this mailbox.
+	// Nil preset means "inherit workspace default".
+	ReplyTimePreset        *string   `json:"reply_time_preset,omitempty" gorm:"size:20;default:null"`
+	ReplyTimeCustomMinutes *int      `json:"reply_time_custom_minutes,omitempty" gorm:"default:null"`
+	Position               int       `json:"position" gorm:"not null;default:0"`
+	Active                 bool      `json:"active" gorm:"not null;default:true"`
+	CreatedByID            string    `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt              time.Time `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt              time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	LinkedTeamName *string `json:"linked_team_name,omitempty" gorm:"->"`
 	MemberCount    int     `json:"member_count,omitempty" gorm:"->"`
@@ -445,6 +503,94 @@ type CreateSupportEmailRouteRequest struct {
 
 type DisableSupportEmailRouteRequest struct{}
 
+type SupportEmailSenderDomain struct {
+	ID                         string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_support_email_sender_domain_workspace_domain"`
+	Domain                     string     `json:"domain" gorm:"not null;uniqueIndex:idx_support_email_sender_domain_workspace_domain"`
+	FromLocalPart              string     `json:"from_local_part" gorm:"not null;default:'support'"`
+	PostmarkDomainID           *int       `json:"postmark_domain_id,omitempty" gorm:"uniqueIndex"`
+	ReturnPathDomain           string     `json:"return_path_domain"`
+	ReturnPathDomainCNAMEValue string     `json:"return_path_domain_cname_value"`
+	ReturnPathDomainVerified   bool       `json:"return_path_domain_verified" gorm:"not null;default:false"`
+	DKIMHost                   string     `json:"dkim_host"`
+	DKIMTextValue              string     `json:"dkim_text_value"`
+	DKIMPendingHost            string     `json:"dkim_pending_host"`
+	DKIMPendingTextValue       string     `json:"dkim_pending_text_value"`
+	DKIMVerified               bool       `json:"dkim_verified" gorm:"not null;default:false"`
+	DKIMUpdateStatus           string     `json:"dkim_update_status"`
+	Status                     string     `json:"status" gorm:"not null;default:'pending_dns';index"`
+	Active                     bool       `json:"active" gorm:"not null;default:false;index"`
+	LastCheckedAt              *time.Time `json:"last_checked_at,omitempty"`
+	LastError                  *string    `json:"last_error,omitempty"`
+	CreatedByID                string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt                  time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                  time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (SupportEmailSenderDomain) TableName() string { return "support_email_sender_domains" }
+
+type CreateSupportEmailSenderDomainRequest struct {
+	Domain        string `json:"domain"`
+	FromLocalPart string `json:"from_local_part"`
+}
+
+type SupportEmailSender struct {
+	ID                          string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                 string     `json:"workspace_id" gorm:"type:uuid;not null;index;uniqueIndex:idx_support_email_sender_workspace_email"`
+	MailboxID                   *string    `json:"mailbox_id,omitempty" gorm:"type:uuid;index"`
+	Email                       string     `json:"email" gorm:"not null;uniqueIndex:idx_support_email_sender_workspace_email"`
+	LocalPart                   string     `json:"local_part" gorm:"not null"`
+	Domain                      string     `json:"domain" gorm:"not null;index"`
+	DisplayName                 string     `json:"display_name"`
+	PostmarkDomainID            *int       `json:"postmark_domain_id,omitempty" gorm:"index"`
+	ReturnPathDomain            string     `json:"return_path_domain"`
+	ReturnPathDomainCNAMEValue  string     `json:"return_path_domain_cname_value"`
+	ReturnPathDomainVerified    bool       `json:"return_path_domain_verified" gorm:"not null;default:false"`
+	DKIMHost                    string     `json:"dkim_host"`
+	DKIMTextValue               string     `json:"dkim_text_value"`
+	DKIMPendingHost             string     `json:"dkim_pending_host"`
+	DKIMPendingTextValue        string     `json:"dkim_pending_text_value"`
+	DKIMVerified                bool       `json:"dkim_verified" gorm:"not null;default:false"`
+	DKIMUpdateStatus            string     `json:"dkim_update_status"`
+	DMARCHost                   string     `json:"dmarc_host"`
+	DMARCPolicy                 string     `json:"dmarc_policy"`
+	DMARCRecordPresent          bool       `json:"dmarc_record_present" gorm:"not null;default:false"`
+	DMARCLastCheckedAt          *time.Time `json:"dmarc_last_checked_at,omitempty"`
+	DomainStatus                string     `json:"domain_status" gorm:"not null;default:'pending_dns';index"`
+	ForwardingStatus            string     `json:"forwarding_status" gorm:"not null;default:'not_started';index"`
+	ForwardingVerificationToken string     `json:"-" gorm:"uniqueIndex"`
+	ForwardingAddress           string     `json:"forwarding_address"`
+	ForwardingVerifiedAt        *time.Time `json:"forwarding_verified_at,omitempty"`
+	ForwardingLastCheckedAt     *time.Time `json:"forwarding_last_checked_at,omitempty"`
+	ForwardingLastError         *string    `json:"forwarding_last_error,omitempty"`
+	EmailRouteID                *string    `json:"email_route_id,omitempty" gorm:"type:uuid;index"`
+	VerificationStatus          string     `json:"verification_status" gorm:"not null;default:'pending_dns';index"`
+	DefaultScope                string     `json:"default_scope" gorm:"not null;default:'none';index"`
+	Active                      bool       `json:"active" gorm:"not null;default:false;index"`
+	LastCheckedAt               *time.Time `json:"last_checked_at,omitempty"`
+	LastError                   *string    `json:"last_error,omitempty"`
+	CreatedByID                 string     `json:"created_by_id" gorm:"type:uuid;not null"`
+	CreatedAt                   time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                   time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+
+	MailboxName   *string `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle *string `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon   *string `json:"mailbox_icon,omitempty" gorm:"->"`
+}
+
+func (SupportEmailSender) TableName() string { return "support_email_senders" }
+
+type CreateSupportEmailSenderRequest struct {
+	Email       string  `json:"email"`
+	DisplayName string  `json:"display_name"`
+	MailboxID   *string `json:"mailbox_id"`
+}
+
+type SetSupportEmailSenderDefaultRequest struct {
+	DefaultScope string  `json:"default_scope"`
+	MailboxID    *string `json:"mailbox_id"`
+}
+
 type CreateSupportMailboxRequest struct {
 	Name               string   `json:"name"`
 	Handle             string   `json:"handle"`
@@ -469,6 +615,14 @@ type UpdateSupportMailboxRequest struct {
 	WorkspaceMemberIDs []string `json:"workspace_member_ids,omitempty"`
 	AssignmentMode     *string  `json:"assignment_mode,omitempty"`
 	ImportLinkedTeam   bool     `json:"import_linked_team,omitempty"`
+
+	// ReplyTimePreset overrides the workspace default for conversations in
+	// this mailbox. Pass an explicit value to set; set ClearReplyTimePreset
+	// to true to clear the override and inherit from workspace again.
+	ReplyTimePreset             *string `json:"reply_time_preset,omitempty"`
+	ReplyTimeCustomMinutes      *int    `json:"reply_time_custom_minutes,omitempty"`
+	ClearReplyTimePreset        *bool   `json:"clear_reply_time_preset,omitempty"`
+	ClearReplyTimeCustomMinutes *bool   `json:"clear_reply_time_custom_minutes,omitempty"`
 }
 
 type ReorderSupportMailboxesRequest struct {
@@ -523,17 +677,37 @@ type LinkStoryRequest struct {
 
 // CreateTaskFromConversationRequest creates a PM task from the current support conversation.
 type CreateTaskFromConversationRequest struct {
-	TaskType        *string `json:"task_type,omitempty"`
-	Priority        *string `json:"priority,omitempty"`
-	TeamID          *string `json:"team_id,omitempty"`
-	WorkflowID      *string `json:"workflow_id,omitempty"`
-	WorkflowStateID *string `json:"workflow_state_id,omitempty"`
-	OwnerMemberID   *string `json:"owner_member_id,omitempty"`
+	Name              *string                      `json:"name,omitempty"`
+	Description       *string                      `json:"description,omitempty"`
+	TaskType          *string                      `json:"task_type,omitempty"`
+	WorkflowID        *string                      `json:"workflow_id,omitempty"`
+	WorkflowStateID   *string                      `json:"workflow_state_id,omitempty"`
+	EpicID            *string                      `json:"epic_id,omitempty"`
+	SprintID          *string                      `json:"sprint_id,omitempty"`
+	TeamID            *string                      `json:"team_id,omitempty"`
+	OwnerMemberID     *string                      `json:"owner_member_id,omitempty"`
+	RequesterMemberID *string                      `json:"requester_member_id,omitempty"`
+	Estimate          *int                         `json:"estimate,omitempty"`
+	Priority          *string                      `json:"priority,omitempty"`
+	Severity          *string                      `json:"severity,omitempty"`
+	Deadline          *time.Time                   `json:"deadline,omitempty"`
+	Position          *int                         `json:"position,omitempty"`
+	Blocked           *bool                        `json:"blocked,omitempty"`
+	Blocker           *string                      `json:"blocker,omitempty"`
+	TemplateID        *string                      `json:"template_id,omitempty"`
+	ExternalID        *string                      `json:"external_id,omitempty"`
+	OwnerIDs          []string                     `json:"owner_ids,omitempty"`
+	FollowerIDs       []string                     `json:"follower_ids,omitempty"`
+	LabelIDs          []string                     `json:"label_ids,omitempty"`
+	AttachmentIDs     []string                     `json:"attachment_ids,omitempty"`
+	ChecklistItems    []CreateChecklistItemRequest `json:"checklist_items,omitempty"`
+	ExternalLinks     []CreateExternalLinkRequest  `json:"external_links,omitempty"`
 }
 
 // CreateTaskFromConversationResponse summarizes the created PM task and copied associations.
 type CreateTaskFromConversationResponse struct {
 	TaskID                    string `json:"task_id"`
+	DisplayID                 int    `json:"display_id,omitempty"`
 	TaskKey                   string `json:"task_key,omitempty"`
 	TaskName                  string `json:"task_name"`
 	Summary                   string `json:"summary,omitempty"`
@@ -550,6 +724,11 @@ type AssignConversationAgentRequest struct {
 // AssignConversationUserRequest assigns a teammate to a conversation.
 type AssignConversationUserRequest struct {
 	UserID *string `json:"user_id"`
+}
+
+// UpdateConversationCRMContactRequest sets or clears the primary CRM contact link.
+type UpdateConversationCRMContactRequest struct {
+	CRMContactID *string `json:"crm_contact_id"`
 }
 
 // UpdateConversationStatusRequest changes conversation status.
@@ -622,6 +801,7 @@ type WidgetIdentityPayload struct {
 	FirstName string `json:"first_name,omitempty"`
 	LastName  string `json:"last_name,omitempty"`
 	Source    string `json:"source"` // "widget_prechat", "sdk_identify", or "sdk_lead"
+	Company   JSONB  `json:"company,omitempty"`
 }
 
 func (p WidgetIdentityPayload) DisplayName() string {
@@ -679,23 +859,25 @@ type WidgetSessionJoinedPayload struct {
 
 // WidgetMessageReceivedPayload is sent to widget clients for new messages.
 type WidgetMessageReceivedPayload struct {
-	ID             string                     `json:"id"`
-	ConversationID string                     `json:"conversation_id"`
-	Content        string                     `json:"content"`
-	SenderType     string                     `json:"sender_type"`
-	SenderName     *string                    `json:"sender_name"`
-	SenderAvatar   *string                    `json:"sender_avatar"`
-	Metadata       *string                    `json:"metadata,omitempty"`
-	ViaChannel     string                     `json:"via_channel,omitempty"`
-	Attachments    []SupportAttachmentPayload `json:"attachments,omitempty"`
-	CreatedAt      string                     `json:"created_at"`
+	ID              string                     `json:"id"`
+	ConversationID  string                     `json:"conversation_id"`
+	Content         string                     `json:"content"`
+	SenderType      string                     `json:"sender_type"`
+	MessageType     string                     `json:"message_type,omitempty"`
+	SystemEventType *string                    `json:"system_event_type,omitempty"`
+	SenderName      *string                    `json:"sender_name"`
+	SenderAvatar    *string                    `json:"sender_avatar"`
+	Metadata        *string                    `json:"metadata,omitempty"`
+	ViaChannel      string                     `json:"via_channel,omitempty"`
+	Attachments     []SupportAttachmentPayload `json:"attachments,omitempty"`
+	CreatedAt       string                     `json:"created_at"`
 }
 
 // CannedResponseRequest is the payload for CRUD operations on canned responses.
 type CannedResponseRequest struct {
-	ShortCode string `json:"short_code"`
-	Title     string `json:"title"`
-	Content   string `json:"content"`
+	ShortCode string  `json:"short_code"`
+	Content   string  `json:"content"`
+	Tag       *string `json:"tag,omitempty"`
 }
 
 // TypingIndicatorRequest represents a typing indicator event.
@@ -771,10 +953,25 @@ type SupportInboxSettings struct {
 	BusinessHoursSchedule map[string]BusinessHoursDay `json:"business_hours_schedule"` // mon-sun
 	OutsideHoursMessage   string                      `json:"outside_hours_message"`
 
+	// Reply-time expectations rendered on the widget during business hours.
+	// Preset drives the copy; ReplyTimeCustomMinutes is only honored when
+	// ReplyTimePreset == "custom". See SupportReplyTimePreset* constants.
+	ReplyTimePreset        string `json:"reply_time_preset"`
+	ReplyTimeCustomMinutes *int   `json:"reply_time_custom_minutes,omitempty"`
+
+	// Optional workspace-wide notice rendered as a slim banner above
+	// conversation surfaces (outages, backlog, maintenance). Empty string
+	// or nil means the banner is hidden.
+	SpecialNoticeText *string `json:"special_notice_text,omitempty"`
+
 	// Offline email fallback
-	EmailFallbackEnabled   bool   `json:"email_fallback_enabled"`
-	EmailFallbackDelaySecs int    `json:"email_fallback_delay_secs"`
-	EmailFallbackFromName  string `json:"email_fallback_from_name"`
+	EmailFallbackEnabled            bool   `json:"email_fallback_enabled"`
+	EmailFallbackDelaySecs          int    `json:"email_fallback_delay_secs"`
+	EmailFallbackFromName           string `json:"email_fallback_from_name"`
+	EmailFallbackMaxDeliveryAgeSecs int    `json:"email_fallback_max_delivery_age_secs"`
+	ForwardedEmailDetectionEnabled  bool   `json:"forwarded_email_detection_enabled"`
+	ForwardedEmailDetectionMode     string `json:"forwarded_email_detection_mode"`
+	ForwardedEmailMinConfidence     int    `json:"forwarded_email_min_confidence"`
 
 	// Widget Identity
 	WidgetName         string   `json:"widget_name"`           // display name in widget header (defaults to workspace name)
@@ -846,79 +1043,95 @@ func DefaultSupportInboxSettings() SupportInboxSettings {
 			"sat": {Start: "09:00", End: "17:00", Enabled: false},
 			"sun": {Start: "09:00", End: "17:00", Enabled: false},
 		},
-		OutsideHoursMessage:    "We're currently offline. Leave a message and we'll get back to you!",
-		EmailFallbackEnabled:   false,
-		EmailFallbackDelaySecs: 120,
-		EmailFallbackFromName:  "",
-		WidgetName:             "",
-		WidgetAvatarURL:        "",
-		WidgetHelpSpaceIDs:     []string{},
-		BrandColor:             "#6366F1",
-		ShowBranding:           true,
-		ColorScheme:            "light",
-		ButtonColor:            "#000000",
-		ButtonIconColor:        "#FFFFFF",
-		LogoURL:                "",
-		LauncherPosition:       "bottom_right",
-		LauncherIcon:           "chat_bubble",
-		CSATEnabled:            false,
-		FileUploadsEnabled:     true,
-		ForceVisitorIdentity:   false,
+		OutsideHoursMessage:             "We're currently offline. Leave a message and we'll get back to you!",
+		ReplyTimePreset:                 SupportReplyTimePresetFewMinutes,
+		ReplyTimeCustomMinutes:          nil,
+		SpecialNoticeText:               nil,
+		EmailFallbackEnabled:            true,
+		EmailFallbackDelaySecs:          180,
+		EmailFallbackFromName:           "",
+		EmailFallbackMaxDeliveryAgeSecs: 600,
+		ForwardedEmailDetectionEnabled:  true,
+		ForwardedEmailDetectionMode:     "high_confidence_any_sender",
+		ForwardedEmailMinConfidence:     80,
+		WidgetName:                      "",
+		WidgetAvatarURL:                 "",
+		WidgetHelpSpaceIDs:              []string{},
+		BrandColor:                      "#6366F1",
+		ShowBranding:                    true,
+		ColorScheme:                     "light",
+		ButtonColor:                     "#000000",
+		ButtonIconColor:                 "#FFFFFF",
+		LogoURL:                         "",
+		LauncherPosition:                "bottom_right",
+		LauncherIcon:                    "chat_bubble",
+		CSATEnabled:                     false,
+		FileUploadsEnabled:              true,
+		ForceVisitorIdentity:            false,
 	}
 }
 
 // UpdateInstallationSettingsRequest is a PATCH payload with pointer fields.
 type UpdateInstallationSettingsRequest struct {
-	RequireEmailBeforeChat        *bool                       `json:"require_email_before_chat,omitempty"`
-	RequirePhoneAfterEmail        *bool                       `json:"require_phone_after_email,omitempty"`
-	WelcomeMessage                *string                     `json:"welcome_message,omitempty"`
-	AutoCreateCRMContact          *bool                       `json:"auto_create_crm_contact,omitempty"`
-	DefaultLifecycleStage         *string                     `json:"default_lifecycle_stage,omitempty"`
-	AutoPromoteToLead             *bool                       `json:"auto_promote_to_lead,omitempty"`
-	AIEnabled                     *bool                       `json:"ai_enabled,omitempty"`
-	AIAgentID                     *string                     `json:"ai_agent_id,omitempty"`
-	AIConfidenceThreshold         *float64                    `json:"ai_confidence_threshold,omitempty"`
-	AIResponseMode                *string                     `json:"ai_response_mode,omitempty"`
-	AIMaxFollowups                *int                        `json:"ai_max_followups,omitempty"`
-	AIAutoResolveTimeout          *int                        `json:"ai_auto_resolve_timeout,omitempty"`
-	ShowTalkToHuman               *bool                       `json:"show_talk_to_human,omitempty"`
-	EscalationMessage             *string                     `json:"escalation_message,omitempty"`
-	HandoffBehavior               *string                     `json:"handoff_behavior,omitempty"`
-	HandoffTeamID                 *string                     `json:"handoff_team_id,omitempty"`
-	DefaultMailboxID              *string                     `json:"default_mailbox_id,omitempty"`
-	AIHandoffMailboxID            *string                     `json:"ai_handoff_mailbox_id,omitempty"`
-	TriageEnabled                 *bool                       `json:"triage_enabled,omitempty"`
-	TriageAutoMoveEnabled         *bool                       `json:"triage_auto_move_enabled,omitempty"`
-	TriageConfidenceThreshold     *float64                    `json:"triage_confidence_threshold,omitempty"`
-	TriageWidgetEnabled           *bool                       `json:"triage_widget_enabled,omitempty"`
-	TriageEmailEnabled            *bool                       `json:"triage_email_enabled,omitempty"`
-	TriageInternalEnabled         *bool                       `json:"triage_internal_enabled,omitempty"`
-	TriageFallbackBehavior        *string                     `json:"triage_fallback_behavior,omitempty"`
-	TriageRerunOnMeaningChange    *bool                       `json:"triage_rerun_on_meaning_change,omitempty"`
-	TriageDailyBudget             *int                        `json:"triage_daily_budget,omitempty"`
-	TriageSkipSpamConversations   *bool                       `json:"triage_skip_spam_conversations,omitempty"`
-	TriageDeduplicateFirstMessage *bool                       `json:"triage_deduplicate_first_message,omitempty"`
-	BusinessHoursEnabled          *bool                       `json:"business_hours_enabled,omitempty"`
-	BusinessHoursTimezone         *string                     `json:"business_hours_timezone,omitempty"`
-	BusinessHoursSchedule         map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
-	OutsideHoursMessage           *string                     `json:"outside_hours_message,omitempty"`
-	EmailFallbackEnabled          *bool                       `json:"email_fallback_enabled,omitempty"`
-	EmailFallbackDelaySecs        *int                        `json:"email_fallback_delay_secs,omitempty"`
-	EmailFallbackFromName         *string                     `json:"email_fallback_from_name,omitempty"`
-	WidgetName                    *string                     `json:"widget_name,omitempty"`
-	WidgetAvatarURL               *string                     `json:"widget_avatar_url,omitempty"`
-	WidgetHelpSpaceIDs            []string                    `json:"widget_help_space_ids,omitempty"`
-	BrandColor                    *string                     `json:"brand_color,omitempty"`
-	ShowBranding                  *bool                       `json:"show_branding,omitempty"`
-	ColorScheme                   *string                     `json:"color_scheme,omitempty"`
-	ButtonColor                   *string                     `json:"button_color,omitempty"`
-	ButtonIconColor               *string                     `json:"button_icon_color,omitempty"`
-	LogoURL                       *string                     `json:"logo_url,omitempty"`
-	LauncherPosition              *string                     `json:"launcher_position,omitempty"`
-	LauncherIcon                  *string                     `json:"launcher_icon,omitempty"`
-	CSATEnabled                   *bool                       `json:"csat_enabled,omitempty"`
-	FileUploadsEnabled            *bool                       `json:"file_uploads_enabled,omitempty"`
-	ForceVisitorIdentity          *bool                       `json:"force_visitor_identity,omitempty"`
+	RequireEmailBeforeChat          *bool                       `json:"require_email_before_chat,omitempty"`
+	RequirePhoneAfterEmail          *bool                       `json:"require_phone_after_email,omitempty"`
+	WelcomeMessage                  *string                     `json:"welcome_message,omitempty"`
+	AutoCreateCRMContact            *bool                       `json:"auto_create_crm_contact,omitempty"`
+	DefaultLifecycleStage           *string                     `json:"default_lifecycle_stage,omitempty"`
+	AutoPromoteToLead               *bool                       `json:"auto_promote_to_lead,omitempty"`
+	AIEnabled                       *bool                       `json:"ai_enabled,omitempty"`
+	AIAgentID                       *string                     `json:"ai_agent_id,omitempty"`
+	AIConfidenceThreshold           *float64                    `json:"ai_confidence_threshold,omitempty"`
+	AIResponseMode                  *string                     `json:"ai_response_mode,omitempty"`
+	AIMaxFollowups                  *int                        `json:"ai_max_followups,omitempty"`
+	AIAutoResolveTimeout            *int                        `json:"ai_auto_resolve_timeout,omitempty"`
+	ShowTalkToHuman                 *bool                       `json:"show_talk_to_human,omitempty"`
+	EscalationMessage               *string                     `json:"escalation_message,omitempty"`
+	HandoffBehavior                 *string                     `json:"handoff_behavior,omitempty"`
+	HandoffTeamID                   *string                     `json:"handoff_team_id,omitempty"`
+	DefaultMailboxID                *string                     `json:"default_mailbox_id,omitempty"`
+	AIHandoffMailboxID              *string                     `json:"ai_handoff_mailbox_id,omitempty"`
+	TriageEnabled                   *bool                       `json:"triage_enabled,omitempty"`
+	TriageAutoMoveEnabled           *bool                       `json:"triage_auto_move_enabled,omitempty"`
+	TriageConfidenceThreshold       *float64                    `json:"triage_confidence_threshold,omitempty"`
+	TriageWidgetEnabled             *bool                       `json:"triage_widget_enabled,omitempty"`
+	TriageEmailEnabled              *bool                       `json:"triage_email_enabled,omitempty"`
+	TriageInternalEnabled           *bool                       `json:"triage_internal_enabled,omitempty"`
+	TriageFallbackBehavior          *string                     `json:"triage_fallback_behavior,omitempty"`
+	TriageRerunOnMeaningChange      *bool                       `json:"triage_rerun_on_meaning_change,omitempty"`
+	TriageDailyBudget               *int                        `json:"triage_daily_budget,omitempty"`
+	TriageSkipSpamConversations     *bool                       `json:"triage_skip_spam_conversations,omitempty"`
+	TriageDeduplicateFirstMessage   *bool                       `json:"triage_deduplicate_first_message,omitempty"`
+	BusinessHoursEnabled            *bool                       `json:"business_hours_enabled,omitempty"`
+	BusinessHoursTimezone           *string                     `json:"business_hours_timezone,omitempty"`
+	BusinessHoursSchedule           map[string]BusinessHoursDay `json:"business_hours_schedule,omitempty"`
+	OutsideHoursMessage             *string                     `json:"outside_hours_message,omitempty"`
+	ReplyTimePreset                 *string                     `json:"reply_time_preset,omitempty"`
+	ReplyTimeCustomMinutes          *int                        `json:"reply_time_custom_minutes,omitempty"`
+	SpecialNoticeText               *string                     `json:"special_notice_text,omitempty"`
+	ClearSpecialNotice              *bool                       `json:"clear_special_notice,omitempty"`
+	ClearReplyTimeCustomMinutes     *bool                       `json:"clear_reply_time_custom_minutes,omitempty"`
+	EmailFallbackEnabled            *bool                       `json:"email_fallback_enabled,omitempty"`
+	EmailFallbackDelaySecs          *int                        `json:"email_fallback_delay_secs,omitempty"`
+	EmailFallbackFromName           *string                     `json:"email_fallback_from_name,omitempty"`
+	EmailFallbackMaxDeliveryAgeSecs *int                        `json:"email_fallback_max_delivery_age_secs,omitempty"`
+	ForwardedEmailDetectionEnabled  *bool                       `json:"forwarded_email_detection_enabled,omitempty"`
+	ForwardedEmailDetectionMode     *string                     `json:"forwarded_email_detection_mode,omitempty"`
+	ForwardedEmailMinConfidence     *int                        `json:"forwarded_email_min_confidence,omitempty"`
+	WidgetName                      *string                     `json:"widget_name,omitempty"`
+	WidgetAvatarURL                 *string                     `json:"widget_avatar_url,omitempty"`
+	WidgetHelpSpaceIDs              []string                    `json:"widget_help_space_ids,omitempty"`
+	BrandColor                      *string                     `json:"brand_color,omitempty"`
+	ShowBranding                    *bool                       `json:"show_branding,omitempty"`
+	ColorScheme                     *string                     `json:"color_scheme,omitempty"`
+	ButtonColor                     *string                     `json:"button_color,omitempty"`
+	ButtonIconColor                 *string                     `json:"button_icon_color,omitempty"`
+	LogoURL                         *string                     `json:"logo_url,omitempty"`
+	LauncherPosition                *string                     `json:"launcher_position,omitempty"`
+	LauncherIcon                    *string                     `json:"launcher_icon,omitempty"`
+	CSATEnabled                     *bool                       `json:"csat_enabled,omitempty"`
+	FileUploadsEnabled              *bool                       `json:"file_uploads_enabled,omitempty"`
+	ForceVisitorIdentity            *bool                       `json:"force_visitor_identity,omitempty"`
 }
 
 // SupportAIPreviewRequest is a dry-run request for the support AI planner + RAG pipeline.
@@ -1053,6 +1266,21 @@ type WidgetConfigAvailability struct {
 	ReplyTimeText       string  `json:"replyTimeText"`
 	OutsideHoursMessage *string `json:"outsideHoursMessage,omitempty"`
 	NextOnlineAt        *string `json:"nextOnlineAt,omitempty"`
+
+	// Structured reply-time expectation so the widget can choose to render
+	// its own copy (e.g. localized) instead of relying on ReplyTimeText.
+	// ReplyTimeMinutes is set only when the preset is "custom".
+	ReplyTimePreset  string `json:"replyTimePreset,omitempty"`
+	ReplyTimeMinutes *int   `json:"replyTimeMinutes,omitempty"`
+
+	// SpecialNoticeText drives the slim amber banner above conversation
+	// surfaces. Nil or empty means the banner is hidden.
+	SpecialNoticeText *string `json:"specialNoticeText,omitempty"`
+
+	// MailboxID is set when the effective preset came from a mailbox
+	// override rather than the workspace default. Widget can surface this
+	// for debugging / preview purposes but does not render it today.
+	MailboxID *string `json:"mailboxId,omitempty"`
 }
 
 // WidgetHelpSpace is an external-capable docs space exposed to the widget help tab.

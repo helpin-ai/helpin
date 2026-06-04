@@ -4,12 +4,14 @@ interface TaskStateSelectContentProps {
   stateType: StateType;
   label: string;
   color?: string | null;
+  autoRunEnabled?: boolean;
 }
 
 export function TaskStateSelectContent({
   stateType: _stateType,
   label,
   color,
+  autoRunEnabled = false,
 }: TaskStateSelectContentProps) {
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
@@ -19,6 +21,11 @@ export function TaskStateSelectContent({
         style={color ? { backgroundColor: color } : undefined}
       />
       <span className="truncate">{label}</span>
+      {autoRunEnabled ? (
+        <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary">
+          Auto-run
+        </span>
+      ) : null}
     </span>
   );
 }

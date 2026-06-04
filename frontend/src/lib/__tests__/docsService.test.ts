@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { postMock } = vi.hoisted(() => ({
+const { getMock, postMock } = vi.hoisted(() => ({
+  getMock: vi.fn(),
   postMock: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   api: {
     post: postMock,
-    get: vi.fn(),
+    get: getMock,
     put: vi.fn(),
     patch: vi.fn(),
     del: vi.fn(),
@@ -16,6 +17,23 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { docsService } from '@/lib/services/docsService'
+
+describe('docsService.getCollectionDeleteImpact', () => {
+  afterEach(() => {
+    getMock.mockReset()
+  })
+
+  it('calls the collection delete impact endpoint', async () => {
+    getMock.mockResolvedValueOnce({ data: { collection_id: 'collection-1' }, error: null, status: 200 })
+
+    const result = await docsService.getCollectionDeleteImpact('ws-1', 'collection-1')
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/docs/collections/collection-1/delete-impact?workspace_id=ws-1',
+    )
+    expect(result.error).toBeNull()
+  })
+})
 
 describe('docsService.updateArticleSlug', () => {
   afterEach(() => {
@@ -58,7 +76,10 @@ describe('docsService.publishArticleTranslation', () => {
   it('sends an explicit slug on first locale publish when provided', async () => {
     postMock.mockResolvedValueOnce({ data: { locale: 'fr', slug: 'premiers-pas' }, error: null, status: 200 })
 
-    const result = await docsService.publishArticleTranslation('ws-1', 'doc-1', 'fr', 'premiers-pas')
+    const result = await docsService.publishArticleTranslation('ws-1', 'doc-1', {
+      locale: 'fr',
+      slug: 'premiers-pas',
+    })
 
     expect(postMock).toHaveBeenCalledWith(
       '/docs/documents/doc-1/helpcenter/translations/fr/publish?workspace_id=ws-1',

@@ -210,6 +210,63 @@ func TestNotificationRepository_GetExisting_NotFound(t *testing.T) {
 	}
 }
 
+func TestNotificationRepository_MarkEntityEventTypeAsReadForWorkspace(t *testing.T) {
+	db := setupNotificationCRUDTestDB(t)
+	repo := NewNotificationRepository(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	mustExecCRUD(t, db, `INSERT INTO notifications (
+		id, workspace_id, recipient_id, entity_type, entity_id, event_type, title,
+		latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"notif-1", "ws-1", "user-1", "agent_run", "run-1", "task.agent_attention_required",
+		"Agent waiting for input", model.NotifCategoryAgentAttention, 1, now, "unread", "high", now, now,
+	)
+	mustExecCRUD(t, db, `INSERT INTO notifications (
+		id, workspace_id, recipient_id, entity_type, entity_id, event_type, title,
+		latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"notif-2", "ws-1", "user-2", "agent_run", "run-1", "task.agent_attention_required",
+		"Agent waiting for input", model.NotifCategoryAgentAttention, 1, now, "unread", "high", now, now,
+	)
+	mustExecCRUD(t, db, `INSERT INTO notifications (
+		id, workspace_id, recipient_id, entity_type, entity_id, event_type, title,
+		latest_event_category, event_count, last_event_at, status, priority, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"notif-3", "ws-1", "user-3", "agent_run", "run-1", "comment.created",
+		"Comment added", model.NotifCategoryComments, 1, now, "unread", "normal", now, now,
+	)
+
+	if err := repo.MarkEntityEventTypeAsReadForWorkspace(ctx, "ws-1", "agent_run", "run-1", "task.agent_attention_required"); err != nil {
+		t.Fatalf("MarkEntityEventTypeAsReadForWorkspace: %v", err)
+	}
+
+	fetched1, err := repo.GetByID(ctx, "notif-1")
+	if err != nil {
+		t.Fatalf("GetByID notif-1: %v", err)
+	}
+	if fetched1.Status != "read" || fetched1.ReadAt == nil {
+		t.Fatalf("notif-1 = %+v, want read with timestamp", fetched1)
+	}
+
+	fetched2, err := repo.GetByID(ctx, "notif-2")
+	if err != nil {
+		t.Fatalf("GetByID notif-2: %v", err)
+	}
+	if fetched2.Status != "read" || fetched2.ReadAt == nil {
+		t.Fatalf("notif-2 = %+v, want read with timestamp", fetched2)
+	}
+
+	fetched3, err := repo.GetByID(ctx, "notif-3")
+	if err != nil {
+		t.Fatalf("GetByID notif-3: %v", err)
+	}
+	if fetched3.Status != "unread" {
+		t.Fatalf("notif-3 status = %q, want unread", fetched3.Status)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------

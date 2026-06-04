@@ -47,8 +47,8 @@ vi.mock('@/components/ui/checkbox', () => ({
 }))
 
 vi.mock('@/components/ui/select', () => ({
-  Select: ({ value, onValueChange, children }: { value: string; onValueChange: (value: string) => void; children: ReactNode }) => (
-    <div data-select-value={value} data-on-change={onValueChange}>
+  Select: ({ value, children }: { value: string; onValueChange: (value: string) => void; children: ReactNode }) => (
+    <div data-select-value={value}>
       {children}
     </div>
   ),
@@ -147,9 +147,9 @@ describe('HelpcenterLocalesCard', () => {
     const defaultRow = defaultCheckbox?.closest('label')
     expect(defaultRow).not.toBeNull()
 
-    const defaultBadge = defaultRow?.querySelector('[data-slot="badge"]')
-    expect(defaultBadge?.textContent).toBe('Default')
-    expect(defaultBadge?.getAttribute('data-variant')).toBe('secondary')
+    // The default-locale marker switched from a Badge component to an
+    // inline "(default)" caption span next to the locale label.
+    expect(defaultRow?.textContent).toContain('(default)')
 
     act(() => {
       root.unmount()

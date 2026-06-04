@@ -7,10 +7,14 @@ import {
   ArrowLeft02Icon,
   Calendar03Icon,
   ArrowRight01Icon,
+  AttachmentIcon,
   FavouriteIcon,
+  Link01Icon,
   Loading01Icon,
   PencilEdit01Icon,
+  PlusSignIcon,
   Target01Icon,
+  Upload01Icon,
   UserIcon,
   UserGroupIcon,
   ArchiveRestoreIcon,
@@ -39,11 +43,12 @@ import { gitService } from '@/lib/services/gitService';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { useWorkflows, useEpicStates, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useAccessibleTeams } from '@/hooks/useAccessibleTeams';
 import { useAssignableWorkspaceMembers } from '@/hooks/useAssignableWorkspaceMembers';
-import type { AttachmentResponse, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType } from '@/lib/pmTypes';
+import type { AttachmentResponse, CreateTaskRequest, EpicWithStats, EpicHealth, GitRepository, Objective, Task, SprintWithStats, UpdateEpicRequest, StateType, WorkflowWithStates } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { STATE_TYPE_ICON_CONFIG } from '@/lib/pmConstants';
 import { SaveIndicator } from '@/components/pm/SaveIndicator';
@@ -58,6 +63,10 @@ import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
+import { ExternalLinks } from '@/components/pm/ExternalLinks';
+import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
 
 const routeApi = getRouteApi('/_authenticated/w/$slug/pm/epics/$epicId');
 
@@ -83,8 +92,8 @@ function MetadataRow({
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-      <span className="text-xs text-muted-foreground self-center">{label}</span>
-      <div className="min-w-0 self-center">{children}</div>
+      <span className="text-[12px] text-muted-foreground self-center">{label}</span>
+      <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
 }
@@ -170,6 +179,9 @@ export function EpicDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [createTaskWorkflow, setCreateTaskWorkflow] = useState<WorkflowWithStates | null>(null);
+  const [openingCreateTask, setOpeningCreateTask] = useState(false);
   const [pendingTeamChange, setPendingTeamChange] = useState<{
     newTeamId: string;
     newTeamName: string;
@@ -180,7 +192,12 @@ export function EpicDetailPage() {
   const [movingTasks, setMovingTasks] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [editingDescription, setEditingDescription] = useState(false);
+  const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [panelDragging, setPanelDragging] = useState(false);
   const savedDescriptionRef = useRef('');
+  const openFilePickerRef = useRef<(() => void) | null>(null);
+  const uploadFilesRef = useRef<((files: FileList | File[]) => Promise<void>) | null>(null);
+  const dragCounterRef = useRef(0);
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
@@ -195,6 +212,16 @@ export function EpicDetailPage() {
     () => filterMentionTeams(teams, form?.team_id ? [form.team_id] : []),
     [teams, form?.team_id],
   );
+  const commandBarContext = useMemo(() => {
+    if (!epic) return null;
+    return {
+      entity_type: 'epic' as const,
+      entity_id: epic.epic.id,
+      display_title: epic.epic.name,
+      related_ids: { task_ids: tasks.map((task) => task.id), story_ids: tasks.map((task) => task.id) },
+    };
+  }, [epic, tasks]);
+  useRegisterPageContext(commandBarContext, 10);
 
   useTitle(form?.name ? `${form.name} — Epic` : 'Epic');
 
@@ -234,6 +261,14 @@ export function EpicDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Auto-show external links if they exist
+  useEffect(() => {
+    if (!workspaceId || !epic?.epic?.id) return;
+    pmExternalLinkService.listByEntity(workspaceId, 'epic', epic.epic.id).then(({ data }) => {
+      if (data && data.length > 0) setShowExternalLinks(true);
+    });
+  }, [workspaceId, epic?.epic?.id]);
 
   // Auto-save debounce
   useEffect(() => {
@@ -365,13 +400,28 @@ export function EpicDetailPage() {
   }, [form?.planning_repository_id, repositories]);
 
   const workflow = workflows[0] ?? null;
+  const canCreateTask = canEdit && teams.length > 0;
+  const createTaskDisabledReason = !canEdit
+    ? 'You need PM edit access to add tasks.'
+    : teams.length === 0
+      ? 'Join a team to add tasks to this epic.'
+      : null;
+  const preferredCreateTaskTeamId = useMemo(() => {
+    if (epic?.epic.team_id && teams.some((team) => team.id === epic.epic.team_id)) {
+      return epic.epic.team_id;
+    }
+    if (form?.team_id && teams.some((team) => team.id === form.team_id)) {
+      return form.team_id;
+    }
+    return teams[0]?.id ?? '';
+  }, [epic?.epic.team_id, form?.team_id, teams]);
 
   // Resources: unique people from task owners + epic team members
   const resources = useMemo(() => {
     const personMap = new Map<string, { id: string; name: string; email: string }>();
 
     for (const task of tasks) {
-      const ownerKey = task.owner_member_id;
+      const ownerKey = task.owner_member_ids?.[0];
       if (ownerKey) {
         const assignable = findAssignableMember(assignableMembers, ownerKey);
         if (assignable) {
@@ -401,6 +451,49 @@ export function EpicDetailPage() {
     },
     [location, navigate, slug],
   );
+
+  const handleStartCreateTask = useCallback(async () => {
+    if (!workspaceId || !canCreateTask) return;
+
+    const teamId = preferredCreateTaskTeamId;
+    if (!teamId) {
+      toast.error('No team available for task creation');
+      return;
+    }
+
+    setOpeningCreateTask(true);
+    try {
+      const resolved = await pmWorkflowService.resolveTeamWorkflow(workspaceId, teamId);
+      if (resolved.error || !resolved.data) {
+        throw new Error(resolved.error ?? 'Failed to open task creator');
+      }
+      setCreateTaskWorkflow(resolved.data);
+      setCreateTaskOpen(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to open task creator');
+    } finally {
+      setOpeningCreateTask(false);
+    }
+  }, [workspaceId, canCreateTask, preferredCreateTaskTeamId]);
+
+  const handleCreateTask = useCallback(async (payload: CreateTaskRequest) => {
+    const { data, error: err } = await pmTaskService.create(payload);
+    if (err || !data) {
+      throw new Error(err ?? 'Failed to create task');
+    }
+    await fetchData(false);
+    return data.task
+      ? {
+          id: data.task.task.id,
+          task: {
+            id: data.task.task.id,
+            name: data.task.task.name,
+            display_id: data.task.task.display_id,
+            task_key: data.task.task.task_key,
+          },
+        }
+      : undefined;
+  }, [fetchData]);
 
   const selectedObjectives = useMemo<ObjectivePickerSelection[]>(
     () => (epic?.objectives ?? []).map((objective) => ({
@@ -467,6 +560,41 @@ export function EpicDetailPage() {
     params: { slug },
     search: epic?.epic.team_id ? { team: epic.epic.team_id } : {},
   });
+
+  const renderTaskHeaderAddButton = () => (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
+      onClick={() => void handleStartCreateTask()}
+      disabled={!canCreateTask || openingCreateTask}
+      title={createTaskDisabledReason ?? undefined}
+    >
+      {openingCreateTask ? (
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <PlusSignIcon className="h-3.5 w-3.5" />
+      )}
+      Add task
+    </Button>
+  );
+
+  const renderGhostAddTaskRow = (className: string) => (
+    <button
+      type="button"
+      className={className}
+      onClick={() => void handleStartCreateTask()}
+      disabled={!canCreateTask || openingCreateTask}
+      title={createTaskDisabledReason ?? undefined}
+    >
+      {openingCreateTask ? (
+        <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <PlusSignIcon className="h-3.5 w-3.5" />
+      )}
+      <span>Add task</span>
+    </button>
+  );
 
   if (loading) {
     return (
@@ -535,9 +663,38 @@ export function EpicDetailPage() {
       </div>
 
       {/* ── Two-column layout ───────────────────────────────────── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]">
+      <div
+        className="relative grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_300px]"
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragCounterRef.current++;
+          if (e.dataTransfer.types.includes('Files')) setPanelDragging(true);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={() => {
+          dragCounterRef.current--;
+          if (dragCounterRef.current === 0) setPanelDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragCounterRef.current = 0;
+          setPanelDragging(false);
+          if (e.dataTransfer.files.length > 0) {
+            uploadFilesRef.current?.(e.dataTransfer.files);
+          }
+        }}
+      >
+        {panelDragging && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-primary px-10 py-8">
+              <Upload01Icon className="h-8 w-8 text-primary" />
+              <p className="text-sm font-medium text-foreground">Drop files to attach</p>
+              <p className="text-xs text-muted-foreground">Max 50MB per file</p>
+            </div>
+          </div>
+        )}
         {/* ── Left column ────────────────────────────────────────── */}
-        <div className="min-h-0 overflow-y-auto px-8 py-6">
+        <div className="min-h-0 overflow-y-auto px-8 pb-24 pt-6">
           {/* Title */}
           <input
             type="text"
@@ -594,6 +751,38 @@ export function EpicDetailPage() {
             )}
           </div>
 
+          {/* Action bar */}
+          {canEdit && (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                  showExternalLinks
+                    ? 'border-primary/30 bg-primary/10 text-primary'
+                    : 'border-border/60 text-muted-foreground hover:bg-accent'
+                }`}
+                onClick={() => setShowExternalLinks((v) => !v)}
+              >
+                <Link01Icon className="h-3 w-3" />
+                External Links
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors cursor-pointer"
+                onClick={() => openFilePickerRef.current?.()}
+              >
+                <AttachmentIcon className="h-3 w-3" />
+                Attach Files
+              </button>
+            </div>
+          )}
+
+          {showExternalLinks && (
+            <div className="mt-4">
+              <ExternalLinks workspaceId={workspaceId!} entityType="epic" entityId={epic.epic.id} />
+            </div>
+          )}
+
           <div className="mt-6">
             <Attachments
               workspaceId={workspaceId!}
@@ -601,6 +790,8 @@ export function EpicDetailPage() {
               entityId={epic.epic.id}
               memberNameMap={assignableMemberNames}
               onDeleteAttachment={handleDescriptionAttachmentDelete}
+              onFilePickerReady={(fn) => { openFilePickerRef.current = fn; }}
+              onUploadReady={(fn) => { uploadFilesRef.current = fn; }}
             />
           </div>
 
@@ -641,11 +832,21 @@ export function EpicDetailPage() {
 
           {/* Tasks */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Tasks ({tasks.length})
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Tasks ({tasks.length})
+              </h3>
+              {renderTaskHeaderAddButton()}
+            </div>
             {tasks.length === 0 ? (
-              <p className="mt-3 text-sm text-muted-foreground">No tasks linked yet.</p>
+              <div className="mt-3 overflow-hidden rounded-lg border border-border/60 bg-card">
+                <div className="px-3 py-3">
+                  <p className="text-sm text-muted-foreground">No tasks linked yet.</p>
+                </div>
+                {renderGhostAddTaskRow(
+                  'flex h-9 w-full items-center gap-2 border-t border-dashed border-border/60 px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
+                )}
+              </div>
             ) : workflow ? (
               <div className="mt-3 -mx-3">
                 <TaskListView
@@ -660,6 +861,10 @@ export function EpicDetailPage() {
                   epicId={epicId}
                   externalTasks={tasks}
                   onOpenTask={openTask}
+                  onBulkOperationComplete={() => fetchData(false)}
+                  footer={renderGhostAddTaskRow(
+                    'flex h-9 w-full items-center gap-2 px-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60',
+                  )}
                 />
               </div>
             ) : (
@@ -671,7 +876,7 @@ export function EpicDetailPage() {
 
           {/* AI Planning */}
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Planning</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Agents</h3>
             <div className="mt-3">
               {workspaceId ? (
                 <EpicPlannerPanel
@@ -906,6 +1111,53 @@ export function EpicDetailPage() {
             </div>
           )}
 
+          <div className="mt-6">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Tasks
+                {tasks.length > 0 && <span className="ml-1.5 font-normal">{tasks.length}</span>}
+              </h4>
+              <button
+                type="button"
+                className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => void handleStartCreateTask()}
+                disabled={!canCreateTask || openingCreateTask}
+                title={createTaskDisabledReason ?? undefined}
+                aria-label="Add task to epic"
+              >
+                {openingCreateTask ? (
+                  <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <span className="text-sm leading-none">+</span>
+                )}
+              </button>
+            </div>
+            {tasks.length === 0 ? (
+              <p className="mt-2 py-2 text-[11px] italic text-muted-foreground">No tasks in this epic</p>
+            ) : (
+              <div className="mt-2 space-y-1">
+                {tasks.slice(0, 3).map((task) => (
+                  <button
+                    key={task.id}
+                    type="button"
+                    className="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/40"
+                    onClick={() => openTask(task)}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-medium">{task.name}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+                      {task.task_key}
+                    </span>
+                  </button>
+                ))}
+                {tasks.length > 3 ? (
+                  <p className="px-2 pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {tasks.length - 3} more in task list
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </div>
+
           {workspaceId ? (
             <>
               <AssociationsPanel objectType="epic" objectId={epicId} workspaceId={workspaceId} className="-mx-4 mt-4 border-t border-border/60" />
@@ -988,6 +1240,24 @@ export function EpicDetailPage() {
           setSaving(false);
         }}
       />
+
+      {createTaskWorkflow ? (
+        <CreateTaskModal
+          open={createTaskOpen}
+          onOpenChange={setCreateTaskOpen}
+          workspaceId={workspaceId!}
+          workflow={createTaskWorkflow}
+          initialStateId={
+            createTaskWorkflow.workflow.default_state_id ??
+            createTaskWorkflow.states.find((state) => state.is_default)?.id ??
+            createTaskWorkflow.states[0]?.id ??
+            ''
+          }
+          initialTeamId={preferredCreateTaskTeamId || createTaskWorkflow.workflow.team_id}
+          initialEpicId={epic.epic.id}
+          onCreate={handleCreateTask}
+        />
+      ) : null}
     </div>
   );
 }

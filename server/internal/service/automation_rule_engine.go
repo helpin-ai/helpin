@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/automationcatalog"
+	"github.com/helpin-ai/helpin/server/internal/automationcron"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
@@ -55,7 +58,11 @@ type AutomationRuleEngine struct {
 	activitySvc     *PMActivityService
 	wsPublisher     *websocket.Publisher
 	healthObserver  AutomationHealthObserver
-	logger          *slog.Logger
+	runEngine       interface {
+		StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error
+		StopRuleSchedule(ctx context.Context, ruleID string) error
+	}
+	logger *slog.Logger
 }
 
 // NewAutomationRuleEngine creates a new AutomationRuleEngine.
@@ -108,6 +115,14 @@ func (e *AutomationRuleEngine) SetCommandService(svc *InternalCommandService) *A
 
 func (e *AutomationRuleEngine) SetTriggerExecutionRepository(repo *repository.AgentTriggerExecutionRepository) *AutomationRuleEngine {
 	e.triggerExecRepo = repo
+	return e
+}
+
+func (e *AutomationRuleEngine) SetRunEngine(runEngine interface {
+	StartRuleSchedule(ctx context.Context, ruleID, workspaceID, schedule string) error
+	StopRuleSchedule(ctx context.Context, ruleID string) error
+}) *AutomationRuleEngine {
+	e.runEngine = runEngine
 	return e
 }
 
@@ -243,21 +258,38 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 		}
 		return cfg.StateID != "" && cfg.StateID == event.StateID
 
-	case model.TriggerGitHubPush:
+	case model.TriggerAgentRunCompleted:
+		var cfg model.TriggerConfigRunCompleted
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return cfg.StateID != "" && cfg.StateID == event.StateID
+
+	case model.TriggerDocPublished, model.TriggerAISectionRegenerated, model.TriggerAISectionApproved:
+		return strings.TrimSpace(event.TargetType) != "" && strings.TrimSpace(event.TargetID) != ""
+
+	case model.TriggerGitHubPush, model.TriggerGitLabPush:
 		var cfg model.TriggerConfigGitHubPush
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
 		}
 		return matchGitHubPushConfig(cfg, event)
 
-	case model.TriggerGitHubPROpened:
+	case model.TriggerGitHubPROpened, model.TriggerGitLabMROpened:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
 		}
 		return matchGitHubPullRequestConfig(cfg, event)
 
-	case model.TriggerGitHubPRMerged:
+	case model.TriggerGitHubPRMerged, model.TriggerGitLabMRMerged:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+			return false
+		}
+		return matchGitHubPullRequestConfig(cfg, event)
+
+	case model.TriggerGitHubPRClosed, model.TriggerGitLabMRClosed:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
@@ -271,14 +303,27 @@ func (e *AutomationRuleEngine) matchesTriggerConfig(ctx context.Context, rule mo
 		}
 		return matchGitHubPullRequestConfig(cfg, event)
 
-	case model.TriggerGitHubReleasePub:
+	case model.TriggerGitHubReleasePub, model.TriggerGitLabReleasePub:
 		var cfg model.TriggerConfigGitHubReleasePublished
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
 		}
+		if len(cfg.ReleaseKinds) > 0 && strings.TrimSpace(event.ReleaseKind) == "" && e.gitService != nil && strings.TrimSpace(event.WorkspaceID) != "" && strings.TrimSpace(event.RepoFullName) != "" && strings.TrimSpace(event.TagName) != "" {
+			releaseKind, err := e.gitService.ResolveReleaseKind(ctx, event.WorkspaceID, event.RepoFullName, event.TagName)
+			if err != nil {
+				e.logger.WarnContext(ctx, "failed to classify github release event for automation matching",
+					"workspace_id", event.WorkspaceID,
+					"repo_full_name", event.RepoFullName,
+					"tag_name", event.TagName,
+					"error", err,
+				)
+				return false
+			}
+			event.ReleaseKind = releaseKind
+		}
 		return matchGitHubReleaseConfig(cfg, event)
 
-	case model.TriggerGitHubCheckSuite:
+	case model.TriggerGitHubCheckSuite, model.TriggerGitLabPipeline:
 		var cfg model.TriggerConfigGitHubCheckSuiteCompleted
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
 			return false
@@ -403,6 +448,24 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		RunID:   nilIfEmpty(event.RunID),
 		Reason:  strPtr(fmt.Sprintf("automation rule %q", rule.Name)),
 	}
+	if strings.HasPrefix(strings.TrimSpace(event.TriggerType), "github.") {
+		eventContext.GitHub = githubRunEventContext(event)
+		if event.TriggerType == model.TriggerGitHubReleasePub {
+			eventContext.GitHub.EventType = "release_published"
+			eventContext.GitHub.Release = &model.AgentRunGitHubReleaseEventContext{
+				TagName:         strings.TrimSpace(event.TagName),
+				TargetCommitish: strings.TrimSpace(event.TargetCommitish),
+				ReleaseName:     strings.TrimSpace(event.ReleaseName),
+				ReleaseURL:      strings.TrimSpace(event.ReleaseURL),
+				PublishedAt:     event.PublishedAt,
+				IsPrerelease:    event.IsPrerelease,
+			}
+		}
+	}
+	outputContext, err := deriveRunOutputContext(event, cfg.Output)
+	if err != nil {
+		return err
+	}
 	baseBranch, workingBranch, err := e.resolveRunBranchOverrides(ctx, event, story, cfg)
 	if err != nil {
 		return fmt.Errorf("resolve branch overrides: %w", err)
@@ -412,7 +475,8 @@ func (e *AutomationRuleEngine) executeStartAgentRun(ctx context.Context, rule *m
 		AdditionalContext: cfg.AdditionalContext,
 		BaseBranch:        nilIfEmpty(baseBranch),
 		WorkingBranch:     nilIfEmpty(workingBranch),
-	}, nil, trigger, eventContext); err != nil {
+		Output:            outputContext,
+	}, nil, trigger, eventContext, nil); err != nil {
 		return fmt.Errorf("start agent run: %w", err)
 	}
 
@@ -654,6 +718,13 @@ func (e *AutomationRuleEngine) executeMergeBranch(ctx context.Context, rule *mod
 		// Don't halt the pipeline for merge failures — log and continue
 		return nil
 	}
+	if err := e.gitService.UpdateDeliveryStatusAfterMerge(ctx, event.WorkspaceID, event.StoryID, "merged"); err != nil {
+		e.logger.WarnContext(ctx, "failed to update delivery status after merge_branch",
+			"error", err,
+			"rule_id", rule.ID,
+			"task_id", event.StoryID,
+		)
+	}
 
 	_ = e.activitySvc.Log(ctx, event.WorkspaceID, "task", event.StoryID, nil,
 		fmt.Sprintf("automation rule '%s' merged %s into %s", rule.Name, *target.WorkingBranch, resolvedBranch),
@@ -773,6 +844,85 @@ func (e *AutomationRuleEngine) EvaluateCronRules(ctx context.Context, category s
 	}
 }
 
+// ExecuteScheduledRule runs a cron-triggered automation rule from its dedicated schedule.
+func (e *AutomationRuleEngine) ExecuteScheduledRule(ctx context.Context, workspaceID, ruleID string) error {
+	if e == nil {
+		return nil
+	}
+	rule, err := e.ruleRepo.GetByID(ctx, workspaceID, ruleID)
+	if err != nil {
+		return err
+	}
+	if rule == nil {
+		return fmt.Errorf("automation rule not found")
+	}
+	if !rule.Enabled {
+		return fmt.Errorf("automation rule is disabled")
+	}
+	if rule.TriggerType != model.TriggerCron {
+		return fmt.Errorf("automation rule is not scheduled")
+	}
+
+	var actionCfg model.ActionConfigRunAgent
+	if err := json.Unmarshal(rule.ActionConfig, &actionCfg); err != nil {
+		return fmt.Errorf("parse start_agent_run config: %w", err)
+	}
+
+	targetType := strings.TrimSpace(actionCfg.TargetType)
+	targetID := strings.TrimSpace(actionCfg.TargetID)
+	if targetType == "" && targetID == "" {
+		targetType = "workspace"
+		targetID = workspaceID
+	}
+	if targetType == "story" {
+		targetType = "task"
+	}
+
+	event := model.AutomationEvent{
+		WorkspaceID: workspaceID,
+		TriggerType: model.TriggerCron,
+		TargetType:  targetType,
+		TargetID:    targetID,
+	}
+	if rule.TeamID != nil {
+		event.TeamID = strings.TrimSpace(*rule.TeamID)
+	}
+
+	e.logger.InfoContext(ctx, "executing scheduled automation rule",
+		"rule_id", rule.ID,
+		"rule_name", rule.Name,
+		"workspace_id", workspaceID,
+		"target_type", targetType,
+		"target_id", targetID,
+	)
+
+	if err := e.executeAction(ctx, rule, event, nil, &model.RuleExecutionContext{MaxDepth: defaultMaxChainDepth}); err != nil {
+		e.observeFailure(ctx, workspaceID, rule.ID, err)
+		if errors.Is(err, ErrAssignedAgentNotFound) {
+			rule.Enabled = false
+			if updateErr := e.ruleRepo.Update(ctx, rule); updateErr != nil {
+				e.logger.ErrorContext(ctx, "failed to disable scheduled automation rule with missing agent",
+					"rule_id", rule.ID,
+					"workspace_id", workspaceID,
+					"agent_id", strings.TrimSpace(actionCfg.AgentID),
+					"error", updateErr,
+				)
+				return updateErr
+			}
+			e.logger.WarnContext(ctx, "disabled scheduled automation rule with missing agent",
+				"rule_id", rule.ID,
+				"rule_name", rule.Name,
+				"workspace_id", workspaceID,
+				"agent_id", strings.TrimSpace(actionCfg.AgentID),
+			)
+			return nil
+		}
+		return err
+	}
+	e.observeSuccess(ctx, workspaceID, rule.ID)
+	return nil
+}
+
 // --- CRUD methods ---
 
 // CreateRule creates a new automation rule with validation.
@@ -803,6 +953,10 @@ func (e *AutomationRuleEngine) CreateRule(ctx context.Context, workspaceID strin
 	if err := e.ruleRepo.Create(ctx, rule); err != nil {
 		return nil, err
 	}
+	if err := e.syncRuleSchedule(ctx, rule, false); err != nil {
+		_ = e.ruleRepo.Delete(ctx, workspaceID, rule.ID)
+		return nil, err
+	}
 
 	e.logger.InfoContext(ctx, "automation rule created",
 		"rule_id", rule.ID,
@@ -826,6 +980,7 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	if rule == nil {
 		return nil, fmt.Errorf("automation rule not found")
 	}
+	wasScheduled := rule.TriggerType == model.TriggerCron && rule.Enabled
 
 	if req.Name != nil {
 		rule.Name = *req.Name
@@ -862,6 +1017,9 @@ func (e *AutomationRuleEngine) UpdateRule(ctx context.Context, workspaceID, rule
 	if err := e.ruleRepo.Update(ctx, rule); err != nil {
 		return nil, err
 	}
+	if err := e.syncRuleSchedule(ctx, rule, wasScheduled); err != nil {
+		return nil, err
+	}
 	publishWorkspaceEventWithParent(e.wsPublisher, "updated", "automation_rule", rule.ID, workspaceID, "", "workflow", derefString(rule.WorkflowID), map[string]any{
 		"workflow_id": derefString(rule.WorkflowID),
 	})
@@ -876,6 +1034,9 @@ func (e *AutomationRuleEngine) DeleteRule(ctx context.Context, workspaceID, rule
 	}
 	if rule == nil {
 		return fmt.Errorf("automation rule not found")
+	}
+	if rule.TriggerType == model.TriggerCron && e.runEngine != nil {
+		_ = e.runEngine.StopRuleSchedule(ctx, rule.ID)
 	}
 	if err := e.ruleRepo.Delete(ctx, workspaceID, ruleID); err != nil {
 		return err
@@ -901,6 +1062,23 @@ func (e *AutomationRuleEngine) ListRulesByWorkflow(ctx context.Context, workspac
 	return e.ruleRepo.ListByWorkflow(ctx, workspaceID, workflowID)
 }
 
+// EnsureScheduledRules ensures Temporal cron workflows exist for all enabled scheduled rules.
+func (e *AutomationRuleEngine) EnsureScheduledRules(ctx context.Context) error {
+	if e == nil || e.runEngine == nil {
+		return nil
+	}
+	rules, err := e.ruleRepo.ListEnabledCronRules(ctx)
+	if err != nil {
+		return err
+	}
+	for idx := range rules {
+		if err := e.syncRuleSchedule(ctx, &rules[idx], false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // --- Validation ---
 
 func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerConfig json.RawMessage, actionType string, actionConfig json.RawMessage) error {
@@ -921,7 +1099,22 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if cfg.StateID == "" {
 			return fmt.Errorf("state_id is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubPush:
+	case model.TriggerAgentRunCompleted:
+		var cfg model.TriggerConfigRunCompleted
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if cfg.StateID == "" {
+			return fmt.Errorf("state_id is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerDocPublished, model.TriggerAISectionRegenerated, model.TriggerAISectionApproved:
+		var cfg map[string]any
+		if len(triggerConfig) > 0 {
+			if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+				return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+			}
+		}
+	case model.TriggerGitHubPush, model.TriggerGitLabPush:
 		var cfg model.TriggerConfigGitHubPush
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -929,7 +1122,7 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.Branch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
 			return fmt.Errorf("branch or repo_full_name is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubPROpened:
+	case model.TriggerGitHubPROpened, model.TriggerGitLabMROpened:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -937,7 +1130,15 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
 			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubPRMerged:
+	case model.TriggerGitHubPRMerged, model.TriggerGitLabMRMerged:
+		var cfg model.TriggerConfigGitHubPullRequest
+		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
+		}
+		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
+			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
+		}
+	case model.TriggerGitHubPRClosed, model.TriggerGitLabMRClosed:
 		var cfg model.TriggerConfigGitHubPullRequest
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -953,15 +1154,15 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if strings.TrimSpace(cfg.BaseBranch) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
 			return fmt.Errorf("base_branch or repo_full_name is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubReleasePub:
+	case model.TriggerGitHubReleasePub, model.TriggerGitLabReleasePub:
 		var cfg model.TriggerConfigGitHubReleasePublished
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 		}
-		if strings.TrimSpace(cfg.TagName) == "" && strings.TrimSpace(cfg.RepoFullName) == "" {
-			return fmt.Errorf("tag_name or repo_full_name is required in trigger_config for %s", triggerType)
+		if strings.TrimSpace(cfg.TagName) == "" && strings.TrimSpace(cfg.RepoFullName) == "" && strings.TrimSpace(cfg.TagPattern) == "" && len(cfg.ReleaseKinds) == 0 {
+			return fmt.Errorf("repo_full_name, tag_name, tag_pattern, or release_kinds is required in trigger_config for %s", triggerType)
 		}
-	case model.TriggerGitHubCheckSuite:
+	case model.TriggerGitHubCheckSuite, model.TriggerGitLabPipeline:
 		var cfg model.TriggerConfigGitHubCheckSuiteCompleted
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
@@ -974,8 +1175,8 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if err := json.Unmarshal(triggerConfig, &cfg); err != nil {
 			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 		}
-		if cfg.Category == "" {
-			return fmt.Errorf("category is required in trigger_config for %s", triggerType)
+		if _, _, err := resolveCronTriggerConfig(cfg); err != nil {
+			return fmt.Errorf("invalid trigger_config for %s: %w", triggerType, err)
 		}
 	default:
 		return fmt.Errorf("unsupported trigger_type: %s", triggerType)
@@ -997,11 +1198,11 @@ func (e *AutomationRuleEngine) validateRuleRequest(triggerType string, triggerCo
 		if (targetType == "") != (targetID == "") {
 			return fmt.Errorf("target_type and target_id must both be set in action_config for %s", actionType)
 		}
-		if triggerType == model.TriggerCron && (targetType == "" || targetID == "") {
+		if isGitHubAutomationTrigger(triggerType) && triggerType != model.TriggerGitHubReleasePub && (targetType == "" || targetID == "") {
 			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
 		}
-		if isGitHubAutomationTrigger(triggerType) && (targetType == "" || targetID == "") {
-			return fmt.Errorf("target_type and target_id are required in action_config for %s when trigger_type is %s", actionType, triggerType)
+		if cfg.Output != nil && strings.EqualFold(strings.TrimSpace(cfg.Output.Type), "docs_document") && strings.TrimSpace(cfg.Output.SpaceID) == "" {
+			return fmt.Errorf("output.space_id is required when output.type is docs_document")
 		}
 	case model.ActionMoveToState:
 		var cfg model.ActionConfigMoveToState
@@ -1041,13 +1242,116 @@ func isGitHubAutomationTrigger(triggerType string) bool {
 	case model.TriggerGitHubPush,
 		model.TriggerGitHubPROpened,
 		model.TriggerGitHubPRMerged,
+		model.TriggerGitHubPRClosed,
 		model.TriggerGitHubPRReviewReq,
 		model.TriggerGitHubReleasePub,
-		model.TriggerGitHubCheckSuite:
+		model.TriggerGitHubCheckSuite,
+		model.TriggerGitLabPush,
+		model.TriggerGitLabMROpened,
+		model.TriggerGitLabMRMerged,
+		model.TriggerGitLabMRClosed,
+		model.TriggerGitLabReleasePub,
+		model.TriggerGitLabPipeline:
 		return true
 	default:
 		return false
 	}
+}
+
+func resolveCronTriggerConfig(cfg model.TriggerConfigCron) (schedule, preset string, err error) {
+	schedule = strings.TrimSpace(cfg.Schedule)
+	preset = strings.TrimSpace(cfg.Preset)
+	category := strings.TrimSpace(cfg.Category)
+
+	if preset == "" {
+		switch category {
+		case "workspace_hourly":
+			preset = "hourly"
+		case "workspace_daily":
+			preset = "daily"
+		case "workspace_weekly":
+			preset = "weekly"
+		}
+	}
+
+	if schedule == "" && preset != "" {
+		switch preset {
+		case "hourly":
+			schedule = "0 * * * *"
+		case "daily":
+			schedule = "0 0 * * *"
+		case "weekly":
+			schedule = "0 0 * * 1"
+		default:
+			return "", "", fmt.Errorf("unsupported preset %q", preset)
+		}
+	}
+
+	if schedule == "" && category != "" && strings.Contains(category, " ") {
+		schedule = category
+	}
+	if schedule == "" {
+		return "", "", fmt.Errorf("schedule or preset is required")
+	}
+	if err := automationcron.ValidateExpression(schedule); err != nil {
+		return "", "", err
+	}
+	return schedule, preset, nil
+}
+
+func (e *AutomationRuleEngine) syncRuleSchedule(ctx context.Context, rule *model.AutomationRule, stopFirst bool) error {
+	if e == nil || e.runEngine == nil || rule == nil {
+		return nil
+	}
+	if stopFirst {
+		_ = e.runEngine.StopRuleSchedule(ctx, rule.ID)
+	}
+	if rule.TriggerType != model.TriggerCron || !rule.Enabled {
+		return nil
+	}
+
+	var cfg model.TriggerConfigCron
+	if err := json.Unmarshal(rule.TriggerConfig, &cfg); err != nil {
+		return fmt.Errorf("parse cron trigger config: %w", err)
+	}
+	schedule, _, err := resolveCronTriggerConfig(cfg)
+	if err != nil {
+		return err
+	}
+	return e.runEngine.StartRuleSchedule(ctx, rule.ID, rule.WorkspaceID, schedule)
+}
+
+func (e *AutomationRuleEngine) StartRuleScheduleForRule(ctx context.Context, rule *model.AutomationRule) error {
+	return e.syncRuleSchedule(ctx, rule, false)
+}
+
+func (e *AutomationRuleEngine) StopRuleScheduleForRule(ctx context.Context, ruleID string) error {
+	if e == nil || e.runEngine == nil || strings.TrimSpace(ruleID) == "" {
+		return nil
+	}
+	return e.runEngine.StopRuleSchedule(ctx, ruleID)
+}
+
+func githubRunEventContext(event model.AutomationEvent) *model.AgentRunGitHubEventContext {
+	ctx := &model.AgentRunGitHubEventContext{
+		EventType:    strings.TrimPrefix(strings.TrimSpace(event.TriggerType), "github."),
+		RepoFullName: strings.TrimSpace(event.RepoFullName),
+		RepositoryID: strings.TrimSpace(event.RepositoryID),
+	}
+	switch event.TriggerType {
+	case model.TriggerGitHubPROpened, model.TriggerGitHubPRMerged, model.TriggerGitHubPRClosed, model.TriggerGitHubPRReviewReq:
+		ctx.PullRequest = &model.AgentRunGitHubPullRequestEventContext{
+			Number:     event.PullRequestNumber,
+			BaseBranch: strings.TrimSpace(event.BaseBranch),
+			HeadBranch: strings.TrimSpace(event.Branch),
+		}
+	case model.TriggerGitHubCheckSuite:
+		ctx.CheckSuite = &model.AgentRunGitHubCheckSuiteEventContext{
+			Branch:     strings.TrimSpace(event.Branch),
+			Conclusion: strings.TrimSpace(event.Conclusion),
+		}
+	}
+	return ctx
 }
 
 func matchGitHubPushConfig(cfg model.TriggerConfigGitHubPush, event model.AutomationEvent) bool {
@@ -1074,10 +1378,51 @@ func matchGitHubReleaseConfig(cfg model.TriggerConfigGitHubReleasePublished, eve
 	if strings.TrimSpace(cfg.TagName) != "" && strings.TrimSpace(cfg.TagName) != strings.TrimSpace(event.TagName) {
 		return false
 	}
+	if strings.TrimSpace(cfg.TagPattern) != "" {
+		matched, err := path.Match(strings.TrimSpace(cfg.TagPattern), strings.TrimSpace(event.TagName))
+		if err != nil || !matched {
+			return false
+		}
+	}
 	if strings.TrimSpace(cfg.RepoFullName) != "" && !strings.EqualFold(strings.TrimSpace(cfg.RepoFullName), strings.TrimSpace(event.RepoFullName)) {
 		return false
 	}
+	if event.IsPrerelease && !cfg.IncludePrerelease && !containsReleaseKind(cfg.ReleaseKinds, "prerelease") {
+		return false
+	}
+	if len(cfg.ReleaseKinds) > 0 && !containsReleaseKind(cfg.ReleaseKinds, event.ReleaseKind) {
+		return false
+	}
 	return strings.TrimSpace(event.TagName) != "" || strings.TrimSpace(event.RepoFullName) != ""
+}
+
+func containsReleaseKind(kinds []string, candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	for _, kind := range kinds {
+		if strings.EqualFold(strings.TrimSpace(kind), candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func deriveRunOutputContext(event model.AutomationEvent, cfg *model.ActionConfigRunAgentOutput) (*model.AgentRunOutputContext, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+	output := &model.AgentRunOutputContext{
+		Type:           strings.TrimSpace(cfg.Type),
+		SpaceID:        strings.TrimSpace(cfg.SpaceID),
+		CollectionID:   cfg.CollectionID,
+		IdempotencyKey: strings.TrimSpace(cfg.IdempotencyKey),
+	}
+	if strings.EqualFold(output.Type, "docs_document") && output.SpaceID == "" {
+		return nil, fmt.Errorf("output.space_id is required when output.type is docs_document")
+	}
+	if output.IdempotencyKey == "" && event.TriggerType == model.TriggerGitHubReleasePub && strings.TrimSpace(event.RepositoryID) != "" && strings.TrimSpace(event.TagName) != "" {
+		output.IdempotencyKey = fmt.Sprintf("release_notes:%s:%s", strings.TrimSpace(event.RepositoryID), strings.TrimSpace(event.TagName))
+	}
+	return output, nil
 }
 
 func matchGitHubCheckSuiteConfig(cfg model.TriggerConfigGitHubCheckSuiteCompleted, event model.AutomationEvent) bool {

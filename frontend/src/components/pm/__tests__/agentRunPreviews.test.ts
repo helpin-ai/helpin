@@ -43,7 +43,7 @@ describe('runPreviews', () => {
       }),
     } as never);
 
-    expect(parsed?.panelKey).toBe('story_plan');
+    expect(parsed?.panelKey).toBe('task_plan');
     expect(parsed?.format).toBe('json');
     expect(parsed?.content).toEqual({
       summary: 'Slice plan',
@@ -62,7 +62,7 @@ describe('runPreviews', () => {
       },
     }));
 
-    expect(parsed?.panelKey).toBe('story_plan');
+    expect(parsed?.panelKey).toBe('task_plan');
     expect(parsed?.title).toBe('Task Plan');
   });
 
@@ -102,7 +102,7 @@ describe('runPreviews', () => {
       ],
     } as never);
 
-    expect(parsed?.panelKey).toBe('story_plan');
+    expect(parsed?.panelKey).toBe('task_plan');
     expect(parsed?.format).toBe('json');
   });
 

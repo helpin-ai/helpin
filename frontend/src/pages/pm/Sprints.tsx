@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import type { InfiniteData } from '@tanstack/react-query';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from '@tanstack/react-router';
@@ -258,6 +258,31 @@ function applyTaskAssignment(
   return workspace;
 }
 
+function normalizeSearchText(value: string | number | null | undefined) {
+  return String(value ?? '').toLowerCase();
+}
+
+function sprintMatchesSearch(
+  card: Pick<SprintPlanningWorkspaceData['buckets'][number]['sprints'][number], 'sprint' | 'stats'>,
+  query: string,
+) {
+  if (!query) return true;
+  const { sprint, stats } = card;
+  const haystack = [
+    sprint.name,
+    sprint.description,
+    sprint.status,
+    sprint.start_date,
+    sprint.end_date,
+    `${stats.task_count} tasks`,
+    `${stats.done_task_count}/${stats.task_count} tasks`,
+    `${stats.total_points} points`,
+    `${stats.done_points}/${stats.total_points} points`,
+  ].map(normalizeSearchText).join(' ');
+
+  return haystack.includes(query);
+}
+
 function syncPreviewQueryCaches(
   queryClient: ReturnType<typeof useQueryClient>,
   workspaceId: string,
@@ -293,14 +318,18 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   const location = useLocation();
   const openCreate = useGlobalCreateStore((state) => state.openCreate);
   const { data: access } = useWorkspaceAccess(workspaceId);
-  const { canEdit } = usePermissions(access);
+  const { canEdit, isAdmin, isTeamManager, teamMemberships } = usePermissions(access);
   const { teams } = useAccessibleTeams(workspaceId);
   const { members } = useAssignableWorkspaceMembers(workspaceId);
   const [backlogOpen, setBacklogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SprintStatusFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
 
   const teamName = teamId ? teams.find((t) => t.id === teamId)?.name : undefined;
   useTitle(teamName ? `Sprints — ${teamName}` : 'Sprints');
+  const canCreateSprint = canEdit && (isAdmin || (teamId ? isTeamManager(teamId) : teamMemberships.some((tm) => tm.role === 'owner')));
 
   const isArchived = statusFilter === 'archived';
 
@@ -330,17 +359,38 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
     enabled: !!workspaceId && isArchived,
   });
 
-  // Filter the planning workspace buckets based on status filter
+  // Filter the planning workspace buckets based on status and search filters
   const filteredWorkspace = useMemo(() => {
     if (!planningQuery.data || isArchived) return planningQuery.data ?? null;
-    if (statusFilter === 'all') return planningQuery.data;
 
     const bucketKey = statusFilter === 'upcoming' ? 'upcoming' : statusFilter === 'active' ? 'active' : 'completed';
+    const statusBuckets = statusFilter === 'all'
+      ? planningQuery.data.buckets
+      : planningQuery.data.buckets.filter((b) => b.key === bucketKey);
+
+    if (!normalizedSearchQuery) {
+      return statusFilter === 'all'
+        ? planningQuery.data
+        : {
+            ...planningQuery.data,
+            buckets: statusBuckets,
+          };
+    }
+
     return {
       ...planningQuery.data,
-      buckets: planningQuery.data.buckets.filter((b) => b.key === bucketKey),
+      buckets: statusBuckets.map((bucket) => ({
+        ...bucket,
+        sprints: (bucket.sprints ?? []).filter((card) => sprintMatchesSearch(card, normalizedSearchQuery)),
+      })),
     };
-  }, [planningQuery.data, statusFilter, isArchived]);
+  }, [planningQuery.data, statusFilter, isArchived, normalizedSearchQuery]);
+
+  const filteredArchivedSprints = useMemo(() => {
+    const archivedSprints = archivedQuery.data ?? [];
+    if (!normalizedSearchQuery) return archivedSprints;
+    return archivedSprints.filter((card) => sprintMatchesSearch(card, normalizedSearchQuery));
+  }, [archivedQuery.data, normalizedSearchQuery]);
 
   const handleAssignTask = async (task: SprintPlanningTaskPreview, sprintId: string | null) => {
     if (!planningQuery.data || !canEdit) return;
@@ -384,20 +434,24 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
   // Check unfiltered data for any sprints (to distinguish "no sprints ever" from "no sprints matching filter")
   const hasAnySprintUnfiltered = Boolean(planningQuery.data?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
   const hasAnySprintFiltered = Boolean(filteredWorkspace?.buckets.some((bucket) => (bucket.sprints?.length ?? 0) > 0));
-  const isFiltered = statusFilter !== 'all';
+  const isSearchFiltered = normalizedSearchQuery.length > 0;
+  const isFiltered = statusFilter !== 'all' || isSearchFiltered;
 
   if (!workspace) {
     return <p className="text-sm text-muted-foreground">Workspace not found.</p>;
   }
 
   return (
-    <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
+    <div className="mx-auto flex max-w-[1600px] 2xl:max-w-[1920px] min-[2560px]:max-w-[2400px] flex-col gap-4">
       {(hasAnySprintUnfiltered || isFiltered) && (
         <SprintPlanningFilters
           teamName={teamName}
           statusFilter={statusFilter}
+          searchQuery={searchQuery}
           canEdit={canEdit}
+          canCreateSprint={canCreateSprint}
           onStatusFilterChange={setStatusFilter}
+          onSearchQueryChange={setSearchQuery}
           onCreateSprint={() => openCreate('sprint', { teamId: teamId || undefined })}
         />
       )}
@@ -413,9 +467,9 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-sm text-muted-foreground">
             Loading archived sprints…
           </div>
-        ) : archivedQuery.data && archivedQuery.data.length > 0 ? (
+        ) : filteredArchivedSprints.length > 0 ? (
           <div className="space-y-2">
-            {archivedQuery.data.map((s) => (
+            {filteredArchivedSprints.map((s) => (
               <ArchivedSprintRow
                 key={s.sprint.id}
                 card={s}
@@ -426,6 +480,10 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
               />
             ))}
           </div>
+        ) : isSearchFiltered && archivedQuery.data && archivedQuery.data.length > 0 ? (
+          <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-center text-sm text-muted-foreground">
+            No archived sprints match your search.
+          </div>
         ) : (
           <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-center text-sm text-muted-foreground">
             No archived sprints.
@@ -434,6 +492,10 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
       ) : planningQuery.isLoading && !planningQuery.data ? (
         <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-sm text-muted-foreground">
           Loading sprints…
+        </div>
+      ) : isSearchFiltered && !hasAnySprintFiltered && hasAnySprintUnfiltered ? (
+        <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-center text-sm text-muted-foreground">
+          No sprints match your search.
         </div>
       ) : isFiltered && !hasAnySprintFiltered && hasAnySprintUnfiltered ? (
         <div className="rounded-xl border border-border/60 bg-card/60 px-4 py-8 text-center text-sm text-muted-foreground">
@@ -447,6 +509,7 @@ export function SprintsPage({ teamId }: SprintsPageProps) {
           backlogOpen={backlogOpen}
           onBacklogToggle={() => setBacklogOpen((prev) => !prev)}
           canEdit={canEdit}
+          canCreateSprint={canCreateSprint}
           members={members}
           onOpenSprint={(sprintId) => navigate({ to: '/w/$slug/pm/sprints/$sprintId', params: { slug: workspace.slug, sprintId } })}
           onOpenTask={handleOpenTask}

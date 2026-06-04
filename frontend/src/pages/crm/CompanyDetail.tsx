@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useCompany, useUpdateCompany, useDeleteCompany, useCompanyActivities, useCompanyAssociations } from '@/hooks/queries';
 import { ActivityTimeline } from '@/components/crm/ActivityTimeline';
+import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
 import { AssociationsList } from '@/components/crm/AssociationsList';
 import { useTitle } from '@/hooks/useTitle';
 import type { UpdateCRMCompanyRequest } from '@/lib/crmTypes';
@@ -37,8 +38,8 @@ function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType;
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
-      <span className="self-center text-xs text-muted-foreground">{label}</span>
-      <div className="min-w-0 self-center">{children}</div>
+      <span className="self-center text-[12px] text-muted-foreground">{label}</span>
+      <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
 }
@@ -201,6 +202,17 @@ export function CompanyDetailPage({ companyId }: { companyId: string }) {
                 className="border-transparent shadow-none"
               />
             </div>
+          </div>
+
+          <Separator className="my-6" />
+
+          {/* Tasks */}
+          <div>
+            <LinkedTasksPanel
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              companyId={companyId}
+            />
           </div>
 
           <Separator className="my-6" />

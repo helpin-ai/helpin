@@ -20,9 +20,11 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 	}
 
 	var capturedUserID, capturedEmail string
+	var capturedClaims *auth.Claims
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedUserID = GetUserID(r.Context())
 		capturedEmail = GetUserEmail(r.Context())
+		capturedClaims = ClaimsFrom(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -42,6 +44,65 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 	}
 	if capturedEmail != "alice@example.com" {
 		t.Errorf("Email = %q, want %q", capturedEmail, "alice@example.com")
+	}
+	if capturedClaims == nil || capturedClaims.TokenUse != auth.TokenUseAccess {
+		t.Fatalf("expected access claims in context, got %+v", capturedClaims)
+	}
+}
+
+func TestRequireAuth_ValidTokenCookie(t *testing.T) {
+	jwtMgr := auth.NewJWTManager("test-secret")
+	accessToken, _, err := jwtMgr.GenerateTokenPair("user-cookie", "cookie@example.com", false)
+	if err != nil {
+		t.Fatalf("GenerateTokenPair() error: %v", err)
+	}
+
+	var capturedUserID, capturedEmail string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedUserID = GetUserID(r.Context())
+		capturedEmail = GetUserEmail(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := RequireAuth(jwtMgr)(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.AddCookie(&http.Cookie{Name: accessTokenCookieName, Value: accessToken})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if capturedUserID != "user-cookie" {
+		t.Errorf("UserID = %q, want %q", capturedUserID, "user-cookie")
+	}
+	if capturedEmail != "cookie@example.com" {
+		t.Errorf("Email = %q, want %q", capturedEmail, "cookie@example.com")
+	}
+}
+
+func TestRequireAuth_RejectsRefreshToken(t *testing.T) {
+	jwtMgr := auth.NewJWTManager("test-secret")
+	_, refreshToken, err := jwtMgr.GenerateTokenPair("user-abc", "alice@example.com", false)
+	if err != nil {
+		t.Fatalf("GenerateTokenPair() error: %v", err)
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("inner handler should not be called")
+	})
+	handler := RequireAuth(jwtMgr)(inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("Authorization", "Bearer "+refreshToken)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 

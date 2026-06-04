@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { CollectionRouteView } from '@/components/routes/CollectionRouteView'
 import { LoadingState } from '@/components/LoadingState'
 import { useDocsContext } from '@/contexts/DocsContext'
+import { prefixBasepath } from '@/lib/pathUtils'
 import { loadRootRouteData } from '@/lib/rootLoader'
 
 export const Route = createFileRoute('/$locale/$spaceSlug/')({
@@ -34,14 +35,14 @@ export const Route = createFileRoute('/$locale/$spaceSlug/')({
 
 function LocalizedSpaceIndex() {
   const { locale: localeParam, spaceSlug } = Route.useParams()
-  const { enabledLocales, multilingualEnabled } = useDocsContext()
+  const { basepath, enabledLocales, multilingualEnabled } = useDocsContext()
   const isValidLocaleParam = enabledLocales.some(
     (enabledLocale) => enabledLocale.toLowerCase() === localeParam.toLowerCase(),
   )
 
   if (!isValidLocaleParam && !multilingualEnabled) {
     if (typeof window !== 'undefined') {
-      window.location.replace(`/${localeParam}/${spaceSlug}`)
+      window.location.replace(prefixBasepath(basepath, `/${localeParam}/${spaceSlug}`))
     }
     return <LoadingState message="Redirecting..." />
   }

@@ -591,8 +591,8 @@ func TestSupportInboxServiceIdentifyByAnonymousIDRefreshesContactIdentity(t *tes
 	if updatedConversation.CRMContactID == nil || *updatedConversation.CRMContactID != contact.ID {
 		t.Fatalf("conversation crm_contact_id = %v, want %q", updatedConversation.CRMContactID, contact.ID)
 	}
-	if !updatedConversation.UpdatedAt.After(oldTime) {
-		t.Fatalf("conversation updated_at = %v, want after %v", updatedConversation.UpdatedAt, oldTime)
+	if updatedConversation.UpdatedAt.After(oldTime) {
+		t.Fatalf("conversation updated_at = %v, want unchanged from %v", updatedConversation.UpdatedAt, oldTime)
 	}
 
 	updatedSession, err := sessionRepo.GetByToken(ctx, session.SessionToken)
@@ -688,6 +688,121 @@ func TestSupportInboxServiceIdentifyByAnonymousIDStoresExplicitFirstAndLastName(
 	}
 	if updatedConversation.CustomerName == nil || *updatedConversation.CustomerName != "Mary Jane van Dyke" {
 		t.Fatalf("conversation customer_name = %v, want %q", updatedConversation.CustomerName, "Mary Jane van Dyke")
+	}
+}
+
+func TestSupportInboxServiceIdentifyByAnonymousIDCreatesCompanyAndPrimaryAssociation(t *testing.T) {
+	db := newTestDB(t)
+
+	const (
+		workspaceID = "ws-widget-identify-company"
+		widgetKey   = "wk_widget_identify_company"
+		anonymousID = "anon-company"
+		email       = "azhar@example.com"
+	)
+
+	seedWorkspace(t, db, workspaceID, "Widget Company", "widget-company", "user-123")
+
+	ctx := context.Background()
+	installationRepo := repository.NewSupportInboxInstallationRepository(db)
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	contactRepo := repository.NewCRMContactRepository(db)
+	companyRepo := repository.NewCRMCompanyRepository(db)
+	assocRepo := repository.NewCRMAssociationRepository(db)
+
+	if err := installationRepo.Create(ctx, &model.SupportWidgetInstallation{
+		WorkspaceID: workspaceID,
+		WidgetKey:   widgetKey,
+		SecretKey:   "sk_widget_identify_company",
+		Settings:    "{}",
+		Active:      true,
+	}); err != nil {
+		t.Fatalf("create installation: %v", err)
+	}
+
+	conversation := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Widget company identify",
+		Status:      "open",
+		AnonymousID: strPtr(anonymousID),
+	}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	session := &model.SupportWidgetSession{
+		WorkspaceID:  workspaceID,
+		SessionToken: "widget-company-token",
+		AnonymousID:  anonymousID,
+		IsAnonymous:  true,
+		ExpiresAt:    time.Now().Add(24 * time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := svcWithWidgetRepos(installationRepo, conversationRepo, sessionRepo, contactRepo).IdentifyByAnonymousID(ctx, widgetKey, anonymousID, model.WidgetIdentityPayload{
+		Email:     email,
+		FirstName: "M",
+		LastName:  "Azhar",
+		Source:    "sdk_identify",
+		Company: model.JSONB{
+			"id":         "company-123",
+			"name":       "Acme Inc",
+			"domain":     "https://www.acme.example/pricing",
+			"created_at": "2024-01-15T00:00:00Z",
+			"plan":       "enterprise",
+			"custom": map[string]interface{}{
+				"region": "emea",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("IdentifyByAnonymousID: %v", err)
+	}
+
+	contacts, _, err := contactRepo.List(ctx, workspaceID, model.CRMContactListFilters{}, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list contacts: %v", err)
+	}
+	if len(contacts) != 1 {
+		t.Fatalf("contact count = %d, want 1", len(contacts))
+	}
+
+	companies, _, err := companyRepo.List(ctx, workspaceID, model.CRMCompanyListFilters{}, model.PMPagination{Page: 1, PerPage: 10})
+	if err != nil {
+		t.Fatalf("list companies: %v", err)
+	}
+	if len(companies) != 1 {
+		t.Fatalf("company count = %d, want 1", len(companies))
+	}
+	company := companies[0]
+	if company.ExternalID == nil || *company.ExternalID != "company-123" {
+		t.Fatalf("company external_id = %v, want company-123", company.ExternalID)
+	}
+	if company.Name != "Acme Inc" {
+		t.Fatalf("company name = %q, want Acme Inc", company.Name)
+	}
+	if company.Domain == nil || *company.Domain != "acme.example" {
+		t.Fatalf("company domain = %v, want acme.example", company.Domain)
+	}
+	if company.CustomProperties["sdk_company_id"] != "company-123" || company.CustomProperties["plan"] != "enterprise" || company.CustomProperties["region"] != "emea" {
+		t.Fatalf("company custom_properties = %#v, want sdk company id, plan, and region", company.CustomProperties)
+	}
+
+	assocs, err := assocRepo.ListByObject(ctx, workspaceID, model.CRMObjectContact, contacts[0].ID)
+	if err != nil {
+		t.Fatalf("list associations: %v", err)
+	}
+	if len(assocs) != 1 {
+		t.Fatalf("association count = %d, want 1", len(assocs))
+	}
+	otherType, otherID := otherAssociationSide(assocs[0], model.CRMObjectContact, contacts[0].ID)
+	if otherType != model.CRMObjectCompany || otherID != company.ID {
+		t.Fatalf("association other side = %s/%s, want company/%s", otherType, otherID, company.ID)
+	}
+	if assocs[0].AssociationLabel == nil || *assocs[0].AssociationLabel != primaryCompanyAssociationLabel {
+		t.Fatalf("association label = %v, want primary", assocs[0].AssociationLabel)
 	}
 }
 
@@ -862,5 +977,85 @@ func TestSupportInboxServiceListConversationMessages_AllowsWidgetValidatedContex
 	}
 	if messages[0].ID != message.ID {
 		t.Fatalf("message id = %q, want %q", messages[0].ID, message.ID)
+	}
+}
+
+func TestWidgetCreateMessageReopensResolvedConversation(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-widget-reopen"
+	seedWorkspace(t, db, workspaceID, "Widget Reopen WS", "widget-reopen-ws", "user-123")
+
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	sessionRepo := repository.NewSupportInboxSessionRepository(db)
+	installationRepo := repository.NewSupportInboxInstallationRepository(db)
+
+	resolvedAt := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	conversation := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Resolved widget conversation",
+		Status:      model.SupportConversationStatusResolved,
+		FlowState:   strPtr(model.SupportConversationFlowStateResolvedByHuman),
+		ResolvedAt:  &resolvedAt,
+		ClosedAt:    &resolvedAt,
+		AnonymousID: strPtr("anon-widget-reopen"),
+		Source:      "widget",
+		Channel:     "widget",
+	}
+	if err := conversationRepo.Create(ctx, conversation); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	session := &model.SupportWidgetSession{
+		WorkspaceID:    workspaceID,
+		SessionToken:   "widget-reopen-session",
+		AnonymousID:    "anon-widget-reopen",
+		IsAnonymous:    true,
+		ConversationID: &conversation.ID,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
+	}
+	if err := sessionRepo.Create(ctx, session); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		conversationRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		nil,
+		nil,
+		installationRepo,
+		sessionRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	if _, err := svc.WidgetCreateMessage(ctx, session.SessionToken, "I need more help on this.", nil); err != nil {
+		t.Fatalf("WidgetCreateMessage: %v", err)
+	}
+
+	updated, err := conversationRepo.GetByID(ctx, workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Status != model.SupportConversationStatusOpen {
+		t.Fatalf("status = %q, want %q", updated.Status, model.SupportConversationStatusOpen)
+	}
+	if updated.ResolvedAt != nil {
+		t.Fatalf("resolved_at = %#v, want nil", updated.ResolvedAt)
+	}
+	if updated.ClosedAt != nil {
+		t.Fatalf("closed_at = %#v, want nil", updated.ClosedAt)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateWaitingForHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateWaitingForHuman)
 	}
 }

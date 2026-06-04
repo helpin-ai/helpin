@@ -11,6 +11,7 @@ const (
 	WorkflowSignalApprove       = "ApproveRun"
 	WorkflowSignalHandoff       = "HandoffRun"
 	WorkflowSignalMessage       = "RunMessage"
+	WorkflowSignalCommandBarRun = "CommandBarRunCompleted"
 )
 
 // QueueConfig describes a shared Temporal task queue and its expected concurrency.

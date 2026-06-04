@@ -6,6 +6,7 @@ import { ComposeBar } from './ComposeBar';
 import { TypingIndicator } from './TypingIndicator';
 import { PreChatForm } from './PreChatForm';
 import { ImageLightbox } from './ImageLightbox';
+import { SpecialNoticeBanner } from './SpecialNoticeBanner';
 import { ChevronLeftIcon, MoreVerticalIcon, XIcon } from './icons';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -82,8 +83,18 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const availability = config.availability;
   const aiFirst = Boolean(config.features?.aiFirst);
   const hasTeamReply = messages.some((message) => message.role !== 'customer');
+  const hasAssistantReply = messages.some((message) => message.role === 'ai' || message.role === 'agent');
   const hasHumanReply = messages.some((message) => message.role === 'agent');
   const hasCustomerMessage = messages.some((message) => message.role === 'customer');
+  const escalationMessageCopy = (config.features?.escalationMessage || 'Let me connect you with a team member who can help further.').trim();
+  const hasEscalationNotice = messages.some((message) =>
+    message.role === 'system' &&
+    (
+      message.systemEventType === 'ai_escalated' ||
+      message.content.trim() === escalationMessageCopy ||
+      message.content.trim() === 'Let me connect you with a team member who can help further.'
+    ),
+  );
   const fileUploadsEnabled = Boolean(config.features?.fileUploads && onUploadAttachment);
   const composeDisabled = connectionStatus === 'connecting' || connectionStatus === 'disconnected' || connectionStatus === 'failed';
   const composePlaceholder = connectionStatus === 'failed'
@@ -95,6 +106,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
         : 'Ask a question...';
   const hasHumanHandoffAlready = Boolean(
     hasHumanReply ||
+      hasEscalationNotice ||
       conversation?.aiState === 'escalated' ||
       conversation?.status === 'resolved' ||
       conversation?.status === 'closed' ||
@@ -104,14 +116,28 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       conversation?.flowState === 'assigned_to_human' ||
       conversation?.flowState === 'resolved_by_human',
   );
+  const showHumanHandoffState = showHumanAvailability && !hasHumanReply;
   const showTalkToHumanButton = Boolean(
     config.features?.showTalkToHuman &&
       onEscalateToHuman &&
-      messages.length > 0 &&
+      hasAssistantReply &&
       !hasHumanHandoffAlready &&
+      !showHumanHandoffState &&
       !isAIThinking &&
       !isTyping,
   );
+  const isWaitingForTeammate = Boolean(
+    (hasEscalationNotice ||
+      conversation?.aiState === 'escalated' ||
+      conversation?.flowState === 'waiting_for_human' ||
+      conversation?.flowState === 'queued_for_human' ||
+      conversation?.flowState === 'after_hours_queue' ||
+      conversation?.flowState === 'assigned_to_human') &&
+      !hasHumanReply &&
+      !isTyping &&
+      !isAIThinking,
+  );
+  const waitingTeammates = (config.availableTeammates || []).slice(0, 3);
 
   // Derive the most recent responding agent from messages.
   const activeAgent = useMemo(() => {
@@ -136,7 +162,6 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
   const introRole = aiFirst ? 'ai' as const : 'agent' as const;
   const introName = aiFirst ? 'Helpin AI' : workspaceName;
   const introAvatar = aiFirst ? undefined : (logoUrl || undefined);
-  const showHumanHandoffState = showHumanAvailability && !hasHumanReply;
   const showActiveAgentHeader = Boolean(activeAgent?.name) && !showHumanHandoffState;
   const teammateStatus = activeTeammate?.status || 'online';
 
@@ -367,7 +392,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
                 </span>
                 <span className="helpin-conversation-subtitle">
                   {showHumanHandoffState
-                    ? availability?.statusText || 'Our team will follow up as soon as someone is available.'
+                    ? availability?.replyTimeText || availability?.outsideHoursMessage || 'Our team will follow up as soon as someone is available.'
                     : aiFirst
                       ? 'Our AI assistant will reply first'
                       : availability?.statusText || 'Online now'}
@@ -471,16 +496,7 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
       </div>
 
       <div className="helpin-conversation-thread" ref={threadRef}>
-        {showHumanHandoffState && (
-          <div className="helpin-human-handoff-banner">
-            <p className="helpin-human-handoff-title">
-              {config.features?.escalationMessage || "We're handing this over to a team member."}
-            </p>
-            <p className="helpin-human-handoff-meta">
-              {availability?.replyTimeText || availability?.outsideHoursMessage || 'Our team will follow up as soon as someone is available.'}
-            </p>
-          </div>
-        )}
+        <SpecialNoticeBanner text={availability?.specialNoticeText} workspaceId={config.workspaceId} />
         <MessageList
           messages={displayMessages}
           showDateSeparators={true}
@@ -521,6 +537,30 @@ export const ConversationView: FunctionComponent<ConversationViewProps> = ({
           <button type="button" className="helpin-talk-to-human-btn" onClick={onEscalateToHuman}>
             Talk to a human
           </button>
+        </div>
+      )}
+      {isWaitingForTeammate && (
+        <div className="helpin-waiting-teammate" role="status" aria-live="polite">
+          {waitingTeammates.length > 0 && (
+            <div className="helpin-waiting-teammate-avatars">
+              {waitingTeammates.map((teammate) => (
+                <div key={teammate.userId} className="helpin-waiting-teammate-avatar-wrap">
+                  {teammate.avatarUrl ? (
+                    <img
+                      src={teammate.avatarUrl}
+                      alt={teammate.name}
+                      className="helpin-waiting-teammate-avatar"
+                    />
+                  ) : (
+                    <div className="helpin-waiting-teammate-avatar helpin-waiting-teammate-avatar--placeholder">
+                      {teammate.name ? teammate.name.charAt(0).toUpperCase() : '?'}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <span className="helpin-waiting-teammate-label">A team member will reply soon</span>
         </div>
       )}
       <ComposeBar

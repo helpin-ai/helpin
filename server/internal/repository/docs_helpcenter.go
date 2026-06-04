@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -14,12 +15,33 @@ import (
 
 // DocsHelpcenterRepository handles DB operations for help center config, articles, slugs, and feedback.
 type DocsHelpcenterRepository struct {
-	db *gorm.DB
+	db         *gorm.DB
+	useSortKey bool
 }
 
 // NewDocsHelpcenterRepository creates a new DocsHelpcenterRepository.
-func NewDocsHelpcenterRepository(db *gorm.DB) *DocsHelpcenterRepository {
-	return &DocsHelpcenterRepository{db: db}
+func NewDocsHelpcenterRepository(db *gorm.DB, useSortKey ...bool) *DocsHelpcenterRepository {
+	enabled := false
+	if len(useSortKey) > 0 {
+		enabled = useSortKey[0]
+	}
+	return &DocsHelpcenterRepository{db: db, useSortKey: enabled}
+}
+
+// hcDocOrderBy returns the canonical ORDER BY for articles/docs in help center queries.
+func (r *DocsHelpcenterRepository) hcDocOrderBy() string {
+	if r.useSortKey {
+		return "d.sort_key ASC, d.id ASC"
+	}
+	return "d.position ASC, d.created_at ASC"
+}
+
+// hcCollOrderBy returns the canonical ORDER BY for collections in help center queries.
+func (r *DocsHelpcenterRepository) hcCollOrderBy() string {
+	if r.useSortKey {
+		return "sort_key ASC, id ASC"
+	}
+	return "position ASC, created_at ASC"
 }
 
 func normalizeDocsHelpcenterConfig(cfg *model.DocsHelpcenterConfig) {
@@ -34,6 +56,13 @@ func normalizeDocsHelpcenterConfig(cfg *model.DocsHelpcenterConfig) {
 	}
 	if cfg.ProtectedTerms == nil {
 		cfg.ProtectedTerms = model.DocsStringArray{}
+	}
+	if cfg.PublicURLMode == "" {
+		if cfg.CustomDomain != nil && strings.TrimSpace(*cfg.CustomDomain) != "" {
+			cfg.PublicURLMode = model.HelpcenterPublicURLModeCustomDomain
+		} else {
+			cfg.PublicURLMode = model.HelpcenterPublicURLModeHostedSubdomain
+		}
 	}
 }
 
@@ -104,6 +133,15 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	if v, ok := updates["custom_domain"].(*string); ok {
 		cfg.CustomDomain = v
 	}
+	if v, ok := updates["public_url_mode"].(string); ok {
+		cfg.PublicURLMode = v
+	}
+	if v, ok := updates["reverse_proxy_host"].(*string); ok {
+		cfg.ReverseProxyHost = v
+	}
+	if v, ok := updates["reverse_proxy_base_path"].(*string); ok {
+		cfg.ReverseProxyBasePath = v
+	}
 	if v, ok := updates["brand_logo_url"].(*string); ok {
 		cfg.BrandLogoURL = v
 	}
@@ -118,6 +156,18 @@ func (r *DocsHelpcenterRepository) UpsertConfig(ctx context.Context, workspaceID
 	}
 	if v, ok := updates["seo_description"].(*string); ok {
 		cfg.SEODescription = v
+	}
+	if v, ok := updates["og_title"].(string); ok {
+		cfg.OGTitle = &v
+	}
+	if v, ok := updates["og_description"].(string); ok {
+		cfg.OGDescription = &v
+	}
+	if v, ok := updates["og_image_url"].(string); ok {
+		cfg.OGImageURL = &v
+	}
+	if v, ok := updates["og_image_alt"].(string); ok {
+		cfg.OGImageAlt = &v
 	}
 	if v, ok := updates["support_email"].(*string); ok {
 		cfg.SupportEmail = v
@@ -187,12 +237,52 @@ func (r *DocsHelpcenterRepository) GetArticle(ctx context.Context, documentID st
 	return &art, nil
 }
 
+// DeleteArticlesByDocumentIDs hard-deletes help center article extensions.
+func (r *DocsHelpcenterRepository) DeleteArticlesByDocumentIDs(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("document_id IN ?", documentIDs).Delete(&model.DocsHelpcenterArticle{}).Error; err != nil {
+		return fmt.Errorf("delete helpcenter articles by documents: %w", err)
+	}
+	return nil
+}
+
+// CountPublicArticlesByDocumentIDs returns how many documents are live in the public help center.
+func (r *DocsHelpcenterRepository) CountPublicArticlesByDocumentIDs(ctx context.Context, documentIDs []string) (int, error) {
+	if len(documentIDs) == 0 {
+		return 0, nil
+	}
+	var count int64
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticle{}).
+		Where("document_id IN ? AND public_published_at IS NOT NULL", documentIDs).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count public helpcenter articles: %w", err)
+	}
+	return int(count), nil
+}
+
 // CreateArticle creates a help center article extension.
 func (r *DocsHelpcenterRepository) CreateArticle(ctx context.Context, art *model.DocsHelpcenterArticle) (*model.DocsHelpcenterArticle, error) {
-	if err := r.db.WithContext(ctx).Create(art).Error; err != nil {
+	q := r.db.WithContext(ctx)
+	if !r.useSortKey {
+		q = q.Omit("sort_key")
+	}
+	if err := q.Create(art).Error; err != nil {
 		return nil, fmt.Errorf("create helpcenter article: %w", err)
 	}
 	return art, nil
+}
+
+func (r *DocsHelpcenterRepository) UpdateArticleMetadata(ctx context.Context, documentID string, updates map[string]interface{}) (*model.DocsHelpcenterArticle, error) {
+	if err := r.db.WithContext(ctx).
+		Model(&model.DocsHelpcenterArticle{}).
+		Where("document_id = ?", documentID).
+		Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("update helpcenter article metadata: %w", err)
+	}
+	return r.GetArticle(ctx, documentID)
 }
 
 func (r *DocsHelpcenterRepository) PublicIDExists(ctx context.Context, publicID, excludeDocumentID string) (bool, error) {
@@ -312,7 +402,7 @@ func (r *DocsHelpcenterRepository) ListPublicCollectionTranslations(ctx context.
 			AND ct.published_at IS NOT NULL
 			AND c.deleted_at IS NULL
 		`, spaceID, locale, model.DocsHelpcenterTranslationStatusPublished).
-		Order("c.position ASC, c.created_at ASC").
+		Order("c." + r.hcCollOrderBy()).
 		Scan(&translations).Error; err != nil {
 		return nil, fmt.Errorf("list public collection translations: %w", err)
 	}
@@ -439,7 +529,7 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsBySpace(ctx cont
 				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
 			)
 		`, spaceID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
-		Order("d.position ASC, d.created_at ASC").
+		Order(r.hcDocOrderBy()).
 		Scan(&translations).Error; err != nil {
 		return nil, fmt.Errorf("list public article translations by space: %w", err)
 	}
@@ -618,7 +708,7 @@ func (r *DocsHelpcenterRepository) ListPublicArticleTranslationsByCollection(ctx
 				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
 			)
 		`, collectionID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished).
-		Order("d.position ASC, d.created_at ASC").
+		Order(r.hcDocOrderBy()).
 		Scan(&translations).Error; err != nil {
 		return nil, fmt.Errorf("list public article translations by collection: %w", err)
 	}
@@ -694,6 +784,10 @@ type sourceArticleRow struct {
 	PublicationExcerpt  *string         `gorm:"column:publication_excerpt"`
 	PublicationSEOTitle *string         `gorm:"column:publication_seo_title"`
 	PublicationSEODesc  *string         `gorm:"column:publication_seo_description"`
+	PublicationOGTitle  *string         `gorm:"column:publication_og_title"`
+	PublicationOGDesc   *string         `gorm:"column:publication_og_description"`
+	PublicationOGImage  *string         `gorm:"column:publication_og_image_url"`
+	PublicationOGAlt    *string         `gorm:"column:publication_og_image_alt"`
 	PublicPublishedAt   *time.Time      `gorm:"column:public_published_at"`
 	HelpfulCount        int             `gorm:"column:helpful_count"`
 	NotHelpfulCount     int             `gorm:"column:not_helpful_count"`
@@ -711,6 +805,10 @@ func sourceArticleRowToModels(row sourceArticleRow) (*model.DocsDocument, *model
 		Slug:              row.HelpcenterSlug,
 		SEOTitle:          row.PublicationSEOTitle,
 		SEODescription:    row.PublicationSEODesc,
+		OGTitle:           row.PublicationOGTitle,
+		OGDescription:     row.PublicationOGDesc,
+		OGImageURL:        row.PublicationOGImage,
+		OGImageAlt:        row.PublicationOGAlt,
 		HelpfulCount:      row.HelpfulCount,
 		NotHelpfulCount:   row.NotHelpfulCount,
 		ViewCount:         row.ViewCount,
@@ -732,7 +830,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 	var collections []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Order("depth ASC, parent_collection_id ASC, position ASC, created_at ASC").
+		Order("depth ASC, parent_collection_id ASC, " + r.hcCollOrderBy()).
 		Find(&collections).Error; err != nil {
 		return nil, fmt.Errorf("list space collections: %w", err)
 	}
@@ -743,11 +841,17 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		Title        string  `gorm:"column:title"`
 		Slug         string  `gorm:"column:slug"`
 		PublicID     string  `gorm:"column:public_id"`
+		Position     int     `gorm:"column:position"`
+		SortKey      string  `gorm:"column:sort_key"`
 		CollectionID *string `gorm:"column:collection_id"`
+	}
+	orderBy := "d.collection_id, d.position ASC, d.created_at ASC"
+	if r.useSortKey {
+		orderBy = "d.collection_id, d.sort_key ASC, d.id ASC"
 	}
 	var articles []navArticleRow
 	if err := r.db.WithContext(ctx).Raw(`
-		SELECT d.id, d.title, ha.slug, ha.public_id, d.collection_id
+		SELECT d.id, d.title, ha.slug, ha.public_id, d.position, d.sort_key, d.collection_id
 		FROM docs_documents d
 		JOIN docs_helpcenter_articles ha ON ha.document_id = d.id
 		WHERE d.space_id = ?
@@ -755,7 +859,7 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 		  AND d.deleted_at IS NULL
 		  AND ha.public_published_at IS NOT NULL
 		  AND ha.slug != ''
-		ORDER BY d.collection_id, d.position ASC, d.created_at ASC
+		ORDER BY `+orderBy+`
 	`, spaceID).Scan(&articles).Error; err != nil {
 		return nil, fmt.Errorf("list space nav articles: %w", err)
 	}
@@ -769,6 +873,8 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 			Title:    a.Title,
 			Slug:     a.Slug,
 			PublicID: a.PublicID,
+			Position: a.Position,
+			SortKey:  a.SortKey,
 		}
 		if a.CollectionID != nil {
 			articlesByCollection[*a.CollectionID] = append(articlesByCollection[*a.CollectionID], na)
@@ -821,6 +927,8 @@ func (r *DocsHelpcenterRepository) ListSpaceNavigation(ctx context.Context, spac
 			Icon:               c.Icon,
 			ParentCollectionID: c.ParentCollectionID,
 			Depth:              c.Depth,
+			Position:           c.Position,
+			SortKey:            c.SortKey,
 			Articles:           articlesByCollection[c.ID],
 		})
 	}
@@ -938,7 +1046,7 @@ func (r *DocsHelpcenterRepository) ListWidgetCollections(ctx context.Context, sp
 	var collections []model.DocsCollection
 	if err := r.db.WithContext(ctx).
 		Where("space_id = ? AND deleted_at IS NULL", spaceID).
-		Order("depth ASC, parent_collection_id ASC, position ASC, created_at ASC").
+		Order("depth ASC, parent_collection_id ASC, " + r.hcCollOrderBy()).
 		Find(&collections).Error; err != nil {
 		return nil, fmt.Errorf("list widget collections: %w", err)
 	}
@@ -1145,6 +1253,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleBySlug(ctx context.Context, s
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1191,6 +1303,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByDocumentIDInSpaces(ctx cont
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1237,6 +1353,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByPublicIDInSpaces(ctx contex
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1277,6 +1397,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByPublicID(ctx context.Contex
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1318,6 +1442,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionSlug(ctx context.
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,
@@ -1353,6 +1481,10 @@ func (r *DocsHelpcenterRepository) GetPublicArticleByCollectionIDAndSlug(ctx con
 			p.excerpt AS publication_excerpt,
 			p.seo_title AS publication_seo_title,
 			p.seo_description AS publication_seo_description,
+			p.og_title AS publication_og_title,
+			p.og_description AS publication_og_description,
+			p.og_image_url AS publication_og_image_url,
+			p.og_image_alt AS publication_og_image_alt,
 			ha.public_published_at,
 			ha.helpful_count,
 			ha.not_helpful_count,

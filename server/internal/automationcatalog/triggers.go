@@ -80,9 +80,13 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 			return "manual.epic_run", "manual", true
 		case "support_conversation":
 			return "manual.support_run", "manual", true
+		case "repository":
+			return "manual.repository_run", "manual", true
+		case "workspace":
+			return "manual.workspace_run", "manual", true
+		case "doc", "document":
+			return "manual.doc_run", "manual", true
 		}
-	case model.AgentRunTriggerSourceSchedule:
-		return "agent.schedule", "schedule", true
 	case model.AgentRunTriggerSourceAutomationRule:
 		if triggerType == model.TriggerCron {
 			return "automation_rule.cron", "automation_rule", true
@@ -94,9 +98,9 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 		switch triggerType {
 		case "support.auto":
 			return "support.widget_message", "support_widget", true
-		case "task.assigned_agent_state_change":
-			return "task.assigned_agent_state_change", "task_assignment", true
 		}
+	case model.AgentRunTriggerSourceCommandBar:
+		return "command_bar.run", "command_bar", true
 	}
 
 	return "", "", false
@@ -170,10 +174,6 @@ func executionSearchPresetForDefinition(def triggerBindingDefinition, referenceI
 			BindingID: strPtr(def.catalogID),
 			Source:    strPtr(def.bindingKind),
 		}
-	case "schedule":
-		return &model.TriggerExecutionSearchPreset{
-			Source: strPtr(def.bindingKind),
-		}
 	case "automation_rule":
 		preset := &model.TriggerExecutionSearchPreset{
 			Source:      strPtr(def.bindingKind),
@@ -200,7 +200,6 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 	workflowsPath := strPtr("/w/$slug/automation/flows")
 	chatPath := strPtr("/w/$slug/settings/chat-general")
 	agentsPath := strPtr("/w/$slug/automation/agents")
-
 	return []triggerBindingDefinition{
 		{
 			catalogID:        "manual.task_run",
@@ -232,6 +231,39 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			title:            "Manual Support Run",
 			description:      "A human starts the assigned support agent from a conversation.",
 			sourceSurface:    "Support inbox run-agent actions",
+			configSurface:    agentsPath,
+			supportsAgentRun: true,
+		},
+		{
+			catalogID:        "manual.repository_run",
+			bindingKind:      "manual",
+			category:         "manual",
+			triggerType:      model.AgentRunTriggerTypeManual,
+			title:            "Manual Repository Run",
+			description:      "A human starts an agent directly against a repository.",
+			sourceSurface:    "Agents page run-now actions",
+			configSurface:    agentsPath,
+			supportsAgentRun: true,
+		},
+		{
+			catalogID:        "manual.workspace_run",
+			bindingKind:      "manual",
+			category:         "manual",
+			triggerType:      model.AgentRunTriggerTypeManual,
+			title:            "Manual Workspace Run",
+			description:      "A human starts a custom agent directly from the workspace.",
+			sourceSurface:    "Agents page run-now actions",
+			configSurface:    agentsPath,
+			supportsAgentRun: true,
+		},
+		{
+			catalogID:        "manual.doc_run",
+			bindingKind:      "manual",
+			category:         "manual",
+			triggerType:      model.AgentRunTriggerTypeManual,
+			title:            "Manual Doc Run",
+			description:      "A human starts an agent directly against a document.",
+			sourceSurface:    "Docs document actions",
 			configSurface:    agentsPath,
 			supportsAgentRun: true,
 		},
@@ -273,6 +305,83 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 				Template:            strPtr(model.TriggerAgentRunApproved),
 				TemplateTitle:       strPtr("Agent Run Approved template"),
 				TemplateDescription: strPtr("Choose a workflow state and follow-up action in Flows to create an agent_run.approved automation for the selected state."),
+			},
+		},
+		{
+			catalogID:        "agent_run.completed",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerAgentRunCompleted,
+			title:            "Agent Run Completed",
+			description:      "Fires when a task agent run completes successfully.",
+			sourceSurface:    "Agent run completion",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerAgentRunCompleted),
+				ShowTriggerTitle: strPtr("Agent Run Completed"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				Template:            strPtr(model.TriggerAgentRunCompleted),
+				TemplateTitle:       strPtr("Agent Run Completed template"),
+				TemplateDescription: strPtr("Choose a workflow state and follow-up action in Flows to create an agent_run.completed automation for the selected state."),
+			},
+		},
+		{
+			catalogID:        "doc.published",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerDocPublished,
+			title:            "Doc Published",
+			description:      "Fires when a document is published internally.",
+			sourceSurface:    "Docs publish actions",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerDocPublished),
+				ShowTriggerTitle: strPtr("Doc Published"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerDocPublished),
+			},
+		},
+		{
+			catalogID:        "ai_section.regenerated",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerAISectionRegenerated,
+			title:            "AI Section Regenerated",
+			description:      "Fires when an agent-owned document section is regenerated.",
+			sourceSurface:    "Docs AI section actions",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerAISectionRegenerated),
+				ShowTriggerTitle: strPtr("AI Section Regenerated"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerAISectionRegenerated),
+			},
+		},
+		{
+			catalogID:        "ai_section.approved",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerAISectionApproved,
+			title:            "AI Section Approved",
+			description:      "Fires when an agent-owned document section is approved.",
+			sourceSurface:    "Docs AI section approval actions",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerAISectionApproved),
+				ShowTriggerTitle: strPtr("AI Section Approved"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerAISectionApproved),
 			},
 		},
 		{
@@ -335,6 +444,26 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			},
 		},
 		{
+			catalogID:        "github.pull_request_closed",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitHubPRClosed,
+			title:            "GitHub Pull Request Closed",
+			description:      "Fires when the GitHub integration receives a pull request closed webhook for a PR that was closed without merging. Filters can scope by repository and PR base branch.",
+			sourceSurface:    "GitHub App webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch: &model.WorkflowRuleSearchPreset{
+				ShowTrigger:      strPtr(model.TriggerGitHubPRClosed),
+				ShowTriggerTitle: strPtr("GitHub Pull Request Closed"),
+			},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{
+				CreateEventRule: true,
+				TriggerType:     strPtr(model.TriggerGitHubPRClosed),
+				BaseBranch:      strPtr("main"),
+			},
+		},
+		{
 			catalogID:        "github.pull_request_review_requested",
 			bindingKind:      "automation_rule",
 			category:         "automation_rule",
@@ -392,16 +521,82 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			},
 		},
 		{
-			catalogID:        "agent.schedule",
-			bindingKind:      "schedule",
-			category:         "agent",
-			triggerType:      model.TriggerCron,
-			title:            "Agent Schedule",
-			description:      "Runs an agent directly from its own cron schedule.",
-			sourceSurface:    "Agent configuration",
-			configSurface:    agentsPath,
+			catalogID:        "gitlab.push",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitLabPush,
+			title:            "GitLab Push",
+			description:      "Fires when the GitLab integration receives a push webhook. Filters can scope by project and branch.",
+			sourceSurface:    "GitLab project webhook delivery",
+			configSurface:    workflowsPath,
 			supportsAgentRun: true,
-			aliases:          []string{"agent_schedule"},
+			showRulesSearch:  &model.WorkflowRuleSearchPreset{ShowTrigger: strPtr(model.TriggerGitLabPush), ShowTriggerTitle: strPtr("GitLab Push")},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{CreateEventRule: true, TriggerType: strPtr(model.TriggerGitLabPush), Branch: strPtr("main")},
+		},
+		{
+			catalogID:        "gitlab.merge_request_opened",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitLabMROpened,
+			title:            "GitLab Merge Request Opened",
+			description:      "Fires when the GitLab integration receives a merge request opened webhook.",
+			sourceSurface:    "GitLab project webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch:  &model.WorkflowRuleSearchPreset{ShowTrigger: strPtr(model.TriggerGitLabMROpened), ShowTriggerTitle: strPtr("GitLab MR Opened")},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{CreateEventRule: true, TriggerType: strPtr(model.TriggerGitLabMROpened)},
+		},
+		{
+			catalogID:        "gitlab.merge_request_merged",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitLabMRMerged,
+			title:            "GitLab Merge Request Merged",
+			description:      "Fires when the GitLab integration receives a merge request merged webhook.",
+			sourceSurface:    "GitLab project webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch:  &model.WorkflowRuleSearchPreset{ShowTrigger: strPtr(model.TriggerGitLabMRMerged), ShowTriggerTitle: strPtr("GitLab MR Merged")},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{CreateEventRule: true, TriggerType: strPtr(model.TriggerGitLabMRMerged), BaseBranch: strPtr("main")},
+		},
+		{
+			catalogID:        "gitlab.merge_request_closed",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitLabMRClosed,
+			title:            "GitLab Merge Request Closed",
+			description:      "Fires when the GitLab integration receives a merge request closed webhook.",
+			sourceSurface:    "GitLab project webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch:  &model.WorkflowRuleSearchPreset{ShowTrigger: strPtr(model.TriggerGitLabMRClosed), ShowTriggerTitle: strPtr("GitLab MR Closed")},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{CreateEventRule: true, TriggerType: strPtr(model.TriggerGitLabMRClosed), BaseBranch: strPtr("main")},
+		},
+		{
+			catalogID:        "gitlab.release_published",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitLabReleasePub,
+			title:            "GitLab Release Published",
+			description:      "Fires when the GitLab integration receives a release webhook.",
+			sourceSurface:    "GitLab project webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch:  &model.WorkflowRuleSearchPreset{ShowTrigger: strPtr(model.TriggerGitLabReleasePub), ShowTriggerTitle: strPtr("GitLab Release Published")},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{CreateEventRule: true, TriggerType: strPtr(model.TriggerGitLabReleasePub)},
+		},
+		{
+			catalogID:        "gitlab.pipeline_completed",
+			bindingKind:      "automation_rule",
+			category:         "automation_rule",
+			triggerType:      model.TriggerGitLabPipeline,
+			title:            "GitLab Pipeline Completed",
+			description:      "Fires when the GitLab integration receives a pipeline webhook.",
+			sourceSurface:    "GitLab project webhook delivery",
+			configSurface:    workflowsPath,
+			supportsAgentRun: true,
+			showRulesSearch:  &model.WorkflowRuleSearchPreset{ShowTrigger: strPtr(model.TriggerGitLabPipeline), ShowTriggerTitle: strPtr("GitLab Pipeline Completed")},
+			createRuleSearch: &model.WorkflowRuleSearchPreset{CreateEventRule: true, TriggerType: strPtr(model.TriggerGitLabPipeline)},
 		},
 		{
 			catalogID:        "support.widget_message",
@@ -416,24 +611,12 @@ func triggerBindingDefinitions() []triggerBindingDefinition {
 			aliases:          []string{"support_widget_ai"},
 		},
 		{
-			catalogID:        "task.assigned_agent_state_change",
-			bindingKind:      "task_assignment",
-			category:         "pm",
-			triggerType:      "task.assigned_agent_state_change",
-			title:            "Assigned Agent On Task State Change",
-			description:      "When a task has an assigned agent, state changes auto-start that agent for the task.",
-			sourceSurface:    "Task workflow transitions",
-			configSurface:    agentsPath,
-			supportsAgentRun: true,
-			aliases:          []string{"task_assignment"},
-		},
-		{
 			catalogID:        "automation_rule.cron",
 			bindingKind:      "automation_rule",
 			category:         "automation_rule",
 			triggerType:      model.TriggerCron,
 			title:            "Automation Rule Cron",
-			description:      "Runs a start-agent-run automation rule on a backend cron category. The engine supports it, but Flows does not yet surface cron authoring.",
+			description:      "Runs a start-agent-run automation rule on a recurring schedule managed from Flows.",
 			sourceSurface:    "Rule engine backend",
 			configSurface:    workflowsPath,
 			supportsAgentRun: true,

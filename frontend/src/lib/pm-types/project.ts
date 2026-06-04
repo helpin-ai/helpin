@@ -1,5 +1,5 @@
 import type { AssignableMember } from '../types';
-import type { TaskImplementationBrief } from './agents';
+import type { AgentRun, AgentRunPauseReason, TaskImplementationBrief } from './agents';
 import type { Objective } from './objectives';
 
 export type TaskType = 'feature' | 'bug' | 'chore';
@@ -93,6 +93,7 @@ export interface Epic {
   health: EpicHealth;
   health_comment?: string;
   archived: boolean;
+  assigned_agent_id?: string;
   spec_document_id?: string;
   planning_repository_id?: string;
   planning_state: string;
@@ -146,6 +147,12 @@ export interface EpicWithStats {
   objectives: RoadmapObjectiveRef[];
   stats: EpicStats;
   suggested_health: EpicHealth;
+}
+
+export interface CreateEpicResponse {
+  epic: EpicWithStats;
+  agent_run: AgentRun | null;
+  agent_run_error?: string;
 }
 
 export type RoadmapEpic = EpicWithStats;
@@ -247,7 +254,7 @@ export interface SprintPlanningTaskPreview {
   workflow_state_id: string;
   state_name?: string;
   state_type?: StateType;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   estimate?: number;
   priority: Priority;
   sprint_id?: string;
@@ -287,7 +294,7 @@ export interface Task {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority: Priority;
@@ -308,6 +315,11 @@ export interface Task {
   blocked_by_tasks?: TaskDependencyTask[];
   blocking_tasks?: TaskDependencyTask[];
   archived: boolean;
+  latest_run_id?: string | null;
+  latest_run_agent_id?: string | null;
+  latest_run_status?: string | null;
+  latest_run_pause_reason?: AgentRunPauseReason | null;
+  latest_run_at?: string | null;
   assigned_agent_id?: string;
   template_id?: string;
   recurring_template_id?: string;
@@ -321,7 +333,7 @@ export interface Task {
   // Enriched by board/list endpoints
   epic_name?: string;
   sprint_name?: string;
-  owner_name?: string;
+  team_name?: string;
   state_name?: string;
   state_type?: StateType;
   state_color?: string;
@@ -368,6 +380,8 @@ export interface AssociationObjectSummary {
   display_id?: string;
   task_key?: string;
   title: string;
+  inferred?: boolean;
+  context_label?: string;
   status?: string;
   workflow_state_id?: string;
   completed?: boolean;
@@ -433,7 +447,6 @@ export interface TaskDetail {
     created_at: string;
     updated_at: string;
   }>;
-  owner_member?: AssignableMember;
   requester_member?: AssignableMember;
   labels: Label[];
   epic_name?: string;
@@ -489,6 +502,11 @@ export interface Comment {
   author_id: string;
   body: string;
   parent_id?: string;
+  block_id?: string;
+  range?: Record<string, unknown>;
+  anchor_text?: string;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -506,6 +524,10 @@ export interface CommentWithAuthor {
     email: string;
     full_name: string;
     avatar_url?: string;
+    avatar_style?: string;
+    avatar_seed?: string;
+    avatar_background_mode?: string;
+    avatar_background_color?: string;
     created_at: string;
     updated_at: string;
   };
@@ -634,8 +656,10 @@ export interface TaskTemplate {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
   checklist_items?: string;
   external_links?: string;
@@ -785,13 +809,19 @@ export interface CreateTaskTemplateRequest {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
+  attachment_ids?: string[];
   checklist_items?: string;
   external_links?: string;
 }
 
+export interface SaveTaskAsTemplateRequest {
+  name?: string;
+}
 
 export interface UpdateTaskTemplateRequest {
   team_id?: string;
@@ -803,9 +833,12 @@ export interface UpdateTaskTemplateRequest {
   estimate?: number;
   label_ids?: string;
   owner_member_id?: string;
+  owner_member_ids?: string;
   epic_id?: string;
   sprint_id?: string;
+  workflow_state_id?: string;
   deadline?: string;
+  attachment_ids?: string[];
   checklist_items?: string;
   external_links?: string;
   archived?: boolean;
@@ -828,6 +861,8 @@ export interface CreateEpicRequest {
   health_comment?: string;
   label_ids?: string[];
   planning_repository_id?: string;
+  assigned_agent_id?: string;
+  run_on_create?: boolean;
 }
 
 export interface UpdateEpicRequest {
@@ -845,6 +880,7 @@ export interface UpdateEpicRequest {
   health_comment?: string;
   label_ids?: string[];
   planning_repository_id?: string;
+  assigned_agent_id?: string;
 }
 
 export interface UpdateEpicHealthRequest {
@@ -889,7 +925,7 @@ export interface CreateTaskRequest {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority?: Priority;
@@ -905,6 +941,14 @@ export interface CreateTaskRequest {
   label_ids?: string[];
   checklist_items?: { text: string; position?: number }[];
   external_links?: { url: string; title?: string }[];
+  assigned_agent_id?: string;
+  run_on_create?: boolean;
+}
+
+export interface CreateTaskResponse {
+  task: TaskDetail;
+  agent_run: AgentRun | null;
+  agent_run_error?: string;
 }
 
 export interface SeedPMTasksRequest {
@@ -926,7 +970,7 @@ export interface UpdateTaskRequest {
   epic_id?: string;
   sprint_id?: string;
   team_id?: string;
-  owner_member_id?: string;
+  owner_member_ids?: string[];
   requester_member_id?: string;
   estimate?: number;
   priority?: Priority;
@@ -941,6 +985,7 @@ export interface UpdateTaskRequest {
   owner_ids?: string[];
   follower_ids?: string[];
   label_ids?: string[];
+  assigned_agent_id?: string;
 }
 
 
@@ -999,6 +1044,8 @@ export interface UpdateChecklistItemRequest {
 export interface ExternalLink {
   id: string;
   task_id: string;
+  entity_type: string;
+  entity_id: string;
   title: string;
   url: string;
   created_by_id: string;
@@ -1020,7 +1067,7 @@ export interface UpdateExternalLinkRequest {
 export interface Attachment {
   id: string;
   workspace_id: string;
-  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'task_template' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -1038,7 +1085,7 @@ export interface AttachmentResponse {
 }
 
 export interface CreateAttachmentRequest {
-  entity_type: 'task' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
+  entity_type: 'task' | 'task_template' | 'epic' | 'objective' | 'sprint' | 'comment' | 'editor_upload';
   entity_id: string;
   file_name: string;
   file_size: number;
@@ -1050,11 +1097,15 @@ export interface CreateCommentRequest {
   entity_id: string;
   body: string;
   parent_id?: string;
+  block_id?: string;
+  range?: Record<string, unknown>;
+  anchor_text?: string;
   attachment_ids?: string[];
 }
 
 export interface UpdateCommentRequest {
   body: string;
+  attachment_ids?: string[];
 }
 
 // Task is now the canonical type, Story is an alias (defined above)

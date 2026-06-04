@@ -12,6 +12,11 @@ on:
       - "website/**"
       - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Run regardless of changed paths"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -26,7 +31,7 @@ env:
 jobs:
   build:
     name: Build Website
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     steps:
       - uses: actions/checkout@v4
 
@@ -52,13 +57,17 @@ jobs:
 
   deploy-production:
     name: Deploy to Production (helpin.ai)
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: build
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: website-dist
           path: dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Ensure Cloudflare Pages project exists
         run: npx wrangler@3.114.1 pages project create helpin-website --production-branch=main 2>/dev/null || true

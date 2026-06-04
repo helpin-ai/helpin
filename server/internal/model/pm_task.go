@@ -36,8 +36,9 @@ type PMTask struct {
 	EpicID                    *string              `json:"epic_id" gorm:"type:uuid;index"`
 	SprintID                  *string              `json:"sprint_id" gorm:"type:uuid;index"`
 	TeamID                    *string              `json:"team_id" gorm:"type:uuid;index"`
-	OwnerID                   *string              `json:"owner_id" gorm:"type:uuid;index"`
-	OwnerMemberID             *string              `json:"owner_member_id" gorm:"type:uuid;index"`
+	OwnerID                   *string              `json:"owner_id,omitempty" gorm:"-"`
+	OwnerMemberID             *string              `json:"owner_member_id,omitempty" gorm:"-"`
+	OwnerMemberIDs            []string             `json:"owner_member_ids" gorm:"-"`
 	RequesterID               *string              `json:"requester_id" gorm:"type:uuid"`
 	RequesterMemberID         *string              `json:"requester_member_id" gorm:"type:uuid;index"`
 	Estimate                  *int                 `json:"estimate"`
@@ -69,6 +70,11 @@ type PMTask struct {
 	BlockedByTasks            []TaskDependencyTask `json:"blocked_by_tasks,omitempty" gorm:"-"`
 	BlockingTasks             []TaskDependencyTask `json:"blocking_tasks,omitempty" gorm:"-"`
 	TaskKey                   string               `json:"task_key" gorm:"-"`
+	LatestRunID               *string              `json:"latest_run_id,omitempty" gorm:"-"`
+	LatestRunAgentID          *string              `json:"latest_run_agent_id,omitempty" gorm:"-"`
+	LatestRunStatus           *string              `json:"latest_run_status,omitempty" gorm:"-"`
+	LatestRunPauseReason      *string              `json:"latest_run_pause_reason,omitempty" gorm:"-"`
+	LatestRunAt               *time.Time           `json:"latest_run_at,omitempty" gorm:"-"`
 	CreatedAt                 time.Time            `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt                 time.Time            `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -123,13 +129,13 @@ type PMTaskFilters struct {
 	WorkflowID            *string
 	WorkflowStateID       *string
 	TaskType              *string
-	OwnerID               *string
-	OwnerMemberID         *string
+	OwnerMemberIDs        []string
 	RequesterID           *string
 	RequesterMemberID     *string
 	LabelID               *string
 	Priority              *string
 	Severity              *string
+	Completed             *bool
 	Blocked               *string
 	Blocking              *string
 	UpdatedAfter          *string
@@ -156,8 +162,7 @@ type CreateTaskRequest struct {
 	EpicID            *string                      `json:"epic_id"`
 	SprintID          *string                      `json:"sprint_id"`
 	TeamID            *string                      `json:"team_id"`
-	OwnerID           *string                      `json:"owner_id"`
-	OwnerMemberID     *string                      `json:"owner_member_id"`
+	OwnerMemberIDs    []string                     `json:"owner_member_ids"`
 	RequesterID       *string                      `json:"requester_id"`
 	RequesterMemberID *string                      `json:"requester_member_id"`
 	Estimate          *int                         `json:"estimate"`
@@ -169,6 +174,8 @@ type CreateTaskRequest struct {
 	Blocker           *string                      `json:"blocker"`
 	TemplateID        *string                      `json:"template_id"`
 	ExternalID        *string                      `json:"external_id"`
+	AssignedAgentID   *string                      `json:"assigned_agent_id"`
+	RunOnCreate       bool                         `json:"run_on_create"`
 	OwnerIDs          []string                     `json:"owner_ids"`
 	FollowerIDs       []string                     `json:"follower_ids"`
 	LabelIDs          []string                     `json:"label_ids"`
@@ -198,8 +205,7 @@ type UpdateTaskRequest struct {
 	EpicID            *string    `json:"epic_id"`
 	SprintID          *string    `json:"sprint_id"`
 	TeamID            *string    `json:"team_id"`
-	OwnerID           *string    `json:"owner_id"`
-	OwnerMemberID     *string    `json:"owner_member_id"`
+	OwnerMemberIDs    []string   `json:"owner_member_ids"`
 	RequesterID       *string    `json:"requester_id"`
 	RequesterMemberID *string    `json:"requester_member_id"`
 	Estimate          *int       `json:"estimate"`
@@ -212,6 +218,7 @@ type UpdateTaskRequest struct {
 	Archived          *bool      `json:"archived"`
 	TemplateID        *string    `json:"template_id"`
 	ExternalID        *string    `json:"external_id"`
+	AssignedAgentID   *string    `json:"assigned_agent_id"`
 	OwnerIDs          []string   `json:"owner_ids"`
 	FollowerIDs       []string   `json:"follower_ids"`
 	LabelIDs          []string   `json:"label_ids"`
@@ -255,6 +262,13 @@ type TaskDetail struct {
 	State           *PMWorkflowState  `json:"state"`
 }
 
+// CreateTaskResponse returns the created task and any best-effort run result.
+type CreateTaskResponse struct {
+	Task          TaskDetail `json:"task"`
+	AgentRun      *AgentRun  `json:"agent_run"`
+	AgentRunError *string    `json:"agent_run_error,omitempty"`
+}
+
 // TaskDependencyTask is the lightweight task payload used in dependency read models.
 type TaskDependencyTask struct {
 	ID              string `json:"id"`
@@ -272,6 +286,7 @@ type BoardTask struct {
 	EpicName             *string                    `json:"epic_name,omitempty"`
 	SprintName           *string                    `json:"sprint_name,omitempty"`
 	OwnerName            *string                    `json:"owner_name,omitempty"`
+	OwnerMemberIDs       []string                   `json:"owner_member_ids"`
 	StateName            *string                    `json:"state_name,omitempty"`
 	StateType            *string                    `json:"state_type,omitempty"`
 	StateColor           *string                    `json:"state_color,omitempty"`

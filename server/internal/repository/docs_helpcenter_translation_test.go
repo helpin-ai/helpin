@@ -35,6 +35,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			default_review_days INTEGER,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -52,6 +53,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -72,6 +74,7 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			icon TEXT,
 			tags TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_pinned BOOLEAN NOT NULL DEFAULT 0,
 			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
 			share_token TEXT,
@@ -97,11 +100,22 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE docs_change_proposals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE docs_helpcenter_configs (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL UNIQUE,
 			subdomain TEXT NOT NULL,
 			custom_domain TEXT,
+			public_url_mode TEXT NOT NULL DEFAULT 'hosted_subdomain',
+			reverse_proxy_host TEXT,
+			reverse_proxy_base_path TEXT,
 			brand_name TEXT NOT NULL,
 			brand_logo_url TEXT,
 			brand_logo_dark_url TEXT,
@@ -121,6 +135,10 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			is_published BOOLEAN NOT NULL DEFAULT 0,
 			seo_title TEXT,
 			seo_description TEXT,
+			og_title TEXT,
+			og_description TEXT,
+			og_image_url TEXT,
+			og_image_alt TEXT,
 			support_email TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -132,6 +150,10 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			slug TEXT NOT NULL DEFAULT '',
 			seo_title TEXT,
 			seo_description TEXT,
+			og_title TEXT,
+			og_description TEXT,
+			og_image_url TEXT,
+			og_image_alt TEXT,
 			helpful_count INTEGER NOT NULL DEFAULT 0,
 			not_helpful_count INTEGER NOT NULL DEFAULT 0,
 			view_count INTEGER NOT NULL DEFAULT 0,
@@ -188,6 +210,10 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			content_text TEXT,
 			seo_title TEXT,
 			seo_description TEXT,
+			og_title TEXT,
+			og_description TEXT,
+			og_image_url TEXT,
+			og_image_alt TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			source_updated_at DATETIME,
 			source_synced BOOLEAN NOT NULL DEFAULT 0,
@@ -214,6 +240,10 @@ func setupDocsHelpcenterTranslationTestDB(t *testing.T) *gorm.DB {
 			content_text TEXT,
 			seo_title TEXT,
 			seo_description TEXT,
+			og_title TEXT,
+			og_description TEXT,
+			og_image_url TEXT,
+			og_image_alt TEXT,
 			published_at DATETIME NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -574,7 +604,7 @@ func TestDocsHelpcenterRepository_ListPublicArticleTranslationsByCollection_Fall
 	)
 
 	db := setupDocsHelpcenterTranslationTestDB(t)
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 	ctx := context.Background()
 	now := time.Date(2026, 4, 10, 17, 0, 0, 0, time.UTC)
 
@@ -720,7 +750,7 @@ func TestDocsHelpcenterRepository_ListPublicArticleTranslationsBySpace_UsesDefau
 	)
 
 	db := setupDocsHelpcenterTranslationTestDB(t)
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 	ctx := context.Background()
 	now := time.Date(2026, 4, 10, 18, 0, 0, 0, time.UTC)
 
@@ -855,7 +885,7 @@ func TestDocsHelpcenterRepository_GetPublicArticleTranslationByCollectionSlug_Fa
 	)
 
 	db := setupDocsHelpcenterTranslationTestDB(t)
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 	ctx := context.Background()
 	now := time.Date(2026, 4, 10, 17, 30, 0, 0, time.UTC)
 
@@ -970,7 +1000,7 @@ func TestDocsHelpcenterRepository_GetPublicArticleTranslationByCollectionSlug_Us
 	)
 
 	db := setupDocsHelpcenterTranslationTestDB(t)
-	repo := NewDocsHelpcenterRepository(db)
+	repo := NewDocsHelpcenterRepository(db, false)
 	ctx := context.Background()
 	now := time.Date(2026, 4, 10, 18, 30, 0, 0, time.UTC)
 

@@ -22,6 +22,6 @@ export interface SearchResponse {
 const qs = (workspaceId: string) => `workspace_id=${encodeURIComponent(workspaceId)}`;
 
 export const searchService = {
-  search: (workspaceId: string, query: string) =>
-    api.get<SearchResponse>(`/search/?${qs(workspaceId)}&q=${encodeURIComponent(query)}`),
+  search: (workspaceId: string, query: string, options?: RequestInit) =>
+    api.get<SearchResponse>(`/search/?${qs(workspaceId)}&q=${encodeURIComponent(query)}`, options),
 };

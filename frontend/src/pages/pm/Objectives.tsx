@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { format, parseISO } from 'date-fns';
 import { useTitle } from '@/hooks/useTitle';
@@ -34,6 +34,7 @@ import type { ObjectiveState, ObjectiveWithDetails } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { OBJECTIVE_STATE_CONFIG } from '@/lib/pmConstants';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const healthConfig: Record<string, { label: string; className: string }> = {
   on_track: { label: 'On Track', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
@@ -57,6 +58,38 @@ const healthFilterOptions: { value: string; label: string }[] = [
   { value: 'at_risk', label: 'At Risk' },
   { value: 'off_track', label: 'Off Track' },
 ];
+
+const OBJECTIVE_CREATE_TOOLTIP = 'Only team managers can create objectives. Ask your team manager for access.';
+
+function CreateObjectiveButton({
+  className,
+  disabled,
+  onClick,
+}: {
+  className?: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex">
+            <Button size="sm" className={`gap-2 ${className ?? ''}`} onClick={onClick} disabled={disabled}>
+              <PlusSignIcon className="h-4 w-4" />
+              Create Objective
+            </Button>
+          </span>
+        </TooltipTrigger>
+        {disabled && (
+          <TooltipContent side="top" className="max-w-[260px] text-xs">
+            {OBJECTIVE_CREATE_TOOLTIP}
+          </TooltipContent>
+        )}
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function FilterChip({
   label,
@@ -122,7 +155,7 @@ export function ObjectivesPage() {
   const navigate = useNavigate();
   const openCreate = useGlobalCreateStore((s) => s.openCreate);
   const { data: access } = useWorkspaceAccess(workspaceId);
-  const { canEdit, isAdmin } = usePermissions(access);
+  const { canEdit, isAdmin, isTeamManager, teamMemberships } = usePermissions(access);
   const { teams } = useAccessibleTeams(workspaceId || '');
 
   // Filters
@@ -130,6 +163,7 @@ export function ObjectivesPage() {
   const [filterTeam, setFilterTeam] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterHealth, setFilterHealth] = useState('');
+  const deferredFilterHealth = useDeferredValue(filterHealth);
 
   const { data: objectives = [], isLoading: loading } = useObjectives(workspaceId, {
     archived: false,
@@ -142,16 +176,22 @@ export function ObjectivesPage() {
 
   // Health is client-side filtered (not in API)
   const filtered = useMemo(() => {
-    if (!filterHealth) return objectives;
-    return objectives.filter((o) => o.objective.health === filterHealth);
-  }, [objectives, filterHealth]);
+    if (!deferredFilterHealth) return objectives;
+    return objectives.filter((o) => o.objective.health === deferredFilterHealth);
+  }, [objectives, deferredFilterHealth]);
 
-  const handleArchive = async (id: string) => {
+  const handleArchive = useCallback((id: string) => {
     if (!workspaceId) return;
     deleteObjective.mutate(id);
-  };
+  }, [deleteObjective, workspaceId]);
+
+  const handleOpenObjective = useCallback((id: string) => {
+    if (!workspace?.slug) return;
+    navigate({ to: `/w/${workspace.slug}/pm/objectives/${id}` } as any);
+  }, [navigate, workspace?.slug]);
 
   const activeFilterCount = [filterState, filterTeam, filterType, filterHealth].filter(Boolean).length;
+  const canCreateObjective = canEdit && (isAdmin || (filterTeam ? isTeamManager(filterTeam) : teamMemberships.some((tm) => tm.role === 'owner')));
 
   const clearAllFilters = () => {
     setFilterState('');
@@ -184,10 +224,11 @@ export function ObjectivesPage() {
           Objectives align your team around measurable goals with key results, keeping everyone focused on outcomes that matter.
         </p>
         {canEdit && (
-          <Button className="gap-2 mb-8" onClick={() => openCreate('objective')}>
-            <PlusSignIcon className="h-4 w-4" />
-            Create Objective
-          </Button>
+          <CreateObjectiveButton
+            className="mb-8"
+            disabled={!canCreateObjective}
+            onClick={() => openCreate('objective')}
+          />
         )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full max-w-4xl">
           {[
@@ -214,10 +255,10 @@ export function ObjectivesPage() {
           <p className="text-sm text-muted-foreground">Set measurable goals and track key results across your team.</p>
         </div>
         {canEdit && (
-          <Button size="sm" className="gap-2" onClick={() => openCreate('objective')}>
-            <PlusSignIcon className="h-4 w-4" />
-            Create Objective
-          </Button>
+          <CreateObjectiveButton
+            disabled={!canCreateObjective}
+            onClick={() => openCreate('objective')}
+          />
         )}
       </div>
 
@@ -244,13 +285,13 @@ export function ObjectivesPage() {
       {filtered.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 xl:grid-cols-3 max-w-6xl">
           {filtered.map((obj) => (
-            <ObjectiveCard
+            <MemoObjectiveCard
               key={obj.objective.id}
               data={obj}
               canEdit={canEdit}
               isAdmin={isAdmin}
-              onArchive={() => handleArchive(obj.objective.id)}
-              onClick={() => navigate({ to: `/w/${workspace!.slug}/pm/objectives/${obj.objective.id}` } as any)}
+              onArchive={handleArchive}
+              onOpen={handleOpenObjective}
             />
           ))}
         </div>
@@ -279,13 +320,13 @@ function ObjectiveCard({
   canEdit,
   isAdmin,
   onArchive,
-  onClick,
+  onOpen,
 }: {
   data: ObjectiveWithDetails;
   canEdit: boolean;
   isAdmin: boolean;
-  onArchive: () => void;
-  onClick: () => void;
+  onArchive: (id: string) => void;
+  onOpen: (id: string) => void;
 }) {
   const { objective, stats, epics } = data;
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
@@ -309,7 +350,8 @@ function ObjectiveCard({
   return (
     <article
       className="group flex flex-col rounded-lg border border-border/60 bg-card transition-all hover:shadow-md hover:border-border cursor-pointer"
-      onClick={onClick}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '280px' }}
+      onClick={() => onOpen(objective.id)}
     >
       {/* Header */}
       <div className="p-3.5 pb-0">
@@ -413,8 +455,16 @@ function ObjectiveCard({
         description="This objective will be hidden from the list. You can restore it later from archived items."
         confirmLabel="Archive"
         variant="default"
-        onConfirm={onArchive}
+        onConfirm={() => onArchive(objective.id)}
       />
     </article>
   );
 }
+
+const MemoObjectiveCard = memo(ObjectiveCard, (prev, next) => (
+  prev.data === next.data &&
+  prev.canEdit === next.canEdit &&
+  prev.isAdmin === next.isAdmin &&
+  prev.onArchive === next.onArchive &&
+  prev.onOpen === next.onOpen
+));

@@ -12,17 +12,79 @@ import (
 
 // DocsDocumentRepository handles DB operations for documents.
 type DocsDocumentRepository struct {
-	db *gorm.DB
+	db         *gorm.DB
+	useSortKey bool
 }
 
 // NewDocsDocumentRepository creates a new DocsDocumentRepository.
-func NewDocsDocumentRepository(db *gorm.DB) *DocsDocumentRepository {
-	return &DocsDocumentRepository{db: db}
+func NewDocsDocumentRepository(db *gorm.DB, useSortKey ...bool) *DocsDocumentRepository {
+	enabled := false
+	if len(useSortKey) > 0 {
+		enabled = useSortKey[0]
+	}
+	return &DocsDocumentRepository{db: db, useSortKey: enabled}
+}
+
+// docOrderBy returns the canonical ORDER BY clause for documents
+// within a bucket. When the sort_key flag is on, uses sort_key ASC;
+// otherwise falls back to the legacy position-based order.
+func (r *DocsDocumentRepository) docOrderBy() string {
+	if r.useSortKey {
+		return "sort_key ASC, id ASC"
+	}
+	return "position ASC, created_at ASC, id ASC"
+}
+
+// LastSortKeyInBucket returns the highest sort_key among docs in the
+// given bucket (space + collection), or "" if the bucket is empty.
+func (r *DocsDocumentRepository) LastSortKeyInBucket(ctx context.Context, spaceID string, collectionID *string) (string, error) {
+	var key string
+	q := r.db.WithContext(ctx).
+		Model(&model.DocsDocument{}).
+		Select("COALESCE(MAX(sort_key), '')").
+		Where("space_id = ? AND deleted_at IS NULL", spaceID)
+	if collectionID != nil {
+		q = q.Where("collection_id = ?", *collectionID)
+	} else {
+		q = q.Where("collection_id IS NULL")
+	}
+	if err := q.Row().Scan(&key); err != nil {
+		return "", fmt.Errorf("last sort key in doc bucket: %w", err)
+	}
+	// Ignore the sentinel '~' — it's an un-backfilled row.
+	if key == "~" {
+		return "", nil
+	}
+	return key, nil
+}
+
+// UpdateSortKey sets the sort_key on a single document.
+func (r *DocsDocumentRepository) UpdateSortKey(ctx context.Context, id, key string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.DocsDocument{}).
+		Where("id = ?", id).
+		Update("sort_key", key).Error
+}
+
+// DB exposes the underlying *gorm.DB for cross-table queries in the
+// service layer. Prefer dedicated repo methods where possible.
+func (r *DocsDocumentRepository) DB() *gorm.DB { return r.db }
+
+// UpdateFields applies partial field updates to a document by ID.
+func (r *DocsDocumentRepository) UpdateFields(ctx context.Context, id string, updates map[string]interface{}) error {
+	return r.db.WithContext(ctx).
+		Model(&model.DocsDocument{}).
+		Where("id = ?", id).
+		Updates(updates).Error
 }
 
 // Create inserts a new document.
 func (r *DocsDocumentRepository) Create(ctx context.Context, doc *model.DocsDocument) (*model.DocsDocument, error) {
-	if err := r.db.WithContext(ctx).Create(doc).Error; err != nil {
+	q := r.db.WithContext(ctx)
+	if !r.useSortKey {
+		q = q.Omit("sort_key")
+	}
+	if err := q.Create(doc).Error; err != nil {
 		return nil, fmt.Errorf("create docs document: %w", err)
 	}
 	return doc, nil
@@ -69,34 +131,49 @@ func (r *DocsDocumentRepository) ListByIDs(ctx context.Context, workspaceID stri
 
 // List returns documents for a workspace with optional filters.
 func (r *DocsDocumentRepository) List(ctx context.Context, workspaceID string, spaceID, collectionID, status, teamID *string, draftViewerID string, includeArchived bool) ([]model.DocsDocument, error) {
-	query := r.db.WithContext(ctx).Where("workspace_id = ? AND deleted_at IS NULL", workspaceID)
+	query := r.db.WithContext(ctx).
+		Model(&model.DocsDocument{}).
+		Select(`docs_documents.*, COALESCE(pending_proposals.pending_change_proposal_count, 0) AS pending_change_proposal_count`).
+		Joins(`LEFT JOIN (
+			SELECT workspace_id, document_id, COUNT(*) AS pending_change_proposal_count
+			FROM docs_change_proposals
+			WHERE status = ?
+			GROUP BY workspace_id, document_id
+		) pending_proposals
+			ON pending_proposals.workspace_id = docs_documents.workspace_id
+			AND pending_proposals.document_id = docs_documents.id`, model.DocsChangeProposalStatusPending).
+		Where("docs_documents.workspace_id = ? AND docs_documents.deleted_at IS NULL", workspaceID)
 	if spaceID != nil && *spaceID != "" {
-		query = query.Where("space_id = ?", *spaceID)
+		query = query.Where("docs_documents.space_id = ?", *spaceID)
 	}
 	if collectionID != nil && *collectionID != "" {
-		query = query.Where("collection_id = ?", *collectionID)
+		query = query.Where("docs_documents.collection_id = ?", *collectionID)
 	}
 	if status != nil && *status != "" {
-		query = query.Where("status = ?", *status)
+		query = query.Where("docs_documents.status = ?", *status)
 	} else if !includeArchived {
 		// By default, exclude archived documents unless explicitly requested.
-		query = query.Where("status != ?", model.DocStatusArchived)
+		query = query.Where("docs_documents.status != ?", model.DocStatusArchived)
 	}
 	if teamID != nil && *teamID != "" {
-		query = query.Where("team_id = ?", *teamID)
+		query = query.Where("docs_documents.team_id = ?", *teamID)
 	}
 
 	// If draftViewerID is set, hide other users' drafts (admins/owners pass empty to see all).
 	if draftViewerID != "" {
-		query = query.Where("status != ? OR created_by = ?", model.DocStatusDraft, draftViewerID)
+		query = query.Where("docs_documents.status != ? OR docs_documents.created_by = ?", model.DocStatusDraft, draftViewerID)
 	}
 
 	var docs []model.DocsDocument
-	// Space-scoped: use canonical position order. Otherwise: recency order.
+	// Space-scoped: use canonical bucket order. Otherwise: recency order.
 	if spaceID != nil && *spaceID != "" {
-		query = query.Order("collection_id ASC NULLS FIRST, position ASC, created_at ASC")
+		if r.useSortKey {
+			query = query.Order("docs_documents.collection_id ASC NULLS FIRST, docs_documents.sort_key ASC, docs_documents.id ASC")
+		} else {
+			query = query.Order("docs_documents.collection_id ASC NULLS FIRST, docs_documents.position ASC, docs_documents.created_at ASC")
+		}
 	} else {
-		query = query.Order("is_pinned DESC, updated_at DESC")
+		query = query.Order("docs_documents.is_pinned DESC, docs_documents.updated_at DESC")
 	}
 	if err := query.Find(&docs).Error; err != nil {
 		return nil, fmt.Errorf("list docs documents: %w", err)
@@ -177,6 +254,25 @@ func (r *DocsDocumentRepository) Move(ctx context.Context, id, spaceID string, c
 func (r *DocsDocumentRepository) Delete(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Exec("UPDATE docs_documents SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL", id).Error; err != nil {
 		return fmt.Errorf("delete docs document: %w", err)
+	}
+	return nil
+}
+
+// HardDelete permanently removes a document row.
+func (r *DocsDocumentRepository) HardDelete(ctx context.Context, id string) error {
+	if err := r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.DocsDocument{}).Error; err != nil {
+		return fmt.Errorf("hard delete docs document: %w", err)
+	}
+	return nil
+}
+
+// HardDeleteByIDs permanently removes document rows.
+func (r *DocsDocumentRepository) HardDeleteByIDs(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Delete(&model.DocsDocument{}).Error; err != nil {
+		return fmt.Errorf("hard delete docs documents: %w", err)
 	}
 	return nil
 }

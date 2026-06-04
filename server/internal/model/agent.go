@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
@@ -9,12 +10,18 @@ import (
 )
 
 const (
-	AgentPresetEpicPlanner  = "epic_planner"
-	AgentPresetTaskPlanner  = "task_planner"
-	AgentPresetCRMOperator  = "crm_operator"
-	AgentPresetSupportAgent = "support_agent"
-	AgentPresetCodeBuilder  = "code_builder"
-	AgentPresetReviewAgent  = "review_agent"
+	AgentPresetEpicPlanner        = "epic_planner"
+	AgentPresetTaskPlanner        = "task_planner"
+	AgentPresetCRMOperator        = "crm_operator"
+	AgentPresetSupportAgent       = "support_agent"
+	AgentPresetDocumentationAgent = "documentation_agent"
+	AgentPresetCodeBuilder        = "code_builder"
+	AgentPresetReviewAgent        = "review_agent"
+	// AgentPresetCommandAgent is stored under the legacy "researcher" key so
+	// existing seeded system-agent rows reconcile in place while the product
+	// surface moves to "Command Agent".
+	AgentPresetCommandAgent = "researcher"
+	AgentPresetResearcher   = AgentPresetCommandAgent
 
 	AgentModelProviderAnthropic           = "anthropic"
 	AgentModelProviderOpenAI              = "openai"
@@ -23,49 +30,65 @@ const (
 
 	AgentRunTriggerSourceManual         = "manual"
 	AgentRunTriggerSourceAutomationRule = "automation_rule"
-	AgentRunTriggerSourceSchedule       = "schedule"
 	AgentRunTriggerSourceSystem         = "system"
+	AgentRunTriggerSourceCommandBar     = "command_bar"
 
-	AgentRunTriggerTypeManual = "manual"
+	AgentRunTriggerTypeManual     = "manual"
+	AgentRunTriggerTypeCommandBar = "command_bar"
 )
 
 // Agent represents an LLM agent in a workspace.
 type Agent struct {
-	ID                     string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID            string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	IsSystem               bool            `json:"is_system" gorm:"not null;default:false"`
-	Name                   string          `json:"name" gorm:"not null"`
-	PresetKey              string          `json:"preset_key"`
-	PresetVersionKey       string          `json:"preset_version_key"`
-	SourcePresetKey        string          `json:"source_preset_key"`
-	SourcePresetVersionKey string          `json:"source_preset_version_key"`
-	Role                   string          `json:"role"`
-	Status                 string          `json:"status" gorm:"not null;default:'idle'"`
-	RuntimeKind            string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
-	Skills                 json.RawMessage `json:"skills" gorm:"type:jsonb;not null;default:'[]'"`
-	TriggerMode            string          `json:"trigger_mode" gorm:"not null;default:'manual'"`
-	Provider               *string         `json:"provider"`
-	Model                  *string         `json:"model"`
-	ExecutionConfig        JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
-	SystemPrompt           *string         `json:"system_prompt"`
-	PlanningNotes          *string         `json:"planning_notes"`
-	MonthlyTokenBudget     *int            `json:"monthly_token_budget"`
-	TokensUsedThisMonth    int             `json:"tokens_used_this_month" gorm:"not null;default:0"`
-	ActiveTaskID           *string         `json:"active_task_id" gorm:"column:active_task_id;type:uuid"`
-	TeamID                 *string         `json:"team_id" gorm:"type:uuid;index"`
-	AllowedTools           json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
-	AllowedCommands        json.RawMessage `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
-	AllowedTargets         json.RawMessage `json:"allowed_targets" gorm:"type:jsonb;not null;default:'[]'"`
-	Schedule               *string         `json:"schedule"`
-	ApprovalMode           string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
-	MaxConcurrentRuns      int             `json:"max_concurrent_runs" gorm:"not null;default:1"`
-	DefaultInvocationMode  string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
-	SupportedModes         []string        `json:"supported_modes" gorm:"-"`
-	CreatedAt              time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt              time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                         string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	IsSystem                   bool            `json:"is_system" gorm:"not null;default:false"`
+	Name                       string          `json:"name" gorm:"not null"`
+	PresetKey                  string          `json:"preset_key"`
+	PresetVersionKey           string          `json:"preset_version_key"`
+	SourcePresetKey            string          `json:"source_preset_key"`
+	SourcePresetVersionKey     string          `json:"source_preset_version_key"`
+	SourceTemplateID           *string         `json:"source_template_id" gorm:"type:uuid;index"`
+	SourceTemplateKey          string          `json:"source_template_key"`
+	TemplateKey                *string         `json:"template_key,omitempty" gorm:"index"`
+	TemplateInstanceID         *string         `json:"template_instance_id,omitempty" gorm:"type:uuid;index"`
+	TemplateVersion            *int            `json:"template_version,omitempty"`
+	Role                       string          `json:"role"`
+	Status                     string          `json:"status" gorm:"not null;default:'idle'"`
+	RuntimeKind                string          `json:"runtime_kind" gorm:"not null;default:'opencode'"`
+	Skills                     AgentSkillRefs  `json:"skills" gorm:"type:jsonb;not null;default:'[]'"`
+	TriggerMode                string          `json:"trigger_mode" gorm:"not null;default:'manual'"`
+	Provider                   *string         `json:"provider"`
+	Model                      *string         `json:"model"`
+	ExecutionConfig            JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
+	SystemPrompt               *string         `json:"system_prompt"`
+	InstructionTemplateVersion string          `json:"instruction_template_version" gorm:"not null;default:''"`
+	PlanningNotes              *string         `json:"planning_notes"`
+	MonthlyTokenBudget         *int            `json:"monthly_token_budget"`
+	TokensUsedThisMonth        int             `json:"tokens_used_this_month" gorm:"not null;default:0"`
+	ActiveTaskID               *string         `json:"active_task_id" gorm:"column:active_task_id;type:uuid"`
+	TeamID                     *string         `json:"team_id" gorm:"type:uuid;index"`
+	TeamIDs                    []string        `json:"team_ids" gorm:"-"`
+	AllowedTools               json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
+	AllowedCommands            json.RawMessage `json:"allowed_commands" gorm:"type:jsonb;not null;default:'[]'"`
+	AllowedTargets             json.RawMessage `json:"allowed_targets" gorm:"type:jsonb;not null;default:'[]'"`
+	ApprovalMode               string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
+	MaxConcurrentRuns          int             `json:"max_concurrent_runs" gorm:"not null;default:1"`
+	DefaultInvocationMode      string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
+	SupportedModes             []string        `json:"supported_modes" gorm:"-"`
+	ResolvedSkillInstructions  string          `json:"-" gorm:"-"`
+	CreatedAt                  time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                  time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (Agent) TableName() string { return "agents" }
+
+type AgentTeamAccess struct {
+	AgentID   string    `json:"agent_id" gorm:"type:uuid;primaryKey"`
+	TeamID    string    `json:"team_id" gorm:"type:uuid;primaryKey;index"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+}
+
+func (AgentTeamAccess) TableName() string { return "agent_team_access" }
 
 func (a *Agent) EffectivePresetKey() string {
 	if a == nil {
@@ -82,25 +105,31 @@ func (a *Agent) EffectivePresetVersionKey() string {
 }
 
 type WorkspaceAgentPresetVersion struct {
-	ID                    string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID           string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	FamilyKey             string          `json:"family_key" gorm:"not null;index"`
-	VersionKey            string          `json:"version_key" gorm:"not null;index"`
-	Label                 string          `json:"label" gorm:"not null"`
-	Description           *string         `json:"description"`
-	SourceVersionKey      *string         `json:"source_version_key"`
-	RuntimeKind           string          `json:"runtime_kind" gorm:"not null"`
-	Provider              *string         `json:"provider"`
-	Model                 *string         `json:"model"`
-	ExecutionConfig       JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
-	SystemPrompt          *string         `json:"system_prompt"`
-	AllowedTools          json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
-	SupportedModes        json.RawMessage `json:"supported_modes" gorm:"type:jsonb;not null;default:'[]'"`
-	ApprovalMode          string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
-	DefaultInvocationMode string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
-	CreatedBy             *string         `json:"created_by" gorm:"type:uuid"`
-	CreatedAt             time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt             time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                         string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID                string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	FamilyKey                  string          `json:"family_key" gorm:"not null;index"`
+	VersionKey                 string          `json:"version_key" gorm:"not null;index"`
+	Label                      string          `json:"label" gorm:"not null"`
+	Description                *string         `json:"description"`
+	SourceVersionKey           *string         `json:"source_version_key"`
+	RuntimeKind                string          `json:"runtime_kind" gorm:"not null"`
+	Provider                   *string         `json:"provider"`
+	Model                      *string         `json:"model"`
+	ExecutionConfig            JSONBlob        `json:"execution_config" gorm:"type:jsonb;not null;default:'{}'"`
+	SystemPrompt               *string         `json:"system_prompt"`
+	InstructionPreamble        *string         `json:"instruction_preamble"`
+	InstructionSkills          json.RawMessage `json:"instruction_skills" gorm:"type:jsonb;not null;default:'[]'"`
+	InstructionTemplateVersion string          `json:"instruction_template_version" gorm:"not null;default:''"`
+	AllowedTools               json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
+	SupportedModes             json.RawMessage `json:"supported_modes" gorm:"type:jsonb;not null;default:'[]'"`
+	ApprovalMode               string          `json:"approval_mode" gorm:"not null;default:'preset_default'"`
+	DefaultInvocationMode      string          `json:"default_invocation_mode" gorm:"not null;default:'autonomous'"`
+	CreatedBy                  *string         `json:"created_by" gorm:"type:uuid"`
+	UpdatedBy                  *string         `json:"updated_by" gorm:"type:uuid"`
+	LastEditedAt               *time.Time      `json:"last_edited_at"`
+	DeletedAt                  *time.Time      `json:"deleted_at" gorm:"index"`
+	CreatedAt                  time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt                  time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (WorkspaceAgentPresetVersion) TableName() string { return "workspace_agent_preset_versions" }
@@ -135,12 +164,27 @@ type AgentRun struct {
 	LastHeartbeatAt   *time.Time      `json:"last_heartbeat_at"`
 	Input             json.RawMessage `json:"input" gorm:"type:jsonb;not null;default:'{}'"`
 	OutputSummary     json.RawMessage `json:"output_summary" gorm:"type:jsonb;not null;default:'{}'"`
+	CachedInputTokens int             `json:"cached_input_tokens" gorm:"not null;default:0"`
+	InputTokens       int             `json:"input_tokens" gorm:"not null;default:0"`
+	OutputTokens      int             `json:"output_tokens" gorm:"not null;default:0"`
 	TokensUsed        int             `json:"tokens_used" gorm:"not null;default:0"`
 	ErrorMessage      *string         `json:"error_message"`
 	StartedAt         *time.Time      `json:"started_at"`
 	CompletedAt       *time.Time      `json:"completed_at"`
 	CreatedAt         time.Time       `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt         time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	TargetInfo        *AgentRunTarget `json:"target_info,omitempty" gorm:"-"`
+}
+
+// AgentRunTarget is a computed sidecar with resolved display info for the
+// run's target entity (e.g. the PM task title and task_key). It is not
+// persisted and is populated by the service layer on read paths so UI can
+// surface a human label instead of a raw UUID.
+type AgentRunTarget struct {
+	TargetType string `json:"target_type"`
+	TargetID   string `json:"target_id"`
+	Title      string `json:"title,omitempty"`
+	TaskKey    string `json:"task_key,omitempty"`
 }
 
 func (AgentRun) TableName() string { return "agent_runs" }
@@ -194,7 +238,7 @@ type CreateAgentRequest struct {
 	PresetVersionKey      *string         `json:"preset_version_key"`
 	Role                  string          `json:"role"`
 	RuntimeKind           *string         `json:"runtime_kind"`
-	Skills                json.RawMessage `json:"skills"`
+	Skills                AgentSkillRefs  `json:"skills"`
 	TriggerMode           *string         `json:"trigger_mode"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
@@ -203,13 +247,49 @@ type CreateAgentRequest struct {
 	PlanningNotes         *string         `json:"planning_notes"`
 	MonthlyTokenBudget    *int            `json:"monthly_token_budget"`
 	TeamID                *string         `json:"team_id"`
+	TeamIDs               []string        `json:"team_ids"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
-	Schedule              *string         `json:"schedule"`
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+}
+
+type CustomAgentDraftRequest struct {
+	Description string `json:"description"`
+}
+
+type CustomAgentDraft struct {
+	Name                  string         `json:"name"`
+	Role                  string         `json:"role,omitempty"`
+	SystemPrompt          string         `json:"system_prompt"`
+	AllowedTargets        []string       `json:"allowed_targets"`
+	AllowedTools          []string       `json:"allowed_tools"`
+	Skills                AgentSkillRefs `json:"skills"`
+	ApprovalMode          string         `json:"approval_mode"`
+	RuntimeKind           string         `json:"runtime_kind"`
+	Provider              string         `json:"provider"`
+	Model                 string         `json:"model,omitempty"`
+	DefaultInvocationMode string         `json:"default_invocation_mode"`
+	MaxConcurrentRuns     int            `json:"max_concurrent_runs"`
+}
+
+type CustomAgentDraftReason struct {
+	Field  string `json:"field"`
+	Value  string `json:"value"`
+	Reason string `json:"reason"`
+}
+
+type CustomAgentDraftResponse struct {
+	Draft    CustomAgentDraft         `json:"draft"`
+	Reasons  []CustomAgentDraftReason `json:"reasons"`
+	Warnings []string                 `json:"warnings"`
+}
+
+type CustomAgentDraftLLMResponse struct {
+	Draft   CustomAgentDraft         `json:"draft"`
+	Reasons []CustomAgentDraftReason `json:"reasons"`
 }
 
 // UpdateAgentRequest is the payload for updating an agent.
@@ -220,7 +300,7 @@ type UpdateAgentRequest struct {
 	Role                  *string         `json:"role"`
 	Status                *string         `json:"status"`
 	RuntimeKind           *string         `json:"runtime_kind"`
-	Skills                json.RawMessage `json:"skills"`
+	Skills                AgentSkillRefs  `json:"skills"`
 	TriggerMode           *string         `json:"trigger_mode"`
 	Provider              *string         `json:"provider"`
 	Model                 *string         `json:"model"`
@@ -230,10 +310,10 @@ type UpdateAgentRequest struct {
 	MonthlyTokenBudget    *int            `json:"monthly_token_budget"`
 	ActiveTaskID          *string         `json:"active_task_id"`
 	TeamID                *string         `json:"team_id"`
+	TeamIDs               *[]string       `json:"team_ids"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedCommands       json.RawMessage `json:"allowed_commands"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
-	Schedule              *string         `json:"schedule"`
 	ApprovalMode          *string         `json:"approval_mode"`
 	MaxConcurrentRuns     *int            `json:"max_concurrent_runs"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
@@ -250,9 +330,27 @@ type CreateWorkspaceAgentPresetVersionRequest struct {
 	Model                 *string         `json:"model"`
 	ExecutionConfig       json.RawMessage `json:"execution_config"`
 	SystemPrompt          *string         `json:"system_prompt"`
+	InstructionPreamble   *string         `json:"instruction_preamble"`
+	InstructionSkills     json.RawMessage `json:"instruction_skills"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
 	ApprovalMode          *string         `json:"approval_mode"`
+	DefaultInvocationMode *string         `json:"default_invocation_mode"`
+}
+
+type UpdateWorkspaceAgentPresetVersionRequest struct {
+	// Label changes are regular edits. The backend does not maintain rename-specific history.
+	Label                 *string         `json:"label"`
+	Description           *string         `json:"description"`
+	RuntimeKind           *string         `json:"runtime_kind"`
+	Provider              *string         `json:"provider"`
+	Model                 *string         `json:"model"`
+	ExecutionConfig       json.RawMessage `json:"execution_config"`
+	SystemPrompt          *string         `json:"system_prompt"`
+	InstructionPreamble   *string         `json:"instruction_preamble"`
+	InstructionSkills     json.RawMessage `json:"instruction_skills"`
+	AllowedTools          json.RawMessage `json:"allowed_tools"`
+	SupportedModes        json.RawMessage `json:"supported_modes"`
 	DefaultInvocationMode *string         `json:"default_invocation_mode"`
 }
 
@@ -296,11 +394,6 @@ type AgentTriggerExecutionSummary struct {
 	TriggerType   *string    `json:"trigger_type,omitempty"`
 	ReferenceID   *string    `json:"reference_id,omitempty"`
 	ReferenceType *string    `json:"reference_type,omitempty"`
-}
-
-// AssignAgentRequest assigns an agent to a task.
-type AssignAgentRequest struct {
-	AgentID string `json:"agent_id"`
 }
 
 // ApproveAgentRunRequest approves a pending run outcome.
@@ -419,10 +512,12 @@ type HandoffAgentRunRequest struct {
 }
 
 type StartAgentRunRequest struct {
-	AgentID           string  `json:"agent_id,omitempty"`
-	AdditionalContext *string `json:"additional_context,omitempty"`
-	BaseBranch        *string `json:"base_branch,omitempty"`
-	WorkingBranch     *string `json:"working_branch,omitempty"`
+	AgentID           string                 `json:"agent_id,omitempty"`
+	AdditionalContext *string                `json:"additional_context,omitempty"`
+	AllowedTools      []string               `json:"allowed_tools,omitempty"`
+	BaseBranch        *string                `json:"base_branch,omitempty"`
+	WorkingBranch     *string                `json:"working_branch,omitempty"`
+	Output            *AgentRunOutputContext `json:"output,omitempty"`
 }
 
 type StartTargetAgentRunRequest struct {
@@ -435,10 +530,11 @@ type StartTargetAgentRunRequest struct {
 }
 
 type AgentRunTriggerContext struct {
-	Source      string     `json:"source,omitempty"`
-	TriggerType string     `json:"trigger_type,omitempty"`
-	RuleID      *string    `json:"rule_id,omitempty"`
-	FiredAt     *time.Time `json:"fired_at,omitempty"`
+	Source      string          `json:"source,omitempty"`
+	TriggerType string          `json:"trigger_type,omitempty"`
+	RuleID      *string         `json:"rule_id,omitempty"`
+	FiredAt     *time.Time      `json:"fired_at,omitempty"`
+	Context     json.RawMessage `json:"context,omitempty"`
 }
 
 type AgentRunTargetContext struct {
@@ -446,11 +542,52 @@ type AgentRunTargetContext struct {
 	TargetID   string `json:"target_id,omitempty"`
 }
 
+type AgentRunGitHubReleaseEventContext struct {
+	TagName         string     `json:"tag_name,omitempty"`
+	TargetCommitish string     `json:"target_commitish,omitempty"`
+	ReleaseName     string     `json:"release_name,omitempty"`
+	ReleaseURL      string     `json:"release_url,omitempty"`
+	PublishedAt     *time.Time `json:"published_at,omitempty"`
+	IsPrerelease    bool       `json:"is_prerelease,omitempty"`
+}
+
+type AgentRunGitHubPullRequestEventContext struct {
+	Number     int    `json:"number,omitempty"`
+	BaseBranch string `json:"base_branch,omitempty"`
+	HeadBranch string `json:"head_branch,omitempty"`
+	URL        string `json:"url,omitempty"`
+	State      string `json:"state,omitempty"`
+	Title      string `json:"title,omitempty"`
+}
+
+type AgentRunGitHubCheckSuiteEventContext struct {
+	Branch     string `json:"branch,omitempty"`
+	Conclusion string `json:"conclusion,omitempty"`
+	URL        string `json:"url,omitempty"`
+}
+
+type AgentRunGitHubEventContext struct {
+	EventType    string                                 `json:"event_type,omitempty"`
+	RepoFullName string                                 `json:"repo_full_name,omitempty"`
+	RepositoryID string                                 `json:"repository_id,omitempty"`
+	Release      *AgentRunGitHubReleaseEventContext     `json:"release,omitempty"`
+	PullRequest  *AgentRunGitHubPullRequestEventContext `json:"pull_request,omitempty"`
+	CheckSuite   *AgentRunGitHubCheckSuiteEventContext  `json:"check_suite,omitempty"`
+}
+
 type AgentRunEventContext struct {
-	StateID *string `json:"state_id,omitempty"`
-	TeamID  *string `json:"team_id,omitempty"`
-	RunID   *string `json:"run_id,omitempty"`
-	Reason  *string `json:"reason,omitempty"`
+	StateID *string                     `json:"state_id,omitempty"`
+	TeamID  *string                     `json:"team_id,omitempty"`
+	RunID   *string                     `json:"run_id,omitempty"`
+	Reason  *string                     `json:"reason,omitempty"`
+	GitHub  *AgentRunGitHubEventContext `json:"github,omitempty"`
+}
+
+type AgentRunOutputContext struct {
+	Type           string  `json:"type,omitempty"`
+	SpaceID        string  `json:"space_id,omitempty"`
+	CollectionID   *string `json:"collection_id,omitempty"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty"`
 }
 
 // AgentRunInputPayload is the shared input contract for all agent runs.
@@ -460,6 +597,7 @@ type AgentRunInputPayload struct {
 	Trigger             *AgentRunTriggerContext `json:"trigger,omitempty"`
 	Target              *AgentRunTargetContext  `json:"target,omitempty"`
 	Event               *AgentRunEventContext   `json:"event,omitempty"`
+	Output              *AgentRunOutputContext  `json:"output,omitempty"`
 	StoryID             string                  `json:"story_id,omitempty"`
 	EpicID              string                  `json:"epic_id,omitempty"`
 	ConversationID      string                  `json:"conversation_id,omitempty"`
@@ -502,6 +640,10 @@ type SendAgentRunMessageRequest struct {
 	Content string `json:"content"`
 }
 
+type ContinueAgentRunRequest struct {
+	Content *string `json:"content,omitempty"`
+}
+
 type SendAgentRunRequestChangesRequest struct {
 	Content string `json:"content"`
 }
@@ -527,30 +669,34 @@ type RuntimeProfile struct {
 
 // AgentPresetDefinition describes a preset/template for a generic agent.
 type AgentPresetDefinition struct {
-	Key                   string   `json:"key"`
-	FamilyKey             string   `json:"family_key"`
-	VersionKey            string   `json:"version_key"`
-	VersionLabel          string   `json:"version_label"`
-	IsDefaultVersion      bool     `json:"is_default_version"`
-	Scope                 string   `json:"scope"`
-	WorkspaceID           *string  `json:"workspace_id,omitempty"`
-	SourceVersionKey      *string  `json:"source_version_key,omitempty"`
-	Provider              *string  `json:"provider,omitempty"`
-	Model                 *string  `json:"model,omitempty"`
-	ExecutionConfig       JSONBlob `json:"execution_config,omitempty"`
-	Label                 string   `json:"label"`
-	Description           string   `json:"description"`
-	DefaultRole           string   `json:"default_role"`
-	RuntimeKind           string   `json:"runtime_kind"`
-	DefaultTriggerMode    string   `json:"default_trigger_mode"`
-	AllowedTriggerModes   []string `json:"allowed_trigger_modes"`
-	AllowedTools          []string `json:"allowed_tools"`
-	AllowedCommands       []string `json:"allowed_commands"`
-	AllowedTargetTypes    []string `json:"allowed_target_types"`
-	ApprovalMode          string   `json:"approval_mode"`
-	DefaultInvocationMode string   `json:"default_invocation_mode"`
-	SupportedModes        []string `json:"supported_modes"`
-	SystemPrompt          *string  `json:"system_prompt,omitempty"`
+	ID                         *string  `json:"id,omitempty"`
+	Key                        string   `json:"key"`
+	FamilyKey                  string   `json:"family_key"`
+	VersionKey                 string   `json:"version_key"`
+	VersionLabel               string   `json:"version_label"`
+	IsDefaultVersion           bool     `json:"is_default_version"`
+	Scope                      string   `json:"scope"`
+	WorkspaceID                *string  `json:"workspace_id,omitempty"`
+	SourceVersionKey           *string  `json:"source_version_key,omitempty"`
+	Provider                   *string  `json:"provider,omitempty"`
+	Model                      *string  `json:"model,omitempty"`
+	ExecutionConfig            JSONBlob `json:"execution_config,omitempty"`
+	Label                      string   `json:"label"`
+	Description                string   `json:"description"`
+	DefaultRole                string   `json:"default_role"`
+	RuntimeKind                string   `json:"runtime_kind"`
+	DefaultTriggerMode         string   `json:"default_trigger_mode"`
+	AllowedTriggerModes        []string `json:"allowed_trigger_modes"`
+	AllowedTools               []string `json:"allowed_tools"`
+	AllowedCommands            []string `json:"allowed_commands"`
+	AllowedTargetTypes         []string `json:"allowed_target_types"`
+	ApprovalMode               string   `json:"approval_mode"`
+	DefaultInvocationMode      string   `json:"default_invocation_mode"`
+	SupportedModes             []string `json:"supported_modes"`
+	InstructionPreamble        string   `json:"instruction_preamble,omitempty"`
+	InstructionSkills          []string `json:"instruction_skills,omitempty"`
+	InstructionTemplateVersion string   `json:"instruction_template_version,omitempty"`
+	SystemPrompt               *string  `json:"system_prompt,omitempty"`
 }
 
 type AgentModelProviderOption struct {
@@ -566,6 +712,111 @@ type AgentModelProviderOption struct {
 type AgentExecutionConfig struct {
 	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
 	ServiceTier     *string `json:"service_tier,omitempty"`
+}
+
+type AgentSkillRef struct {
+	SkillID    *string  `json:"skill_id,omitempty"`
+	Key        string   `json:"key,omitempty"`
+	VersionKey *string  `json:"version_key,omitempty"`
+	Config     JSONBlob `json:"config,omitempty"`
+}
+
+type AgentSkillRefs []AgentSkillRef
+
+func (r AgentSkillRef) Normalize() AgentSkillRef {
+	if r.SkillID != nil {
+		value := strings.TrimSpace(*r.SkillID)
+		if value == "" {
+			r.SkillID = nil
+		} else {
+			r.SkillID = &value
+		}
+	}
+	r.Key = strings.TrimSpace(r.Key)
+	if r.VersionKey != nil {
+		value := strings.TrimSpace(*r.VersionKey)
+		if value == "" {
+			r.VersionKey = nil
+		} else {
+			r.VersionKey = &value
+		}
+	}
+	if len(r.Config) == 0 || bytes.Equal(bytes.TrimSpace(r.Config), []byte("null")) {
+		r.Config = nil
+	}
+	return r
+}
+
+func (r AgentSkillRefs) Normalize() AgentSkillRefs {
+	if len(r) == 0 {
+		return AgentSkillRefs{}
+	}
+	out := make(AgentSkillRefs, 0, len(r))
+	for _, ref := range r {
+		out = append(out, ref.Normalize())
+	}
+	return out
+}
+
+func (r AgentSkillRefs) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]AgentSkillRef(r.Normalize()))
+}
+
+func (r *AgentSkillRefs) UnmarshalJSON(data []byte) error {
+	if r == nil {
+		return nil
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		*r = AgentSkillRefs{}
+		return nil
+	}
+	var refs []AgentSkillRef
+	if err := json.Unmarshal(trimmed, &refs); err == nil {
+		*r = AgentSkillRefs(refs).Normalize()
+		return nil
+	}
+	var legacy []string
+	if err := json.Unmarshal(trimmed, &legacy); err != nil {
+		return err
+	}
+	out := make(AgentSkillRefs, 0, len(legacy))
+	for _, key := range legacy {
+		out = append(out, AgentSkillRef{Key: key}.Normalize())
+	}
+	*r = out
+	return nil
+}
+
+func (r *AgentSkillRefs) Scan(value interface{}) error {
+	if r == nil {
+		return nil
+	}
+	if value == nil {
+		*r = AgentSkillRefs{}
+		return nil
+	}
+	var data []byte
+	switch typed := value.(type) {
+	case []byte:
+		data = typed
+	case string:
+		data = []byte(typed)
+	default:
+		return fmt.Errorf("unsupported AgentSkillRefs scan type %T", value)
+	}
+	return r.UnmarshalJSON(data)
+}
+
+func (r AgentSkillRefs) Value() (driver.Value, error) {
+	if len(r) == 0 {
+		return "[]", nil
+	}
+	payload, err := json.Marshal(r.Normalize())
+	if err != nil {
+		return nil, err
+	}
+	return string(payload), nil
 }
 
 type JSONBlob []byte
@@ -680,4 +931,22 @@ type ToolCatalogEntry struct {
 type ToolCatalogResponse struct {
 	Tools      []ToolCatalogEntry `json:"tools"`
 	Categories []string           `json:"categories"`
+}
+type SkillCatalogEntry struct {
+	ID                *string  `json:"id,omitempty"`
+	Key               string   `json:"key"`
+	VersionKey        string   `json:"version_key,omitempty"`
+	Title             string   `json:"title"`
+	Description       string   `json:"description"`
+	Instructions      string   `json:"instructions,omitempty"`
+	SourceKind        string   `json:"source_kind"`
+	SourceRuntime     *string  `json:"source_runtime,omitempty"`
+	RequiredTools     []string `json:"required_tools,omitempty"`
+	SupportedRuntimes []string `json:"supported_runtimes,omitempty"`
+	Presets           []string `json:"presets,omitempty"`
+}
+
+// SkillCatalogResponse is the response for GET /automation/library/skills.
+type SkillCatalogResponse struct {
+	Skills []SkillCatalogEntry `json:"skills"`
 }

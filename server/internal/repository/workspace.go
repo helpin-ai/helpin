@@ -224,6 +224,19 @@ func (r *WorkspaceRepository) GetTeamByID(ctx context.Context, workspaceID, team
 	return team, nil
 }
 
+// ListTeams returns all teams in a workspace.
+func (r *WorkspaceRepository) ListTeams(ctx context.Context, workspaceID string) ([]model.WorkspaceTeam, error) {
+	var teams []model.WorkspaceTeam
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("name").
+		Find(&teams).Error
+	if err != nil {
+		return nil, fmt.Errorf("list workspace teams: %w", err)
+	}
+	return teams, nil
+}
+
 // Update modifies workspace fields.
 func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, description, websiteURL, logoURL, timezone *string) (*model.Workspace, error) {
 	updates := map[string]interface{}{}
@@ -261,6 +274,15 @@ func (r *WorkspaceRepository) Update(ctx context.Context, id string, name, descr
 // Delete removes a workspace and all associated data via cascade deletion.
 func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var workspace model.Workspace
+		if err := tx.Where("id = ?", id).First(&workspace).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return fmt.Errorf("load workspace %s: %w", id, err)
+		}
+		orgID := strings.TrimSpace(workspaceOrgID(workspace.OrganizationID))
+
 		// Helper subqueries for indirect children.
 		storyQ := "SELECT id FROM pm_tasks WHERE workspace_id = ?"
 		epicQ := "SELECT id FROM pm_epics WHERE workspace_id = ?"
@@ -332,10 +354,9 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM pm_import_jobs WHERE workspace_id = ?",
 
 			// Git module
-			"DELETE FROM story_delivery_targets WHERE workspace_id = ?",
-			"DELETE FROM story_git_links WHERE workspace_id = ?",
+			"DELETE FROM task_delivery_targets WHERE workspace_id = ?",
+			"DELETE FROM task_git_links WHERE workspace_id = ?",
 			"DELETE FROM git_repositories WHERE workspace_id = ?",
-			"DELETE FROM git_integrations WHERE workspace_id = ?",
 
 			// Agent module
 			"DELETE FROM agent_run_artifacts WHERE workspace_id = ?",
@@ -344,6 +365,7 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			"DELETE FROM agent_handoffs WHERE workspace_id = ?",
 
 			// Support module
+			"DELETE FROM support_inbox_views WHERE workspace_id = ?",
 			"DELETE FROM support_conversations WHERE workspace_id = ?",
 			"DELETE FROM support_widget_sessions WHERE workspace_id = ?",
 			"DELETE FROM support_widget_installations WHERE workspace_id = ?",
@@ -378,8 +400,33 @@ func (r *WorkspaceRepository) Delete(ctx context.Context, id string) error {
 			}
 		}
 
+		if orgID != "" {
+			if err := tx.Exec(`
+				UPDATE git_integrations
+				   SET active = false,
+				       deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP),
+				       updated_at = CURRENT_TIMESTAMP
+				 WHERE organization_id = ?
+				   AND NOT EXISTS (
+				         SELECT 1
+				           FROM workspaces
+				          WHERE organization_id = ?
+				            AND id <> ?
+				       )
+			`, orgID, orgID, id).Error; err != nil {
+				return fmt.Errorf("deactivate org git integrations for workspace %s: %w", id, err)
+			}
+		}
+
 		return nil
 	})
+}
+
+func workspaceOrgID(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // AddMember adds or activates a user as a workspace member.
@@ -592,6 +639,21 @@ func (r *WorkspaceRepository) UpdateMemberRole(ctx context.Context, workspaceID,
 	return nil
 }
 
+// UpdateSupportTaskPreferences updates the support task creation preferences for a workspace member.
+func (r *WorkspaceRepository) UpdateSupportTaskPreferences(ctx context.Context, memberID string, teamID *string, dialogDismissed *bool) error {
+	updates := map[string]interface{}{}
+	if teamID != nil {
+		updates["support_default_team_id"] = teamID
+	}
+	if dialogDismissed != nil {
+		updates["support_task_dialog_dismissed"] = *dialogDismissed
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&model.WorkspaceMember{}).Where("id = ?", memberID).Updates(updates).Error
+}
+
 // RemoveMember revokes an active workspace member and clears membership-specific state.
 func (r *WorkspaceRepository) RemoveMember(ctx context.Context, workspaceID, memberID string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -649,7 +711,7 @@ func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID strin
 	var results []model.MemberWithUser
 	err := r.db.WithContext(ctx).
 		Table("workspace_members wm").
-		Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name) AS full_name, u.avatar_url, u.avatar_style, u.avatar_seed, u.avatar_background_mode, u.avatar_background_color").
+		Select("wm.id, wm.user_id, wm.role, wm.email, COALESCE(NULLIF(wm.display_name, ''), u.full_name) AS full_name, u.totp_verified AS two_fa_enabled, u.avatar_url, u.avatar_style, u.avatar_seed, u.avatar_background_mode, u.avatar_background_color").
 		Joins("JOIN users u ON u.id = wm.user_id").
 		Where("wm.workspace_id = ? AND wm.status = ?", workspaceID, model.WorkspaceMemberStatusActive).
 		Order("COALESCE(NULLIF(wm.display_name, ''), u.full_name) ASC").
@@ -658,6 +720,51 @@ func (r *WorkspaceRepository) ListMembers(ctx context.Context, workspaceID strin
 		return nil, fmt.Errorf("list workspace members: %w", err)
 	}
 	return results, nil
+}
+
+// GetWorkspaceMFAPolicy returns the workspace MFA policy plus whether the user
+// has TOTP registered. Verified passkey sign-ins can still satisfy MFA at the
+// token level, but the setup gate needs TOTP state to know whether it can ask
+// for a code or must guide setup.
+func (r *WorkspaceRepository) GetWorkspaceMFAPolicy(ctx context.Context, workspaceID, userID string) (model.WorkspaceMFAPolicy, error) {
+	var row struct {
+		EnforceTwoFactor bool
+		TOTPVerified     bool
+	}
+	err := r.db.WithContext(ctx).
+		Table("workspaces w").
+		Select(`
+			COALESCE(ws.enforce_two_factor, false) AS enforce_two_factor,
+			COALESCE(u.totp_verified, false) AS totp_verified
+		`).
+		Joins("LEFT JOIN workspace_settings ws ON ws.workspace_id = w.id").
+		Joins("JOIN workspace_members wm ON wm.workspace_id = w.id AND wm.user_id = ? AND wm.status = ?", userID, model.WorkspaceMemberStatusActive).
+		Joins("JOIN users u ON u.id = wm.user_id").
+		Where("w.id = ?", workspaceID).
+		Scan(&row).Error
+	if err != nil {
+		return model.WorkspaceMFAPolicy{}, fmt.Errorf("get workspace mfa policy: %w", err)
+	}
+	return model.WorkspaceMFAPolicy{
+		EnforceTwoFactor: row.EnforceTwoFactor,
+		MFARequired:      row.EnforceTwoFactor,
+		MFAEnabled:       row.TOTPVerified,
+	}, nil
+}
+
+// UserHasEnforcedWorkspace returns true when the user is an active member of at
+// least one workspace that currently requires MFA.
+func (r *WorkspaceRepository) UserHasEnforcedWorkspace(ctx context.Context, userID string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("workspace_members wm").
+		Joins("JOIN workspace_settings ws ON ws.workspace_id = wm.workspace_id").
+		Where("wm.user_id = ? AND wm.status = ? AND ws.enforce_two_factor = true", userID, model.WorkspaceMemberStatusActive).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("check enforced workspace membership: %w", err)
+	}
+	return count > 0, nil
 }
 
 // ListSupportAccessibleUserIDs returns active linked user IDs that can access the support module.

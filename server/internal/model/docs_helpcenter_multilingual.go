@@ -69,6 +69,10 @@ type DocsHelpcenterArticleTranslation struct {
 	ContentText     string          `json:"content_text" gorm:"type:text"`
 	SEOTitle        *string         `json:"seo_title"`
 	SEODescription  *string         `json:"seo_description"`
+	OGTitle         *string         `json:"og_title"`
+	OGDescription   *string         `json:"og_description"`
+	OGImageURL      *string         `json:"og_image_url"`
+	OGImageAlt      *string         `json:"og_image_alt"`
 	Status          string          `json:"status" gorm:"not null;default:'draft'"`
 	SourceUpdatedAt *time.Time      `json:"source_updated_at"`
 	SourceSynced    bool            `json:"source_synced" gorm:"not null;default:false"`
@@ -119,6 +123,10 @@ type UpsertDocsHelpcenterArticleTranslationRequest struct {
 	Content        json.RawMessage `json:"content"`
 	SEOTitle       *string         `json:"seo_title"`
 	SEODescription *string         `json:"seo_description"`
+	OGTitle        *string         `json:"og_title"`
+	OGDescription  *string         `json:"og_description"`
+	OGImageURL     *string         `json:"og_image_url"`
+	OGImageAlt     *string         `json:"og_image_alt"`
 	Status         string          `json:"status"`
 }
 
@@ -136,11 +144,11 @@ type AutoTranslateMissingRequest struct {
 // failed (with a human-readable reason so the frontend can surface
 // per-row diagnostics in the results modal).
 type AutoTranslateMissingResponse struct {
-	Locale      string                                 `json:"locale"`
-	Requested   int                                    `json:"requested"`
-	Spaces      []DocsHelpcenterSpaceTranslation       `json:"spaces,omitempty"`
-	Collections []DocsHelpcenterCollectionTranslation  `json:"collections,omitempty"`
-	Failed      []AutoTranslateFailedItem              `json:"failed,omitempty"`
+	Locale      string                                `json:"locale"`
+	Requested   int                                   `json:"requested"`
+	Spaces      []DocsHelpcenterSpaceTranslation      `json:"spaces,omitempty"`
+	Collections []DocsHelpcenterCollectionTranslation `json:"collections,omitempty"`
+	Failed      []AutoTranslateFailedItem             `json:"failed,omitempty"`
 }
 
 // AutoTranslateFailedItem identifies one target that could not be

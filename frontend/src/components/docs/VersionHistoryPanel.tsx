@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { format, parseISO } from 'date-fns'
 import {
   Clock01Icon,
@@ -49,6 +49,7 @@ const TYPE_BADGE_STYLES: Record<VersionType, string> = {
   auto: 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20',
   publish: 'bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20',
   revert: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+  proposal_apply: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/20',
 }
 
 const TYPE_ICONS: Record<VersionType, React.ComponentType<{ className?: string }>> = {
@@ -56,6 +57,7 @@ const TYPE_ICONS: Record<VersionType, React.ComponentType<{ className?: string }
   auto: ZapIcon,
   publish: GlobeIcon,
   revert: Clock03Icon,
+  proposal_apply: Tick01Icon,
 }
 
 export function VersionTypeBadge({ type }: { type: VersionType }) {
@@ -245,6 +247,8 @@ interface VersionHistoryPanelProps {
   members: AssignableMember[]
   canEdit: boolean
   previewingVersionId?: string | null
+  /** When true, render only the body (no outer aside/header) — used inside the docs swap rail */
+  embedded?: boolean
 }
 
 export function VersionHistoryPanel({
@@ -256,6 +260,7 @@ export function VersionHistoryPanel({
   members,
   canEdit,
   previewingVersionId,
+  embedded,
 }: VersionHistoryPanelProps) {
   const { data: versions, isLoading } = useDocsVersions(wsId, docId)
   const revertVersion = useRevertDocsVersion(wsId)
@@ -274,18 +279,25 @@ export function VersionHistoryPanel({
 
   if (!open) return null
 
+  const Wrapper = embedded
+    ? ({ children }: { children: ReactNode }) => <>{children}</>
+    : ({ children }: { children: ReactNode }) => (
+        <aside className="w-80 shrink-0 border-l border-border/60 flex flex-col bg-background">
+          {/* Header */}
+          <div className="flex items-center gap-2 border-b border-border/40 px-4 py-3">
+            <Clock01Icon className="h-4 w-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold flex-1">Version History</h3>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+              <Cancel01Icon className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          {children}
+        </aside>
+      )
+
   return (
     <>
-      <aside className="w-80 shrink-0 border-l border-border/60 flex flex-col bg-background">
-        {/* Header */}
-        <div className="flex items-center gap-2 border-b border-border/40 px-4 py-3">
-          <Clock01Icon className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold flex-1">Version History</h3>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
-            <Cancel01Icon className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-
+      <Wrapper>
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
           {canEdit && (
@@ -411,7 +423,7 @@ export function VersionHistoryPanel({
             </div>
           )}
         </div>
-      </aside>
+      </Wrapper>
 
       {/* Restore confirmation dialog */}
       <AlertDialog

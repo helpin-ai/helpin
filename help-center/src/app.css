@@ -141,8 +141,8 @@
 /* ─── Article Prose ─────────────────────────────────────────────────────── */
 
 .hc-prose {
-  font-size: 0.9375rem;
-  line-height: 1.65;
+  font-size: 1rem;
+  line-height: 1.7;
   @apply text-foreground/80;
 }
 
@@ -150,48 +150,55 @@
   margin-top: 0;
 }
 
+.hc-prose > *:last-child {
+  margin-bottom: 0;
+}
+
 .hc-prose h1 {
-  font-size: 1.75rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0;
   @apply text-foreground;
-  margin: 1.5rem 0 0.5rem;
+  margin: 2.75rem 0 0.75rem;
   scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
 .hc-prose h2 {
-  font-size: 1.375rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0;
   @apply text-foreground;
-  margin: 1.25rem 0 0.375rem;
+  margin: 2.5rem 0 0.75rem;
   scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
 .hc-prose h3 {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  line-height: 1.4;
+  letter-spacing: 0;
   @apply text-foreground;
-  margin: 1rem 0 0.25rem;
+  margin: 2rem 0 0.6rem;
   scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
 .hc-prose h4 {
-  font-size: 1rem;
+  font-size: 1.125rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   @apply text-foreground;
-  margin: 1.125rem 0 0.375rem;
+  margin: 1.65rem 0 0.5rem;
   scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
 .hc-prose h5 {
   font-size: 0.9375rem;
   font-weight: 600;
-  letter-spacing: -0.005em;
+  letter-spacing: 0;
   @apply text-foreground;
-  margin: 1rem 0 0.375rem;
+  margin: 1.45rem 0 0.45rem;
   scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
@@ -199,13 +206,19 @@
   font-size: 0.875rem;
   font-weight: 600;
   @apply text-foreground;
-  margin: 0.875rem 0 0.25rem;
+  margin: 1.25rem 0 0.35rem;
   scroll-margin-top: calc(var(--hc-header-height) + 1.5rem);
 }
 
 .hc-prose p {
-  margin: 0 0 1rem;
-  line-height: 1.65;
+  margin: 0 0 1.1rem;
+  line-height: 1.7;
+}
+
+.hc-prose h1 + h2,
+.hc-prose h2 + h3,
+.hc-prose h3 + h4 {
+  margin-top: 1rem;
 }
 
 .hc-prose h3 + p,
@@ -241,9 +254,9 @@
 .hc-prose pre {
   @apply bg-secondary border border-border;
   border-radius: 0.5rem;
-  padding: 0.875rem 1.125rem;
+  padding: 1rem 1.125rem;
   overflow-x: auto;
-  margin-bottom: 1.25rem;
+  margin: 1.5rem 0;
 }
 .hc-prose pre code {
   background: none;
@@ -256,8 +269,8 @@
 
 .hc-prose ul,
 .hc-prose ol {
-  margin-bottom: 1rem;
-  padding-left: 1.5rem;
+  margin: 0.5rem 0 1.25rem;
+  padding-left: 1.625rem;
 }
 .hc-prose ul {
   list-style-type: disc;
@@ -266,18 +279,29 @@
   list-style-type: decimal;
 }
 .hc-prose li {
-  margin-bottom: 0.375rem;
-  line-height: 1.6;
+  margin-bottom: 0.45rem;
+  padding-left: 0.125rem;
+  line-height: 1.65;
 }
 .hc-prose li::marker {
   @apply text-muted-foreground;
+}
+.hc-prose li > p {
+  margin: 0.15rem 0;
+}
+.hc-prose li > p:first-child:last-child {
+  margin: 0;
+}
+.hc-prose li > ul,
+.hc-prose li > ol {
+  margin: 0.45rem 0 0.35rem;
 }
 
 .hc-prose blockquote {
   border-left: 3px solid var(--color-border);
   @apply text-muted-foreground;
-  padding: 0.25rem 0 0.25rem 1rem;
-  margin-bottom: 1rem;
+  padding: 0.35rem 0 0.35rem 1.125rem;
+  margin: 1.5rem 0;
   font-style: italic;
 }
 .hc-prose blockquote > *:last-child {
@@ -288,7 +312,7 @@
   border-left: 4px solid;
   border-radius: 0.5rem;
   padding: 1rem 1.25rem;
-  margin: 1.25rem 0;
+  margin: 1.5rem 0;
 }
 .hc-prose .docs-callout--blue {
   border-color: oklch(0.62 0.19 255);
@@ -315,14 +339,14 @@
 }
 
 .hc-prose .docs-html-block {
-  margin: 1.25rem 0;
+  margin: 1.5rem 0;
 }
 
 .hc-prose .docs-video-embed {
   position: relative;
   width: 100%;
   padding-bottom: 56.25%;
-  margin: 1.25rem 0;
+  margin: 1.75rem 0;
   border-radius: 0.5rem;
   overflow: hidden;
 }
@@ -338,8 +362,45 @@
   display: block;
   border-radius: 0.5rem;
   max-width: 100%;
-  margin: 0.875rem 0 1.35rem;
+  margin: 1.5rem 0;
   @apply border border-border/70 bg-card shadow-sm;
+}
+
+.hc-prose .docs-image-block {
+  margin: 1.75rem 0;
+}
+
+.hc-prose .docs-image-block img {
+  display: inline-block;
+  margin: 0 auto;
+  vertical-align: middle;
+}
+
+.hc-prose .docs-theme-image-set {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.hc-prose .docs-theme-image-dark {
+  display: none;
+}
+
+.dark .hc-prose .docs-theme-image-light {
+  display: none;
+}
+
+.dark .hc-prose .docs-theme-image-dark {
+  display: inline-block;
+}
+
+.hc-prose .docs-image-block[style*="left"] img {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.hc-prose .docs-image-block[style*="right"] img {
+  margin-left: auto;
+  margin-right: 0;
 }
 
 .hc-prose h2 + img,
@@ -358,10 +419,18 @@
   margin-top: 1.5rem;
 }
 
+.hc-prose .docs-image-block + h2,
+.hc-prose .docs-image-block + h3,
+.hc-prose .docs-image-block + h4,
+.hc-prose .docs-image-block + h5,
+.hc-prose .docs-image-block + h6 {
+  margin-top: 2rem;
+}
+
 .hc-prose table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 1.25rem;
+  margin: 1.5rem 0;
   font-size: 0.875rem;
 }
 .hc-prose th,
@@ -378,7 +447,7 @@
 .hc-prose hr {
   border: none;
   @apply border-t border-border;
-  margin: 1.5rem 0;
+  margin: 2.25rem 0;
 }
 
 /* ─── Code Copy Button ─────────────────────────────────────────────────── */
@@ -411,7 +480,7 @@
 .hc-prose [data-callout] {
   border-radius: var(--radius);
   padding: 0.75rem 1rem;
-  margin-bottom: 1.25rem;
+  margin: 1.5rem 0;
   font-size: 0.875rem;
   border-left: 3px solid var(--color-primary);
   @apply bg-primary/5;

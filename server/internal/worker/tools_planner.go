@@ -138,28 +138,28 @@ func toolCreateTaskBatch(ctx *ExecutionContext, input json.RawMessage) (string, 
 	}
 
 	var params struct {
-		Stories         []model.ProposedTask `json:"stories"`
-		ProposedStories []model.ProposedTask `json:"proposed_stories"`
+		Tasks         []model.ProposedTask `json:"tasks"`
+		ProposedTasks []model.ProposedTask `json:"proposed_tasks"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return "", plannerToolInputError("create_task_batch", err)
 	}
-	if len(params.Stories) == 0 && len(params.ProposedStories) > 0 {
-		params.Stories = params.ProposedStories
+	if len(params.Tasks) == 0 {
+		params.Tasks = params.ProposedTasks
 	}
-	if len(params.Stories) == 0 {
-		return "", fmt.Errorf("create_task_batch requires \"stories\" (legacy alias: \"proposed_stories\")")
+	if len(params.Tasks) == 0 {
+		return "", fmt.Errorf("create_task_batch requires \"tasks\" or \"proposed_tasks\"")
 	}
-	if err := model.NormalizeProposedTasks(params.Stories); err != nil {
-		return "", fmt.Errorf("create_task_batch stories are invalid: %w", err)
+	if err := model.NormalizeProposedTasks(params.Tasks); err != nil {
+		return "", fmt.Errorf("create_task_batch tasks are invalid: %w", err)
 	}
 
-	// Hard guard: stories require an approved spec.
+	// Hard guard: task creation requires an approved spec.
 	if ctx.Epic == nil || ctx.Epic.ApprovedSpecVersionID == nil || strings.TrimSpace(*ctx.Epic.ApprovedSpecVersionID) == "" {
 		return "", fmt.Errorf("create_task_batch requires an approved PRD first; call approve_epic_spec before creating tasks")
 	}
 	commandInput, _ := json.Marshal(map[string]any{
-		"stories": params.Stories,
+		"tasks": params.Tasks,
 	})
 	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.create_task_batch", commandInput); ok {
 		if err != nil {
@@ -171,7 +171,7 @@ func toolCreateTaskBatch(ctx *ExecutionContext, input json.RawMessage) (string, 
 		return "", fmt.Errorf("task batch creation is not available")
 	}
 
-	result, err := ctx.Services.CreateTaskBatch(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.Stories)
+	result, err := ctx.Services.CreateTaskBatch(ctx.Context, ctx.WorkspaceID, ctx.TargetID, ctx.AgentID, params.Tasks)
 	if err != nil {
 		return "", fmt.Errorf("create task batch: %w", err)
 	}
@@ -180,7 +180,6 @@ func toolCreateTaskBatch(ctx *ExecutionContext, input json.RawMessage) (string, 
 
 func toolAssignTaskAgent(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	var params struct {
-		StoryID string `json:"story_id"`
 		TaskID  string `json:"task_id"`
 		AgentID string `json:"agent_id"`
 	}
@@ -188,9 +187,6 @@ func toolAssignTaskAgent(ctx *ExecutionContext, input json.RawMessage) (string, 
 		return "", plannerToolInputError("assign_task_agent", err)
 	}
 	taskID := strings.TrimSpace(params.TaskID)
-	if taskID == "" {
-		taskID = strings.TrimSpace(params.StoryID)
-	}
 	if taskID == "" || strings.TrimSpace(params.AgentID) == "" {
 		return "", fmt.Errorf("assign_task_agent requires \"task_id\" and \"agent_id\"")
 	}
@@ -221,7 +217,7 @@ func toolSetTaskDependencies(ctx *ExecutionContext, input json.RawMessage) (stri
 	}
 	for idx, link := range params.Dependencies {
 		if strings.TrimSpace(link.SourceTaskID) == "" || strings.TrimSpace(link.TargetTaskID) == "" {
-			return "", fmt.Errorf("set_task_dependencies dependencies[%d] must include \"source_task_id\"/\"source_story_id\" and \"target_task_id\"/\"target_story_id\"", idx)
+			return "", fmt.Errorf("set_task_dependencies dependencies[%d] must include \"source_task_id\" and \"target_task_id\"", idx)
 		}
 	}
 	if output, ok, err := executeInternalCommand(ctx, "epic", ctx.TargetID, "pm.set_task_dependencies", input); ok {
@@ -244,7 +240,7 @@ func toolListEpicTasks(ctx *ExecutionContext, input json.RawMessage) (string, er
 		return "", fmt.Errorf("list_epic_tasks is only available for epic runs")
 	}
 	if ctx.Services == nil || ctx.Services.ListEpicTasks == nil {
-		return "", fmt.Errorf("epic story listing is not available")
+		return "", fmt.Errorf("epic task listing is not available")
 	}
 
 	tasks, err := ctx.Services.ListEpicTasks(ctx.Context, ctx.WorkspaceID, ctx.TargetID)

@@ -14,6 +14,11 @@ on:
       - "packages/widget-core/**"
       - "packages/shared/**"
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Run regardless of changed paths"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -28,7 +33,7 @@ env:
 jobs:
   build:
     name: Build SDK
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +67,7 @@ jobs:
 
   deploy-staging:
     name: Deploy to Staging (cdn-stage.helpin.ai)
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: build
     if: github.ref_name == 'develop'
     steps:
@@ -70,6 +75,10 @@ jobs:
         with:
           name: sdk-dist
           path: dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
@@ -80,7 +89,7 @@ jobs:
 
   deploy-production:
     name: Deploy to Production (cdn.helpin.ai)
-    runs-on: ubuntu-latest
+    runs-on: arc-runners-helpin-ai
     needs: build
     if: github.ref_name == 'main'
     steps:
@@ -88,6 +97,10 @@ jobs:
         with:
           name: sdk-dist
           path: dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

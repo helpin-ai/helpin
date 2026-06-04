@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   BookOpen01Icon,
-  BotIcon,
   Briefcase01Icon,
   File01Icon,
   FolderKanbanIcon,
@@ -28,7 +27,10 @@ import {
   type SearchResponse,
   type SearchResult,
 } from '@/lib/services/searchService';
-import { buildTaskCommandValue } from '@/components/search/searchCommandPalette';
+import {
+  buildSearchCommandValue,
+  buildTaskCommandValue,
+} from '@/components/search/searchCommandPalette';
 
 const EMPTY: SearchResponse = {
   tasks: [],
@@ -78,7 +80,9 @@ export function SearchCommandPalette({
     timerRef.current = setTimeout(async () => {
       const controller = new AbortController();
       abortRef.current = controller;
-      const { data, error } = await searchService.search(workspace.id, query.trim());
+      const { data, error } = await searchService.search(workspace.id, query.trim(), {
+        signal: controller.signal,
+      });
       if (controller.signal.aborted) return;
       if (error || !data) {
         setResults(EMPTY);
@@ -102,7 +106,6 @@ export function SearchCommandPalette({
     { label: 'CRM', icon: Briefcase01Icon, path: `/w/${slug}/crm/contacts` },
     { label: 'Support', icon: Message01Icon, path: `/w/${slug}/support` },
     { label: 'Docs', icon: File01Icon, path: `/w/${slug}/docs` },
-    { label: 'Automation', icon: BotIcon, path: `/w/${slug}/automation/flows` },
   ];
 
   const settingsNavItems = SETTINGS_ROUTE_SECTIONS.filter(
@@ -151,10 +154,11 @@ export function SearchCommandPalette({
       onOpenChange={onOpenChange}
       title="Search"
       description={`Search across ${workspace?.name ?? 'workspace'}`}
+      className="self-start justify-self-center border-border/70 shadow-xl sm:mt-[12vh] sm:max-w-2xl"
       showCloseButton={false}
     >
       <CommandInput
-        placeholder={`Search ${workspace?.name ?? 'workspace'}...`}
+        placeholder="Search tasks, epics, docs, people…"
         value={query}
         onValueChange={setQuery}
       />
@@ -166,7 +170,7 @@ export function SearchCommandPalette({
           </div>
         )}
 
-        <CommandEmpty>No results found.</CommandEmpty>
+        {!searching && <CommandEmpty>No results found.</CommandEmpty>}
 
         <CommandGroup heading="Go to">
           {quickNavItems.map((item) => (
@@ -211,7 +215,7 @@ export function SearchCommandPalette({
                 className="cursor-pointer"
               >
                 <RecordIcon className="h-4 w-4 text-blue-500" />
-                <span className="text-muted-foreground text-xs font-mono mr-1">
+                <span className="mr-1 shrink-0 whitespace-nowrap text-xs font-mono text-muted-foreground">
                   {item.task_key || `#${item.display_id}`}
                 </span>
                 <span className="truncate">{item.name}</span>
@@ -225,7 +229,7 @@ export function SearchCommandPalette({
             {results.epics.map((item) => (
               <CommandItem
                 key={item.id}
-                value={`epic-${item.id}-${item.name}`}
+                value={buildSearchCommandValue('epic', item)}
                 onSelect={() => handleSelect('epic', item)}
                 className="cursor-pointer"
               >
@@ -241,7 +245,7 @@ export function SearchCommandPalette({
             {results.sprints.map((item) => (
               <CommandItem
                 key={item.id}
-                value={`sprint-${item.id}-${item.name}`}
+                value={buildSearchCommandValue('sprint', item)}
                 onSelect={() => handleSelect('sprint', item)}
                 className="cursor-pointer"
               >
@@ -257,7 +261,7 @@ export function SearchCommandPalette({
             {results.objectives.map((item) => (
               <CommandItem
                 key={item.id}
-                value={`objective-${item.id}-${item.name}`}
+                value={buildSearchCommandValue('objective', item)}
                 onSelect={() => handleSelect('objective', item)}
                 className="cursor-pointer"
               >
@@ -273,7 +277,7 @@ export function SearchCommandPalette({
             {results.documents.map((item) => (
               <CommandItem
                 key={item.id}
-                value={`document-${item.id}-${item.name}`}
+                value={buildSearchCommandValue('document', item)}
                 onSelect={() => handleSelect('document', item)}
                 className="cursor-pointer"
               >
@@ -289,7 +293,7 @@ export function SearchCommandPalette({
             {results.members.map((item) => (
               <CommandItem
                 key={item.id}
-                value={`member-${item.id}-${item.name}`}
+                value={buildSearchCommandValue('member', item)}
                 onSelect={() => handleSelect('member', item)}
                 className="cursor-pointer"
               >

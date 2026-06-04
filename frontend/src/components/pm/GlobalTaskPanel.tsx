@@ -13,6 +13,7 @@ import {
 } from '@/components/pm/task-detail/taskOverlayState';
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload';
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
+import { agentService } from '@/lib/services/agentService';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { pmRecurringTemplateService } from '@/lib/services/pmRecurringTemplateService';
@@ -20,6 +21,7 @@ import { parseTaskKey } from '@/lib/taskKeyUtils';
 import type { TaskDetail, TaskRecurringSummary } from '@/lib/pmTypes';
 import { useTaskPanelStore } from '@/stores/taskPanelStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext';
 
 interface GlobalTaskPanelProps {
   workspaceId: string;
@@ -29,7 +31,8 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const overlayLocation = location as TaskOverlayLocationLike;
-  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
+  const workspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const workspaceSlug = workspace?.slug ?? '';
   const contextualTaskId = useTaskPanelStore((s) => s.taskId);
   const requestKey = useTaskPanelStore((s) => s.requestKey);
   const closeContextualTask = useTaskPanelStore((s) => s.close);
@@ -41,6 +44,46 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     () => getTaskOverlayPresentationState(activeTaskId, loadedTask),
     [activeTaskId, loadedTask],
   );
+  const commandBarContext = useMemo(() => {
+    const detail = presentation.taskDetail;
+    if (!presentation.open || !detail) return null;
+    return {
+      entity_type: 'task' as const,
+      entity_id: detail.task.id,
+      display_title: detail.task.name,
+      related_ids: detail.task.epic_id ? { epicIds: [detail.task.epic_id] } : undefined,
+    };
+  }, [presentation.open, presentation.taskDetail]);
+  const commandBarContextOptions = useMemo<PageContextScopeOption[]>(() => {
+    if (!commandBarContext) return [];
+    return [
+      {
+        key: 'task',
+        label: 'Task',
+        description: 'Use the selected task as context.',
+        context: commandBarContext,
+      },
+      {
+        key: 'all_tasks',
+        label: 'All tasks',
+        description: 'Use all workspace tasks as context.',
+        context: {
+          entity_type: 'workspace' as const,
+          entity_id: workspaceId,
+          display_title: 'All tasks',
+          metadata: {
+            module: 'pm',
+            context_scope: 'all_tasks',
+            workspace_name: workspace?.name,
+          },
+        },
+      },
+    ];
+  }, [commandBarContext, workspace?.name, workspaceId]);
+  useRegisterPageContext(commandBarContext, 30, {
+    scopeOptions: commandBarContextOptions,
+    defaultScopeKey: 'task',
+  });
 
   // Use refs for close handler to avoid re-triggering task load effect
   const locationRef = useRef(overlayLocation);
@@ -79,10 +122,71 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
 
     (async () => {
       const res = await pmTaskService.getByDisplayId(workspaceId, displayId!);
+      const currentTask = new URLSearchParams(window.location.search).get('task');
+      if (currentTask !== maybeTask) return;
       if (res.data && workspaceSlug) {
-        openTaskRoute(navigateRef.current as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.task.id);
+        const runParam = new URLSearchParams(window.location.search).get('run') ?? undefined;
+        openTaskRoute(navigateRef.current as never, { pathname: window.location.pathname } as never, workspaceSlug, res.data.task.id, { run: runParam });
       }
     })();
+  }, [activeTaskId, workspaceId, workspaceSlug]);
+
+  // Open agent run drawer from ?run= URL param on any page.
+  // Resolves the run's target task, preloads task data, then navigates to the
+  // canonical task route so the panel opens with content immediately.
+  // This also handles shared my-work URLs by redirecting to /pm/tasks/.
+  useEffect(() => {
+    if (activeTaskId || !workspaceId || !workspaceSlug) return;
+    const params = new URLSearchParams(window.location.search);
+    const maybeRun = params.get('run');
+    if (!maybeRun || params.has('task')) return; // ?task= handler takes precedence
+
+    let cancelled = false;
+    (async () => {
+      const runRes = await agentService.getRun(workspaceId, maybeRun);
+      if (cancelled) return;
+      if (new URLSearchParams(window.location.search).get('run') !== maybeRun) return;
+      if (!runRes.data || runRes.data.target_type !== 'task' || !runRes.data.target_id) return;
+
+      const taskId = runRes.data.target_id;
+
+      // Preload task detail + workflows so the panel opens with content, not a skeleton.
+      const [taskRes, wfRes] = await Promise.all([
+        pmTaskService.get(workspaceId, taskId),
+        pmWorkflowService.list(workspaceId),
+      ]);
+      if (cancelled) return;
+
+      if (taskRes.data) {
+        const workflow = wfRes.data?.find(
+          (item) => item.workflow.id === taskRes.data!.task.workflow_id,
+        );
+        let recurring: TaskRecurringSummary | null = null;
+        if (taskRes.data.task.recurring_template_id) {
+          const { data } = await pmRecurringTemplateService.getByTask(workspaceId, taskId);
+          if (!cancelled) recurring = data ?? null;
+        }
+        if (cancelled) return;
+
+        // Pre-seed state so presentation shows content on the very first render after navigate.
+        setLoadedTask({
+          taskId,
+          taskDetail: taskRes.data,
+          states: workflow?.states ?? [],
+          recurringSummary: recurring,
+        });
+      }
+
+      const team = params.get('team') ?? undefined;
+      navigateRef.current({
+        to: '/w/$slug/pm/tasks/$taskId',
+        params: { slug: workspaceSlug, taskId },
+        search: { run: maybeRun, team },
+        replace: true,
+      });
+    })();
+
+    return () => { cancelled = true; };
   }, [activeTaskId, workspaceId, workspaceSlug]);
 
   useEffect(() => {
@@ -159,6 +263,22 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
     );
   }, []);
 
+  const handleTaskOpened = useCallback((detail: TaskDetail) => {
+    setLoadedTask((current) => ({
+      taskId: detail.task.id,
+      taskDetail: detail,
+      states: current?.states ?? [],
+      recurringSummary: null,
+    }));
+    if (!workspaceSlug) return;
+    openTaskRoute(
+      navigateRef.current as never,
+      locationRef.current,
+      workspaceSlug,
+      detail.task.id,
+    );
+  }, [workspaceSlug]);
+
   const handleStoryArchived = useCallback(
     (archivedTaskId: string) => {
       handleClose();
@@ -183,6 +303,7 @@ export function GlobalTaskPanel({ workspaceId }: GlobalTaskPanelProps) {
         if (!isOpen) handleClose();
       }}
       onTaskUpdated={handleStoryUpdated}
+      onTaskOpened={handleTaskOpened}
       onTaskArchived={handleStoryArchived}
     />
   );

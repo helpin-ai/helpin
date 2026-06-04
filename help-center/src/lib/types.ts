@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query'
 // ─── Help Center Config ─────────────────────────────────────────────────────
 
 export type HelpcenterThemeMode = 'light' | 'dark' | 'system'
+export type HelpcenterPublicUrlMode = 'hosted_subdomain' | 'custom_domain' | 'reverse_proxy'
 
 export type HeaderLinkStyle = 'text' | 'button'
 
@@ -29,6 +30,9 @@ export interface HelpCenterConfig {
   workspace_id: string
   subdomain: string
   custom_domain: string | null
+  public_url_mode?: HelpcenterPublicUrlMode | null
+  reverse_proxy_host?: string | null
+  reverse_proxy_base_path?: string | null
   brand_name: string
   brand_logo_url: string | null
   brand_logo_dark_url: string | null
@@ -43,6 +47,10 @@ export interface HelpCenterConfig {
   is_published: boolean
   seo_title: string | null
   seo_description: string | null
+  og_title?: string | null
+  og_description?: string | null
+  og_image_url?: string | null
+  og_image_alt?: string | null
   support_email: string | null
   header_links?: HeaderLink[]
   footer_config?: FooterConfig
@@ -114,6 +122,10 @@ export interface Article {
   published_at: string | null
   seo_title: string | null
   seo_description: string | null
+  og_title?: string | null
+  og_description?: string | null
+  og_image_url?: string | null
+  og_image_alt?: string | null
   helpful_count: number
   not_helpful_count: number
   view_count: number
@@ -160,6 +172,7 @@ export interface NavItem {
   parent_collection_id: string | null
   /** Tree depth: 0 for top-level, 1 for child, 2 for grandchild. */
   depth: number
+  position: number
   articles: NavArticle[]
 }
 
@@ -168,6 +181,7 @@ export interface NavArticle {
   title: string
   slug: string
   public_id: string
+  position: number
   published_at?: string | null
 }
 

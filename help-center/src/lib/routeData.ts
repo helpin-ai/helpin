@@ -44,7 +44,7 @@ export async function prefetchArticleRouteData(
     .catch(() => null)
 
   if (article?.space_slug) {
-    await queryClient
+    void queryClient
       .prefetchQuery(
         spaceNavigationQueryOptions(
           rootData.subdomain,
@@ -76,7 +76,7 @@ export async function prefetchCollectionRouteData(
     .catch(() => null)
 
   if (collection?.space_slug) {
-    await queryClient
+    void queryClient
       .prefetchQuery(
         spaceNavigationQueryOptions(
           rootData.subdomain,

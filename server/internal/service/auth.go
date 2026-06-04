@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,13 +18,27 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/auth"
+	appcrypto "github.com/helpin-ai/helpin/server/internal/crypto"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
+	apptotp "github.com/helpin-ai/helpin/server/internal/totp"
 	"gorm.io/gorm"
 )
 
-const passwordResetTTL = time.Hour
+var (
+	ErrBadRequest         = errors.New("bad request")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrTwoFAUnavailable   = errors.New("two-factor authentication is not available")
+)
+
+const (
+	passwordResetTTL   = time.Hour
+	twoFAIssuer        = "Helpin"
+	recoveryCodeCount  = 10
+	totpWindow         = 1
+	legacyRefreshFloor = 30 * time.Minute
+)
 
 type authEmailSender interface {
 	SendPasswordResetEmail(to, fullName, resetURL string) error
@@ -33,10 +49,12 @@ type AuthService struct {
 	userRepo          *repository.UserRepository
 	passwordResetRepo *repository.PasswordResetTokenRepository
 	organizationRepo  *repository.OrganizationRepository
+	workspaceRepo     *repository.WorkspaceRepository
 	jwtManager        *auth.JWTManager
 	s3Client          *storage.S3Client
 	emailClient       authEmailSender
 	appBaseURL        string
+	encryptionKey     []byte
 	logger            *slog.Logger
 }
 
@@ -45,19 +63,23 @@ func NewAuthService(
 	userRepo *repository.UserRepository,
 	passwordResetRepo *repository.PasswordResetTokenRepository,
 	organizationRepo *repository.OrganizationRepository,
+	workspaceRepo *repository.WorkspaceRepository,
 	jwtManager *auth.JWTManager,
 	s3Client *storage.S3Client,
 	emailClient authEmailSender,
 	appBaseURL string,
+	encryptionKey []byte,
 ) *AuthService {
 	return &AuthService{
 		userRepo:          userRepo,
 		passwordResetRepo: passwordResetRepo,
 		organizationRepo:  organizationRepo,
+		workspaceRepo:     workspaceRepo,
 		jwtManager:        jwtManager,
 		s3Client:          s3Client,
 		emailClient:       emailClient,
 		appBaseURL:        strings.TrimRight(strings.TrimSpace(appBaseURL), "/"),
+		encryptionKey:     append([]byte(nil), encryptionKey...),
 		logger:            slog.Default().With("service", "auth"),
 	}
 }
@@ -90,7 +112,7 @@ func (s *AuthService) Signup(ctx context.Context, req model.SignupRequest) (*mod
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, false, false)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens after signup", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)
@@ -147,10 +169,10 @@ func slugifyOrg(name string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-// Signin authenticates a user and returns auth tokens.
-func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*model.AuthResponse, error) {
+// Signin authenticates a user and returns auth tokens or a 2FA challenge.
+func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*model.SigninResponse, error) {
 	if req.Email == "" || req.Password == "" {
-		return nil, fmt.Errorf("email and password are required")
+		return nil, fmt.Errorf("%w: email and password are required", ErrBadRequest)
 	}
 
 	user, err := s.userRepo.GetByEmail(ctx, req.Email)
@@ -160,15 +182,38 @@ func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*mod
 	}
 	if user == nil {
 		s.logger.InfoContext(ctx, "signin attempted with unknown email", "email", req.Email)
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
 	if err := auth.CheckPassword(req.Password, user.PasswordHash); err != nil {
 		s.logger.InfoContext(ctx, "signin failed invalid password", "user_id", user.ID, "email", req.Email)
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrInvalidCredentials
 	}
 
-	accessToken, refreshToken, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, req.RememberMe)
+	if user.TOTPVerified {
+		if len(s.encryptionKey) != 32 {
+			s.logger.ErrorContext(ctx, "cannot complete 2fa signin without encryption key", "user_id", user.ID)
+			return nil, ErrTwoFAUnavailable
+		}
+		if user.TOTPSecretEncrypted == nil || strings.TrimSpace(*user.TOTPSecretEncrypted) == "" {
+			s.logger.ErrorContext(ctx, "user marked 2fa enabled without secret", "user_id", user.ID)
+			return nil, ErrTwoFAUnavailable
+		}
+
+		twoFAToken, err := s.jwtManager.Generate2FAToken(user.ID, user.Email, req.RememberMe)
+		if err != nil {
+			s.logger.ErrorContext(ctx, "failed to generate 2fa token after signin", "user_id", user.ID, "error", err)
+			return nil, fmt.Errorf("generate 2fa token: %w", err)
+		}
+
+		s.logger.InfoContext(ctx, "signin requires 2fa", "user_id", user.ID, "email", user.Email, "remember_me", req.RememberMe)
+		return &model.SigninResponse{
+			Requires2FA: true,
+			TwoFAToken:  twoFAToken,
+		}, nil
+	}
+
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, req.RememberMe, false)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens after signin", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)
@@ -176,6 +221,385 @@ func (s *AuthService) Signin(ctx context.Context, req model.SigninRequest) (*mod
 
 	s.logger.InfoContext(ctx, "user signed in", "user_id", user.ID, "email", user.Email, "remember_me", req.RememberMe)
 
+	profile := toUserProfile(user)
+	return &model.SigninResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		User:         &profile,
+	}, nil
+}
+
+// Get2FAStatus returns whether the current user has active TOTP enabled.
+func (s *AuthService) Get2FAStatus(ctx context.Context, userID string) (*model.TwoFAStatusResponse, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	return &model.TwoFAStatusResponse{Enabled: user.TOTPVerified}, nil
+}
+
+// Setup2FA creates a pending TOTP setup for the authenticated user.
+func (s *AuthService) Setup2FA(ctx context.Context, userID string, req model.TwoFASetupRequest) (*model.TwoFASetupResponse, error) {
+	if strings.TrimSpace(req.Password) == "" {
+		return nil, fmt.Errorf("password is required")
+	}
+	if len(s.encryptionKey) != 32 {
+		return nil, fmt.Errorf("two-factor authentication is not configured")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if user.TOTPVerified {
+		return nil, fmt.Errorf("two-factor authentication is already enabled")
+	}
+	if err := auth.CheckPassword(req.Password, user.PasswordHash); err != nil {
+		return nil, fmt.Errorf("current password is incorrect")
+	}
+
+	secret, err := apptotp.GenerateSecret()
+	if err != nil {
+		return nil, err
+	}
+	recoveryCodes, err := apptotp.GenerateRecoveryCodes(recoveryCodeCount)
+	if err != nil {
+		return nil, err
+	}
+
+	encryptedSecret, err := appcrypto.EncryptString(secret, s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt totp secret: %w", err)
+	}
+	encryptedRecoveryCodes, err := s.encryptRecoveryCodeHashes(recoveryCodes)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.userRepo.UpsertTwoFactor(ctx, userID, &encryptedSecret, false, &encryptedRecoveryCodes); err != nil {
+		return nil, err
+	}
+
+	s.logger.InfoContext(ctx, "prepared 2fa setup", "user_id", userID)
+	return &model.TwoFASetupResponse{
+		ProvisioningURI: apptotp.BuildProvisioningURI(secret, user.Email, twoFAIssuer),
+		RecoveryCodes:   recoveryCodes,
+	}, nil
+}
+
+// Verify2FASetup validates the pending TOTP code and activates 2FA.
+func (s *AuthService) Verify2FASetup(ctx context.Context, userID string, req model.TwoFAVerifyRequest) error {
+	if strings.TrimSpace(req.TOTPCode) == "" {
+		return fmt.Errorf("totp_code is required")
+	}
+	if len(s.encryptionKey) != 32 {
+		return fmt.Errorf("two-factor authentication is not configured")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if user.TOTPSecretEncrypted == nil || strings.TrimSpace(*user.TOTPSecretEncrypted) == "" {
+		return fmt.Errorf("two-factor authentication setup has not been started")
+	}
+
+	secret, err := appcrypto.DecryptString(*user.TOTPSecretEncrypted, s.encryptionKey)
+	if err != nil {
+		return fmt.Errorf("decrypt totp secret: %w", err)
+	}
+	if !apptotp.ValidateOTP(secret, req.TOTPCode, totpWindow) {
+		return fmt.Errorf("invalid authentication code")
+	}
+
+	if _, err := s.userRepo.MarkTwoFactorVerified(ctx, userID); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "enabled 2fa", "user_id", userID)
+	return nil
+}
+
+// Verify2FASetupWithSession activates 2FA and returns a fresh MFA-satisfied session.
+func (s *AuthService) Verify2FASetupWithSession(ctx context.Context, userID string, req model.TwoFAVerifyRequest) (*model.AuthResponse, error) {
+	if err := s.Verify2FASetup(ctx, userID, req); err != nil {
+		return nil, err
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, false, true)
+	if err != nil {
+		return nil, fmt.Errorf("generate tokens: %w", err)
+	}
+	return &model.AuthResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		User:         toUserProfile(user),
+	}, nil
+}
+
+// Disable2FA clears all stored TOTP state for the authenticated user.
+func (s *AuthService) Disable2FA(ctx context.Context, userID string, req model.TwoFADisableRequest) error {
+	if strings.TrimSpace(req.Password) == "" {
+		return fmt.Errorf("password is required")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found")
+	}
+	if err := auth.CheckPassword(req.Password, user.PasswordHash); err != nil {
+		return fmt.Errorf("current password is incorrect")
+	}
+	if s.workspaceRepo != nil {
+		enforced, err := s.workspaceRepo.UserHasEnforcedWorkspace(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if enforced {
+			return fmt.Errorf("two-factor authentication is required by one or more workspaces")
+		}
+	}
+
+	if _, err := s.userRepo.ClearTwoFactor(ctx, userID); err != nil {
+		return err
+	}
+
+	s.logger.InfoContext(ctx, "disabled 2fa", "user_id", userID)
+	return nil
+}
+
+// RegenerateRecoveryCodes rotates the stored recovery codes after verifying password and TOTP.
+func (s *AuthService) RegenerateRecoveryCodes(ctx context.Context, userID string, req model.TwoFARegenerateRequest) (*model.RecoveryCodesResponse, error) {
+	if strings.TrimSpace(req.Password) == "" || strings.TrimSpace(req.TOTPCode) == "" {
+		return nil, fmt.Errorf("password and totp_code are required")
+	}
+	if len(s.encryptionKey) != 32 {
+		return nil, fmt.Errorf("two-factor authentication is not configured")
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if !user.TOTPVerified || user.TOTPSecretEncrypted == nil || strings.TrimSpace(*user.TOTPSecretEncrypted) == "" {
+		return nil, fmt.Errorf("two-factor authentication is not enabled")
+	}
+	if err := auth.CheckPassword(req.Password, user.PasswordHash); err != nil {
+		return nil, fmt.Errorf("current password is incorrect")
+	}
+
+	secret, err := appcrypto.DecryptString(*user.TOTPSecretEncrypted, s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt totp secret: %w", err)
+	}
+	if !apptotp.ValidateOTP(secret, req.TOTPCode, totpWindow) {
+		return nil, fmt.Errorf("invalid authentication code")
+	}
+
+	recoveryCodes, err := apptotp.GenerateRecoveryCodes(recoveryCodeCount)
+	if err != nil {
+		return nil, err
+	}
+	encryptedRecoveryCodes, err := s.encryptRecoveryCodeHashes(recoveryCodes)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.userRepo.UpdateRecoveryCodes(ctx, userID, &encryptedRecoveryCodes); err != nil {
+		return nil, err
+	}
+
+	s.logger.InfoContext(ctx, "regenerated recovery codes", "user_id", userID)
+	return &model.RecoveryCodesResponse{RecoveryCodes: recoveryCodes}, nil
+}
+
+// Verify2FASignin validates a short-lived 2FA challenge and exchanges it for a full auth session.
+func (s *AuthService) Verify2FASignin(ctx context.Context, req model.TwoFASigninRequest) (*model.AuthResponse, error) {
+	if strings.TrimSpace(req.TwoFAToken) == "" {
+		return nil, fmt.Errorf("%w: two_fa_token is required", ErrBadRequest)
+	}
+
+	hasTOTPCode := strings.TrimSpace(req.TOTPCode) != ""
+	hasRecoveryCode := strings.TrimSpace(req.RecoveryCode) != ""
+	switch {
+	case hasTOTPCode == hasRecoveryCode:
+		return nil, fmt.Errorf("%w: exactly one of totp_code or recovery_code is required", ErrBadRequest)
+	case len(s.encryptionKey) != 32:
+		return nil, ErrTwoFAUnavailable
+	}
+
+	claims, err := s.jwtManager.Validate2FAToken(req.TwoFAToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid two-factor token")
+	}
+
+	var user *model.User
+	if err := s.userRepo.WithTx(ctx, func(txRepo *repository.UserRepository, tx *gorm.DB) error {
+		loadedUser, err := txRepo.GetByID(ctx, claims.UserID)
+		if err != nil {
+			return fmt.Errorf("get user: %w", err)
+		}
+		if loadedUser == nil || !loadedUser.TOTPVerified || loadedUser.TOTPSecretEncrypted == nil || strings.TrimSpace(*loadedUser.TOTPSecretEncrypted) == "" {
+			return fmt.Errorf("invalid two-factor token")
+		}
+
+		secret, err := appcrypto.DecryptString(*loadedUser.TOTPSecretEncrypted, s.encryptionKey)
+		if err != nil {
+			return fmt.Errorf("decrypt totp secret: %w", err)
+		}
+
+		if hasTOTPCode {
+			if !apptotp.ValidateOTP(secret, req.TOTPCode, totpWindow) {
+				return fmt.Errorf("invalid authentication code")
+			}
+			user = loadedUser
+			return nil
+		}
+
+		recoveryCodeHashes, err := s.decryptRecoveryCodeHashes(loadedUser.RecoveryCodesEncrypted)
+		if err != nil {
+			return err
+		}
+
+		requestHash := apptotp.HashRecoveryCode(req.RecoveryCode)
+		nextHashes := make([]string, 0, len(recoveryCodeHashes))
+		matched := false
+		for _, hash := range recoveryCodeHashes {
+			if !matched && hash == requestHash {
+				matched = true
+				continue
+			}
+			nextHashes = append(nextHashes, hash)
+		}
+		if !matched {
+			return fmt.Errorf("invalid recovery code")
+		}
+
+		encryptedRecoveryCodes, err := s.encryptRecoveryCodeHashList(nextHashes)
+		if err != nil {
+			return err
+		}
+		loadedUser, err = txRepo.UpdateRecoveryCodes(ctx, loadedUser.ID, &encryptedRecoveryCodes)
+		if err != nil {
+			return err
+		}
+
+		user = loadedUser
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, claims.RememberMe, true)
+	if err != nil {
+		return nil, fmt.Errorf("generate tokens: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "completed 2fa signin", "user_id", user.ID, "used_recovery_code", hasRecoveryCode)
+	return &model.AuthResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		User:         toUserProfile(user),
+	}, nil
+}
+
+// StepUp2FA verifies an already authenticated user and returns a fresh
+// MFA-satisfied token pair for workspace policies that require it.
+func (s *AuthService) StepUp2FA(ctx context.Context, userID string, req model.TwoFAStepUpRequest) (*model.AuthResponse, error) {
+	hasTOTPCode := strings.TrimSpace(req.TOTPCode) != ""
+	hasRecoveryCode := strings.TrimSpace(req.RecoveryCode) != ""
+	switch {
+	case hasTOTPCode == hasRecoveryCode:
+		return nil, fmt.Errorf("%w: exactly one of totp_code or recovery_code is required", ErrBadRequest)
+	case len(s.encryptionKey) != 32:
+		return nil, ErrTwoFAUnavailable
+	}
+
+	var user *model.User
+	if err := s.userRepo.WithTx(ctx, func(txRepo *repository.UserRepository, tx *gorm.DB) error {
+		loadedUser, err := txRepo.GetByID(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("get user: %w", err)
+		}
+		if loadedUser == nil || !loadedUser.TOTPVerified || loadedUser.TOTPSecretEncrypted == nil || strings.TrimSpace(*loadedUser.TOTPSecretEncrypted) == "" {
+			return fmt.Errorf("two-factor authentication is not enabled")
+		}
+
+		secret, err := appcrypto.DecryptString(*loadedUser.TOTPSecretEncrypted, s.encryptionKey)
+		if err != nil {
+			return fmt.Errorf("decrypt totp secret: %w", err)
+		}
+
+		if hasTOTPCode {
+			if !apptotp.ValidateOTP(secret, req.TOTPCode, totpWindow) {
+				return fmt.Errorf("invalid authentication code")
+			}
+			user = loadedUser
+			return nil
+		}
+
+		recoveryCodeHashes, err := s.decryptRecoveryCodeHashes(loadedUser.RecoveryCodesEncrypted)
+		if err != nil {
+			return err
+		}
+
+		requestHash := apptotp.HashRecoveryCode(req.RecoveryCode)
+		nextHashes := make([]string, 0, len(recoveryCodeHashes))
+		matched := false
+		for _, hash := range recoveryCodeHashes {
+			if !matched && hash == requestHash {
+				matched = true
+				continue
+			}
+			nextHashes = append(nextHashes, hash)
+		}
+		if !matched {
+			return fmt.Errorf("invalid recovery code")
+		}
+
+		encryptedRecoveryCodes, err := s.encryptRecoveryCodeHashList(nextHashes)
+		if err != nil {
+			return err
+		}
+		loadedUser, err = txRepo.UpdateRecoveryCodes(ctx, loadedUser.ID, &encryptedRecoveryCodes)
+		if err != nil {
+			return err
+		}
+
+		user = loadedUser
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	accessToken, refreshToken, err := s.generateTokenPairForUser(user, false, true)
+	if err != nil {
+		return nil, fmt.Errorf("generate tokens: %w", err)
+	}
+
+	s.logger.InfoContext(ctx, "completed 2fa step-up", "user_id", user.ID, "used_recovery_code", hasRecoveryCode)
 	return &model.AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
@@ -274,12 +698,16 @@ func (s *AuthService) DeleteAvatar(ctx context.Context, userID string) (*model.U
 	return &profile, nil
 }
 
-// RefreshToken validates a refresh token and issues a new token pair.
+// RefreshToken validates a refresh token and issues a fresh token pair.
 func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*model.AuthResponse, error) {
 	claims, err := s.jwtManager.ValidateToken(refreshToken)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "invalid refresh token", "error", err)
 		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+	if !claimsUsableForRefresh(claims) {
+		s.logger.WarnContext(ctx, "non-refresh token rejected during refresh", "user_id", claims.UserID, "token_use", claims.TokenUse)
+		return nil, fmt.Errorf("invalid refresh token")
 	}
 
 	user, err := s.userRepo.GetByID(ctx, claims.UserID)
@@ -292,7 +720,13 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*m
 		return nil, fmt.Errorf("user not found")
 	}
 
-	accessToken, newRefresh, err := s.jwtManager.GenerateTokenPair(user.ID, user.Email, false)
+	// Refresh tokens are stateless JWTs, so issuing a new cookie extends active
+	// sessions without invalidating another tab that still has the previous token.
+	rememberMe := claims.RememberMe
+	if !rememberMe && claims.ExpiresAt != nil && time.Until(claims.ExpiresAt.Time) > auth.RefreshTokenTTL {
+		rememberMe = true
+	}
+	accessToken, newRefresh, err := s.generateTokenPairForUser(user, rememberMe, claims.MFASatisfied)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "failed to generate tokens during refresh", "user_id", user.ID, "error", err)
 		return nil, fmt.Errorf("generate tokens: %w", err)
@@ -510,8 +944,70 @@ func toUserProfile(u *model.User) model.UserProfile {
 		AvatarBackgroundMode:  u.AvatarBackgroundMode,
 		AvatarBackgroundColor: u.AvatarBackgroundColor,
 		DefaultWorkspaceID:    u.DefaultWorkspaceID,
+		TwoFAEnabled:          u.TOTPVerified,
+		IsPlatformAdmin:       u.IsPlatformAdmin,
 		CreatedAt:             u.CreatedAt,
+		UpdatedAt:             u.UpdatedAt,
 	}
+}
+
+func (s *AuthService) generateTokenPairForUser(user *model.User, rememberMe bool, mfaSatisfied bool) (string, string, error) {
+	return s.jwtManager.GenerateTokenPair(
+		user.ID,
+		user.Email,
+		rememberMe,
+		auth.WithMFASatisfied(mfaSatisfied),
+		auth.WithPlatformAdmin(user.IsPlatformAdmin),
+	)
+}
+
+func claimsUsableForRefresh(claims *auth.Claims) bool {
+	if claims == nil {
+		return false
+	}
+	switch claims.TokenUse {
+	case auth.TokenUseRefresh:
+		return true
+	case "":
+		return claims.ExpiresAt != nil && time.Until(claims.ExpiresAt.Time) > legacyRefreshFloor
+	default:
+		return false
+	}
+}
+
+func (s *AuthService) encryptRecoveryCodeHashes(recoveryCodes []string) (string, error) {
+	hashes := make([]string, 0, len(recoveryCodes))
+	for _, code := range recoveryCodes {
+		hashes = append(hashes, apptotp.HashRecoveryCode(code))
+	}
+	return s.encryptRecoveryCodeHashList(hashes)
+}
+
+func (s *AuthService) encryptRecoveryCodeHashList(hashes []string) (string, error) {
+	serialized, err := json.Marshal(hashes)
+	if err != nil {
+		return "", fmt.Errorf("marshal recovery codes: %w", err)
+	}
+	encrypted, err := appcrypto.EncryptString(string(serialized), s.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("encrypt recovery codes: %w", err)
+	}
+	return encrypted, nil
+}
+
+func (s *AuthService) decryptRecoveryCodeHashes(encrypted *string) ([]string, error) {
+	if encrypted == nil || strings.TrimSpace(*encrypted) == "" {
+		return nil, fmt.Errorf("recovery codes are unavailable")
+	}
+	decrypted, err := appcrypto.DecryptString(*encrypted, s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt recovery codes: %w", err)
+	}
+	var hashes []string
+	if err := json.Unmarshal([]byte(decrypted), &hashes); err != nil {
+		return nil, fmt.Errorf("decode recovery codes: %w", err)
+	}
+	return hashes, nil
 }
 
 func generatePasswordResetToken() (string, string, error) {

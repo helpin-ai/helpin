@@ -9,7 +9,7 @@ import {
   resolveLocaleSwitchPath,
   type LocaleRouteState,
 } from '@/lib/locale'
-import { prefixBasepath } from '@/lib/pathUtils'
+import { absolutePublicUrl } from '@/lib/publicUrl'
 import type { NavItem, Space } from '@/lib/types'
 
 export interface AlternateLink {
@@ -19,7 +19,7 @@ export interface AlternateLink {
 }
 
 function absoluteUrl(rootData: RootRouteData, path: string) {
-  return new URL(prefixBasepath(rootData.basepath, path), rootData.origin).toString()
+  return absolutePublicUrl(rootData, path)
 }
 
 async function loadSpacesForLocale(
@@ -82,15 +82,28 @@ export async function loadAlternateLinks(
     current,
   )
 
-  for (const locale of rootData.config.enabled_locales) {
-    const targetSpaces = await loadSpacesForLocale(queryClient, rootData, locale)
-    const targetNavigation = await loadNavigationForLocale(
-      queryClient,
-      rootData,
-      locale,
-      targetSpaces,
-      current,
-    )
+  const localeEntries = await Promise.all(
+    rootData.config.enabled_locales.map(async (locale) => {
+      const targetSpaces =
+        locale === defaultLocale
+          ? defaultSpaces
+          : await loadSpacesForLocale(queryClient, rootData, locale)
+      const targetNavigation =
+        locale === defaultLocale
+          ? defaultNavigation
+          : await loadNavigationForLocale(
+              queryClient,
+              rootData,
+              locale,
+              targetSpaces,
+              current,
+            )
+
+      return { locale, targetSpaces, targetNavigation }
+    }),
+  )
+
+  for (const { locale, targetSpaces, targetNavigation } of localeEntries) {
     const href = resolveExactLocalePath({
       multilingualEnabled: rootData.multilingualEnabled,
       targetLocale: locale,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -59,6 +60,35 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 	return user, nil
 }
 
+// GrantPlatformAdminByEmails marks existing users with matching emails as platform admins.
+func (r *UserRepository) GrantPlatformAdminByEmails(ctx context.Context, emails []string) (int64, error) {
+	normalized := make([]string, 0, len(emails))
+	seen := make(map[string]struct{}, len(emails))
+	for _, email := range emails {
+		cleaned := strings.ToLower(strings.TrimSpace(email))
+		if cleaned == "" {
+			continue
+		}
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		normalized = append(normalized, cleaned)
+	}
+	if len(normalized) == 0 {
+		return 0, nil
+	}
+
+	result := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("lower(email) IN ?", normalized).
+		Update("is_platform_admin", true)
+	if result.Error != nil {
+		return 0, fmt.Errorf("grant platform admin: %w", result.Error)
+	}
+	return result.RowsAffected, nil
+}
+
 // Update modifies a user's profile fields.
 func (r *UserRepository) Update(ctx context.Context, id string, fullName, avatarURL, avatarStyle, avatarSeed, avatarBackgroundMode, avatarBackgroundColor, defaultWorkspaceID *string) (*model.User, error) {
 	updates := map[string]interface{}{}
@@ -98,4 +128,57 @@ func (r *UserRepository) Update(ctx context.Context, id string, fullName, avatar
 // UpdatePassword updates a user's password hash.
 func (r *UserRepository) UpdatePassword(ctx context.Context, id, passwordHash string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("password_hash", passwordHash).Error
+}
+
+// UpsertTwoFactor stores the current encrypted TOTP secret and recovery codes.
+func (r *UserRepository) UpsertTwoFactor(ctx context.Context, id string, secretEncrypted *string, verified bool, recoveryCodesEncrypted *string) (*model.User, error) {
+	updates := map[string]interface{}{
+		"totp_secret_encrypted":    secretEncrypted,
+		"totp_verified":            verified,
+		"recovery_codes_encrypted": recoveryCodesEncrypted,
+	}
+
+	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("upsert user 2fa: %w", err)
+	}
+	return r.GetByID(ctx, id)
+}
+
+// UpdateRecoveryCodes replaces the encrypted recovery codes for a user.
+func (r *UserRepository) UpdateRecoveryCodes(ctx context.Context, id string, recoveryCodesEncrypted *string) (*model.User, error) {
+	updates := map[string]interface{}{
+		"recovery_codes_encrypted": recoveryCodesEncrypted,
+	}
+	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("update user recovery codes: %w", err)
+	}
+	return r.GetByID(ctx, id)
+}
+
+// MarkTwoFactorVerified activates TOTP for the user.
+func (r *UserRepository) MarkTwoFactorVerified(ctx context.Context, id string) (*model.User, error) {
+	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("totp_verified", true).Error; err != nil {
+		return nil, fmt.Errorf("mark user 2fa verified: %w", err)
+	}
+	return r.GetByID(ctx, id)
+}
+
+// ClearTwoFactor removes all stored 2FA state from the user.
+func (r *UserRepository) ClearTwoFactor(ctx context.Context, id string) (*model.User, error) {
+	updates := map[string]interface{}{
+		"totp_secret_encrypted":    nil,
+		"totp_verified":            false,
+		"recovery_codes_encrypted": nil,
+	}
+	if err := r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, fmt.Errorf("clear user 2fa: %w", err)
+	}
+	return r.GetByID(ctx, id)
+}
+
+// WithTx runs fn in a transaction and passes a repository bound to that transaction.
+func (r *UserRepository) WithTx(ctx context.Context, fn func(txRepo *UserRepository, tx *gorm.DB) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return fn(NewUserRepository(tx), tx)
+	})
 }

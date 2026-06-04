@@ -1,4 +1,4 @@
-import { useTaskPanelStore } from '@/stores/taskPanelStore';
+import { clearTaskSearchParam, useTaskPanelStore } from '@/stores/taskPanelStore';
 
 export interface TaskOverlayLocationLike {
   pathname: string;
@@ -27,20 +27,33 @@ export function getActiveTaskRoute(location: TaskOverlayLocationLike): TaskRoute
   return matchTaskRoute(location.pathname);
 }
 
+export interface OpenTaskRouteOptions {
+  run?: string;
+  team?: string;
+}
+
 export function openTaskRoute(
   navigate: TaskRouteNavigate,
   location: TaskOverlayLocationLike,
   slug: string,
   taskId: string,
+  opts?: OpenTaskRouteOptions,
 ) {
   if (useTaskPanelStore.getState().shouldSuppressOpen(taskId)) {
     return undefined;
   }
 
-  if (matchTaskRoute(location.pathname)) {
+  const search: Record<string, string> = {};
+  if (opts?.run) search.run = opts.run;
+  if (opts?.team) search.team = opts.team;
+
+  // When a specific run is requested, force the route form so AgentRunPanel
+  // (which reads the `run` param via useSearch) can open the drawer.
+  if (opts?.run || matchTaskRoute(location.pathname)) {
     return navigate({
       to: '/w/$slug/pm/tasks/$taskId',
       params: { slug, taskId },
+      search: Object.keys(search).length > 0 ? search : undefined,
     });
   }
 
@@ -84,8 +97,15 @@ export function closeTaskRoute(
     return undefined;
   }
 
+  clearTaskSearchParam();
   return navigate({
     to: behavior.to,
     params: behavior.params,
+    search: (prev: Record<string, unknown>) => {
+      const next = { ...prev };
+      delete next.task;
+      delete next.run;
+      return next;
+    },
   });
 }

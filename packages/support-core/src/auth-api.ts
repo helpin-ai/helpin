@@ -12,11 +12,11 @@ interface ApiClientOptions {
 }
 
 interface ApiClient {
-  get: <T>(path: string) => Promise<ApiResponse<T>>
+  get: <T>(path: string, init?: RequestInit) => Promise<ApiResponse<T>>
   post: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
   put: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
   patch: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
-  del: <T>(path: string) => Promise<ApiResponse<T>>
+  del: <T>(path: string, body?: unknown) => Promise<ApiResponse<T>>
 }
 
 const TOKEN_REFRESH_INTERVAL = 5 * 60 * 1000
@@ -151,14 +151,15 @@ async function request<T>(
 
 export function createApiClient(apiBase: string, options: ApiClientOptions = {}): ApiClient {
   return {
-    get: <T>(path: string) => request<T>(apiBase, path, {}, options.onUnauthorized),
+    get: <T>(path: string, init?: RequestInit) => request<T>(apiBase, path, init ?? {}, options.onUnauthorized),
     post: <T>(path: string, body?: unknown) =>
       request<T>(apiBase, path, { method: 'POST', body: body ? JSON.stringify(body) : undefined }, options.onUnauthorized),
     put: <T>(path: string, body?: unknown) =>
       request<T>(apiBase, path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }, options.onUnauthorized),
     patch: <T>(path: string, body?: unknown) =>
       request<T>(apiBase, path, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }, options.onUnauthorized),
-    del: <T>(path: string) => request<T>(apiBase, path, { method: 'DELETE' }, options.onUnauthorized),
+    del: <T>(path: string, body?: unknown) =>
+      request<T>(apiBase, path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined }, options.onUnauthorized),
   }
 }
 

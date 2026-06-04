@@ -7,10 +7,32 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const (
+	TokenUseAccess  = "access"
+	TokenUseRefresh = "refresh"
+
+	AccessTokenTTL            = 15 * time.Minute
+	RefreshTokenTTL           = 7 * 24 * time.Hour
+	RememberMeRefreshTokenTTL = 30 * 24 * time.Hour
+)
+
 // Claims represents the JWT claims embedded in each token.
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
+	UserID          string `json:"user_id"`
+	Email           string `json:"email"`
+	TokenUse        string `json:"tu"`
+	RememberMe      bool   `json:"remember_me,omitempty"`
+	MFASatisfied    bool   `json:"mfa,omitempty"`
+	IsPlatformAdmin bool   `json:"pa,omitempty"`
+	jwt.RegisteredClaims
+}
+
+// TwoFAClaims represents the claims embedded in a short-lived 2FA challenge token.
+type TwoFAClaims struct {
+	UserID     string `json:"user_id"`
+	Email      string `json:"email"`
+	RememberMe bool   `json:"remember_me"`
+	Purpose    string `json:"purpose"`
 	jwt.RegisteredClaims
 }
 
@@ -19,22 +41,51 @@ type JWTManager struct {
 	secret []byte
 }
 
+type tokenPairOptions struct {
+	mfaSatisfied    bool
+	isPlatformAdmin bool
+}
+
+type TokenPairOption func(*tokenPairOptions)
+
+func WithMFASatisfied(mfaSatisfied bool) TokenPairOption {
+	return func(opts *tokenPairOptions) {
+		opts.mfaSatisfied = mfaSatisfied
+	}
+}
+
+func WithPlatformAdmin(isPlatformAdmin bool) TokenPairOption {
+	return func(opts *tokenPairOptions) {
+		opts.isPlatformAdmin = isPlatformAdmin
+	}
+}
+
 // NewJWTManager creates a new JWTManager with the given secret.
 func NewJWTManager(secret string) *JWTManager {
 	return &JWTManager{secret: []byte(secret)}
 }
 
-// GenerateTokenPair creates a new access token (15 min) and refresh token.
-// When rememberMe is true, the refresh token lasts 30 days; otherwise 24 hours.
-func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool) (accessToken, refreshToken string, err error) {
+// GenerateTokenPair creates a new access token and refresh token.
+// When rememberMe is true, the refresh token lasts 30 days; otherwise 7 days.
+func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool, options ...TokenPairOption) (accessToken, refreshToken string, err error) {
 	now := time.Now()
+	opts := tokenPairOptions{}
+	for _, option := range options {
+		if option != nil {
+			option(&opts)
+		}
+	}
 
 	// Access token: 15 minutes
 	accessClaims := Claims{
-		UserID: userID,
-		Email:  email,
+		UserID:          userID,
+		Email:           email,
+		TokenUse:        TokenUseAccess,
+		RememberMe:      rememberMe,
+		MFASatisfied:    opts.mfaSatisfied,
+		IsPlatformAdmin: opts.isPlatformAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			Subject:   userID,
 		},
@@ -45,14 +96,18 @@ func (m *JWTManager) GenerateTokenPair(userID, email string, rememberMe bool) (a
 		return "", "", fmt.Errorf("sign access token: %w", err)
 	}
 
-	// Refresh token: 30 days if remember me, 24 hours otherwise
-	refreshDuration := 24 * time.Hour
+	// Refresh token: 30 days if remember me, 7 days otherwise.
+	refreshDuration := RefreshTokenTTL
 	if rememberMe {
-		refreshDuration = 30 * 24 * time.Hour
+		refreshDuration = RememberMeRefreshTokenTTL
 	}
 	refreshClaims := Claims{
-		UserID: userID,
-		Email:  email,
+		UserID:          userID,
+		Email:           email,
+		TokenUse:        TokenUseRefresh,
+		RememberMe:      rememberMe,
+		MFASatisfied:    opts.mfaSatisfied,
+		IsPlatformAdmin: opts.isPlatformAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(refreshDuration)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -83,6 +138,52 @@ func (m *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token claims")
+	}
+
+	return claims, nil
+}
+
+// Generate2FAToken creates a short-lived token that can only be exchanged for a full auth session.
+func (m *JWTManager) Generate2FAToken(userID, email string, rememberMe bool) (string, error) {
+	now := time.Now()
+	claims := TwoFAClaims{
+		UserID:     userID,
+		Email:      email,
+		RememberMe: rememberMe,
+		Purpose:    "signin_2fa",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Subject:   "2fa:" + userID,
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString(m.secret)
+	if err != nil {
+		return "", fmt.Errorf("sign 2fa token: %w", err)
+	}
+	return signed, nil
+}
+
+// Validate2FAToken validates a short-lived 2FA challenge token.
+func (m *JWTManager) Validate2FAToken(tokenString string) (*TwoFAClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &TwoFAClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return m.secret, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid 2fa token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*TwoFAClaims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid 2fa token claims")
+	}
+	if claims.Purpose != "signin_2fa" {
+		return nil, fmt.Errorf("invalid 2fa token purpose")
 	}
 
 	return claims, nil

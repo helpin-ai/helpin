@@ -93,10 +93,30 @@ export const ChevronRightIcon = createIcon(
   'ChevronRightIcon',
 );
 
-export const MoreVerticalIcon = createIcon(
-  ['M12 12h.01', 'M12 5h.01', 'M12 19h.01'],
-  'MoreVerticalIcon',
+export const MoreVerticalIcon: FunctionComponent<IconProps> = ({
+  size = 24,
+  color = 'currentColor',
+  strokeWidth = 2,
+  class: className,
+}) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    stroke-width={strokeWidth}
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    class={className}
+  >
+    <circle cx="12" cy="12" r="1" />
+    <circle cx="12" cy="5" r="1" />
+    <circle cx="12" cy="19" r="1" />
+  </svg>
 );
+MoreVerticalIcon.displayName = 'MoreVerticalIcon';
 
 export const ExternalLinkIcon = createIcon(
   ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],

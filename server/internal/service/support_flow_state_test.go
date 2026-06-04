@@ -115,6 +115,298 @@ func TestCreateConversationMessageHumanReplySetsAssignedToHumanFlowState(t *test
 	if updated.OpenedByUserID == nil || *updated.OpenedByUserID != userID {
 		t.Fatalf("opened_by_user_id = %#v, want %q", updated.OpenedByUserID, userID)
 	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
+}
+
+func TestCreateConversationMessageHumanReplyReopensResolvedConversationForCustomerEmail(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-flow-human-resolved-reply"
+	userID := "user-flow-human-resolved-reply"
+	seedUser(t, db, userID, "agent-resolved-reply@example.com", "Agent Resolved Reply", "hash")
+	seedWorkspace(t, db, workspaceID, "Flow Human Resolved Reply WS", "flow-human-resolved-reply-ws", userID)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	userRepo := repository.NewUserRepository(db)
+
+	resolvedAt := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	conv := &model.SupportConversation{
+		WorkspaceID:       workspaceID,
+		Subject:           "Resolved conversation with new team reply",
+		Status:            model.SupportConversationStatusResolved,
+		FlowState:         strPtr(model.SupportConversationFlowStateResolvedByHuman),
+		OpenedByUserID:    &userID,
+		HumanTakeover:     boolPtr(true),
+		ResolvedAt:        &resolvedAt,
+		ClosedAt:          &resolvedAt,
+		CustomerEmail:     strPtr("customer@example.com"),
+		ContactLastSeenAt: nil,
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		userRepo,
+		nil,
+		nil,
+		nil,
+	)
+
+	displayName := "Agent Resolved Reply"
+	if _, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "Following up over email.", MessageType: "reply"},
+		"user",
+		&userID,
+		nil,
+		&displayName,
+	); err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Status != model.SupportConversationStatusWaitingOnCustomer {
+		t.Fatalf("status = %q, want %q", updated.Status, model.SupportConversationStatusWaitingOnCustomer)
+	}
+	if updated.ResolvedAt != nil {
+		t.Fatalf("resolved_at = %#v, want nil", updated.ResolvedAt)
+	}
+	if updated.ClosedAt != nil {
+		t.Fatalf("closed_at = %#v, want nil", updated.ClosedAt)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAssignedToHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAssignedToHuman)
+	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
+}
+
+func TestCreateConversationMessageCustomerReplyPreservesHumanTakeoverFlowState(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-human-reopen"
+	userID := "user-human-reopen"
+	seedUser(t, db, userID, "agent-reopen@example.com", "Agent Reopen", "hash")
+	seedWorkspace(t, db, workspaceID, "Human Reopen WS", "human-reopen-ws", userID)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	aiResolved := "resolved"
+	conv := &model.SupportConversation{
+		WorkspaceID:      workspaceID,
+		Subject:          "Handled by a human",
+		Status:           model.SupportConversationStatusResolved,
+		OpenedByUserID:   &userID,
+		AssignedUserID:   &userID,
+		AIState:          &aiResolved,
+		FlowState:        strPtr(model.SupportConversationFlowStateResolvedByHuman),
+		HumanTakeover:    boolPtr(true),
+		ResolvedAt:       &time.Time{},
+		AIResolvedAt:     &time.Time{},
+		AIResolutionType: strPtr("confirmed"),
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		nil,
+	)
+
+	customerName := "Customer"
+	if _, err := svc.CreateConversationMessage(
+		ctx,
+		workspaceID,
+		conv.ID,
+		model.CreateMessageRequest{Content: "Following up", MessageType: "reply"},
+		"customer",
+		nil,
+		nil,
+		&customerName,
+	); err != nil {
+		t.Fatalf("CreateConversationMessage: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Status != model.SupportConversationStatusOpen {
+		t.Fatalf("status = %q, want %q", updated.Status, model.SupportConversationStatusOpen)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAssignedToHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAssignedToHuman)
+	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
+}
+
+func TestAssignConversationUserSetsHumanTakeover(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	ensureSupportModuleGrantsTable(t, db)
+
+	workspaceID := "ws-human-assign"
+	ownerID := "user-human-assign-owner"
+	userID := "user-human-assign"
+	seedUser(t, db, ownerID, "owner-assign@example.com", "Owner Assign", "hash")
+	seedUser(t, db, userID, "agent-assign@example.com", "Agent Assign", "hash")
+	seedWorkspace(t, db, workspaceID, "Human Assign WS", "human-assign-ws", ownerID)
+	seedWorkspaceMember(t, db, "wm-human-assign-owner", workspaceID, ownerID, "owner-assign@example.com", "Owner Assign", model.RoleOwner)
+	seedWorkspaceMember(t, db, "wm-human-assign", workspaceID, userID, "agent-assign@example.com", "Agent Assign", model.RoleAdmin)
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	conv := &model.SupportConversation{
+		WorkspaceID: workspaceID,
+		Subject:     "Assign to teammate",
+		Status:      model.SupportConversationStatusOpen,
+		FlowState:   strPtr(model.SupportConversationFlowStateAIHandling),
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewSupportInboxService(
+		convRepo,
+		repository.NewSupportMailboxRepository(db),
+		repository.NewSupportMessageRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		repository.NewUserRepository(db),
+		nil,
+		nil,
+		nil,
+	).SetWorkspaceRepo(repository.NewWorkspaceRepository(db))
+
+	if err := svc.AssignConversationUser(ctx, workspaceID, conv.ID, &userID, ownerID); err != nil {
+		t.Fatalf("AssignConversationUser: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAssignedToHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAssignedToHuman)
+	}
+	if updated.AssignedUserID == nil || *updated.AssignedUserID != userID {
+		t.Fatalf("assigned_user_id = %#v, want %q", updated.AssignedUserID, userID)
+	}
+}
+
+func TestSupportAIServiceHandleIncomingMessageSkipsHumanTakeover(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	workspaceID := "ws-ai-human-takeover"
+	userID := "user-ai-human"
+	agentID := "agent-ai-human"
+	seedUser(t, db, userID, "agent-ai-human@example.com", "AI Human", "hash")
+	seedWorkspace(t, db, workspaceID, "AI Human WS", "ai-human-ws", userID)
+	seedSupportInstallationSettings(t, db, workspaceID, func(settings *model.SupportInboxSettings) {
+		settings.AIEnabled = true
+		settings.AIResponseMode = "ai_first"
+		settings.AIAgentID = &agentID
+	})
+
+	convRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	aiResolved := "resolved"
+	conv := &model.SupportConversation{
+		WorkspaceID:      workspaceID,
+		Subject:          "Previously resolved by AI then human-owned",
+		Status:           model.SupportConversationStatusOpen,
+		OpenedByUserID:   &userID,
+		AssignedUserID:   &userID,
+		AIState:          &aiResolved,
+		FlowState:        strPtr(model.SupportConversationFlowStateResolvedByAI),
+		HumanTakeover:    boolPtr(true),
+		AIResolvedAt:     &time.Time{},
+		AIResolutionType: strPtr("confirmed"),
+	}
+	if err := convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	msg := &model.SupportMessage{
+		WorkspaceID:    workspaceID,
+		ConversationID: conv.ID,
+		SenderType:     "customer",
+		Content:        "Are you still there?",
+		MessageType:    "reply",
+	}
+	if err := messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	svc := &SupportAIService{
+		conversationRepo: convRepo,
+		messageRepo:      messageRepo,
+		installationRepo: repository.NewSupportInboxInstallationRepository(db),
+	}
+	if err := svc.HandleIncomingMessage(ctx, workspaceID, conv.ID, msg); err != nil {
+		t.Fatalf("HandleIncomingMessage: %v", err)
+	}
+
+	updated, err := convRepo.GetByID(ctx, workspaceID, conv.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.FlowState == nil || *updated.FlowState != model.SupportConversationFlowStateAssignedToHuman {
+		t.Fatalf("flow_state = %#v, want %q", updated.FlowState, model.SupportConversationFlowStateAssignedToHuman)
+	}
+	if updated.AIState == nil || *updated.AIState != "pending" {
+		t.Fatalf("ai_state = %#v, want pending", updated.AIState)
+	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
 }
 
 func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.T) {
@@ -189,6 +481,9 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 	if updated.AIState == nil || *updated.AIState != "escalated" {
 		t.Fatalf("ai_state = %#v, want escalated", updated.AIState)
 	}
+	if updated.HumanTakeover == nil || !*updated.HumanTakeover {
+		t.Fatalf("human_takeover = %#v, want true", updated.HumanTakeover)
+	}
 	if updated.CustomerRequestedHumanAt == nil {
 		t.Fatal("expected customer_requested_human_at to be set")
 	}
@@ -197,8 +492,26 @@ func TestSupportAIServiceEscalateToHumanSetsAfterHoursQueueFlowState(t *testing.
 	if err != nil {
 		t.Fatalf("ListByConversation: %v", err)
 	}
-	if len(messages) != 1 || messages[0].MessageType != "system" {
-		t.Fatalf("expected one system escalation message, got %+v", messages)
+	if len(messages) != 2 {
+		t.Fatalf("expected escalation reply + system event, got %+v", messages)
+	}
+	var reply, sysEvent *model.SupportMessage
+	for i := range messages {
+		if messages[i].MessageType == "reply" && !messages[i].IsInternal {
+			reply = &messages[i]
+		}
+		if messages[i].MessageType == "system" && messages[i].IsInternal {
+			sysEvent = &messages[i]
+		}
+	}
+	if reply == nil {
+		t.Fatalf("expected non-internal AI reply, got %+v", messages)
+	}
+	if sysEvent == nil {
+		t.Fatalf("expected internal system escalation event, got %+v", messages)
+	}
+	if sysEvent.SystemEventType == nil || *sysEvent.SystemEventType != model.SystemEventCustomerRequestedHuman {
+		t.Fatalf("system_event_type = %v, want %q", sysEvent.SystemEventType, model.SystemEventCustomerRequestedHuman)
 	}
 }
 
@@ -227,7 +540,7 @@ func TestSupportAIServicePublishAIReplySetsAIHandlingFlowState(t *testing.T) {
 		messageRepo:      messageRepo,
 	}
 
-	if _, err := svc.publishAIReply(ctx, workspaceID, conv.ID, "agent-ai", "Here is the answer", "gpt-5", 42, 0.94, nil, "answer", "", "", supportStateProgressing); err != nil {
+	if _, err := svc.publishAIReply(ctx, workspaceID, conv.ID, "agent-ai", "Here is the answer", "gpt-5", 42, 0.94, nil, "answer", "", "", supportStateProgressing, nil, nil); err != nil {
 		t.Fatalf("publishAIReply: %v", err)
 	}
 

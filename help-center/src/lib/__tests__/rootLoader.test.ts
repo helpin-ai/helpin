@@ -74,6 +74,26 @@ const customDomainSpaces: Space[] = [
   },
 ]
 
+const proxyConfig: HelpCenterConfig = {
+  ...customDomainConfig,
+  id: 'cfg-usermaven',
+  workspace_id: 'ws-usermaven',
+  subdomain: 'usermaven',
+  custom_domain: null,
+  brand_name: 'Usermaven',
+  seo_title: 'Usermaven Docs',
+}
+
+const proxySpaces: Space[] = [
+  {
+    id: 'space-usermaven',
+    name: 'Docs',
+    slug: 'docs',
+    icon: null,
+    description: null,
+  },
+]
+
 function writeJSON(res: ServerResponse, body: unknown, statusCode = 200) {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json')
@@ -104,6 +124,12 @@ describe('loadRootRouteData', () => {
           return
         case '/api/hc/docs.contentpen.ai/spaces':
           writeJSON(res, customDomainSpaces)
+          return
+        case '/api/hc/usermaven/config':
+          writeJSON(res, proxyConfig)
+          return
+        case '/api/hc/usermaven/spaces':
+          writeJSON(res, proxySpaces)
           return
         default:
           writeJSON(res, { error: `Unhandled path: ${path}` }, 404)
@@ -191,6 +217,37 @@ describe('loadRootRouteData', () => {
     expect(requests).toEqual([
       '/api/hc/docs.contentpen.ai/config',
       '/api/hc/docs.contentpen.ai/spaces',
+    ])
+  })
+
+  it('loads reverse-proxied root data with public origin and stripped base path', async () => {
+    getHelpCenterRequestContext.mockResolvedValue({
+      host: 'usermaven.com',
+      protocol: 'https',
+      subdomain: 'usermaven',
+      basepath: '/docs',
+    })
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    })
+
+    const rootData = await loadRootRouteData(queryClient, '/docs/brands')
+
+    expect(rootData.subdomain).toBe('usermaven')
+    expect(rootData.host).toBe('usermaven.com')
+    expect(rootData.origin).toBe('https://usermaven.com')
+    expect(rootData.basepath).toBe('/docs')
+    expect(rootData.activeLocale).toBe('en')
+    expect(rootData.multilingualEnabled).toBe(false)
+    expect(rootData.spaces.map((space) => space.slug)).toEqual(['docs'])
+    expect(requests).toEqual([
+      '/api/hc/usermaven/config',
+      '/api/hc/usermaven/spaces',
     ])
   })
 })

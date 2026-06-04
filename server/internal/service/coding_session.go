@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,39 +56,12 @@ func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID,
 
 	pending := make([]pendingEvent, 0, len(messages)+len(artifacts)+len(interactions)+1)
 	for _, message := range messages {
-		eventType := "user.message.completed"
-		switch strings.TrimSpace(message.Role) {
-		case "assistant":
-			eventType = "assistant.message.completed"
-		case "tool":
-			eventType = "tool.call.completed"
-		}
-		payload := map[string]any{
-			"message_id":       message.ID,
-			"role":             message.Role,
-			"message_type":     message.MessageType,
-			"content":          message.Content,
-			"sequence_no":      message.SequenceNo,
-			"content_blocks":   json.RawMessage(message.ContentBlocks),
-			"turn_segments":    json.RawMessage(message.TurnSegments),
-			"tool_invocations": json.RawMessage(message.ToolInvocations),
-		}
+		event := model.CodingSessionEventFromAgentRunMessage(run, &message)
 		pending = append(pending, pendingEvent{
-			at:      message.CreatedAt.UTC(),
+			at:      event.Timestamp,
 			weight:  10,
-			eventID: "msg:" + message.ID,
-			event: model.CodingSessionEvent{
-				ID:          "msg:" + message.ID,
-				SessionID:   run.ID,
-				RunID:       run.ID,
-				Timestamp:   message.CreatedAt.UTC(),
-				Type:        eventType,
-				RuntimeKind: run.RuntimeKind,
-				Payload:     payload,
-				RuntimeMetadata: map[string]any{
-					"source": "agent_run_message",
-				},
-			},
+			eventID: event.ID,
+			event:   event,
 		})
 	}
 
@@ -166,6 +140,7 @@ func (s *AgentService) ListCodingSessionEvents(ctx context.Context, workspaceID,
 				"pause_reason":    pauseReason,
 				"execution_stage": strings.TrimSpace(derefString(run.ExecutionStage)),
 				"approval_state":  run.ApprovalState,
+				"error_message":   strings.TrimSpace(derefString(run.ErrorMessage)),
 			},
 			RuntimeMetadata: map[string]any{
 				"source": "agent_run",
@@ -310,6 +285,16 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 				return nil, err
 			}
 		}
+		if err := s.persistResolvedInteractionArtifacts(ctx, run, interaction, actorID); err != nil {
+			slog.ErrorContext(ctx, "failed to persist resolved interaction artifacts",
+				"error", err,
+				"workspace_id", run.WorkspaceID,
+				"run_id", run.ID,
+				"interaction_id", interaction.ID,
+				"interaction_kind", interaction.InteractionKind,
+			)
+		}
+		s.clearAgentAttentionNotification(ctx, run)
 		s.publishResolvedInteractionEvent(run, interaction, actorID)
 		return interaction, nil
 	}
@@ -322,6 +307,15 @@ func (s *AgentService) ResolveCodingSessionInteraction(ctx context.Context, work
 	if _, _, err := s.resumeRunWithIntent(ctx, workspaceID, sessionID, actorID, resumeReq); err != nil {
 		_ = s.restorePendingInteraction(ctx, &previousInteraction)
 		return nil, err
+	}
+	if err := s.persistResolvedInteractionArtifacts(ctx, run, interaction, actorID); err != nil {
+		slog.ErrorContext(ctx, "failed to persist resolved interaction artifacts",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+			"interaction_id", interaction.ID,
+			"interaction_kind", interaction.InteractionKind,
+		)
 	}
 	s.publishResolvedInteractionEvent(run, interaction, actorID)
 	return interaction, nil
@@ -355,17 +349,15 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	}
 
 	var title string
-	if agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID); err == nil && agent != nil && strings.TrimSpace(agent.Name) != "" {
-		title = strings.TrimSpace(agent.Name)
+	var systemPrompt *string
+	if agent, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID); err == nil && agent != nil {
+		if strings.TrimSpace(agent.Name) != "" {
+			title = strings.TrimSpace(agent.Name)
+		}
+		systemPrompt = trimPtr(agent.SystemPrompt)
 	}
 	if title == "" {
 		title = "Coding Session"
-	}
-
-	var summary *string
-	if strings.TrimSpace(derefString(run.ExecutionStage)) != "" {
-		stage := strings.TrimSpace(derefString(run.ExecutionStage))
-		summary = &stage
 	}
 
 	artifacts, err := s.ListRunArtifacts(ctx, run.WorkspaceID, run.ID)
@@ -374,7 +366,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	}
 
 	var streamSnapshot *model.CodingSessionStreamSnapshot
-	if s.sessionSnapshotRepo != nil && run.Status != model.AgentRunStatusCompleted && run.Status != model.AgentRunStatusFailed && run.Status != model.AgentRunStatusCancelled {
+	if s.sessionSnapshotRepo != nil && run.Status != model.AgentRunStatusCompleted && run.Status != model.AgentRunStatusCancelled {
 		snapshotRecord, err := s.sessionSnapshotRepo.GetByRun(ctx, run.WorkspaceID, run.ID)
 		if err != nil {
 			return nil, err
@@ -406,6 +398,7 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 	session := &model.CodingSession{
 		ID:                  run.ID,
 		RunID:               run.ID,
+		ParentRunID:         run.ParentRunID,
 		WorkspaceID:         run.WorkspaceID,
 		TargetType:          run.TargetType,
 		TargetID:            run.TargetID,
@@ -414,10 +407,18 @@ func (s *AgentService) buildCodingSession(ctx context.Context, run *model.AgentR
 		InvocationMode:      run.InvocationMode,
 		Status:              run.Status,
 		PauseReason:         run.PauseReason,
+		ErrorMessage:        run.ErrorMessage,
+		ExecutionStage:      trimPtr(run.ExecutionStage),
+		LastHeartbeatAt:     run.LastHeartbeatAt,
+		StartedAt:           run.StartedAt,
 		Title:               title,
-		Summary:             summary,
+		SystemPrompt:        systemPrompt,
 		Capabilities:        codingSessionCapabilitiesForRun(run),
 		Repo:                repoState,
+		CachedInputTokens:   run.CachedInputTokens,
+		InputTokens:         run.InputTokens,
+		OutputTokens:        run.OutputTokens,
+		TokensUsed:          run.TokensUsed,
 		AuthState:           latestCodexAuthArtifact(artifacts),
 		StreamStateSnapshot: streamSnapshot,
 		TriggeredByUser:     triggeredBy,
@@ -455,6 +456,19 @@ func (s *AgentService) restorePendingInteraction(ctx context.Context, interactio
 	return s.interactionRepo.Update(ctx, interaction)
 }
 
+func (s *AgentService) clearAgentAttentionNotification(ctx context.Context, run *model.AgentRun) {
+	if s == nil || s.notificationService == nil || run == nil {
+		return
+	}
+	if err := s.notificationService.MarkAgentAttentionResolved(ctx, run.WorkspaceID, run.ID); err != nil {
+		slog.ErrorContext(ctx, "failed to clear agent attention notification",
+			"error", err,
+			"workspace_id", run.WorkspaceID,
+			"run_id", run.ID,
+		)
+	}
+}
+
 func (s *AgentService) publishResolvedInteractionEvent(run *model.AgentRun, interaction *model.AgentRunInteraction, actorID string) {
 	if s == nil || run == nil || interaction == nil {
 		return
@@ -479,8 +493,23 @@ func resumeRequestForResolvedInteraction(interaction *model.AgentRunInteraction,
 			Content:         content,
 			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
 		}, nil
+	case model.AgentRunInteractionKindApprovalRequest:
+		content := firstNonEmptyString(followupMessage, approvalRequestResumeContent(interaction.RequestPayload, responsePayload, intent))
+		req := model.ResumeAgentRunRequest{
+			Intent:          intent,
+			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
+		}
+		if intent == model.AgentRunResumeIntentApprove {
+			if content != "" {
+				req.Content = content
+				req.SendMessage = true
+			}
+			return req, nil
+		}
+		req.Content = firstNonEmptyString(content, "Please revise and continue.")
+		return req, nil
 	case model.AgentRunInteractionKindReviewCheckpoint:
-		content := firstNonEmptyString(followupMessage, reviewCheckpointResponseMessage(responsePayload))
+		content := firstNonEmptyString(reviewCheckpointResumeContent(interaction.RequestPayload, responsePayload, intent), followupMessage)
 		req := model.ResumeAgentRunRequest{
 			Intent:          intent,
 			ResponsePayload: append(json.RawMessage(nil), responsePayload...),
@@ -575,12 +604,25 @@ func resolveIntentForInteraction(interaction *model.AgentRunInteraction, respons
 	switch strings.TrimSpace(interaction.InteractionKind) {
 	case model.AgentRunInteractionKindRequestUserInput:
 		return model.AgentRunResumeIntentReply
-	case model.AgentRunInteractionKindReviewCheckpoint:
+	case model.AgentRunInteractionKindApprovalRequest:
 		var payload struct {
 			Decision string `json:"decision"`
 		}
 		if err := json.Unmarshal(responsePayload, &payload); err == nil && strings.TrimSpace(payload.Decision) == "approve" {
 			return model.AgentRunResumeIntentApprove
+		}
+		return model.AgentRunResumeIntentRequestChanges
+	case model.AgentRunInteractionKindReviewCheckpoint:
+		var payload struct {
+			Decision string `json:"decision"`
+		}
+		if err := json.Unmarshal(responsePayload, &payload); err == nil {
+			switch strings.TrimSpace(payload.Decision) {
+			case "approve":
+				return model.AgentRunResumeIntentApprove
+			case "skip":
+				return model.AgentRunResumeIntentReply
+			}
 		}
 		return model.AgentRunResumeIntentRequestChanges
 	case model.AgentRunInteractionKindPermissionsApproval:
@@ -622,9 +664,6 @@ func requestUserInputResumeContent(interaction *model.AgentRunInteraction, respo
 	if interaction == nil {
 		return ""
 	}
-	if content := structuredReviewNextStepResumeContent(interaction.RequestPayload, responsePayload); content != "" {
-		return content
-	}
 	if strings.TrimSpace(interaction.RequestSchemaVersion) == model.AgentRunInteractionSchemaVersionHelpinV1 {
 		var payload struct {
 			Content string `json:"content"`
@@ -639,53 +678,87 @@ func requestUserInputResumeContent(interaction *model.AgentRunInteraction, respo
 	return strings.TrimSpace(string(responsePayload))
 }
 
-func structuredReviewNextStepResumeContent(requestPayload, responsePayload json.RawMessage) string {
-	var request struct {
-		Questions []struct {
-			ID       string `json:"id"`
-			Question string `json:"question"`
-		} `json:"questions"`
-	}
-	var response struct {
-		Answers map[string]struct {
-			Answers []string `json:"answers"`
-		} `json:"answers"`
-	}
-	if err := json.Unmarshal(requestPayload, &request); err != nil {
-		return ""
-	}
+func reviewCheckpointResumeContent(requestPayload, responsePayload json.RawMessage, intent string) string {
+	var response model.ReviewCheckpointResponse
 	if err := json.Unmarshal(responsePayload, &response); err != nil {
 		return ""
 	}
-	for _, question := range request.Questions {
-		if strings.TrimSpace(question.ID) != "next_step" {
-			continue
+	response.Message = strings.TrimSpace(response.Message)
+	response.SelectionMode = strings.ToLower(strings.TrimSpace(response.SelectionMode))
+	for i := range response.SelectedFindingIDs {
+		response.SelectedFindingIDs[i] = strings.TrimSpace(response.SelectedFindingIDs[i])
+	}
+
+	var request model.ReviewCheckpointRequest
+	if err := json.Unmarshal(requestPayload, &request); err != nil {
+		return response.Message
+	}
+	selected := selectReviewFindings(request.Findings, response.SelectionMode, response.SelectedFindingIDs)
+
+	if strings.TrimSpace(response.Decision) == "skip" {
+		lines := []string{"Skipped review findings.", "Do not implement these review findings."}
+		if response.Message != "" {
+			lines = append(lines, "Human note: "+response.Message)
 		}
-		if !strings.Contains(strings.ToLower(strings.TrimSpace(question.Question)), "what should i do next with this review") {
-			return ""
+		return strings.Join(lines, "\n")
+	}
+
+	switch strings.TrimSpace(intent) {
+	case model.AgentRunResumeIntentApprove:
+		if len(selected) == 0 {
+			return response.Message
 		}
-		answer, ok := response.Answers["next_step"]
-		if !ok || len(answer.Answers) == 0 {
-			return ""
+		lines := []string{"Approved review findings for implementation:"}
+		lines = append(lines, formatReviewFindingLines(selected)...)
+		lines = append(lines, "Implement only these approved findings in the same branch. Run focused validation and summarize what changed.")
+		if response.Message != "" {
+			lines = append(lines, "Human note: "+response.Message)
 		}
-		value := strings.TrimSpace(answer.Answers[0])
-		if value == "" {
-			return ""
+		return strings.Join(lines, "\n")
+	case model.AgentRunResumeIntentRequestChanges:
+		if len(selected) == 0 {
+			return response.Message
 		}
-		switch strings.ToLower(value) {
-		case "discuss a finding (recommended)", "discuss a finding":
-			return "Discuss the selected review finding and answer the human's follow-up before asking what to do next."
-		case "implement changes":
-			return "Implement the requested changes based on the review findings in the same branch, run focused validation, create a local commit, then summarize what changed and ask what to do next."
-		case "re-review changes":
-			return "Re-review the latest code changes, report the updated findings, and ask what to do next."
-		case "done reviewing":
-			return "The review is done."
+		lines := []string{"Revise or discuss the review using this selected scope:"}
+		lines = append(lines, formatReviewFindingLines(selected)...)
+		if response.Message != "" {
+			lines = append(lines, "Human feedback: "+response.Message)
+		}
+		return strings.Join(lines, "\n")
+	default:
+		return response.Message
+	}
+}
+
+func approvalRequestResumeContent(requestPayload, responsePayload json.RawMessage, intent string) string {
+	var response model.ApprovalResponse
+	if err := json.Unmarshal(responsePayload, &response); err != nil {
+		return ""
+	}
+	response.Message = strings.TrimSpace(response.Message)
+	if strings.TrimSpace(intent) == model.AgentRunResumeIntentApprove {
+		var request model.ApprovalRequest
+		if err := json.Unmarshal(requestPayload, &request); err != nil {
+			if response.Message != "" {
+				return response.Message
+			}
+			return "Approved. Continue."
+		}
+		if response.Message != "" {
+			return response.Message
+		}
+		switch strings.ToLower(strings.TrimSpace(request.Phase)) {
+		case "prd":
+			return "Approved PRD. Continue to task planning."
+		case "tasks":
+			return "Approved task plan. Apply it and create tasks."
+		case "task_doc":
+			return "Approved task planning document. Persist it and finish."
 		default:
-			return value
+			return "Approved. Continue."
 		}
 	}
-	return ""
+	return response.Message
 }
 
 func codexUserInputResumeContent(requestPayload, responsePayload json.RawMessage) string {
@@ -760,14 +833,53 @@ func codexUserInputResumeContent(requestPayload, responsePayload json.RawMessage
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
-func reviewCheckpointResponseMessage(responsePayload json.RawMessage) string {
-	var payload struct {
-		Message string `json:"message"`
+func selectReviewFindings(findings []model.ReviewFinding, selectionMode string, selectedIDs []string) []model.ReviewFinding {
+	if len(findings) == 0 {
+		return nil
 	}
-	if err := json.Unmarshal(responsePayload, &payload); err != nil {
-		return ""
+	if selectionMode == "" || selectionMode == "all" {
+		return append([]model.ReviewFinding(nil), findings...)
 	}
-	return strings.TrimSpace(payload.Message)
+	if selectionMode == "selected" && len(selectedIDs) == 0 {
+		return nil
+	}
+	selectedSet := make(map[string]struct{}, len(selectedIDs))
+	for _, id := range selectedIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		selectedSet[id] = struct{}{}
+	}
+	if len(selectedSet) == 0 {
+		return nil
+	}
+	selected := make([]model.ReviewFinding, 0, len(selectedSet))
+	for _, finding := range findings {
+		if _, ok := selectedSet[strings.TrimSpace(finding.ID)]; ok {
+			selected = append(selected, finding)
+		}
+	}
+	return selected
+}
+
+func formatReviewFindingLines(findings []model.ReviewFinding) []string {
+	lines := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		line := "- "
+		if priority := strings.TrimSpace(finding.Priority); priority != "" {
+			line += priority + " "
+		}
+		line += strings.TrimSpace(finding.Title)
+		if location := strings.TrimSpace(finding.CodeLocation); location != "" {
+			line += " (" + location + ")"
+		}
+		if body := strings.TrimSpace(finding.Body); body != "" {
+			line += ": " + body
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func (s *AgentService) resolveCodingSessionRepoState(ctx context.Context, run *model.AgentRun) (model.CodingSessionRepoState, error) {
@@ -865,6 +977,10 @@ func codingSessionEventFromArtifact(artifact model.AgentRunArtifact) (string, ma
 		return "input.requested", payload
 	case model.AgentRunArtifactTypeHumanApprovalRequest:
 		return "approval.requested", payload
+	case model.AgentRunArtifactTypeReviewFindings:
+		return "review.findings.updated", payload
+	case model.AgentRunArtifactTypeReviewDecision:
+		return "review.decision.recorded", payload
 	case model.AgentRunArtifactTypeCodexAuthState:
 		return "auth.updated", payload
 	case "codex_diff", "diff":
@@ -1013,7 +1129,13 @@ func artifactInteractionKind(artifact model.AgentRunArtifact) string {
 				return model.AgentRunInteractionKindPermissionsApproval
 			}
 		}
-		return model.AgentRunInteractionKindReviewCheckpoint
+		var review model.ReviewCheckpointRequest
+		if artifact.InlineContent != nil && json.Unmarshal([]byte(*artifact.InlineContent), &review) == nil {
+			if len(review.Findings) > 0 || strings.TrimSpace(review.OverallCorrectness) != "" || strings.TrimSpace(review.OverallExplanation) != "" || review.OverallConfidenceScore != nil {
+				return model.AgentRunInteractionKindReviewCheckpoint
+			}
+		}
+		return model.AgentRunInteractionKindApprovalRequest
 	default:
 		return ""
 	}
@@ -1025,6 +1147,7 @@ func (s *AgentService) publishCodingSessionUpdated(run *model.AgentRun, actorID 
 	}
 	status, pauseReason := model.NormalizeAgentRunStatus(run.Status, run.PauseReason, run.ApprovalState, run.ExecutionStage)
 	data, _ := json.Marshal(map[string]any{
+		"parent_run_id":   strings.TrimSpace(derefString(run.ParentRunID)),
 		"id":              run.ID,
 		"run_id":          run.ID,
 		"status":          status,
@@ -1059,6 +1182,24 @@ func (s *AgentService) publishCodingSessionEvent(run *model.AgentRun, eventType 
 		RuntimeKind: run.RuntimeKind,
 		Payload:     payload,
 	}
+	data, _ := json.Marshal(event)
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "created",
+		Entity:      "coding_session_event",
+		EntityID:    event.ID,
+		WorkspaceID: run.WorkspaceID,
+		ActorID:     actorID,
+		ParentType:  "coding_session",
+		ParentID:    run.ID,
+		Data:        data,
+	})
+}
+
+func (s *AgentService) publishCodingSessionMessageEvent(run *model.AgentRun, message *model.AgentRunMessage, actorID string) {
+	if s.wsPublisher == nil || run == nil || message == nil {
+		return
+	}
+	event := model.CodingSessionEventFromAgentRunMessage(run, message)
 	data, _ := json.Marshal(event)
 	s.wsPublisher.Publish(websocket.Event{
 		Action:      "created",

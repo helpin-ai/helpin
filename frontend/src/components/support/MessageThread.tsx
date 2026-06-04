@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, memo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, memo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Message01Icon, BotIcon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
@@ -16,12 +16,16 @@ import {
   useCreateTaskFromConversation,
   useMoveConversation,
   useDismissConversationTriage,
+  useDeleteSupportMessage,
+  useMarkConversationRead,
 } from '@/hooks/queries/useSupport';
+import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
+import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
+import { CreateTaskDialog } from './CreateTaskDialog';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
-import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
@@ -30,13 +34,23 @@ import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { getDayLabel, getEffectiveSenderType, isSameDay, getInitial } from './helpers';
 import { MessageBubble } from './MessageBubble';
 import { ReplyComposer } from './ReplyComposer';
+import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
+import { SupportInboxOnboarding } from './SupportInboxOnboarding';
+import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
 
 interface MessageThreadProps {
   workspaceId: string;
   conversationId: string | null;
+  showInboxOnboarding?: boolean;
+  onWidgetSettingsClick?: () => void;
+  onCreateConversationClick?: () => void;
 }
+
+const INITIAL_THREAD_ITEM_COUNT = 60;
+const THREAD_HISTORY_HYDRATION_DELAY_MS = 120;
+const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
   const typingState = useSupportPresenceStore(
@@ -154,15 +168,17 @@ function DaySeparator({
   separatorRef?: (node: HTMLDivElement | null) => void;
 }) {
   return (
-    <div ref={separatorRef} className="sticky top-0 z-[1] flex items-center justify-center py-3">
+    <div ref={separatorRef} className="sticky top-0 z-[1] my-5 flex items-center gap-3">
+      <div className="h-px flex-1 bg-border/60" aria-hidden />
       <span
-        className={`relative rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
+        className={`shrink-0 rounded-full px-3 py-0.5 text-[10.5px] font-medium text-muted-foreground/70 ${
           isSticky ? 'bg-white dark:bg-background' : 'bg-muted'
         }`}
         style={{ border: 'none', boxShadow: 'none', outline: 'none' }}
       >
         {label}
       </span>
+      <div className="h-px flex-1 bg-border/60" aria-hidden />
     </div>
   );
 }
@@ -170,7 +186,7 @@ function DaySeparator({
 /** Skeleton message bubbles shown while loading */
 const MessageSkeleton = memo(function MessageSkeleton() {
   return (
-    <div className="space-y-6 py-8">
+    <div data-testid="support-thread-message-skeleton" className="space-y-6 py-8">
       {/* Customer message group */}
       <div className="flex items-end gap-2" style={{ width: '55%' }}>
         <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-muted" />
@@ -198,14 +214,46 @@ const MessageSkeleton = memo(function MessageSkeleton() {
   );
 });
 
-export function MessageThread({ workspaceId, conversationId }: MessageThreadProps) {
+const ThreadHeaderSkeleton = memo(function ThreadHeaderSkeleton() {
+  return (
+    <div
+      data-testid="support-thread-header-skeleton"
+      className="relative z-10 flex items-center justify-between border-b bg-background px-4 py-2.5"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="h-4 w-64 max-w-[70%] animate-pulse rounded bg-muted" />
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div className="h-7 w-24 animate-pulse rounded-md bg-muted" />
+        <div className="h-7 w-20 animate-pulse rounded-md bg-muted" />
+        <div className="h-7 w-7 animate-pulse rounded-md bg-muted" />
+      </div>
+      <div className="pointer-events-none absolute left-0 right-0 top-full h-1.5 bg-gradient-to-b from-black/[0.025] to-transparent" />
+    </div>
+  );
+});
+
+export function MessageThread({
+  workspaceId,
+  conversationId,
+  showInboxOnboarding,
+  onWidgetSettingsClick,
+  onCreateConversationClick,
+}: MessageThreadProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
-  const { data: conversation } = useConversation(workspaceId, conversationId);
+  const isNearBottomRef = useRef(true);
+  const pendingInitialScrollRef = useRef(false);
+  const threadScrollStateRef = useRef<{ conversationId: string | null; messageCount: number; lastMessageId: string | null }>({
+    conversationId: null,
+    messageCount: 0,
+    lastMessageId: null,
+  });
+  const { data: conversation, isFetched: conversationFetched } = useConversation(workspaceId, conversationId);
   const { data: messages = [], isLoading } = useConversationMessages(workspaceId, conversationId);
   const { data: inboxScopes } = useInboxScopes(workspaceId);
   const { data: installation } = useChatSettings(workspaceId);
@@ -216,11 +264,20 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   const createTaskFromConversation = useCreateTaskFromConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
+  const deleteMessage = useDeleteSupportMessage(workspaceId, conversationId);
+  const markConversationRead = useMarkConversationRead(workspaceId);
+  const { data: access } = useWorkspaceAccess(workspaceId);
+  const { data: wsSettings } = useWorkspaceSettings(workspaceId);
+  const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
-  const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
+  const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
 
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
+  const [composerReady, setComposerReady] = useState(false);
+  const [historyHydrated, setHistoryHydrated] = useState(true);
+  const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
   const memberAvatarByUserId = useMemo(() => {
     const map = new Map<string, string>();
@@ -369,8 +426,50 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }, [conversationId, wsSend, wsConnected]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const handleKeyDown = async (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z' || event.shiftKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return;
+      if (!conversationId || deleteMessage.isPending) return;
+
+      const now = Date.now();
+      const latest = [...messages].reverse().find((message) => {
+        if (message.sender_type !== 'user' || message.sender_user_id !== currentUser?.id || message.is_internal) return false;
+        if (!message.cancellable_until) return false;
+        return Date.parse(message.cancellable_until) > now;
+      });
+      if (!latest) return;
+
+      event.preventDefault();
+      const result = await deleteMessage.mutateAsync({ messageId: latest.id, undo: true });
+      if (result.markdown) {
+        window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
+          detail: { conversationId, markdown: result.markdown, attachments: latest.attachments ?? [] },
+        }));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [conversationId, currentUser?.id, deleteMessage, messages]);
+
+  useEffect(() => {
+    if (!conversationId) {
+      setComposerReady(false);
+      return;
+    }
+
+    setComposerReady(false);
+    let timeout = 0;
+    const frame = window.requestAnimationFrame(() => {
+      timeout = window.setTimeout(() => setComposerReady(true), 0);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (timeout) window.clearTimeout(timeout);
+    };
+  }, [conversationId]);
 
   const handleApproveRun = async (runId: string) => {
     await agentService.approveRun(workspaceId, runId, { send_message: true });
@@ -390,7 +489,41 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
   const handleCreateTask = async () => {
     if (!conversationId || !workspaceSlug) return;
-    const created = await createTaskFromConversation.mutateAsync(conversationId);
+
+    const dismissed = access?.membership?.support_task_dialog_dismissed;
+    const savedTeamId = access?.membership?.support_default_team_id;
+
+    if (!dismissed) {
+      setShowCreateTaskDialog(true);
+      return;
+    }
+
+    const created = await createTaskFromConversation.mutateAsync({
+      conversationId,
+      teamId: savedTeamId,
+    });
+    toast.success(`Created ${created.task_key ?? 'task'}`, {
+      description: created.summary || created.task_name,
+    });
+    openTaskRoute(navigate as never, location as never, workspaceSlug, created.task_id);
+  };
+
+  const handleCreateTaskConfirm = async (teamId: string, dismissDialog: boolean) => {
+    if (!conversationId || !workspaceSlug) return;
+
+    // Create task first — only persist preferences after success
+    const created = await createTaskFromConversation.mutateAsync({
+      conversationId,
+      teamId,
+    });
+
+    // Task succeeded — now save team preference and dismissal
+    await updatePreferences.mutateAsync({
+      support_default_team_id: teamId,
+      support_task_dialog_dismissed: dismissDialog,
+    });
+
+    setShowCreateTaskDialog(false);
     toast.success(`Created ${created.task_key ?? 'task'}`, {
       description: created.summary || created.task_name,
     });
@@ -410,14 +543,16 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }, [messages]);
 
   // Derive delivered/read status from conversation's contact_last_seen_at cursor
-  const receiptStatus = useMemo<'delivered' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
+  const receiptStatus = useMemo<'delivered' | 'sent_email' | 'delivered_email' | 'read' | 'read_email' | null>(() => {
     if (!receiptMessageId || !conversation) return null;
     const msg = messages.find((m) => m.id === receiptMessageId);
     if (!msg) return null;
     if (msg.email_read_at) return 'read_email';
+    if (msg.email_delivery_status === 'opened') return 'read_email';
+    if (msg.email_delivery_status === 'delivered') return 'delivered_email';
     const seen = conversation.contact_last_seen_at;
     if (conversation.source === 'widget' && seen && new Date(seen) >= new Date(msg.created_at)) return 'read';
-    if (msg.email_notified_at) return 'delivered_email';
+    if (msg.email_notified_at) return 'sent_email';
     if (conversation.source === 'widget') return 'delivered';
     return null;
   }, [receiptMessageId, conversation, messages]);
@@ -459,6 +594,158 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
   }, [messages]);
 
   useEffect(() => {
+    if (!conversationId || groupedMessages.length <= INITIAL_THREAD_ITEM_COUNT) {
+      setHistoryHydrated(true);
+      return;
+    }
+
+    setHistoryHydrated(false);
+    let timeout = 0;
+    const frame = window.requestAnimationFrame(() => {
+      timeout = window.setTimeout(() => setHistoryHydrated(true), THREAD_HISTORY_HYDRATION_DELAY_MS);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (timeout) window.clearTimeout(timeout);
+    };
+  }, [conversationId, groupedMessages.length]);
+
+  const visibleGroupedMessages = useMemo(() => {
+    if (historyHydrated || groupedMessages.length <= INITIAL_THREAD_ITEM_COUNT) {
+      return groupedMessages;
+    }
+
+    const start = Math.max(0, groupedMessages.length - INITIAL_THREAD_ITEM_COUNT);
+    let firstSeparatorBeforeWindow: (typeof groupedMessages)[number] | undefined;
+    for (let i = start - 1; i >= 0; i -= 1) {
+      if (groupedMessages[i]?.type === 'separator') {
+        firstSeparatorBeforeWindow = groupedMessages[i];
+        break;
+      }
+    }
+    const visibleItems = groupedMessages.slice(start);
+
+    if (firstSeparatorBeforeWindow && visibleItems[0]?.type !== 'separator') {
+      return [firstSeparatorBeforeWindow, ...visibleItems];
+    }
+
+    return visibleItems;
+  }, [groupedMessages, historyHydrated]);
+
+  const lastMessageId = messages[messages.length - 1]?.id ?? null;
+  const initialScrollTargetMessageId = useMemo(
+    () => getInitialThreadScrollTarget(messages, conversation?.team_last_seen_at),
+    [conversation?.team_last_seen_at, messages],
+  );
+
+  useLayoutEffect(() => {
+    if (!conversationId) {
+      pendingInitialScrollRef.current = false;
+      isNearBottomRef.current = true;
+      threadScrollStateRef.current = { conversationId: null, messageCount: 0, lastMessageId: null };
+      return;
+    }
+
+    if (messages.length === 0) {
+      pendingInitialScrollRef.current = false;
+      isNearBottomRef.current = true;
+      threadScrollStateRef.current = { conversationId, messageCount: 0, lastMessageId: null };
+      return;
+    }
+
+    const previous = threadScrollStateRef.current;
+    const conversationChanged = previous.conversationId !== conversationId;
+    const initialLoad = previous.conversationId === conversationId && previous.messageCount === 0;
+    const messageCountIncreased = previous.conversationId === conversationId && messages.length > previous.messageCount;
+
+    if (conversationChanged || initialLoad) {
+      pendingInitialScrollRef.current = true;
+      isNearBottomRef.current = true;
+    }
+
+    const shouldScroll = shouldAutoScrollThread({
+      conversationChanged,
+      initialLoad,
+      messageCountIncreased,
+      wasNearBottom: isNearBottomRef.current,
+      pendingInitialScroll: pendingInitialScrollRef.current,
+    });
+
+    threadScrollStateRef.current = { conversationId, messageCount: messages.length, lastMessageId };
+
+    if (!shouldScroll) return;
+
+    let cancelled = false;
+    const frames: number[] = [];
+    const timeouts: number[] = [];
+    const shouldUseInitialTarget = pendingInitialScrollRef.current && initialScrollTargetMessageId && initialScrollTargetMessageId !== lastMessageId;
+
+    const scrollToTarget = () => {
+      if (cancelled) return;
+
+      const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
+      if (viewport) {
+        if (shouldUseInitialTarget) {
+          const target = viewport.querySelector(`[data-support-message-id="${initialScrollTargetMessageId}"]`) as HTMLDivElement | null;
+          if (target) {
+            viewport.scrollTop = Math.max(0, target.offsetTop - 24);
+            isNearBottomRef.current = isNearThreadBottom(viewport);
+            return;
+          }
+        }
+        viewport.scrollTop = viewport.scrollHeight;
+        isNearBottomRef.current = true;
+        return;
+      }
+
+      if (shouldUseInitialTarget) {
+        document.querySelector(`[data-support-message-id="${initialScrollTargetMessageId}"]`)?.scrollIntoView({ block: 'start' });
+        isNearBottomRef.current = false;
+        return;
+      }
+
+      messagesEndRef.current?.scrollIntoView({ block: 'end' });
+      isNearBottomRef.current = true;
+    };
+
+    const scheduleFrame = () => {
+      frames.push(window.requestAnimationFrame(scrollToTarget));
+    };
+
+    scrollToTarget();
+    scheduleFrame();
+    timeouts.push(window.setTimeout(scheduleFrame, 0));
+    timeouts.push(window.setTimeout(scheduleFrame, 80));
+    timeouts.push(window.setTimeout(scheduleFrame, 180));
+
+    if (pendingInitialScrollRef.current && historyHydrated) {
+      pendingInitialScrollRef.current = false;
+    }
+
+    return () => {
+      cancelled = true;
+      frames.forEach((frame) => window.cancelAnimationFrame(frame));
+      timeouts.forEach((timeout) => window.clearTimeout(timeout));
+    };
+  }, [conversationId, historyHydrated, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
+  useEffect(() => {
+    if (!conversationId || !conversation) return;
+    if (!shouldMarkOpenThreadRead({
+      unreadCount: conversation.unread_count,
+      isNearBottom: isNearBottomRef.current,
+      isLoading: isThreadLoading,
+    })) {
+      return;
+    }
+    if (lastOpenThreadReadMessageIdRef.current === lastMessageId) return;
+
+    lastOpenThreadReadMessageIdRef.current = lastMessageId;
+    markConversationRead.mutate(conversationId);
+  }, [conversation, conversationId, isThreadLoading, lastMessageId, markConversationRead]);
+
+  useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
     if (!viewport) return;
 
@@ -480,10 +767,12 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
     };
 
     const onScroll = () => {
+      isNearBottomRef.current = isNearThreadBottom(viewport);
       if (frame) return;
       frame = window.requestAnimationFrame(updateActiveStickySeparator);
     };
 
+    isNearBottomRef.current = isNearThreadBottom(viewport);
     updateActiveStickySeparator();
     viewport.addEventListener('scroll', onScroll, { passive: true });
 
@@ -493,14 +782,29 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         window.cancelAnimationFrame(frame);
       }
     };
-  }, [groupedMessages]);
+  }, [visibleGroupedMessages]);
 
-  if (!conversationId) {
+  // Treat a stale conversation id (e.g., previous selection that no longer
+  // matches the active filter, or a deleted conversation) the same as no
+  // selection. Wait until the fetch settled so we don't flash during load.
+  const noSelection = !conversationId || (conversationFetched && !conversation);
+  if (noSelection) {
+    if (showInboxOnboarding && onWidgetSettingsClick && onCreateConversationClick) {
+      return (
+        <SupportInboxOnboarding
+          onWidgetSettingsClick={onWidgetSettingsClick}
+          onCreateConversationClick={onCreateConversationClick}
+        />
+      );
+    }
+
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-muted/30 text-muted-foreground">
-        <Message01Icon className="h-12 w-12 opacity-20" />
-        <p className="text-sm">Select a conversation to view</p>
-      </div>
+      <EmptyState
+        icon={Message01Icon}
+        title="Select a conversation"
+        subtitle="Pick one from the list to view messages and reply."
+        background="muted"
+      />
     );
   }
 
@@ -577,8 +881,9 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               conversation={conversation}
               moveOptions={moveOptions.map((option) => ({ id: option!.id, name: option!.name }))}
               align="end"
-              onConversationMoved={(option) => {
-                setSelectedMailboxId(option.id);
+              onConversationDeleted={() => {
+                if (!workspaceSlug) return;
+                void navigate({ to: '/w/$slug/support', params: { slug: workspaceSlug }, replace: true });
               }}
               trigger={(
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Open conversation actions">
@@ -589,6 +894,7 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
           </div>
         </div>
       )}
+      {!conversation && isThreadLoading && <ThreadHeaderSkeleton />}
 
       {conversation && triageBanner && (
         <div className={`border-b px-4 py-3 ${
@@ -624,7 +930,6 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
                       mailboxId: triageBanner.mailboxId,
                     }, {
                       onSuccess: () => {
-                        setSelectedMailboxId(triageBanner.mailboxId);
                         toast.success(`Moved to ${triageBanner.mailboxName}`);
                       },
                     });
@@ -666,15 +971,16 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
 
       {/* Messages area with light background (Crisp-style) */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 bg-muted/20">
-        <div className="px-4 pb-4 pt-2">
-          {isLoading && <MessageSkeleton />}
-          {!isLoading && messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
-              <Message01Icon className="h-8 w-8 opacity-30" />
-              <p className="text-sm">No messages yet. Start the conversation below.</p>
-            </div>
+        <div className="px-4 pb-10 pt-2">
+          {isThreadLoading && <MessageSkeleton />}
+          {!isThreadLoading && messages.length === 0 && (
+            <EmptyState
+              icon={Message01Icon}
+              title="No messages yet"
+              subtitle="Start the conversation using the reply below."
+            />
           )}
-          {groupedMessages.map((item, idx) => {
+          {visibleGroupedMessages.map((item, idx) => {
             if (item.type === 'separator') {
               return (
                 <DaySeparator
@@ -692,21 +998,26 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
               );
             }
             return (
-              <MessageBubble
+              <div
                 key={item.message.id}
-                message={item.message}
-                isConsecutive={item.isConsecutive}
-                isLastInGroup={item.isLastInGroup}
-                source={conversation?.source}
-                receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
-                customerDisplayName={conversation?.customer_name || conversation?.customer_email}
-                fallbackAvatarUrl={
-                  (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
-                  ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
-                    ? currentUser?.avatar_url
-                    : undefined)
-                }
-              />
+                className="support-thread-message"
+                data-support-message-id={item.message.id}
+              >
+                <MessageBubble
+                  message={item.message}
+                  isConsecutive={item.isConsecutive}
+                  isLastInGroup={item.isLastInGroup}
+                  source={conversation?.source}
+                  receiptStatus={item.message.id === receiptMessageId ? receiptStatus : undefined}
+                  customerDisplayName={conversation?.customer_name || conversation?.customer_email}
+                  fallbackAvatarUrl={
+                    (item.message.sender_user_id ? memberAvatarByUserId.get(item.message.sender_user_id) : undefined)
+                    ?? ((item.message.sender_display_name === currentUser?.full_name || item.message.sender_display_name === currentUser?.email)
+                      ? currentUser?.avatar_url
+                      : undefined)
+                  }
+                />
+              </div>
             );
           })}
           <TypingIndicatorBar conversationId={conversationId} />
@@ -715,14 +1026,28 @@ export function MessageThread({ workspaceId, conversationId }: MessageThreadProp
         </div>
       </ScrollArea>
 
-      {/* Reply composer */}
-      {conversationId && (
+      {/* Soft gradient fade between thread and composer */}
+      <div className="pointer-events-none h-3 -mt-3 relative z-10 bg-gradient-to-t from-background to-transparent" />
+
+      {/* Reply composer — only show once the selected conversation and its
+          messages have loaded, so switching threads never exposes a stale
+          or half-ready composer. */}
+      {composerReady && conversationId && conversation && !isLoading && (
         <ReplyComposer
           workspaceId={workspaceId}
           conversationId={conversationId}
           emailFallbackHint={emailFallbackHint}
         />
       )}
+
+      <CreateTaskDialog
+        open={showCreateTaskDialog}
+        onOpenChange={setShowCreateTaskDialog}
+        teams={wsSettings?.teams ?? []}
+        defaultTeamId={access?.membership?.support_default_team_id ?? access?.team_memberships?.[0]?.team_id}
+        isPending={createTaskFromConversation.isPending}
+        onConfirm={handleCreateTaskConfirm}
+      />
     </div>
   );
 }

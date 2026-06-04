@@ -20,7 +20,6 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
-	"github.com/helpin-ai/helpin/server/internal/tiptap"
 )
 
 // DocsImportService orchestrates help center article imports.
@@ -591,7 +590,7 @@ func (s *DocsImportService) importArticle(
 		if _, err := s.documentSvc.Publish(ctx, doc.ID); err != nil {
 			return nil, fmt.Errorf("publish imported article internally %s: %w", ref.ID, err)
 		}
-		if err := s.helpcenterSvc.PublishExternally(ctx, doc.ID, article.Slug); err != nil {
+		if err := s.helpcenterSvc.PublishExternally(ctx, doc.ID, article.Slug, nil); err != nil {
 			return nil, fmt.Errorf("publish imported article externally %s: %w", ref.ID, err)
 		}
 		stats.Published = true
@@ -653,7 +652,7 @@ func (s *DocsImportService) Reconvert(ctx context.Context, jobID string) (*Recon
 		switch sourceSystem {
 		case "nextra":
 			// Re-run MDX preprocessing and markdown-to-TipTap conversion.
-			contentJSON = tiptap.MarkdownToJSON(*c.ImportSourceHTML)
+			contentJSON = nextraContentToTiptapJSON(*c.ImportSourceHTML)
 			// No warnings tracked for markdown conversion currently.
 
 		default:

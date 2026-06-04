@@ -1,6 +1,7 @@
 import { formatDistanceToNow, parseISO } from 'date-fns';
 
 import type { CodingSessionEvent, CodingSessionInteraction } from '@/lib/pmTypes';
+import { normalizeCodingSessionPreviewPanelKey } from './previewPanelKeys';
 
 export function formatCodingSessionRelative(value?: string) {
   if (!value) return 'Unknown time';
@@ -23,7 +24,11 @@ export function codingSessionEventContent(payload: Record<string, unknown>) {
 }
 
 export function sortCodingSessionEvents(events: CodingSessionEvent[]) {
-  return [...events].sort((a, b) => a.sequence_no - b.sequence_no);
+  return [...events].sort((a, b) => {
+    const sequenceDelta = codingSessionEventSortSequence(a) - codingSessionEventSortSequence(b);
+    if (sequenceDelta !== 0) return sequenceDelta;
+    return a.sequence_no - b.sequence_no;
+  });
 }
 
 export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
@@ -34,6 +39,23 @@ export function isPersistedCodingSessionEvent(event: CodingSessionEvent) {
     || event.id.startsWith('artifact:')
     || event.id.startsWith('interaction:')
     || event.id.startsWith('run:')
+  );
+}
+
+function codingSessionEventSortSequence(event: CodingSessionEvent) {
+  const payloadSequence = event.payload?.sequence_no;
+  if (isRunMessageShapedEvent(event) && typeof payloadSequence === 'number' && Number.isFinite(payloadSequence)) {
+    return payloadSequence;
+  }
+  return event.sequence_no;
+}
+
+function isRunMessageShapedEvent(event: CodingSessionEvent) {
+  const payload = event.payload;
+  return (
+    typeof payload?.message_id === 'string'
+    && typeof payload?.role === 'string'
+    && typeof payload?.sequence_no === 'number'
   );
 }
 
@@ -94,6 +116,67 @@ export function parseCodingSessionInteraction(event: CodingSessionEvent): Coding
     resolved_at: asString(payload?.resolved_at),
     resolved_by: asString(payload?.resolved_by),
   };
+}
+
+export type CodingSessionPreviewApprovalStatus = 'pending' | 'approved' | 'changes_requested';
+
+export interface CodingSessionPreviewApprovalState {
+  interaction: CodingSessionInteraction;
+  status: CodingSessionPreviewApprovalStatus;
+  title?: string;
+  summary?: string;
+  phase?: string;
+  previewPanelKey: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  note?: string;
+}
+
+function approvalStateFromInteraction(
+  interaction: CodingSessionInteraction,
+): CodingSessionPreviewApprovalState | null {
+  if (interaction.interaction_kind !== 'approval_request') return null;
+  const previewPanelKey = normalizeCodingSessionPreviewPanelKey(
+    typeof interaction.request_payload?.preview_panel_key === 'string'
+      ? interaction.request_payload.preview_panel_key
+      : '',
+  );
+  if (!previewPanelKey) return null;
+
+  const responsePayload = asRecord(interaction.response_payload);
+  const decision = asString(responsePayload?.decision);
+  const status: CodingSessionPreviewApprovalStatus = interaction.status === 'pending'
+    ? 'pending'
+    : decision === 'request_changes'
+      ? 'changes_requested'
+      : 'approved';
+
+  return {
+    interaction,
+    status,
+    title: asString(interaction.request_payload?.title) ?? interaction.title,
+    summary: asString(interaction.request_payload?.summary) ?? interaction.summary,
+    phase: asString(interaction.request_payload?.phase),
+    previewPanelKey,
+    resolvedAt: interaction.resolved_at ?? asString(responsePayload?.resolved_at),
+    resolvedBy: interaction.resolved_by ?? asString(responsePayload?.resolved_by),
+    note: asString(responsePayload?.message) ?? asString(responsePayload?.note),
+  };
+}
+
+export function codingSessionApprovalStatesByPreviewKey(events: CodingSessionEvent[]) {
+  const latestByPreviewKey = new Map<string, { sequence: number; state: CodingSessionPreviewApprovalState }>();
+  for (const event of events) {
+    const interaction = parseCodingSessionInteraction(event);
+    if (!interaction) continue;
+    const state = approvalStateFromInteraction(interaction);
+    if (!state) continue;
+    const existing = latestByPreviewKey.get(state.previewPanelKey);
+    if (!existing || event.sequence_no >= existing.sequence) {
+      latestByPreviewKey.set(state.previewPanelKey, { sequence: event.sequence_no, state });
+    }
+  }
+  return new Map([...latestByPreviewKey].map(([previewPanelKey, entry]) => [previewPanelKey, entry.state]));
 }
 
 export function latestPendingCodingSessionInteraction(events: CodingSessionEvent[]) {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -27,6 +28,7 @@ type AutomationInventoryService struct {
 	automationHealthRepo *repository.AutomationHealthRepository
 	automationRuleRepo   *repository.AutomationRuleRepository
 	triggerExecRepo      *repository.AgentTriggerExecutionRepository
+	runRepo              *repository.AgentRunRepository
 	agentRepo            *repository.AgentRepository
 	taskRepo             *repository.PMTaskRepository
 	installationRepo     *repository.SupportInboxInstallationRepository
@@ -39,6 +41,7 @@ func NewAutomationInventoryService(
 	automationHealthRepo *repository.AutomationHealthRepository,
 	automationRuleRepo *repository.AutomationRuleRepository,
 	triggerExecRepo *repository.AgentTriggerExecutionRepository,
+	runRepo *repository.AgentRunRepository,
 	agentRepo *repository.AgentRepository,
 	taskRepo *repository.PMTaskRepository,
 	installationRepo *repository.SupportInboxInstallationRepository,
@@ -50,6 +53,7 @@ func NewAutomationInventoryService(
 		automationHealthRepo: automationHealthRepo,
 		automationRuleRepo:   automationRuleRepo,
 		triggerExecRepo:      triggerExecRepo,
+		runRepo:              runRepo,
 		agentRepo:            agentRepo,
 		taskRepo:             taskRepo,
 		installationRepo:     installationRepo,
@@ -258,12 +262,29 @@ func (s *AutomationInventoryService) automationRuleItems(ctx context.Context, wo
 		return nil, nil
 	}
 
+	healthByRuleID := map[string]model.AutomationHealthSummary{}
+	if s.triggerExecRepo != nil {
+		latestExecutions, err := s.triggerExecRepo.ListLatestAutomationRuleExecutions(ctx, workspaceID, collectRuleIDs(rules))
+		if err != nil {
+			return nil, fmt.Errorf("list automation rule executions for inventory: %w", err)
+		}
+		for _, execution := range latestExecutions {
+			if execution.ReferenceID == nil || strings.TrimSpace(*execution.ReferenceID) == "" {
+				continue
+			}
+			healthByRuleID[strings.TrimSpace(*execution.ReferenceID)] = summarizeRuleExecution(execution)
+		}
+	}
+
 	items := make([]model.AutomationInventoryItem, 0, len(rules))
 	for _, rule := range rules {
-		health := model.AutomationHealthSummary{
-			Status:    model.AutomationHealthHealthy,
-			Freshness: "active",
-			Metrics:   model.JSONB{"trigger_type": rule.TriggerType, "action_type": rule.ActionType},
+		health := healthByRuleID[rule.ID]
+		if health.Status == "" {
+			health = model.AutomationHealthSummary{
+				Status:    model.AutomationHealthHealthy,
+				Freshness: "active",
+				Metrics:   model.JSONB{"trigger_type": rule.TriggerType, "action_type": rule.ActionType},
+			}
 		}
 		if !rule.Enabled {
 			health = inactiveHealth("Disabled")
@@ -306,12 +327,6 @@ func (s *AutomationInventoryService) triggerCatalogItems(ctx context.Context, wo
 		}
 	}
 
-	for _, agent := range agents {
-		if strings.TrimSpace(derefString(agent.Schedule)) != "" {
-			bindingCounts["agent.schedule"]++
-		}
-	}
-
 	if s.installationRepo != nil {
 		inst, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
 		if err != nil {
@@ -325,14 +340,6 @@ func (s *AutomationInventoryService) triggerCatalogItems(ctx context.Context, wo
 		}
 	}
 
-	if s.taskRepo != nil {
-		count, err := s.taskRepo.CountAssignedTasks(ctx, workspaceID)
-		if err != nil {
-			return nil, fmt.Errorf("count assigned tasks for trigger catalog: %w", err)
-		}
-		bindingCounts["task.assigned_agent_state_change"] = int(count)
-	}
-
 	entries := automationcatalog.TriggerCatalog()
 	for idx := range entries {
 		entries[idx].BindingCount = bindingCounts[entries[idx].ID]
@@ -343,6 +350,8 @@ func (s *AutomationInventoryService) triggerCatalogItems(ctx context.Context, wo
 			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "epic")
 		case "manual.support_run":
 			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "support_conversation")
+		case "manual.repository_run":
+			entries[idx].BindingCount = countRunnableAgentsForTarget(agents, "repository")
 		}
 	}
 	return entries, nil
@@ -377,7 +386,9 @@ func (s *AutomationInventoryService) ListTriggerExecutions(
 		pagination.PerPage = 100
 	}
 
-	executions, total, err := s.triggerExecRepo.ListByWorkspace(ctx, workspaceID, filters, pagination)
+	fetchLimit := pagination.Page * pagination.PerPage
+	executionPagination := model.PMPagination{Page: 1, PerPage: fetchLimit}
+	executions, executionTotal, err := s.triggerExecRepo.ListByWorkspace(ctx, workspaceID, filters, executionPagination)
 	if err != nil {
 		return nil, err
 	}
@@ -432,6 +443,33 @@ func (s *AutomationInventoryService) ListTriggerExecutions(
 			CompletedAt:    execution.CompletedAt,
 		})
 	}
+	total := executionTotal
+	if s.runRepo != nil {
+		runs, runTotal, err := s.runRepo.ListWorkspaceRunsWithoutTriggerExecutions(ctx, workspaceID, filters, fetchLimit)
+		if err != nil {
+			return nil, err
+		}
+		total += runTotal
+		for _, run := range runs {
+			items = append(items, automationActivityItemForRun(run, agentNames))
+		}
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].FiredAt.Equal(items[j].FiredAt) {
+			return strings.TrimSpace(items[i].ExecutionID) > strings.TrimSpace(items[j].ExecutionID)
+		}
+		return items[i].FiredAt.After(items[j].FiredAt)
+	})
+	offset := (pagination.Page - 1) * pagination.PerPage
+	if offset >= len(items) {
+		items = []model.AutomationTriggerExecutionListItem{}
+	} else {
+		end := offset + pagination.PerPage
+		if end > len(items) {
+			end = len(items)
+		}
+		items = items[offset:end]
+	}
 
 	totalPages := 0
 	if pagination.PerPage > 0 {
@@ -445,6 +483,93 @@ func (s *AutomationInventoryService) ListTriggerExecutions(
 		PerPage:    pagination.PerPage,
 		TotalPages: totalPages,
 	}, nil
+}
+
+func automationActivityItemForRun(run model.AgentRun, agentNames map[string]string) model.AutomationTriggerExecutionListItem {
+	input := model.AgentRunInputPayload{}
+	_ = json.Unmarshal(run.Input, &input)
+	source := strings.TrimSpace(model.AgentRunTriggerSourceManual)
+	triggerType := strings.TrimSpace(model.AgentRunTriggerTypeManual)
+	if input.Trigger != nil {
+		if strings.TrimSpace(input.Trigger.Source) != "" {
+			source = strings.TrimSpace(input.Trigger.Source)
+		}
+		if strings.TrimSpace(input.Trigger.TriggerType) != "" {
+			triggerType = strings.TrimSpace(input.Trigger.TriggerType)
+		}
+	}
+	bindingID := "agent_run.run"
+	bindingKind := "agent_run"
+	bindingTitle := "Agent run"
+	triggerTitle := strPtr("Agent run")
+	var referenceID *string
+	var referenceType *string
+	var referenceTitle *string
+	if run.ParentRunID != nil && strings.TrimSpace(*run.ParentRunID) != "" {
+		parentID := strings.TrimSpace(*run.ParentRunID)
+		bindingID = "agent_run.child_run"
+		bindingTitle = "Agent-started run"
+		triggerTitle = strPtr("Agent-started run")
+		referenceID = &parentID
+		referenceType = strPtr("agent_run")
+		referenceTitle = strPtr("Parent run")
+	}
+	if source == model.AgentRunTriggerSourceCommandBar {
+		bindingID = "command_bar.run"
+		bindingKind = model.AgentRunTriggerSourceCommandBar
+		bindingTitle = "Command bar"
+		triggerTitle = strPtr("Command bar")
+	} else if source == model.AgentRunTriggerSourceManual && run.ParentRunID == nil {
+		bindingKind = model.AgentRunTriggerSourceManual
+		bindingID = manualActivityBindingIDForTargetType(run.TargetType)
+		bindingTitle = "Manual run"
+		triggerTitle = strPtr("Manual")
+	}
+	var triggerTypePtr *string
+	if triggerType != "" {
+		triggerTypePtr = &triggerType
+	}
+	targetType := nilIfEmpty(run.TargetType)
+	targetID := nilIfEmpty(run.TargetID)
+	runID := strings.TrimSpace(run.ID)
+	return model.AutomationTriggerExecutionListItem{
+		ExecutionID:    "run:" + runID,
+		AgentID:        run.AgentID,
+		AgentName:      agentDisplayName(run.AgentID, agentNames),
+		BindingID:      bindingID,
+		BindingKind:    bindingKind,
+		BindingTitle:   bindingTitle,
+		TriggerType:    triggerTypePtr,
+		TriggerTitle:   triggerTitle,
+		ReferenceID:    referenceID,
+		ReferenceType:  referenceType,
+		ReferenceTitle: referenceTitle,
+		TargetType:     targetType,
+		TargetID:       targetID,
+		RunID:          &runID,
+		Status:         run.Status,
+		ErrorMessage:   run.ErrorMessage,
+		FiredAt:        run.CreatedAt,
+		StartedAt:      run.StartedAt,
+		CompletedAt:    run.CompletedAt,
+	}
+}
+
+func manualActivityBindingIDForTargetType(targetType string) string {
+	switch strings.TrimSpace(targetType) {
+	case "task", "story":
+		return "manual.task_run"
+	case "epic":
+		return "manual.epic_run"
+	case "support_conversation":
+		return "manual.support_run"
+	case "repository":
+		return "manual.repository_run"
+	case "workspace":
+		return "manual.workspace_run"
+	default:
+		return fmt.Sprintf("manual.%s_run", strings.ReplaceAll(defaultString(strings.TrimSpace(targetType), "target"), "_", "."))
+	}
 }
 
 func countRunnableAgentsForTarget(agents []model.Agent, targetType string) int {
@@ -525,12 +650,24 @@ func describeTriggerBinding(execution model.AgentTriggerExecution, ruleNames map
 		}
 		return def.Title, def.ConfigSurface
 	}
+	switch strings.TrimSpace(execution.BindingKind) {
+	case model.AgentRunTriggerSourceCommandBar:
+		return "Command bar", nil
+	case "agent_run":
+		return "Agent run", nil
+	}
 	return defaultString(strings.TrimSpace(execution.BindingKind), "Trigger"), nil
 }
 
 func triggerTitleForExecution(execution model.AgentTriggerExecution) *string {
 	if def, ok := automationcatalog.ResolveDefinitionForExecution(execution.BindingID, execution.BindingKind, derefString(execution.TriggerType)); ok {
 		return strPtr(def.Title)
+	}
+	switch strings.TrimSpace(execution.BindingKind) {
+	case model.AgentRunTriggerSourceCommandBar:
+		return strPtr("Command bar")
+	case "agent_run":
+		return strPtr("Agent run")
 	}
 	return nil
 }
@@ -611,4 +748,49 @@ func timePointer(value time.Time) *time.Time {
 	}
 	normalized := value.UTC()
 	return &normalized
+}
+
+func collectRuleIDs(rules []model.AutomationRule) []string {
+	ids := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		if strings.TrimSpace(rule.ID) != "" {
+			ids = append(ids, rule.ID)
+		}
+	}
+	return ids
+}
+
+func summarizeRuleExecution(execution model.AgentTriggerExecution) model.AutomationHealthSummary {
+	lastSeenAt := timePointer(execution.FiredAt)
+	status := model.AutomationHealthHealthy
+	switch strings.TrimSpace(execution.Status) {
+	case model.AgentTriggerExecutionStatusFailed:
+		status = model.AutomationHealthError
+	case model.AgentTriggerExecutionStatusCancelled, model.AgentTriggerExecutionStatusSkipped:
+		status = model.AutomationHealthWarning
+	}
+
+	summary := model.AutomationHealthSummary{
+		Status:     status,
+		LastSeenAt: lastSeenAt,
+		Freshness:  summarizeFreshness(status, lastSeenAt),
+		Metrics:    model.JSONB{},
+	}
+	if execution.CompletedAt != nil && strings.TrimSpace(execution.Status) == model.AgentTriggerExecutionStatusCompleted {
+		completedAt := execution.CompletedAt.UTC()
+		summary.LastSuccessAt = &completedAt
+	}
+	if execution.ErrorMessage != nil && strings.TrimSpace(*execution.ErrorMessage) != "" {
+		msg := strings.TrimSpace(*execution.ErrorMessage)
+		summary.LastErrorMessage = &msg
+	}
+	if strings.TrimSpace(execution.Status) == model.AgentTriggerExecutionStatusFailed {
+		if execution.CompletedAt != nil {
+			failedAt := execution.CompletedAt.UTC()
+			summary.LastErrorAt = &failedAt
+		} else {
+			summary.LastErrorAt = lastSeenAt
+		}
+	}
+	return summary
 }

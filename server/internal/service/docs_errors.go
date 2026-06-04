@@ -46,4 +46,16 @@ var (
 	// ErrDocsCollectionNameRequired is returned when a create request
 	// omits the required name field.
 	ErrDocsCollectionNameRequired = errors.New("collection name is required")
+
+	// ErrDocsStaleBlockRevision is returned when a block patch is based on
+	// an older revision than the current stored block.
+	ErrDocsStaleBlockRevision = errors.New("block revision is stale")
+
+	// ErrDocsDocumentLocked is returned when a mutation targets a locked
+	// document.
+	ErrDocsDocumentLocked = errors.New("document is locked and cannot be modified")
+
+	// ErrDocsChangeProposalNotFound is returned when a referenced docs
+	// change proposal does not exist for the requested document/workspace.
+	ErrDocsChangeProposalNotFound = errors.New("docs change proposal not found")
 )

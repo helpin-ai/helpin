@@ -15,14 +15,20 @@ import (
 // PostmarkInboundHandler handles Postmark inbound webhooks.
 type PostmarkInboundHandler struct {
 	emailFallbackService *service.EmailFallbackService
-	webhookSecret        string
+	webhookSecrets       []string
 }
 
 // NewPostmarkInboundHandler creates a new PostmarkInboundHandler.
-func NewPostmarkInboundHandler(emailFallbackService *service.EmailFallbackService, webhookSecret string) *PostmarkInboundHandler {
+func NewPostmarkInboundHandler(emailFallbackService *service.EmailFallbackService, webhookSecrets ...string) *PostmarkInboundHandler {
+	normalizedSecrets := make([]string, 0, len(webhookSecrets))
+	for _, secret := range webhookSecrets {
+		if trimmed := strings.TrimSpace(secret); trimmed != "" {
+			normalizedSecrets = append(normalizedSecrets, trimmed)
+		}
+	}
 	return &PostmarkInboundHandler{
 		emailFallbackService: emailFallbackService,
-		webhookSecret:        strings.TrimSpace(webhookSecret),
+		webhookSecrets:       normalizedSecrets,
 	}
 }
 
@@ -107,13 +113,136 @@ func (h *PostmarkInboundHandler) PostmarkOpen(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(http.StatusOK)
 }
 
+// PostmarkDelivery handles POST /api/webhooks/postmark/delivery.
+func (h *PostmarkInboundHandler) PostmarkDelivery(w http.ResponseWriter, r *http.Request) {
+	if h == nil || !h.authorized(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	defer r.Body.Close()
+
+	var payload model.PostmarkDeliveryPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	slog.InfoContext(r.Context(), "postmark delivery webhook received",
+		"message_id", strings.TrimSpace(payload.MessageID),
+		"message_stream", strings.TrimSpace(payload.MessageStream),
+	)
+
+	if h.emailFallbackService != nil {
+		if err := h.emailFallbackService.ProcessDeliveryEvent(r.Context(), payload, string(body)); err != nil {
+			slog.Warn("postmark delivery processing failed", "error", err, "message_id", payload.MessageID)
+		} else {
+			slog.InfoContext(r.Context(), "postmark delivery webhook processed",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"message_stream", strings.TrimSpace(payload.MessageStream),
+			)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// PostmarkBounce handles POST /api/webhooks/postmark/bounce.
+func (h *PostmarkInboundHandler) PostmarkBounce(w http.ResponseWriter, r *http.Request) {
+	if h == nil || !h.authorized(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	defer r.Body.Close()
+
+	var payload model.PostmarkBouncePayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	slog.InfoContext(r.Context(), "postmark bounce webhook received",
+		"message_id", strings.TrimSpace(payload.MessageID),
+		"message_stream", strings.TrimSpace(payload.MessageStream),
+		"type", strings.TrimSpace(payload.Type),
+	)
+
+	if h.emailFallbackService != nil {
+		if err := h.emailFallbackService.ProcessBounceEvent(r.Context(), payload, string(body)); err != nil {
+			slog.Warn("postmark bounce processing failed", "error", err, "message_id", payload.MessageID)
+		} else {
+			slog.InfoContext(r.Context(), "postmark bounce webhook processed",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"message_stream", strings.TrimSpace(payload.MessageStream),
+				"type", strings.TrimSpace(payload.Type),
+			)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// PostmarkSpamComplaint handles POST /api/webhooks/postmark/spam-complaint.
+func (h *PostmarkInboundHandler) PostmarkSpamComplaint(w http.ResponseWriter, r *http.Request) {
+	if h == nil || !h.authorized(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	defer r.Body.Close()
+
+	var payload model.PostmarkSpamComplaintPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	slog.InfoContext(r.Context(), "postmark spam complaint webhook received",
+		"message_id", strings.TrimSpace(payload.MessageID),
+		"message_stream", strings.TrimSpace(payload.MessageStream),
+		"type", strings.TrimSpace(payload.Type),
+	)
+
+	if h.emailFallbackService != nil {
+		if err := h.emailFallbackService.ProcessSpamComplaintEvent(r.Context(), payload, string(body)); err != nil {
+			slog.Warn("postmark spam complaint processing failed", "error", err, "message_id", payload.MessageID)
+		} else {
+			slog.InfoContext(r.Context(), "postmark spam complaint webhook processed",
+				"message_id", strings.TrimSpace(payload.MessageID),
+				"message_stream", strings.TrimSpace(payload.MessageStream),
+				"type", strings.TrimSpace(payload.Type),
+			)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *PostmarkInboundHandler) authorized(r *http.Request) bool {
-	if h == nil || h.webhookSecret == "" {
+	if h == nil || len(h.webhookSecrets) == 0 {
 		return false
 	}
 	_, password, ok := r.BasicAuth()
 	if !ok {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(password), []byte(h.webhookSecret)) == 1
+	for _, secret := range h.webhookSecrets {
+		if subtle.ConstantTimeCompare([]byte(password), []byte(secret)) == 1 {
+			return true
+		}
+	}
+	return false
 }

@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 )
 
 func TestWriteDocumentContentCommandSupportsDocumentTarget(t *testing.T) {
@@ -61,6 +64,459 @@ func TestCommandToolMetadataUsesExplicitAliasInsteadOfBoolean(t *testing.T) {
 	}
 }
 
+func TestCreateDocumentCommandMetadataAndTargets(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("docs.create_document")
+	if !ok {
+		t.Fatal("expected docs.create_document definition")
+	}
+	if !def.ExposesTool() {
+		t.Fatal("expected docs.create_document to expose a runtime tool")
+	}
+	if def.Tool == nil || def.Tool.Alias != "create_document" || def.Tool.Category != "Docs" {
+		t.Fatalf("unexpected tool metadata %#v", def.Tool)
+	}
+	for _, targetType := range def.SupportedTargetTypes {
+		if targetType == "workspace" {
+			return
+		}
+	}
+	t.Fatalf("expected docs.create_document to support workspace target, got %#v", def.SupportedTargetTypes)
+}
+
+func TestCreateTaskCommandMetadataAndTargets(t *testing.T) {
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+
+	def, ok := svc.Definition("pm.create_task")
+	if !ok {
+		t.Fatal("expected pm.create_task definition")
+	}
+	if !def.ExposesTool() {
+		t.Fatal("expected pm.create_task to expose a runtime tool")
+	}
+	if def.Tool == nil || def.Tool.Alias != "create_task" || def.Tool.Category != "PM / Tasks" {
+		t.Fatalf("unexpected tool metadata %#v", def.Tool)
+	}
+
+	var supportsWorkspace bool
+	var supportsEpic bool
+	for _, targetType := range def.SupportedTargetTypes {
+		if targetType == "workspace" {
+			supportsWorkspace = true
+		}
+		if targetType == "epic" {
+			supportsEpic = true
+		}
+	}
+	if !supportsWorkspace || !supportsEpic {
+		t.Fatalf("expected pm.create_task to support workspace and epic targets, got %#v", def.SupportedTargetTypes)
+	}
+}
+
+func TestListWorkspaceTeamsCommandMetadataAndOutput(t *testing.T) {
+	db := newTestDB(t)
+	now := time.Now()
+	handle := "eng"
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, handle, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"team-1", "ws-1", "Engineering", handle, "engineering", "feature", now, now)
+	mustExec(t, db, `INSERT INTO workspace_teams (id, workspace_id, name, team_type, default_task_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"team-2", "ws-1", "Growth", "growth", "task", now, now)
+
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetSettingsRepository(repository.NewSettingsRepository(db))
+	def, ok := svc.Definition("workspace.list_teams")
+	if !ok {
+		t.Fatal("expected workspace.list_teams definition")
+	}
+	if !def.ExposesTool() {
+		t.Fatal("expected workspace.list_teams to expose a runtime tool")
+	}
+	if def.Tool == nil || def.Tool.Alias != "list_workspace_teams" || def.Tool.Category != "Workspace" {
+		t.Fatalf("unexpected tool metadata %#v", def.Tool)
+	}
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "workspace.list_teams", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("workspace.list_teams returned error: %v", err)
+	}
+	var teams []struct {
+		ID              string `json:"id"`
+		Name            string `json:"name"`
+		Handle          string `json:"handle"`
+		TeamType        string `json:"team_type"`
+		DefaultTaskType string `json:"default_task_type"`
+	}
+	if err := json.Unmarshal(output, &teams); err != nil {
+		t.Fatalf("unmarshal output: %v\n%s", err, string(output))
+	}
+	if len(teams) != 2 || teams[0].ID != "team-1" || teams[0].Handle != "eng" || teams[1].Name != "Growth" {
+		t.Fatalf("unexpected teams output %#v", teams)
+	}
+}
+
+func TestListTasksSupportsOptionalOwnerFilters(t *testing.T) {
+	db := newTestDB(t)
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedUser(t, db, "actor-2", "other@example.com", "Other", "hash")
+	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
+	seedWorkspaceMember(t, db, "member-1", "ws-1", "actor-1", "actor@example.com", "Actor", "admin")
+	seedWorkspaceMember(t, db, "member-2", "ws-1", "actor-2", "other@example.com", "Other", "member")
+	seedWorkflow(t, db, "wf-1", "ws-1", "state-1")
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-owned", "ws-1", 1, "Owned by actor", model.PMTaskTypeFeature, "wf-1", "state-1", "medium", "normal", false, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-other", "ws-1", 2, "Owned by other", model.PMTaskTypeFeature, "wf-1", "state-1", "medium", "normal", false, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_task_owners (task_id, user_id, created_at) VALUES (?, ?, ?)`, "task-owned", "actor-1", now)
+	mustExec(t, db, `INSERT INTO pm_task_owners (task_id, user_id, created_at) VALUES (?, ?, ?)`, "task-other", "actor-2", now)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	taskService := NewPMTaskService(
+		taskRepo,
+		repository.NewWorkspaceRepository(db),
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+
+	allOutput, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "pm.list_tasks", json.RawMessage(`{"open_only":true}`))
+	if err != nil {
+		t.Fatalf("pm.list_tasks without owner filter returned error: %v", err)
+	}
+	var allResult struct {
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(allOutput, &allResult); err != nil {
+		t.Fatalf("unmarshal all output: %v", err)
+	}
+	if allResult.Total != 2 {
+		t.Fatalf("expected existing unfiltered behavior to return 2 tasks, got %d", allResult.Total)
+	}
+
+	ownedOutput, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "pm.list_tasks", json.RawMessage(`{"open_only":true,"owned_by_actor":true}`))
+	if err != nil {
+		t.Fatalf("pm.list_tasks owned_by_actor returned error: %v", err)
+	}
+	var ownedResult struct {
+		Total int64 `json:"total"`
+		Tasks []struct {
+			Name string `json:"name"`
+		} `json:"tasks"`
+	}
+	if err := json.Unmarshal(ownedOutput, &ownedResult); err != nil {
+		t.Fatalf("unmarshal owned output: %v", err)
+	}
+	if ownedResult.Total != 1 || len(ownedResult.Tasks) != 1 || ownedResult.Tasks[0].Name != "Owned by actor" {
+		t.Fatalf("expected actor-owned task only, got %#v", ownedResult)
+	}
+}
+
+func TestNormalizeTaskDescriptionRichTextConvertsMarkdownToHTML(t *testing.T) {
+	input := `<!-- sentinel:root_cause=test finding_ids=["sentinel:v1:test"] -->` + "\n\n## Summary\n\n- first\n- second"
+
+	got := normalizeTaskDescriptionRichText(&input)
+	if got == nil {
+		t.Fatal("expected converted description")
+	}
+	if !strings.Contains(*got, "<h2") || !strings.Contains(*got, "<ul>") {
+		t.Fatalf("expected markdown to be rendered as html, got %q", *got)
+	}
+	if !strings.HasPrefix(*got, `<!-- sentinel:root_cause=test`) {
+		t.Fatalf("expected html comment marker to be preserved at the start, got %q", *got)
+	}
+}
+
+func TestNormalizeTaskDescriptionRichTextPreservesHTML(t *testing.T) {
+	input := "  <p><strong>Hello</strong> world</p>  "
+
+	got := normalizeTaskDescriptionRichText(&input)
+	if got == nil {
+		t.Fatal("expected normalized description")
+	}
+	if *got != "<p><strong>Hello</strong> world</p>" {
+		t.Fatalf("expected html to be preserved, got %q", *got)
+	}
+}
+
+func TestAddTaskCommentCommandConvertsMarkdownToRichTextHTML(t *testing.T) {
+	db := newTestDB(t)
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
+	seedWorkspaceMember(t, db, "member-1", "ws-1", "actor-1", "actor@example.com", "Actor", "admin")
+	seedWorkflow(t, db, "wf-1", "ws-1", "state-1")
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, priority, severity, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-1", "ws-1", 1, "Fix secret", model.PMTaskTypeChore, "wf-1", "state-1", "high", "high", now, now)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	activityService := NewPMActivityService(repository.NewPMActivityRepository(db))
+	taskService := NewPMTaskService(
+		taskRepo,
+		workspaceRepo,
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		activityService,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	commentService := NewPMCommentService(
+		repository.NewPMCommentRepository(db),
+		taskRepo,
+		nil,
+		activityService,
+		nil,
+		nil,
+		workspaceRepo,
+		nil,
+	)
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+	svc.SetPMCommentService(commentService)
+
+	_, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "task",
+		TargetID:    "task-1",
+	}, "pm.add_task_comment", json.RawMessage(`{"content":"<!-- sentinel:scan_update finding_ids=[\"sentinel:v1:test\"] -->\n\n## Scan update\n\n- CVE-1\n- CVE-2"}`))
+	if err != nil {
+		t.Fatalf("pm.add_task_comment returned error: %v", err)
+	}
+
+	var body string
+	if err := db.Raw(`SELECT body FROM pm_comments WHERE entity_id = ?`, "task-1").Scan(&body).Error; err != nil {
+		t.Fatalf("load comment body: %v", err)
+	}
+	if !strings.Contains(body, "<h2") || !strings.Contains(body, "Scan update") || !strings.Contains(body, "<ul>") || !strings.Contains(body, "<li>") {
+		t.Fatalf("expected markdown comment to be stored as rich text html, got %q", body)
+	}
+	if strings.Contains(body, "## Scan update") {
+		t.Fatalf("expected markdown syntax to be converted, got %q", body)
+	}
+	if !strings.HasPrefix(body, `<!-- sentinel:scan_update`) {
+		t.Fatalf("expected comment marker to be preserved at the start, got %q", body)
+	}
+}
+
+func TestListTasksCompactReturnsBoundedExcerptsWithHTMLComments(t *testing.T) {
+	db := newTestDB(t)
+	seedUser(t, db, "actor-1", "actor@example.com", "Actor", "hash")
+	seedWorkspace(t, db, "ws-1", "Workspace", "workspace", "actor-1")
+	seedWorkspaceMember(t, db, "member-1", "ws-1", "actor-1", "actor@example.com", "Actor", "admin")
+	seedWorkflow(t, db, "wf-1", "ws-1", "state-1")
+	now := time.Now()
+	description := `<!-- sentinel:root_cause=dependency:npm:docs:next finding_ids=["sentinel:v1:dependency:npm:docs/package.json:next:CVE-1"] --><p>Fix the vulnerable dependency with enough detail to excerpt.</p>`
+	mustExec(t, db, `INSERT INTO pm_tasks (id, workspace_id, display_id, name, description, task_type, workflow_id, workflow_state_id, priority, severity, completed, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-1", "ws-1", 1, "Fix Next.js CVE", description, model.PMTaskTypeChore, "wf-1", "state-1", "high", "critical", false, false, now, now)
+	mustExec(t, db, `INSERT INTO pm_labels (id, workspace_id, name, color, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"label-security", "ws-1", "security", "#dc2626", false, now, now)
+	mustExec(t, db, `INSERT INTO pm_task_labels (task_id, label_id, created_at) VALUES (?, ?, ?)`, "task-1", "label-security", now)
+	mustExec(t, db, `INSERT INTO pm_comments (id, workspace_id, entity_type, entity_id, author_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"comment-1", "ws-1", "task", "task-1", "actor-1", `<!-- sentinel:scan_update finding_ids=["sentinel:v1:dependency:npm:docs/package.json:next:CVE-2"] --><p>New scan evidence.</p>`, now, now)
+
+	taskRepo := repository.NewPMTaskRepository(db)
+	workspaceRepo := repository.NewWorkspaceRepository(db)
+	activityService := NewPMActivityService(repository.NewPMActivityRepository(db))
+	taskService := NewPMTaskService(
+		taskRepo,
+		workspaceRepo,
+		repository.NewPMWorkflowRepository(db),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		activityService,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	commentService := NewPMCommentService(repository.NewPMCommentRepository(db), taskRepo, nil, activityService, nil, nil, workspaceRepo, nil)
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, taskRepo, nil)
+	svc.SetPMCommentService(commentService)
+
+	output, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		ActorID:     "actor-1",
+		TargetType:  "workspace",
+		TargetID:    "ws-1",
+	}, "pm.list_tasks", json.RawMessage(`{"label_id":"label-security","open_only":true,"detail_level":"compact","include_descriptions":true,"include_comments":true,"limit":100}`))
+	if err != nil {
+		t.Fatalf("pm.list_tasks returned error: %v", err)
+	}
+
+	var result struct {
+		Compaction map[string]any `json:"_helpin_compaction"`
+		Tasks      []struct {
+			Description        string `json:"description,omitempty"`
+			Comments           []any  `json:"comments,omitempty"`
+			DescriptionExcerpt string `json:"description_excerpt"`
+			CommentExcerpts    []struct {
+				Excerpt string `json:"excerpt"`
+			} `json:"comment_excerpts"`
+		} `json:"tasks"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("unmarshal list tasks output: %v\n%s", err, string(output))
+	}
+	if result.Compaction["mode"] != "bounded_index" {
+		t.Fatalf("expected compaction hint, got %#v", result.Compaction)
+	}
+	if len(result.Tasks) != 1 {
+		t.Fatalf("expected one task, got %#v", result.Tasks)
+	}
+	task := result.Tasks[0]
+	if task.Description != "" || len(task.Comments) != 0 {
+		t.Fatalf("compact should not include full description/comments, got %#v", task)
+	}
+	if !strings.Contains(task.DescriptionExcerpt, "Fix the vulnerable dependency") || len(task.CommentExcerpts) != 1 {
+		t.Fatalf("expected compact excerpts, got %#v", task)
+	}
+	if !strings.Contains(task.DescriptionExcerpt, "<!-- sentinel:root_cause=dependency:npm:docs:next") || !strings.Contains(task.DescriptionExcerpt, "CVE-1") {
+		t.Fatalf("expected description excerpt to preserve marker comment, got %q", task.DescriptionExcerpt)
+	}
+	if !strings.Contains(task.CommentExcerpts[0].Excerpt, "<!-- sentinel:scan_update") || !strings.Contains(task.CommentExcerpts[0].Excerpt, "CVE-2") {
+		t.Fatalf("expected comment excerpt to preserve marker comment, got %#v", task.CommentExcerpts)
+	}
+	if strings.Contains(string(output), `"sentinel_root_cause"`) || strings.Contains(string(output), `"sentinel_finding_ids"`) {
+		t.Fatalf("compact should not include structured Sentinel marker fields, got %s", string(output))
+	}
+}
+
+func TestMarshalCompactTaskResponseDropsRowsToStayBounded(t *testing.T) {
+	tasks := make([]map[string]any, 0, 100)
+	for i := 0; i < 100; i++ {
+		tasks = append(tasks, map[string]any{
+			"task_id":             strings.Repeat("task-", 40),
+			"task_key":            strings.Repeat("SEC-", 40),
+			"name":                strings.Repeat("large task metadata ", 60),
+			"state_name":          strings.Repeat("state ", 40),
+			"description_excerpt": strings.Repeat("description ", 100),
+			"comment_excerpts":    []map[string]any{{"excerpt": strings.Repeat("comment ", 100)}},
+			"labels":              []map[string]any{{"label_id": strings.Repeat("label-", 40), "name": strings.Repeat("security ", 40)}},
+		})
+	}
+
+	out, err := marshalCompactTaskResponse(tasks, int64(len(tasks)), len(tasks))
+	if err != nil {
+		t.Fatalf("marshal compact response: %v", err)
+	}
+	if len([]rune(string(out))) > 30000 {
+		t.Fatalf("expected compact task output <= 30000 runes, got %d", len([]rune(string(out))))
+	}
+	var result struct {
+		Bounded       bool             `json:"bounded"`
+		HasMore       bool             `json:"has_more"`
+		ReturnedTasks int              `json:"returned_tasks"`
+		Tasks         []map[string]any `json:"tasks"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		t.Fatalf("unmarshal compact response: %v", err)
+	}
+	if !result.Bounded || !result.HasMore || result.ReturnedTasks >= len(tasks) || len(result.Tasks) != result.ReturnedTasks {
+		t.Fatalf("expected bounded response with fewer tasks, got %+v", result)
+	}
+}
+
+func TestResolveTaskCreationWorkflowValidatesExplicitWorkflowTeamScope(t *testing.T) {
+	db := newTestDB(t)
+	workflowRepo := repository.NewPMWorkflowRepository(db)
+	taskService := &PMTaskService{workflowRepo: workflowRepo}
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, nil, nil)
+
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"wf-team-a", "ws-1", "Team A Workflow", "team-a", "state-team-a", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-team-a", "wf-team-a", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"wf-team-b", "ws-1", "Team B Workflow", "team-b", "state-team-b", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-team-b", "wf-team-b", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+
+	workflowID := "wf-team-b"
+	stateID := "state-team-b"
+	_, _, err := svc.resolveTaskCreationWorkflow(context.Background(), "ws-1", "team-a", &workflowID, &stateID)
+	if err == nil {
+		t.Fatal("expected explicit workflow/state pair from another team to be rejected")
+	}
+	if !strings.Contains(err.Error(), "workflow_id does not belong to team_id") {
+		t.Fatalf("expected team scope error, got %v", err)
+	}
+
+	workflowID = "wf-team-a"
+	stateID = "state-team-a"
+	resolvedWorkflowID, resolvedStateID, err := svc.resolveTaskCreationWorkflow(context.Background(), "ws-1", "team-a", &workflowID, &stateID)
+	if err != nil {
+		t.Fatalf("expected matching explicit workflow/state pair to resolve: %v", err)
+	}
+	if resolvedWorkflowID != "wf-team-a" || resolvedStateID != "state-team-a" {
+		t.Fatalf("unexpected workflow/state resolution: %q %q", resolvedWorkflowID, resolvedStateID)
+	}
+}
+
+func TestResolveTaskCreationWorkflowRejectsStateOutsideWorkflow(t *testing.T) {
+	db := newTestDB(t)
+	workflowRepo := repository.NewPMWorkflowRepository(db)
+	taskService := &PMTaskService{workflowRepo: workflowRepo}
+	svc := NewInternalCommandService(nil, taskService, nil, nil, nil, nil, nil, nil)
+
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"wf-team-a", "ws-1", "Team A Workflow", "team-a", "state-team-a", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-team-a", "wf-team-a", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+	mustExec(t, db, `INSERT INTO pm_workflows (id, workspace_id, name, team_id, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"wf-team-b", "ws-1", "Team B Workflow", "team-b", "state-team-b", now, now)
+	mustExec(t, db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-team-b", "wf-team-b", "To Do", model.PMStateTypeUnstarted, 0, true, now, now)
+
+	workflowID := "wf-team-a"
+	stateID := "state-team-b"
+	_, _, err := svc.resolveTaskCreationWorkflow(context.Background(), "ws-1", "team-a", &workflowID, &stateID)
+	if err == nil {
+		t.Fatal("expected explicit state from another workflow to be rejected")
+	}
+	if !strings.Contains(err.Error(), "state_id does not belong to workflow_id") {
+		t.Fatalf("expected workflow/state mismatch error, got %v", err)
+	}
+}
+
 func TestCreateFollowupTasksCommandIsBackendOnlyUntilToolExists(t *testing.T) {
 	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
 
@@ -71,4 +527,29 @@ func TestCreateFollowupTasksCommandIsBackendOnlyUntilToolExists(t *testing.T) {
 	if def.ExposesTool() {
 		t.Fatalf("expected pm.create_followup_tasks to remain backend-only, got %#v", def.Tool)
 	}
+}
+
+func TestDeliveryMergeBranchCommandUpdatesDeliveryStatusAfterSuccessfulMerge(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	app := &fakeGitHubAppClient{}
+	gitSvc := newGitDeliveryStatusService(db, app)
+	svc := NewInternalCommandService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc.SetGitService(gitSvc)
+
+	_, err := svc.Execute(context.Background(), model.InternalCommandContext{
+		WorkspaceID: "ws-1",
+		TargetType:  "task",
+		TargetID:    "task-1",
+	}, "delivery.merge_branch", json.RawMessage(`{"target_branch":"main"}`))
+	if err != nil {
+		t.Fatalf("delivery.merge_branch returned error: %v", err)
+	}
+	if len(app.mergeCalls) != 1 {
+		t.Fatalf("merge calls = %d, want 1", len(app.mergeCalls))
+	}
+	if app.mergeCalls[0].Base != "main" || app.mergeCalls[0].Head != "hel-31-fix-merge-status" {
+		t.Fatalf("unexpected merge call: %#v", app.mergeCalls[0])
+	}
+	assertMergedDeliveryStatus(t, db)
 }

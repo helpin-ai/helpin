@@ -7,10 +7,14 @@ import { useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useGlobalCreateStore } from '@/stores/globalCreateStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useQuery } from '@tanstack/react-query';
-import { useArchiveMailbox, useInboxScopes, useUnreadStats } from '@/hooks/queries/useSupport';
+import { useArchiveMailbox, useInboxScopes, useSupportBuiltinInboxViews, useSupportInboxViewCounts, useUnreadStats } from '@/hooks/queries/useSupport';
+import { useDeleteSupportInboxView, useSupportInboxViews, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { automationService } from '@/lib/services/automationService';
 import { queryKeys } from '@/lib/queryKeys';
 import { getInitials } from '@/lib/utils';
+import { buildSupportInboxSearch } from '@/lib/supportInboxRouting';
+import { supportInboxCountMailboxScope } from '@/lib/supportInboxFilters';
+import { ACTIVE_RUN_STATUSES, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams';
 import {
   Sidebar as ShellSidebar,
@@ -30,7 +34,14 @@ import { SidebarCreateBar } from './sidebar/SidebarCreateBar';
 import { SidebarRail } from './sidebar/SidebarRail';
 import { SettingsRailNav } from './sidebar/SettingsRailNav';
 import { StandardRailNav } from './sidebar/StandardRailNav';
+import { CrmRailNav } from './sidebar/CrmRailNav';
 import { SupportRailNav } from './sidebar/SupportRailNav';
+import type { SupportInboxView } from '@/lib/pmTypes';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -53,31 +64,73 @@ export function Sidebar() {
     setNavFilter,
     selectedMailboxId,
     setSelectedMailboxId,
+    activeCustomViewId,
+    applyCustomView,
+    searchQuery,
+    setBuiltinViewFilters,
     setTeamInboxDialogOpen,
     setEditMailboxId,
   } = useSupportInboxStore();
 
   const { data: inboxScopes } = useInboxScopes(workspaceId ?? '', hasSupportModule);
-  const unreadMailboxScope = selectedMailboxId === 'all' ? undefined : selectedMailboxId;
-  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', unreadMailboxScope, hasSupportModule);
+  const { data: customViews = [] } = useSupportInboxViews(workspaceId ?? '', hasSupportModule);
+  const { data: customViewCounts = [] } = useSupportInboxViewCounts(workspaceId ?? '', hasSupportModule);
+  const { data: builtinViews } = useSupportBuiltinInboxViews(workspaceId ?? '', hasSupportModule);
+  const inboxUnreadMailboxScope = supportInboxCountMailboxScope('all');
+  const { data: unreadStats } = useUnreadStats(workspaceId ?? '', undefined, hasSupportModule);
+  const { data: inboxUnreadStats } = useUnreadStats(workspaceId ?? '', inboxUnreadMailboxScope, hasSupportModule);
+  const globalUnreadStats = unreadStats;
   const archiveMailbox = useArchiveMailbox(workspaceId ?? '');
+  const updateSupportInboxView = useUpdateSupportInboxView(workspaceId ?? '');
+  const deleteSupportInboxView = useDeleteSupportInboxView(workspaceId ?? '');
+  const [editingSupportView, setEditingSupportView] = useState<SupportInboxView | null>(null);
+  const [editingSupportViewName, setEditingSupportViewName] = useState('');
+  const [editingSupportViewShared, setEditingSupportViewShared] = useState(false);
   const totalSupportUnread = useMemo(
     () => (inboxScopes?.shared_inbox.unread_count ?? 0) + (inboxScopes?.mailboxes ?? []).reduce((sum, mailbox) => sum + mailbox.unread_count, 0),
     [inboxScopes],
   );
+  const sortedCustomViews = useMemo(
+    () => [...customViews].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    [customViews],
+  );
+  const customViewCountMap = useMemo(
+    () => Object.fromEntries(customViewCounts.map((count) => [count.view_id, count])),
+    [customViewCounts],
+  );
+
+  const builtinViewFilterMap = useMemo(
+    () => Object.fromEntries(
+      (builtinViews ?? [])
+        .filter((view) => view.view_key)
+        .map((view) => [view.view_key as string, view.filters]),
+    ),
+    [builtinViews],
+  );
+
+  useEffect(() => {
+    setBuiltinViewFilters(builtinViewFilterMap);
+  }, [builtinViewFilterMap, setBuiltinViewFilters]);
 
   const { data: agentRunsData } = useQuery({
     queryKey: queryKeys.automation.runs(workspaceId ?? '', 1, 100),
     queryFn: async () => {
       const res = await automationService.listWorkspaceRuns(workspaceId!, 1, 100);
-      return res.data?.data ?? [];
+      return {
+        data: Array.isArray(res.data?.data) ? res.data.data : [],
+        total: res.data?.total ?? 0,
+        page: res.data?.page ?? 1,
+        per_page: res.data?.per_page ?? 100,
+        total_pages: res.data?.total_pages ?? 0,
+      };
     },
     enabled: !!workspaceId,
     staleTime: 30_000,
   });
+  const agentRuns = Array.isArray(agentRunsData?.data) ? agentRunsData.data : [];
   const agentAttentionCount = useMemo(
-    () => (agentRunsData ?? []).filter((r) => r.status === 'paused' || r.approval_state === 'pending').length,
-    [agentRunsData],
+    () => agentRuns.filter((run) => ACTIVE_RUN_STATUSES.has(run.status) && isPausedAgentRun(run)).length,
+    [agentRuns],
   );
 
   const { data: teammatePresence = [] } = useSupportTeammatePresence(workspaceId ?? '', hasSupportModule);
@@ -145,11 +198,11 @@ export function Sidebar() {
   };
 
   const panelNavGroups = useMemo(
-    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet),
-    [wsSlug, canManageSettings, permissionSet],
+    () => buildPanelNavGroups(wsSlug, canManageSettings, permissionSet, agentAttentionCount),
+    [wsSlug, canManageSettings, permissionSet, agentAttentionCount],
   );
   const currentNavGroups = panelNavGroups[activeRail];
-  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread, agentAttentionCount), [wsSlug, totalSupportUnread, agentAttentionCount]);
+  const railItems = useMemo(() => buildRailItems(wsSlug, totalSupportUnread), [wsSlug, totalSupportUnread]);
 
   useEffect(() => {
     if (activeRail !== 'settings') {
@@ -228,7 +281,19 @@ export function Sidebar() {
     });
   };
 
+  const submitSupportViewEdit = () => {
+    if (!editingSupportView || !editingSupportViewName.trim()) return;
+    updateSupportInboxView.mutate({
+      id: editingSupportView.id,
+      name: editingSupportViewName.trim(),
+      ...(canManageSettings ? { is_shared: editingSupportViewShared } : {}),
+    }, {
+      onSuccess: () => setEditingSupportView(null),
+    });
+  };
+
   return (
+    <>
     <ShellSidebar collapsible="offcanvas" className="border-r border-border/70 bg-[#f0f0f2] dark:border-transparent dark:bg-sidebar">
       <SidebarHeader className="relative p-2 after:absolute after:right-2 after:bottom-0 after:left-2 after:h-px after:bg-border/70 after:[mask-image:linear-gradient(to_right,transparent,black_24px,black_calc(100%-24px),transparent)] dark:after:bg-sidebar-border">
         <div className="flex items-center gap-1">
@@ -300,7 +365,15 @@ export function Sidebar() {
                 toggleGroup={toggleSettingsGroup}
                 onNavigate={(link) => handleNavigate(link)}
               />
-            ) : (
+            ) : activeRail === 'crm' ? (
+              <CrmRailNav
+                groups={currentNavGroups}
+                isActive={isActive}
+                wsSlug={wsSlug}
+                onNavigate={(link) => handleNavigate(link)}
+                onNavigateTo={(to) => navigate({ to })}
+              />
+            ) : activeRail === 'support' ? null : (
               <StandardRailNav
                 groups={currentNavGroups}
                 isActive={isActive}
@@ -312,13 +385,63 @@ export function Sidebar() {
               <SupportRailNav
                 navFilter={navFilter}
                 unreadStats={unreadStats}
+                inboxUnreadStats={inboxUnreadStats}
+                globalUnreadStats={globalUnreadStats}
                 inboxScopes={inboxScopes}
                 selectedMailboxId={selectedMailboxId}
+                activeCustomViewId={activeCustomViewId}
+                currentUserId={user?.id}
+                customViews={sortedCustomViews}
+                customViewCounts={customViewCountMap}
                 canManageSettings={canManageSettings}
                 wsSlug={wsSlug}
-                onNavFilterChange={setNavFilter}
-                onMailboxSelect={setSelectedMailboxId}
-                onCreateMailbox={() => setTeamInboxDialogOpen(true)}
+                pathname={location.pathname}
+                onNavFilterChange={(filter) => {
+                  const nextSearch = buildSupportInboxSearch({
+                    navFilter: filter,
+                    selectedMailboxId: 'all',
+                    statusFilter: 'all',
+                    searchQuery,
+                  });
+                  setNavFilter(filter);
+                  navigate({ to: `/w/${wsSlug}/support`, search: nextSearch });
+                }}
+                onMailboxSelect={(id) => {
+                  const nextSearch = buildSupportInboxSearch({
+                    navFilter: 'inbox',
+                    selectedMailboxId: id,
+                    statusFilter: 'all',
+                    searchQuery,
+                  });
+                  setSelectedMailboxId(id);
+                  navigate({ to: `/w/${wsSlug}/support`, search: nextSearch });
+                }}
+                onCustomViewSelect={(view) => {
+                  applyCustomView(view);
+                  const next = useSupportInboxStore.getState();
+                  navigate({
+                    to: `/w/${wsSlug}/support`,
+                    search: buildSupportInboxSearch({
+                      navFilter: next.navFilter,
+                      selectedMailboxId: next.selectedMailboxId,
+                      statusFilter: next.statusFilter,
+                      searchQuery: next.searchQuery,
+                      activeCustomViewId: view.id,
+                      listFilters: next.conversationListFilters,
+                      includeFilterParams: false,
+                    }),
+                  });
+                }}
+                onEditCustomView={(view) => {
+                  setEditingSupportView(view);
+                  setEditingSupportViewName(view.name);
+                  setEditingSupportViewShared(view.is_shared);
+                }}
+                onDeleteCustomView={(view) => {
+                  if (!window.confirm(`Delete "${view.name}"?`)) return;
+                  deleteSupportInboxView.mutate(view.id);
+                }}
+                onCreateMailbox={() => { setEditMailboxId(null); setTeamInboxDialogOpen(true); }}
                 onEditMailbox={(id) => { setEditMailboxId(id); setTeamInboxDialogOpen(true); }}
                 onArchiveMailbox={(id) => archiveMailbox.mutate(id)}
                 onNavigate={(to) => navigate({ to })}
@@ -352,5 +475,52 @@ export function Sidebar() {
         </div>
       </SidebarContent>
     </ShellSidebar>
+    <Dialog open={!!editingSupportView} onOpenChange={(open) => !open && setEditingSupportView(null)}>
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>Edit view</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="support-custom-view-name">Name</Label>
+            <Input
+              id="support-custom-view-name"
+              value={editingSupportViewName}
+              onChange={(event) => setEditingSupportViewName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  submitSupportViewEdit();
+                }
+              }}
+            />
+          </div>
+          {canManageSettings && (
+            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+              <Label htmlFor="support-custom-view-shared" className="text-sm font-medium">
+                Shared with workspace
+              </Label>
+              <Switch
+                id="support-custom-view-shared"
+                checked={editingSupportViewShared}
+                onCheckedChange={setEditingSupportViewShared}
+              />
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setEditingSupportView(null)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={submitSupportViewEdit}
+            disabled={!editingSupportViewName.trim() || updateSupportInboxView.isPending}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

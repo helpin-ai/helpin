@@ -7,3 +7,4 @@ export * from './pm-types/delivery';
 export * from './pm-types/orchestration';
 export * from './pm-types/visitor';
 export * from './pm-types/codingSession';
+export * from './pm-types/skills';

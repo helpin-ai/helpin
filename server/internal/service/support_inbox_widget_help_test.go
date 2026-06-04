@@ -177,8 +177,8 @@ func TestSupportInboxServiceListWidgetHelpArticles_ResolvesBareSlugWithinAllowed
 		nil,
 		nil,
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
 	)
 
 	articles, err := svc.ListWidgetHelpArticles(ctx, widgetKey, "getting-started")

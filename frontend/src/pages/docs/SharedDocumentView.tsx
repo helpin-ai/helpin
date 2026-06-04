@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from '@tanstack/react-router'
-import { File01Icon } from '@/lib/icons'
+import { useTheme } from 'next-themes'
+import { File01Icon, Moon02Icon, Sun01Icon } from '@/lib/icons'
 import { useTitle } from '@/hooks/useTitle'
 import { docsService } from '@/lib/services/docsService'
 import type { DocsDocument, DocsContent } from '@/lib/docsTypes'
@@ -9,6 +10,7 @@ import type { JSONContent } from '@tiptap/react'
 
 export function SharedDocumentView() {
   const { shareToken } = useParams({ strict: false }) as { shareToken: string }
+  const { resolvedTheme, setTheme } = useTheme()
 
   const [doc, setDoc] = useState<DocsDocument | null>(null)
   const [content, setContent] = useState<DocsContent | null>(null)
@@ -62,13 +64,43 @@ export function SharedDocumentView() {
     <div className="min-h-screen bg-background">
       {/* Clean header */}
       <header className="border-b border-border/40 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="mx-auto max-w-4xl px-6 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-3">
           <span className="text-xs text-muted-foreground">Shared document</span>
+          <div className="flex items-center rounded-md border border-border bg-muted/30 p-0.5">
+            <button
+              type="button"
+              onClick={() => setTheme('light')}
+              aria-label="Use light theme"
+              aria-pressed={resolvedTheme !== 'dark'}
+              className={`flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors ${
+                resolvedTheme !== 'dark'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Sun01Icon className="h-3.5 w-3.5" />
+              <span>Light</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTheme('dark')}
+              aria-label="Use dark theme"
+              aria-pressed={resolvedTheme === 'dark'}
+              className={`flex h-7 items-center gap-1.5 rounded px-2 text-xs transition-colors ${
+                resolvedTheme === 'dark'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Moon02Icon className="h-3.5 w-3.5" />
+              <span>Dark</span>
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Document content */}
-      <main className="mx-auto max-w-4xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-6 py-8">
         <DocsEditor
           title={doc.title}
           initialContent={content?.content as JSONContent | null}

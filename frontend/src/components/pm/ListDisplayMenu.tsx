@@ -1,4 +1,4 @@
-import { Settings02Icon } from '@/lib/icons';
+import { ColumnsThreeCogIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -26,7 +26,7 @@ export function ListDisplayMenu({ disabledKeys }: ListDisplayMenuProps) {
       <QuickTooltip label="Display columns">
         <PopoverTrigger asChild>
           <Button variant="ghost" size="icon" className="h-7 w-7">
-            <Settings02Icon className="h-4 w-4" />
+            <ColumnsThreeCogIcon className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
       </QuickTooltip>

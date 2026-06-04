@@ -35,15 +35,31 @@ import { SortableFooterLinkRow, SortableHeaderLinkRow } from '@/components/setti
 import {
   PlusSignIcon, InformationCircleIcon, ArrowDown01Icon, Cancel01Icon,
   GlobeIcon, PaintBoardIcon, LayoutGridIcon, Link01Icon, Image01Icon,
-  LanguageCircleIcon, DragDropVerticalIcon,
+  LanguageCircleIcon, DragDropVerticalIcon, Copy01Icon, Tick01Icon,
+  Folder01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { IconPicker, StoredIcon } from '@/components/ui/icon-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePicker';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+
 import type {
   HelpcenterHeaderLink,
   HelpcenterFooterLink,
+  HelpcenterPublicUrlMode,
   HelpcenterThemeMode,
   HomepageFeaturedCard,
   DocsHelpcenterLocalesConfig,
@@ -185,7 +201,7 @@ function SortableFeaturedCollectionRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/[0.03] p-3"
+      className="group/row flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/[0.03] p-3"
     >
       <button
         type="button"
@@ -196,10 +212,6 @@ function SortableFeaturedCollectionRow({
       >
         <DragDropVerticalIcon className="h-4 w-4" />
       </button>
-      <Checkbox
-        checked
-        onCheckedChange={onToggle}
-      />
       <div className="flex-1 grid gap-2 grid-cols-[40px_140px_1fr] items-center">
         <IconPicker
           value={card.icon}
@@ -218,13 +230,91 @@ function SortableFeaturedCollectionRow({
           className="h-8 text-sm"
         />
       </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="shrink-0 rounded-md p-1 text-muted-foreground/50 opacity-0 transition-all group-hover/row:opacity-100 hover:bg-muted hover:text-muted-foreground"
+        aria-label={`Remove ${collection.name}`}
+      >
+        <Cancel01Icon className="h-3.5 w-3.5" />
+      </button>
     </div>
+  );
+}
+
+function CollectionTreeMultiSelect({
+  collections,
+  spaceId,
+  selectedIds,
+  onToggle,
+}: {
+  collections: DocsCollection[];
+  spaceId: string;
+  selectedIds: string[];
+  onToggle: (collectionId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const options = buildCollectionTreeOptions(spaceId, collections);
+  const selectedSet = new Set(selectedIds);
+  const count = selectedIds.length;
+  const label =
+    count === 0
+      ? 'Select collections'
+      : count === 1
+        ? '1 collection selected'
+        : `${count} collections selected`;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex w-48 items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm shadow-sm transition-colors hover:bg-accent/40"
+        >
+          <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+          <ArrowDown01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[280px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search collections…" className="h-9" />
+          <CommandList>
+            <CommandEmpty>No collections.</CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
+                  key={option.id}
+                  value={option.path}
+                  onSelect={() => onToggle(option.id)}
+                  className="flex items-center gap-2 text-sm"
+                >
+                  <Checkbox
+                    checked={selectedSet.has(option.id)}
+                    className="pointer-events-none"
+                  />
+                  <span
+                    className="flex min-w-0 flex-1 items-center gap-1.5"
+                    style={{ paddingLeft: `${option.depth * 12}px` }}
+                  >
+                    <Folder01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{option.name}</span>
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
 interface ConfigState {
   subdomain: string;
   custom_domain: string;
+  public_url_mode: HelpcenterPublicUrlMode;
+  reverse_proxy_host: string;
+  reverse_proxy_base_path: string;
   brand_name: string;
   brand_logo_url: string;
   brand_logo_dark_url: string;
@@ -242,12 +332,21 @@ interface ConfigState {
   is_published: boolean;
   seo_title: string;
   seo_description: string;
+  og_title: string;
+  og_description: string;
+  og_image_url: string;
+  og_image_alt: string;
   support_email: string;
 }
+
+const DEFAULT_REVERSE_PROXY_BASE_PATH = '/docs';
 
 const DEFAULT_CONFIG: ConfigState = {
   subdomain: '',
   custom_domain: '',
+  public_url_mode: 'hosted_subdomain',
+  reverse_proxy_host: '',
+  reverse_proxy_base_path: DEFAULT_REVERSE_PROXY_BASE_PATH,
   brand_name: '',
   brand_logo_url: '',
   brand_logo_dark_url: '',
@@ -265,6 +364,10 @@ const DEFAULT_CONFIG: ConfigState = {
   is_published: false,
   seo_title: '',
   seo_description: '',
+  og_title: '',
+  og_description: '',
+  og_image_url: '',
+  og_image_alt: '',
   support_email: '',
 };
 
@@ -274,6 +377,174 @@ const DEFAULT_LOCALES_CONFIG: DocsHelpcenterLocalesConfig = {
   show_language_switcher: true,
   fallback_to_default_locale: true,
 };
+
+function normalizeReverseProxyBasePath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '/') return DEFAULT_REVERSE_PROXY_BASE_PATH;
+
+  const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  const withoutTrailingSlash = withSlash.replace(/\/+$/, '');
+  if (
+    !withoutTrailingSlash ||
+    withoutTrailingSlash === '/' ||
+    withoutTrailingSlash.includes('//') ||
+    withoutTrailingSlash.includes('\\')
+  ) {
+    return DEFAULT_REVERSE_PROXY_BASE_PATH;
+  }
+
+  const segments = withoutTrailingSlash.split('/').filter(Boolean);
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    return DEFAULT_REVERSE_PROXY_BASE_PATH;
+  }
+
+  return withoutTrailingSlash;
+}
+
+function normalizeDomainForDisplay(value: string): string {
+  return value
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/.*$/, '')
+    .toLowerCase();
+}
+
+function buildReverseProxyOrigin(subdomain: string, brandName: string, workspaceName: string): string {
+  const fallback = slugifyBrand(brandName || workspaceName) || 'yourcompany';
+  return `https://${subdomain || fallback}.helpin.center`;
+}
+
+function buildCloudflareWorkerSnippet(originUrl: string, tenant: string, publicHost: string, basePath: string): string {
+  const originHost = normalizeDomainForDisplay(originUrl);
+  const safeTenant = tenant || 'yourcompany';
+  const safePublicHost = publicHost || 'yourdomain.com';
+
+  return `export default {
+  async fetch(request) {
+    const url = new URL(request.url)
+
+    const HELPIN_BASE_PATH = '${basePath}'
+
+    if (url.pathname === HELPIN_BASE_PATH) {
+      url.pathname = '/'
+    } else if (url.pathname.startsWith(\`\${HELPIN_BASE_PATH}/\`)) {
+      url.pathname = url.pathname.slice(HELPIN_BASE_PATH.length)
+    } else {
+      return fetch(request)
+    }
+
+    url.hostname = '${originHost}'
+
+    const headers = new Headers(request.headers)
+    headers.set('X-Helpin-HC-Tenant', '${safeTenant}')
+    headers.set('X-Helpin-HC-Basepath', HELPIN_BASE_PATH)
+    headers.set('X-Forwarded-Host', '${safePublicHost}')
+    headers.set('X-Forwarded-Proto', 'https')
+
+    const init = {
+      method: request.method,
+      headers,
+      redirect: 'manual',
+    }
+
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      init.body = request.body
+    }
+
+    return fetch(url.toString(), init)
+  },
+}`;
+}
+
+function buildVercelRewriteSnippet(originUrl: string, tenant: string, basePath: string): string {
+  const safeTenant = tenant || 'yourcompany';
+
+  return `const DOCS_ORIGIN =
+  process.env.DOCS_WEBSITE_URL || '${originUrl}'
+const DOCS_TENANT = process.env.DOCS_HELPIN_TENANT || '${safeTenant}'
+const DOCS_BASE_PATH =
+  process.env.DOCS_HELPIN_BASE_PATH || '${basePath}'
+
+export default {
+  async rewrites() {
+    const proxyContext =
+      \`helpin_tenant=\${DOCS_TENANT}&helpin_basepath=\${encodeURIComponent(DOCS_BASE_PATH)}\`
+
+    return [
+      { source: DOCS_BASE_PATH, destination: \`\${DOCS_ORIGIN}/?\${proxyContext}\` },
+      { source: \`\${DOCS_BASE_PATH}/:path*\`, destination: \`\${DOCS_ORIGIN}/:path*?\${proxyContext}\` },
+    ]
+  },
+}`;
+}
+
+function buildAwsProxySnippet(originUrl: string, tenant: string, publicHost: string, basePath: string): string {
+  const originHost = normalizeDomainForDisplay(originUrl);
+  const safeTenant = tenant || 'yourcompany';
+  const safePublicHost = publicHost || 'yourdomain.com';
+
+  return `Origin domain: ${originHost}
+Path behavior: ${basePath}/*
+Forward headers:
+  X-Helpin-HC-Tenant: ${safeTenant}
+  X-Helpin-HC-Basepath: ${basePath}
+  X-Forwarded-Host: ${safePublicHost}
+  X-Forwarded-Proto: https`;
+}
+
+function CodeSnippet({
+  code,
+  onCopy,
+}: {
+  code: string;
+  onCopy: (value: string, label: string) => void;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-border/70 bg-zinc-950 text-zinc-100">
+      <button
+        type="button"
+        onClick={() => onCopy(code, 'Snippet')}
+        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+        aria-label="Copy reverse proxy snippet"
+      >
+        <Copy01Icon className="h-4 w-4" />
+      </button>
+      <pre className="max-h-[360px] overflow-auto p-4 pr-14 text-[12px] leading-6">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function ReverseProxyGuideCard({
+  title,
+  description,
+  badge,
+  code,
+  onCopy,
+}: {
+  title: string;
+  description: string;
+  badge: string;
+  code: string;
+  onCopy: (value: string, label: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-border/60 bg-muted/30 p-4 sm:flex-row sm:items-center">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border bg-background text-xs font-semibold text-foreground">
+        {badge}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={() => onCopy(code, `${title} guide`)}>
+        <Copy01Icon className="mr-1.5 h-3.5 w-3.5" />
+        Copy guide
+      </Button>
+    </div>
+  );
+}
 
 // Derive a URL-safe slug from a brand name.
 function slugifyBrand(name: string): string {
@@ -344,6 +615,9 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         const loaded: ConfigState = {
           subdomain: d.subdomain ?? '',
           custom_domain: d.custom_domain ?? '',
+          public_url_mode: d.public_url_mode ?? (d.custom_domain ? 'custom_domain' : 'hosted_subdomain'),
+          reverse_proxy_host: d.reverse_proxy_host ?? d.custom_domain ?? '',
+          reverse_proxy_base_path: d.reverse_proxy_base_path ?? DEFAULT_REVERSE_PROXY_BASE_PATH,
           brand_name: d.brand_name ?? '',
           brand_logo_url: d.brand_logo_url ?? '',
           brand_logo_dark_url: d.brand_logo_dark_url ?? '',
@@ -361,6 +635,10 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
           is_published: d.is_published ?? false,
           seo_title: d.seo_title ?? '',
           seo_description: d.seo_description ?? '',
+          og_title: d.og_title ?? '',
+          og_description: d.og_description ?? '',
+          og_image_url: d.og_image_url ?? '',
+          og_image_alt: d.og_image_alt ?? '',
           support_email: d.support_email ?? '',
         };
         // Auto-fill brand name from workspace name if not yet set, then derive defaults
@@ -368,6 +646,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         if (!loaded.brand_name && workspaceName) loaded.brand_name = workspaceName;
         const defaults = deriveDefaults(effectiveBrand, loaded);
         setConfig({ ...loaded, ...defaults });
+        setReverseProxyBasePathInput(loaded.reverse_proxy_base_path);
       } else {
         // No config exists yet — pre-fill everything from workspace name
         const fresh = { ...DEFAULT_CONFIG, brand_name: workspaceName };
@@ -422,6 +701,9 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     const res = await docsService.updateHelpcenterConfig(workspaceId, {
       subdomain: config.subdomain || undefined,
       custom_domain: config.custom_domain || undefined,
+      public_url_mode: config.public_url_mode,
+      reverse_proxy_host: config.reverse_proxy_host || undefined,
+      reverse_proxy_base_path: normalizeReverseProxyBasePath(config.reverse_proxy_base_path || reverseProxyBasePathInput),
       brand_name: config.brand_name || undefined,
       brand_logo_url: config.brand_logo_url || undefined,
       brand_logo_dark_url: config.brand_logo_dark_url || undefined,
@@ -443,6 +725,10 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       is_published: config.is_published,
       seo_title: config.seo_title || undefined,
       seo_description: config.seo_description || undefined,
+      og_title: config.og_title,
+      og_description: config.og_description,
+      og_image_url: config.og_image_url,
+      og_image_alt: config.og_image_alt,
       support_email: config.support_email || undefined,
     });
     // Sync icon changes back to collections
@@ -664,15 +950,30 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
   const logoInputRef = useRef<HTMLInputElement>(null);
   const logoDarkInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
+  const ogImageInputRef = useRef<HTMLInputElement>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingLogoDark, setUploadingLogoDark] = useState(false);
   const [uploadingFavicon, setUploadingFavicon] = useState(false);
+  const [uploadingOGImage, setUploadingOGImage] = useState(false);
+  const [copiedGuideLabel, setCopiedGuideLabel] = useState('');
+  const [reverseProxyBasePathInput, setReverseProxyBasePathInput] = useState(DEFAULT_REVERSE_PROXY_BASE_PATH);
+
+  const copyGuideText = useCallback(async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedGuideLabel(label);
+      toast.success(`${label} copied`);
+      window.setTimeout(() => setCopiedGuideLabel(''), 1800);
+    } catch {
+      toast.error('Could not copy to clipboard');
+    }
+  }, []);
 
   const handleAssetUpload = async (
     e: ChangeEvent<HTMLInputElement>,
-    assetType: 'logo' | 'logo_dark' | 'favicon',
+    assetType: 'logo' | 'logo_dark' | 'favicon' | 'og_image',
     setUploading: (v: boolean) => void,
-    field: 'brand_logo_url' | 'brand_logo_dark_url' | 'favicon_url',
+    field: 'brand_logo_url' | 'brand_logo_dark_url' | 'favicon_url' | 'og_image_url',
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -694,7 +995,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
       return;
     }
     setConfig((prev) => ({ ...prev, [field]: res.data!.url }));
-    toast.success(`${assetType === 'favicon' ? 'Favicon' : 'Logo'} uploaded`);
+    toast.success(`${assetType === 'favicon' ? 'Favicon' : assetType === 'og_image' ? 'Social image' : 'Logo'} uploaded`);
   };
 
   if (loading) {
@@ -707,26 +1008,80 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
     );
   }
 
-  // Featured cards are homepage-level tiles — only top-level
-  // collections (no parent) make sense here. Sub-collections are
-  // reachable from their parent collection's page.
-  const topLevelCollections = spaceCollections.filter(
-    (c) => !c.parent_collection_id,
-  );
-  const orderedSpaceCollections = orderCollectionsForFeaturedCards(
-    topLevelCollections,
+  // Featured cards — all collections (including sub-collections) are
+  // eligible. The multi-select tree dropdown handles hierarchy display;
+  // only selected/featured ones render as configurable rows below.
+  const featuredCollections = orderCollectionsForFeaturedCards(
+    spaceCollections,
     config.homepage_featured_cards,
     homepageSpaceSlug,
+  ).filter((collection) =>
+    !!findFeaturedCardForCollection(
+      config.homepage_featured_cards,
+      collection,
+      homepageSpaceSlug,
+    ),
   );
-  const selectedFeaturedCollectionIds = orderedSpaceCollections
-    .filter((collection) =>
-      !!findFeaturedCardForCollection(
-        config.homepage_featured_cards,
-        collection,
-        homepageSpaceSlug,
-      ),
-    )
-    .map((collection) => collection.id);
+  const selectedFeaturedCollectionIds = featuredCollections.map((c) => c.id);
+  const reverseProxyOrigin = buildReverseProxyOrigin(
+    config.subdomain,
+    config.brand_name,
+    workspaceName,
+  );
+  const reverseProxyTenant = normalizeDomainForDisplay(reverseProxyOrigin)
+    .replace(/\.helpin\.center$/, '');
+  const reverseProxyPublicHost =
+    normalizeDomainForDisplay(config.reverse_proxy_host || config.custom_domain) || 'yourdomain.com';
+  const reverseProxyBasePath = normalizeReverseProxyBasePath(reverseProxyBasePathInput);
+  const reverseProxyPublicUrl = `https://${reverseProxyPublicHost}${reverseProxyBasePath}`;
+  const hostedPublicUrl = reverseProxyOrigin;
+  const customDomainHost = normalizeDomainForDisplay(config.custom_domain);
+  const customDomainPublicUrl = customDomainHost ? `https://${customDomainHost}` : '';
+  const isReverseProxyMode = config.public_url_mode === 'reverse_proxy';
+  const activePublicUrl =
+    config.public_url_mode === 'reverse_proxy'
+      ? reverseProxyPublicUrl
+      : config.public_url_mode === 'custom_domain' && customDomainPublicUrl
+        ? customDomainPublicUrl
+        : hostedPublicUrl;
+  const cloudflareWorkerSnippet = buildCloudflareWorkerSnippet(
+    reverseProxyOrigin,
+    reverseProxyTenant,
+    reverseProxyPublicHost,
+    reverseProxyBasePath,
+  );
+  const vercelRewriteSnippet = buildVercelRewriteSnippet(
+    reverseProxyOrigin,
+    reverseProxyTenant,
+    reverseProxyBasePath,
+  );
+  const awsProxySnippet = buildAwsProxySnippet(
+    reverseProxyOrigin,
+    reverseProxyTenant,
+    reverseProxyPublicHost,
+    reverseProxyBasePath,
+  );
+  const disableReverseProxyMode = () => {
+    setConfig({
+      ...config,
+      public_url_mode: customDomainPublicUrl ? 'custom_domain' : 'hosted_subdomain',
+    });
+  };
+  const selectPublicUrlMode = (value: HelpcenterPublicUrlMode) => {
+    setConfig({
+      ...config,
+      public_url_mode: value,
+      reverse_proxy_host:
+        value === 'reverse_proxy' && !config.reverse_proxy_host
+          ? normalizeDomainForDisplay(config.custom_domain)
+          : config.reverse_proxy_host,
+    });
+  };
+  const publicUrlModes: Array<{ value: HelpcenterPublicUrlMode; label: string }> = [
+    { value: 'hosted_subdomain', label: 'Hosted subdomain' },
+    { value: 'custom_domain', label: 'Custom domain' },
+    { value: 'reverse_proxy', label: 'Reverse proxy' },
+  ];
 
   return (
     <form onSubmit={handleSave} className="space-y-5">
@@ -905,7 +1260,7 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
             <div className="space-y-2">
               <div className="flex items-center gap-1.5">
                 <Label htmlFor="hc-theme-mode">Theme Mode</Label>
-                <TooltipProvider delayDuration={200}>
+                <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <InformationCircleIcon className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
@@ -953,6 +1308,59 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
         <div className="accordion-animate" data-open={isExpanded('domain-seo')}>
           <div>
           <div className="border-t border-border px-6 py-6 space-y-6">
+          <div className="max-w-4xl rounded-lg border border-border/70 bg-card p-3 shadow-sm">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0 space-y-1">
+                <Label id="hc-public-url-mode-label">Public URL mode</Label>
+                <p className="text-xs text-muted-foreground">
+                  Choose the URL visitors and search engines should use; reverse proxy takes priority for canonical links and sitemaps.
+                </p>
+              </div>
+              <div
+                role="radiogroup"
+                aria-labelledby="hc-public-url-mode-label"
+                className="inline-flex w-fit max-w-full shrink-0 gap-0.5 overflow-x-auto rounded-md bg-muted p-0.5"
+              >
+                {publicUrlModes.map((mode) => {
+                  const selected = config.public_url_mode === mode.value;
+                  return (
+                    <button
+                      key={mode.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => selectPublicUrlMode(mode.value)}
+                      className={cn(
+                        'h-8 whitespace-nowrap rounded-[5px] px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        selected
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:bg-background/70 hover:text-foreground',
+                      )}
+                    >
+                      {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-md border bg-background px-2.5 py-1.5">
+              <span className="shrink-0 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Current</span>
+              <span className="min-w-0 truncate font-mono text-xs text-foreground">{activePublicUrl}</span>
+              <button
+                type="button"
+                onClick={() => copyGuideText(activePublicUrl, 'Current public URL')}
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Copy current public URL"
+              >
+                {copiedGuideLabel === 'Current public URL' ? (
+                  <Tick01Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <Copy01Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+              </button>
+            </div>
+          </div>
           <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <div className="space-y-2">
@@ -960,9 +1368,12 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               <div className="flex items-center">
                 <Input
                   id="hc-subdomain"
+                  name="helpcenter-subdomain"
                   value={config.subdomain}
                   onChange={(e) => setConfig({ ...config, subdomain: e.target.value })}
-                  placeholder="yourcompany"
+                  placeholder="yourcompany…"
+                  autoComplete="off"
+                  spellCheck={false}
                   className="rounded-r-none"
                 />
                 <span className="flex h-9 shrink-0 items-center rounded-r-md border border-l-0 bg-muted/50 px-3 text-sm text-muted-foreground">.helpin.center</span>
@@ -975,9 +1386,13 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               <Label htmlFor="hc-custom-domain">Custom Domain</Label>
               <Input
                 id="hc-custom-domain"
+                name="helpcenter-custom-domain"
+                inputMode="url"
                 value={config.custom_domain}
                 onChange={(e) => setConfig({ ...config, custom_domain: e.target.value })}
-                placeholder="help.yourcompany.com"
+                placeholder="help.yourcompany.com…"
+                autoComplete="off"
+                spellCheck={false}
               />
               <div className="rounded-md border border-border/60 bg-muted/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
                 <p className="mb-1.5 font-medium text-foreground">DNS setup</p>
@@ -1024,8 +1439,175 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
               />
               <p className="text-[11px] text-muted-foreground">{config.seo_description.length}/160 characters</p>
             </div>
+            <div className="grid gap-4 rounded-lg border border-border/60 bg-muted/20 p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Social sharing</p>
+                <p className="text-xs text-muted-foreground">Default Open Graph tags for the help center home and article pages without their own override.</p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="hc-og-title">Social Title</Label>
+                  <Input
+                    id="hc-og-title"
+                    value={config.og_title}
+                    onChange={(e) => setConfig({ ...config, og_title: e.target.value })}
+                    placeholder="Falls back to meta title"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hc-og-image-alt">Image Alt Text</Label>
+                  <Input
+                    id="hc-og-image-alt"
+                    value={config.og_image_alt}
+                    onChange={(e) => setConfig({ ...config, og_image_alt: e.target.value })}
+                    placeholder={`${config.brand_name || 'Help center'} preview image`}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="hc-og-desc">Social Description</Label>
+                <Textarea
+                  id="hc-og-desc"
+                  value={config.og_description}
+                  onChange={(e) => setConfig({ ...config, og_description: e.target.value })}
+                  placeholder="Falls back to meta description"
+                  rows={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Social Image</Label>
+                {config.og_image_url ? (
+                  <div className="group relative aspect-[1200/630] max-w-md overflow-hidden rounded-lg border bg-muted">
+                    <img src={config.og_image_url} alt={config.og_image_alt || 'Social preview'} className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 flex items-center justify-center gap-2 bg-background/80 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Button type="button" variant="outline" size="sm" disabled={uploadingOGImage} onClick={() => ogImageInputRef.current?.click()}>
+                        {uploadingOGImage ? 'Uploading...' : 'Replace'}
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfig({ ...config, og_image_url: '' })}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={uploadingOGImage}
+                    onClick={() => ogImageInputRef.current?.click()}
+                    className="flex aspect-[1200/630] max-w-md flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-background text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted/40 hover:text-foreground"
+                  >
+                    <Image01Icon className="h-6 w-6" />
+                    <span className="text-xs">{uploadingOGImage ? 'Uploading...' : '1200 x 630 px · PNG, JPEG, or WebP'}</span>
+                  </button>
+                )}
+                <input ref={ogImageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => handleAssetUpload(e, 'og_image', setUploadingOGImage, 'og_image_url')} />
+              </div>
+            </div>
           </div>
           </div>
+          {isReverseProxyMode && (
+            <div className="rounded-lg border border-primary/20 bg-muted/20 p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium">Reverse Proxy</p>
+                    <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-medium">
+                      Enabled
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    Route <span className="font-mono text-foreground">{reverseProxyPublicUrl}</span> to <span className="font-mono text-foreground">{reverseProxyOrigin}</span>.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={disableReverseProxyMode}
+                >
+                  Disable Reverse Proxy
+                </Button>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(220px,280px)_minmax(220px,280px)_1fr]">
+                <div className="space-y-2">
+                  <Label htmlFor="hc-reverse-proxy-host">Public host</Label>
+                  <Input
+                    id="hc-reverse-proxy-host"
+                    name="helpcenter-reverse-proxy-host"
+                    inputMode="url"
+                    value={config.reverse_proxy_host}
+                    onChange={(e) => setConfig({ ...config, reverse_proxy_host: normalizeDomainForDisplay(e.target.value) })}
+                    placeholder="yourdomain.com…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="font-mono"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hc-reverse-proxy-base-path">Public base path</Label>
+                  <Input
+                    id="hc-reverse-proxy-base-path"
+                    name="helpcenter-reverse-proxy-base-path"
+                    value={reverseProxyBasePathInput}
+                    onChange={(e) => {
+                      setReverseProxyBasePathInput(e.target.value);
+                      setConfig({ ...config, reverse_proxy_base_path: e.target.value });
+                    }}
+                    onBlur={() => {
+                      setReverseProxyBasePathInput(reverseProxyBasePath);
+                      setConfig({ ...config, reverse_proxy_base_path: reverseProxyBasePath });
+                    }}
+                    placeholder="/docs…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="font-mono"
+                  />
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Tenant header</p>
+                    <p className="mt-1 truncate font-mono text-xs text-foreground">X-Helpin-HC-Tenant: {reverseProxyTenant}</p>
+                  </div>
+                  <div className="rounded-md border bg-background px-3 py-2">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Base path header</p>
+                    <p className="mt-1 truncate font-mono text-xs text-foreground">X-Helpin-HC-Basepath: {reverseProxyBasePath}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">Cloudflare Worker</p>
+                    <Button type="button" variant="outline" size="sm" onClick={() => copyGuideText(cloudflareWorkerSnippet, 'Cloudflare Worker')}>
+                      {copiedGuideLabel === 'Cloudflare Worker' ? <Tick01Icon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" /> : <Copy01Icon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />}
+                      {copiedGuideLabel === 'Cloudflare Worker' ? 'Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                  <CodeSnippet code={cloudflareWorkerSnippet} onCopy={copyGuideText} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Other setups</p>
+                  <ReverseProxyGuideCard
+                    title="AWS CloudFront"
+                    description={`${reverseProxyBasePath}/* forwards to the Helpin origin with tenant and base-path headers.`}
+                    badge="aws"
+                    code={awsProxySnippet}
+                    onCopy={copyGuideText}
+                  />
+                  <ReverseProxyGuideCard
+                    title="Vercel"
+                    description={`Rewrite ${reverseProxyBasePath} and ${reverseProxyBasePath}/:path* to the Helpin origin.`}
+                    badge="▲"
+                    code={vercelRewriteSnippet}
+                    onCopy={copyGuideText}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
           </div>
           </div>
         </div>
@@ -1086,91 +1668,65 @@ export function HelpcenterTab({ workspaceId, workspaceName }: { workspaceId: str
                 Select a space to populate homepage cards from its collections.
               </p>
             </div>
-            <Select value={homepageSpaceSlug} onValueChange={handleHomepageSpaceChange}>
-              <SelectTrigger className="w-full sm:w-64">
-                <SelectValue placeholder="Select a space..." />
-              </SelectTrigger>
-              <SelectContent>
-                {spaces.map(s => (
-                  <SelectItem key={s.id} value={s.slug}>
-                    <span className="inline-flex items-center gap-1">
-                      <StoredIcon name={s.icon} className="h-4 w-4 shrink-0" textClassName="" />
-                      <span>{s.name}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select value={homepageSpaceSlug} onValueChange={handleHomepageSpaceChange}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Select a space..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {spaces.map(s => (
+                    <SelectItem key={s.id} value={s.slug}>
+                      <span className="inline-flex items-center gap-1">
+                        <StoredIcon name={s.icon} className="h-4 w-4 shrink-0" textClassName="" />
+                        <span>{s.name}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            {spaceCollections.length > 0 && (() => {
-              // Build a (collection_id -> ancestor path) map for the
-              // active space so we can show nested collections with
-              // their full breadcrumb ("Parent / Middle"). Depth-0
-              // collections get no path label.
-              const homepageSpace = spaces?.find((s) => s.slug === homepageSpaceSlug);
-              const pathOptions = homepageSpace
-                ? buildCollectionTreeOptions(homepageSpace.id, spaceCollections)
-                : [];
-              const pathBySourceId = new Map<string, string>();
-              for (const opt of pathOptions) {
-                if (opt.depth === 0) continue;
-                // The option path already ends with the collection's own
-                // name; strip the trailing segment so the breadcrumb
-                // label shows only ancestors.
-                const segments = opt.path.split(' / ');
-                if (segments.length > 1) {
-                  pathBySourceId.set(opt.id, segments.slice(0, -1).join(' / '));
-                }
-              }
-              return (
+              {spaceCollections.length > 0 ? (() => {
+                const homepageSpace = spaces?.find((s) => s.slug === homepageSpaceSlug);
+                return (
+                  <CollectionTreeMultiSelect
+                    collections={spaceCollections}
+                    spaceId={homepageSpace?.id ?? ''}
+                    selectedIds={selectedFeaturedCollectionIds}
+                    onToggle={toggleCollection}
+                  />
+                );
+              })() : homepageSpaceSlug && (
+                <p className="text-xs text-muted-foreground">No collections in this space.</p>
+              )}
+            </div>
+
+            {spaceCollections.length > 0 && featuredCollections.length > 0 && (
                 <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleFeaturedCardsDragEnd}>
                   <SortableContext items={selectedFeaturedCollectionIds} strategy={verticalListSortingStrategy}>
                     <div className="space-y-1.5">
-                      {orderedSpaceCollections.map(col => {
+                      {featuredCollections.map(col => {
                         const card = findFeaturedCardForCollection(
                           config.homepage_featured_cards,
                           col,
                           homepageSpaceSlug,
                         );
-                        const checked = !!card;
-                        const pathLabel = pathBySourceId.get(col.id);
-                        if (checked && card) {
-                          return (
-                            <SortableFeaturedCollectionRow
-                              key={col.id}
-                              id={col.id}
-                              collection={col}
-                              card={card}
-                              pathLabel={pathLabel}
-                              onToggle={() => toggleCollection(col.id)}
-                              onDescriptionChange={(value) => updateCardByCollectionId(col.id, { description: value })}
-                              onIconChange={(value) => updateCardByCollectionId(col.id, { icon: value })}
-                            />
-                          );
-                        }
+                        if (!card) return null;
                         return (
-                          <div
+                          <SortableFeaturedCollectionRow
                             key={col.id}
-                            className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${checked ? 'border-primary/20 bg-primary/[0.03]' : 'border-transparent bg-muted/30'}`}
-                          >
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={() => toggleCollection(col.id)}
-                            />
-                            <div className="min-w-0">
-                              {pathLabel && (
-                                <div className="text-[10px] text-muted-foreground/70 truncate">{pathLabel}</div>
-                              )}
-                              <span className="text-sm text-muted-foreground block truncate">{col.name}</span>
-                            </div>
-                          </div>
+                            id={col.id}
+                            collection={col}
+                            card={card}
+                            onToggle={() => toggleCollection(col.id)}
+                            onDescriptionChange={(value) => updateCardByCollectionId(col.id, { description: value })}
+                            onIconChange={(value) => updateCardByCollectionId(col.id, { icon: value })}
+                          />
                         );
                       })}
                     </div>
                   </SortableContext>
                 </DndContext>
-              );
-            })()}
+            )}
           </div>
           </div>
           </div>

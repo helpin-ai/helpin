@@ -36,6 +36,7 @@ interface SprintPlanningWorkspaceProps {
   backlogOpen: boolean;
   onBacklogToggle: () => void;
   canEdit: boolean;
+  canCreateSprint: boolean;
   members: AssignableMember[];
   onOpenSprint: (sprintId: string) => void;
   onOpenTask: (taskId: string) => void;
@@ -51,6 +52,7 @@ export function SprintPlanningWorkspace({
   backlogOpen,
   onBacklogToggle,
   canEdit,
+  canCreateSprint,
   members,
   onOpenSprint,
   onOpenTask,
@@ -170,7 +172,7 @@ export function SprintPlanningWorkspace({
   );
 
   if (!workspace || !hasAnySprint) {
-    return <SprintPlanningEmptyState canEdit={canEdit} onCreateSprint={onCreateSprint} />;
+    return <SprintPlanningEmptyState canEdit={canEdit} canCreateSprint={canCreateSprint} onCreateSprint={onCreateSprint} />;
   }
 
   return (
@@ -213,7 +215,7 @@ export function SprintPlanningWorkspace({
           <div className="w-[300px] rotate-[1deg] shadow-xl">
             <SprintPlanningTaskCard
               task={activeTask}
-              owner={activeTask.owner_member_id ? ownerByMemberId.get(activeTask.owner_member_id) : undefined}
+              owner={activeTask.owner_member_ids?.[0] ? ownerByMemberId.get(activeTask.owner_member_ids[0]) : undefined}
               compact
               onOpenTask={onOpenTask}
             />

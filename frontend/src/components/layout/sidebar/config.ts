@@ -10,10 +10,8 @@ import {
   InboxIcon,
   LayoutTable01Icon,
   BulbIcon,
-  Mail01Icon,
   Message01Icon,
   PauseIcon,
-  PlayIcon,
   ArrowReloadHorizontalIcon,
   Setting07Icon,
   KanbanIcon,
@@ -29,8 +27,8 @@ import {
   ChartGanttIcon,
   Layers01Icon,
   OctagonXIcon,
-  UserRemove01Icon,
   Wrench01Icon,
+  BookOpen01Icon,
 } from '@/lib/icons';
 import { buildSettingsRoutePath, getSettingsSidebarGroups } from '@/lib/settingsSections';
 import type { NavGroup, RailId, RailItem } from './types';
@@ -61,18 +59,18 @@ export const projectCreateOptions = [
   { key: 'objective' as const, label: 'Objective', icon: Target01Icon, pages: ['objectives'] },
 ];
 
-export function buildRailItems(wsSlug: string, totalSupportUnread: number, agentAttentionCount: number): RailItem[] {
+export function buildRailItems(wsSlug: string, totalSupportUnread: number): RailItem[] {
   return [
     { id: 'projects', label: 'Projects', icon: FolderKanbanIcon, defaultLink: `/w/${wsSlug}/pm/my-work` },
     { id: 'crm', label: 'CRM', icon: Briefcase01Icon, defaultLink: `/w/${wsSlug}/crm/contacts` },
     { id: 'support', label: 'Support', icon: Message01Icon, defaultLink: `/w/${wsSlug}/support`, indicator: Boolean(totalSupportUnread) },
-    { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/flows`, indicator: Boolean(agentAttentionCount) },
+    { id: 'automation', label: 'Automation', icon: BotIcon, defaultLink: `/w/${wsSlug}/automation/flows` },
     { id: 'docs', label: 'Docs', icon: File01Icon, defaultLink: `/w/${wsSlug}/docs` },
     { id: 'settings', label: 'Settings', icon: Setting07Icon, defaultLink: buildSettingsRoutePath(wsSlug, 'profile') },
   ];
 }
 
-export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, permissionSet?: Set<string>): Record<RailId, NavGroup[]> {
+export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, permissionSet?: Set<string>, agentAttentionCount = 0): Record<RailId, NavGroup[]> {
   return {
     projects: [
       {
@@ -92,8 +90,6 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
           { link: `/w/${wsSlug}/crm/contacts`, label: 'Contacts', icon: UserGroupIcon },
           { link: `/w/${wsSlug}/crm/companies`, label: 'Companies', icon: Building03Icon },
           { link: `/w/${wsSlug}/crm/deals`, label: 'Deals', icon: DollarCircleIcon },
-          { link: `/w/${wsSlug}/crm/lists`, label: 'Lists', icon: LayoutTable01Icon },
-          { link: `/w/${wsSlug}/crm/sequences`, label: 'Sequences', icon: PlayIcon },
           { link: `/w/${wsSlug}/crm/review`, label: 'Review', icon: ClipboardIcon },
           { link: `/w/${wsSlug}/crm/insights`, label: 'Insights', icon: BulbIcon },
         ],
@@ -110,15 +106,16 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
         label: '',
         items: [
           { link: `/w/${wsSlug}/automation/flows`, label: 'Flows', icon: ArrowReloadHorizontalIcon },
-          { link: `/w/${wsSlug}/automation/activity`, label: 'Activity', icon: Clock01Icon },
           { link: `/w/${wsSlug}/automation/agents`, label: 'Agents', icon: BotIcon },
+          { link: `/w/${wsSlug}/automation/activity`, label: 'Activity', icon: Clock01Icon, badge: agentAttentionCount },
         ],
       },
       {
-        label: 'Library',
+        label: 'Catalog',
         items: [
-          { link: `/w/${wsSlug}/automation/library`, label: 'Trigger Catalog', icon: BotIcon },
-          { link: `/w/${wsSlug}/automation/tools`, label: 'Tool Catalog', icon: Wrench01Icon },
+          { link: `/w/${wsSlug}/automation/library`, label: 'Triggers', icon: BotIcon },
+          { link: `/w/${wsSlug}/automation/tools`, label: 'Tools', icon: Wrench01Icon },
+          { link: `/w/${wsSlug}/automation/skills`, label: 'Skills', icon: BookOpen01Icon },
         ],
       },
     ],
@@ -144,10 +141,11 @@ export function buildPanelNavGroups(wsSlug: string, canManageSettings: boolean, 
 }
 
 export const supportFilterItems = [
-  { key: 'my_inbox' as const, label: 'My Inbox', icon: UserIcon },
-  { key: 'unassigned' as const, label: 'Unassigned', icon: UserRemove01Icon },
-  { key: 'mentions' as const, label: 'Mentions', icon: Message01Icon },
-  { key: 'all' as const, label: 'All', icon: Mail01Icon },
+  { key: 'inbox' as const, label: 'Inbox', icon: InboxIcon },
+  { key: 'mine' as const, label: 'Mine', icon: UserIcon },
+  { key: 'waiting' as const, label: 'Waiting', icon: PauseIcon },
+  { key: 'resolved' as const, label: 'Resolved', icon: CheckmarkCircle02Icon },
+  { key: 'spam' as const, label: 'Spam', icon: OctagonXIcon },
 ];
 
 export const supportStatusOptions: readonly { value: string; label: string; icon: IconComponent; color: string }[] = [
@@ -159,6 +157,6 @@ export const supportStatusOptions: readonly { value: string; label: string; icon
 ] as const;
 
 export const supportAiItems = [
-  { key: 'ai_active' as const, label: 'AI Active', icon: BotIcon },
-  { key: 'resolved_by_ai' as const, label: 'Resolved by AI', icon: CheckmarkCircle02Icon },
+  { key: 'ai_active' as const, label: 'AI Handling', icon: BotIcon },
+  { key: 'resolved_by_ai' as const, label: 'AI Resolved', icon: CheckmarkCircle02Icon },
 ];

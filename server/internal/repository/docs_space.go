@@ -145,6 +145,19 @@ func (r *DocsSpaceRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// HardDelete permanently removes a space and its team associations.
+func (r *DocsSpaceRepository) HardDelete(ctx context.Context, id string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("space_id = ?", id).Delete(&model.DocsSpaceTeam{}).Error; err != nil {
+			return fmt.Errorf("delete docs space teams: %w", err)
+		}
+		if err := tx.Where("id = ?", id).Delete(&model.DocsSpace{}).Error; err != nil {
+			return fmt.Errorf("hard delete docs space: %w", err)
+		}
+		return nil
+	})
+}
+
 // Restore un-deletes a space.
 func (r *DocsSpaceRepository) Restore(ctx context.Context, id string) (*model.DocsSpace, error) {
 	if err := r.db.WithContext(ctx).Exec("UPDATE docs_spaces SET deleted_at = NULL WHERE id = ?", id).Error; err != nil {

@@ -22,19 +22,19 @@ Use it when changing:
 }
 ```
 
-### `publish_story_plan`
+### `publish_task_plan`
 
 ```json
 {
-  "title": "Story Plan",
+  "title": "Task Plan",
   "content": {
     "summary": "...",
-    "proposed_stories": [
+    "proposed_tasks": [
       {
-        "ref": "story_1",
+        "ref": "task_1",
         "name": "Add tracking helper",
         "description": "...",
-        "story_type": "chore",
+        "task_type": "chore",
         "acceptance_criteria": ["..."],
         "dependency_refs": [],
         "slice_type": "enabler",
@@ -51,12 +51,12 @@ Use it when changing:
         }
       },
       {
-        "ref": "story_2",
+        "ref": "task_2",
         "name": "Wire tracking into capture errors",
         "description": "...",
-        "story_type": "feature",
+        "task_type": "feature",
         "acceptance_criteria": ["..."],
-        "dependency_refs": ["story_1"],
+        "dependency_refs": ["task_1"],
         "slice_type": "vertical",
         "implementation_brief": {
           "approach": "...",
@@ -77,11 +77,11 @@ Use it when changing:
 }
 ```
 
-### `publish_story_plan_doc`
+### `publish_task_plan_doc`
 
 ```json
 {
-  "title": "Story Planning Document",
+  "title": "Task Planning Document",
   "content": "# Outcome\n..."
 }
 ```
@@ -92,24 +92,39 @@ Rules:
 - `content` must be the full markdown draft being reviewed
 - `title` is optional metadata only and must not be sent by itself
 
-### `request_human_approval`
+### `request_approval`
 
 ```json
 {
-  "phase": "prd|stories|story_doc",
+  "phase": "prd|tasks|task_doc",
+  "preview_panel_key": "prd_draft|task_plan|task_plan_doc",
   "title": "...",
   "summary": "..."
 }
 ```
 
-## Canonical Story Plan Fields
+For planner approval phases:
 
-Inside `proposed_stories`, use:
+- `phase="prd"` requires a same-turn `publish_prd_draft` and `preview_panel_key="prd_draft"`
+- `phase="tasks"` requires a same-turn `publish_task_plan` and `preview_panel_key="task_plan"`
+- `phase="task_doc"` requires a same-turn `publish_task_plan_doc` and `preview_panel_key="task_plan_doc"`
+
+Treat `request_approval` as the final action in that turn. Do not call additional tools or append approval-choice prose after it.
+
+Do not emit `request_approval` for a planner phase before publishing the corresponding preview in that same turn.
+
+### `request_review_checkpoint`
+
+`request_review_checkpoint` is for review-agent checkpoints, not epic/task planner approval. Planner approval flows should use `request_approval`.
+
+## Canonical Task Plan Fields
+
+Inside `proposed_tasks`, use:
 
 - `ref`
 - `name`
 - `description`
-- `story_type`
+- `task_type`
 - `acceptance_criteria`
 - `dependency_refs`
 - `slice_type`
@@ -118,14 +133,14 @@ Inside `proposed_stories`, use:
 Do not use:
 
 - `title` instead of `name`
-- `type` instead of `story_type`
+- `type` instead of `task_type`
 
 ## Compatibility Aliases
 
-These are accepted during decode for backward compatibility:
+These are accepted during decode for backward compatibility only. Do not use them in new prompt examples or skill instructions.
 
 - `title` -> `name`
-- `type` -> `story_type`
+- `type` -> `task_type`
 - `test_strategy` as either:
   - string
   - array of strings
@@ -133,22 +148,24 @@ These are accepted during decode for backward compatibility:
   - structured JSON object
   - stringified JSON
 
+Legacy story-era aliases should not be added to prompts. If one still exists in decoder code, treat it as temporary compatibility, not as part of the model-facing contract.
+
 No other planner payload aliases should be added casually.
 
 ## `dependency_refs`
 
-`dependency_refs` must point to refs that exist elsewhere in the same `proposed_stories` array.
+`dependency_refs` must point to refs that exist elsewhere in the same `proposed_tasks` array.
 
 Example:
 
 ```json
 {
-  "ref": "story_2",
-  "dependency_refs": ["story_1"]
+  "ref": "task_2",
+  "dependency_refs": ["task_1"]
 }
 ```
 
-That means `story_2` depends on the story whose ref is `story_1`.
+That means `task_2` depends on the task whose ref is `task_1`.
 
 Rules:
 
@@ -190,8 +207,8 @@ Planner validation errors returned to the model should be:
 
 Good:
 
-- `story 1 is missing name; use field "name" for the story title`
-- `story 2 references unknown dependency ref "story_7" in dependency_refs`
+- `task 1 is missing name; use field "name" for the task title`
+- `task 2 references unknown dependency ref "task_7" in dependency_refs`
 - `implementation_brief.test_strategy must be a string or array of strings`
 
 Avoid:
@@ -203,8 +220,9 @@ Avoid:
 
 Changes to planner contracts should update:
 
-- `server/internal/service/agent_system_prompts_test.go`
 - `server/internal/worker/tools_test.go`
+- `server/internal/worker/tools_interaction_test.go`
+- `server/internal/worker/tools_planner_test.go`
 - `server/internal/model/agent_planning_test.go`
 - `server/internal/temporalapp/activities_test.go`
 

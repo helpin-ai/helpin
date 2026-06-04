@@ -3,17 +3,98 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
-const defaultOnlineReplyTimeText = "We typically reply in a few minutes"
+const cannedResponseShortCodeIndex = "idx_support_canned_responses_ws_short_code"
+
+var (
+	ErrCannedResponseDuplicate = errors.New("shortcut already exists")
+	ErrCannedResponseInvalid   = errors.New("invalid shortcut")
+)
+
+type defaultCannedResponse struct {
+	ShortCode string
+	Content   string
+	Tag       string
+}
+
+var defaultSupportCannedResponses = []defaultCannedResponse{
+	{
+		ShortCode: "!hello",
+		Content: `Hi {{customer.first_name | fallback: "there"}},
+
+Thanks for reaching out. I'm checking this now and will get back to you shortly.`,
+		Tag: "General",
+	},
+	{
+		ShortCode: "!thanks",
+		Content:   "Thanks for sending this over - that helps 👍",
+		Tag:       "General",
+	},
+	{
+		ShortCode: "!closing",
+		Content:   "I'm going to close this for now, but reply here anytime if you need more help.",
+		Tag:       "General",
+	},
+	{
+		ShortCode: "!needinfo",
+		Content:   "Could you send a little more detail about what you're seeing?\n\nA screenshot, error message, or the steps you took would help us investigate.",
+		Tag:       "Support",
+	},
+	{
+		ShortCode: "!steps",
+		Content:   "Could you try these steps and let me know what happens?\n\n1. Refresh the page\n2. Sign out and back in\n3. Try again",
+		Tag:       "Support",
+	},
+	{
+		ShortCode: "!bug",
+		Content:   "Thanks for reporting this.\n\nI can reproduce the issue from your description and I'm sharing it with our team to investigate.",
+		Tag:       "Support",
+	},
+	{
+		ShortCode: "!escalate",
+		Content:   "I'm going to escalate this to the right teammate so we can take a closer look.\n\nWe'll keep you updated here.",
+		Tag:       "Support",
+	},
+	{
+		ShortCode: "!invoice",
+		Content:   "I can help with that.\n\nCould you confirm the billing email or invoice number so I can look it up?",
+		Tag:       "Billing",
+	},
+	{
+		ShortCode: "!refund",
+		Content:   "I can check the refund status for you.\n\nPlease send the order ID or billing email, and I'll take a look.",
+		Tag:       "Billing",
+	},
+	{
+		ShortCode: "!pricing",
+		Content:   "Happy to help with pricing.\n\nCould you share your team size and what you're looking to use the product for?",
+		Tag:       "Sales",
+	},
+	{
+		ShortCode: "!demo",
+		Content:   "We'd be happy to walk you through it. What day and time works best for a quick demo?",
+		Tag:       "Sales",
+	},
+	{
+		ShortCode: "!followup",
+		Content: `Hi {{customer.first_name | fallback: "there"}},
+
+Just checking in to see if you had a chance to review my last message.`,
+		Tag: "Follow-up",
+	},
+}
 
 // parseSettings unmarshals the JSONB settings string, applying defaults for missing fields.
 func parseSettings(raw string) model.SupportInboxSettings {
@@ -23,6 +104,18 @@ func parseSettings(raw string) model.SupportInboxSettings {
 	}
 	if err := json.Unmarshal([]byte(raw), &defaults); err != nil {
 		return model.DefaultSupportInboxSettings()
+	}
+	defaults.EmailFallbackEnabled = true
+	if !defaults.ForwardedEmailDetectionEnabled && defaults.ForwardedEmailDetectionMode == "" && defaults.ForwardedEmailMinConfidence == 0 {
+		defaults.ForwardedEmailDetectionEnabled = true
+		defaults.ForwardedEmailDetectionMode = "high_confidence_any_sender"
+		defaults.ForwardedEmailMinConfidence = forwardedEmailDefaultMinConfidence
+	}
+	if defaults.ForwardedEmailDetectionMode == "" {
+		defaults.ForwardedEmailDetectionMode = "high_confidence_any_sender"
+	}
+	if defaults.ForwardedEmailMinConfidence <= 0 {
+		defaults.ForwardedEmailMinConfidence = forwardedEmailDefaultMinConfidence
 	}
 	return defaults
 }
@@ -124,14 +217,43 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	if patch.OutsideHoursMessage != nil {
 		current.OutsideHoursMessage = *patch.OutsideHoursMessage
 	}
-	if patch.EmailFallbackEnabled != nil {
-		current.EmailFallbackEnabled = *patch.EmailFallbackEnabled
+	if patch.ReplyTimePreset != nil {
+		current.ReplyTimePreset = strings.TrimSpace(*patch.ReplyTimePreset)
 	}
+	if patch.ClearReplyTimeCustomMinutes != nil && *patch.ClearReplyTimeCustomMinutes {
+		current.ReplyTimeCustomMinutes = nil
+	} else if patch.ReplyTimeCustomMinutes != nil {
+		minutes := *patch.ReplyTimeCustomMinutes
+		current.ReplyTimeCustomMinutes = &minutes
+	}
+	if patch.ClearSpecialNotice != nil && *patch.ClearSpecialNotice {
+		current.SpecialNoticeText = nil
+	} else if patch.SpecialNoticeText != nil {
+		trimmed := strings.TrimSpace(*patch.SpecialNoticeText)
+		if trimmed == "" {
+			current.SpecialNoticeText = nil
+		} else {
+			current.SpecialNoticeText = &trimmed
+		}
+	}
+	current.EmailFallbackEnabled = true
 	if patch.EmailFallbackDelaySecs != nil {
 		current.EmailFallbackDelaySecs = *patch.EmailFallbackDelaySecs
 	}
 	if patch.EmailFallbackFromName != nil {
 		current.EmailFallbackFromName = *patch.EmailFallbackFromName
+	}
+	if patch.EmailFallbackMaxDeliveryAgeSecs != nil {
+		current.EmailFallbackMaxDeliveryAgeSecs = *patch.EmailFallbackMaxDeliveryAgeSecs
+	}
+	if patch.ForwardedEmailDetectionEnabled != nil {
+		current.ForwardedEmailDetectionEnabled = *patch.ForwardedEmailDetectionEnabled
+	}
+	if patch.ForwardedEmailDetectionMode != nil {
+		current.ForwardedEmailDetectionMode = strings.TrimSpace(*patch.ForwardedEmailDetectionMode)
+	}
+	if patch.ForwardedEmailMinConfidence != nil {
+		current.ForwardedEmailMinConfidence = *patch.ForwardedEmailMinConfidence
 	}
 	if patch.WidgetName != nil {
 		current.WidgetName = *patch.WidgetName
@@ -241,6 +363,20 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	if settings.AIResponseMode != "" && !validResponseMode[settings.AIResponseMode] {
 		return fmt.Errorf("ai_response_mode must be ai_first or off")
 	}
+	if settings.ReplyTimePreset != "" && !model.IsValidSupportReplyTimePreset(settings.ReplyTimePreset) {
+		return fmt.Errorf("reply_time_preset must be few_minutes, few_hours, same_day, or custom")
+	}
+	if settings.ReplyTimePreset == model.SupportReplyTimePresetCustom {
+		if settings.ReplyTimeCustomMinutes == nil {
+			return fmt.Errorf("reply_time_custom_minutes is required when reply_time_preset is custom")
+		}
+		if !model.IsValidSupportReplyTimeCustomMinutes(*settings.ReplyTimeCustomMinutes) {
+			return fmt.Errorf("reply_time_custom_minutes must be between %d and %d", model.SupportReplyTimeCustomMinutesMin, model.SupportReplyTimeCustomMinutesMax)
+		}
+	}
+	if settings.SpecialNoticeText != nil && len(*settings.SpecialNoticeText) > model.SupportSpecialNoticeMaxLength {
+		return fmt.Errorf("special_notice_text must be %d characters or fewer", model.SupportSpecialNoticeMaxLength)
+	}
 	if settings.AIMaxFollowups < 0 || settings.AIMaxFollowups > 50 {
 		return fmt.Errorf("ai_max_followups must be between 0 and 50")
 	}
@@ -249,6 +385,12 @@ func (s *SupportInboxService) validateSettings(ctx context.Context, workspaceID 
 	}
 	if settings.EmailFallbackDelaySecs < 30 || settings.EmailFallbackDelaySecs > 600 {
 		return fmt.Errorf("email_fallback_delay_secs must be between 30 and 600")
+	}
+	if settings.EmailFallbackMaxDeliveryAgeSecs < 120 || settings.EmailFallbackMaxDeliveryAgeSecs > 1800 {
+		return fmt.Errorf("email_fallback_max_delivery_age_secs must be between 120 and 1800")
+	}
+	if settings.EmailFallbackMaxDeliveryAgeSecs < settings.EmailFallbackDelaySecs {
+		return fmt.Errorf("email_fallback_max_delivery_age_secs must be greater than or equal to email_fallback_delay_secs")
 	}
 	if settings.TriageDailyBudget < 0 {
 		return fmt.Errorf("triage_daily_budget must be >= 0")
@@ -479,43 +621,76 @@ func (s *SupportInboxService) RegenerateWidgetKey(ctx context.Context, workspace
 	return inst, &settings, nil
 }
 
-// SeedWorkspaceDefaults creates a default widget installation for a new workspace.
+// SeedWorkspaceDefaults creates default support inbox data for a new workspace.
 func (s *SupportInboxService) SeedWorkspaceDefaults(ctx context.Context, workspaceID, actorID string) error {
-	existing, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
-	if err != nil {
-		return fmt.Errorf("check existing installation: %w", err)
-	}
-	if existing != nil {
-		return nil // already seeded
-	}
+	if s.installationRepo != nil {
+		existing, err := s.installationRepo.GetByWorkspace(ctx, workspaceID)
+		if err != nil {
+			return fmt.Errorf("check existing installation: %w", err)
+		}
+		if existing == nil {
+			widgetKey, err := generateSecureToken(16)
+			if err != nil {
+				return fmt.Errorf("generate widget key: %w", err)
+			}
+			secretKey, err := generateSecureToken(32)
+			if err != nil {
+				return fmt.Errorf("generate secret key: %w", err)
+			}
 
-	widgetKey, err := generateSecureToken(16)
-	if err != nil {
-		return fmt.Errorf("generate widget key: %w", err)
-	}
-	secretKey, err := generateSecureToken(32)
-	if err != nil {
-		return fmt.Errorf("generate secret key: %w", err)
-	}
+			defaults := model.DefaultSupportInboxSettings()
+			raw, err := json.Marshal(defaults)
+			if err != nil {
+				return fmt.Errorf("marshal default settings: %w", err)
+			}
 
-	defaults := model.DefaultSupportInboxSettings()
-	raw, err := json.Marshal(defaults)
+			inst := &model.SupportWidgetInstallation{
+				WorkspaceID: workspaceID,
+				WidgetKey:   widgetKey,
+				SecretKey:   secretKey,
+				Settings:    string(raw),
+				Active:      true,
+			}
+			if err := s.installationRepo.Create(ctx, inst); err != nil {
+				return fmt.Errorf("create widget installation: %w", err)
+			}
+
+			slog.InfoContext(ctx, "seeded support widget installation", "workspace_id", workspaceID, "installation_id", inst.ID)
+		}
+	}
+	if err := s.seedDefaultCannedResponses(ctx, workspaceID, actorID); err != nil {
+		return fmt.Errorf("seed default shortcuts: %w", err)
+	}
+	return nil
+}
+
+func (s *SupportInboxService) seedDefaultCannedResponses(ctx context.Context, workspaceID, actorID string) error {
+	if s.cannedResponseRepo == nil {
+		return nil
+	}
+	existing, err := s.cannedResponseRepo.List(ctx, workspaceID)
 	if err != nil {
-		return fmt.Errorf("marshal default settings: %w", err)
+		return err
 	}
-
-	inst := &model.SupportWidgetInstallation{
-		WorkspaceID: workspaceID,
-		WidgetKey:   widgetKey,
-		SecretKey:   secretKey,
-		Settings:    string(raw),
-		Active:      true,
+	if len(existing) > 0 {
+		return nil
 	}
-	if err := s.installationRepo.Create(ctx, inst); err != nil {
-		return fmt.Errorf("create widget installation: %w", err)
+	for _, def := range defaultSupportCannedResponses {
+		response := &model.SupportCannedResponse{
+			WorkspaceID: workspaceID,
+			ShortCode:   def.ShortCode,
+			Content:     def.Content,
+			Tag:         def.Tag,
+			CreatedByID: actorID,
+		}
+		if err := s.cannedResponseRepo.Create(ctx, response); err != nil {
+			if isDuplicateCannedResponseError(err) {
+				continue
+			}
+			return err
+		}
 	}
-
-	slog.InfoContext(ctx, "seeded support widget installation", "workspace_id", workspaceID, "installation_id", inst.ID)
+	slog.InfoContext(ctx, "seeded support shortcut defaults", "workspace_id", workspaceID, "count", len(defaultSupportCannedResponses))
 	return nil
 }
 
@@ -529,20 +704,68 @@ func (s *SupportInboxService) SearchCannedResponses(ctx context.Context, workspa
 	return s.cannedResponseRepo.Search(ctx, workspaceID, query)
 }
 
+func normalizeCannedResponseRequest(req model.CannedResponseRequest) (model.CannedResponseRequest, error) {
+	req.ShortCode = strings.TrimSpace(req.ShortCode)
+	req.Content = strings.TrimSpace(req.Content)
+	if req.Tag != nil {
+		tag := strings.TrimSpace(*req.Tag)
+		req.Tag = &tag
+	}
+	if req.ShortCode == "" || req.Content == "" {
+		return req, fmt.Errorf("%w: shortcut and content are required", ErrCannedResponseInvalid)
+	}
+	if !strings.HasPrefix(req.ShortCode, "!") || strings.ContainsAny(req.ShortCode, " \t\r\n") {
+		return req, fmt.Errorf("%w: shortcut must start with ! and contain no spaces", ErrCannedResponseInvalid)
+	}
+	if len(req.ShortCode) < 2 {
+		return req, fmt.Errorf("%w: shortcut must have at least one character after !", ErrCannedResponseInvalid)
+	}
+	if req.Tag == nil || *req.Tag == "" {
+		tag := "General"
+		req.Tag = &tag
+	}
+	return req, nil
+}
+
+// isDuplicateCannedResponseError detects a race-condition violation of the
+// (workspace_id, short_code) unique index. The pre-flight GetByShortCode check
+// covers the common case; this fallback only fires when two creates land
+// between that lookup and the INSERT.
+func isDuplicateCannedResponseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), cannedResponseShortCodeIndex)
+}
+
 // CreateCannedResponse creates a new canned response.
 func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspaceID string, req model.CannedResponseRequest, createdByID string) (*model.SupportCannedResponse, error) {
-	if strings.TrimSpace(req.ShortCode) == "" || strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Content) == "" {
-		return nil, fmt.Errorf("short_code, title, and content are required")
+	req, err := normalizeCannedResponseRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.cannedResponseRepo.GetByShortCode(ctx, workspaceID, req.ShortCode)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, ErrCannedResponseDuplicate
 	}
 
 	response := &model.SupportCannedResponse{
 		WorkspaceID: workspaceID,
 		ShortCode:   req.ShortCode,
-		Title:       req.Title,
 		Content:     req.Content,
+		Tag:         *req.Tag,
 		CreatedByID: createdByID,
 	}
 	if err := s.cannedResponseRepo.Create(ctx, response); err != nil {
+		if isDuplicateCannedResponseError(err) {
+			return nil, ErrCannedResponseDuplicate
+		}
 		return nil, fmt.Errorf("create canned response: %w", err)
 	}
 	return response, nil
@@ -550,6 +773,10 @@ func (s *SupportInboxService) CreateCannedResponse(ctx context.Context, workspac
 
 // UpdateCannedResponse updates an existing canned response.
 func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspaceID, id string, req model.CannedResponseRequest) (*model.SupportCannedResponse, error) {
+	req, err := normalizeCannedResponseRequest(req)
+	if err != nil {
+		return nil, err
+	}
 	response, err := s.cannedResponseRepo.GetByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
@@ -557,12 +784,22 @@ func (s *SupportInboxService) UpdateCannedResponse(ctx context.Context, workspac
 	if response == nil {
 		return nil, fmt.Errorf("canned response not found")
 	}
+	existing, err := s.cannedResponseRepo.GetByShortCode(ctx, workspaceID, req.ShortCode)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.ID != id {
+		return nil, ErrCannedResponseDuplicate
+	}
 
 	response.ShortCode = req.ShortCode
-	response.Title = req.Title
 	response.Content = req.Content
+	response.Tag = *req.Tag
 
 	if err := s.cannedResponseRepo.Update(ctx, response); err != nil {
+		if isDuplicateCannedResponseError(err) {
+			return nil, ErrCannedResponseDuplicate
+		}
 		return nil, fmt.Errorf("update canned response: %w", err)
 	}
 	return response, nil

@@ -1,4 +1,4 @@
-import { mountWidget, unmountWidget } from '@helpin-ai/widget-core';
+import { mountWidget, unmountWidget, SYSTEM_EVENT_TYPES } from '@helpin-ai/widget-core';
 import type { WidgetConfig, Message, Conversation, WidgetView } from '@helpin-ai/widget-core';
 // @ts-ignore — Vite ?inline import returns CSS as a string
 import widgetStyles from '@helpin-ai/widget-core/styles?inline';
@@ -64,7 +64,8 @@ const WS_BASE_DELAY_MS = 1000;
 const WS_MAX_DELAY_MS = 30000;
 const MAX_AUTO_RECONNECT_WINDOW_MS = 25_000;
 const MAX_BACKGROUND_RETRY_DELAY_MS = 120_000;
-const NOTIFICATION_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
+const RECEIVED_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/ping.mp3';
+const SENT_MESSAGE_SOUND_URL = 'https://cdn.helpin.ai/sounds/submit.mp3';
 
 function normalizeWidgetConfig(raw: any): WidgetConfig {
   const teammates = Array.isArray(raw?.availableTeammates)
@@ -95,6 +96,7 @@ export class WidgetManager {
   private isVisible = false;
   private isOpen = false;
   private unreadCount = 0;
+  private titleUnreadByConversation = new Map<string, number>();
   private sessionToken: string | null = null;
   private wsConnection: WebSocket | null = null;
   private wsRetryCount = 0;
@@ -122,12 +124,20 @@ export class WidgetManager {
   private typingAgentName: string | undefined;
   private typingAgentAvatar: string | undefined;
   private activeTeammate: WidgetActiveTeammate | undefined;
+  private escalationRequestsInFlight = new Set<string>();
   private currentEmail: string | null = null;
   private isConversationExpanded = false;
+  private originalDocumentTitle: string | null = null;
+  private pageIsFocused = true;
   private preChatDone = false;
-  private notificationAudio: HTMLAudioElement | null = null;
-  private notificationAudioUnlocked = false;
+  private receivedMessageAudio: HTMLAudioElement | null = null;
+  private receivedMessageAudioUnlocked = false;
+  private sentMessageAudio: HTMLAudioElement | null = null;
+  private sentMessageAudioUnlocked = false;
   private audioUnlockListener: (() => void) | null = null;
+  private visibilityChangeListener: (() => void) | null = null;
+  private focusListener: (() => void) | null = null;
+  private blurListener: (() => void) | null = null;
 
   private callbacks: Record<string, WidgetCallback[]> = {
     onOpen: [],
@@ -160,6 +170,9 @@ export class WidgetManager {
 
     this.isShutdown = false;
     this.isVisible = true;
+    this.originalDocumentTitle = document.title;
+    this.pageIsFocused = this.computePageIsFocused();
+    this.registerTitleNotificationListeners();
     this.config = {
       ...settings,
       widgetKey,
@@ -181,7 +194,8 @@ export class WidgetManager {
     // Unlock notification audio on first user interaction with the page
     if (!this.audioUnlockListener) {
       this.audioUnlockListener = () => {
-        this.unlockNotificationSound();
+        this.unlockReceivedMessageSound();
+        this.unlockSentMessageSound();
         document.removeEventListener('click', this.audioUnlockListener!);
         document.removeEventListener('touchstart', this.audioUnlockListener!);
         this.audioUnlockListener = null;
@@ -239,12 +253,15 @@ export class WidgetManager {
 
   private cleanup(): void {
     this.stopTyping();
+    this.restoreDocumentTitle();
+    this.unregisterTitleNotificationListeners();
     this.config = null;
     this.widgetConfig = null;
     this.isVisible = false;
     this.sessionToken = null;
     this.isOpen = false;
     this.unreadCount = 0;
+    this.titleUnreadByConversation.clear();
     this.hasBeenOpened = false;
     this.wsRetryCount = 0;
     this.connectionIssueStartedAt = null;
@@ -255,10 +272,13 @@ export class WidgetManager {
     this.openArticleRequest = null;
     this.articleRequestKey = 0;
     this.isTyping = false;
+    this.isAIThinking = false;
     this.connectionStatus = 'idle';
     this.activeTeammate = undefined;
     this.currentEmail = null;
     this.isConversationExpanded = false;
+    this.originalDocumentTitle = null;
+    this.pageIsFocused = true;
 
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
@@ -283,13 +303,15 @@ export class WidgetManager {
   hide(): void {
     this.isVisible = false;
     this.isOpen = false;
+    this.updateDocumentTitle();
     this.render();
   }
 
   open(): void {
     this.isVisible = true;
     this.isOpen = true;
-    this.unlockNotificationSound();
+    this.unlockReceivedMessageSound();
+    this.unlockSentMessageSound();
     if (!this.hasBeenOpened && this.currentView === 'home') {
       this.hasBeenOpened = true;
       // If there's an active conversation (restored session), resume it;
@@ -298,12 +320,15 @@ export class WidgetManager {
     } else {
       this.hasBeenOpened = true;
     }
+    this.clearTitleUnread(this.currentView === 'conversation' ? this.activeConversationId : null);
     this.ensureWidget();
+    this.updateDocumentTitle();
     this.render();
   }
 
   close(): void {
     this.isOpen = false;
+    this.updateDocumentTitle();
     this.render();
   }
 
@@ -589,30 +614,59 @@ export class WidgetManager {
   // ─── Unread Count ──────────────────────────────────────────
 
   /** Preload and unlock audio playback (call from a user-gesture handler like show/toggle). */
-  private unlockNotificationSound(): void {
-    if (this.notificationAudioUnlocked) return;
+  private unlockReceivedMessageSound(): void {
+    if (this.receivedMessageAudioUnlocked) return;
     try {
-      if (!this.notificationAudio) {
-        this.notificationAudio = new Audio(NOTIFICATION_SOUND_URL);
+      if (!this.receivedMessageAudio) {
+        this.receivedMessageAudio = new Audio(RECEIVED_MESSAGE_SOUND_URL);
       }
       // Silent play to unlock autoplay policy, then pause
-      this.notificationAudio.volume = 0;
-      this.notificationAudio.play().then(() => {
-        this.notificationAudio!.pause();
-        this.notificationAudio!.currentTime = 0;
-        this.notificationAudioUnlocked = true;
+      this.receivedMessageAudio.volume = 0;
+      this.receivedMessageAudio.play().then(() => {
+        this.receivedMessageAudio!.pause();
+        this.receivedMessageAudio!.currentTime = 0;
+        this.receivedMessageAudioUnlocked = true;
       }).catch(() => {/* ignore */});
     } catch { /* audio not supported */ }
   }
 
-  private playNotificationSound(): void {
+  private playReceivedMessageSound(): void {
     try {
-      if (!this.notificationAudio) {
-        this.notificationAudio = new Audio(NOTIFICATION_SOUND_URL);
+      if (!this.receivedMessageAudio) {
+        this.receivedMessageAudio = new Audio(RECEIVED_MESSAGE_SOUND_URL);
       }
-      this.notificationAudio.volume = 0.5;
-      this.notificationAudio.currentTime = 0;
-      this.notificationAudio.play().catch(() => {/* autoplay blocked — ignore */});
+      this.receivedMessageAudio.volume = 0.5;
+      this.receivedMessageAudio.currentTime = 0;
+      this.receivedMessageAudio.play().catch(() => {/* autoplay blocked — ignore */});
+    } catch { /* audio not supported — ignore */ }
+  }
+
+  /** Preload + unlock the customer "send" pop. Same gesture-unlock dance
+   *  as the received-message sound so the first send doesn't get blocked
+   *  by the browser's autoplay policy. */
+  private unlockSentMessageSound(): void {
+    if (this.sentMessageAudioUnlocked) return;
+    try {
+      if (!this.sentMessageAudio) {
+        this.sentMessageAudio = new Audio(SENT_MESSAGE_SOUND_URL);
+      }
+      this.sentMessageAudio.volume = 0;
+      this.sentMessageAudio.play().then(() => {
+        this.sentMessageAudio!.pause();
+        this.sentMessageAudio!.currentTime = 0;
+        this.sentMessageAudioUnlocked = true;
+      }).catch(() => {/* ignore */});
+    } catch { /* audio not supported */ }
+  }
+
+  private playSentMessageSound(): void {
+    try {
+      if (!this.sentMessageAudio) {
+        this.sentMessageAudio = new Audio(SENT_MESSAGE_SOUND_URL);
+      }
+      this.sentMessageAudio.volume = 0.4;
+      this.sentMessageAudio.currentTime = 0;
+      this.sentMessageAudio.play().catch(() => {/* autoplay blocked — ignore */});
     } catch { /* audio not supported — ignore */ }
   }
 
@@ -625,6 +679,8 @@ export class WidgetManager {
       this.unreadCount = total;
       this.triggerCallback('onUnreadCountChange', total);
     }
+    this.syncTitleUnreadWithConversations();
+    this.updateDocumentTitle();
   }
 
   private clearActiveConversationUnread(): void {
@@ -635,6 +691,140 @@ export class WidgetManager {
       this.conversations = this.conversations.map((c, i) => i === convIdx ? updated : c);
       this.syncUnreadCount();
     }
+    this.clearTitleUnread(this.activeConversationId);
+  }
+
+  private isConversationVisibleToUser(conversationId?: string | null): boolean {
+    return Boolean(
+      conversationId &&
+      this.pageIsFocused &&
+      this.isOpen &&
+      this.currentView === 'conversation' &&
+      this.activeConversationId === conversationId,
+    );
+  }
+
+  private markConversationRead(conversationId?: string | null): void {
+    if (!conversationId) return;
+
+    const convIdx = this.conversations.findIndex((conversation) => conversation.id === conversationId);
+    if (convIdx >= 0 && this.conversations[convIdx].unreadCount) {
+      const updated = { ...this.conversations[convIdx], unreadCount: 0 };
+      this.conversations = this.conversations.map((conversation, index) => (
+        index === convIdx ? updated : conversation
+      ));
+      this.syncUnreadCount();
+    } else {
+      this.clearTitleUnread(conversationId);
+    }
+
+    if (this.wsConnection?.readyState === WebSocket.OPEN) {
+      this.wsSend('conversation:read', { conversation_id: conversationId });
+    }
+  }
+
+  private computePageIsFocused(): boolean {
+    if (typeof document === 'undefined') return true;
+    return document.visibilityState === 'visible' && document.hasFocus();
+  }
+
+  private registerTitleNotificationListeners(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    this.visibilityChangeListener = () => {
+      this.pageIsFocused = this.computePageIsFocused();
+      if (this.pageIsFocused && this.isConversationVisibleToUser(this.activeConversationId)) {
+        this.markConversationRead(this.activeConversationId);
+      }
+      this.updateDocumentTitle();
+    };
+    this.focusListener = () => {
+      this.pageIsFocused = true;
+      if (this.isConversationVisibleToUser(this.activeConversationId)) {
+        this.markConversationRead(this.activeConversationId);
+      }
+      this.updateDocumentTitle();
+    };
+    this.blurListener = () => {
+      this.pageIsFocused = this.computePageIsFocused();
+      this.updateDocumentTitle();
+    };
+
+    document.addEventListener('visibilitychange', this.visibilityChangeListener);
+    window.addEventListener('focus', this.focusListener);
+    window.addEventListener('blur', this.blurListener);
+  }
+
+  private unregisterTitleNotificationListeners(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (this.visibilityChangeListener) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeListener);
+      this.visibilityChangeListener = null;
+    }
+    if (this.focusListener) {
+      window.removeEventListener('focus', this.focusListener);
+      this.focusListener = null;
+    }
+    if (this.blurListener) {
+      window.removeEventListener('blur', this.blurListener);
+      this.blurListener = null;
+    }
+  }
+
+  private restoreDocumentTitle(): void {
+    if (typeof document === 'undefined' || this.originalDocumentTitle === null) return;
+    document.title = this.originalDocumentTitle;
+  }
+
+  private getTitleUnreadCount(): number {
+    return Array.from(this.titleUnreadByConversation.values()).reduce((sum, count) => sum + count, 0);
+  }
+
+  private syncTitleUnreadWithConversations(): void {
+    if (!this.titleUnreadByConversation.size) return;
+
+    const conversationIds = new Set(this.conversations.map((conversation) => conversation.id));
+    for (const [conversationId] of this.titleUnreadByConversation.entries()) {
+      const conversation = this.conversations.find((entry) => entry.id === conversationId);
+      if (!conversationIds.has(conversationId) || Number(conversation?.unreadCount ?? 0) <= 0) {
+        this.titleUnreadByConversation.delete(conversationId);
+      }
+    }
+  }
+
+  private clearTitleUnread(conversationId?: string | null): void {
+    if (!conversationId) {
+      this.updateDocumentTitle();
+      return;
+    }
+    if (this.titleUnreadByConversation.delete(conversationId)) {
+      this.updateDocumentTitle();
+      return;
+    }
+    this.updateDocumentTitle();
+  }
+
+  private incrementTitleUnread(conversationId?: string): void {
+    if (!conversationId) return;
+    this.titleUnreadByConversation.set(
+      conversationId,
+      (this.titleUnreadByConversation.get(conversationId) ?? 0) + 1,
+    );
+  }
+
+  private updateDocumentTitle(): void {
+    if (typeof document === 'undefined') return;
+    if (this.originalDocumentTitle === null) {
+      this.originalDocumentTitle = document.title;
+    }
+
+    const unread = this.getTitleUnreadCount();
+    if (unread <= 0 || this.pageIsFocused) {
+      this.restoreDocumentTitle();
+      return;
+    }
+
+    document.title = unread === 1 ? '(1) New reply' : `(${unread}) New replies`;
   }
 
   // ─── Message Handling ──────────────────────────────────────
@@ -644,6 +834,7 @@ export class WidgetManager {
     this.activeTeammate = undefined;
     this.messages = [];
     this.isTyping = false;
+    this.isAIThinking = false;
   }
 
   private mapActiveTeammate(raw: any): WidgetActiveTeammate | undefined {
@@ -716,6 +907,53 @@ export class WidgetManager {
     };
   }
 
+  private mapSupportMessage(raw: any): Message {
+    let parsedMeta: any = null;
+    if (raw?.metadata) {
+      try { parsedMeta = typeof raw.metadata === 'string' ? JSON.parse(raw.metadata) : raw.metadata; } catch { /* ignore */ }
+    }
+
+    const isSystem = raw?.message_type === 'system';
+    const isAI = raw?.sender_type === 'ai' || !!(parsedMeta?.ai_agent_id);
+    const role: Message['role'] = isSystem
+      ? 'system'
+      : raw?.sender_type === 'customer'
+        ? 'customer'
+        : isAI
+          ? 'ai'
+          : 'agent';
+
+    // Validate system_event_type against the shared union before surfacing it
+    // so renderers can trust the value.
+    let systemEventType: Message['systemEventType'];
+    const rawEventType = typeof raw?.system_event_type === 'string' ? raw.system_event_type : undefined;
+    if (rawEventType && Array.isArray(SYSTEM_EVENT_TYPES) && (SYSTEM_EVENT_TYPES as readonly string[]).includes(rawEventType)) {
+      systemEventType = rawEventType as Message['systemEventType'];
+    }
+
+    const message: Message = {
+      id: raw?.id || `ws-${Date.now()}`,
+      conversationId: raw?.conversation_id || '',
+      role,
+      content: raw?.content || '',
+      senderName: raw?.sender_display_name || raw?.sender_name || undefined,
+      senderAvatar: raw?.sender_avatar_url || raw?.sender_avatar || undefined,
+      systemEventType,
+      viaChannel: raw?.via_channel || undefined,
+      isInternal: raw?.is_internal || false,
+      attachments: WidgetManager.mapAttachments(raw?.attachments),
+      createdAt: raw?.created_at || new Date().toISOString(),
+    };
+
+    if (parsedMeta) {
+      if (parsedMeta.ai_sources) message.sources = parsedMeta.ai_sources;
+      if (parsedMeta.ai_confidence !== undefined) message.aiConfidence = parsedMeta.ai_confidence;
+      if (Array.isArray(parsedMeta.link_previews)) message.linkPreviews = parsedMeta.link_previews;
+    }
+
+    return message;
+  }
+
   private handleSendMessage(content: string, options: { startNewConversation?: boolean; attachmentIds?: string[] } = {}): void {
     if (!content.trim() && (!options.attachmentIds || options.attachmentIds.length === 0)) return;
 
@@ -739,7 +977,28 @@ export class WidgetManager {
       createdAt: new Date().toISOString(),
     };
     this.messages = [...this.messages, optimisticMsg];
+    const activeConversation = this.activeConversationId
+      ? this.conversations.find((conversation) => conversation.id === this.activeConversationId)
+      : undefined;
+    const humanHandledFlowStates = new Set([
+      'waiting_for_human',
+      'queued_for_human',
+      'after_hours_queue',
+      'assigned_to_human',
+      'resolved_by_human',
+    ]);
+    const expectsAIReply = Boolean(
+      this.widgetConfig?.features?.aiEnabled &&
+        this.widgetConfig?.features?.aiFirst &&
+        !this.messages.some((message) => message.role === 'agent') &&
+        activeConversation?.aiState !== 'escalated' &&
+        !humanHandledFlowStates.has(activeConversation?.flowState || ''),
+    );
+    if (expectsAIReply) {
+      this.isAIThinking = true;
+    }
     this.render();
+    this.playSentMessageSound();
 
     // Stop typing indicator before sending
     this.stopTyping();
@@ -1020,8 +1279,19 @@ export class WidgetManager {
   private handleEscalateToHuman(): void {
     if (!this.activeConversationId) return;
 
+    const conversation = this.conversations.find((c) => c.id === this.activeConversationId);
+    if (conversation?.aiState === 'escalated' || this.escalationRequestsInFlight.has(this.activeConversationId)) {
+      return;
+    }
+
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
-      this.wsSend('conversation:escalate', {});
+      this.escalationRequestsInFlight.add(this.activeConversationId);
+      try {
+        this.wsSend('conversation:escalate', {});
+      } catch (error) {
+        this.escalationRequestsInFlight.delete(this.activeConversationId);
+        throw error;
+      }
     } else {
       console.error('Failed to escalate to human: WebSocket not connected');
     }
@@ -1045,6 +1315,7 @@ export class WidgetManager {
       this.conversations = this.conversations.map((c, i) => i === convIdx ? updated : c);
       this.syncUnreadCount();
     }
+    this.clearTitleUnread(conversationId);
 
     // Clear current messages while loading
     this.messages = [];
@@ -1247,32 +1518,7 @@ export class WidgetManager {
 
         // Load conversation history from server
         if (payload.messages && payload.messages.length > 0) {
-          this.messages = payload.messages.map((m: any) => {
-            let parsedMeta: any = null;
-            if (m.metadata) {
-              try { parsedMeta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; } catch { /* ignore */ }
-            }
-            const isAI = m.sender_type === 'ai' || !!(parsedMeta?.ai_agent_id);
-            const msg: any = {
-              id: m.id,
-              conversationId: m.conversation_id,
-              role: m.sender_type === 'customer' ? 'customer' : isAI ? 'ai' : 'agent',
-              content: m.content,
-              senderName: m.sender_display_name || undefined,
-              senderAvatar: m.sender_avatar_url || undefined,
-              viaChannel: m.via_channel || undefined,
-              isInternal: m.is_internal || false,
-              attachments: WidgetManager.mapAttachments(m.attachments),
-              createdAt: m.created_at,
-            };
-            // Map AI metadata to widget Message fields
-            if (parsedMeta) {
-              if (parsedMeta.ai_sources) msg.sources = parsedMeta.ai_sources;
-              if (parsedMeta.ai_confidence !== undefined) msg.aiConfidence = parsedMeta.ai_confidence;
-              if (Array.isArray(parsedMeta.link_previews)) msg.linkPreviews = parsedMeta.link_previews;
-            }
-            return msg;
-          });
+          this.messages = payload.messages.map((m: any) => this.mapSupportMessage(m));
         }
 
         const hashConversationId = this.getConversationIdFromHash();
@@ -1363,29 +1609,7 @@ export class WidgetManager {
 
       case 'message:received': {
         const msg = data.data;
-        let wsMeta: any = null;
-        if (msg.metadata) {
-          try { wsMeta = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata; } catch { /* ignore */ }
-        }
-        const wsIsAI = msg.sender_type === 'ai' || !!(wsMeta?.ai_agent_id);
-        const newMsg: any = {
-          id: msg.id || `ws-${Date.now()}`,
-          conversationId: msg.conversation_id || '',
-          role: msg.sender_type === 'customer' ? 'customer' : wsIsAI ? 'ai' : 'agent',
-          content: msg.content || '',
-          senderName: msg.sender_name || undefined,
-          senderAvatar: msg.sender_avatar || undefined,
-          viaChannel: msg.via_channel || undefined,
-          isInternal: false,
-          attachments: WidgetManager.mapAttachments(msg.attachments),
-          createdAt: msg.created_at || new Date().toISOString(),
-        };
-        // Map AI metadata from WS payload
-        if (wsMeta) {
-          if (wsMeta.ai_sources) (newMsg as any).sources = wsMeta.ai_sources;
-          if (wsMeta.ai_confidence !== undefined) (newMsg as any).aiConfidence = wsMeta.ai_confidence;
-          if (Array.isArray(wsMeta.link_previews)) (newMsg as any).linkPreviews = wsMeta.link_previews;
-        }
+        const newMsg = this.mapSupportMessage(msg);
 
         // Replace optimistic message if this is an echo
         if (msg.sender_type === 'customer') {
@@ -1404,14 +1628,18 @@ export class WidgetManager {
 
         if (msg.sender_type !== 'customer') {
           this.isTyping = false;
-          this.playNotificationSound();
+          this.isAIThinking = false;
+          this.playReceivedMessageSound();
         }
 
         // Update conversation in the list (lastMessage preview + unread count + move to top)
         if (newMsg.conversationId) {
           const convIdx = this.conversations.findIndex(c => c.id === newMsg.conversationId);
-          const isActiveAndOpen = this.isOpen && this.currentView === 'conversation' && this.activeConversationId === newMsg.conversationId;
+          const isActiveAndOpen = this.isConversationVisibleToUser(newMsg.conversationId);
           const nextUnreadCount = msg.sender_type !== 'customer' && !isActiveAndOpen ? 1 : 0;
+          if (msg.sender_type !== 'customer' && newMsg.role !== 'system' && !isActiveAndOpen) {
+            this.incrementTitleUnread(newMsg.conversationId);
+          }
           if (convIdx >= 0) {
             const prev = this.conversations[convIdx];
             const updated = {
@@ -1438,8 +1666,8 @@ export class WidgetManager {
             this.activeTeammate = this.conversations.find((conversation) => conversation.id === newMsg.conversationId)?.activeTeammate;
           }
 
-          if (msg.sender_type !== 'customer' && isActiveAndOpen && this.wsConnection?.readyState === WebSocket.OPEN) {
-            this.wsSend('conversation:read', { conversation_id: newMsg.conversationId });
+          if (msg.sender_type !== 'customer' && isActiveAndOpen) {
+            this.markConversationRead(newMsg.conversationId);
           }
         }
 
@@ -1507,6 +1735,9 @@ export class WidgetManager {
         if (Array.isArray(convs)) {
           this.conversations = convs.map((c: any) => {
             const conversation = this.mapConversation(c);
+            if (conversation.aiState === 'escalated') {
+              this.escalationRequestsInFlight.delete(conversation.id);
+            }
             return {
               ...conversation,
               unreadCount: (this.isOpen && this.currentView === 'conversation' && this.activeConversationId === c.id)
@@ -1528,31 +1759,9 @@ export class WidgetManager {
         if (Array.isArray(msgs)) {
           this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate)
             || (this.activeConversationId ? this.conversations.find((c) => c.id === this.activeConversationId)?.activeTeammate : undefined);
-          this.messages = msgs.map((m: any) => {
-            let meta: any = null;
-            if (m.metadata) {
-              try { meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; } catch { /* ignore */ }
-            }
-            const mIsAI = m.sender_type === 'ai' || !!(meta?.ai_agent_id);
-            const mapped: any = {
-              id: m.id,
-              conversationId: m.conversation_id,
-              role: m.sender_type === 'customer' ? 'customer' : mIsAI ? 'ai' : 'agent',
-              content: m.content,
-              senderName: m.sender_display_name || undefined,
-              senderAvatar: m.sender_avatar_url || undefined,
-              viaChannel: m.via_channel || undefined,
-              isInternal: m.is_internal || false,
-              attachments: WidgetManager.mapAttachments(m.attachments),
-              createdAt: m.created_at,
-            };
-            if (meta) {
-              if (meta.ai_sources) mapped.sources = meta.ai_sources;
-              if (meta.ai_confidence !== undefined) mapped.aiConfidence = meta.ai_confidence;
-              if (Array.isArray(meta.link_previews)) mapped.linkPreviews = meta.link_previews;
-            }
-            return mapped;
-          });
+          this.messages = msgs.map((m: any) => this.mapSupportMessage(m));
+          this.isTyping = false;
+          this.isAIThinking = false;
           this.render();
         }
         break;
@@ -1560,6 +1769,21 @@ export class WidgetManager {
 
       case 'conversation:escalated': {
         this.activeTeammate = this.mapActiveTeammate(data.data?.active_teammate) || this.activeTeammate;
+        const conversationId = typeof data.data?.conversation_id === 'string'
+          ? data.data.conversation_id
+          : this.activeConversationId;
+        if (conversationId) {
+          this.escalationRequestsInFlight.delete(conversationId);
+          this.conversations = this.conversations.map((conversation) => {
+            if (conversation.id !== conversationId) return conversation;
+            return {
+              ...conversation,
+              aiState: 'escalated',
+              flowState: data.data?.flow_state || conversation.flowState,
+              activeTeammate: this.activeTeammate || conversation.activeTeammate,
+            };
+          });
+        }
         this.render();
         break;
       }
@@ -1649,7 +1873,7 @@ export class WidgetManager {
    * identify() / lead() SDK methods without going through the HTTP fallback.
    * Returns true if the message was sent, false if WS is not open.
    */
-  public sendSessionUpgrade(email: string, name: string, source: string, firstName: string = '', lastName: string = ''): boolean {
+  public sendSessionUpgrade(email: string, name: string, source: string, firstName: string = '', lastName: string = '', company?: Record<string, any>): boolean {
     if (this.wsConnection?.readyState === WebSocket.OPEN) {
       this.wsSend('session:upgrade', {
         email,
@@ -1657,6 +1881,7 @@ export class WidgetManager {
         first_name: firstName,
         last_name: lastName,
         source,
+        company,
       });
       // Persist identity so it survives page refresh
       if (this.widgetKey && email) {

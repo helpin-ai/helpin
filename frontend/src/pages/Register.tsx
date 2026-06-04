@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
+import { loginRedirectFromSearch } from '@/lib/authRedirect';
 
 export default function Register() {
   useTitle('Sign Up');
@@ -17,6 +18,8 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuthStore();
   const navigate = useNavigate();
+  const redirect = loginRedirectFromSearch();
+  const loginHref = redirect ? `/login?redirect=${encodeURIComponent(redirect)}` : '/login';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -27,8 +30,7 @@ export default function Register() {
       toast.error(error);
     } else {
       toast.success('Account created successfully');
-      const redirect = new URLSearchParams(window.location.search).get('redirect');
-      if (redirect && redirect.startsWith('/join/')) {
+      if (redirect) {
         navigate({ to: redirect as string });
       } else {
         navigate({ to: '/workspaces' });
@@ -63,7 +65,7 @@ export default function Register() {
               {loading ? 'Creating account...' : 'Create account'}
             </Button>
             <p className="text-sm text-muted-foreground">
-              Already have an account? <Link to="/login" className="text-primary hover:underline">Sign in</Link>
+              Already have an account? <Link to={loginHref as '/login'} className="text-primary hover:underline">Sign in</Link>
             </p>
           </CardFooter>
         </form>

@@ -42,12 +42,10 @@ export function CodingPlanPanel({ plan, runStatus }: CodingPlanPanelProps) {
     return `${completedCount}/${steps.length} steps`;
   })();
 
-  const open = terminal ? !allDone && !unfinalized : (!hasPlan || hasInProgress || !allDone);
-
   return (
     <details
       className="rounded-xl border border-border bg-card shadow-sm"
-      open={open}
+      open
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
         <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

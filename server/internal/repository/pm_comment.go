@@ -20,6 +20,16 @@ func NewPMCommentRepository(db *gorm.DB) *PMCommentRepository {
 	return &PMCommentRepository{db: db}
 }
 
+// DB returns the underlying database handle for transaction orchestration.
+func (r *PMCommentRepository) DB() *gorm.DB {
+	return r.db
+}
+
+// WithTx returns a repository bound to the provided transaction.
+func (r *PMCommentRepository) WithTx(tx *gorm.DB) *PMCommentRepository {
+	return NewPMCommentRepository(tx)
+}
+
 // List returns top-level comments for an entity with author info, nested replies, reactions, and attachments.
 func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID string) ([]model.CommentWithAuthor, error) {
 	var comments []model.PMComment
@@ -30,17 +40,46 @@ func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID str
 		return nil, fmt.Errorf("list comments: %w", err)
 	}
 
-	if len(comments) == 0 {
-		return nil, nil
+	grouped, err := r.commentsWithAuthorsByEntity(ctx, comments)
+	if err != nil {
+		return nil, err
 	}
+	return grouped[entityID], nil
+}
 
-	// Collect all comment IDs for batch loading.
+// ListByEntityIDs returns comments grouped by entity ID for entities of the same type.
+func (r *PMCommentRepository) ListByEntityIDs(ctx context.Context, entityType string, entityIDs []string) (map[string][]model.CommentWithAuthor, error) {
+	result := make(map[string][]model.CommentWithAuthor, len(entityIDs))
+	if len(entityIDs) == 0 {
+		return result, nil
+	}
+	var comments []model.PMComment
+	if err := r.db.WithContext(ctx).
+		Where("entity_type = ? AND entity_id IN ?", entityType, entityIDs).
+		Order("entity_id ASC, created_at ASC").
+		Find(&comments).Error; err != nil {
+		return nil, fmt.Errorf("list comments by entity ids: %w", err)
+	}
+	grouped, err := r.commentsWithAuthorsByEntity(ctx, comments)
+	if err != nil {
+		return nil, err
+	}
+	for _, entityID := range entityIDs {
+		result[entityID] = grouped[entityID]
+	}
+	return result, nil
+}
+
+func (r *PMCommentRepository) commentsWithAuthorsByEntity(ctx context.Context, comments []model.PMComment) (map[string][]model.CommentWithAuthor, error) {
+	result := make(map[string][]model.CommentWithAuthor)
+	if len(comments) == 0 {
+		return result, nil
+	}
 	commentIDs := make([]string, 0, len(comments))
 	for _, c := range comments {
 		commentIDs = append(commentIDs, c.ID)
 	}
 
-	// Build author cache to avoid N+1 queries.
 	authorIDs := make(map[string]struct{}, len(comments))
 	for _, c := range comments {
 		authorIDs[c.AuthorID] = struct{}{}
@@ -60,16 +99,12 @@ func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID str
 		authorMap[a.ID] = a
 	}
 
-	// Batch load reactions for all comments.
 	reactionsMap := r.loadReactions(ctx, commentIDs)
-
-	// Batch load attachments for all comments.
 	attachmentsMap := r.loadCommentAttachments(ctx, commentIDs)
 
-	// Separate top-level and replies, then nest replies under parents.
-	allWithAuthor := make([]model.CommentWithAuthor, 0, len(comments))
+	allByEntity := make(map[string][]model.CommentWithAuthor)
 	for _, c := range comments {
-		allWithAuthor = append(allWithAuthor, model.CommentWithAuthor{
+		allByEntity[c.EntityID] = append(allByEntity[c.EntityID], model.CommentWithAuthor{
 			Comment:     c,
 			Author:      authorMap[c.AuthorID],
 			Reactions:   reactionsMap[c.ID],
@@ -77,22 +112,25 @@ func (r *PMCommentRepository) List(ctx context.Context, entityType, entityID str
 		})
 	}
 
-	childrenMap := make(map[string][]model.CommentWithAuthor)
-	var topLevel []model.CommentWithAuthor
-	for _, cwa := range allWithAuthor {
-		if cwa.Comment.ParentID != nil && *cwa.Comment.ParentID != "" {
-			childrenMap[*cwa.Comment.ParentID] = append(childrenMap[*cwa.Comment.ParentID], cwa)
-		} else {
-			topLevel = append(topLevel, cwa)
+	for entityID, comments := range allByEntity {
+		childrenMap := make(map[string][]model.CommentWithAuthor)
+		var topLevel []model.CommentWithAuthor
+		for _, cwa := range comments {
+			if cwa.Comment.ParentID != nil && *cwa.Comment.ParentID != "" {
+				childrenMap[*cwa.Comment.ParentID] = append(childrenMap[*cwa.Comment.ParentID], cwa)
+			} else {
+				topLevel = append(topLevel, cwa)
+			}
 		}
-	}
 
-	result := make([]model.CommentWithAuthor, 0, len(topLevel))
-	for _, tl := range topLevel {
-		replies := childrenMap[tl.Comment.ID]
-		tl.ReplyCount = len(replies)
-		tl.Replies = replies
-		result = append(result, tl)
+		entityResult := make([]model.CommentWithAuthor, 0, len(topLevel))
+		for _, tl := range topLevel {
+			replies := childrenMap[tl.Comment.ID]
+			tl.ReplyCount = len(replies)
+			tl.Replies = replies
+			entityResult = append(entityResult, tl)
+		}
+		result[entityID] = entityResult
 	}
 	return result, nil
 }
@@ -209,9 +247,37 @@ func (r *PMCommentRepository) GetByID(ctx context.Context, id string) (*model.PM
 	return &comment, nil
 }
 
+// GetWithAuthor returns one comment enriched with author, reactions, and attachments.
+func (r *PMCommentRepository) GetWithAuthor(ctx context.Context, id string) (*model.CommentWithAuthor, error) {
+	comment, err := r.GetByID(ctx, id)
+	if err != nil || comment == nil {
+		return nil, err
+	}
+
+	var author model.User
+	if err := r.db.WithContext(ctx).Where("id = ?", comment.AuthorID).First(&author).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("load comment author: %w", err)
+		}
+	}
+
+	reactionsMap := r.loadReactions(ctx, []string{comment.ID})
+	attachmentsMap := r.loadCommentAttachments(ctx, []string{comment.ID})
+	return &model.CommentWithAuthor{
+		Comment:     *comment,
+		Author:      author,
+		Reactions:   reactionsMap[comment.ID],
+		Attachments: attachmentsMap[comment.ID],
+	}, nil
+}
+
 // Create inserts a comment.
 func (r *PMCommentRepository) Create(ctx context.Context, comment *model.PMComment) error {
-	if err := r.db.WithContext(ctx).Create(comment).Error; err != nil {
+	db := r.db.WithContext(ctx)
+	if comment.ResolvedAt == nil && comment.ResolvedBy == nil {
+		db = db.Omit("ResolvedAt", "ResolvedBy")
+	}
+	if err := db.Create(comment).Error; err != nil {
 		return fmt.Errorf("create comment: %w", err)
 	}
 	return nil
@@ -219,8 +285,26 @@ func (r *PMCommentRepository) Create(ctx context.Context, comment *model.PMComme
 
 // Update updates a comment.
 func (r *PMCommentRepository) Update(ctx context.Context, comment *model.PMComment) error {
-	if err := r.db.WithContext(ctx).Save(comment).Error; err != nil {
+	db := r.db.WithContext(ctx)
+	if comment.ResolvedAt == nil && comment.ResolvedBy == nil {
+		db = db.Omit("ResolvedAt", "ResolvedBy")
+	}
+	if err := db.Save(comment).Error; err != nil {
 		return fmt.Errorf("update comment: %w", err)
+	}
+	return nil
+}
+
+// UpdateResolution updates only the comment resolution fields.
+func (r *PMCommentRepository) UpdateResolution(ctx context.Context, id string, resolvedAt interface{}, resolvedBy interface{}) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.PMComment{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"resolved_at": resolvedAt,
+			"resolved_by": resolvedBy,
+		}).Error; err != nil {
+		return fmt.Errorf("update comment resolution: %w", err)
 	}
 	return nil
 }

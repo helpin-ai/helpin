@@ -3,6 +3,7 @@ import { useQueries } from '@tanstack/react-query'
 import { Search, Moon, Sun } from 'lucide-react'
 import {
   useParams,
+  useMatches,
   useRouterState,
   useSearch,
 } from '@tanstack/react-router'
@@ -24,7 +25,7 @@ import {
 import { prefixBasepath } from '@/lib/pathUtils'
 import { PhIcon } from '@/components/PhIcon'
 import { LocaleSwitcher } from './LocaleSwitcher'
-import type { NavItem, Space } from '@/lib/types'
+import type { ArticleDetail, CollectionPage, NavItem, Space } from '@/lib/types'
 
 interface TopBarProps {
   onSearchClick: () => void
@@ -74,6 +75,21 @@ function findSpaceId(spaces: Space[], spaceSlug?: string) {
   return spaces.find((space) => space.slug === spaceSlug)?.id
 }
 
+interface RouteLoaderData {
+  article?: ArticleDetail | null
+  collection?: CollectionPage | null
+}
+
+function getRouteLoaderData(matches: Array<{ loaderData?: unknown }>) {
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const loaderData = matches[index]?.loaderData as RouteLoaderData | undefined
+    if (loaderData?.article || loaderData?.collection) {
+      return loaderData
+    }
+  }
+  return undefined
+}
+
 export function TopBar({ onSearchClick }: TopBarProps) {
   const {
     config,
@@ -92,12 +108,18 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     articleKey?: string
   }
   const search = useSearch({ strict: false }) as { q?: string; space?: string }
+  const matches = useMatches()
+  const routeLoaderData = getRouteLoaderData(matches)
+  const routeArticle = routeLoaderData?.article ?? null
+  const routeCollection = routeLoaderData?.collection ?? null
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const activeSpaceSlug = spaces.some((space) => space.slug === params.spaceSlug)
     ? params.spaceSlug
     : undefined
   const canonicalCollectionSlug = !activeSpaceSlug ? params.collectionSlug : undefined
   const canonicalArticleKey = params.articleKey
+  const routeResolvedSpaceSlug = routeArticle?.space_slug || routeCollection?.space_slug || undefined
+  const routeResolvedSpaceId = findSpaceId(spaces, routeResolvedSpaceSlug)
   const { theme, toggleTheme, canToggle } = useTheme(config.theme_mode)
   const { data: currentNavigation = [] } = useSpaceNavigation(
     subdomain,
@@ -106,7 +128,9 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     multilingualEnabled,
   )
   const needsCrossSpaceLookup =
-    !activeSpaceSlug && (!!canonicalCollectionSlug || !!canonicalArticleKey)
+    !activeSpaceSlug &&
+    !routeResolvedSpaceSlug &&
+    (!!canonicalCollectionSlug || !!canonicalArticleKey)
 
   const currentLocaleNavigationQueries = useQueries({
     queries: needsCrossSpaceLookup
@@ -128,6 +152,14 @@ export function TopBar({ onSearchClick }: TopBarProps) {
   })
 
   const currentSpaceContext = useMemo(() => {
+    if (routeResolvedSpaceSlug) {
+      return {
+        spaceId: routeResolvedSpaceId,
+        spaceSlug: routeResolvedSpaceSlug,
+        navigation: [] as NavItem[],
+      }
+    }
+
     if (activeSpaceSlug) {
       return {
         spaceId: findSpaceId(spaces, activeSpaceSlug),
@@ -173,6 +205,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     currentNavigation,
     needsCrossSpaceLookup,
     params.collectionSlug,
+    routeResolvedSpaceId,
+    routeResolvedSpaceSlug,
     spaces,
   ])
 
@@ -197,8 +231,12 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       return {
         kind: 'article',
         spaceId: currentSpaceId,
-        collectionId: findCollectionId(currentResolvedNavigation, canonicalCollectionSlug),
-        articleId: findArticleId(currentResolvedNavigation, params.articleKey),
+        collectionId:
+          routeArticle?.collection_id ??
+          findCollectionId(currentResolvedNavigation, canonicalCollectionSlug),
+        articleId:
+          routeArticle?.id ??
+          findArticleId(currentResolvedNavigation, params.articleKey),
       }
     }
 
@@ -206,7 +244,9 @@ export function TopBar({ onSearchClick }: TopBarProps) {
       return {
         kind: 'collection',
         spaceId: currentSpaceId,
-        collectionId: findCollectionId(currentResolvedNavigation, canonicalCollectionSlug),
+        collectionId:
+          routeCollection?.collection.id ??
+          findCollectionId(currentResolvedNavigation, canonicalCollectionSlug),
       }
     }
 
@@ -227,6 +267,8 @@ export function TopBar({ onSearchClick }: TopBarProps) {
     params.collectionSlug,
     params.spaceSlug,
     pathname,
+    routeArticle,
+    routeCollection,
     search.q,
     search.space,
     spaces,

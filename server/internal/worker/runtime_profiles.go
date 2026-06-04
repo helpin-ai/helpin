@@ -14,7 +14,7 @@ var runtimeProfiles = []model.RuntimeProfile{
 		Description:        "Task-only code implementation with repository, git, and validation tools.",
 		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "create_branch", "commit_and_push", "open_pr", "add_task_comment", "update_task_state", "list_task_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "mkdir", "cp", "mv", "pwd", "python", "pip", "cargo", "rustc", "rg"},
-		AllowedTargetTypes: []string{"task", "repository"},
+		AllowedTargetTypes: []string{"task", "repository", "workspace"},
 		ApprovalRequired:   false,
 		RequiresRepo:       true,
 	},
@@ -22,9 +22,9 @@ var runtimeProfiles = []model.RuntimeProfile{
 		Name:               model.AgentPresetEpicPlanner,
 		RuntimeKind:        "native_sdk",
 		Description:        "Cross-module product planning and review with repository read access, versioned preview artifacts, and optional web research.",
-		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search_brave", "request_user_input", "request_review_checkpoint", "update_plan", "publish_prd_draft", "publish_task_plan", "publish_task_plan_doc", "add_task_comment", "list_task_checklist", "list_epic_tasks", "list_workspace_teams", "list_documents", "read_document", "search_documents", "list_deals", "list_contacts", "list_buyer_signals"},
+		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "request_user_input", "request_approval", "request_review_checkpoint", "update_plan", "publish_prd_draft", "publish_task_plan", "publish_task_plan_doc", "publish_document_change_proposal", "publish_ai_section_candidate", "add_task_comment", "list_task_checklist", "list_epic_tasks", "list_workspace_teams", "list_team_workflows_with_stages", "create_task", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents", "create_document", "list_deals", "list_contacts", "list_buyer_signals"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
-		AllowedTargetTypes: []string{"epic", "task", "crm_deal"},
+		AllowedTargetTypes: []string{"epic", "task", "crm_deal", "document", "workspace"},
 		ApprovalRequired:   false,
 		RequiresRepo:       false,
 	},
@@ -32,9 +32,9 @@ var runtimeProfiles = []model.RuntimeProfile{
 		Name:               model.AgentPresetReviewAgent,
 		RuntimeKind:        "opencode",
 		Description:        "Review-first validation agent that can discuss findings and apply agreed fixes in the same branch.",
-		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "edit_file", "apply_patch", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "request_user_input", "add_task_comment", "list_task_checklist"},
+		AllowedTools:       []string{"read_file", "read_files", "read_file_range", "write_file", "edit_file", "apply_patch", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "run_command", "request_user_input", "request_approval", "request_review_checkpoint", "add_task_comment", "list_task_checklist"},
 		AllowedCommands:    []string{"go", "npm", "npx", "node", "make", "git", "ls", "cat", "grep", "find", "head", "tail", "wc", "diff", "echo", "pwd", "python", "cargo", "rg"},
-		AllowedTargetTypes: []string{"task", "repository"},
+		AllowedTargetTypes: []string{"task", "repository", "workspace"},
 		ApprovalRequired:   false,
 		RequiresRepo:       true,
 	},
@@ -42,10 +42,20 @@ var runtimeProfiles = []model.RuntimeProfile{
 		Name:               model.AgentPresetSupportAgent,
 		RuntimeKind:        "native_sdk",
 		Description:        "Support conversation triage and draft replies with human approval before customer-visible sends.",
-		AllowedTools:       []string{"request_user_input", "request_review_checkpoint", "preview_md", "preview_json", "list_conversation_messages", "draft_support_reply", "update_conversation_status"},
+		AllowedTools:       []string{"request_user_input", "request_approval", "request_review_checkpoint", "preview_md", "preview_json", "list_conversation_messages", "draft_support_reply", "update_conversation_status"},
 		AllowedCommands:    []string{},
 		AllowedTargetTypes: []string{"support_conversation"},
 		ApprovalRequired:   true,
+		RequiresRepo:       false,
+	},
+	{
+		Name:               model.AgentPresetDocumentationAgent,
+		RuntimeKind:        "native_sdk",
+		Description:        "Documentation maintenance across internal docs, public help center articles, API docs, support gaps, and release-driven updates.",
+		AllowedTools:       []string{"request_user_input", "request_approval", "request_review_checkpoint", "update_plan", "web_search_brave", "web_search_exa", "fetch_url", "crawl_url", "read_file", "read_files", "read_file_range", "list_directory", "search_files", "ripgrep", "grep", "list_symbols", "list_documents", "list_collections", "read_document", "get_document_blocks", "search_documents", "create_document", "write_document_content", "update_document_block", "link_document_to_object", "publish_document_change_proposal", "publish_ai_section_candidate", "get_release_context", "find_tasks_for_git_changes", "get_task_context", "list_tasks", "add_task_comment", "list_conversation_messages", "list_workspace_teams"},
+		AllowedCommands:    []string{},
+		AllowedTargetTypes: []string{"workspace", "document", "support_conversation", "support_coverage_gap", "task", "epic", "repository"},
+		ApprovalRequired:   false,
 		RequiresRepo:       false,
 	},
 }
@@ -78,6 +88,8 @@ func normalizeRuntimeProfileName(name string) string {
 		return model.AgentPresetReviewAgent
 	case "support", model.AgentPresetSupportAgent:
 		return model.AgentPresetSupportAgent
+	case "docs", "documentation", model.AgentPresetDocumentationAgent:
+		return model.AgentPresetDocumentationAgent
 	default:
 		return strings.TrimSpace(name)
 	}

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,8 +90,8 @@ func newTaskTestEnv(t *testing.T) taskTestEnv {
 		repository.NewPMEpicRepository(db),
 		repository.NewPMSprintRepository(db),
 		labelRepo,
-		nil,
-		nil,
+		repository.NewPMChecklistItemRepository(db),
+		repository.NewPMExternalLinkRepository(db),
 		repository.NewPMAttachmentRepository(db),
 		activityService,
 		nil,
@@ -107,6 +109,436 @@ func newTaskTestEnv(t *testing.T) taskTestEnv {
 		stTodo:       stTodo,
 		stInProgress: stInProgress,
 		stDone:       stDone,
+	}
+}
+
+func TestPMTaskService_SaveAsTemplate(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+	env.svc.SetTaskTemplateRepository(repository.NewPMTaskTemplateRepository(env.db))
+
+	teamID := "team-template-source"
+	epicID := "epic-template-source"
+	sprintID := "sprint-template-source"
+	labelID := "label-template-source"
+	ownerMemberID2 := "member-template-owner-2"
+	ownerUserID2 := "user-template-owner-2"
+	estimate := 5
+	priority := model.PMTaskPriorityHigh
+	severity := model.PMTaskSeverityMajor
+	deadline := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
+	description := `<p>Template description <img src="https://cdn.test/source.png" data-attachment-id="task-template-source-attachment"><img src="https://cdn.test/orphan.png" data-attachment-id="task-template-orphan-inline"></p>`
+	seedTaskTeam(t, env, teamID, "Template Team")
+	seedUser(t, env.db, ownerUserID2, "template-owner-2@test.com", "Template Owner 2", "hash")
+	seedWorkspaceMember(t, env.db, ownerMemberID2, env.wsID, ownerUserID2, "template-owner-2@test.com", "Template Owner 2", model.RoleMember)
+	seedTaskEpic(t, env, epicID, teamID, "Template Epic")
+	seedStorySprint(t, env, sprintID, teamID, "Template Sprint")
+	mustExec(t, env.db, `INSERT INTO pm_labels (id, workspace_id, team_id, name, color, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		labelID, env.wsID, teamID, "Template Label", "#3b82f6", false, time.Now(), time.Now())
+
+	task, err := env.svc.Create(ctx, model.CreateTaskRequest{
+		WorkspaceID:     env.wsID,
+		Name:            "Configured task",
+		Description:     &description,
+		TaskType:        model.PMTaskTypeBug,
+		WorkflowID:      env.wfID,
+		WorkflowStateID: env.stInProgress,
+		TeamID:          &teamID,
+		EpicID:          &epicID,
+		SprintID:        &sprintID,
+		Estimate:        &estimate,
+		Priority:        &priority,
+		Severity:        &severity,
+		Deadline:        &deadline,
+		OwnerMemberIDs:  []string{"member-story-001", ownerMemberID2},
+		LabelIDs:        []string{labelID},
+		ChecklistItems: []model.CreateChecklistItemRequest{
+			{Text: "First checklist item", Position: intPtr(0)},
+			{Text: "Second checklist item", Position: intPtr(1)},
+		},
+		ExternalLinks: []model.CreateExternalLinkRequest{
+			{Title: "Spec", URL: "https://example.com/spec"},
+		},
+	}, env.userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	now := time.Now().UTC()
+	mustExec(t, env.db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-template-source-attachment",
+		env.wsID,
+		"task",
+		task.Task.ID,
+		"source.pdf",
+		int64(256),
+		"application/pdf",
+		env.wsID+"/source.pdf",
+		true,
+		env.userID,
+		now,
+		now,
+	)
+	mustExec(t, env.db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-template-orphan-inline",
+		env.wsID,
+		"editor_upload",
+		env.wsID,
+		"inline.png",
+		int64(512),
+		"image/png",
+		env.wsID+"/inline.png",
+		true,
+		env.userID,
+		now,
+		now,
+	)
+
+	templateName := "Reusable configured task"
+	tmpl, err := env.svc.SaveAsTemplate(ctx, task.Task.ID, model.SaveTaskAsTemplateRequest{Name: &templateName})
+	if err != nil {
+		t.Fatalf("SaveAsTemplate: %v", err)
+	}
+	if tmpl.Name != templateName {
+		t.Fatalf("template name = %q, want %q", tmpl.Name, templateName)
+	}
+	if tmpl.TeamID == nil || *tmpl.TeamID != teamID {
+		t.Fatalf("team_id = %#v, want %q", tmpl.TeamID, teamID)
+	}
+	if tmpl.WorkflowStateID == nil || *tmpl.WorkflowStateID != env.stInProgress {
+		t.Fatalf("workflow_state_id = %#v, want %q", tmpl.WorkflowStateID, env.stInProgress)
+	}
+	if tmpl.TaskType == nil || *tmpl.TaskType != model.PMTaskTypeBug {
+		t.Fatalf("task_type = %#v, want bug", tmpl.TaskType)
+	}
+	if tmpl.Priority == nil || *tmpl.Priority != model.PMTaskPriorityHigh {
+		t.Fatalf("priority = %#v, want high", tmpl.Priority)
+	}
+	if tmpl.Severity == nil || *tmpl.Severity != model.PMTaskSeverityMajor {
+		t.Fatalf("severity = %#v, want major", tmpl.Severity)
+	}
+	if tmpl.Estimate == nil || *tmpl.Estimate != estimate {
+		t.Fatalf("estimate = %#v, want %d", tmpl.Estimate, estimate)
+	}
+	if tmpl.Deadline == nil || *tmpl.Deadline != "2026-06-15" {
+		t.Fatalf("deadline = %#v, want 2026-06-15", tmpl.Deadline)
+	}
+	if tmpl.LabelIDs == nil {
+		t.Fatal("expected label ids")
+	}
+	var labelIDs []string
+	if err := json.Unmarshal([]byte(*tmpl.LabelIDs), &labelIDs); err != nil {
+		t.Fatalf("unmarshal label_ids: %v", err)
+	}
+	if len(labelIDs) != 1 || labelIDs[0] != labelID {
+		t.Fatalf("label_ids = %#v, want [%s]", labelIDs, labelID)
+	}
+	if tmpl.OwnerMemberIDs == nil {
+		t.Fatal("expected owner_member_ids")
+	}
+	var ownerMemberIDs []string
+	if err := json.Unmarshal([]byte(*tmpl.OwnerMemberIDs), &ownerMemberIDs); err != nil {
+		t.Fatalf("unmarshal owner_member_ids: %v", err)
+	}
+	if len(ownerMemberIDs) != 2 || ownerMemberIDs[0] != "member-story-001" || ownerMemberIDs[1] != ownerMemberID2 {
+		t.Fatalf("owner_member_ids = %#v, want both source owners", ownerMemberIDs)
+	}
+	if tmpl.ChecklistItems == nil {
+		t.Fatal("expected checklist_items")
+	}
+	var checklist []map[string]any
+	if err := json.Unmarshal([]byte(*tmpl.ChecklistItems), &checklist); err != nil {
+		t.Fatalf("unmarshal checklist_items: %v", err)
+	}
+	if len(checklist) != 2 || checklist[0]["text"] != "First checklist item" {
+		t.Fatalf("checklist = %#v", checklist)
+	}
+	if tmpl.ExternalLinks == nil {
+		t.Fatal("expected external_links")
+	}
+	var links []map[string]any
+	if err := json.Unmarshal([]byte(*tmpl.ExternalLinks), &links); err != nil {
+		t.Fatalf("unmarshal external_links: %v", err)
+	}
+	if len(links) != 1 || links[0]["url"] != "https://example.com/spec" {
+		t.Fatalf("external_links = %#v", links)
+	}
+
+	attachments, err := repository.NewPMAttachmentRepository(env.db).List(ctx, "task_template", tmpl.ID)
+	if err != nil {
+		t.Fatalf("List template attachments: %v", err)
+	}
+	if len(attachments) != 2 {
+		t.Fatalf("template attachments len = %d, want 2", len(attachments))
+	}
+	templateAttachmentIDs := make([]string, 0, len(attachments))
+	templateStorageKeys := make(map[string]bool, len(attachments))
+	for _, attachment := range attachments {
+		templateAttachmentIDs = append(templateAttachmentIDs, attachment.ID)
+		templateStorageKeys[attachment.StorageKey] = true
+	}
+	if !templateStorageKeys[env.wsID+"/source.pdf"] || !templateStorageKeys[env.wsID+"/inline.png"] {
+		t.Fatalf("template attachment storage keys = %#v", templateStorageKeys)
+	}
+	for _, attachmentID := range templateAttachmentIDs {
+		if tmpl.Description == nil || !strings.Contains(*tmpl.Description, attachmentID) {
+			t.Fatalf("template description = %q, want cloned attachment id %q", stringPtrValue(tmpl.Description), attachmentID)
+		}
+	}
+	if strings.Contains(stringPtrValue(tmpl.Description), "task-template-source-attachment") || strings.Contains(stringPtrValue(tmpl.Description), "task-template-orphan-inline") {
+		t.Fatalf("template description still references source attachment: %q", *tmpl.Description)
+	}
+
+	createdFromTemplate, err := env.svc.Create(ctx, model.CreateTaskRequest{
+		WorkspaceID: env.wsID,
+		Name:        tmpl.Name,
+		Description: tmpl.Description,
+		TeamID:      &teamID,
+		TemplateID:  &tmpl.ID,
+	}, env.userID)
+	if err != nil {
+		t.Fatalf("Create from template: %v", err)
+	}
+	taskAttachments, err := repository.NewPMAttachmentRepository(env.db).List(ctx, "task", createdFromTemplate.Task.ID)
+	if err != nil {
+		t.Fatalf("List task attachments: %v", err)
+	}
+	if len(taskAttachments) != 2 {
+		t.Fatalf("created task attachments len = %d, want 2", len(taskAttachments))
+	}
+	for _, attachment := range taskAttachments {
+		if createdFromTemplate.Task.Description == nil || !strings.Contains(*createdFromTemplate.Task.Description, attachment.ID) {
+			t.Fatalf("created task description = %q, want cloned task attachment id %q", stringPtrValue(createdFromTemplate.Task.Description), attachment.ID)
+		}
+	}
+	for _, attachmentID := range templateAttachmentIDs {
+		if strings.Contains(stringPtrValue(createdFromTemplate.Task.Description), attachmentID) {
+			t.Fatalf("created task description still references template attachment: %q", *createdFromTemplate.Task.Description)
+		}
+	}
+	if strings.Contains(stringPtrValue(createdFromTemplate.Task.Description), "task-template-source-attachment") || strings.Contains(stringPtrValue(createdFromTemplate.Task.Description), "task-template-orphan-inline") {
+		t.Fatalf("created task description still references template attachment: %q", *createdFromTemplate.Task.Description)
+	}
+	createdLabelIDs := make([]string, 0, len(createdFromTemplate.Labels))
+	for _, label := range createdFromTemplate.Labels {
+		createdLabelIDs = append(createdLabelIDs, label.ID)
+	}
+	if len(createdLabelIDs) != 1 || createdLabelIDs[0] != labelID {
+		t.Fatalf("created task label IDs = %#v, want [%s]", createdLabelIDs, labelID)
+	}
+	if len(createdFromTemplate.Task.OwnerMemberIDs) != 2 {
+		t.Fatalf("created task owner_member_ids = %#v, want 2 owners", createdFromTemplate.Task.OwnerMemberIDs)
+	}
+	createdOwnerSet := stringSet(createdFromTemplate.Task.OwnerMemberIDs)
+	if _, ok := createdOwnerSet["member-story-001"]; !ok {
+		t.Fatalf("created task owner_member_ids = %#v, missing member-story-001", createdFromTemplate.Task.OwnerMemberIDs)
+	}
+	if _, ok := createdOwnerSet[ownerMemberID2]; !ok {
+		t.Fatalf("created task owner_member_ids = %#v, missing %s", createdFromTemplate.Task.OwnerMemberIDs, ownerMemberID2)
+	}
+	checklistRows, err := repository.NewPMChecklistItemRepository(env.db).List(ctx, createdFromTemplate.Task.ID)
+	if err != nil {
+		t.Fatalf("List created checklist: %v", err)
+	}
+	if len(checklistRows) != 2 {
+		t.Fatalf("created checklist len = %d, want 2", len(checklistRows))
+	}
+	linkRows, err := repository.NewPMExternalLinkRepository(env.db).List(ctx, createdFromTemplate.Task.ID)
+	if err != nil {
+		t.Fatalf("List created external links: %v", err)
+	}
+	if len(linkRows) != 1 || linkRows[0].URL != "https://example.com/spec" {
+		t.Fatalf("created external links = %#v", linkRows)
+	}
+}
+
+func TestPMTaskService_DuplicateCopiesReusableTaskContent(t *testing.T) {
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+
+	teamID := "team-duplicate-source"
+	epicID := "epic-duplicate-source"
+	sprintID := "sprint-duplicate-source"
+	labelID := "label-duplicate-source"
+	ownerMemberID2 := "member-duplicate-owner-2"
+	ownerUserID2 := "user-duplicate-owner-2"
+	estimate := 8
+	priority := model.PMTaskPriorityUrgent
+	severity := model.PMTaskSeverityCritical
+	deadline := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
+	blocked := true
+	blocker := "Waiting on API contract"
+	description := `<p>Duplicate me <img data-attachment-id="task-duplicate-source-attachment" src="https://cdn.test/source.png"><img data-attachment-id="task-duplicate-orphan-inline" src="https://cdn.test/orphan.png"></p>`
+
+	seedTaskTeam(t, env, teamID, "Duplicate Team")
+	seedUser(t, env.db, ownerUserID2, "duplicate-owner-2@test.com", "Duplicate Owner 2", "hash")
+	seedWorkspaceMember(t, env.db, ownerMemberID2, env.wsID, ownerUserID2, "duplicate-owner-2@test.com", "Duplicate Owner 2", model.RoleMember)
+	seedTaskEpic(t, env, epicID, teamID, "Duplicate Epic")
+	seedStorySprint(t, env, sprintID, teamID, "Duplicate Sprint")
+	mustExec(t, env.db, `INSERT INTO pm_labels (id, workspace_id, team_id, name, color, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		labelID, env.wsID, teamID, "Duplicate Label", "#22c55e", false, time.Now(), time.Now())
+
+	source, err := env.svc.Create(ctx, model.CreateTaskRequest{
+		WorkspaceID:     env.wsID,
+		Name:            "Task to duplicate",
+		Description:     &description,
+		TaskType:        model.PMTaskTypeBug,
+		WorkflowID:      env.wfID,
+		WorkflowStateID: env.stInProgress,
+		TeamID:          &teamID,
+		EpicID:          &epicID,
+		SprintID:        &sprintID,
+		Estimate:        &estimate,
+		Priority:        &priority,
+		Severity:        &severity,
+		Deadline:        &deadline,
+		OwnerMemberIDs:  []string{"member-story-001", ownerMemberID2},
+		LabelIDs:        []string{labelID},
+		Blocked:         &blocked,
+		Blocker:         &blocker,
+		ChecklistItems: []model.CreateChecklistItemRequest{
+			{Text: "Open item", Position: intPtr(0)},
+			{Text: "Done item", Position: intPtr(1), AssigneeID: &ownerUserID2},
+		},
+		ExternalLinks: []model.CreateExternalLinkRequest{
+			{Title: "Spec", URL: "https://example.com/duplicate-spec"},
+		},
+	}, env.userID)
+	if err != nil {
+		t.Fatalf("Create source: %v", err)
+	}
+	mustExec(t, env.db, `UPDATE pm_checklist_items SET completed = true WHERE task_id = ? AND text = ?`, source.Task.ID, "Done item")
+
+	now := time.Now().UTC()
+	mustExec(t, env.db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-duplicate-source-attachment",
+		env.wsID,
+		"task",
+		source.Task.ID,
+		"source.pdf",
+		int64(256),
+		"application/pdf",
+		env.wsID+"/duplicate-source.pdf",
+		true,
+		env.userID,
+		now,
+		now,
+	)
+	mustExec(t, env.db, `INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"task-duplicate-orphan-inline",
+		env.wsID,
+		"editor_upload",
+		env.wsID,
+		"inline.png",
+		int64(512),
+		"image/png",
+		env.wsID+"/duplicate-inline.png",
+		true,
+		env.userID,
+		now,
+		now,
+	)
+
+	duplicate, err := env.svc.Duplicate(ctx, source.Task.ID, env.userID)
+	if err != nil {
+		t.Fatalf("Duplicate: %v", err)
+	}
+
+	if duplicate.Task.ID == source.Task.ID {
+		t.Fatal("duplicate reused source ID")
+	}
+	if duplicate.Task.DisplayID == source.Task.DisplayID {
+		t.Fatal("duplicate reused source display ID")
+	}
+	if duplicate.Task.Name != "Task to duplicate (copy)" {
+		t.Fatalf("duplicate name = %q", duplicate.Task.Name)
+	}
+	if duplicate.Task.Description == nil {
+		t.Fatal("duplicate description is nil")
+	}
+	if duplicate.Task.WorkflowID != env.wfID || duplicate.Task.WorkflowStateID != env.stInProgress {
+		t.Fatalf("duplicate workflow/state = %s/%s", duplicate.Task.WorkflowID, duplicate.Task.WorkflowStateID)
+	}
+	if duplicate.Task.TeamID == nil || *duplicate.Task.TeamID != teamID {
+		t.Fatalf("duplicate team_id = %#v, want %q", duplicate.Task.TeamID, teamID)
+	}
+	if duplicate.Task.EpicID == nil || *duplicate.Task.EpicID != epicID {
+		t.Fatalf("duplicate epic_id = %#v, want %q", duplicate.Task.EpicID, epicID)
+	}
+	if duplicate.Task.SprintID == nil || *duplicate.Task.SprintID != sprintID {
+		t.Fatalf("duplicate sprint_id = %#v, want %q", duplicate.Task.SprintID, sprintID)
+	}
+	if duplicate.Task.Estimate == nil || *duplicate.Task.Estimate != estimate {
+		t.Fatalf("duplicate estimate = %#v, want %d", duplicate.Task.Estimate, estimate)
+	}
+	if duplicate.Task.Priority != priority || duplicate.Task.Severity != severity {
+		t.Fatalf("duplicate priority/severity = %s/%s", duplicate.Task.Priority, duplicate.Task.Severity)
+	}
+	if duplicate.Task.Deadline == nil || !duplicate.Task.Deadline.Equal(deadline) {
+		t.Fatalf("duplicate deadline = %#v, want %s", duplicate.Task.Deadline, deadline)
+	}
+	if !duplicate.Task.Blocked || duplicate.Task.Blocker == nil || *duplicate.Task.Blocker != blocker {
+		t.Fatalf("duplicate blocker = blocked:%v blocker:%#v", duplicate.Task.Blocked, duplicate.Task.Blocker)
+	}
+	if duplicate.Task.Completed || duplicate.Task.CompletedAt != nil {
+		t.Fatalf("duplicate should not copy completed state: %+v", duplicate.Task)
+	}
+
+	ownerSet := stringSet(duplicate.Task.OwnerMemberIDs)
+	_, hasPrimaryOwner := ownerSet["member-story-001"]
+	_, hasSecondOwner := ownerSet[ownerMemberID2]
+	if len(ownerSet) != 2 || !hasPrimaryOwner || !hasSecondOwner {
+		t.Fatalf("duplicate owner_member_ids = %#v", duplicate.Task.OwnerMemberIDs)
+	}
+	if len(duplicate.Labels) != 1 || duplicate.Labels[0].ID != labelID {
+		t.Fatalf("duplicate labels = %#v, want %s", duplicate.Labels, labelID)
+	}
+
+	checklistRows, err := repository.NewPMChecklistItemRepository(env.db).List(ctx, duplicate.Task.ID)
+	if err != nil {
+		t.Fatalf("List duplicate checklist: %v", err)
+	}
+	if len(checklistRows) != 2 {
+		t.Fatalf("duplicate checklist len = %d, want 2", len(checklistRows))
+	}
+	if checklistRows[0].Text != "Open item" || checklistRows[0].Completed {
+		t.Fatalf("duplicate checklist first item = %+v, want incomplete Open item", checklistRows[0])
+	}
+	if checklistRows[1].Text != "Done item" || !checklistRows[1].Completed || checklistRows[1].AssigneeID == nil || *checklistRows[1].AssigneeID != ownerUserID2 {
+		t.Fatalf("duplicate checklist second item = %+v", checklistRows[1])
+	}
+
+	linkRows, err := repository.NewPMExternalLinkRepository(env.db).List(ctx, duplicate.Task.ID)
+	if err != nil {
+		t.Fatalf("List duplicate external links: %v", err)
+	}
+	if len(linkRows) != 1 || linkRows[0].URL != "https://example.com/duplicate-spec" || linkRows[0].Title != "Spec" || linkRows[0].TaskID == nil || *linkRows[0].TaskID != duplicate.Task.ID {
+		t.Fatalf("duplicate external links = %#v", linkRows)
+	}
+
+	attachments, err := repository.NewPMAttachmentRepository(env.db).List(ctx, "task", duplicate.Task.ID)
+	if err != nil {
+		t.Fatalf("List duplicate attachments: %v", err)
+	}
+	if len(attachments) != 2 {
+		t.Fatalf("duplicate attachments len = %d, want 2", len(attachments))
+	}
+	attachmentStorageKeys := make(map[string]bool, len(attachments))
+	for _, attachment := range attachments {
+		attachmentStorageKeys[attachment.StorageKey] = true
+		if !strings.Contains(*duplicate.Task.Description, attachment.ID) {
+			t.Fatalf("duplicate description = %q, want cloned attachment id %q", *duplicate.Task.Description, attachment.ID)
+		}
+	}
+	if !attachmentStorageKeys[env.wsID+"/duplicate-source.pdf"] || !attachmentStorageKeys[env.wsID+"/duplicate-inline.png"] {
+		t.Fatalf("duplicate attachment storage keys = %#v", attachmentStorageKeys)
+	}
+	if strings.Contains(*duplicate.Task.Description, "task-duplicate-source-attachment") || strings.Contains(*duplicate.Task.Description, "task-duplicate-orphan-inline") {
+		t.Fatalf("duplicate description still references source attachment: %q", *duplicate.Task.Description)
 	}
 }
 
@@ -231,13 +663,30 @@ func TestPMTaskService_Create(t *testing.T) {
 		}
 	})
 
+	t.Run("create stores assigned agent", func(t *testing.T) {
+		agentID := "agent-task-planner-001"
+		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "Agent-backed Story",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+			AssignedAgentID: &agentID,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if story.Task.AssignedAgentID == nil || *story.Task.AssignedAgentID != agentID {
+			t.Fatalf("assigned_agent_id = %v, want %q", story.Task.AssignedAgentID, agentID)
+		}
+	})
+
 	t.Run("create with explicit type bug", func(t *testing.T) {
 		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
 			WorkspaceID:     env.wsID,
 			Name:            "Bug Report",
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
-			TaskType:       model.PMTaskTypeBug,
+			TaskType:        model.PMTaskTypeBug,
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Create bug: %v", err)
@@ -338,6 +787,59 @@ func TestPMTaskService_Create(t *testing.T) {
 		}
 		if attachment.EntityID != story.Task.ID {
 			t.Fatalf("entity_id = %q, want %q", attachment.EntityID, story.Task.ID)
+		}
+	})
+
+	t.Run("create clones template attachments", func(t *testing.T) {
+		now := time.Now().UTC()
+		mustExec(
+			t,
+			env.db,
+			`INSERT INTO pm_attachments (id, workspace_id, entity_type, entity_id, file_name, file_size, content_type, storage_key, is_uploaded, uploaded_by_id, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"template-attachment-story-1",
+			env.wsID,
+			"task_template",
+			"template-story-1",
+			"brief.pdf",
+			int64(128),
+			"application/pdf",
+			env.wsID+"/template-brief.pdf",
+			true,
+			env.userID,
+			now,
+			now,
+		)
+		templateID := "template-story-1"
+
+		story, err := env.svc.Create(ctx, model.CreateTaskRequest{
+			WorkspaceID:     env.wsID,
+			Name:            "Story From Template",
+			WorkflowID:      env.wfID,
+			WorkflowStateID: env.stTodo,
+			TemplateID:      &templateID,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+
+		attachmentRepo := repository.NewPMAttachmentRepository(env.db)
+		taskAttachments, err := attachmentRepo.List(ctx, "task", story.Task.ID)
+		if err != nil {
+			t.Fatalf("List task attachments: %v", err)
+		}
+		if len(taskAttachments) != 1 {
+			t.Fatalf("task attachments len = %d, want 1", len(taskAttachments))
+		}
+		if taskAttachments[0].StorageKey != env.wsID+"/template-brief.pdf" {
+			t.Fatalf("storage_key = %q, want template shared key", taskAttachments[0].StorageKey)
+		}
+		templateAttachments, err := attachmentRepo.List(ctx, "task_template", templateID)
+		if err != nil {
+			t.Fatalf("List template attachments: %v", err)
+		}
+		if len(templateAttachments) != 1 {
+			t.Fatalf("template attachments len = %d, want 1", len(templateAttachments))
 		}
 	})
 
@@ -450,7 +952,7 @@ func TestPMTaskService_CreateValidation(t *testing.T) {
 			Name:            "Bad Type",
 			WorkflowID:      env.wfID,
 			WorkflowStateID: env.stTodo,
-			TaskType:       "invalid_type",
+			TaskType:        "invalid_type",
 		}, env.userID)
 		if err == nil {
 			t.Fatal("expected error for invalid story_type")
@@ -767,6 +1269,19 @@ func TestPMTaskService_Update(t *testing.T) {
 		}
 	})
 
+	t.Run("update assigned agent", func(t *testing.T) {
+		agentID := "agent-task-planner-002"
+		updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
+			AssignedAgentID: &agentID,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update assigned agent: %v", err)
+		}
+		if updated.Task.AssignedAgentID == nil || *updated.Task.AssignedAgentID != agentID {
+			t.Fatalf("assigned_agent_id = %v, want %q", updated.Task.AssignedAgentID, agentID)
+		}
+	})
+
 	t.Run("clear epic with empty string", func(t *testing.T) {
 		epicID := "epic-001"
 		seedTaskEpic(t, env, epicID, "", "Shared Epic")
@@ -932,6 +1447,38 @@ func TestPMTaskService_Update(t *testing.T) {
 	})
 }
 
+func TestPMTaskService_UpdateAllowsUnrelatedEditWithExistingWorkflowStateMismatch(t *testing.T) {
+	t.Parallel()
+	env := newTaskTestEnv(t)
+	ctx := context.Background()
+	created := createTestTask(t, env, "Mismatched State Story")
+
+	now := time.Now()
+	otherWorkflowID := "wf-story-other"
+	otherStateID := "state-story-other"
+	mustExec(t, env.db, `INSERT INTO pm_workflows (id, workspace_id, name, default_state_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		otherWorkflowID, env.wsID, "Other Workflow", otherStateID, now, now)
+	mustExec(t, env.db, `INSERT INTO pm_workflow_states (id, workflow_id, name, state_type, position, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		otherStateID, otherWorkflowID, "Other", "unstarted", 0, true, now, now)
+	mustExec(t, env.db, `UPDATE pm_tasks SET workflow_state_id = ? WHERE id = ?`, otherStateID, created.Task.ID)
+
+	estimate := 5
+	updated, err := env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{Estimate: &estimate}, env.userID)
+	if err != nil {
+		t.Fatalf("update unrelated estimate: %v", err)
+	}
+	if updated.Task.Estimate == nil || *updated.Task.Estimate != estimate {
+		t.Fatalf("estimate = %v, want %d", updated.Task.Estimate, estimate)
+	}
+
+	_, err = env.svc.Update(ctx, created.Task.ID, model.UpdateTaskRequest{
+		WorkflowStateID: &otherStateID,
+	}, env.userID)
+	if err == nil || !strings.Contains(err.Error(), "workflow_state_id must belong to workflow_id") {
+		t.Fatalf("expected workflow/state validation error, got %v", err)
+	}
+}
+
 func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 	t.Parallel()
 	env := newTaskTestEnv(t)
@@ -970,12 +1517,12 @@ func TestPMTaskService_UpdateActivityLogging(t *testing.T) {
 	t.Run("owner assignment logs activity", func(t *testing.T) {
 		story := createTestTask(t, env, "Owner Activity Story")
 		_, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
-			OwnerMemberID: stringPtr(ownerMemberID),
+			OwnerMemberIDs: []string{ownerMemberID},
 		}, env.userID)
 		if err != nil {
 			t.Fatalf("Update owner: %v", err)
 		}
-		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "assigned owner Alice Owner" {
+		if got := latestStoryActivityAction(t, env, story.Task.ID); got != "owner_added" {
 			t.Fatalf("latest activity = %q", got)
 		}
 	})
@@ -1502,6 +2049,52 @@ func TestPMTaskService_Owners(t *testing.T) {
 			t.Fatal("expected error for empty user_id")
 		}
 	})
+
+	t.Run("update owner member ids diffs owners and logs activity", func(t *testing.T) {
+		const (
+			nextUserID   = "user-owner-update-next"
+			nextMemberID = "member-owner-update-next"
+		)
+		seedUser(t, env.db, nextUserID, "owner-update-next@test.com", "Owner Update Next", "hash")
+		seedWorkspaceMember(t, env.db, nextMemberID, env.wsID, nextUserID, "owner-update-next@test.com", "Owner Update Next", model.RoleMember)
+
+		story := createTestTask(t, env, "Update Owners")
+		if err := env.svc.AddOwner(ctx, story.Task.ID, env.userID, env.userID); err != nil {
+			t.Fatalf("AddOwner initial: %v", err)
+		}
+
+		updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
+			OwnerMemberIDs: []string{nextMemberID},
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if got := updated.Task.OwnerMemberIDs; len(got) != 1 || got[0] != nextMemberID {
+			t.Fatalf("owner_member_ids = %v, want [%s]", got, nextMemberID)
+		}
+
+		var oldOwnerCount int64
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Task.ID, env.userID).Count(&oldOwnerCount)
+		if oldOwnerCount != 0 {
+			t.Fatalf("old owner count = %d, want 0", oldOwnerCount)
+		}
+		var nextOwnerCount int64
+		env.db.Table("pm_task_owners").Where("task_id = ? AND user_id = ?", story.Task.ID, nextUserID).Count(&nextOwnerCount)
+		if nextOwnerCount != 1 {
+			t.Fatalf("next owner count = %d, want 1", nextOwnerCount)
+		}
+
+		var addedActivityCount int64
+		env.db.Table("pm_activity_log").Where("entity_id = ? AND action = ?", story.Task.ID, "owner_added").Count(&addedActivityCount)
+		if addedActivityCount < 2 {
+			t.Fatalf("owner_added activities = %d, want at least 2", addedActivityCount)
+		}
+		var removedActivityCount int64
+		env.db.Table("pm_activity_log").Where("entity_id = ? AND action = ?", story.Task.ID, "owner_removed").Count(&removedActivityCount)
+		if removedActivityCount != 1 {
+			t.Fatalf("owner_removed activities = %d, want 1", removedActivityCount)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1640,6 +2233,29 @@ func TestPMTaskService_Estimate(t *testing.T) {
 	if updated.Task.Estimate == nil || *updated.Task.Estimate != 13 {
 		t.Errorf("updated estimate mismatch, got %v", updated.Task.Estimate)
 	}
+
+	t.Run("estimate-only update ignores pre-existing sprint team mismatch", func(t *testing.T) {
+		teamA := "team-estimate-a"
+		teamB := "team-estimate-b"
+		sprintB := "sprint-estimate-b"
+		seedTaskTeam(t, env, teamA, "Estimate Team A")
+		seedTaskTeam(t, env, teamB, "Estimate Team B")
+		seedStorySprint(t, env, sprintB, teamB, "Estimate Sprint B")
+
+		story := createTestTask(t, env, "Mismatched Planning Estimate")
+		mustExec(t, env.db, `UPDATE pm_tasks SET team_id = ?, sprint_id = ? WHERE id = ?`, teamA, sprintB, story.Task.ID)
+
+		newEst := 2
+		updated, err := env.svc.Update(ctx, story.Task.ID, model.UpdateTaskRequest{
+			Estimate: &newEst,
+		}, env.userID)
+		if err != nil {
+			t.Fatalf("Update estimate with existing planning mismatch: %v", err)
+		}
+		if updated.Task.Estimate == nil || *updated.Task.Estimate != newEst {
+			t.Fatalf("estimate = %v, want %d", updated.Task.Estimate, newEst)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@ func TestNotifCategoryConstants_NonEmpty(t *testing.T) {
 		NotifCategoryMentions,
 		NotifCategorySubscriptions,
 		NotifCategorySprints,
+		NotifCategoryAgentAttention,
 		NotifCategorySupportReplies,
 		NotifCategorySupportMentions,
 	}
@@ -46,6 +47,7 @@ func TestNotifCategoryConstants_UniqueValues(t *testing.T) {
 		NotifCategoryMentions,
 		NotifCategorySubscriptions,
 		NotifCategorySprints,
+		NotifCategoryAgentAttention,
 		NotifCategorySupportReplies,
 		NotifCategorySupportMentions,
 	}
@@ -69,6 +71,8 @@ func TestEventTypeToCategory_KnownMappings(t *testing.T) {
 		{"comment.created", NotifCategoryComments},
 		{"story.mention", NotifCategoryMentions},
 		{"sprint.mention", NotifCategoryMentions},
+		{"doc.mention", NotifCategoryMentions},
+		{"task.agent_attention_required", NotifCategoryAgentAttention},
 		{"support_conversation.customer_reply", NotifCategorySupportReplies},
 		{"support_conversation.mentioned", NotifCategorySupportMentions},
 		{"epic.created", NotifCategorySubscriptions},
@@ -122,7 +126,7 @@ func TestEventTypeToCategory_AllComments(t *testing.T) {
 func TestEventTypeToCategory_AllMentions(t *testing.T) {
 	mentionEvents := []string{
 		"story.mention", "comment.mention", "checklist.mention",
-		"objective.mention", "epic.mention", "sprint.mention",
+		"objective.mention", "epic.mention", "sprint.mention", "doc.mention",
 	}
 	for _, e := range mentionEvents {
 		got := EventTypeToCategory[e]
@@ -155,6 +159,7 @@ func TestEmittedNotificationEventTypes_AreMapped(t *testing.T) {
 		"story.status_changed",
 		"story.blocked",
 		"story.assigned",
+		"task.agent_attention_required",
 		"comment.created",
 		"comment.mention",
 		"checklist.mention",
@@ -199,6 +204,7 @@ func TestEventTypeToCategory_AllMappedToValidCategory(t *testing.T) {
 		NotifCategoryMentions:        true,
 		NotifCategorySubscriptions:   true,
 		NotifCategorySprints:         true,
+		NotifCategoryAgentAttention:  true,
 		NotifCategorySupportReplies:  true,
 		NotifCategorySupportMentions: true,
 	}

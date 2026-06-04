@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -338,6 +337,10 @@ func (s *DocsHelpcenterTranslationService) UpsertArticleTranslation(ctx context.
 		Content:         req.Content,
 		SEOTitle:        req.SEOTitle,
 		SEODescription:  req.SEODescription,
+		OGTitle:         req.OGTitle,
+		OGDescription:   req.OGDescription,
+		OGImageURL:      req.OGImageURL,
+		OGImageAlt:      req.OGImageAlt,
 		Status:          status,
 		SourceUpdatedAt: &doc.UpdatedAt,
 		SourceSynced:    true,
@@ -686,6 +689,10 @@ func (s *DocsHelpcenterTranslationService) MarkArticleTranslationReviewed(ctx co
 		ContentText:     translation.ContentText,
 		SEOTitle:        translation.SEOTitle,
 		SEODescription:  translation.SEODescription,
+		OGTitle:         translation.OGTitle,
+		OGDescription:   translation.OGDescription,
+		OGImageURL:      translation.OGImageURL,
+		OGImageAlt:      translation.OGImageAlt,
 		Status:          status,
 		SourceUpdatedAt: translation.SourceUpdatedAt,
 		SourceSynced:    true,
@@ -751,6 +758,10 @@ func (s *DocsHelpcenterTranslationService) SyncDefaultLocaleArticleMirror(ctx co
 		Excerpt:         doc.Excerpt,
 		SEOTitle:        article.SEOTitle,
 		SEODescription:  article.SEODescription,
+		OGTitle:         article.OGTitle,
+		OGDescription:   article.OGDescription,
+		OGImageURL:      article.OGImageURL,
+		OGImageAlt:      article.OGImageAlt,
 		Status:          status,
 		SourceUpdatedAt: &doc.UpdatedAt,
 		SourceSynced:    true,
@@ -1257,7 +1268,12 @@ func (s *DocsHelpcenterTranslationService) MarkArticleTranslationsForSourceChang
 	return s.translationRepo.MarkArticleTranslationsNeedsReview(ctx, documentID, defaultLocale, doc.UpdatedAt)
 }
 
-func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context.Context, documentID, locale string, requestedSlug *string) (*model.DocsHelpcenterArticleTranslation, error) {
+func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context.Context, documentID, locale string, requestedSlug *string, publishedContent json.RawMessage) (*model.DocsHelpcenterArticleTranslation, error) {
+	publishedContent, err := validatePublicationSnapshotContent(publishedContent)
+	if err != nil {
+		return nil, err
+	}
+
 	translation, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
 	if err != nil {
 		return nil, err
@@ -1326,6 +1342,9 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 		return nil, err
 	}
 	publication := buildArticleTranslationPublication(translation)
+	if len(publishedContent) > 0 {
+		publication.Content = publishedContent
+	}
 	if _, err := s.publicationRepo.UpsertArticlePublication(ctx, publication); err != nil {
 		return nil, err
 	}
@@ -1564,6 +1583,10 @@ func buildArticleTranslationPublication(translation *model.DocsHelpcenterArticle
 		ContentText:    translation.ContentText,
 		SEOTitle:       translation.SEOTitle,
 		SEODescription: translation.SEODescription,
+		OGTitle:        translation.OGTitle,
+		OGDescription:  translation.OGDescription,
+		OGImageURL:     translation.OGImageURL,
+		OGImageAlt:     translation.OGImageAlt,
 		PublishedAt:    publishedAt,
 	}
 }
@@ -1587,7 +1610,19 @@ func translationHasUnpublishedChanges(translation *model.DocsHelpcenterArticleTr
 	if strings.TrimSpace(stringPtrValue(translation.SEODescription)) != strings.TrimSpace(stringPtrValue(publication.SEODescription)) {
 		return true
 	}
-	return !bytes.Equal(compactJSON(translation.Content), compactJSON(publication.Content))
+	if strings.TrimSpace(stringPtrValue(translation.OGTitle)) != strings.TrimSpace(stringPtrValue(publication.OGTitle)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.OGDescription)) != strings.TrimSpace(stringPtrValue(publication.OGDescription)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.OGImageURL)) != strings.TrimSpace(stringPtrValue(publication.OGImageURL)) {
+		return true
+	}
+	if strings.TrimSpace(stringPtrValue(translation.OGImageAlt)) != strings.TrimSpace(stringPtrValue(publication.OGImageAlt)) {
+		return true
+	}
+	return !publicationContentEqual(translation.Content, publication.Content)
 }
 
 func validateEditableLocale(cfg *model.DocsHelpcenterConfig, locale string) (string, error) {

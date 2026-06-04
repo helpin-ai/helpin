@@ -83,6 +83,10 @@ interface LabelPickerProps {
   /** Called when the labels list changes (e.g. a new label was created inline). */
   onLabelsChange?: (labels: Label[]) => void;
   className?: string;
+  /** Show only the trigger button, no badges — used for compact inline table cells */
+  triggerOnly?: boolean;
+  /** Label ids present on some but not all items in the selection (rendered italic + muted). */
+  partialLabelIds?: string[];
 }
 
 export function LabelPicker({
@@ -93,6 +97,8 @@ export function LabelPicker({
   labels,
   onLabelsChange,
   className,
+  triggerOnly = false,
+  partialLabelIds,
 }: LabelPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -144,7 +150,7 @@ export function LabelPicker({
 
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
-      {selectedLabels.map((label) => (
+      {!triggerOnly && selectedLabels.map((label) => (
         <LabelBadge key={label.id} label={label} onRemove={() => removeLabel(label.id)} />
       ))}
 
@@ -205,12 +211,16 @@ export function LabelPicker({
                         ? `#${label.color}`
                         : undefined;
 
+                    const isPartial = !!partialLabelIds?.includes(label.id);
                     return (
                       <CommandItem
                         key={label.id}
                         value={label.name}
                         onSelect={() => toggleLabel(label.id)}
-                        className="flex items-center gap-2 text-xs"
+                        className={cn(
+                          'flex items-center gap-2 text-xs',
+                          isPartial && 'italic text-muted-foreground',
+                        )}
                       >
                         <span
                           className="h-2.5 w-2.5 shrink-0 rounded-full"

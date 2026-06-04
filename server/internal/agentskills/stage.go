@@ -1,0 +1,125 @@
+package agentskills
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/worker"
+)
+
+type SkillPackageStore interface {
+	GetObject(ctx context.Context, key string) ([]byte, error)
+}
+
+var stagedSkillNamePattern = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+
+func EffectiveRuntimeRefs(agent *model.Agent) model.AgentSkillRefs {
+	if agent == nil {
+		return nil
+	}
+	if agent.IsSystem {
+		if bundle, ok := worker.BuiltInPresetSkillBundleForPreset(agent.EffectivePresetKey()); ok {
+			refs := make(model.AgentSkillRefs, 0, len(bundle.SkillKeys))
+			for _, key := range bundle.SkillKeys {
+				key = strings.TrimSpace(key)
+				if key == "" {
+					continue
+				}
+				refs = append(refs, model.AgentSkillRef{Key: key})
+			}
+			return refs
+		}
+	}
+	return agent.Skills.Normalize()
+}
+
+func StageInto(
+	ctx context.Context,
+	workspaceID string,
+	agent *model.Agent,
+	allowedTools []string,
+	lookup WorkspaceSkillLookup,
+	store SkillPackageStore,
+	destRoot string,
+) (Resolution, error) {
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) == 0 {
+		return Resolution{Refs: model.AgentSkillRefs{}, Definitions: nil}, nil
+	}
+
+	resolution, err := Resolve(ctx, workspaceID, refs, lookup)
+	if err != nil {
+		return Resolution{}, err
+	}
+	runtimeKind := ""
+	if agent != nil {
+		runtimeKind = strings.TrimSpace(agent.RuntimeKind)
+	}
+	if err := ValidateRuntimeAndTools(runtimeKind, allowedTools, resolution.Definitions); err != nil {
+		return Resolution{}, err
+	}
+	if strings.TrimSpace(destRoot) == "" {
+		return Resolution{}, fmt.Errorf("skill staging root is required")
+	}
+	if err := os.RemoveAll(destRoot); err != nil {
+		return Resolution{}, fmt.Errorf("clear skill staging root: %w", err)
+	}
+	if err := os.MkdirAll(destRoot, 0o755); err != nil {
+		return Resolution{}, fmt.Errorf("create skill staging root: %w", err)
+	}
+
+	for index, ref := range resolution.Refs {
+		definition := resolution.Definitions[index]
+		stageDir := filepath.Join(destRoot, stagedSkillDirName(index, definition.Key))
+		switch {
+		case ref.SkillID != nil:
+			if lookup == nil {
+				return Resolution{}, fmt.Errorf("workspace skill lookup is not configured")
+			}
+			if store == nil {
+				return Resolution{}, fmt.Errorf("skill package store is not configured")
+			}
+			skill, err := lookup.GetByID(ctx, workspaceID, *ref.SkillID)
+			if err != nil {
+				return Resolution{}, err
+			}
+			if skill == nil || skill.IsArchived {
+				return Resolution{}, fmt.Errorf("workspace skill not found")
+			}
+			if ref.VersionKey != nil && strings.TrimSpace(*ref.VersionKey) != "" && strings.TrimSpace(*ref.VersionKey) != strings.TrimSpace(skill.VersionKey) {
+				return Resolution{}, fmt.Errorf("workspace skill %q version mismatch", skill.Key)
+			}
+			archiveData, err := store.GetObject(ctx, skill.PackageObjectKey)
+			if err != nil {
+				return Resolution{}, fmt.Errorf("load workspace skill package %q: %w", skill.Key, err)
+			}
+			if err := worker.ExtractSkillArchiveToDir(archiveData, stageDir); err != nil {
+				return Resolution{}, fmt.Errorf("stage workspace skill %q: %w", skill.Key, err)
+			}
+		default:
+			if err := worker.CopyBuiltInSkillPackageToDir(definition.Key, stageDir); err != nil {
+				return Resolution{}, fmt.Errorf("stage built-in skill %q: %w", definition.Key, err)
+			}
+		}
+	}
+
+	return resolution, nil
+}
+
+func stagedSkillDirName(index int, key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = "skill"
+	}
+	key = stagedSkillNamePattern.ReplaceAllString(key, "_")
+	key = strings.Trim(key, "_")
+	if key == "" {
+		key = "skill"
+	}
+	return fmt.Sprintf("%02d-%s", index+1, key)
+}

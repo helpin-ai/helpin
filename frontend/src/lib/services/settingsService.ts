@@ -8,6 +8,7 @@ import type {
   TeamEstimateSettings,
   TeamFieldVisibility,
   EstimateScale,
+  ManagedWorkspaceModule,
   TeamRepoDefault,
   WorkspaceModuleAccessSettings,
   WorkspaceModuleGrant,
@@ -26,6 +27,7 @@ const normalizeWorkspaceSettings = (raw: RawWorkspaceSettings): WorkspaceSetting
     sprint_duration_weeks: 2,
     notifications_enabled: true,
     team_weight: 50,
+    enforce_two_factor: false,
   },
   teams: raw.teams ?? [],
   people: raw.people ?? [],
@@ -59,6 +61,8 @@ export const settingsService = {
   initialize: (workspaceId: string) => api.post(`/settings/initialize${qs(workspaceId)}`, { workspace_id: workspaceId }),
   createTeam: (data: { workspace_id: string; name: string; handle?: string; description?: string; manager_id?: string; team_type?: WorkspaceTeam['team_type']; default_task_type?: WorkspaceTeam['default_task_type'] }) =>
     api.post<WorkspaceTeam>(`/settings/teams${qs(data.workspace_id)}`, data),
+  ensureDefaultTeam: (data: { workspace_id: string; team_type: WorkspaceTeam['team_type'] }) =>
+    api.post<WorkspaceTeam>(`/settings/teams/ensure-default${qs(data.workspace_id)}`, data),
   updateTeam: (workspaceId: string, id: string, data: Partial<WorkspaceTeam>) =>
     api.put<WorkspaceTeam>(`/settings/teams/${id}${qs(workspaceId)}`, data),
   deleteTeam: (workspaceId: string, id: string) => api.del(`/settings/teams/${id}${qs(workspaceId)}`),
@@ -77,7 +81,7 @@ export const settingsService = {
     api.put(`/settings/job-roles${qs(workspaceId)}`, { workspace_id: workspaceId, job_role: jobRole, criteria }),
   deleteJobRole: (workspaceId: string, jobRole: string) =>
     api.del(`/settings/job-roles${qs(workspaceId)}&job_role=${encodeURIComponent(jobRole)}`),
-  updateSystem: (workspaceId: string, data: { team_weight?: number; sprint_duration_weeks?: number; notifications_enabled?: boolean }) =>
+  updateSystem: (workspaceId: string, data: { team_weight?: number; sprint_duration_weeks?: number; notifications_enabled?: boolean; enforce_two_factor?: boolean }) =>
     api.put(`/settings/system${qs(workspaceId)}`, data),
   addTeamInvitation: (workspaceId: string, teamId: string, invitationId: string) =>
     api.post<InvitationTeamPreassignment>(`/settings/teams/${teamId}/invitations${qs(workspaceId)}`, { invitation_id: invitationId }),
@@ -103,11 +107,12 @@ export const settingsService = {
       auto_sync_states?: boolean;
       review_state_id?: string;
       done_state_id?: string;
+      closed_state_id?: string;
     },
   ) => api.put<TeamRepoDefault>(`/settings/teams/${teamId}/repo-default${qs(workspaceId)}`, data),
   getModuleAccess: (workspaceId: string) =>
     api.get<WorkspaceModuleAccessSettings>(`/settings/module-access${qs(workspaceId)}`),
-  createModuleGrant: (workspaceId: string, data: { module: 'crm' | 'support'; subject_type: 'team' | 'workspace_member'; subject_id: string }) =>
+  createModuleGrant: (workspaceId: string, data: { module: ManagedWorkspaceModule; subject_type: 'team' | 'workspace_member'; subject_id: string }) =>
     api.post<WorkspaceModuleGrant>(`/settings/module-access${qs(workspaceId)}`, { workspace_id: workspaceId, ...data }),
   deleteModuleGrant: (workspaceId: string, grantId: string) =>
     api.del(`/settings/module-access/${grantId}${qs(workspaceId)}`),

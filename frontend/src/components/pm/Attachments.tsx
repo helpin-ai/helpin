@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft01Icon, ArrowRight01Icon, Download04Icon, Loading01Icon, AttachmentIcon, Delete01Icon, Upload01Icon, Cancel01Icon } from '@/lib/icons';
+import { ArrowLeft01Icon, ArrowRight01Icon, Download04Icon, Loading01Icon, AttachmentIcon, Delete01Icon, Upload01Icon, Cancel01Icon, PlayCircleIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { LoadingImage } from '@/components/ui/loading-image';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
@@ -35,9 +35,20 @@ interface AttachmentsProps {
   onFilePickerReady?: (openPicker: () => void) => void;
   /** Allow parent to programmatically upload files (e.g. from drag overlay) */
   onUploadReady?: (upload: (files: FileList | File[]) => Promise<void>) => void;
+  editable?: boolean;
 }
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
+
+export function getAttachmentGridDensityClasses(count: number): string {
+  if (count >= 9) {
+    return 'grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-1.5';
+  }
+  if (count >= 5) {
+    return 'grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2';
+  }
+  return 'grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2';
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -86,7 +97,12 @@ function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/') && !contentType.includes('svg');
 }
 
-export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment, onFilePickerReady, onUploadReady }: AttachmentsProps) {
+function isVideoType(contentType: string, fileName: string): boolean {
+  if (contentType.startsWith('video/')) return true;
+  return ['mp4', 'mov', 'webm', 'mkv', 'wmv', 'avi', 'mpeg', 'mpg'].includes(getFileExtension(fileName));
+}
+
+export function Attachments({ workspaceId, entityType, entityId, memberNameMap, onDeleteAttachment, onFilePickerReady, onUploadReady, editable = true }: AttachmentsProps) {
   const [attachments, setAttachments] = useState<AttachmentResponse[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -94,6 +110,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
   const [dragging, setDragging] = useState(false);
   const [previewEntry, setPreviewEntry] = useState<AttachmentResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounterRef = useRef(0);
 
   // Load attachments
   const reload = useCallback(async () => {
@@ -101,7 +118,15 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
     setAttachments(data ?? []);
   }, [workspaceId, entityType, entityId]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    let cancelled = false;
+    void pmAttachmentService.list(workspaceId, entityType, entityId).then(({ data }) => {
+      if (!cancelled) setAttachments(data ?? []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, entityType, entityId]);
 
   // Re-fetch when another client changes attachments
   useEffect(() => {
@@ -110,17 +135,22 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       if (d?.parent_id === entityId && d?.entity === 'attachment') reload();
     };
     window.addEventListener('task-child-updated', handler);
-    return () => window.removeEventListener('task-child-updated', handler);
+    window.addEventListener('epic-child-updated', handler);
+    return () => {
+      window.removeEventListener('task-child-updated', handler);
+      window.removeEventListener('epic-child-updated', handler);
+    };
   }, [entityId, reload]);
 
   const handleUpload = useCallback(
     async (files: FileList | File[]) => {
+      if (!editable) return;
       setError(null);
       const fileArray = Array.from(files);
 
       for (const file of fileArray) {
         if (file.size > MAX_SIZE) {
-          setError(`${file.name} exceeds 10MB limit`);
+          setError(`${file.name} exceeds 50MB limit`);
           continue;
         }
 
@@ -155,19 +185,22 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
         setUploading(false);
       }
     },
-    [workspaceId, entityType, entityId],
+    [workspaceId, entityType, entityId, editable],
   );
 
   // Expose file picker and upload to parent
   useEffect(() => {
-    onFilePickerReady?.(() => fileInputRef.current?.click());
-  }, [onFilePickerReady]);
+    onFilePickerReady?.(() => {
+      if (editable) fileInputRef.current?.click();
+    });
+  }, [onFilePickerReady, editable]);
 
   useEffect(() => {
     onUploadReady?.(handleUpload);
   }, [onUploadReady, handleUpload]);
 
   const handleDelete = async (entry: AttachmentResponse) => {
+    if (!editable) return;
     if (onDeleteAttachment) {
       const action = await onDeleteAttachment(entry);
       if (action === 'handled') {
@@ -187,28 +220,58 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
     setAttachments((prev) => prev.filter((a) => a.attachment.id !== entry.attachment.id));
   };
 
-  const onDragOver = (e: React.DragEvent) => {
+  const isFileDrag = (e: React.DragEvent) => e.dataTransfer.types.includes('Files');
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!editable) return;
+    if (!isFileDrag(e)) return;
     e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
     setDragging(true);
   };
-  const onDragLeave = () => setDragging(false);
-  const onDrop = (e: React.DragEvent) => {
+  const onDragOver = (e: React.DragEvent) => {
+    if (!editable) return;
+    if (!isFileDrag(e)) return;
     e.preventDefault();
+    e.stopPropagation();
+  };
+  const onDragLeave = (e: React.DragEvent) => {
+    if (!editable) return;
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
+    if (dragCounterRef.current === 0) setDragging(false);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    if (!editable) return;
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
     setDragging(false);
     if (e.dataTransfer.files.length > 0) handleUpload(e.dataTransfer.files);
   };
 
   const resolveUrl = (a: AttachmentResponse) => a.public_url || a.url;
-  const imageAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type));
+  const previewAttachments = attachments.filter(({ attachment }) => isImageType(attachment.content_type) || isVideoType(attachment.content_type, attachment.file_name));
 
   const hasAttachments = attachments.length > 0;
 
   return (
-    <div className="space-y-3">
+    <div
+      className="space-y-3"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       {hasAttachments && (
         <div className="flex items-center gap-1.5">
           <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</h3>
+          <h3 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
+            Attachments
+          </h3>
         </div>
       )}
 
@@ -216,6 +279,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
         ref={fileInputRef}
         type="file"
         multiple
+        disabled={!editable}
         className="hidden"
         onChange={(e) => {
           if (e.target.files?.length) handleUpload(e.target.files);
@@ -224,7 +288,7 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
       />
 
       {/* Drop zone — only visible when dragging or uploading */}
-      {(dragging || uploading) && (
+      {editable && (dragging || uploading) && (
         <div
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
@@ -251,25 +315,39 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
 
       {/* Unified attachment grid — images + files as consistent cards */}
       {attachments.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        <div className={getAttachmentGridDensityClasses(attachments.length)}>
           {attachments.map((entry) => {
             const isImage = isImageType(entry.attachment.content_type);
+            const isVideo = isVideoType(entry.attachment.content_type, entry.attachment.file_name);
             const ext = getFileExtension(entry.attachment.file_name);
+            const url = resolveUrl(entry);
             return (
               <div key={entry.attachment.id} className="group relative">
                 <button
                   type="button"
                   className="block w-full overflow-hidden rounded-lg border border-border/60 cursor-pointer transition-colors hover:border-border"
-                  onClick={() => isImage ? setPreviewEntry(entry) : window.open(resolveUrl(entry), '_blank')}
+                  onClick={() => (isImage || isVideo) ? setPreviewEntry(entry) : window.open(url, '_blank')}
                 >
                   {isImage ? (
                     <LoadingImage
-                      src={resolveUrl(entry)}
+                      src={url}
                       alt={entry.attachment.file_name}
                       containerClassName="block h-20 w-full overflow-hidden"
                       className="h-20 w-full object-cover transition-transform group-hover:scale-105"
                       loading="lazy"
                     />
+                  ) : isVideo ? (
+                    <div className="relative h-20 w-full overflow-hidden bg-black">
+                      <video
+                        src={url}
+                        preload="metadata"
+                        muted
+                        className="h-20 w-full object-cover opacity-80"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                        <PlayCircleIcon className="h-8 w-8 text-white drop-shadow" />
+                      </div>
+                    </div>
                   ) : (
                     <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
                       <img
@@ -289,21 +367,23 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
                       variant="secondary"
                       size="icon"
                       className="h-6 w-6 bg-background/80 backdrop-blur-sm"
-                      onClick={(e) => { e.stopPropagation(); window.open(resolveUrl(entry), '_blank'); }}
+                      onClick={(e) => { e.stopPropagation(); window.open(url, '_blank'); }}
                     >
                       <Download04Icon className="h-3 w-3" />
                     </Button>
                   </QuickTooltip>
-                  <QuickTooltip label="Delete">
-                    <Button
-                      variant="secondary"
-                      size="icon"
-                      className="h-6 w-6 bg-background/80 backdrop-blur-sm"
-                      onClick={(e) => { e.stopPropagation(); void handleDelete(entry); }}
-                    >
-                      <Delete01Icon className="h-3 w-3 text-destructive" />
-                    </Button>
-                  </QuickTooltip>
+                  {editable && (
+                    <QuickTooltip label="Delete">
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        className="h-6 w-6 bg-background/80 backdrop-blur-sm"
+                        onClick={(e) => { e.stopPropagation(); void handleDelete(entry); }}
+                      >
+                        <Delete01Icon className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </QuickTooltip>
+                  )}
                 </div>
                 <p className="mt-1 truncate text-[10px] text-muted-foreground" title={entry.attachment.file_name}>
                   {entry.attachment.file_name}
@@ -319,13 +399,15 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
         </div>
       )}
 
-      {/* Image preview lightbox */}
+      {/* Image/video preview lightbox */}
       {previewEntry && (() => {
-        const curIdx = imageAttachments.findIndex((e) => e.attachment.id === previewEntry.attachment.id);
+        const curIdx = previewAttachments.findIndex((e) => e.attachment.id === previewEntry.attachment.id);
         const hasPrev = curIdx > 0;
-        const hasNext = curIdx < imageAttachments.length - 1;
-        const goPrev = () => { if (hasPrev) setPreviewEntry(imageAttachments[curIdx - 1]); };
-        const goNext = () => { if (hasNext) setPreviewEntry(imageAttachments[curIdx + 1]); };
+        const hasNext = curIdx < previewAttachments.length - 1;
+        const goPrev = () => { if (hasPrev) setPreviewEntry(previewAttachments[curIdx - 1]); };
+        const goNext = () => { if (hasNext) setPreviewEntry(previewAttachments[curIdx + 1]); };
+        const previewUrl = resolveUrl(previewEntry);
+        const previewIsVideo = isVideoType(previewEntry.attachment.content_type, previewEntry.attachment.file_name);
 
         return (
           <div
@@ -369,18 +451,30 @@ export function Attachments({ workspaceId, entityType, entityId, memberNameMap, 
               </Button>
             )}
 
-            <LoadingImage
-              src={resolveUrl(previewEntry)}
-              alt={previewEntry.attachment.file_name}
-              containerClassName="max-h-[50vh] max-w-[60vw] overflow-hidden rounded-lg"
-              className="max-h-[50vh] max-w-[60vw] rounded-lg object-contain"
-              onClick={(e) => e.stopPropagation()}
-            />
+            {previewIsVideo ? (
+              <video
+                src={previewUrl}
+                controls
+                autoPlay
+                className="max-h-[70vh] max-w-[75vw] rounded-lg bg-black"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <a href={previewUrl} target="_blank" rel="noopener noreferrer">{previewEntry.attachment.file_name}</a>
+              </video>
+            ) : (
+              <LoadingImage
+                src={previewUrl}
+                alt={previewEntry.attachment.file_name}
+                containerClassName="max-h-[50vh] max-w-[60vw] overflow-hidden rounded-lg"
+                className="max-h-[50vh] max-w-[60vw] rounded-lg object-contain"
+                onClick={(e) => e.stopPropagation()}
+              />
+            )}
             <div className="mt-3 flex items-center gap-2 text-white/80" onClick={(e) => e.stopPropagation()}>
               <span className="text-sm font-medium">{previewEntry.attachment.file_name}</span>
               <span className="text-xs text-white/50">{formatFileSize(previewEntry.attachment.file_size)}</span>
-              {imageAttachments.length > 1 && (
-                <span className="text-xs text-white/40">{curIdx + 1} / {imageAttachments.length}</span>
+              {previewAttachments.length > 1 && (
+                <span className="text-xs text-white/40">{curIdx + 1} / {previewAttachments.length}</span>
               )}
             </div>
           </div>

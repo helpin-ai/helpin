@@ -28,6 +28,9 @@ type MailboxFormState = {
   linkedTeamId: string;
   assignmentMode: 'manual' | 'round_robin';
   workspaceMemberIds: string[];
+  replyTimeOverride: boolean;
+  replyTimePreset: string;
+  replyTimeCustomMinutes: number | null;
 };
 
 const DEFAULT_FORM: MailboxFormState = {
@@ -40,6 +43,9 @@ const DEFAULT_FORM: MailboxFormState = {
   linkedTeamId: 'none',
   assignmentMode: 'manual',
   workspaceMemberIds: [],
+  replyTimeOverride: false,
+  replyTimePreset: 'few_minutes',
+  replyTimeCustomMinutes: null,
 };
 
 const EMPTY_MEMBERS: never[] = [];
@@ -50,6 +56,7 @@ function normalizeHandle(value: string) {
 
 function buildFormState(mailbox?: SupportMailbox | null): MailboxFormState {
   if (!mailbox) return DEFAULT_FORM;
+  const hasOverride = Boolean(mailbox.reply_time_preset);
   return {
     name: mailbox.name,
     handle: mailbox.handle,
@@ -60,6 +67,9 @@ function buildFormState(mailbox?: SupportMailbox | null): MailboxFormState {
     linkedTeamId: mailbox.linked_team_id ?? 'none',
     assignmentMode: mailbox.assignment_mode,
     workspaceMemberIds: [],
+    replyTimeOverride: hasOverride,
+    replyTimePreset: mailbox.reply_time_preset ?? 'few_minutes',
+    replyTimeCustomMinutes: mailbox.reply_time_custom_minutes ?? null,
   };
 }
 
@@ -69,9 +79,15 @@ function FieldLabel({ htmlFor, children, tip }: { htmlFor?: string; children: Re
       <Label htmlFor={htmlFor}>{children}</Label>
       <Tooltip>
         <TooltipTrigger asChild>
-          <HelpCircleIcon className="h-3.5 w-3.5 cursor-help text-muted-foreground/60" />
+          <button
+            type="button"
+            aria-label="More info"
+            className="inline-flex cursor-help items-center justify-center rounded-full text-muted-foreground/60 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <HelpCircleIcon className="h-3.5 w-3.5" />
+          </button>
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-56">
+        <TooltipContent side="top" className="max-w-64 text-xs leading-relaxed">
           {tip}
         </TooltipContent>
       </Tooltip>
@@ -181,6 +197,14 @@ export function TeamInboxDialog({
         assignment_mode: form.assignmentMode,
         workspace_member_ids: form.workspaceMemberIds,
       };
+      if (form.replyTimeOverride) {
+        payload.reply_time_preset = form.replyTimePreset;
+        payload.reply_time_custom_minutes = form.replyTimePreset === 'custom' ? form.replyTimeCustomMinutes : null;
+        payload.clear_reply_time_custom_minutes = form.replyTimePreset !== 'custom';
+      } else {
+        payload.clear_reply_time_preset = true;
+        payload.clear_reply_time_custom_minutes = true;
+      }
       await updateMailbox.mutateAsync({ mailboxId: mailbox.id, payload });
       toast.success('Team inbox updated');
     } else {
@@ -304,7 +328,7 @@ export function TeamInboxDialog({
                 />
               </div>
 
-              <div className="rounded-xl border bg-muted/20 p-3">
+              <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
                 <div className="flex items-end gap-3">
                   <div className="flex-1 space-y-1.5">
                     <FieldLabel tip="Connect this inbox to an existing workspace team. Current members of that team get inbox access automatically, and you can still add extra individual members in the next step.">
@@ -338,6 +362,62 @@ export function TeamInboxDialog({
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                <div className="border-t border-border/60 pt-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <FieldLabel tip="Override the workspace reply-time expectation for conversations in this inbox. Leave off to use the workspace default; turn on to give this inbox its own SLA.">
+                        Reply expectations
+                      </FieldLabel>
+                      <p className="text-xs text-muted-foreground">
+                        {form.replyTimeOverride
+                          ? 'Using a custom reply-time SLA for this inbox.'
+                          : 'Using the workspace default reply-time SLA.'}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.replyTimeOverride}
+                      onCheckedChange={(checked) => setForm((c) => ({ ...c, replyTimeOverride: checked }))}
+                    />
+                  </div>
+
+                  {form.replyTimeOverride && (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Select
+                        value={form.replyTimePreset}
+                        onValueChange={(v) => setForm((c) => ({ ...c, replyTimePreset: v }))}
+                      >
+                        <SelectTrigger className={form.replyTimePreset === 'custom' ? 'w-44' : 'flex-1'}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="few_minutes">Usually a few minutes</SelectItem>
+                          <SelectItem value="few_hours">Usually a few hours</SelectItem>
+                          <SelectItem value="same_day">Within a day</SelectItem>
+                          <SelectItem value="custom">Custom…</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {form.replyTimePreset === 'custom' && (
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={10080}
+                            value={form.replyTimeCustomMinutes ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setForm((c) => ({
+                                ...c,
+                                replyTimeCustomMinutes: v === '' ? null : Number(v),
+                              }));
+                            }}
+                            className="h-9 w-16 text-sm"
+                            placeholder="30"
+                          />
+                          <span className="text-xs text-muted-foreground">minutes</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

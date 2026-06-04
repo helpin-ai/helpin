@@ -18,7 +18,7 @@ interface TaskQueryFilters {
   workflow_id?: string
   state_id?: string
   task_type?: string
-  owner_member_id?: string
+  owner_member_ids?: string
   requester_member_id?: string
   label_id?: string
   priority?: string
@@ -26,6 +26,9 @@ interface TaskQueryFilters {
   blocked?: string
   blocking?: string
   archived?: boolean
+  contact_id?: string
+  company_id?: string
+  deal_id?: string
 }
 
 interface TaskFilters extends TaskQueryFilters {}
@@ -65,7 +68,10 @@ export function useTaskActivity(wsId: string, taskId: string, page = 1, perPage 
 export function useCreateTask(wsId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: CreateTaskRequest) => unwrap(await pmTaskService.create(data)),
+    mutationFn: async (data: CreateTaskRequest) => {
+      const response = unwrap(await pmTaskService.create(data))
+      return response.task
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'tasks'] })
       qc.invalidateQueries({ queryKey: ['pm', wsId, 'board'] })

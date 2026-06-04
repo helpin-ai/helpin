@@ -2,17 +2,19 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 )
 
 func TestOpenAIProviderBuildChatCompletionBodyUsesMaxCompletionTokensForGPT5(t *testing.T) {
 	provider := NewOpenAIProvider("test-key", "https://api.openai.com/v1", "")
 	body := provider.buildChatCompletionBody(
-		"gpt-5.4-mini",
+		"gpt-5.5",
 		[]map[string]any{{"role": "user", "content": "hello"}},
 		123,
 		0.1,
 		true,
+		nil,
 	)
 
 	if _, ok := body["max_completion_tokens"]; !ok {
@@ -34,6 +36,7 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxTokensForNonGPT5(t *testing
 		123,
 		0.1,
 		false,
+		nil,
 	)
 
 	if _, ok := body["max_tokens"]; !ok {
@@ -44,6 +47,26 @@ func TestOpenAIProviderBuildChatCompletionBodyUsesMaxTokensForNonGPT5(t *testing
 	}
 	if _, ok := body["response_format"]; ok {
 		t.Fatalf("did not expect response_format when JSON mode is off, got %#v", body)
+	}
+}
+
+func TestOpenAIProviderBuildChatCompletionBodyIncludesProviderOptions(t *testing.T) {
+	provider := NewOpenAIProvider("test-key", "https://openrouter.ai/api/v1", "")
+	body := provider.buildChatCompletionBody(
+		"openai/gpt-5.5",
+		[]map[string]any{{"role": "user", "content": "hello"}},
+		123,
+		0.1,
+		false,
+		[]byte(`{"order":["openai"],"allow_fallbacks":false}`),
+	)
+
+	raw, ok := body["provider"].(json.RawMessage)
+	if !ok {
+		t.Fatalf("expected provider options raw json, got %#v", body["provider"])
+	}
+	if string(raw) != `{"order":["openai"],"allow_fallbacks":false}` {
+		t.Fatalf("unexpected provider options: %s", string(raw))
 	}
 }
 

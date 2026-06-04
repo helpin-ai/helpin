@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/ordering"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -50,19 +51,34 @@ func isUniqueConstraintViolation(err error) bool {
 
 // DocsCollectionService handles business logic for docs collections.
 type DocsCollectionService struct {
-	collectionRepo *repository.DocsCollectionRepository
-	spaceRepo      *repository.DocsSpaceRepository
-	translationSvc *DocsHelpcenterTranslationService
-	wsPublisher    *websocket.Publisher
+	collectionRepo  *repository.DocsCollectionRepository
+	spaceRepo       *repository.DocsSpaceRepository
+	docRepo         *repository.DocsDocumentRepository
+	documentSvc     *DocsDocumentService
+	helpcenterRepo  *repository.DocsHelpcenterRepository
+	translationRepo *repository.DocsHelpcenterTranslationRepository
+	translationSvc  *DocsHelpcenterTranslationService
+	wsPublisher     *websocket.Publisher
+	useSortKey      bool
 }
 
 // NewDocsCollectionService creates a new DocsCollectionService.
-func NewDocsCollectionService(collectionRepo *repository.DocsCollectionRepository, spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher) *DocsCollectionService {
-	return &DocsCollectionService{collectionRepo: collectionRepo, spaceRepo: spaceRepo, wsPublisher: wsPublisher}
+func NewDocsCollectionService(collectionRepo *repository.DocsCollectionRepository, spaceRepo *repository.DocsSpaceRepository, wsPublisher *websocket.Publisher, useSortKey bool) *DocsCollectionService {
+	return &DocsCollectionService{collectionRepo: collectionRepo, spaceRepo: spaceRepo, wsPublisher: wsPublisher, useSortKey: useSortKey}
 }
 
 func (s *DocsCollectionService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
 	s.translationSvc = translationSvc
+}
+
+func (s *DocsCollectionService) SetPermanentDeleteDependencies(docRepo *repository.DocsDocumentRepository, documentSvc *DocsDocumentService, translationRepo *repository.DocsHelpcenterTranslationRepository) {
+	s.docRepo = docRepo
+	s.documentSvc = documentSvc
+	s.translationRepo = translationRepo
+}
+
+func (s *DocsCollectionService) SetHelpcenterRepository(helpcenterRepo *repository.DocsHelpcenterRepository) {
+	s.helpcenterRepo = helpcenterRepo
 }
 
 // maxCollectionDepth is the deepest allowed value of DocsCollection.Depth.
@@ -130,6 +146,16 @@ func (s *DocsCollectionService) Create(ctx context.Context, workspaceID, spaceID
 		Icon:               req.Icon,
 		Position:           nextPos,
 		CreatedBy:          userID,
+	}
+
+	if s.useSortKey {
+		lastKey, err := s.collectionRepo.LastSortKeyInBucket(ctx, spaceID, parentID)
+		if err != nil {
+			slog.ErrorContext(ctx, "last collection sort key failed", "error", err)
+		}
+		if key, err := ordering.Between(lastKey, ""); err == nil {
+			coll.SortKey = key
+		}
 	}
 	created, err := s.collectionRepo.Create(ctx, coll)
 	if err != nil {
@@ -343,8 +369,10 @@ func (s *DocsCollectionService) resolveParentForReparent(ctx context.Context, cu
 	return &id, nil
 }
 
-// Delete soft-deletes a collection.
-func (s *DocsCollectionService) Delete(ctx context.Context, id string) error {
+// Delete permanently deletes a collection subtree when permanent-delete
+// dependencies are wired. Without those dependencies it preserves the legacy
+// repository-level soft-delete behavior used by older tests and callers.
+func (s *DocsCollectionService) Delete(ctx context.Context, workspaceID, id string) error {
 	collection, err := s.collectionRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -352,11 +380,122 @@ func (s *DocsCollectionService) Delete(ctx context.Context, id string) error {
 	if collection == nil {
 		return ErrDocsCollectionNotFound
 	}
+	if workspaceID != "" && collection.WorkspaceID != workspaceID {
+		return ErrDocsCrossWorkspace
+	}
+	if s.documentSvc != nil && s.docRepo != nil {
+		collections, err := s.collectionRepo.ListBySpace(ctx, collection.SpaceID)
+		if err != nil {
+			return err
+		}
+		subtreeIDs := docsCollectionSubtreeIDs(id, collections)
+		// Collect all doc ids across the subtree in one pass, then delete the
+		// whole batch at once. This avoids the per-doc survivor scan that
+		// dominates delete time for large collections.
+		var documentIDs []string
+		for _, collectionID := range subtreeIDs {
+			docs, err := s.docRepo.List(ctx, collection.WorkspaceID, &collection.SpaceID, &collectionID, nil, nil, "", true)
+			if err != nil {
+				return err
+			}
+			for _, doc := range docs {
+				documentIDs = append(documentIDs, doc.ID)
+			}
+		}
+		if err := s.documentSvc.DeleteDocumentsPermanently(ctx, collection.WorkspaceID, documentIDs); err != nil {
+			return err
+		}
+		if s.translationRepo != nil {
+			if err := s.translationRepo.DeleteCollectionTranslationsByCollectionIDs(ctx, subtreeIDs); err != nil {
+				return err
+			}
+		}
+		if err := s.collectionRepo.HardDeleteByIDs(ctx, subtreeIDs); err != nil {
+			return err
+		}
+		publishWorkspaceEventWithParent(s.wsPublisher, "deleted", "docs_collection", id, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
+		return nil
+	}
 	if err := s.collectionRepo.Delete(ctx, id); err != nil {
 		return err
 	}
 	publishWorkspaceEventWithParent(s.wsPublisher, "deleted", "docs_collection", id, collection.WorkspaceID, "", "docs_space", collection.SpaceID, nil)
 	return nil
+}
+
+func docsCollectionSubtreeIDs(rootID string, collections []model.DocsCollection) []string {
+	ids := []string{rootID}
+	seen := map[string]struct{}{rootID: {}}
+	for {
+		added := false
+		for _, collection := range collections {
+			if _, ok := seen[collection.ID]; ok || collection.ParentCollectionID == nil {
+				continue
+			}
+			if _, parentInSubtree := seen[*collection.ParentCollectionID]; parentInSubtree {
+				seen[collection.ID] = struct{}{}
+				ids = append(ids, collection.ID)
+				added = true
+			}
+		}
+		if !added {
+			return ids
+		}
+	}
+}
+
+func (s *DocsCollectionService) GetDeleteImpact(ctx context.Context, workspaceID, id string) (*model.DocsCollectionDeleteImpact, error) {
+	collection, err := s.collectionRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil {
+		return nil, ErrDocsCollectionNotFound
+	}
+	if workspaceID != "" && collection.WorkspaceID != workspaceID {
+		return nil, ErrDocsCrossWorkspace
+	}
+
+	collections, err := s.collectionRepo.ListBySpace(ctx, collection.SpaceID)
+	if err != nil {
+		return nil, err
+	}
+	subtreeIDs := docsCollectionSubtreeIDs(id, collections)
+	impact := &model.DocsCollectionDeleteImpact{
+		CollectionID:    collection.ID,
+		CollectionName:  collection.Name,
+		SpaceID:         collection.SpaceID,
+		CollectionCount: len(subtreeIDs),
+	}
+	if s.docRepo == nil {
+		return impact, nil
+	}
+
+	documentIDs := []string{}
+	for _, collectionID := range subtreeIDs {
+		docs, err := s.docRepo.List(ctx, collection.WorkspaceID, &collection.SpaceID, &collectionID, nil, nil, "", true)
+		if err != nil {
+			return nil, err
+		}
+		for _, doc := range docs {
+			documentIDs = append(documentIDs, doc.ID)
+			impact.DocumentCount++
+			switch doc.Status {
+			case model.DocStatusArchived:
+				impact.ArchivedDocumentCount++
+			case model.DocStatusPublished:
+				impact.PublishedDocumentCount++
+			}
+		}
+	}
+	if s.helpcenterRepo != nil {
+		publicCount, err := s.helpcenterRepo.CountPublicArticlesByDocumentIDs(ctx, documentIDs)
+		if err != nil {
+			return nil, err
+		}
+		impact.PublicDocumentCount = publicCount
+	}
+	return impact, nil
 }
 
 // Restore restores a soft-deleted collection.
@@ -384,8 +523,79 @@ func (s *DocsCollectionService) ReorderCollections(ctx context.Context, spaceID 
 	if err := s.collectionRepo.ReorderSiblings(ctx, spaceID, parentID, req.CollectionIDs); err != nil {
 		return err
 	}
+
+	if s.useSortKey {
+		prevKey := ""
+		for _, id := range req.CollectionIDs {
+			key, err := ordering.Between(prevKey, "")
+			if err != nil {
+				return fmt.Errorf("compute sort key for collection reorder: %w", err)
+			}
+			if err := s.collectionRepo.UpdateSortKey(ctx, id, key); err != nil {
+				return fmt.Errorf("update sort key for collection %s: %w", id, err)
+			}
+			prevKey = key
+		}
+	}
+
 	if space, err := s.spaceRepo.GetByID(ctx, spaceID); err == nil && space != nil {
 		publishWorkspaceEventWithParent(s.wsPublisher, "reordered", "docs_collection", req.CollectionIDs[0], space.WorkspaceID, "", "docs_space", spaceID, nil)
+	}
+	return nil
+}
+
+// ReorderChildren reassigns positions across a mixed list of collections
+// and articles sharing the same parent (or the space root). Both types
+// get sequential positions in one transaction so cross-type drag-and-drop
+// persists correctly.
+func (s *DocsCollectionService) ReorderChildren(ctx context.Context, spaceID string, req model.ReorderDocsChildrenRequest) error {
+	if len(req.Items) == 0 {
+		return nil
+	}
+	var parentID *string
+	if req.ParentCollectionID != nil && *req.ParentCollectionID != "" {
+		parentID = req.ParentCollectionID
+	}
+	ordered := make([]repository.OrderedChild, 0, len(req.Items))
+	for _, item := range req.Items {
+		kind := repository.ChildKind(item.Kind)
+		if kind != repository.ChildKindCollection && kind != repository.ChildKindArticle {
+			return fmt.Errorf("invalid child kind: %q", item.Kind)
+		}
+		if item.ID == "" {
+			return fmt.Errorf("child id is required")
+		}
+		ordered = append(ordered, repository.OrderedChild{Kind: kind, ID: item.ID})
+	}
+	if err := s.collectionRepo.ReorderChildren(ctx, spaceID, parentID, ordered); err != nil {
+		return err
+	}
+
+	// Rebuild sort_keys from scratch for the full submitted mixed list.
+	if s.useSortKey {
+		prevKey := ""
+		for _, child := range ordered {
+			key, err := ordering.Between(prevKey, "")
+			if err != nil {
+				return fmt.Errorf("compute sort key for children reorder: %w", err)
+			}
+			switch child.Kind {
+			case repository.ChildKindCollection:
+				if err := s.collectionRepo.UpdateSortKey(ctx, child.ID, key); err != nil {
+					return fmt.Errorf("update sort key for collection %s: %w", child.ID, err)
+				}
+			case repository.ChildKindArticle:
+				if err := s.docRepo.UpdateSortKey(ctx, child.ID, key); err != nil {
+					// docRepo may be nil if not wired via SetPermanentDeleteDependencies.
+					slog.ErrorContext(ctx, "update sort key for doc in children reorder", "doc_id", child.ID, "error", err)
+				}
+			}
+			prevKey = key
+		}
+	}
+
+	if space, err := s.spaceRepo.GetByID(ctx, spaceID); err == nil && space != nil {
+		publishWorkspaceEventWithParent(s.wsPublisher, "reordered", "docs_children", req.Items[0].ID, space.WorkspaceID, "", "docs_space", spaceID, nil)
 	}
 	return nil
 }

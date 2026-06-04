@@ -9,9 +9,9 @@ import { useImageActions } from '@/hooks/useImageActions';
 const MIN_WIDTH = 100;
 
 const ALIGNMENT_CLASS: Record<string, string> = {
-  left: 'justify-start',
-  center: 'justify-center',
-  right: 'justify-end',
+  left: 'items-start',
+  center: 'items-center',
+  right: 'items-end',
 };
 
 const ALIGNMENT_OPTIONS = [
@@ -20,9 +20,10 @@ const ALIGNMENT_OPTIONS = [
   { value: 'right', label: 'Right', icon: TextAlignRightIcon },
 ] as const;
 
-export function ResizableImageComponent({ node, updateAttributes, selected: _selected, deleteNode, editor }: NodeViewProps) {
-  const { src, alt, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab } = node.attrs;
+export function ResizableImageComponent({ node, updateAttributes, selected: _selected, deleteNode, editor, extension }: NodeViewProps) {
+  const { src, darkSrc, alt, caption, width, height, aspectRatio: storedAspectRatio, alignment, linkUrl, linkNewTab } = node.attrs;
   const { copyImage, downloadImage, openInNewTab: _openInNewTab } = useImageActions();
+  const enableCaption = extension.options.enableCaption ?? true;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -36,6 +37,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   const [showAlignMenu, setShowAlignMenu] = useState(false);
   const [showAltInput, setShowAltInput] = useState(false);
   const [altText, setAltText] = useState<string>(alt ?? '');
+  const [captionText, setCaptionText] = useState<string>(caption ?? '');
   const [linkInput, setLinkInput] = useState<string>(linkUrl ?? '');
   const [linkNewTabInput, setLinkNewTabInput] = useState<boolean>(linkNewTab ?? true);
 
@@ -50,9 +52,10 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   // Sync from external changes
   useEffect(() => {
     setAltText(alt ?? '');
+    setCaptionText(caption ?? '');
     setLinkInput(linkUrl ?? '');
     setLinkNewTabInput(linkNewTab ?? true);
-  }, [alt, linkUrl, linkNewTab]);
+  }, [alt, caption, linkUrl, linkNewTab]);
 
   // On image load, compute aspect ratio and initial pixel size
   const handleImageLoad = useCallback(() => {
@@ -192,7 +195,7 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
   const currentAlignment = alignment || 'center';
 
   return (
-    <NodeViewWrapper className={`relative my-2 flex ${ALIGNMENT_CLASS[currentAlignment] ?? 'justify-center'}`} data-drag-handle>
+    <NodeViewWrapper className={`docs-image-block relative my-6 flex flex-col ${ALIGNMENT_CLASS[currentAlignment] ?? 'items-center'}`} data-drag-handle>
       <div
         ref={containerRef}
         className="group/img relative inline-block max-w-full"
@@ -205,16 +208,28 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
           ref={imageRef}
           src={src}
           alt={alt ?? ''}
-          crossOrigin="anonymous"
           onLoad={handleImageLoad}
           draggable={false}
-          containerClassName="block max-w-full overflow-hidden rounded-md"
+          containerClassName={`${darkSrc ? 'dark:hidden' : 'block'} max-w-full overflow-hidden rounded-md`}
           className="block max-w-full rounded-md"
           style={{
             width: currentWidth,
             ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
           }}
         />
+        {darkSrc && (
+          <LoadingImage
+            src={darkSrc}
+            alt={alt ?? ''}
+            draggable={false}
+            containerClassName="hidden max-w-full overflow-hidden rounded-md dark:block"
+            className="block max-w-full rounded-md"
+            style={{
+              width: currentWidth,
+              ...(aspectRatio ? { aspectRatio: String(aspectRatio) } : {}),
+            }}
+          />
+        )}
 
         {/* Selection border — only on hover or resize, not on programmatic selection */}
         <div
@@ -419,6 +434,19 @@ export function ResizableImageComponent({ node, updateAttributes, selected: _sel
           />
         )}
       </div>
+      {enableCaption && (editable || captionText) && (
+        <input
+          value={captionText}
+          onChange={(event) => {
+            setCaptionText(event.target.value);
+            updateAttributes({ caption: event.target.value.trim() || null });
+          }}
+          placeholder="Add caption"
+          readOnly={!editable}
+          className="mt-2 w-full max-w-[min(100%,32rem)] bg-transparent text-center text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/60"
+          contentEditable={false}
+        />
+      )}
 
       {/* Fullscreen overlay */}
       {isFullscreen && (

@@ -58,6 +58,7 @@ func setupDocsOrderingTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -78,6 +79,7 @@ func setupDocsOrderingTestDB(t *testing.T) *gorm.DB {
 			icon TEXT,
 			tags TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_pinned BOOLEAN NOT NULL DEFAULT 0,
 			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
 			share_token TEXT,
@@ -90,6 +92,14 @@ func setupDocsOrderingTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME,
 			deleted_at DATETIME
+		)`,
+		`CREATE TABLE docs_change_proposals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
 		)`,
 	}
 
@@ -136,8 +146,8 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 	t.Run("Move appends to target bucket and normalizes source bucket", func(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
-		docRepo := repository.NewDocsDocumentRepository(db)
-		docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil)
+		docRepo := repository.NewDocsDocumentRepository(db, false)
+		docSvc := NewDocsDocumentService(docRepo, spaceRepo, nil, false)
 		ctx := context.Background()
 
 		seedDocsSpace(t, db, model.DocsSpace{
@@ -232,8 +242,8 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 	t.Run("Collection create derives slug when request slug is omitted", func(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
-		collectionRepo := repository.NewDocsCollectionRepository(db)
-		collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+		collectionRepo := repository.NewDocsCollectionRepository(db, false)
+		collectionSvc := NewDocsCollectionService(collectionRepo, spaceRepo, nil, false)
 		ctx := context.Background()
 
 		seedDocsSpace(t, db, model.DocsSpace{
@@ -266,7 +276,7 @@ func TestDocsOrdering_MoveDeleteAndTypeChange(t *testing.T) {
 
 	t.Run("Delete appends docs into uncategorized and normalizes remaining collections", func(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
-		repo := repository.NewDocsCollectionRepository(db)
+		repo := repository.NewDocsCollectionRepository(db, false)
 		ctx := context.Background()
 
 		seedDocsCollection(t, db, model.DocsCollection{
@@ -612,7 +622,7 @@ func TestDocsCollectionRepo_Tree(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		seedSpace(t, db)
 		ctx := context.Background()
-		repo := repository.NewDocsCollectionRepository(db)
+		repo := repository.NewDocsCollectionRepository(db, false)
 
 		// Top-level: A (0), B (1). Nested under A: A1 (0), A2 (1).
 		seedTreeCollection(t, db, "A", spaceID, workspaceID, nil, 0, 0, "A")
@@ -642,7 +652,7 @@ func TestDocsCollectionRepo_Tree(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		seedSpace(t, db)
 		ctx := context.Background()
-		repo := repository.NewDocsCollectionRepository(db)
+		repo := repository.NewDocsCollectionRepository(db, false)
 
 		root := "root"
 		child := "child"
@@ -667,7 +677,7 @@ func TestDocsCollectionRepo_Tree(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		seedSpace(t, db)
 		ctx := context.Background()
-		repo := repository.NewDocsCollectionRepository(db)
+		repo := repository.NewDocsCollectionRepository(db, false)
 
 		seedTreeCollection(t, db, "root", spaceID, workspaceID, nil, 0, 0, "root")
 
@@ -684,7 +694,7 @@ func TestDocsCollectionRepo_Tree(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		seedSpace(t, db)
 		ctx := context.Background()
-		repo := repository.NewDocsCollectionRepository(db)
+		repo := repository.NewDocsCollectionRepository(db, false)
 
 		seedTreeCollection(t, db, "root", spaceID, workspaceID, nil, 0, 0, "root")
 		rootID := "root"
@@ -709,7 +719,7 @@ func TestDocsCollectionRepo_Tree(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		seedSpace(t, db)
 		ctx := context.Background()
-		repo := repository.NewDocsCollectionRepository(db)
+		repo := repository.NewDocsCollectionRepository(db, false)
 
 		seedTreeCollection(t, db, "A", spaceID, workspaceID, nil, 0, 0, "A")
 		seedTreeCollection(t, db, "B", spaceID, workspaceID, nil, 0, 1, "B")
@@ -737,7 +747,7 @@ func TestDocsCollectionRepo_Tree(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		seedSpace(t, db)
 		ctx := context.Background()
-		repo := repository.NewDocsCollectionRepository(db)
+		repo := repository.NewDocsCollectionRepository(db, false)
 
 		// Three top-level collections and two nested under the second one.
 		seedTreeCollection(t, db, "A", spaceID, workspaceID, nil, 0, 0, "A")
@@ -774,7 +784,7 @@ func TestDocsCollectionRepo_Tree(t *testing.T) {
 		db := setupDocsOrderingTestDB(t)
 		seedSpace(t, db)
 		ctx := context.Background()
-		repo := repository.NewDocsCollectionRepository(db)
+		repo := repository.NewDocsCollectionRepository(db, false)
 
 		// Two top-level roots; "mover" lives under rootA and carries one child.
 		seedTreeCollection(t, db, "rootA", spaceID, workspaceID, nil, 0, 0, "rootA")
@@ -854,9 +864,9 @@ func TestDocsCollectionService_TreeValidation(t *testing.T) {
 	setup := func(t *testing.T) (*DocsCollectionService, *gorm.DB) {
 		t.Helper()
 		db := setupDocsOrderingTestDB(t)
-		collectionRepo := repository.NewDocsCollectionRepository(db)
+		collectionRepo := repository.NewDocsCollectionRepository(db, false)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
-		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil, false)
 		return svc, db
 	}
 
@@ -1103,7 +1113,7 @@ func TestDocsCollectionService_TreeValidation(t *testing.T) {
 		}
 
 		// Order should remain [a, b] with contiguous positions.
-		collectionRepo := repository.NewDocsCollectionRepository(db)
+		collectionRepo := repository.NewDocsCollectionRepository(db, false)
 		topLevel, err := collectionRepo.ListChildren(ctx, "space", nil)
 		if err != nil {
 			t.Fatalf("ListChildren: %v", err)
@@ -1166,8 +1176,8 @@ func TestDocsDocumentMoves_NestedCollections(t *testing.T) {
 		t.Helper()
 		db := setupDocsOrderingTestDB(t)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
-		docRepo := repository.NewDocsDocumentRepository(db)
-		svc := NewDocsDocumentService(docRepo, spaceRepo, nil)
+		docRepo := repository.NewDocsDocumentRepository(db, false)
+		svc := NewDocsDocumentService(docRepo, spaceRepo, nil, false)
 
 		seedDocsSpace(t, db, model.DocsSpace{
 			ID:          spaceID,
@@ -1367,10 +1377,10 @@ func TestDocsCollection_TreeDelete(t *testing.T) {
 	setup := func(t *testing.T) (*DocsCollectionService, *repository.DocsCollectionRepository, *repository.DocsDocumentRepository, *gorm.DB) {
 		t.Helper()
 		db := setupDocsOrderingTestDB(t)
-		collectionRepo := repository.NewDocsCollectionRepository(db)
+		collectionRepo := repository.NewDocsCollectionRepository(db, false)
 		spaceRepo := repository.NewDocsSpaceRepository(db)
-		docRepo := repository.NewDocsDocumentRepository(db)
-		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil)
+		docRepo := repository.NewDocsDocumentRepository(db, false)
+		svc := NewDocsCollectionService(collectionRepo, spaceRepo, nil, false)
 
 		seedDocsSpace(t, db, model.DocsSpace{
 			ID:          spaceID,
@@ -1436,7 +1446,7 @@ func TestDocsCollection_TreeDelete(t *testing.T) {
 		child := "child"
 		seedCollection(t, db, "grand", &child, 2, 0)
 
-		if err := svc.Delete(ctx, "root"); err != nil {
+		if err := svc.Delete(ctx, "", "root"); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 
@@ -1498,7 +1508,7 @@ func TestDocsCollection_TreeDelete(t *testing.T) {
 		seedDoc(t, db, "doc-a", &target, 0)
 		seedDoc(t, db, "doc-b", &target, 1)
 
-		if err := svc.Delete(ctx, "target"); err != nil {
+		if err := svc.Delete(ctx, "", "target"); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 
@@ -1545,7 +1555,7 @@ func TestDocsCollection_TreeDelete(t *testing.T) {
 
 		seedDoc(t, db, "mid-doc", &mid, 0)
 
-		if err := svc.Delete(ctx, "mid"); err != nil {
+		if err := svc.Delete(ctx, "", "mid"); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 

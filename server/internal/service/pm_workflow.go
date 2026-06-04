@@ -15,7 +15,7 @@ import (
 // PMWorkflowService contains workflow business logic.
 type PMWorkflowService struct {
 	workflowRepo *repository.PMWorkflowRepository
-	taskRepo    *repository.PMTaskRepository
+	taskRepo     *repository.PMTaskRepository
 	labelRepo    *repository.PMLabelRepository
 	wsPublisher  *websocket.Publisher
 	logger       *slog.Logger
@@ -25,7 +25,7 @@ type PMWorkflowService struct {
 func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, taskRepo *repository.PMTaskRepository, labelRepo *repository.PMLabelRepository, wsPublisher *websocket.Publisher) *PMWorkflowService {
 	return &PMWorkflowService{
 		workflowRepo: workflowRepo,
-		taskRepo:    taskRepo,
+		taskRepo:     taskRepo,
 		labelRepo:    labelRepo,
 		wsPublisher:  wsPublisher,
 		logger:       slog.Default().With("service", "pm_workflow"),
@@ -67,10 +67,20 @@ func (s *PMWorkflowService) ListEpicStates(ctx context.Context, workspaceID stri
 	return states, nil
 }
 
-// Create creates a workflow and seeds base states.
+// Create creates a workflow and seeds the baseline 4-state layout.
 func (s *PMWorkflowService) Create(ctx context.Context, req model.CreateWorkflowRequest) (*model.WorkflowWithStates, error) {
+	return s.createWithStates(ctx, req, defaultStatesForTeamType(model.TeamTypeEngineering))
+}
+
+// createWithStates creates a workflow and seeds it with the provided state
+// templates. The templates must be in display order; the one with IsDefault=true
+// becomes the workflow's default_state. Passed-in WorkflowID fields are ignored.
+func (s *PMWorkflowService) createWithStates(ctx context.Context, req model.CreateWorkflowRequest, states []model.PMWorkflowState) (*model.WorkflowWithStates, error) {
 	if req.WorkspaceID == "" || strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("workspace_id and name are required")
+	}
+	if len(states) == 0 {
+		return nil, fmt.Errorf("workflow requires at least one state")
 	}
 
 	workflow := &model.PMWorkflow{
@@ -85,19 +95,21 @@ func (s *PMWorkflowService) Create(ctx context.Context, req model.CreateWorkflow
 		return nil, err
 	}
 
-	// New workflows start with the baseline 4-state layout.
-	states := []model.PMWorkflowState{
-		{WorkflowID: workflow.ID, Name: "Backlog", StateType: model.PMStateTypeBacklog, Position: 0},
-		{WorkflowID: workflow.ID, Name: "To Do", StateType: model.PMStateTypeUnstarted, Position: 1, IsDefault: true},
-		{WorkflowID: workflow.ID, Name: "In Progress", StateType: model.PMStateTypeStarted, Position: 2},
-		{WorkflowID: workflow.ID, Name: "Done", StateType: model.PMStateTypeDone, Position: 3},
-	}
+	defaultStateIdx := -1
 	for i := range states {
+		states[i].WorkflowID = workflow.ID
+		states[i].Position = i
 		if err := s.workflowRepo.CreateState(ctx, &states[i]); err != nil {
 			return nil, err
 		}
+		if states[i].IsDefault {
+			defaultStateIdx = i
+		}
 	}
-	defaultStateID := states[1].ID
+	if defaultStateIdx < 0 {
+		defaultStateIdx = 0
+	}
+	defaultStateID := states[defaultStateIdx].ID
 	workflow.DefaultStateID = &defaultStateID
 	if err := s.workflowRepo.Update(ctx, workflow); err != nil {
 		return nil, err
@@ -106,6 +118,38 @@ func (s *PMWorkflowService) Create(ctx context.Context, req model.CreateWorkflow
 	s.logger.InfoContext(ctx, "workflow created", "workflow_id", workflow.ID, "workspace_id", req.WorkspaceID, "name", workflow.Name)
 	publishWorkspaceEvent(s.wsPublisher, "created", "workflow", workflow.ID, req.WorkspaceID, "")
 	return s.workflowRepo.GetByID(ctx, workflow.ID)
+}
+
+// defaultStatesForTeamType returns the state template for a newly-seeded team
+// workflow, keyed by team type. Sales uses a pipeline-style layout (To contact
+// → Won/Lost); all other types fall back to the engineering 4-state default.
+// WorkflowID and state IDs are filled in by createWithStates at insert time.
+func defaultStatesForTeamType(teamType string) []model.PMWorkflowState {
+	switch teamType {
+	case model.TeamTypeSales:
+		return []model.PMWorkflowState{
+			{Name: "To contact", StateType: model.PMStateTypeUnstarted, IsDefault: true},
+			{Name: "Contacted", StateType: model.PMStateTypeStarted},
+			{Name: "Meeting booked", StateType: model.PMStateTypeStarted},
+			{Name: "Proposal", StateType: model.PMStateTypeStarted},
+			{Name: "Won", StateType: model.PMStateTypeDone},
+			{Name: "Lost", StateType: model.PMStateTypeDone},
+		}
+	case model.TeamTypeSupport:
+		return []model.PMWorkflowState{
+			{Name: "New", StateType: model.PMStateTypeUnstarted, IsDefault: true},
+			{Name: "In progress", StateType: model.PMStateTypeStarted},
+			{Name: "Waiting", StateType: model.PMStateTypeStarted},
+			{Name: "Done", StateType: model.PMStateTypeDone},
+		}
+	default:
+		return []model.PMWorkflowState{
+			{Name: "Backlog", StateType: model.PMStateTypeBacklog},
+			{Name: "To Do", StateType: model.PMStateTypeUnstarted, IsDefault: true},
+			{Name: "In Progress", StateType: model.PMStateTypeStarted},
+			{Name: "Done", StateType: model.PMStateTypeDone},
+		}
+	}
 }
 
 // Update updates a workflow.
@@ -304,16 +348,23 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 	if req.WIPLimit != nil {
 		target.WIPLimit = req.WIPLimit
 	}
+	defaultRequested := false
 	if req.IsDefault != nil {
 		target.IsDefault = *req.IsDefault
 		if *req.IsDefault {
-			if err := s.workflowRepo.ClearDefaultStates(ctx, workflowID); err != nil {
-				return nil, err
-			}
+			defaultRequested = true
 			wf.Workflow.DefaultStateID = &target.ID
 		}
 	}
 
+	if err := ensureWorkflowStateTypeCoverage(wf.States); err != nil {
+		return nil, err
+	}
+	if defaultRequested {
+		if err := s.workflowRepo.ClearDefaultStates(ctx, workflowID); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.workflowRepo.UpdateState(ctx, target); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update workflow state", "error", err, "state_id", stateID, "workflow_id", workflowID)
 		return nil, err
@@ -329,11 +380,14 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 	if err != nil {
 		return nil, err
 	}
-	if err := validateWorkflowStateOrder(updated.States); err != nil {
-		return nil, err
-	}
-	if err := ensureWorkflowStateTypeCoverage(updated.States); err != nil {
-		return nil, err
+	if req.StateType != nil || req.Position != nil {
+		if err := s.normalizePositions(ctx, workflowID, updated.States); err != nil {
+			return nil, err
+		}
+		updated, err = s.workflowRepo.GetByID(ctx, workflowID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, state := range updated.States {
 		if state.ID == stateID {
@@ -446,8 +500,10 @@ func (s *PMWorkflowService) ResolveTeamWorkflow(ctx context.Context, workspaceID
 	}
 
 	// No team workflow found — auto-seed one from the workspace default.
+	// Team type is unknown at this layer; empty falls through to engineering
+	// defaults. Primary team-type-aware seeding happens in SettingsService.CreateTeam.
 	s.logger.InfoContext(ctx, "auto-seeding workflow for team", "team_id", teamID, "workspace_id", workspaceID)
-	if err := s.SeedTeamWorkflow(ctx, workspaceID, teamID, "Team"); err != nil {
+	if err := s.SeedTeamWorkflow(ctx, workspaceID, teamID, "Team", ""); err != nil {
 		return nil, fmt.Errorf("auto-seed team workflow: %w", err)
 	}
 
@@ -502,7 +558,10 @@ func (s *PMWorkflowService) CopyToTeam(ctx context.Context, sourceWorkflowID, ta
 }
 
 // SeedTeamWorkflow creates a default workflow for a newly created team.
-func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, teamID, teamName string) error {
+// When the workspace has a default workflow it is copied; otherwise the
+// team-type-specific state template is used (see defaultStatesForTeamType).
+// teamType is optional — an empty value falls back to engineering defaults.
+func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, teamID, teamName, teamType string) error {
 	// Check if team already has a workflow.
 	existing, err := s.workflowRepo.GetByTeamID(ctx, workspaceID, teamID)
 	if err != nil {
@@ -512,36 +571,43 @@ func (s *PMWorkflowService) SeedTeamWorkflow(ctx context.Context, workspaceID, t
 		return nil
 	}
 
-	// Try to copy from the workspace default workflow.
-	defaultWf, err := s.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
-	if err != nil {
-		return err
-	}
-	if defaultWf != nil && len(defaultWf.States) > 0 {
-		name := teamName + " Workflow"
-		newWf, err := s.workflowRepo.CopyWorkflow(ctx, defaultWf, name, &teamID)
+	// For sales/support teams, prefer the type-specific template over copying
+	// the workspace default (which is typically an engineering workflow and a
+	// poor fit for a sales pipeline).
+	preferTypeTemplate := teamType == model.TeamTypeSales || teamType == model.TeamTypeSupport
+
+	if !preferTypeTemplate {
+		defaultWf, err := s.workflowRepo.GetDefaultWorkflow(ctx, workspaceID)
 		if err != nil {
-			s.logger.ErrorContext(ctx, "failed to seed team workflow from default", "error", err, "team_id", teamID)
 			return err
 		}
-		s.logger.InfoContext(ctx, "team workflow seeded from default", "team_id", teamID, "workspace_id", workspaceID)
+		if defaultWf != nil && len(defaultWf.States) > 0 {
+			name := teamName + " Workflow"
+			newWf, err := s.workflowRepo.CopyWorkflow(ctx, defaultWf, name, &teamID)
+			if err != nil {
+				s.logger.ErrorContext(ctx, "failed to seed team workflow from default", "error", err, "team_id", teamID)
+				return err
+			}
+			s.logger.InfoContext(ctx, "team workflow seeded from default", "team_id", teamID, "workspace_id", workspaceID)
 
-		// Migrate existing team stories from old workflow to new workflow.
-		s.migrateTeamStories(ctx, teamID, defaultWf, newWf)
-		return nil
+			// Migrate existing team stories from old workflow to new workflow.
+			s.migrateTeamStories(ctx, teamID, defaultWf, newWf)
+			return nil
+		}
 	}
 
-	// No default workflow exists; create a fresh one.
-	_, err = s.Create(ctx, model.CreateWorkflowRequest{
+	// No default workflow exists (or the team type wants its own template);
+	// create a fresh one with the type-specific state set.
+	_, err = s.createWithStates(ctx, model.CreateWorkflowRequest{
 		WorkspaceID: workspaceID,
 		Name:        teamName + " Workflow",
 		TeamID:      &teamID,
-	})
+	}, defaultStatesForTeamType(teamType))
 	if err != nil {
-		s.logger.ErrorContext(ctx, "failed to seed fresh team workflow", "error", err, "team_id", teamID)
+		s.logger.ErrorContext(ctx, "failed to seed fresh team workflow", "error", err, "team_id", teamID, "team_type", teamType)
 		return err
 	}
-	s.logger.InfoContext(ctx, "team workflow seeded with defaults", "team_id", teamID, "workspace_id", workspaceID)
+	s.logger.InfoContext(ctx, "team workflow seeded with type defaults", "team_id", teamID, "workspace_id", workspaceID, "team_type", teamType)
 	return nil
 }
 
@@ -707,7 +773,6 @@ func validateWorkflowStateOrder(states []model.PMWorkflowState) error {
 
 func ensureWorkflowStateTypeCoverage(states []model.PMWorkflowState) error {
 	type hasType struct {
-		Backlog   bool
 		Unstarted bool
 		Started   bool
 		Done      bool
@@ -715,8 +780,6 @@ func ensureWorkflowStateTypeCoverage(states []model.PMWorkflowState) error {
 	flags := hasType{}
 	for _, state := range states {
 		switch state.StateType {
-		case model.PMStateTypeBacklog:
-			flags.Backlog = true
 		case model.PMStateTypeUnstarted:
 			flags.Unstarted = true
 		case model.PMStateTypeStarted:
@@ -725,8 +788,8 @@ func ensureWorkflowStateTypeCoverage(states []model.PMWorkflowState) error {
 			flags.Done = true
 		}
 	}
-	if !flags.Backlog || !flags.Unstarted || !flags.Started || !flags.Done {
-		return fmt.Errorf("workflow must include at least one backlog, unstarted, started, and done state")
+	if !flags.Unstarted || !flags.Started || !flags.Done {
+		return fmt.Errorf("workflow must include at least one unstarted, started, and done state")
 	}
 	return nil
 }

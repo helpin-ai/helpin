@@ -1,5 +1,5 @@
-import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   useReactTable,
   getCoreRowModel,
@@ -13,20 +13,22 @@ import {
   type Row,
   type SortingState,
   type ColumnSizingState,
+  type RowSelectionState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Loading01Icon } from '@/lib/icons';
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
+import { useQueryClient } from '@tanstack/react-query';
+import { Copy01Icon, Loading01Icon } from '@/lib/icons';
+import { AgentAvatar, resolveAgentPersonaKey } from '@/components/agents/AgentAvatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Calendar } from '@/components/ui/calendar';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format, parseISO } from 'date-fns';
 import { pmTaskService } from '@/lib/services/pmTaskService';
 import { pmLabelService } from '@/lib/services/pmLabelService';
-import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import { cn, getInitials } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import {
   PRIORITY_CONFIG,
   PriorityIcon as TaskListPriorityIcon,
@@ -54,6 +56,7 @@ import {
   UserAdd01Icon as TaskListUserAddIcon,
 } from '@/lib/pmIcons';
 import type {
+  Agent,
   AssociationObjectSummary,
   Label,
   Priority,
@@ -67,26 +70,45 @@ import type {
 import type { AssignableMember, TeamEstimateSettings, WorkspaceTeam } from '@/lib/types';
 import { EstimatePicker } from '@/components/pm/EstimatePicker';
 import { LabelPicker } from '@/components/pm/LabelPicker';
+import { TaskBulkActionsBar } from '@/components/pm/TaskBulkActionsBar';
+import { StickyPinnedGroupOverlay } from '@/components/pm/StickyPinnedGroupOverlay';
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
+import { showTaskDuplicatedToast } from '@/components/pm/TaskDuplicatedToast';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { buildTaskCopyUrl } from '@/lib/pmTaskLinks';
-import { useAgents, useTeamEstimateSettings, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
+import { useAgents, useAutomationRulesByWorkflow, useTeamEstimateSettings, useTeamFieldVisibilityForTeam } from '@/hooks/queries';
 import { useBoardDisplayStore, type DisplayPropertyKey } from '@/stores/boardDisplayStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { ListDisplayMenu } from '@/components/pm/ListDisplayMenu';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { MultiMemberPickerPopover } from '@/components/pm/MemberPickerPopover';
+import { OwnerAvatarStack } from '@/components/pm/OwnerAvatarStack';
 import {
   TABLE_CONTAINER,
+  TABLE_HEADER,
+  TABLE_HEADER_CELL,
+  TABLE_HEADER_CELL_SORTABLE,
+  TABLE_ROW,
+  TABLE_CELL,
+  TABLE_GROUP_ROW,
   TABLE_RESIZE_HANDLE,
   TABLE_PINNED_LEFT,
+  TABLE_PINNED_LEFT_NAME,
   TABLE_PINNED_RIGHT,
   TABLE_PINNED_HEADER_LEFT,
+  TABLE_PINNED_HEADER_LEFT_NAME,
   TABLE_PINNED_HEADER_RIGHT,
   ROW_HEIGHT,
   GROUP_ROW_HEIGHT,
   dynamicCellStyle,
   pinnedStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
+  TABLE_HEADER_CELL_ACTIONS,
+  TABLE_GROUP_ROW_INNER,
+  ACTIONS_COL_SIZE,
+  getGroupSelectionState as resolveGroupSelectionState,
+  toggleGroupSelection as computeGroupSelectionToggle,
 } from '@/lib/tableStyles';
 import type { BoardFilters } from '@/stores/pmBoardStore';
 import { buildAssignableMemberNameMap } from '@/lib/assignableMembers';
@@ -95,113 +117,85 @@ import {
   getVisibleTaskListGroupOptions,
   type TaskListGroupByOption,
 } from '@/components/pm/task-detail/taskListGrouping';
+import { getVisibleSprintsForTaskScope } from '@/components/pm/task-detail/taskPlanningScope';
+import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
+import { toast } from 'sonner';
+import { queryKeys } from '@/lib/queryKeys';
+import {
+  getAgentAutoRunStateChangeMessage,
+  getAgentAutoRunStateChangeToastId,
+  shouldNotifyAgentAutoRunStateChange,
+} from '@/components/pm/agentAutoRunNotification';
 
 const ALL_PRIORITIES: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 const ALL_SEVERITIES: Severity[] = ['critical', 'major', 'minor', 'none'];
-const TASK_LIST_AVATAR_COLORS = [
-  { bg: 'bg-rose-100 dark:bg-rose-900/40', text: 'text-rose-700 dark:text-rose-300' },
-  { bg: 'bg-pink-100 dark:bg-pink-900/40', text: 'text-pink-700 dark:text-pink-300' },
-  { bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/40', text: 'text-fuchsia-700 dark:text-fuchsia-300' },
-  { bg: 'bg-purple-100 dark:bg-purple-900/40', text: 'text-purple-700 dark:text-purple-300' },
-  { bg: 'bg-indigo-100 dark:bg-indigo-900/40', text: 'text-indigo-700 dark:text-indigo-300' },
-  { bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-300' },
-  { bg: 'bg-teal-100 dark:bg-teal-900/40', text: 'text-teal-700 dark:text-teal-300' },
-  { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-300' },
-  { bg: 'bg-lime-100 dark:bg-lime-900/40', text: 'text-lime-700 dark:text-lime-300' },
-  { bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-700 dark:text-amber-300' },
-  { bg: 'bg-orange-100 dark:bg-orange-900/40', text: 'text-orange-700 dark:text-orange-300' },
-  { bg: 'bg-red-100 dark:bg-red-900/40', text: 'text-red-700 dark:text-red-300' },
-] as const;
-const TASK_LIST_HEADER = 'sticky top-0 z-10 bg-card';
-const TASK_LIST_HEADER_CELL =
-  'relative shrink-0 border-r border-b border-border/60 px-2.5 py-1.5 text-left text-[11px] font-medium text-muted-foreground last:border-r-0';
-const TASK_LIST_HEADER_CELL_SORTABLE = 'cursor-pointer select-none hover:bg-muted';
-const TASK_LIST_ROW =
-  'group/row flex h-9 cursor-pointer items-center border-b border-border/60 bg-card hover:bg-muted';
-const TASK_LIST_CELL =
-  'flex shrink-0 items-center self-stretch border-r border-border/60 bg-inherit px-2.5 last:border-r-0';
-const TASK_LIST_GROUP_ROW =
-  'flex h-9 cursor-pointer items-center gap-2 border-b border-border/60 bg-muted/20 px-3 text-sm font-semibold hover:bg-muted';
+const LIST_AGENT_OCTAGON_POINTS = '30,2 70,2 98,30 98,70 70,98 30,98 2,70 2,30';
 
-function hashTaskListAvatarName(name: string): number {
-  let hash = 0;
-  for (let index = 0; index < name.length; index += 1) {
-    hash = ((hash << 5) - hash + name.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-function getTaskListAvatarColor(name?: string | null) {
-  if (!name) return TASK_LIST_AVATAR_COLORS[0];
-  return TASK_LIST_AVATAR_COLORS[hashTaskListAvatarName(name) % TASK_LIST_AVATAR_COLORS.length];
-}
-
-// Task list avatars stay off the shared Radix avatar path to keep the virtualized row hot path lightweight.
-function TaskListOwnerAvatar({
-  name,
-  avatarUrl,
-  avatarStyle,
-  avatarSeed,
-  avatarBackgroundMode,
-  avatarBackgroundColor,
-  className,
-  fallbackClassName,
+function TaskListLatestRunAgentBadge({
+  agent,
+  latestRunStatus,
 }: {
-  name?: string | null;
-  avatarUrl?: string | null;
-  avatarStyle?: string | null;
-  avatarSeed?: string | null;
-  avatarBackgroundMode?: string | null;
-  avatarBackgroundColor?: string | null;
-  className?: string;
-  fallbackClassName?: string;
+  agent: Agent | null;
+  latestRunStatus?: string | null;
 }) {
-  const color = getTaskListAvatarColor(name);
-  const avatarSrc = resolveTeamMemberAvatarSrc({
-    avatarUrl,
-    avatarStyle,
-    avatarSeed,
-    avatarBackgroundMode,
-    avatarBackgroundColor,
-    fallbackSeed: name,
-  });
-
-  if (!avatarSrc) {
-    return (
-      <span
-        className={cn(
-          'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/80 bg-background text-[9px] font-semibold',
-          color.bg,
-          color.text,
-          className,
-          fallbackClassName,
-        )}
-        aria-hidden
-      >
-        {getInitials(name)}
-      </span>
-    );
-  }
+  const isWorking = !!latestRunStatus && ACTIVE_RUN_STATUSES.has(latestRunStatus);
+  const isGenericAgent = resolveAgentPersonaKey({ agent }) === 'generic';
+  const statusDotClassName = latestRunStatus === 'completed'
+    ? 'bg-emerald-500 dark:bg-emerald-400'
+    : latestRunStatus === 'failed'
+      ? 'bg-red-500 dark:bg-red-400'
+      : null;
 
   return (
-    <span
-      className={cn(
-        'inline-flex shrink-0 overflow-hidden rounded-full border border-border/80 bg-background',
-        className,
+    <span className="relative block h-5 w-5 shrink-0">
+      {isWorking ? (
+        <>
+          <svg
+            viewBox="0 0 100 100"
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full overflow-visible motion-safe:animate-spin motion-safe:[animation-duration:2.4s]"
+          >
+            <polygon
+              points={LIST_AGENT_OCTAGON_POINTS}
+              fill="none"
+              className="stroke-foreground/80"
+              strokeWidth={4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          <span
+            className="absolute inset-[2px] overflow-hidden bg-background/95"
+            style={{ clipPath: 'polygon(31% 4%, 69% 4%, 96% 31%, 96% 69%, 69% 96%, 31% 96%, 4% 69%, 4% 31%)' }}
+          >
+            <AgentAvatar
+              agent={agent}
+              className="h-full w-full rounded-none border-0 bg-transparent shadow-none"
+              genericBare={isGenericAgent}
+            />
+          </span>
+        </>
+      ) : (
+        <AgentAvatar
+          agent={agent}
+          className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none"
+          genericBare={isGenericAgent}
+        />
       )}
-      aria-hidden
-    >
-      <img
-        src={avatarSrc}
-        alt=""
-        className="size-full object-cover"
-        loading="lazy"
-        decoding="async"
-        draggable={false}
-      />
+      {statusDotClassName ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            'absolute bottom-0 right-0 h-2 w-2 rounded-full ring-1 ring-background',
+            statusDotClassName,
+          )}
+        />
+      ) : null}
     </span>
   );
 }
+
+const GROUP_HEADER_REPEAT_HEIGHT = 30;
 
 interface TaskListViewProps {
   workspaceId: string;
@@ -223,6 +217,10 @@ interface TaskListViewProps {
   groupBy?: TaskListGroupByOption;
   onGroupByChange?: (groupBy: TaskListGroupByOption) => void;
   showToolbar?: boolean;
+  footer?: React.ReactNode;
+  onBulkOperationComplete?: () => void | Promise<void>;
+  /** When provided, the bulk-edit trigger button portals into this element instead of rendering in the toolbar. */
+  bulkTriggerContainer?: HTMLElement | null;
 }
 
 // Column accessor ID used for each group-by option
@@ -239,11 +237,26 @@ const GROUP_COLUMN_MAP: Record<TaskListGroupByOption, string | null> = {
 
 const HIDDEN_GROUP_COLUMNS = ['typeName', 'priorityName', 'severityName'];
 const LIST_PAGE_SIZE = 50;
+const CHECKBOX_COL_SIZE = 42;
 const GROUP_LOAD_SENTINEL_HEIGHT = 28;
 const GROUPED_OVERSCAN = 4;
 const FLAT_OVERSCAN = 6;
 
 const columnHelper = createColumnHelper<Task>();
+
+function getSelectableTaskRows(rows: Row<Task>[]): Row<Task>[] {
+  const selectable: Row<Task>[] = [];
+  for (const row of rows) {
+    if (row.getIsGrouped()) {
+      if (row.getIsExpanded()) {
+        selectable.push(...getSelectableTaskRows(row.subRows as Row<Task>[]));
+      }
+    } else {
+      selectable.push(row);
+    }
+  }
+  return selectable;
+}
 
 export function TaskListView({
   workspaceId,
@@ -262,10 +275,30 @@ export function TaskListView({
   groupBy: controlledGroupBy,
   onGroupByChange,
   showToolbar = true,
+  footer,
+  onBulkOperationComplete,
+  bulkTriggerContainer,
 }: TaskListViewProps) {
+  const queryClient = useQueryClient();
   const workspaceSlug = useWorkspaceStore((state) => state.currentWorkspace?.slug ?? null);
   const currentWorkspaceId = useWorkspaceStore((state) => state.currentWorkspace?.id ?? '');
   const fieldVis = useTeamFieldVisibilityForTeam(workspaceId, teamId);
+  const { data: automationRules } = useAutomationRulesByWorkflow(workspaceId, workflow.workflow.id);
+  const automatedStateIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!automationRules) return ids;
+    for (const rule of automationRules) {
+      if (
+        rule.enabled &&
+        rule.trigger_type === 'task.state_entered' &&
+        rule.action_type === 'start_agent_run'
+      ) {
+        const stateId = rule.trigger_config?.state_id;
+        if (stateId) ids.add(stateId);
+      }
+    }
+    return ids;
+  }, [automationRules]);
   const teamEstimateSettings = useTeamEstimateSettings(currentWorkspaceId);
   const displayInit = useBoardDisplayStore((s) => s.init);
   const displayProps = useBoardDisplayStore((s) => s.properties);
@@ -295,6 +328,7 @@ export function TaskListView({
   const headerRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({});
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const columnSizingVersion = useMemo(() => JSON.stringify(columnSizing), [columnSizing]);
   const [allLabels, setAllLabels] = useState<Label[]>([]);
   const { data: agents = [] } = useAgents(workspaceId);
@@ -305,6 +339,8 @@ export function TaskListView({
   const groupLoadingRef = useRef(false);
   const isPerGroupMode = groupBy === 'workflow_state' && !isExternal;
   const onOpenTaskRef = useRef(onOpenTask);
+  const lastClickedTaskIdRef = useRef<string | null>(null);
+  const checkboxShiftKeyRef = useRef(false);
 
   useEffect(() => {
     onOpenTaskRef.current = onOpenTask;
@@ -317,6 +353,23 @@ export function TaskListView({
   useEffect(() => {
     pmLabelService.list(workspaceId).then((r) => { if (r.data) setAllLabels(r.data); });
   }, [workspaceId]);
+
+  useEffect(() => {
+    const handleTaskCreated = (event: Event) => {
+      const created = (event as CustomEvent<{ task?: Task }>).detail?.task;
+      if (!created) return;
+      if (created.workspace_id !== workspaceId) return;
+      if (created.workflow_id !== workflow.workflow.id) return;
+      if (teamId && created.team_id !== teamId) return;
+      setTasks((current) => (
+        current.some((candidate) => candidate.id === created.id)
+          ? current
+          : [created, ...current]
+      ));
+    };
+    window.addEventListener('task-created', handleTaskCreated);
+    return () => window.removeEventListener('task-created', handleTaskCreated);
+  }, [workspaceId, workflow.workflow.id, teamId]);
 
   // Build lookup maps
   const availableWorkflows = useMemo(
@@ -331,10 +384,23 @@ export function TaskListView({
     return map;
   }, [availableWorkflows]);
   const stateMap = useMemo(() => {
-    const map = new Map<string, { name: string; stateType: string }>();
+    const stateNameCounts = new Map<string, number>();
     for (const wf of availableWorkflows) {
       for (const s of wf.states) {
-        map.set(s.id, { name: s.name, stateType: s.state_type });
+        stateNameCounts.set(s.name, (stateNameCounts.get(s.name) ?? 0) + 1);
+      }
+    }
+
+    const map = new Map<string, { name: string; stateType: string; groupLabel: string; position: number }>();
+    for (const wf of availableWorkflows) {
+      for (const s of wf.states) {
+        const duplicateName = (stateNameCounts.get(s.name) ?? 0) > 1;
+        map.set(s.id, {
+          name: s.name,
+          stateType: s.state_type,
+          groupLabel: duplicateName ? `${s.name} · ${wf.workflow.name}` : s.name,
+          position: s.position,
+        });
       }
     }
     return map;
@@ -345,10 +411,6 @@ export function TaskListView({
     [assignableMembers],
   );
   const ownerNameMap = assignableMemberMap;
-  const assignableMemberById = useMemo(
-    () => new Map(assignableMembers.map((member) => [member.id, member])),
-    [assignableMembers],
-  );
   const agentById = useMemo(
     () => new Map(agents.map((agent) => [agent.id, agent])),
     [agents],
@@ -517,26 +579,80 @@ export function TaskListView({
   // Optimistic inline update with rollback on failure
   const updateTaskField = useCallback(
     async (taskId: string, patch: Partial<Task>) => {
-      const optimisticPatch: Partial<Task> = { ...patch };
-      if (Object.prototype.hasOwnProperty.call(patch, 'owner_member_id')) {
-        const ownerMemberId = patch.owner_member_id;
-        optimisticPatch.owner_name = ownerMemberId ? ownerNameMap.get(ownerMemberId) : undefined;
-      }
-
       let snapshot: Task[] = [];
       setTasks((current) => {
         snapshot = current;
-        return current.map((s) => (s.id === taskId ? { ...s, ...optimisticPatch } : s));
+        return current.map((s) => (s.id === taskId ? { ...s, ...patch } : s));
       });
       const apiPatch = { ...patch };
-      delete apiPatch.owner_name;
       delete apiPatch.epic_name;
       delete apiPatch.labels;
       const { error } = await pmTaskService.update(workspaceId, taskId, apiPatch);
       if (error) setTasks(snapshot);
+      if (!error && patch.workflow_state_id !== undefined) {
+        const previousStateId = snapshot.find((task) => task.id === taskId)?.workflow_state_id;
+        if (shouldNotifyAgentAutoRunStateChange({
+          fromStateId: previousStateId,
+          toStateId: patch.workflow_state_id,
+          automatedStateIds,
+        })) {
+          const stateName = workflow.states.find((state) => state.id === patch.workflow_state_id)?.name ?? 'this state';
+          toast.info(getAgentAutoRunStateChangeMessage(stateName), { id: getAgentAutoRunStateChangeToastId(patch.workflow_state_id) });
+        }
+      }
     },
-    [workspaceId, ownerNameMap],
+    [workspaceId, ownerNameMap, automatedStateIds, workflow.states],
   );
+
+  const handleRowCheckboxToggle = useCallback((taskId: string, checked: boolean, shiftKey: boolean) => {
+    setRowSelection((current) => {
+      const next = { ...current };
+      const currentIndex = tasks.findIndex((task) => task.id === taskId);
+      const previousIndex = lastClickedTaskIdRef.current
+        ? tasks.findIndex((task) => task.id === lastClickedTaskIdRef.current)
+        : -1;
+
+      if (shiftKey && previousIndex >= 0 && currentIndex >= 0) {
+        const start = Math.min(previousIndex, currentIndex);
+        const end = Math.max(previousIndex, currentIndex);
+        for (const task of tasks.slice(start, end + 1)) {
+          if (checked) next[task.id] = true;
+          else delete next[task.id];
+        }
+      } else if (checked) {
+        next[taskId] = true;
+      } else {
+        delete next[taskId];
+      }
+
+      return next;
+    });
+    lastClickedTaskIdRef.current = taskId;
+  }, [tasks]);
+
+  const clearSelection = useCallback(() => {
+    setRowSelection({});
+    lastClickedTaskIdRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    const taskIds = new Set(tasks.map((task) => task.id));
+    setRowSelection((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([id, selected]) => selected && taskIds.has(id)),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [tasks]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clearSelection();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [clearSelection]);
 
   // Listen for task events (only for self-fetching mode)
   useEffect(() => {
@@ -568,9 +684,6 @@ export function TaskListView({
         labels: taskDetail.labels,
         epic_name: taskDetail.epic_name ?? taskDetail.task.epic_name,
         sprint_name: taskDetail.sprint_name ?? taskDetail.task.sprint_name,
-        owner_name: taskDetail.owner_member
-          ? (taskDetail.owner_member.display_name ?? taskDetail.owner_member.email)
-          : taskDetail.task.owner_name,
       };
       setTasks((current) =>
         current.map((s) => (
@@ -599,6 +712,53 @@ export function TaskListView({
   // Table columns
   const tableColumns = useMemo(
     () => [
+      columnHelper.display({
+        id: 'select',
+        size: CHECKBOX_COL_SIZE,
+        enableGrouping: false,
+        enableSorting: false,
+        enableResizing: false,
+        header: ({ table }) => {
+          const selectableRows = getSelectableTaskRows(table.getRowModel().rows as Row<Task>[]);
+          const selectedCount = selectableRows.filter((row) => row.getIsSelected()).length;
+          const checked = selectedCount === 0
+            ? false
+            : selectedCount === selectableRows.length ? true : 'indeterminate';
+
+          return (
+            <Checkbox
+              checked={checked}
+              onCheckedChange={(value) => {
+                const shouldSelect = value === true;
+                setRowSelection((current) => {
+                  const next = { ...current };
+                  for (const row of selectableRows) {
+                    if (shouldSelect) next[row.id] = true;
+                    else delete next[row.id];
+                  }
+                  return next;
+                });
+              }}
+              aria-label="Select all tasks"
+              onClick={(event) => event.stopPropagation()}
+            />
+          );
+        },
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onMouseDown={(event) => {
+              checkboxShiftKeyRef.current = event.shiftKey;
+            }}
+            onCheckedChange={(value) => {
+              handleRowCheckboxToggle(row.original.id, value === true, checkboxShiftKeyRef.current);
+              checkboxShiftKeyRef.current = false;
+            }}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={`Select ${row.original.task_key}`}
+          />
+        ),
+      }),
       columnHelper.accessor('task_key', {
         id: 'displayId',
         header: 'ID',
@@ -621,7 +781,7 @@ export function TaskListView({
             }}
           >
             {fieldVis.task_type && displayProps.task_type ? (
-              <TaskListTaskTypeIcon taskType={info.row.original.task_type} className="h-4 w-4 shrink-0" />
+              <TaskListTaskTypeIcon taskType={info.row.original.task_type} className="h-[18px] w-[18px] shrink-0" />
             ) : null}
             {info.row.original.recurring_template_id ? (
               <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0 text-[10px] text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
@@ -632,22 +792,30 @@ export function TaskListView({
               </span>
             ) : null}
             <span className="min-w-0 truncate">{info.getValue()}</span>
-            {info.row.original.assigned_agent_id && (
-              <AgentAvatar
-                agent={agentById.get(info.row.original.assigned_agent_id) ?? null}
-                className="h-4 w-4 border-violet-200/80 dark:border-violet-800"
+            {info.row.original.latest_run_agent_id && (
+              <TaskListLatestRunAgentBadge
+                agent={agentById.get(info.row.original.latest_run_agent_id) ?? null}
+                latestRunStatus={info.row.original.latest_run_status}
               />
             )}
           </button>
         ),
       }),
-      // Hidden grouping columns (values shown in group headers, not as table columns)
+      // Group by state identity, not state name, because different workflows can
+      // have separate states with the same visible label and independent order.
       columnHelper.accessor(
-        (row) => stateMap.get(row.workflow_state_id)?.name ?? 'Unknown',
+        (row) => row.workflow_state_id,
         {
           id: 'stateName',
           header: 'State',
           size: 190,
+          sortingFn: (a, b) => {
+            const aState = stateMap.get(a.original.workflow_state_id);
+            const bState = stateMap.get(b.original.workflow_state_id);
+            const labelCompare = (aState?.groupLabel ?? '').localeCompare(bState?.groupLabel ?? '');
+            if (labelCompare !== 0) return labelCompare;
+            return (aState?.position ?? 0) - (bState?.position ?? 0);
+          },
           cell: (info) => (
             <InlineStateCell
               task={info.row.original}
@@ -697,8 +865,10 @@ export function TaskListView({
       }),
       columnHelper.accessor(
         (row) => {
-          const ownerKey = row.owner_member_id;
-          return ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : 'Unassigned';
+          const ownerKeys = row.owner_member_ids ?? [];
+          return ownerKeys.length > 0
+            ? ownerKeys.map((ownerKey) => ownerNameMap.get(ownerKey) ?? 'Unknown').join(', ')
+            : 'Unassigned';
         },
         {
           id: 'ownerName',
@@ -708,7 +878,6 @@ export function TaskListView({
             <InlineOwnerCell
               task={info.row.original}
               assignableMembers={assignableMembers}
-              assignableMemberById={assignableMemberById}
               ownerNameMap={ownerNameMap}
               onUpdate={updateTaskField}
             />
@@ -756,6 +925,8 @@ export function TaskListView({
           cell: (info) => (
             <InlineSprintCell
               task={info.row.original}
+              taskTeamId={info.row.original.team_id}
+              listTeamId={teamId}
               sprints={sprints}
               sprintMap={sprintMap}
               onUpdate={updateTaskField}
@@ -871,7 +1042,7 @@ export function TaskListView({
       columnHelper.display({
         id: 'actions',
         header: '',
-        size: 44,
+        size: ACTIONS_COL_SIZE,
         enableGrouping: false,
         enableSorting: false,
         enableResizing: false,
@@ -880,13 +1051,14 @@ export function TaskListView({
               task={info.row.original}
               workspaceId={workspaceId}
               workspaceSlug={workspaceSlug}
+              automatedStateIds={automatedStateIds}
               onOpenTask={handleOpenTask}
               setTasks={setTasks}
             />
           ),
         }),
     ],
-    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, assignableMemberById, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById]
+    [stateMap, statesByWorkflowId, ownerNameMap, teamMap, epicMap, sprintMap, estimateSettingsByTeamId, handleOpenTask, workflow.states, assignableMembers, teams, epics, sprints, updateTaskField, allLabels, workspaceId, workspaceSlug, fieldVis.task_type, displayProps.task_type, agentById, handleRowCheckboxToggle]
   );
 
   // Team-level disabled keys (for hiding toggles in display menu)
@@ -985,13 +1157,16 @@ export function TaskListView({
     state: {
       grouping,
       expanded,
+      rowSelection,
       columnVisibility,
       sorting,
       columnSizing,
     },
     onExpandedChange: setExpanded,
+    onRowSelectionChange: setRowSelection,
     onSortingChange: setSorting,
     onColumnSizingChange: setColumnSizing,
+    enableRowSelection: true,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
     autoResetExpanded: false,
@@ -1003,19 +1178,23 @@ export function TaskListView({
   });
 
   const { rows } = table.getRowModel();
+  const selectWidth = table.getColumn('select')?.getSize() ?? CHECKBOX_COL_SIZE;
   const displayIdWidth = table.getColumn('displayId')?.getSize() ?? 90;
   const typeIconColumn = table.getColumn('typeIcon');
   const typeIconWidth = typeIconColumn?.getSize() ?? 40;
   const showTypeIcon = typeIconColumn?.getIsVisible() ?? false;
-  const pinnedOffsets = useMemo(
-    () =>
-      getTaskListPinnedOffsets({
+  const pinnedOffsets = useMemo(() => {
+    const offsets = getTaskListPinnedOffsets({
         displayIdWidth,
         typeIconWidth,
         showTypeIcon,
-      }),
-    [displayIdWidth, typeIconWidth, showTypeIcon],
-  );
+      });
+    return {
+      displayId: offsets.displayId + selectWidth,
+      typeIcon: offsets.typeIcon + selectWidth,
+      name: offsets.name + selectWidth,
+    };
+  }, [displayIdWidth, selectWidth, typeIconWidth, showTypeIcon]);
 
   const getTrailingGroupStateId = useCallback(
     (index: number): string | null => {
@@ -1037,7 +1216,9 @@ export function TaskListView({
     (index: number) => {
       const row = rows[index];
       if (!row) return ROW_HEIGHT;
-      if (row.getIsGrouped()) return GROUP_ROW_HEIGHT;
+      if (row.getIsGrouped()) {
+        return GROUP_ROW_HEIGHT + (row.getIsExpanded() ? GROUP_HEADER_REPEAT_HEIGHT : 0);
+      }
 
       const trailingGroupStateId = getTrailingGroupStateId(index);
       const hasLoadingSentinel = trailingGroupStateId !== null && groupLoadingId === trailingGroupStateId;
@@ -1079,8 +1260,13 @@ export function TaskListView({
         groupBy === 'workflow_state' && subRows[0]
           ? (stateMap.get(subRows[0].original.workflow_state_id)?.stateType as StateType | undefined)
           : undefined;
+      const groupLabel =
+        groupBy === 'workflow_state' && subRows[0]
+          ? (stateMap.get(subRows[0].original.workflow_state_id)?.groupLabel ?? String(row.groupingValue))
+          : String(row.groupingValue);
 
       summaries.set(row.id, {
+        groupLabel,
         storyCount,
         totalPoints,
         completedPoints,
@@ -1117,6 +1303,148 @@ export function TaskListView({
     ? Array.from(groupHasMore.values()).reduce((sum, info) => sum + info.total, 0)
     : tasks.length;
 
+  const selectedTasks = useMemo(
+    () => tasks.filter((task) => rowSelection[task.id]),
+    [rowSelection, tasks],
+  );
+
+  const handleBulkOperationComplete = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.tasks(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: ['pm', workspaceId, 'board'] }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPlanning(workspaceId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintPreviewTasksRoot(workspaceId) }),
+      epicId ? queryClient.invalidateQueries({ queryKey: queryKeys.pm.epicTasks(workspaceId, epicId) }) : Promise.resolve(),
+      sprintId ? queryClient.invalidateQueries({ queryKey: queryKeys.pm.sprintTasks(workspaceId, sprintId) }) : Promise.resolve(),
+    ]);
+
+    if (onBulkOperationComplete) {
+      await onBulkOperationComplete();
+      return;
+    }
+
+    if (isExternal) return;
+    if (isPerGroupMode) {
+      await fetchTasksByState();
+    } else {
+      await fetchTasksFlat(1, false);
+    }
+  }, [
+    epicId,
+    fetchTasksByState,
+    fetchTasksFlat,
+    isExternal,
+    isPerGroupMode,
+    onBulkOperationComplete,
+    queryClient,
+    sprintId,
+    workspaceId,
+  ]);
+
+  const toggleGroupSelection = useCallback(
+    (groupRow: Row<Task>, checked: boolean) => {
+      setRowSelection((current) => computeGroupSelectionToggle(groupRow, current, checked));
+    },
+    [],
+  );
+
+  const getGroupSelectionState = useCallback(
+    (groupRow: Row<Task>): boolean | 'indeterminate' =>
+      resolveGroupSelectionState(groupRow, rowSelection),
+    [rowSelection],
+  );
+
+  const renderColumnHeaderRow = (opts?: {
+    groupRow?: Row<Task>;
+    groupSelectionState?: boolean | 'indeterminate';
+  }) => {
+    const groupRow = opts?.groupRow;
+    const isGroupRepeat = !!groupRow;
+    return table.getHeaderGroups().map((headerGroup) => (
+      <div key={`${headerGroup.id}-${groupRow ? groupRow.id : 'main'}`} className="flex items-center">
+        {headerGroup.headers.map((header) => {
+          if (header.column.getIsGrouped()) return null;
+          const defSize = header.column.columnDef.size ?? 150;
+          const runtimeSize = header.getSize();
+          if (defSize === 0 && runtimeSize === 0) return null;
+          const isResized = !!columnSizing[header.column.id];
+          const canSort = header.column.getCanSort();
+          const sorted = header.column.getIsSorted();
+          const colId = header.column.id;
+          const pinnedClass = colId === 'name'
+            ? TABLE_PINNED_HEADER_LEFT_NAME
+            : colId === 'select' || colId === 'displayId' || colId === 'typeIcon'
+            ? TABLE_PINNED_HEADER_LEFT
+            : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
+          const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
+            : colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
+            : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
+            : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
+            : colId === 'actions' ? pinnedStyle('right', 0) : {};
+          const isGroupSelectCell = isGroupRepeat && colId === 'select';
+          if (colId === 'actions') {
+            return (
+              <div
+                key={header.id}
+                className={TABLE_HEADER_CELL_ACTIONS}
+                style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
+                aria-hidden="true"
+              />
+            );
+          }
+          return (
+            <div
+              key={header.id}
+              className={`${TABLE_HEADER_CELL} ${!isGroupSelectCell && canSort ? TABLE_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
+              style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
+              onClick={!isGroupSelectCell && canSort ? header.column.getToggleSortingHandler() : undefined}
+            >
+              {isGroupSelectCell ? (
+                <div
+                  className="flex items-center"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <Checkbox
+                    checked={opts?.groupSelectionState ?? false}
+                    onCheckedChange={(value) => {
+                      if (groupRow) toggleGroupSelection(groupRow, value === true);
+                    }}
+                    aria-label="Select all in group"
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(header.column.columnDef.header, header.getContext())}
+                  {canSort && (
+                    <span className="ml-auto shrink-0">
+                      {sorted === 'asc' ? (
+                        <TaskListChevronUpIcon className="h-3 w-3 text-foreground/80" />
+                      ) : sorted === 'desc' ? (
+                        <TaskListChevronDownIcon className="h-3 w-3 text-foreground/80" />
+                      ) : (
+                        <TaskListArrowUpDownIcon className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </span>
+                  )}
+                </div>
+              )}
+              {header.column.getCanResize() && (
+                <div
+                  onMouseDown={header.getResizeHandler()}
+                  onTouchStart={header.getResizeHandler()}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    ));
+  };
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -1126,8 +1454,27 @@ export function TaskListView({
     );
   }
 
+  const bulkActionsBar = (
+    <TaskBulkActionsBar
+      selectedTasks={selectedTasks}
+      workspaceId={workspaceId}
+      teamId={teamId}
+      workflow={workflow}
+      assignableMembers={assignableMembers}
+      epics={epics}
+      sprints={sprints}
+      labels={allLabels}
+      onComplete={handleBulkOperationComplete}
+      onClearSelection={clearSelection}
+    />
+  );
+
+  const portalContainer = bulkTriggerContainer ?? null;
+  const usePortal = !!portalContainer;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="relative flex min-h-0 flex-1 flex-col gap-2">
+      {usePortal && selectedTasks.length > 0 ? createPortal(bulkActionsBar, portalContainer) : null}
       {showToolbar ? (
         <div className="flex items-center gap-2 px-3 pt-2">
           <span className="text-xs text-muted-foreground">Group by:</span>
@@ -1146,9 +1493,14 @@ export function TaskListView({
           <span className="text-xs text-muted-foreground">
             {displayTaskCount} {displayTaskCount === 1 ? 'task' : 'tasks'}{!isPerGroupMode && hasMore ? '+' : ''}
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {!usePortal ? bulkActionsBar : null}
             <ListDisplayMenu disabledKeys={teamDisabledKeys} />
           </div>
+        </div>
+      ) : !usePortal && selectedTasks.length > 0 ? (
+        <div className="flex items-center justify-end gap-2 px-3 pt-2">
+          {bulkActionsBar}
         </div>
       ) : null}
 
@@ -1170,61 +1522,8 @@ export function TaskListView({
       >
         <div className="min-w-fit">
         {/* Header */}
-        <div ref={headerRef} className={TASK_LIST_HEADER}>
-          {table.getHeaderGroups().map((headerGroup) => (
-            <div key={headerGroup.id} className="flex items-center">
-              {headerGroup.headers.map((header) => {
-                if (header.column.getIsGrouped()) return null;
-                const defSize = header.column.columnDef.size ?? 150;
-                const runtimeSize = header.getSize();
-                if (defSize === 0 && runtimeSize === 0) return null;
-                const isResized = !!columnSizing[header.column.id];
-                const canSort = header.column.getCanSort();
-                const sorted = header.column.getIsSorted();
-                const colId = header.column.id;
-                const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
-                  ? TABLE_PINNED_HEADER_LEFT
-                  : colId === 'actions' ? TABLE_PINNED_HEADER_RIGHT : '';
-                const pinnedSt = colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
-                  : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
-                  : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
-                  : colId === 'actions' ? pinnedStyle('right', 0) : {};
-                return (
-                  <div
-                    key={header.id}
-                    className={`${TASK_LIST_HEADER_CELL} ${canSort ? TASK_LIST_HEADER_CELL_SORTABLE : ''} ${pinnedClass}`}
-                    style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
-                    onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                  >
-                    <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                      {canSort && (
-                        <span className="ml-auto shrink-0">
-                          {sorted === 'asc' ? (
-                            <TaskListChevronUpIcon className="h-3 w-3 text-foreground/80" />
-                          ) : sorted === 'desc' ? (
-                            <TaskListChevronDownIcon className="h-3 w-3 text-foreground/80" />
-                          ) : (
-                            <TaskListArrowUpDownIcon className="h-3 w-3 text-muted-foreground" />
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    {header.column.getCanResize() && (
-                      <div
-                        onMouseDown={header.getResizeHandler()}
-                        onTouchStart={header.getResizeHandler()}
-                        onClick={(e) => e.stopPropagation()}
-                        className={`${TABLE_RESIZE_HANDLE} ${header.column.getIsResizing() ? 'bg-primary/50' : ''}`}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+        <div ref={headerRef} className={TABLE_HEADER}>
+          {hasGroupedRows ? null : renderColumnHeaderRow()}
         </div>
 
         {/* Virtualized body */}
@@ -1232,9 +1531,13 @@ export function TaskListView({
             {hasGroupedRows ? (
               <StickyPinnedGroupOverlay
                 parentRef={parentRef}
-                rows={rows}
+                items={rows}
                 virtualizer={virtualizer}
-                groupSummaries={groupSummaries}
+                isPinnedItem={(row) => row.getIsGrouped()}
+                renderHeader={(row) => (
+                  <MemoGroupHeaderRow row={row} summary={groupSummaries.get(row.id)} />
+                )}
+                top="var(--task-list-header-height, 0px)"
               />
             ) : null}
             {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -1260,21 +1563,31 @@ export function TaskListView({
                 <div
                   key={row.id}
                   data-index={virtualRow.index}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
+                  style={virtualRowStyle(virtualRow.start)}
                 >
                   {isGrouped ? (
-                    <MemoGroupHeaderRow row={row} summary={groupSummaries.get(row.id)} />
+                    <>
+                      <MemoGroupHeaderRow
+                        row={row}
+                        summary={groupSummaries.get(row.id)}
+                      />
+                      {row.getIsExpanded() ? (
+                        <div className="border-b border-border/60 bg-card">
+                          {renderColumnHeaderRow({
+                            groupRow: row,
+                            groupSelectionState: getGroupSelectionState(row),
+                          })}
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <>
                       <MemoDataRow
                         row={row}
+                        isSelected={!!rowSelection[row.original.id]}
                         onOpenTask={handleOpenTask}
+                        onToggleSelection={handleRowCheckboxToggle}
+                        columnSizing={columnSizing}
                         columnSizingVersion={columnSizingVersion}
                         pinnedOffsets={pinnedOffsets}
                       />
@@ -1299,6 +1612,11 @@ export function TaskListView({
           )}
         </div>
       </div>
+      {footer ? (
+        <div className="border-t border-border/60 bg-card">
+          {footer}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1313,6 +1631,7 @@ function arePMGroupRowPropsEqual(prev: PMGroupRowProps, next: PMGroupRowProps): 
     prev.row.id === next.row.id &&
     prev.row.getIsExpanded() === next.row.getIsExpanded() &&
     prev.row.subRows.length === next.row.subRows.length &&
+    prev.summary?.groupLabel === next.summary?.groupLabel &&
     prev.summary?.storyCount === next.summary?.storyCount &&
     prev.summary?.totalPoints === next.summary?.totalPoints &&
     prev.summary?.completedPoints === next.summary?.completedPoints &&
@@ -1328,142 +1647,85 @@ const MemoGroupHeaderRow = memo(function GroupHeaderRow({
   const totalPoints = summary?.totalPoints ?? 0;
   const completedPoints = summary?.completedPoints ?? 0;
   const stateType = summary?.stateType;
+  const groupLabel = summary?.groupLabel ?? String(row.groupingValue);
 
   return (
     <button
-      className={`${TASK_LIST_GROUP_ROW} w-full text-left text-xs`}
+      className={`${TABLE_GROUP_ROW} w-full text-left text-xs`}
       onClick={row.getToggleExpandedHandler()}
     >
-      {row.getIsExpanded() ? (
-        <TaskListChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
-      ) : (
-        <TaskListChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-      {stateType && <TaskListStateTypeIcon stateType={stateType} className="h-4 w-4" />}
-      <span>{String(row.groupingValue)}</span>
-      <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
-        <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
-          <span className="flex items-center gap-1">
-            <TaskListNoteIcon className="h-3 w-3" /> {storyCount}
-          </span>
-        </QuickTooltip>
-        <QuickTooltip label={`${totalPoints} total ${totalPoints === 1 ? 'point' : 'points'}`}>
-          <span className="flex items-center gap-1">
-            <TaskListChartIcon className="h-3 w-3" /> {totalPoints}
-          </span>
-        </QuickTooltip>
-        <QuickTooltip label={`${completedPoints} completed ${completedPoints === 1 ? 'point' : 'points'}`}>
-          <span className="flex items-center gap-1">
-            <TaskListDoneCircleIcon className="h-3 w-3" /> {completedPoints}
-          </span>
-        </QuickTooltip>
+      <span className={TABLE_GROUP_ROW_INNER}>
+        {row.getIsExpanded() ? (
+          <TaskListChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : (
+          <TaskListChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+        )}
+        {stateType && <TaskListStateTypeIcon stateType={stateType} className="h-4 w-4" />}
+        <span>{groupLabel}</span>
+        <span className="flex items-center gap-3 ml-1 font-normal text-muted-foreground">
+          <QuickTooltip label={`${storyCount} ${storyCount === 1 ? 'task' : 'tasks'}`}>
+            <span className="flex items-center gap-1">
+              <TaskListNoteIcon className="h-3 w-3" /> {storyCount}
+            </span>
+          </QuickTooltip>
+          <QuickTooltip label={`${totalPoints} total ${totalPoints === 1 ? 'point' : 'points'}`}>
+            <span className="flex items-center gap-1">
+              <TaskListChartIcon className="h-3 w-3" /> {totalPoints}
+            </span>
+          </QuickTooltip>
+          <QuickTooltip label={`${completedPoints} completed ${completedPoints === 1 ? 'point' : 'points'}`}>
+            <span className="flex items-center gap-1">
+              <TaskListDoneCircleIcon className="h-3 w-3" /> {completedPoints}
+            </span>
+          </QuickTooltip>
+        </span>
       </span>
     </button>
   );
 }, arePMGroupRowPropsEqual);
 
 interface PMGroupSummary {
+  groupLabel: string;
   storyCount: number;
   totalPoints: number;
   completedPoints: number;
   stateType?: StateType;
 }
 
-interface TaskListVirtualizerLike {
-  getVirtualItems: () => Array<{ index: number; start: number }>;
-}
-
-function StickyPinnedGroupOverlay({
-  parentRef,
-  rows,
-  virtualizer,
-  groupSummaries,
+function DataRowSelectCheckbox({
+  taskId,
+  taskKey,
+  isSelected,
+  onToggleSelection,
 }: {
-  parentRef: RefObject<HTMLDivElement | null>;
-  rows: Row<Task>[];
-  virtualizer: TaskListVirtualizerLike;
-  groupSummaries: Map<string, PMGroupSummary>;
+  taskId: string;
+  taskKey: string;
+  isSelected: boolean;
+  onToggleSelection: (taskId: string, checked: boolean, shiftKey: boolean) => void;
 }) {
-  const pinnedGroupRef = useRef<number | null>(null);
-  const pinnedGroupRafRef = useRef<number | null>(null);
-  const [pinnedGroupIdx, setPinnedGroupIdx] = useState<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (pinnedGroupRafRef.current !== null) {
-        cancelAnimationFrame(pinnedGroupRafRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const scrollEl = parentRef.current;
-    if (!scrollEl) return;
-
-    const syncPinnedGroup = () => {
-      const scrollTop = scrollEl.scrollTop;
-      const virtualItems = virtualizer.getVirtualItems();
-      let newPinnedIdx: number | null = null;
-
-      if (scrollTop > 10) {
-        for (const vItem of virtualItems) {
-          if (vItem.start > scrollTop) break;
-          if (rows[vItem.index]?.getIsGrouped()) newPinnedIdx = vItem.index;
-        }
-        if (newPinnedIdx === null && virtualItems.length > 0) {
-          for (let index = virtualItems[0].index - 1; index >= 0; index -= 1) {
-            if (rows[index]?.getIsGrouped()) {
-              newPinnedIdx = index;
-              break;
-            }
-          }
-        }
-      }
-
-      if (newPinnedIdx !== pinnedGroupRef.current) {
-        pinnedGroupRef.current = newPinnedIdx;
-        startTransition(() => {
-          setPinnedGroupIdx((current) => (current === newPinnedIdx ? current : newPinnedIdx));
-        });
-      }
-    };
-
-    const handleScroll = () => {
-      if (pinnedGroupRafRef.current !== null) return;
-      pinnedGroupRafRef.current = requestAnimationFrame(() => {
-        pinnedGroupRafRef.current = null;
-        syncPinnedGroup();
-      });
-    };
-
-    syncPinnedGroup();
-    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
-
-    return () => {
-      scrollEl.removeEventListener('scroll', handleScroll);
-      if (pinnedGroupRafRef.current !== null) {
-        cancelAnimationFrame(pinnedGroupRafRef.current);
-        pinnedGroupRafRef.current = null;
-      }
-    };
-  }, [parentRef, rows, virtualizer]);
-
-  const pinnedGroupRow = pinnedGroupIdx !== null ? rows[pinnedGroupIdx] : undefined;
-
-  if (!pinnedGroupRow) return null;
-
+  const shiftRef = useRef(false);
   return (
-    <div className="sticky z-[5]" style={{ top: 'var(--task-list-header-height, 0px)', height: 0, overflow: 'visible' }}>
-      <div className="border-b border-border/60 bg-background">
-        <MemoGroupHeaderRow row={pinnedGroupRow} summary={groupSummaries.get(pinnedGroupRow.id)} />
-      </div>
-    </div>
+    <Checkbox
+      checked={isSelected}
+      onMouseDown={(event) => {
+        shiftRef.current = event.shiftKey;
+      }}
+      onCheckedChange={(value) => {
+        onToggleSelection(taskId, value === true, shiftRef.current);
+        shiftRef.current = false;
+      }}
+      onClick={(event) => event.stopPropagation()}
+      aria-label={`Select ${taskKey}`}
+    />
   );
 }
 
 interface PMDataRowProps {
   row: Row<Task>;
+  isSelected: boolean;
   onOpenTask: (task: Task) => void;
+  onToggleSelection: (taskId: string, checked: boolean, shiftKey: boolean) => void;
+  columnSizing: ColumnSizingState;
   columnSizingVersion: string;
   pinnedOffsets: TaskListPinnedOffsets;
 }
@@ -1472,46 +1734,61 @@ function arePMDataRowPropsEqual(prev: PMDataRowProps, next: PMDataRowProps): boo
   return (
     prev.row.id === next.row.id &&
     prev.row.original === next.row.original &&
+    prev.isSelected === next.isSelected &&
     prev.columnSizingVersion === next.columnSizingVersion &&
     prev.pinnedOffsets === next.pinnedOffsets &&
-    prev.onOpenTask === next.onOpenTask
+    prev.onOpenTask === next.onOpenTask &&
+    prev.onToggleSelection === next.onToggleSelection
   );
 }
 
 const MemoDataRow = memo(function DataRow({
   row,
+  isSelected,
   onOpenTask,
+  onToggleSelection,
+  columnSizing,
   columnSizingVersion,
   pinnedOffsets,
 }: PMDataRowProps) {
   void columnSizingVersion; // used by arePMDataRowPropsEqual for memo comparison
   return (
     <div
-      className={TASK_LIST_ROW}
+      className={`${TABLE_ROW} cursor-pointer`}
       onClick={() => onOpenTask(row.original)}
     >
       {row.getVisibleCells().map((cell) => {
         // Skip the grouped column entirely — header does the same, keeping alignment
         if (cell.column.getIsGrouped()) return null;
-        const defSize = cell.column.columnDef.size ?? 150;
-        const runtimeSize = cell.column.getSize();
-        const isResized = runtimeSize !== defSize;
+        const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, columnSizing);
         if (defSize === 0 && runtimeSize === 0) return null;
         const colId = cell.column.id;
-        const pinnedClass = colId === 'displayId' || colId === 'typeIcon' || colId === 'name'
+        const pinnedClass = colId === 'name'
+          ? TABLE_PINNED_LEFT_NAME
+          : colId === 'select' || colId === 'displayId' || colId === 'typeIcon'
           ? TABLE_PINNED_LEFT
           : colId === 'actions' ? TABLE_PINNED_RIGHT : '';
-        const pinnedSt = colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
+        const pinnedSt = colId === 'select' ? pinnedStyle('left', 0)
+          : colId === 'displayId' ? pinnedStyle('left', pinnedOffsets.displayId)
           : colId === 'typeIcon' ? pinnedStyle('left', pinnedOffsets.typeIcon)
           : colId === 'name' ? pinnedStyle('left', pinnedOffsets.name)
           : colId === 'actions' ? pinnedStyle('right', 0) : {};
         return (
           <div
             key={cell.id}
-            className={`${TASK_LIST_CELL} overflow-hidden ${pinnedClass}`}
+            className={`${TABLE_CELL} overflow-hidden ${pinnedClass}`}
             style={{ ...dynamicCellStyle(defSize, runtimeSize, isResized, 400), ...pinnedSt }}
           >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {colId === 'select' ? (
+              <DataRowSelectCheckbox
+                taskId={row.original.id}
+                taskKey={row.original.task_key}
+                isSelected={isSelected}
+                onToggleSelection={onToggleSelection}
+              />
+            ) : (
+              flexRender(cell.column.columnDef.cell, cell.getContext())
+            )}
           </div>
         );
       })}
@@ -1569,7 +1846,7 @@ function InlinePriorityCell({
         className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
         onClick={(e) => { e.stopPropagation(); setOpen(true); }}
       >
-        <TaskListPriorityIcon priority={p} className="h-3.5 w-3.5" />
+        <TaskListPriorityIcon priority={p} className="h-4 w-4" />
         {PRIORITY_CONFIG[p].label}
       </button>
     );
@@ -1583,7 +1860,7 @@ function InlinePriorityCell({
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer"
           onClick={(e) => { e.stopPropagation(); setOpen(true); }}
         >
-          <TaskListPriorityIcon priority={p} className="h-3.5 w-3.5" />
+          <TaskListPriorityIcon priority={p} className="h-4 w-4" />
           {PRIORITY_CONFIG[p].label}
         </button>
       </PopoverTrigger>
@@ -1612,7 +1889,7 @@ function InlinePriorityCell({
                       }}
                       className="flex items-center gap-2 text-xs"
                     >
-                      <TaskListPriorityIcon priority={pri} className="h-3.5 w-3.5" />
+                      <TaskListPriorityIcon priority={pri} className="h-4 w-4" />
                       <span>{cfg.label}</span>
                       {p === pri && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                     </CommandItem>
@@ -1711,44 +1988,33 @@ function InlineStateCell({
 function InlineOwnerCell({
   task,
   assignableMembers,
-  assignableMemberById,
   ownerNameMap,
   onUpdate,
 }: {
   task: Task;
   assignableMembers: AssignableMember[];
-  assignableMemberById: Map<string, AssignableMember>;
   ownerNameMap: Map<string, string>;
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
-  const ownerKey = task.owner_member_id;
-  const ownerName = ownerKey ? ownerNameMap.get(ownerKey) ?? 'Unknown' : null;
-  const selectedMember = ownerKey ? assignableMemberById.get(ownerKey) ?? null : null;
+  const ownerMemberIds = task.owner_member_ids ?? [];
 
   return (
-    <MemberPickerPopover
-      value={task.owner_member_id || '__none__'}
+    <MultiMemberPickerPopover
+      values={ownerMemberIds}
       members={assignableMembers}
-      noneLabel="Unassigned"
       lazyMount
-      onChange={(value) => {
-        void onUpdate(task.id, { owner_member_id: value === '__none__' ? '' : value });
+      onChange={(nextOwnerIds) => {
+        void onUpdate(task.id, { owner_member_ids: nextOwnerIds });
       }}
       renderTrigger={() => {
-        return selectedMember ? (
-          <>
-            <TaskListOwnerAvatar
-              name={selectedMember.display_name || selectedMember.email}
-              avatarUrl={selectedMember.avatar_url}
-              avatarStyle={selectedMember.avatar_style}
-              avatarSeed={selectedMember.avatar_seed}
-              avatarBackgroundMode={selectedMember.avatar_background_mode}
-              avatarBackgroundColor={selectedMember.avatar_background_color}
-              className="h-4 w-4"
-              fallbackClassName="text-[7px]"
-            />
-            <span className="truncate">{ownerName}</span>
-          </>
+        return ownerMemberIds.length > 0 ? (
+          <OwnerAvatarStack
+            memberIds={ownerMemberIds}
+            nameMap={ownerNameMap}
+            members={assignableMembers}
+            size="sm"
+            max={3}
+          />
         ) : (
           <>
             <TaskListUserAddIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1779,7 +2045,7 @@ function InlineSeverityCell({
       >
         {s !== 'none' ? (
           <>
-            <TaskListSeverityIcon severity={s} className="h-3.5 w-3.5" />
+            <TaskListSeverityIcon severity={s} className="h-4 w-4" />
             {SEVERITY_CONFIG[s].label}
           </>
         ) : (
@@ -1799,7 +2065,7 @@ function InlineSeverityCell({
         >
           {s !== 'none' ? (
             <>
-              <TaskListSeverityIcon severity={s} className="h-3.5 w-3.5" />
+              <TaskListSeverityIcon severity={s} className="h-4 w-4" />
               {SEVERITY_CONFIG[s].label}
             </>
           ) : (
@@ -1832,7 +2098,7 @@ function InlineSeverityCell({
                       }}
                       className="flex items-center gap-2 text-xs"
                     >
-                      <TaskListSeverityIcon severity={sev} className="h-3.5 w-3.5" />
+                      <TaskListSeverityIcon severity={sev} className="h-4 w-4" />
                       <span>{cfg.label}</span>
                       {s === sev && <TaskListCheckIcon className="ml-auto h-3.5 w-3.5 text-primary" />}
                     </CommandItem>
@@ -2040,17 +2306,25 @@ function InlineEpicCell({
 
 function InlineSprintCell({
   task,
+  taskTeamId,
+  listTeamId,
   sprints,
   sprintMap,
   onUpdate,
 }: {
   task: Task;
+  taskTeamId?: string | null;
+  listTeamId?: string | null;
   sprints: SprintWithStats[];
   sprintMap: Map<string, string>;
   onUpdate: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const sprintName = task.sprint_id ? sprintMap.get(task.sprint_id) ?? 'Unknown' : null;
+  const visibleSprints = useMemo(
+    () => getVisibleSprintsForTaskScope(sprints, { taskTeamId, listTeamId }),
+    [listTeamId, sprints, taskTeamId],
+  );
 
   if (!open) {
     return (
@@ -2096,7 +2370,7 @@ function InlineSprintCell({
             <CommandList>
               <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No sprints found</CommandEmpty>
               <CommandGroup>
-                {sprints.map((sp) => (
+                {visibleSprints.map((sp) => (
                   <CommandItem
                     key={sp.sprint.id}
                     value={sp.sprint.name}
@@ -2270,17 +2544,21 @@ function InlineActionsCell({
   task,
   workspaceId,
   workspaceSlug,
+  automatedStateIds,
   onOpenTask,
   setTasks,
 }: {
   task: Task;
   workspaceId: string;
   workspaceSlug: string | null;
+  automatedStateIds: Set<string>;
   onOpenTask: (task: Task) => void;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const { copy } = useCopyToClipboard();
 
   const copyLink = (e: React.MouseEvent) => {
@@ -2303,10 +2581,40 @@ function InlineActionsCell({
     }
   };
 
+  const duplicateTask = async () => {
+    if (duplicating) return;
+    setDuplicateConfirmOpen(false);
+    setDuplicating(true);
+    try {
+      const { data, error } = await pmTaskService.duplicate(workspaceId, task.id);
+      if (error || !data) {
+        toast.error(error ?? 'Failed to duplicate task');
+        return;
+      }
+      setTasks((current) => [data.task, ...current]);
+      showTaskDuplicatedToast({
+        taskName: data.task.name,
+        taskKey: data.task.task_key,
+        taskType: data.task.task_type,
+        onOpen: () => onOpenTask(data.task),
+      });
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
+  const requestDuplicateTask = () => {
+    if (automatedStateIds.has(task.workflow_state_id)) {
+      setDuplicateConfirmOpen(true);
+      return;
+    }
+    void duplicateTask();
+  };
+
   const trigger = (
     <button
       type="button"
-      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/row:opacity-100 data-[state=open]:opacity-100 cursor-pointer"
+      className="rounded-md p-1 text-foreground transition-colors hover:bg-accent cursor-pointer"
       onClick={(event) => {
         event.stopPropagation();
         if (!menuOpen) {
@@ -2314,11 +2622,11 @@ function InlineActionsCell({
         }
       }}
     >
-      <TaskListMoreVerticalIcon className="h-4 w-4" />
+      <TaskListMoreVerticalIcon className="h-4 w-4" strokeWidth={2.5} />
     </button>
   );
 
-  if (!menuOpen && !archiveOpen) {
+  if (!menuOpen && !archiveOpen && !duplicateConfirmOpen) {
     return <div onClick={(e) => e.stopPropagation()}>{trigger}</div>;
   }
 
@@ -2327,6 +2635,10 @@ function InlineActionsCell({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={requestDuplicateTask} disabled={duplicating}>
+            <Copy01Icon className="mr-2 h-3.5 w-3.5" />
+            Duplicate Task
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onOpenTask(task)}>
             <TaskListOpenTaskIcon className="mr-2 h-3.5 w-3.5" />
             Open Task
@@ -2352,6 +2664,16 @@ function InlineActionsCell({
           description="This task will be hidden from the board and lists. You can restore it later from archived items."
           confirmLabel="Archive"
           onConfirm={archiveTask}
+        />
+      ) : null}
+      {duplicateConfirmOpen ? (
+        <ConfirmDialog
+          open={duplicateConfirmOpen}
+          onOpenChange={setDuplicateConfirmOpen}
+          title="Duplicate task and start agent?"
+          description="This task is in an auto-run state. Duplicating it will create a copy in the same state and start the assigned agent automatically."
+          confirmLabel="Duplicate and start agent"
+          onConfirm={duplicateTask}
         />
       ) : null}
     </div>

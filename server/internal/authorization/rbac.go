@@ -24,12 +24,13 @@ func NewRBACEngine() *RBACEngine {
 		PermSettingsManage, PermModuleAccessManage, PermWorkspaceUpdate,
 		PermWorkspaceMembersManage, PermWorkspaceInvitesManage,
 		PermWorkspaceRolesManage,
+		PermIntegrationsConnect, PermIntegrationsEnumerate, PermIntegrationsLinkRepo,
 		PermPMAdminWorkflows, PermPMAdminLabels, PermPMAdminAutomations, PermPMImport,
 		PermDocsAdmin, PermDocsImport, PermCRMAdmin, PermSupportAdmin,
 	)
 
 	ownerPerms := copyPerms(adminPerms)
-	addPerms(ownerPerms, PermWorkspaceDelete)
+	addPerms(ownerPerms, PermWorkspaceDelete, PermIntegrationsUninstall)
 
 	return &RBACEngine{
 		rolePerms: map[string]map[Permission]struct{}{

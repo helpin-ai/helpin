@@ -79,6 +79,12 @@ describe('renderMarkdown', () => {
     expect(result).toBe('<p>line one<br>line two</p>');
   });
 
+  it('treats markdown hard-break escapes before newlines as line breaks', () => {
+    const input = 'Hi Caleb,\\\n\\\nThank you for reaching out.';
+    const result = renderMarkdown(input);
+    expect(result).toBe('<p>Hi Caleb,</p><p>Thank you for reaching out.</p>');
+  });
+
   it('renders headings downscaled to h3-h5', () => {
     const input = '# Heading 1\n## Heading 2\n### Heading 3';
     const result = renderMarkdown(input);

@@ -27,6 +27,8 @@ interface CreatedEntityToastOptions {
   identifier?: CreatedEntityIdentifier;
   onOpen?: () => void;
   subtitle?: string;
+  eyebrow?: string;
+  openLabel?: string;
   tone?: CreatedEntityTone;
   icon?: IconComponent;
 }
@@ -48,6 +50,8 @@ export function showEntityCreatedToast(options: CreatedEntityToastOptions) {
     />
   ), {
     duration: 6000,
+    unstyled: true,
+    className: '!border-0 !bg-transparent !p-0 !shadow-none !backdrop-blur-none',
   });
 }
 
@@ -58,6 +62,8 @@ function CreatedEntityToastCard({
   identifier,
   onOpen,
   subtitle,
+  eyebrow,
+  openLabel = 'Open',
   tone = 'pm',
   icon,
 }: CreatedEntityToastCardProps) {
@@ -84,7 +90,7 @@ function CreatedEntityToastCard({
       <div className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-primary/30" />
       <button
         type="button"
-        className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+        className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
         onClick={() => toast.dismiss(toastId)}
       >
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
@@ -97,7 +103,7 @@ function CreatedEntityToastCard({
 
           <div className="min-w-0 flex-1">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              {entityLabel} created
+              {eyebrow ?? `${entityLabel} created`}
             </p>
             <button
               type="button"
@@ -150,7 +156,7 @@ function CreatedEntityToastCard({
               onClick={handleOpen}
             >
               <ArrowUpRight01Icon className="mr-1.5 h-3.5 w-3.5" />
-              Open
+              {openLabel}
             </Button>
           ) : null}
         </div>

@@ -9,8 +9,8 @@ import { buildCollectionTreeOptions } from '@/components/docs/CollectionTreePick
 import { useTruncationDetection } from '@/hooks/useTruncationDetection';
 import { SpaceDialog } from '@/components/docs/SpaceDialog';
 import { QuickTooltip } from '@/components/ui/quick-tooltip';
-import { ConfirmDialog } from '@/components/pm/ConfirmDialog';
-import { TypedConfirmDialog } from '@/components/docs/TypedConfirmDialog';
+import { DeleteCollectionDialog } from '@/components/docs/DeleteCollectionDialog';
+import { DeleteSpaceDialog } from '@/components/docs/DeleteSpaceDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,16 +79,46 @@ function DocsSpaceCollections({
     [collections],
   );
 
+  // Track which parent collections are expanded in the sidebar tree.
+  const [expandedColls, setExpandedColls] = useState<Set<string>>(new Set());
+  const toggleColl = (id: string) => {
+    setExpandedColls((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Enrich each option with a hasChildren flag (next item in DFS is deeper).
+  // Filter to only show items whose parent is expanded.
+  const visibleOptions = useMemo(() => {
+    const enriched = treeOptions.map((opt, i) => ({
+      ...opt,
+      hasChildren: i + 1 < treeOptions.length && treeOptions[i + 1].depth > opt.depth,
+    }));
+    const result: (typeof enriched)[number][] = [];
+    // skipUntilDepth: when a collapsed parent is hit, hide all deeper
+    // items until we return to the same depth or shallower.
+    let skipUntilDepth = Infinity;
+    for (const opt of enriched) {
+      if (opt.depth > skipUntilDepth) continue;
+      skipUntilDepth = Infinity;
+      result.push(opt);
+      if (opt.hasChildren && !expandedColls.has(opt.id)) {
+        skipUntilDepth = opt.depth;
+      }
+    }
+    return result;
+  }, [treeOptions, expandedColls]);
+
   return (
     <SidebarMenuSub className="mr-0 pr-0">
-      {treeOptions.map((option) => {
+      {visibleOptions.map((option) => {
         const collection = collectionById.get(option.id);
         if (!collection) return null;
         const link = `/w/${wsSlug}/docs/spaces/${spaceId}?collection=${collection.id}`;
         const showTooltip = isColTruncated(collection.id);
-        // Depth 0 stays flush with the sidebar's base indent; each
-        // additional depth adds a small left pad + a muted "↳" so
-        // the hierarchy is readable without hover.
         const depthStyle = option.depth > 0 ? { paddingLeft: `${option.depth * 12}px` } : undefined;
 
         return (
@@ -105,6 +135,9 @@ function DocsSpaceCollections({
                       href={link}
                       onClick={(event) => {
                         event.preventDefault();
+                        if (option.hasChildren) {
+                          toggleColl(collection.id);
+                        }
                         onNavigate({
                           to: '/w/$slug/docs/spaces/$spaceId',
                           params: { slug: wsSlug, spaceId },
@@ -112,14 +145,7 @@ function DocsSpaceCollections({
                         });
                       }}
                     >
-                      {option.depth > 0 && (
-                        <span
-                          className="select-none text-[10px] text-muted-foreground/50"
-                          aria-hidden="true"
-                        >
-                          ↳
-                        </span>
-                      )}
+                      <ArrowRight01Icon className={`h-3 w-3 shrink-0 transition-transform ${option.hasChildren ? `text-muted-foreground ${expandedColls.has(collection.id) ? 'rotate-90' : ''}` : 'invisible'}`} />
                       <SidebarCollectionIcon name={collection.icon} />
                       <span className="truncate" ref={(element) => checkColTruncation(collection.id, element)}>
                         {collection.name}
@@ -404,16 +430,15 @@ export function DocsSpacesNav({
         defaultType={createSpaceType}
       />
 
-      <TypedConfirmDialog
+      <DeleteSpaceDialog
+        wsId={wsId}
+        space={deletingSpace}
         open={deletingSpace !== null}
         onOpenChange={(open) => {
           if (!open) {
             setTimeout(() => setDeletingSpace(null), 150);
           }
         }}
-        title="Delete space"
-        description="This will permanently delete this space and all its documents. This action cannot be undone."
-        confirmText={deletingSpace?.name ?? ''}
         onConfirm={async () => {
           if (!deletingSpace) return;
           await deleteSpace.mutateAsync(deletingSpace.id);
@@ -433,27 +458,21 @@ export function DocsSpacesNav({
         collection={editingCollection}
       />
 
-      <ConfirmDialog
+      <DeleteCollectionDialog
+        wsId={wsId}
+        collection={deletingCollection}
         open={deletingCollection !== null}
         onOpenChange={(open) => {
           if (!open) {
             setTimeout(() => setDeletingCollection(null), 150);
           }
         }}
-        title="Delete collection"
-        description="This will permanently delete this collection. Documents in this collection will become uncategorized."
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!deletingCollection) {
             return;
           }
-
-          deleteCollection.mutate({ id: deletingCollection.id, spaceId: deletingCollection.space_id }, {
-            onSuccess: () => {
-              setDeletingCollection(null);
-            },
-          });
+          await deleteCollection.mutateAsync({ id: deletingCollection.id, spaceId: deletingCollection.space_id });
+          setDeletingCollection(null);
         }}
       />
     </>

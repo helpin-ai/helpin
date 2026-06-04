@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams, useRouter } from '@tanstack/react-router'
+import { useNavigate, useParams, useRouter, useSearch } from '@tanstack/react-router'
 import { format, parseISO } from 'date-fns'
 import type { JSONContent } from '@tiptap/react'
+import type { Editor as TiptapEditor } from '@tiptap/core'
 import {
   ArrowLeft02Icon,
   ArchiveIcon,
@@ -25,6 +26,7 @@ import {
   Cancel01Icon,
   Loading01Icon,
   MagicWand01Icon,
+  Message01Icon,
   ArchiveRestoreIcon,
   FolderInputIcon,
   LockIcon,
@@ -35,6 +37,7 @@ import { ICON_MAP, StoredIcon } from '@/components/ui/icon-picker'
 import { toast } from 'sonner'
 import { useTitle } from '@/hooks/useTitle'
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard'
+import { useWorkspaceTeams } from '@/hooks/useWorkspaceTeams'
 import { useAuthStore } from '@/stores/authStore'
 import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -45,6 +48,7 @@ import {
   useDocsSpace,
   useDocsCollections,
   useDocsHelpcenterArticleTranslations,
+  useDocsHelpcenterConfig,
   useDocsHelpcenterCollectionTranslations,
   useDocsHelpcenterLocales,
   useDocsHelpcenterSpaceTranslations,
@@ -62,17 +66,27 @@ import {
   useUnarchiveDocsDocument,
   useDeleteDocsDocument,
   useAssignableMembers,
+  useAgents,
   useWorkspaceAccess,
   usePermissions,
   useToggleDocShare,
   useToggleDocLock,
   useRevertDocsVersion,
+  useDocsBlocks,
+  useDocsChangeProposal,
+  useDocsChangeProposals,
+  useApplyDocsChangeProposal,
+  useDiscardDocsChangeProposal,
 } from '@/hooks/queries'
 import { timeAgo } from '@/lib/utils'
+import { isAgentAvailableForTarget } from '@/lib/agentAccess'
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -81,26 +95,46 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { DocsEditor, type DocsEditingPresenceSignal } from '@/components/docs/DocsEditor'
+import { DocsEditor, SaveIndicator, type DocsCommentAnchor, type DocsCommentAnchorDecoration, type DocsEditingPresenceSignal, type SaveStatus } from '@/components/docs/DocsEditor'
+import {
+  buildCollectionTree,
+  collectionAncestorChain,
+  findCollectionNode,
+  type CollectionTreeNode,
+} from '@/components/docs/docsCollectionTree'
 import { VersionHistoryPanel, VersionTypeBadge, AuthorDisplay } from '@/components/docs/VersionHistoryPanel'
 import { DocumentLinksPanel } from '@/components/docs/DocumentLinksPanel'
+import { DocsOutlineMinimap } from '@/components/docs/DocsOutlineMinimap'
+import { CommentSideGutter } from '@/components/docs/CommentSideGutter'
+import { BlockCommentTrigger } from '@/components/docs/BlockCommentTrigger'
+import { DocsRailHeader } from '@/components/docs/DocsRailHeader'
+import { RailSection } from '@/components/crm/contact-detail/RailSection'
 import { MoveDocumentDialog } from '@/components/docs/MoveDocumentDialog'
 import { EditArticleTranslationDialog } from '@/components/docs/helpcenter/EditArticleTranslationDialog'
 import type { TranslationRow } from '@/components/docs/helpcenter/TranslationsPanel'
 import { ArticleLocalePillRail } from '@/components/docs/helpcenter/ArticleLocalePillRail'
 import { MissingArticleTranslationDialog } from '@/components/docs/helpcenter/MissingArticleTranslationDialog'
 import { PublishSlugDialog } from '@/components/docs/helpcenter/PublishSlugDialog'
+import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
+import { ProposalReviewView } from '@/components/docs/proposals/ProposalReviewView'
 import { ConfirmDialog } from '@/components/pm/ConfirmDialog'
+import { CommentThread } from '@/components/pm/CommentThread'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { DOC_STATUS_LABELS, getHelpcenterLocaleLabel } from '@/lib/docsTypes'
+import { getHelpcenterLocaleLabel } from '@/lib/docsTypes'
 import { suggestDocsSlug } from '@/lib/docsSlugs'
 import { buildHelpcenterPreviewUrlFromEnv } from '@/lib/helpcenterPreview'
 import { docsService } from '@/lib/services/docsService'
+import { docsCommentService } from '@/lib/services/docsCommentService'
+import { supportCoverageService } from '@/lib/services/supportCoverageService'
 import { queryKeys } from '@/lib/queryKeys'
-import type { DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import type { DocsBlock, DocsChangeProposal, DocsDocument, DocsReferenceItem, DocsVersion, DocsHelpcenterTranslationState } from '@/lib/docsTypes'
+import type { CommandBarPageContext, CommentWithAuthor } from '@/lib/pmTypes'
+import { prepareDocsContentForPublish } from '@/lib/docsPublishTransforms'
 import { QuickTooltip } from '@/components/ui/quick-tooltip'
 import { AvatarGroupCount } from '@/components/ui/avatar'
 import { UserAvatar } from '@/components/pm/UserAvatar'
+import { loadCoverageHandoffContent } from '@/components/support/coverage/coverageHandoff'
+import { useRegisterPageContext, type PageContextScopeOption } from '@/components/command-bar/pageContext'
 
 function docStatusColor(status: string): string {
   switch (status) {
@@ -121,12 +155,141 @@ function DocCollectionIcon({ name }: { name?: string | null }) {
   return <FolderOpenIcon className="h-3 w-3 shrink-0" />;
 }
 
+import type { DocumentOutlineItem } from '@/components/docs/DocsOutlineMinimap'
+
+function collectDocumentOutline(content: JSONContent | null | undefined): DocumentOutlineItem[] {
+  const items: DocumentOutlineItem[] = []
+  const walk = (node: JSONContent | undefined) => {
+    if (!node) return
+    if (node.type === 'heading') {
+      const text = collectJSONText(node).trim()
+      if (text) {
+        items.push({
+          index: items.length,
+          level: typeof node.attrs?.level === 'number' ? node.attrs.level : 2,
+          text,
+        })
+      }
+    }
+    node.content?.forEach(walk)
+  }
+  walk(content ?? undefined)
+  return items
+}
+
+function collectJSONText(node: JSONContent): string {
+  if (typeof node.text === 'string') return node.text
+  return node.content?.map(collectJSONText).join('') ?? ''
+}
+
+function getFocusedEditorBlockId(editor: TiptapEditor | null): string | null {
+  if (!editor) return null
+  const { from } = editor.state.selection
+  const $from = editor.state.doc.resolve(from)
+  for (let depth = $from.depth; depth >= 0; depth -= 1) {
+    const node = $from.node(depth)
+    const blockId = typeof node.attrs?.blockId === 'string' ? node.attrs.blockId.trim() : ''
+    if (blockId) return blockId
+  }
+  return null
+}
+
+function useFocusedDocsBlockId(editor: TiptapEditor | null) {
+  const [blockId, setBlockId] = useState<string | null>(() => getFocusedEditorBlockId(editor))
+
+  useEffect(() => {
+    if (!editor) {
+      setBlockId(null)
+      return
+    }
+    const update = () => setBlockId(getFocusedEditorBlockId(editor))
+    update()
+    editor.on('selectionUpdate', update)
+    editor.on('transaction', update)
+    return () => {
+      editor.off('selectionUpdate', update)
+      editor.off('transaction', update)
+    }
+  }, [editor])
+
+  return blockId
+}
+
+function buildDocsDocumentCommandContext(doc: DocsDocument | undefined): CommandBarPageContext | null {
+  if (!doc) return null
+  return {
+    entity_type: 'document',
+    entity_id: doc.id,
+    display_title: doc.title,
+  }
+}
+
+function buildDocsBlockCommandContext(doc: DocsDocument | undefined, block: DocsBlock | null): CommandBarPageContext | null {
+  if (!doc || !block) return null
+  return {
+    entity_type: 'document',
+    entity_id: doc.id,
+    display_title: doc.title,
+    metadata: {
+      context_scope: 'block',
+      block_id: block.id,
+      block_revision: block.revision,
+      block_type: block.type,
+      block_excerpt: (block.content_text ?? '').trim().slice(0, 500),
+    },
+  }
+}
+
+function DocsPendingProposalsBanner({
+  proposal,
+  count,
+  onReview,
+}: {
+  proposal: DocsChangeProposal
+  count: number
+  onReview: () => void
+}) {
+  const scopeLabel = proposal.scope === 'block' ? 'Block change' : 'Document change'
+  return (
+    <div className="border-b border-amber-500/25 bg-amber-50/80 px-4 py-3 text-amber-950 dark:border-amber-400/20 dark:bg-amber-950/20 dark:text-amber-100">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+        <div className="flex min-w-0 flex-1 gap-3">
+          <MagicWand01Icon className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{scopeLabel} ready</span>
+              {count > 1 && <PendingProposalBadge count={count} />}
+              <span className="text-[11px] text-amber-800/70 dark:text-amber-200/70">
+                {timeAgo(proposal.created_at)}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-amber-900/85 dark:text-amber-100/85">{proposal.summary}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 lg:justify-end">
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={onReview}>
+            <ViewIcon className="h-3 w-3" />
+            Review
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface ArticleTranslationDraftState {
   locale: string
   title: string
   slug: string
   excerpt: string
   content: JSONContent | null
+}
+
+interface SourceSocialDraftState {
+  og_title: string
+  og_description: string
+  og_image_url: string
+  og_image_alt: string
 }
 
 function emptyTranslationDraft(locale: string): ArticleTranslationDraftState {
@@ -185,25 +348,68 @@ function EditingIndicator() {
   )
 }
 
-export function DocsDocumentDetail() {
+export function DocsDocumentDetail({
+  fromGapId,
+  fromSuggestionId,
+}: {
+  fromGapId?: string
+  fromSuggestionId?: string
+} = {}) {
   const navigate = useNavigate()
   const router = useRouter()
   const queryClient = useQueryClient()
   const { docId } = useParams({ strict: false }) as { docId: string }
+  const routeSearch = useSearch({
+    from: '/_authenticated/w/$slug/docs/documents/$docId',
+  }) as { proposal?: string; from_gap?: string; from_suggestion?: string }
   const workspace = useWorkspaceStore((s) => s.currentWorkspace)
   const wsId = workspace?.id ?? ''
   const wsSlug = workspace?.slug ?? ''
+  const proposalSearchId = routeSearch.proposal ?? null
+  const setProposalSearchId = useCallback((next: string | null) => {
+    if (!wsSlug || !docId) return
+    navigate({
+      to: '/w/$slug/docs/documents/$docId',
+      params: { slug: wsSlug, docId },
+      search: (prev) => ({
+        ...prev,
+        proposal: next ?? undefined,
+      }),
+      replace: false,
+    })
+  }, [docId, navigate, wsSlug])
+  const coverageGapClosedRef = useRef(false)
+  const editorShellRef = useRef<HTMLDivElement | null>(null)
+  const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null)
+  const [editorShellEl, setEditorShellEl] = useState<HTMLDivElement | null>(null)
+  const setEditorShellRef = useCallback((el: HTMLDivElement | null) => {
+    editorShellRef.current = el
+    setEditorShellEl(el)
+  }, [])
+  const [coverageInitialContent] = useState(() =>
+    loadCoverageHandoffContent(fromGapId, fromSuggestionId),
+  )
 
   const { data: access } = useWorkspaceAccess(wsId)
   const { canEditDocs, canPublishDocs, canAdminDocs, isAdmin } = usePermissions(access)
   const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data: doc, isLoading: docLoading } = useDocsDocument(wsId, docId)
+  const { data: blocks = [] } = useDocsBlocks(wsId, docId)
   const { data: content, isLoading: contentLoading } = useDocsContent(wsId, docId)
+  const { data: changeProposals = [] } = useDocsChangeProposals(wsId, docId)
+  const {
+    data: searchedChangeProposal,
+    isLoading: searchedChangeProposalLoading,
+    isError: searchedChangeProposalError,
+    error: searchedChangeProposalFetchError,
+  } = useDocsChangeProposal(wsId, docId, proposalSearchId)
   const { data: localesConfig } = useDocsHelpcenterLocales(wsId)
   const { data: articleTranslations = [] } = useDocsHelpcenterArticleTranslations(wsId, docId)
 
   const saveContent = useSaveDocsContent(wsId)
+  const applyChangeProposal = useApplyDocsChangeProposal(wsId)
+  const discardChangeProposal = useDiscardDocsChangeProposal(wsId)
   const updateDoc = useUpdateDocsDocument(wsId)
   const publishDoc = usePublishDocsDocument(wsId)
   const unpublishDoc = useUnpublishDocsDocument(wsId)
@@ -213,6 +419,62 @@ export function DocsDocumentDetail() {
 
   const { data: space } = useDocsSpace(wsId, doc?.space_id ?? '')
   const { data: members = [] } = useAssignableMembers(wsId)
+  const { teams = [] } = useWorkspaceTeams(wsId)
+  const { data: workspaceAgents = [] } = useAgents(wsId)
+  const accessibleTeamIds = useMemo(
+    () => new Set((access?.team_memberships ?? []).map((team) => team.team_id)),
+    [access?.team_memberships],
+  )
+  const documentAgents = useMemo(
+    () => workspaceAgents.filter((agent) => isAgentAvailableForTarget(agent, {
+      targetType: 'document',
+      targetTeamId: doc?.team_id,
+      accessibleTeamIds,
+      canSeeAllAgents: isAdmin,
+    })),
+    [accessibleTeamIds, doc?.team_id, isAdmin, workspaceAgents],
+  )
+  const focusedBlockId = useFocusedDocsBlockId(editorInstance)
+  const focusedBlock = useMemo(
+    () => blocks.find((block) => block.id === focusedBlockId) ?? null,
+    [blocks, focusedBlockId],
+  )
+  const visibleChangeProposal = useMemo(
+    () => changeProposals.find((proposal) => proposal.block_id === focusedBlockId) ?? changeProposals[0] ?? null,
+    [changeProposals, focusedBlockId],
+  )
+  const activeReviewProposal = proposalSearchId ? searchedChangeProposal : null
+  const documentCommandContext = useMemo(
+    () => buildDocsDocumentCommandContext(doc),
+    [doc],
+  )
+  const blockCommandContext = useMemo(
+    () => buildDocsBlockCommandContext(doc, focusedBlock),
+    [doc, focusedBlock],
+  )
+  const commandBarContext = blockCommandContext ?? documentCommandContext
+  const commandBarContextOptions = useMemo<PageContextScopeOption[]>(() => {
+    if (!documentCommandContext) return []
+    const options: PageContextScopeOption[] = [{
+      key: 'document',
+      label: 'Document',
+      description: 'Use the whole document as the edit target.',
+      context: documentCommandContext,
+    }]
+    if (blockCommandContext) {
+      options.push({
+        key: 'block',
+        label: 'Block',
+        description: 'Use the selected block as the edit target.',
+        context: blockCommandContext,
+      })
+    }
+    return options
+  }, [blockCommandContext, documentCommandContext])
+  useRegisterPageContext(commandBarContext, 20, {
+    scopeOptions: commandBarContextOptions,
+    defaultScopeKey: blockCommandContext ? 'block' : 'document',
+  })
   const remoteViewers = useDocsPresenceStore((s) => s.viewingUsers[docId] ?? EMPTY_DOC_VIEWERS)
   const remoteEditors = useDocsPresenceStore((s) => s.editingUsers[docId] ?? EMPTY_DOC_EDITORS)
   const wsSendRaw = useWSStore((s) => s.send)
@@ -228,6 +490,14 @@ export function DocsDocumentDetail() {
 
   const toggleShare = useToggleDocShare(wsId)
   const toggleLock = useToggleDocLock(wsId)
+
+  const collectionBreadcrumbNodes = useMemo<CollectionTreeNode[]>(() => {
+    if (!doc?.space_id || !doc.collection_id || collections.length === 0) return []
+    const tree = buildCollectionTree(doc.space_id, collections, [])
+    const current = findCollectionNode(tree.topLevel, doc.collection_id)
+    if (!current) return []
+    return [...collectionAncestorChain(tree.topLevel, doc.collection_id), current]
+  }, [collections, doc?.collection_id, doc?.space_id])
 
   const activeDocViewers = useMemo(() => {
     return Object.entries(remoteViewers).map(([userId, viewer]) => {
@@ -274,14 +544,74 @@ export function DocsDocumentDetail() {
     return [...editors, ...viewers]
   }, [activeDocEditors, activeDocViewers])
 
+  useEffect(() => {
+    let cancelled = false
+    if (!wsId || !docId || !doc) {
+      setComments([])
+      return
+    }
+    setCommentsLoading(true)
+    docsCommentService.list(wsId, 'doc', docId).then(({ data }) => {
+      if (!cancelled) setComments(data ?? [])
+    }).finally(() => {
+      if (!cancelled) setCommentsLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [doc?.id, docId, wsId])
+
   // Lock-aware editing: locked docs are read-only for everyone — unlock to edit
   const effectiveReadOnly = !canEditDocs || doc?.status === 'archived' || !!doc?.is_locked
   const canUnlock = doc?.is_locked && (doc.locked_by === currentUserId || isAdmin)
 
-  const [metaOpen, setMetaOpen] = useState(false)
-  const [versionsOpen, setVersionsOpen] = useState(false)
+  // Right rail view: 'overview' | 'comments' | 'history' | 'linked' | 'references' | null (closed)
+  type DocsRailView = 'overview' | 'comments' | 'history' | 'linked' | 'references'
+  const parseRailView = (raw: string | null): DocsRailView | null => {
+    if (raw === 'overview' || raw === 'comments' || raw === 'history' || raw === 'linked' || raw === 'references') {
+      return raw
+    }
+    return null
+  }
+  const [railView, setRailViewState] = useState<DocsRailView | null>(() => {
+    if (typeof window === 'undefined') return null
+    return parseRailView(new URLSearchParams(window.location.search).get('rail'))
+  })
+  const railOpen = railView !== null
+  const setRailView = useCallback((next: DocsRailView | null) => {
+    setRailViewState(next)
+    const params = new URLSearchParams(window.location.search)
+    if (next) params.set('rail', next)
+    else params.delete('rail')
+    const queryString = params.toString()
+    const url = queryString ? `${window.location.pathname}?${queryString}` : window.location.pathname
+    window.history.replaceState(null, '', url)
+  }, [])
+  const goToRailOverview = useCallback(() => setRailView('overview'), [setRailView])
+  const closeRail = useCallback(() => setRailView(null), [setRailView])
+  const toggleRail = useCallback(() => setRailView(railOpen ? null : 'overview'), [railOpen, setRailView])
+  // Sync rail state to popstate events (browser back/forward)
+  useEffect(() => {
+    const onPopState = () => {
+      setRailViewState(parseRailView(new URLSearchParams(window.location.search).get('rail')))
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
-  const [linksOpen, setLinksOpen] = useState(false)
+  const [editorSaveStatus, setEditorSaveStatus] = useState<SaveStatus>('idle')
+  const [editorLastSavedAt, setEditorLastSavedAt] = useState<Date | null>(null)
+  const handleEditorSaveStatusChange = useCallback((status: SaveStatus, lastSavedAt: Date | null) => {
+    setEditorSaveStatus(status)
+    setEditorLastSavedAt(lastSavedAt)
+  }, [])
+  const [comments, setComments] = useState<CommentWithAuthor[]>([])
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const [commentAnchor, setCommentAnchor] = useState<DocsCommentAnchor | null>(null)
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null)
+  const [references, setReferences] = useState<DocsReferenceItem[]>([])
+  const [referencesLoading, setReferencesLoading] = useState(false)
   const [editingTranslationLocale, setEditingTranslationLocale] = useState<string | null>(null)
   const [pendingTranslationLocale, setPendingTranslationLocale] = useState<string | null>(null)
   const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false)
@@ -293,11 +623,26 @@ export function DocsDocumentDetail() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [pendingSlug, setPendingSlug] = useState('')
   const [pendingPublishLocale, setPendingPublishLocale] = useState<string | null>(null)
+  const [proposalStatusMessage, setProposalStatusMessage] = useState('')
   const { copied: linkCopied, copy: copyLink } = useCopyToClipboard()
 
   // Version preview state — when set, the editor shows version content read-only
   const [previewVersion, setPreviewVersion] = useState<DocsVersion | null>(null)
   const revertVersion = useRevertDocsVersion(wsId)
+
+  useEffect(() => {
+    let cancelled = false
+    if (railView !== 'references' || !wsId || !docId || !doc) return
+    setReferencesLoading(true)
+    docsService.listReferences(wsId, docId).then(({ data }) => {
+      if (!cancelled) setReferences(data?.items ?? [])
+    }).finally(() => {
+      if (!cancelled) setReferencesLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [doc?.id, docId, railView, wsId])
 
   const handlePreview = useCallback((version: DocsVersion) => {
     setPreviewVersion((prev) => prev?.id === version.id ? null : version)
@@ -309,11 +654,38 @@ export function DocsDocumentDetail() {
       await revertVersion.mutateAsync({ docId, versionId: previewVersion.id })
       toast.success('Reverted to selected version')
       setPreviewVersion(null)
-      setVersionsOpen(false)
+      setRailView(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to revert')
     }
   }, [previewVersion, revertVersion, docId])
+
+  const handleApplyChangeProposal = useCallback(async () => {
+    const proposal = activeReviewProposal ?? visibleChangeProposal
+    if (!proposal) return
+    try {
+      await applyChangeProposal.mutateAsync({ docId, proposalId: proposal.id })
+      toast.success('Proposal applied')
+      setProposalStatusMessage('Proposal applied. The document has been updated.')
+      if (activeReviewProposal) setProposalSearchId(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to apply proposal')
+    }
+  }, [activeReviewProposal, applyChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
+
+  const handleDiscardChangeProposal = useCallback(async () => {
+    const proposal = activeReviewProposal ?? visibleChangeProposal
+    if (!proposal) return
+    if (!window.confirm("Discard Quill's proposal? You'll lose this draft.")) return
+    try {
+      await discardChangeProposal.mutateAsync({ docId, proposalId: proposal.id })
+      toast.success('Proposal discarded')
+      setProposalStatusMessage('Proposal discarded.')
+      if (activeReviewProposal) setProposalSearchId(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to discard proposal')
+    }
+  }, [activeReviewProposal, discardChangeProposal, docId, setProposalSearchId, visibleChangeProposal])
 
   // Title state — keep a local draft only for the active document.
   const [titleDraftState, setTitleDraftState] = useState<{ docId: string; value: string } | null>(null)
@@ -321,6 +693,15 @@ export function DocsDocumentDetail() {
   const titleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [selectedLocaleState, setSelectedLocaleState] = useState<{ docId: string; locale: string } | null>(null)
   const [translationDrafts, setTranslationDrafts] = useState<Record<string, ArticleTranslationDraftState>>({})
+  const [sourceSocialDraft, setSourceSocialDraft] = useState<SourceSocialDraftState>({
+    og_title: '',
+    og_description: '',
+    og_image_url: '',
+    og_image_alt: '',
+  })
+  const [savingSourceSocial, setSavingSourceSocial] = useState(false)
+  const [uploadingSourceOGImage, setUploadingSourceOGImage] = useState(false)
+  const sourceOGImageInputRef = useRef<HTMLInputElement>(null)
   const translationSaveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const patchDoc = useCallback(
@@ -354,6 +735,49 @@ export function DocsDocumentDetail() {
   }, [])
 
   useEffect(() => {
+    setSourceSocialDraft({
+      og_title: doc?.hc_og_title ?? '',
+      og_description: doc?.hc_og_description ?? '',
+      og_image_url: doc?.hc_og_image_url ?? '',
+      og_image_alt: doc?.hc_og_image_alt ?? '',
+    })
+  }, [doc?.id, doc?.hc_og_title, doc?.hc_og_description, doc?.hc_og_image_url, doc?.hc_og_image_alt])
+
+  const handleSaveSourceSocial = useCallback(async () => {
+    setSavingSourceSocial(true)
+    try {
+      const res = await docsService.updateHelpcenterArticleMetadata(wsId, docId, sourceSocialDraft)
+      if (res.error) throw new Error(res.error)
+      toast.success('Social metadata saved')
+      queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save social metadata')
+    } finally {
+      setSavingSourceSocial(false)
+    }
+  }, [docId, queryClient, sourceSocialDraft, wsId])
+
+  const handleUploadSourceOGImage = useCallback(async (file?: File | null) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file')
+      return
+    }
+    setUploadingSourceOGImage(true)
+    try {
+      const res = await docsService.uploadHelpcenterAsset(wsId, 'og_image', file)
+      if (res.error || !res.data) throw new Error(res.error ?? 'Upload failed')
+      setSourceSocialDraft((prev) => ({ ...prev, og_image_url: res.data!.url }))
+      toast.success('Social image uploaded')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploadingSourceOGImage(false)
+      if (sourceOGImageInputRef.current) sourceOGImageInputRef.current.value = ''
+    }
+  }, [wsId])
+
+  useEffect(() => {
     if (!docId || !wsSendRaw) return
 
     wsSendRaw({ type: 'docs:presence:sync', data: { document_ids: [docId] } })
@@ -385,18 +809,66 @@ export function DocsDocumentDetail() {
     })
   }, [docId, wsSendRaw])
 
+  const handleCreateCommentAnchor = useCallback((anchor: DocsCommentAnchor) => {
+    setCommentAnchor(anchor)
+    setActiveCommentId(null)
+  }, [])
+
+  const handleOpenComment = useCallback((commentId: string) => {
+    setActiveCommentId(commentId)
+    window.setTimeout(() => {
+      document
+        .querySelector(`[data-comment-card-id="${CSS.escape(commentId)}"]`)
+        ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 0)
+  }, [])
+
+  const commentAnchors = useMemo<DocsCommentAnchorDecoration[]>(() => {
+    return comments
+      .flatMap((entry) => [entry, ...(entry.replies ?? [])])
+      .map((entry) => entry.comment)
+      .filter((comment) => comment.block_id || comment.range || comment.anchor_text)
+      .map((comment) => ({
+        id: comment.id,
+        block_id: comment.block_id,
+        range: comment.range,
+        anchor_text: comment.anchor_text,
+      }))
+  }, [comments])
+
+  const showInlineComments = railView !== 'comments'
+  const hasVisibleInlineComments = showInlineComments && (comments.length > 0 || commentAnchor != null)
+
   const handleSave = useCallback(
     async (json: JSONContent) => {
       await saveContent.mutateAsync({ docId, content: json })
+      if (fromGapId && fromSuggestionId && !coverageGapClosedRef.current) {
+        coverageGapClosedRef.current = true
+        const result = await supportCoverageService.addDocumentToGap(wsId, fromGapId, {
+          route: 'update_article',
+          target_document_id: docId,
+        })
+        if (result.error) throw new Error(result.error)
+      }
       // Invalidate translation data so needs_review status updates promptly
       if (space?.type === 'external_capable' && (localesConfig?.enabled_locales?.length ?? 0) > 1) {
         queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
       }
     },
-    [saveContent, docId, space?.type, localesConfig?.enabled_locales?.length, queryClient, wsId],
+    [
+      saveContent,
+      docId,
+      fromGapId,
+      fromSuggestionId,
+      wsId,
+      space?.type,
+      localesConfig?.enabled_locales?.length,
+      queryClient,
+    ],
   )
 
   const isExternalHelpCenter = space?.type === 'external_capable'
+  const { data: helpcenterConfig } = useDocsHelpcenterConfig(wsId)
   const defaultLocale = localesConfig?.default_locale ?? 'en'
   const enabledLocales = localesConfig?.enabled_locales?.length
     ? localesConfig.enabled_locales
@@ -454,6 +926,57 @@ export function DocsDocumentDetail() {
     ? emptyTranslationDraft(activeLocale)
     : translationDrafts[translationDraftKey(docId, activeLocale)] ?? translationDraftFromTranslation(activeLocale, activeTranslation)
   const displayedTitle = isSourceLocaleActive ? titleDraft : activeTranslationDraft.title
+  const outlineContent = previewVersion
+    ? previewVersion.content as JSONContent | null
+    : isSourceLocaleActive
+      ? coverageInitialContent ?? (content?.content as JSONContent | null)
+      : activeTranslationDraft.content
+  const outlineItems = useMemo(() => collectDocumentOutline(outlineContent), [outlineContent])
+  const handleOutlineSelect = useCallback((index: number) => {
+    const headings = editorShellRef.current?.querySelectorAll('.docs-editor-prose h1, .docs-editor-prose h2, .docs-editor-prose h3, .docs-editor-prose h4, .docs-editor-prose h5, .docs-editor-prose h6')
+    const heading = headings?.[index] as HTMLElement | undefined
+    heading?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  // When the URL has a `#block-<uuid>` fragment, scroll the matching block
+  // into view once content is rendered. Re-run on hashchange and on content
+  // load. Briefly highlights the target so the reader can locate it.
+  useEffect(() => {
+    if (contentLoading) return
+    const scrollToHash = () => {
+      const hash = window.location.hash
+      if (!hash.startsWith('#block-')) return
+      const blockId = hash.slice('#block-'.length)
+      if (!blockId) return
+      const tryScroll = (attempt: number) => {
+        const node = editorShellRef.current?.querySelector<HTMLElement>(
+          `[data-block-id="${CSS.escape(blockId)}"]`,
+        )
+        if (node) {
+          node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          node.classList.add('docs-block-anchor-highlight')
+          window.setTimeout(() => node.classList.remove('docs-block-anchor-highlight'), 1800)
+          return
+        }
+        // The editor may still be hydrating block IDs on first render; retry
+        // a few times with backoff.
+        if (attempt < 8) window.setTimeout(() => tryScroll(attempt + 1), 80 * (attempt + 1))
+      }
+      tryScroll(0)
+    }
+    scrollToHash()
+    window.addEventListener('hashchange', scrollToHash)
+    return () => window.removeEventListener('hashchange', scrollToHash)
+  }, [contentLoading, docId])
+
+
+  const preparePublishedContent = useCallback(async (rawContent: JSONContent | null | undefined) => {
+    if (!isExternalHelpCenter || !rawContent) return undefined
+    return prepareDocsContentForPublish(rawContent, {
+      uploadConfig: { workspaceId: wsId, entityType: 'editor_upload', entityId: docId },
+      diagramTheme: { brandColor: helpcenterConfig?.brand_color },
+    })
+  }, [docId, helpcenterConfig?.brand_color, isExternalHelpCenter, wsId])
 
   useTitle(displayedTitle || 'Document')
 
@@ -466,7 +989,8 @@ export function DocsDocumentDetail() {
       return
     }
     try {
-      await publishDoc.mutateAsync({ id: docId })
+      const publishedContent = await preparePublishedContent(content?.content as JSONContent | null | undefined)
+      await publishDoc.mutateAsync({ id: docId, published_content: publishedContent })
       toast.success('Document published')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to publish')
@@ -476,10 +1000,18 @@ export function DocsDocumentDetail() {
   const handleConfirmPublish = async () => {
     try {
       if (pendingPublishLocale && pendingPublishLocale !== defaultLocale) {
-        await publishArticleTranslation.mutateAsync({ locale: pendingPublishLocale, slug: pendingSlug })
+        const draft = translationDrafts[translationDraftKey(docId, pendingPublishLocale)]
+          ?? translationDraftFromTranslation(pendingPublishLocale, articleTranslationsByLocale.get(pendingPublishLocale) ?? null)
+        const publishedContent = await preparePublishedContent(draft.content as JSONContent | null | undefined)
+        await publishArticleTranslation.mutateAsync({
+          locale: pendingPublishLocale,
+          slug: pendingSlug,
+          published_content: publishedContent,
+        })
         toast.success(`${getHelpcenterLocaleLabel(pendingPublishLocale)} translation published`)
       } else {
-        await publishDoc.mutateAsync({ id: docId, slug: pendingSlug })
+        const publishedContent = await preparePublishedContent(content?.content as JSONContent | null | undefined)
+        await publishDoc.mutateAsync({ id: docId, slug: pendingSlug, published_content: publishedContent })
         toast.success('Document published')
       }
       setSlugDialogOpen(false)
@@ -539,8 +1071,12 @@ export function DocsDocumentDetail() {
       content: (draft.content as JSONContent | null) ?? { type: 'doc', content: [] },
       seo_title: title,
       seo_description: draft.excerpt.trim() || undefined,
+      og_title: activeTranslation?.og_title ?? undefined,
+      og_description: activeTranslation?.og_description ?? undefined,
+      og_image_url: activeTranslation?.og_image_url ?? undefined,
+      og_image_alt: activeTranslation?.og_image_alt ?? undefined,
     }
-  }, [])
+  }, [activeTranslation?.og_description, activeTranslation?.og_image_alt, activeTranslation?.og_image_url, activeTranslation?.og_title])
 
   const persistTranslationDraft = useCallback(async (draft: ArticleTranslationDraftState) => {
     const payload = buildTranslationPayload(draft)
@@ -658,7 +1194,8 @@ export function DocsDocumentDetail() {
           await docsService.publishCollectionTranslation(wsId, doc.collection_id, activeLocale)
         }
       }
-      await publishArticleTranslation.mutateAsync({ locale: activeLocale })
+      const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
+      await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
       toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
       setParentPublishConfirmOpen(false)
       queryClient.invalidateQueries({ queryKey: queryKeys.docs.documents(wsId) })
@@ -667,7 +1204,7 @@ export function DocsDocumentDetail() {
     } finally {
       setGeneratingParents(false)
     }
-  }, [activeLocale, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale, publishArticleTranslation, queryClient])
+  }, [activeLocale, activeTranslationDraft.content, doc, isSourceLocaleActive, wsId, spaceTranslationsByLocale, collectionTranslationsByLocale, preparePublishedContent, publishArticleTranslation, queryClient])
 
   const activeLocaleShortLabel = activeLocale.toUpperCase()
   const sourceLivePublished = isExternalHelpCenter ? !!doc?.live_published_at : doc?.status === 'published'
@@ -681,7 +1218,7 @@ export function DocsDocumentDetail() {
   const activePublishLabel = !isPublished
     ? `Publish${localeSuffix}`
     : hasUnpublishedChanges
-      ? `Update${localeSuffix}`
+      ? `Publish update${localeSuffix}`
       : `Published${localeSuffix}`
   const showContextualPublish = canPublishDocs && doc?.status !== 'archived'
   const parentTranslationsMissing = !isSourceLocaleActive && Boolean(activeLocaleRow?.publishBlockedReason)
@@ -704,6 +1241,10 @@ export function DocsDocumentDetail() {
           content_text: '',
           seo_title: undefined,
           seo_description: undefined,
+          og_title: undefined,
+          og_description: undefined,
+          og_image_url: undefined,
+          og_image_alt: undefined,
           status: 'draft' as const,
           source_updated_at: undefined,
           source_synced: true,
@@ -719,6 +1260,10 @@ export function DocsDocumentDetail() {
         excerpt: activeTranslationDraft.excerpt || undefined,
         seo_title: activeTranslationDraft.title || undefined,
         seo_description: activeTranslationDraft.excerpt || undefined,
+        og_title: activeTranslation?.og_title,
+        og_description: activeTranslation?.og_description,
+        og_image_url: activeTranslation?.og_image_url,
+        og_image_alt: activeTranslation?.og_image_alt,
         content: activeTranslationDraft.content,
       }
     : articleTranslationsByLocale.get(editingTranslationLocale ?? '') ?? null
@@ -754,8 +1299,11 @@ export function DocsDocumentDetail() {
 
   return (
     <div className="flex h-full flex-col">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {proposalStatusMessage}
+      </div>
       {/* Top bar */}
-      <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
+      <div className="relative z-30 flex items-center gap-2 border-b border-border/60 bg-background px-3 py-1.5">
         <Button
           variant="ghost"
           size="icon"
@@ -787,30 +1335,50 @@ export function DocsDocumentDetail() {
               </span>
             </button>
           )}
-          {doc.collection_id && (() => {
-            const col = collections.find((c) => c.id === doc.collection_id)
-            if (!col) return null
-            return (
-              <>
-                <ArrowRight01Icon className="h-3 w-3 shrink-0" />
-                <DocCollectionIcon name={col.icon} />
-                <span className="truncate">{col.name}</span>
-              </>
-            )
-          })()}
+          {collectionBreadcrumbNodes.map((node) => (
+            <div key={node.collection.id} className="flex min-w-0 items-center gap-1">
+              <ArrowRight01Icon className="h-3 w-3 shrink-0" />
+              <button
+                type="button"
+                onClick={() =>
+                  navigate({
+                    to: '/w/$slug/docs/spaces/$spaceId',
+                    params: { slug: wsSlug, spaceId: node.collection.space_id },
+                    search: { collection: node.collection.id },
+                  })
+                }
+                className="inline-flex min-w-0 items-center gap-1 truncate hover:text-foreground transition-colors"
+              >
+                <DocCollectionIcon name={node.collection.icon} />
+                <span className="truncate">{node.collection.name}</span>
+              </button>
+            </div>
+          ))}
         </nav>
 
-        {!showLocalePills && !(isPublished && hasUnpublishedChanges) && (
-          <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>
-            {DOC_STATUS_LABELS[doc.status] ?? doc.status}
+        {(editorSaveStatus !== 'idle' || editorLastSavedAt) && (
+          <span className="shrink-0">
+            <SaveIndicator status={editorSaveStatus} lastSavedAt={editorLastSavedAt} />
           </span>
         )}
 
-        {showContextualPublish && isPublished && hasUnpublishedChanges && (
-          <span className="shrink-0 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-            Unpublished changes
-          </span>
-        )}
+        {!showLocalePills && (() => {
+          if (doc.status === 'archived') {
+            return <span className={`shrink-0 text-xs font-medium ${docStatusColor(doc.status)}`}>Archived</span>
+          }
+          if (!isPublished) {
+            return <span className={`shrink-0 text-xs font-medium ${docStatusColor('draft')}`}>Draft</span>
+          }
+          const audience = isExternalHelpCenter ? 'help center' : 'internal'
+          return (
+            <span className="shrink-0 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              Published · {audience}
+              {hasUnpublishedChanges && (
+                <span className="ml-1 text-amber-600 dark:text-amber-400"> · Unpublished changes</span>
+              )}
+            </span>
+          )
+        })()}
 
         {headerPresencePeople.length > 0 && (
           <div className={`hidden shrink-0 items-center gap-2 rounded-full border px-2.5 py-1 md:flex ${
@@ -880,13 +1448,13 @@ export function DocsDocumentDetail() {
           </Button>
         )}
 
-        {showContextualPublish && (
+        {showContextualPublish && !(isPublished && !hasUnpublishedChanges) && (
           <>
             <Button
               size="sm"
-              variant={isPublished && !hasUnpublishedChanges ? 'secondary' : 'default'}
+              variant="default"
               className="h-7 gap-1.5 text-xs"
-              onClick={() => {
+              onClick={async () => {
                 if (isSourceLocaleActive) {
                   void handlePublish()
                   return
@@ -901,10 +1469,13 @@ export function DocsDocumentDetail() {
                   setParentPublishConfirmOpen(true)
                   return
                 }
-                publishArticleTranslation.mutate({ locale: activeLocale }, {
-                  onSuccess: () => toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`),
-                  onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to publish translation'),
-                })
+                try {
+                  const publishedContent = await preparePublishedContent(activeTranslationDraft.content as JSONContent | null | undefined)
+                  await publishArticleTranslation.mutateAsync({ locale: activeLocale, published_content: publishedContent })
+                  toast.success(`${getHelpcenterLocaleLabel(activeLocale)} translation published`)
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'Failed to publish translation')
+                }
               }}
               disabled={publishDisabled}
             >
@@ -914,12 +1485,12 @@ export function DocsDocumentDetail() {
           </>
         )}
 
-        <QuickTooltip label="Document details">
+        <QuickTooltip label={railOpen ? 'Hide details' : 'Show details'}>
           <Button
             variant="ghost"
             size="icon"
             className="h-8 w-8 shrink-0"
-            onClick={() => setMetaOpen((v) => !v)}
+            onClick={toggleRail}
           >
             <MoreHorizontalIcon className="h-4 w-4" />
           </Button>
@@ -1053,10 +1624,80 @@ export function DocsDocumentDetail() {
         </div>
       )}
 
+      {!previewVersion && visibleChangeProposal && (
+        <DocsPendingProposalsBanner
+          proposal={visibleChangeProposal}
+          count={changeProposals.length}
+          onReview={() => setProposalSearchId(visibleChangeProposal.id)}
+        />
+      )}
+
       {/* Main content area */}
+      {proposalSearchId ? (
+        searchedChangeProposalLoading ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+            <Loading01Icon className="mr-2 h-4 w-4 animate-spin" />
+            Loading proposal…
+          </div>
+        ) : searchedChangeProposalError || !activeReviewProposal ? (
+          <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+            <div className="max-w-md text-center">
+              <h2 className="text-lg font-semibold text-foreground">This proposal is no longer available</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {searchedChangeProposalFetchError instanceof Error
+                  ? searchedChangeProposalFetchError.message
+                  : 'It may have been removed, or you may not have access to view it.'}
+              </p>
+              <Button className="mt-4" variant="outline" onClick={() => setProposalSearchId(null)}>
+                Back to document
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <ProposalReviewView
+            proposal={activeReviewProposal}
+            pendingProposals={changeProposals}
+            currentText={content?.content_text ?? ''}
+            canEdit={canEditDocs && !effectiveReadOnly}
+            applying={applyChangeProposal.isPending}
+            discarding={discardChangeProposal.isPending}
+            workspaceSlug={wsSlug}
+            onBack={() => setProposalSearchId(null)}
+            onApply={handleApplyChangeProposal}
+            onDiscard={handleDiscardChangeProposal}
+            onSelectProposal={setProposalSearchId}
+          />
+        )
+      ) : (
       <div className="flex min-h-0 flex-1">
         {/* Editor */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div ref={setEditorShellRef} className="relative flex min-w-0 flex-1 flex-col">
+          {/* Right-side scrollspy outline minimap */}
+          <DocsOutlineMinimap
+            items={outlineItems}
+            scrollContainer={editorShellEl}
+            onSelect={handleOutlineSelect}
+          />
+          {/* Inline side comments + per-block comment trigger */}
+          {showInlineComments && (
+            <CommentSideGutter
+              editor={editorInstance}
+              workspaceId={wsId}
+              docId={docId}
+              comments={comments}
+              currentUserId={currentUserId}
+              members={members}
+              teams={teams}
+              composingAnchor={commentAnchor}
+              onCommentsChange={setComments}
+              onComposingAnchorConsumed={() => setCommentAnchor(null)}
+              activeCommentId={activeCommentId}
+            />
+          )}
+          <BlockCommentTrigger
+            editor={editorInstance}
+            onComment={(anchor) => handleCreateCommentAnchor(anchor)}
+          />
           {previewVersion ? (
             <DocsEditor
               key={`preview-${previewVersion.id}`}
@@ -1064,6 +1705,17 @@ export function DocsDocumentDetail() {
               initialContent={previewVersion.content as JSONContent | null}
               onSave={handleSave}
               readOnly
+              members={members}
+              teams={teams}
+              agents={documentAgents}
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              documentId={docId}
+              onSaveStatusChange={handleEditorSaveStatusChange}
+              onEditorReady={setEditorInstance}
+              hasSideComments={hasVisibleInlineComments}
+              commentAnchors={commentAnchors}
+              onOpenComment={handleOpenComment}
             />
           ) : (
             <DocsEditor
@@ -1071,18 +1723,13 @@ export function DocsDocumentDetail() {
               title={isSourceLocaleActive ? titleDraft : activeTranslationDraft.title}
               onTitleChange={!effectiveReadOnly ? (isSourceLocaleActive ? handleTitleChange : handleTranslationTitleChange) : undefined}
               slug={isSourceLocaleActive ? doc?.hc_slug : activeTranslationDraft.slug}
-              slugHelperText={
-                isPublished && hasUnpublishedChanges
-                  ? 'Slug changes will go live when you update this article.'
-                  : undefined
-              }
               onSlugChange={
                 isSourceLocaleActive
                   ? doc?.hc_slug && !effectiveReadOnly
                     ? async (newSlug) => {
                         const res = await docsService.updateArticleSlug(wsId, docId, newSlug)
                         if (res.error) throw new Error(res.error)
-                        toast.success(sourceLivePublished ? 'Slug saved. It will go live when you update the article.' : 'Slug saved')
+                        toast.success(sourceLivePublished ? 'Slug saved. It will take effect when you publish an update.' : 'Slug saved')
                         queryClient.invalidateQueries({ queryKey: queryKeys.docs.document(wsId, docId) })
                       }
                     : undefined
@@ -1092,14 +1739,18 @@ export function DocsDocumentDetail() {
                         if (res.error) throw new Error(res.error)
                         toast.success(
                           translationLivePublished
-                            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will go live when you update the translation.`
+                            ? `${getHelpcenterLocaleLabel(activeLocale)} slug saved. It will take effect when you publish an update.`
                             : `${getHelpcenterLocaleLabel(activeLocale)} slug saved`,
                         )
                         queryClient.invalidateQueries({ queryKey: queryKeys.docs.helpcenterArticleTranslations(wsId, docId) })
                       }
                     : undefined
               }
-              initialContent={isSourceLocaleActive ? (content?.content as JSONContent | null) : activeTranslationDraft.content}
+              initialContent={
+                isSourceLocaleActive
+                  ? coverageInitialContent ?? (content?.content as JSONContent | null)
+                  : activeTranslationDraft.content
+              }
               onSave={isSourceLocaleActive ? handleSave : handleTranslationContentSave}
               readOnly={effectiveReadOnly}
               uploadConfig={
@@ -1113,13 +1764,44 @@ export function DocsDocumentDetail() {
                   : null
               }
               onEditingPresenceChange={!effectiveReadOnly && !previewVersion ? handleEditingPresenceChange : undefined}
+              onCreateCommentAnchor={!effectiveReadOnly ? handleCreateCommentAnchor : undefined}
+              commentAnchors={commentAnchors}
+              onOpenComment={handleOpenComment}
+              members={members}
+              teams={teams}
+              agents={documentAgents}
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              documentId={docId}
+              onSaveStatusChange={handleEditorSaveStatusChange}
+              onEditorReady={setEditorInstance}
+              hasSideComments={hasVisibleInlineComments}
             />
           )}
         </div>
 
-        {/* Metadata sidebar */}
-        {metaOpen && (
-          <aside className="w-64 shrink-0 overflow-y-auto border-l border-border/60 px-4 py-5">
+        {/* Right rail: swap between Overview / Comments / History / Linked / References */}
+        {railOpen && (
+          <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden border-l border-border/60">
+            <DocsRailHeader
+              title={
+                railView === 'comments' ? 'Comments'
+                : railView === 'history' ? 'Version history'
+                : railView === 'linked' ? 'Linked items'
+                : railView === 'references' ? 'References'
+                : 'Document'
+              }
+              count={
+                railView === 'comments' ? comments.length
+                : railView === 'references' ? references.length
+                : undefined
+              }
+              onBack={railView !== 'overview' ? goToRailOverview : undefined}
+              onClose={closeRail}
+            />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+            {railView === 'overview' && (
+              <div className="px-5 py-5">
 
             {/* ── Document/Translation status ── */}
             {showLocalePills && isSourceLocaleActive && (
@@ -1135,7 +1817,9 @@ export function DocsDocumentDetail() {
                     doc.status === 'archived' ? 'text-muted-foreground' :
                     'text-amber-600 dark:text-amber-400'
                   }`}>
-                    {doc.status === 'published' ? 'Published' : doc.status === 'archived' ? 'Archived' : 'Draft'}
+                    {doc.status === 'published'
+                      ? `Published · ${isExternalHelpCenter ? 'help center' : 'internal'}`
+                      : doc.status === 'archived' ? 'Archived' : 'Draft'}
                   </span>
                 </div>
                 <Separator className="my-4" />
@@ -1154,8 +1838,79 @@ export function DocsDocumentDetail() {
                     activeTranslationStatus === 'needs_review' ? 'text-blue-600 dark:text-blue-400' :
                     'text-amber-600 dark:text-amber-400'
                   }`}>
-                    {activeTranslationStatus === 'published' ? 'Published' : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
+                    {activeTranslationStatus === 'published'
+                      ? `Published · ${isExternalHelpCenter ? 'help center' : 'internal'}`
+                      : activeTranslationStatus === 'needs_review' ? 'Needs review' : 'Draft'}
                   </span>
+                </div>
+                <Separator className="my-4" />
+              </>
+            )}
+
+            {/* ── Social metadata (source locale only) ── */}
+            {isExternalHelpCenter && isSourceLocaleActive && canEditDocs && (
+              <>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-1.5">
+                    <GlobeIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">Social preview</span>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-title" className="text-[11px] text-muted-foreground">Title</Label>
+                    <Input
+                      id="doc-og-title"
+                      value={sourceSocialDraft.og_title}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_title: event.target.value }))}
+                      placeholder={titleDraft || 'Article title'}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-description" className="text-[11px] text-muted-foreground">Description</Label>
+                    <Textarea
+                      id="doc-og-description"
+                      value={sourceSocialDraft.og_description}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_description: event.target.value }))}
+                      placeholder={doc.excerpt || 'Article summary'}
+                      rows={3}
+                      className="min-h-20 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-image" className="text-[11px] text-muted-foreground">Image URL</Label>
+                    <div className="flex gap-1.5">
+                      <Input
+                        id="doc-og-image"
+                        value={sourceSocialDraft.og_image_url}
+                        onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_image_url: event.target.value }))}
+                        placeholder="https://..."
+                        className="h-8 text-xs"
+                      />
+                      <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-xs" disabled={uploadingSourceOGImage} onClick={() => sourceOGImageInputRef.current?.click()}>
+                        {uploadingSourceOGImage ? '...' : 'Upload'}
+                      </Button>
+                      <input
+                        ref={sourceOGImageInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(event) => void handleUploadSourceOGImage(event.target.files?.[0])}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="doc-og-image-alt" className="text-[11px] text-muted-foreground">Image Alt</Label>
+                    <Input
+                      id="doc-og-image-alt"
+                      value={sourceSocialDraft.og_image_alt}
+                      onChange={(event) => setSourceSocialDraft((prev) => ({ ...prev, og_image_alt: event.target.value }))}
+                      placeholder={titleDraft || 'Article preview image'}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <Button type="button" size="sm" className="h-8 w-full text-xs" disabled={savingSourceSocial || doc.is_locked} onClick={() => void handleSaveSourceSocial()}>
+                    {savingSourceSocial ? 'Saving...' : 'Save social preview'}
+                  </Button>
                 </div>
                 <Separator className="my-4" />
               </>
@@ -1209,33 +1964,54 @@ export function DocsDocumentDetail() {
               {/* Owner (source only) */}
               {isSourceLocaleActive && (<>
               <UserIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Owner</span>
+              <span className="text-sm text-muted-foreground self-center">Owner</span>
               <div className="min-w-0 self-center">
                 {canEditDocs && !doc.is_locked ? (
                   <MemberPickerPopover
                     value={doc.owner_id ?? '__none__'}
                     members={members}
                     onChange={(id) =>
-                      patchDoc({ owner_id: id === '__none__' ? null : id })
+                      patchDoc({ owner_id: id === '__none__' ? '' : id })
                     }
                     noneLabel="Unassigned"
                     renderTrigger={() => {
                       const owner = members.find((m) => m.id === doc.owner_id)
-                      if (!owner) return <span className="text-xs text-muted-foreground">Unassigned</span>
+                      if (!owner) return <span className="text-sm text-muted-foreground">Unassigned</span>
                       return (
-                        <span className="truncate text-xs">
-                          {formatAssignableMemberName(owner)}
-                        </span>
+                        <>
+                          <UserAvatar
+                            name={owner.display_name || owner.email}
+                            avatarUrl={owner.avatar_url}
+                            avatarStyle={owner.avatar_style}
+                            avatarSeed={owner.avatar_seed}
+                            avatarBackgroundMode={owner.avatar_background_mode}
+                            avatarBackgroundColor={owner.avatar_background_color}
+                            className="h-4 w-4 shrink-0"
+                            fallbackClassName="text-[7px]"
+                          />
+                          <span className="truncate text-sm">{formatAssignableMemberName(owner)}</span>
+                        </>
                       )
                     }}
                   />
                 ) : (
                   (() => {
                     const owner = members.find((m) => m.id === doc.owner_id)
-                    return owner ? (
-                      <span className="truncate text-xs">{formatAssignableMemberName(owner)}</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Unassigned</span>
+                    if (!owner) return <span className="text-sm text-muted-foreground">Unassigned</span>
+                    return (
+                      <span className="inline-flex items-center gap-1.5 min-w-0">
+                        <UserAvatar
+                          name={owner.display_name || owner.email}
+                          avatarUrl={owner.avatar_url}
+                          avatarStyle={owner.avatar_style}
+                          avatarSeed={owner.avatar_seed}
+                          avatarBackgroundMode={owner.avatar_background_mode}
+                          avatarBackgroundColor={owner.avatar_background_color}
+                          className="h-4 w-4 shrink-0"
+                          fallbackClassName="text-[7px]"
+                        />
+                        <span className="truncate text-sm">{formatAssignableMemberName(owner)}</span>
+                      </span>
                     )
                   })()
                 )}
@@ -1243,22 +2019,32 @@ export function DocsDocumentDetail() {
 
               {/* Created by */}
               <UserCheck01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Created by</span>
+              <span className="text-sm text-muted-foreground self-center">Created by</span>
               <div className="min-w-0 self-center">
                 {(() => {
                   const creator = members.find((m) => m.user_id === doc.created_by)
-                  return creator ? (
-                    <span className="truncate text-xs">{formatAssignableMemberName(creator)}</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Unknown</span>
+                  if (!creator) return <span className="text-sm text-muted-foreground">Unknown</span>
+                  return (
+                    <span className="inline-flex items-center gap-1.5 min-w-0">
+                      <UserAvatar
+                        name={creator.display_name || creator.email}
+                        avatarUrl={creator.avatar_url}
+                        avatarStyle={creator.avatar_style}
+                        avatarSeed={creator.avatar_seed}
+                        avatarBackgroundMode={creator.avatar_background_mode}
+                        avatarBackgroundColor={creator.avatar_background_color}
+                        className="h-4 w-4 shrink-0"
+                        fallbackClassName="text-[7px]"
+                      />
+                      <span className="truncate text-sm">{formatAssignableMemberName(creator)}</span>
+                    </span>
                   )
                 })()}
               </div>
 
               {/* Collection */}
               <FolderOpenIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-
-              <span className="text-xs text-muted-foreground self-center">Collection</span>
+              <span className="text-sm text-muted-foreground self-center">Collection</span>
               <div className="min-w-0 self-center">
                 {canEditDocs && !doc.is_locked ? (
                   <Select
@@ -1295,7 +2081,7 @@ export function DocsDocumentDetail() {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <span className="text-xs">
+                  <span className="text-sm">
                     {collections.find((c) => c.id === doc.collection_id)?.name ?? 'None'}
                   </span>
                 )}
@@ -1304,25 +2090,25 @@ export function DocsDocumentDetail() {
 
               {/* Created */}
               <Calendar03Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Created</span>
+              <span className="text-sm text-muted-foreground self-center">Created</span>
               <div className="min-w-0 self-center">
-                <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.created_at ? activeTranslation.created_at : doc.created_at)}</span>
+                <span className="text-sm">{timeAgo(!isSourceLocaleActive && activeTranslation?.created_at ? activeTranslation.created_at : doc.created_at)}</span>
               </div>
 
               {/* Updated */}
               <Clock01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-              <span className="text-xs text-muted-foreground self-center">Updated</span>
+              <span className="text-sm text-muted-foreground self-center">Updated</span>
               <div className="min-w-0 self-center">
-                <span className="text-xs">{timeAgo(!isSourceLocaleActive && activeTranslation?.updated_at ? activeTranslation.updated_at : doc.updated_at)}</span>
+                <span className="text-sm">{timeAgo(!isSourceLocaleActive && activeTranslation?.updated_at ? activeTranslation.updated_at : doc.updated_at)}</span>
               </div>
 
               {/* Published */}
               {(isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at) && (
                 <>
                   <GlobeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                  <span className="text-xs text-muted-foreground self-center">Published</span>
+                  <span className="text-sm text-muted-foreground self-center">Published</span>
                   <div className="min-w-0 self-center">
-                    <span className="text-xs">{timeAgo((isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at)!)}</span>
+                    <span className="text-sm">{timeAgo((isSourceLocaleActive ? doc.published_at : activeTranslation?.published_at)!)}</span>
                   </div>
                 </>
               )}
@@ -1335,19 +2121,45 @@ export function DocsDocumentDetail() {
               <div className="space-y-1">
                 <button
                   type="button"
-                  onClick={() => { setVersionsOpen(true); setMetaOpen(false) }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  onClick={() => setRailView('history')}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
                 >
-                  <Clock01Icon className="h-3.5 w-3.5" />
+                  <Clock01Icon className="h-4 w-4 text-muted-foreground" />
                   Version History
                 </button>
                 <button
                   type="button"
-                  onClick={() => setLinksOpen(true)}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  onClick={() => setRailView('linked')}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
                 >
-                  <LinkSquare01Icon className="h-3.5 w-3.5" />
+                  <LinkSquare01Icon className="h-4 w-4 text-muted-foreground" />
                   Linked Items
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRailView('comments')}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                >
+                  <Message01Icon className="h-4 w-4 text-muted-foreground" />
+                  Comments
+                  {comments.length > 0 && (
+                    <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                      {comments.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRailView('references')}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                >
+                  <Link01Icon className="h-4 w-4 text-muted-foreground" />
+                  References
+                  {references.length > 0 && (
+                    <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                      {references.length}
+                    </span>
+                  )}
                 </button>
               </div>
               </>
@@ -1368,9 +2180,9 @@ export function DocsDocumentDetail() {
                         })
                       }}
                       disabled={markArticleTranslationReviewed.isPending}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      <Tick01Icon className="h-3.5 w-3.5" />
+                      <Tick01Icon className="h-4 w-4 text-muted-foreground" />
                       Mark as reviewed
                     </button>
                   )}
@@ -1384,9 +2196,9 @@ export function DocsDocumentDetail() {
                         })
                       }}
                       disabled={unpublishArticleTranslation.isPending}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      <RotateLeft01Icon className="h-3.5 w-3.5" />
+                      <RotateLeft01Icon className="h-4 w-4 text-muted-foreground" />
                       Unpublish translation
                     </button>
                   )}
@@ -1394,12 +2206,36 @@ export function DocsDocumentDetail() {
               </>
             )}
 
-            {/* ── Document Actions (source locale) ── */}
-            {isSourceLocaleActive && canEditDocs && (
+            {/* ── Move to draft (high-frequency action; inline) ── */}
+            {isSourceLocaleActive && canEditDocs && doc.status === 'published' && (
               <>
                 <Separator className="my-4" />
-                <div className="space-y-1">
-                  {/* Lock/unlock: only show if user can toggle (can lock when unlocked, can unlock when locked) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const publishedTranslationCount = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').length
+                    if (publishedTranslationCount > 0) {
+                      setRevertConfirmOpen(true)
+                      return
+                    }
+                    unpublishDoc.mutate(docId, {
+                      onSuccess: () => toast.success('Moved to draft'),
+                      onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to move to draft'),
+                    })
+                  }}
+                  disabled={unpublishDoc.isPending || doc.is_locked}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  <RotateLeft01Icon className="h-4 w-4 text-muted-foreground" />
+                  Move to draft
+                </button>
+              </>
+            )}
+
+            {/* ── Less-frequent actions (collapsed by default) ── */}
+            {isSourceLocaleActive && canEditDocs && (
+              <div className="-mx-4 mt-4">
+                <RailSection title="Actions" defaultOpen={false}>
                   {(!doc.is_locked || canUnlock) && (
                     <button
                       type="button"
@@ -1414,40 +2250,19 @@ export function DocsDocumentDetail() {
                         )
                       }}
                       disabled={toggleLock.isPending}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      {doc.is_locked ? <SquareUnlock01Icon className="h-3.5 w-3.5" /> : <LockIcon className="h-3.5 w-3.5" />}
+                      {doc.is_locked ? <SquareUnlock01Icon className="h-4 w-4 text-muted-foreground" /> : <LockIcon className="h-4 w-4 text-muted-foreground" />}
                       {doc.is_locked ? 'Unlock document' : 'Lock document'}
-                    </button>
-                  )}
-                  {doc.status === 'published' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const publishedTranslationCount = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').length
-                        if (publishedTranslationCount > 0) {
-                          setRevertConfirmOpen(true)
-                          return
-                        }
-                        unpublishDoc.mutate(docId, {
-                          onSuccess: () => toast.success('Reverted to draft'),
-                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
-                        })
-                      }}
-                      disabled={unpublishDoc.isPending || doc.is_locked}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                      <RotateLeft01Icon className="h-3.5 w-3.5" />
-                      Revert to draft
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => setMoveDialogOpen(true)}
                     disabled={doc.is_locked}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <FolderInputIcon className="h-3.5 w-3.5" />
+                    <FolderInputIcon className="h-4 w-4 text-muted-foreground" />
                     Move to...
                   </button>
                   {doc.status !== 'archived' && (
@@ -1455,9 +2270,9 @@ export function DocsDocumentDetail() {
                       type="button"
                       onClick={handleArchive}
                       disabled={doc.is_locked}
-                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground disabled:opacity-50 disabled:pointer-events-none"
                     >
-                      <ArchiveIcon className="h-3.5 w-3.5" />
+                      <ArchiveIcon className="h-4 w-4 text-muted-foreground" />
                       Archive
                     </button>
                   )}
@@ -1465,38 +2280,107 @@ export function DocsDocumentDetail() {
                     type="button"
                     onClick={() => setDeleteConfirmOpen(true)}
                     disabled={doc.is_locked}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50 disabled:pointer-events-none"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <Delete01Icon className="h-3.5 w-3.5" />
+                    <Delete01Icon className="h-4 w-4 text-muted-foreground" />
                     Delete
                   </button>
-                </div>
-              </>
+                </RailSection>
+              </div>
             )}
+              </div>
+            )}
+            {railView === 'comments' && (
+              <div className="p-4">
+                {commentsLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                    Loading comments...
+                  </div>
+                ) : (
+                  <CommentThread
+                    workspaceId={wsId}
+                    entityType="doc"
+                    entityId={docId}
+                    comments={comments}
+                    currentUserId={currentUserId}
+                    teams={teams}
+                    members={members}
+                    commentService={docsCommentService}
+                    attachmentsEnabled={false}
+                    commentAnchor={commentAnchor}
+                    activeCommentId={activeCommentId}
+                    onCommentAnchorConsumed={() => setCommentAnchor(null)}
+                    onCommentsChange={setComments}
+                  />
+                )}
+              </div>
+            )}
+            {railView === 'history' && (
+              <VersionHistoryPanel
+                wsId={wsId}
+                docId={docId}
+                open
+                embedded
+                onClose={() => { setRailView(null); setPreviewVersion(null) }}
+                onPreview={handlePreview}
+                members={members}
+                canEdit={canEditDocs}
+                previewingVersionId={previewVersion?.id}
+              />
+            )}
+            {railView === 'linked' && (
+              <DocumentLinksPanel
+                wsId={wsId}
+                docId={docId}
+                open
+                embedded
+                onOpenChange={(open) => { if (!open) setRailView(null) }}
+                canEdit={canEditDocs}
+              />
+            )}
+            {railView === 'references' && (
+              <div className="p-4">
+                {referencesLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loading01Icon className="h-3.5 w-3.5 animate-spin" />
+                    Loading references...
+                  </div>
+                ) : references.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-border/70 p-3 text-xs text-muted-foreground">
+                    No references yet.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {references.map((item) => (
+                      <div key={item.id} className="rounded-md border border-border/60 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-medium">{item.title}</span>
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                            {item.kind.replaceAll('_', ' ')}
+                          </span>
+                        </div>
+                        {item.description && (
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
+                        )}
+                        {(item.block_id || item.entity_type) && (
+                          <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                            {item.entity_type && <span className="rounded bg-muted px-1.5 py-0.5">{item.entity_type}</span>}
+                            {item.block_id && <span className="rounded bg-muted px-1.5 py-0.5">Block</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
           </aside>
         )}
 
-        {/* Version history — inline sidebar */}
-        <VersionHistoryPanel
-          wsId={wsId}
-          docId={docId}
-          open={versionsOpen}
-          onClose={() => { setVersionsOpen(false); setPreviewVersion(null) }}
-          onPreview={handlePreview}
-          members={members}
-          canEdit={canEditDocs}
-          previewingVersionId={previewVersion?.id}
-        />
       </div>
-
-      {/* Slide-out panels */}
-      <DocumentLinksPanel
-        wsId={wsId}
-        docId={docId}
-        open={linksOpen}
-        onOpenChange={setLinksOpen}
-        canEdit={canEditDocs}
-      />
+      )}
 
       {editingTranslationLocale && (
         <EditArticleTranslationDialog
@@ -1597,21 +2481,20 @@ export function DocsDocumentDetail() {
       <ConfirmDialog
         open={revertConfirmOpen}
         onOpenChange={setRevertConfirmOpen}
-        title="Revert to draft"
+        title="Move to draft"
         variant="destructive"
         description={(() => {
           const count = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').length
-          return `This will revert the source article and ${count} published translation${count !== 1 ? 's' : ''} to draft. They will no longer be visible on the public help center.`
+          return `This will move the source article and ${count} published translation${count !== 1 ? 's' : ''} back to draft. They will no longer be visible on the public help center.`
         })()}
-        confirmLabel="Revert all to draft"
+        confirmLabel="Move all to draft"
         onConfirm={() => {
-          // Unpublish all published translations first, then the source
           const publishedLocales = articleTranslationRows.filter(r => !r.isDefaultLocale && r.state === 'published').map(r => r.locale)
           Promise.all(publishedLocales.map(locale => unpublishArticleTranslation.mutateAsync(locale).catch(() => {})))
             .then(() => {
               unpublishDoc.mutate(docId, {
-                onSuccess: () => toast.success(`Reverted to draft (${publishedLocales.length} translation${publishedLocales.length !== 1 ? 's' : ''} also reverted)`),
-                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to revert'),
+                onSuccess: () => toast.success(`Moved to draft (${publishedLocales.length} translation${publishedLocales.length !== 1 ? 's' : ''} also moved)`),
+                onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to move to draft'),
               })
             })
           setRevertConfirmOpen(false)

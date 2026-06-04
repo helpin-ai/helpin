@@ -79,6 +79,183 @@ func TestPMTaskRepository_MemberBoardOrdering(t *testing.T) {
 	})
 }
 
+func TestPMTaskRepository_ListFiltersByOwnerMemberIDsFromJoinTable(t *testing.T) {
+	t.Parallel()
+
+	db := newPMTaskMemberBoardTestDB(t)
+	repo := NewPMTaskRepository(db)
+	ctx := context.Background()
+
+	const (
+		workspaceID = "ws-owner-filter"
+		workflowID  = "wf-owner-filter"
+		todoStateID = "state-owner-filter-todo"
+	)
+
+	seedPMTaskMemberBoardUser(t, db, "user-alice", "alice-owner-filter@test.com", "Alice Owner")
+	seedPMTaskMemberBoardUser(t, db, "user-bob", "bob-owner-filter@test.com", "Bob Owner")
+	seedPMTaskMemberBoardUser(t, db, "user-charlie", "charlie-owner-filter@test.com", "Charlie Owner")
+	seedPMTaskMemberBoardWorkspace(t, db, workspaceID, "user-alice")
+	seedPMTaskMemberBoardMember(t, db, "member-alice", workspaceID, "user-alice", "Alice Owner")
+	seedPMTaskMemberBoardMember(t, db, "member-bob", workspaceID, "user-bob", "Bob Owner")
+	seedPMTaskMemberBoardMember(t, db, "member-charlie", workspaceID, "user-charlie", "Charlie Owner")
+	seedPMTaskMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, "state-owner-filter-doing", "state-owner-filter-done")
+
+	now := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
+	insertPMTaskMemberBoardTask(t, db, "task-owned", workspaceID, workflowID, todoStateID, "", 1, 0, now)
+	insertPMTaskMemberBoardTask(t, db, "task-unassigned", workspaceID, workflowID, todoStateID, "", 2, 1, now.Add(time.Minute))
+	seedPMTaskOwner(t, db, "task-owned", "user-alice", now)
+	seedPMTaskOwner(t, db, "task-owned", "user-bob", now.Add(time.Second))
+
+	t.Run("single owner member matches any task where that member is an owner", func(t *testing.T) {
+		tasks, _, err := repo.List(ctx, workspaceID, model.PMTaskFilters{OwnerMemberIDs: []string{"member-alice"}}, model.PMPagination{Page: 1, PerPage: 20})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if got := taskIDsFromBoardTasks(tasks); len(got) != 1 || got[0] != "task-owned" {
+			t.Fatalf("task ids = %v, want [task-owned]", got)
+		}
+	})
+
+	t.Run("multiple owner members use set overlap", func(t *testing.T) {
+		tasks, _, err := repo.List(ctx, workspaceID, model.PMTaskFilters{OwnerMemberIDs: []string{"member-bob", "member-charlie"}}, model.PMPagination{Page: 1, PerPage: 20})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		if got := taskIDsFromBoardTasks(tasks); len(got) != 1 || got[0] != "task-owned" {
+			t.Fatalf("task ids = %v, want [task-owned]", got)
+		}
+	})
+
+	t.Run("empty owner member filter does not filter", func(t *testing.T) {
+		tasks, _, err := repo.List(ctx, workspaceID, model.PMTaskFilters{}, model.PMPagination{Page: 1, PerPage: 20})
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		got := taskIDsFromBoardTasks(tasks)
+		want := []string{"task-owned", "task-unassigned"}
+		if len(got) != len(want) {
+			t.Fatalf("task ids = %v, want %v", got, want)
+		}
+		for _, id := range want {
+			if !containsString(got, id) {
+				t.Fatalf("task ids = %v, want to contain %q", got, id)
+			}
+		}
+	})
+}
+
+func TestPMTaskRepository_MemberBoardUsesTaskOwnersJoinTable(t *testing.T) {
+	t.Parallel()
+
+	db := newPMTaskMemberBoardTestDB(t)
+	repo := NewPMTaskRepository(db)
+	ctx := context.Background()
+
+	const (
+		workspaceID = "ws-member-board-owners"
+		workflowID  = "wf-member-board-owners"
+		todoStateID = "state-member-board-owners-todo"
+	)
+
+	seedPMTaskMemberBoardUser(t, db, "user-owner-a", "owner-a@test.com", "Owner A")
+	seedPMTaskMemberBoardUser(t, db, "user-owner-b", "owner-b@test.com", "Owner B")
+	seedPMTaskMemberBoardWorkspace(t, db, workspaceID, "user-owner-a")
+	seedPMTaskMemberBoardMember(t, db, "member-owner-a", workspaceID, "user-owner-a", "Owner A")
+	seedPMTaskMemberBoardMember(t, db, "member-owner-b", workspaceID, "user-owner-b", "Owner B")
+	seedPMTaskMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, "state-member-board-owners-doing", "state-member-board-owners-done")
+
+	now := time.Date(2026, 5, 5, 13, 0, 0, 0, time.UTC)
+	insertPMTaskMemberBoardTask(t, db, "task-two-owners", workspaceID, workflowID, todoStateID, "", 1, 0, now)
+	insertPMTaskMemberBoardTask(t, db, "task-no-owners", workspaceID, workflowID, todoStateID, "", 2, 1, now.Add(time.Minute))
+	seedPMTaskOwner(t, db, "task-two-owners", "user-owner-a", now)
+	seedPMTaskOwner(t, db, "task-two-owners", "user-owner-b", now.Add(time.Second))
+
+	columns, err := repo.ListByMember(ctx, workspaceID, workflowID, model.PMTaskFilters{}, 10, false, nil)
+	if err != nil {
+		t.Fatalf("ListByMember: %v", err)
+	}
+
+	tasksByColumn := map[string][]string{}
+	for _, column := range columns {
+		key := "__unassigned__"
+		if column.Member != nil {
+			key = column.Member.ID
+		}
+		tasksByColumn[key] = taskIDsFromBoardTasks(column.Tasks)
+	}
+
+	if got := tasksByColumn["member-owner-a"]; len(got) != 1 || got[0] != "task-two-owners" {
+		t.Fatalf("member-owner-a tasks = %v, want [task-two-owners]", got)
+	}
+	if got := tasksByColumn["member-owner-b"]; len(got) != 1 || got[0] != "task-two-owners" {
+		t.Fatalf("member-owner-b tasks = %v, want [task-two-owners]", got)
+	}
+	if got := tasksByColumn["__unassigned__"]; len(got) != 1 || got[0] != "task-no-owners" {
+		t.Fatalf("unassigned tasks = %v, want [task-no-owners]", got)
+	}
+
+	memberTasks, total, err := repo.ListMemberColumnTasks(ctx, workspaceID, workflowID, testStringPtr("member-owner-b"), model.PMTaskFilters{}, 0, 10)
+	if err != nil {
+		t.Fatalf("ListMemberColumnTasks member: %v", err)
+	}
+	if got := taskIDsFromBoardTasks(memberTasks); total != 1 || len(got) != 1 || got[0] != "task-two-owners" {
+		t.Fatalf("member column total/tasks = %d/%v, want 1/[task-two-owners]", total, got)
+	}
+
+	unassignedTasks, total, err := repo.ListMemberColumnTasks(ctx, workspaceID, workflowID, nil, model.PMTaskFilters{}, 0, 10)
+	if err != nil {
+		t.Fatalf("ListMemberColumnTasks unassigned: %v", err)
+	}
+	if got := taskIDsFromBoardTasks(unassignedTasks); total != 1 || len(got) != 1 || got[0] != "task-no-owners" {
+		t.Fatalf("unassigned column total/tasks = %d/%v, want 1/[task-no-owners]", total, got)
+	}
+}
+
+func TestPMTaskRepository_GetByIDHydratesOwnerMemberIDsFromJoinTable(t *testing.T) {
+	t.Parallel()
+
+	db := newPMTaskMemberBoardTestDB(t)
+	repo := NewPMTaskRepository(db)
+	ctx := context.Background()
+
+	const (
+		workspaceID = "ws-task-detail-owners"
+		workflowID  = "wf-task-detail-owners"
+		todoStateID = "state-task-detail-owners-todo"
+	)
+
+	seedPMTaskMemberBoardUser(t, db, "user-detail-a", "detail-a@test.com", "Detail A")
+	seedPMTaskMemberBoardUser(t, db, "user-detail-b", "detail-b@test.com", "Detail B")
+	seedPMTaskMemberBoardWorkspace(t, db, workspaceID, "user-detail-a")
+	seedPMTaskMemberBoardMember(t, db, "member-detail-a", workspaceID, "user-detail-a", "Detail A")
+	seedPMTaskMemberBoardMember(t, db, "member-detail-b", workspaceID, "user-detail-b", "Detail B")
+	seedPMTaskMemberBoardWorkflow(t, db, workflowID, workspaceID, todoStateID, "state-task-detail-owners-doing", "state-task-detail-owners-done")
+
+	now := time.Date(2026, 5, 5, 14, 0, 0, 0, time.UTC)
+	insertPMTaskMemberBoardTask(t, db, "task-detail-owners", workspaceID, workflowID, todoStateID, "", 1, 0, now)
+	seedPMTaskOwner(t, db, "task-detail-owners", "user-detail-a", now)
+	seedPMTaskOwner(t, db, "task-detail-owners", "user-detail-b", now.Add(time.Second))
+
+	detail, err := repo.GetByID(ctx, "task-detail-owners")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if detail == nil {
+		t.Fatal("GetByID returned nil detail")
+	}
+	want := []string{"member-detail-a", "member-detail-b"}
+	got := detail.Task.OwnerMemberIDs
+	if len(got) != len(want) {
+		t.Fatalf("owner_member_ids = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("owner_member_ids = %v, want %v", got, want)
+		}
+	}
+}
+
 func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -99,6 +276,7 @@ func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 			avatar_seed TEXT,
 			avatar_background_mode TEXT,
 			avatar_background_color TEXT,
+			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -206,6 +384,18 @@ func newPMTaskMemberBoardTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			PRIMARY KEY (task_id, label_id)
 		)`,
+		`CREATE TABLE pm_task_owners (
+			task_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at DATETIME,
+			PRIMARY KEY (task_id, user_id)
+		)`,
+		`CREATE TABLE pm_task_followers (
+			task_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at DATETIME,
+			PRIMARY KEY (task_id, user_id)
+		)`,
 		`CREATE TABLE pm_epics (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -307,6 +497,44 @@ func insertPMTaskMemberBoardTask(t *testing.T, db *gorm.DB, taskID, workspaceID,
 	).Error; err != nil {
 		t.Fatalf("seed task %s: %v", taskID, err)
 	}
+	if ownerMemberID != "" {
+		if err := db.Exec(
+			`INSERT INTO pm_task_owners (task_id, user_id, created_at)
+			 SELECT ?, user_id, ?
+			 FROM workspace_members
+			 WHERE id = ?`,
+			taskID, updatedAt, ownerMemberID,
+		).Error; err != nil {
+			t.Fatalf("seed task owner %s: %v", taskID, err)
+		}
+	}
+}
+
+func seedPMTaskOwner(t *testing.T, db *gorm.DB, taskID, userID string, createdAt time.Time) {
+	t.Helper()
+	if err := db.Exec(
+		`INSERT INTO pm_task_owners (task_id, user_id, created_at) VALUES (?, ?, ?)`,
+		taskID, userID, createdAt,
+	).Error; err != nil {
+		t.Fatalf("seed task owner: %v", err)
+	}
+}
+
+func taskIDsFromBoardTasks(tasks []model.BoardTask) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func testStringPtr(value string) *string {

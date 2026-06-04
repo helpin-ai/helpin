@@ -73,6 +73,9 @@ func (h *codexSessionHost) Execute() (*ExecutionResult, error) {
 
 	client := newCodexAppServerClient(h.executor.commandPath, h.execCtx.WorkDir, session.env)
 	if err := client.Start(ctx); err != nil {
+		if result := h.recoverWithCodexAuthRetry(ctx, err, session.state, session.profile); result != nil {
+			return result, nil
+		}
 		return nil, err
 	}
 	if h.execCtx.Heartbeat != nil {
@@ -92,11 +95,17 @@ func (h *codexSessionHost) Execute() (*ExecutionResult, error) {
 	initCtx, cancelInitialize := context.WithTimeout(ctx, codexAppServerRequestTimeout)
 	defer cancelInitialize()
 	if err := client.Initialize(initCtx); err != nil {
+		if result := h.recoverWithCodexAuthRetry(ctx, err, session.state, session.profile); result != nil {
+			return result, nil
+		}
 		return nil, err
 	}
 
 	authResult, err := h.ensureAuthenticated(ctx, client, session.state, session.profile)
 	if err != nil {
+		if result := h.recoverWithCodexAuthRetry(ctx, err, session.state, session.profile); result != nil {
+			return result, nil
+		}
 		return nil, err
 	}
 	if authResult != nil {
@@ -107,6 +116,9 @@ func (h *codexSessionHost) Execute() (*ExecutionResult, error) {
 	}
 
 	if err := h.startOrResumeThread(ctx, client, session.state, session.profile); err != nil {
+		if result := h.recoverWithCodexAuthRetry(ctx, err, session.state, session.profile); result != nil {
+			return result, nil
+		}
 		return nil, err
 	}
 
@@ -124,6 +136,9 @@ func (h *codexSessionHost) Execute() (*ExecutionResult, error) {
 	}
 
 	if err != nil {
+		if result := h.recoverWithCodexAuthRetry(ctx, err, session.state, session.profile); result != nil {
+			return result, nil
+		}
 		_ = h.clearSessionState(ctx, session.state)
 		return nil, err
 	}
@@ -157,6 +172,10 @@ func (h *codexSessionHost) Execute() (*ExecutionResult, error) {
 		message := "codex turn failed"
 		if completedTurn.Error != nil && strings.TrimSpace(completedTurn.Error.Message) != "" {
 			message = strings.TrimSpace(completedTurn.Error.Message)
+		}
+		if codexShouldReauthForMessage(session.profile, message) {
+			result := h.codexAuthRequiredState(ctx, session.state, session.profile, "ChatGPT authentication needs to be refreshed. Sign in with ChatGPT again.")
+			return result, nil
 		}
 		_ = h.clearSessionState(ctx, session.state)
 		return nil, fmt.Errorf("%s", message)
@@ -201,6 +220,11 @@ func (h *codexSessionHost) prepareSession(existing *codexSessionState) (*codexPr
 	if err := os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(configContent), 0o600); err != nil {
 		return nil, fmt.Errorf("write codex config.toml: %w", err)
 	}
+	if stagedRoot := strings.TrimSpace(h.execCtx.StagedRuntimeSkillRoot); stagedRoot != "" {
+		if err := SyncRuntimeSkillRoot(stagedRoot, filepath.Join(codexHome, "skills", "helpin")); err != nil {
+			return nil, fmt.Errorf("sync staged codex skills: %w", err)
+		}
+	}
 	if err := h.executor.restoreWorkspaceAuth(h.execCtx.Context, h.run.WorkspaceID, profile.Provider, profile.AuthMode, codexHome); err != nil {
 		return nil, err
 	}
@@ -228,7 +252,7 @@ func (h *codexSessionHost) ensureAuthenticated(ctx context.Context, client *code
 	case appmodel.AgentModelProviderOpenAI:
 		switch strings.TrimSpace(profile.AuthMode) {
 		case codexOpenAIAuthModeDevice:
-			authState, authenticated, err := h.readAccountAuthState(ctx, client, profile)
+			authState, authenticated, err := h.readAccountAuthState(ctx, client, state, profile)
 			if err != nil {
 				return nil, err
 			}
@@ -257,13 +281,17 @@ func (h *codexSessionHost) ensureAuthenticated(ctx context.Context, client *code
 	}
 }
 
-func (h *codexSessionHost) readAccountAuthState(ctx context.Context, client *codexAppServerClient, profile codexResolvedRuntimeProfile) (*appmodel.CodexAuthState, bool, error) {
+func (h *codexSessionHost) readAccountAuthState(ctx context.Context, client *codexAppServerClient, state *codexSessionState, profile codexResolvedRuntimeProfile) (*appmodel.CodexAuthState, bool, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, codexAppServerRequestTimeout)
 	defer cancel()
 	raw, err := client.Request(requestCtx, "account/read", map[string]any{
 		"refreshToken": false,
 	})
 	if err != nil {
+		if codexShouldReauthForError(profile, err) {
+			codexClearRecoveredAuthState(ctx, h.executor, h.run.WorkspaceID, state, profile)
+			return codexBuildReauthRequiredState(profile, "ChatGPT authentication needs to be refreshed."), false, nil
+		}
 		return nil, false, err
 	}
 
@@ -296,6 +324,21 @@ func (h *codexSessionHost) readAccountAuthState(ctx context.Context, client *cod
 		State:     appmodel.CodexAuthStateRequired,
 		UpdatedAt: time.Now().UTC(),
 	}, false, nil
+}
+
+func (h *codexSessionHost) recoverWithCodexAuthRetry(ctx context.Context, err error, state *codexSessionState, profile codexResolvedRuntimeProfile) *ExecutionResult {
+	if !codexShouldReauthForError(profile, err) {
+		return nil
+	}
+	return h.codexAuthRequiredState(ctx, state, profile, "ChatGPT authentication needs to be refreshed. Sign in with ChatGPT again.")
+}
+
+func (h *codexSessionHost) codexAuthRequiredState(ctx context.Context, state *codexSessionState, profile codexResolvedRuntimeProfile, message string) *ExecutionResult {
+	codexClearRecoveredAuthState(ctx, h.executor, h.run.WorkspaceID, state, profile)
+	return &ExecutionResult{
+		CodexAuthState: codexBuildReauthRequiredState(profile, message),
+		AssistantText:  "Sign in with ChatGPT to continue this Codex run.",
+	}
 }
 
 func (h *codexSessionHost) startOrResumeThread(ctx context.Context, client *codexAppServerClient, state *codexSessionState, profile codexResolvedRuntimeProfile) error {
@@ -810,10 +853,10 @@ func (h *codexSessionHost) persistWorkspaceAuth(ctx context.Context, state *code
 func buildCodexPromptArtifact(developerInstructions, input string, pending *codexPendingRequest) string {
 	sections := make([]string, 0, 3)
 	if strings.TrimSpace(developerInstructions) != "" {
-		sections = append(sections, "Developer instructions:\n"+strings.TrimSpace(developerInstructions))
+		sections = append(sections, "Developer prompt:\n"+strings.TrimSpace(developerInstructions))
 	}
 	if strings.TrimSpace(input) != "" {
-		sections = append(sections, "Turn input:\n"+strings.TrimSpace(input))
+		sections = append(sections, "User prompt:\n"+strings.TrimSpace(input))
 	}
 	if pending != nil {
 		sections = append(sections, fmt.Sprintf(
@@ -885,6 +928,9 @@ func unsupportedCodexServerRequestError(msg codexRPCMessage) error {
 }
 
 func codexApprovalPolicyForRun(run *appmodel.AgentRun) string {
+	if run != nil && strings.TrimSpace(run.InvocationMode) == appmodel.InvocationModeAutonomous {
+		return "never"
+	}
 	return "on-request"
 }
 

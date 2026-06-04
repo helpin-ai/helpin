@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -33,11 +34,16 @@ func (f *scriptedDocsTranslationLLM) ChatCompletion(_ context.Context, req llm.C
 func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	dbName := fmt.Sprintf("file:docs-helpcenter-service-i18n-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	dbName := fmt.Sprintf("file:docs-helpcenter-service-i18n-%s?mode=memory&cache=shared&_busy_timeout=5000", uuid.NewString())
 	db, err := gorm.Open(sqlite.Open(dbName), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
 	stmts := []string{
 		`CREATE TABLE docs_spaces (
@@ -52,6 +58,7 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			default_review_days INTEGER,
 			is_system BOOLEAN NOT NULL DEFAULT 0,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -69,6 +76,7 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			description TEXT,
 			icon TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -89,6 +97,7 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			icon TEXT,
 			tags TEXT,
 			position INTEGER NOT NULL DEFAULT 0,
+			sort_key TEXT NOT NULL DEFAULT '~',
 			is_pinned BOOLEAN NOT NULL DEFAULT 0,
 			is_publicly_shared BOOLEAN NOT NULL DEFAULT 0,
 			share_token TEXT,
@@ -114,11 +123,22 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE docs_change_proposals (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE docs_helpcenter_configs (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL UNIQUE,
 			subdomain TEXT NOT NULL,
 			custom_domain TEXT,
+			public_url_mode TEXT NOT NULL DEFAULT 'hosted_subdomain',
+			reverse_proxy_host TEXT,
+			reverse_proxy_base_path TEXT,
 			brand_name TEXT NOT NULL,
 			brand_logo_url TEXT,
 			brand_logo_dark_url TEXT,
@@ -138,6 +158,10 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			is_published BOOLEAN NOT NULL DEFAULT 0,
 			seo_title TEXT,
 			seo_description TEXT,
+			og_title TEXT,
+			og_description TEXT,
+			og_image_url TEXT,
+			og_image_alt TEXT,
 			support_email TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
@@ -149,6 +173,10 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			slug TEXT NOT NULL DEFAULT '',
 			seo_title TEXT,
 			seo_description TEXT,
+			og_title TEXT,
+			og_description TEXT,
+			og_image_url TEXT,
+			og_image_alt TEXT,
 			helpful_count INTEGER NOT NULL DEFAULT 0,
 			not_helpful_count INTEGER NOT NULL DEFAULT 0,
 			view_count INTEGER NOT NULL DEFAULT 0,
@@ -205,6 +233,10 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			content_text TEXT,
 			seo_title TEXT,
 			seo_description TEXT,
+			og_title TEXT,
+			og_description TEXT,
+			og_image_url TEXT,
+			og_image_alt TEXT,
 			status TEXT NOT NULL DEFAULT 'draft',
 			source_updated_at DATETIME,
 			source_synced BOOLEAN NOT NULL DEFAULT 0,
@@ -231,6 +263,10 @@ func setupDocsHelpcenterTranslationServiceTestDB(t *testing.T) *gorm.DB {
 			content_text TEXT,
 			seo_title TEXT,
 			seo_description TEXT,
+			og_title TEXT,
+			og_description TEXT,
+			og_image_url TEXT,
+			og_image_alt TEXT,
 			published_at DATETIME NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME,
@@ -333,25 +369,25 @@ func newDocsHelpcenterTranslationServiceForTest(db *gorm.DB) *DocsHelpcenterTran
 func newDocsHelpcenterTranslationServiceForTestWithLLM(db *gorm.DB, llmProvider llm.Provider) *DocsHelpcenterTranslationService {
 	return NewDocsHelpcenterTranslationService(
 		repository.NewDocsHelpcenterTranslationRepository(db),
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
 		repository.NewDocsRedirectRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		llmProvider,
 	)
 }
 
 func newDocsHelpcenterPublicServiceForTest(db *gorm.DB) *DocsHelpcenterService {
 	svc := NewDocsHelpcenterService(
-		repository.NewDocsHelpcenterRepository(db),
+		repository.NewDocsHelpcenterRepository(db, false),
 		repository.NewDocsHelpcenterPublicationRepository(db),
-		repository.NewDocsDocumentRepository(db),
+		repository.NewDocsDocumentRepository(db, false),
 		repository.NewDocsContentRepository(db),
 		repository.NewDocsSpaceRepository(db),
-		repository.NewDocsCollectionRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
 		repository.NewDocsRedirectRepository(db),
 		nil,
 		nil,
@@ -861,7 +897,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil); err == nil {
+		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil); err == nil {
 			t.Fatal("expected publish without parents to fail")
 		}
 
@@ -880,7 +916,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil); err == nil {
+		if _, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil); err == nil {
 			t.Fatal("expected publish without collection translation to fail")
 		}
 
@@ -900,7 +936,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil)
+		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil)
 		if err != nil {
 			t.Fatalf("PublishArticleTranslation with parents: %v", err)
 		}
@@ -1036,7 +1072,7 @@ func TestDocsHelpcenterTranslationService(t *testing.T) {
 			UpdatedAt:       now,
 		})
 
-		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil)
+		published, err := svc.PublishArticleTranslation(ctx, documentID, "fr", nil, nil)
 		if err != nil {
 			t.Fatalf("PublishArticleTranslation first publish slug: %v", err)
 		}
@@ -2053,7 +2089,7 @@ func TestDocsHelpcenterService_CollectionRedirects(t *testing.T) {
 		}
 
 		// The collection itself should be updated.
-		collection, err := repository.NewDocsCollectionRepository(db).GetByID(ctx, "coll-A")
+		collection, err := repository.NewDocsCollectionRepository(db, false).GetByID(ctx, "coll-A")
 		if err != nil {
 			t.Fatalf("load collection: %v", err)
 		}
@@ -2103,7 +2139,7 @@ func TestDocsHelpcenterService_CollectionRedirects(t *testing.T) {
 		seedCollection(t, db, "B", "coll-b")
 		seedPublishedArticle(t, db, "doc-hop", "hop-article", ptr("A"))
 
-		docRepo := repository.NewDocsDocumentRepository(db)
+		docRepo := repository.NewDocsDocumentRepository(db, false)
 
 		// Move A -> B
 		oldA := "A"

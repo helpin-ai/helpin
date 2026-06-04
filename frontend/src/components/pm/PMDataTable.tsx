@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -10,6 +10,7 @@ import {
   type SortingState,
   type ColumnSizingState,
 } from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ArrowDown02Icon, ArrowUp02Icon, ArrowUpDownIcon } from '@/lib/icons';
 import {
   TABLE_CONTAINER,
@@ -19,7 +20,10 @@ import {
   TABLE_ROW,
   TABLE_CELL,
   TABLE_RESIZE_HANDLE,
+  ROW_HEIGHT,
   dynamicCellStyle,
+  resolveColumnRuntimeSize,
+  virtualRowStyle,
 } from '@/lib/tableStyles';
 
 interface PMDataTableProps<T> {
@@ -73,6 +77,15 @@ export function PMDataTable<T>({
     columnResizeMode: 'onEnd',
     getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
+  });
+  const rows = table.getRowModel().rows;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const estimateSize = useCallback(() => ROW_HEIGHT, []);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => bodyRef.current,
+    estimateSize,
+    overscan: 8,
   });
 
   return (
@@ -128,29 +141,35 @@ export function PMDataTable<T>({
       ) : null}
 
       {/* Body */}
-      <div className={bodyClassName ?? 'overflow-auto'} style={bodyStyle ?? { maxHeight: 'calc(100vh - 220px)' }}>
-        {table.getRowModel().rows.map((row) => (
-          <div
-            key={row.id}
-            className={`${TABLE_ROW}${onRowClick ? ' cursor-pointer' : ''}`}
-            onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-          >
-            {row.getVisibleCells().map((cell) => {
-              const defSize = cell.column.columnDef.size ?? 150;
-              const runtimeSize = cell.column.getSize();
-              const isResized = !!resolvedColumnSizing[cell.column.id];
-              return (
-                <div
-                  key={cell.id}
-                  className={`${TABLE_CELL} overflow-hidden`}
-                  style={dynamicCellStyle(defSize, runtimeSize, isResized, 200)}
-                >
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </div>
-              );
-            })}
-          </div>
-        ))}
+      <div ref={bodyRef} className={bodyClassName ?? 'overflow-auto'} style={bodyStyle ?? { maxHeight: 'calc(100vh - 220px)' }}>
+        <div style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}>
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const row = rows[virtualRow.index];
+            if (!row) return null;
+            return (
+              <div
+                key={row.id}
+                data-index={virtualRow.index}
+                className={`${TABLE_ROW}${onRowClick ? ' cursor-pointer' : ''}`}
+                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                style={virtualRowStyle(virtualRow.start)}
+              >
+                {row.getVisibleCells().map((cell) => {
+                  const { defSize, runtimeSize, isResized } = resolveColumnRuntimeSize(cell.column, resolvedColumnSizing);
+                  return (
+                    <div
+                      key={cell.id}
+                      className={`${TABLE_CELL} overflow-hidden`}
+                      style={dynamicCellStyle(defSize, runtimeSize, isResized, 200)}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

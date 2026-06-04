@@ -1,7 +1,9 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import Profile from '@/pages/Profile'
+import SecuritySettings from '@/pages/SecuritySettings'
 import AccountSettings from '@/pages/AccountSettings'
 import NotificationSettings from '@/pages/NotificationSettings'
+import { OrgGitConnectionsSettingsPage } from '@/pages/settings/OrgGitConnectionsSettingsPage'
 import { SettingsRouteViewport } from '@/pages/settings/SettingsRouteViewport'
 
 type SettingsSearch = {
@@ -28,10 +30,26 @@ function SettingsSectionRoute() {
     )
   }
 
+  if (section === 'security') {
+    return (
+      <SettingsRouteViewport>
+        <SecuritySettings />
+      </SettingsRouteViewport>
+    )
+  }
+
   if (section === 'account') {
     return (
       <SettingsRouteViewport>
         <AccountSettings />
+      </SettingsRouteViewport>
+    )
+  }
+
+  if (section === 'git-connections') {
+    return (
+      <SettingsRouteViewport>
+        <OrgGitConnectionsSettingsPage />
       </SettingsRouteViewport>
     )
   }

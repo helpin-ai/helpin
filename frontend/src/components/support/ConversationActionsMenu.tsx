@@ -7,6 +7,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -20,17 +23,20 @@ import {
 import { Input } from '@/components/ui/input';
 import {
   Delete01Icon,
+  FolderInputIcon,
+  InboxIcon,
   Link01Icon,
   MailOpenIcon,
-  Message01Icon,
+  OctagonXIcon,
   PencilEdit01Icon,
 } from '@/lib/icons';
-import type { SupportConversation } from '@/lib/pmTypes';
+import type { ConversationStatus, SupportConversation } from '@/lib/pmTypes';
 import {
   useDeleteConversation,
   useMarkConversationRead,
   useMarkConversationUnread,
   useMoveConversation,
+  useUpdateConversationStatus,
   useUpdateConversationSubject,
 } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
@@ -51,6 +57,7 @@ interface ConversationActionsMenuProps {
   onOpenChange?: (open: boolean) => void;
   onConversationDeleted?: () => void;
   onConversationMoved?: (option: ConversationActionMoveOption) => void;
+  onSubjectDialogOpenChange?: (open: boolean) => void;
 }
 
 function buildConversationLink(workspaceSlug: string | undefined, conversationId: string) {
@@ -71,11 +78,13 @@ export function ConversationActionsMenu({
   onOpenChange,
   onConversationDeleted,
   onConversationMoved,
+  onSubjectDialogOpenChange,
 }: ConversationActionsMenuProps) {
   const confirm = useConfirm();
   const markConversationRead = useMarkConversationRead(workspaceId);
   const markConversationUnread = useMarkConversationUnread(workspaceId);
   const updateSubject = useUpdateConversationSubject(workspaceId);
+  const updateStatus = useUpdateConversationStatus(workspaceId);
   const deleteConversation = useDeleteConversation(workspaceId);
   const moveConversation = useMoveConversation(workspaceId);
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug);
@@ -91,7 +100,8 @@ export function ConversationActionsMenu({
     if (!subjectDialogOpen) {
       setSubjectDraft(conversation.subject);
     }
-  }, [conversation.subject, subjectDialogOpen]);
+    onSubjectDialogOpenChange?.(subjectDialogOpen);
+  }, [conversation.subject, onSubjectDialogOpenChange, subjectDialogOpen]);
 
   const handleToggleReadState = () => {
     const mutation = isUnread ? markConversationRead : markConversationUnread;
@@ -124,6 +134,15 @@ export function ConversationActionsMenu({
       onSuccess: () => {
         setSubjectDialogOpen(false);
         toast.success('Conversation subject updated');
+      },
+    });
+  };
+
+  const handleToggleSpam = () => {
+    const nextStatus: ConversationStatus = conversation.status === 'spam' ? 'open' : 'spam';
+    updateStatus.mutate({ conversationId: conversation.id, status: nextStatus }, {
+      onSuccess: () => {
+        toast.success(nextStatus === 'spam' ? 'Marked as spam' : 'Restored to inbox');
       },
     });
   };
@@ -165,33 +184,62 @@ export function ConversationActionsMenu({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleUpdateSubject} className={itemClassName}>
             <PencilEdit01Icon className={iconClassName} />
-            Set conversation subject
+            Set subject
           </DropdownMenuItem>
           {moveOptions.length > 0 && (
             <>
               <DropdownMenuSeparator />
-              {moveOptions.map((option) => (
-                <DropdownMenuItem
-                  key={option.id}
-                  className={itemClassName}
-                  onClick={() => {
-                    moveConversation.mutate({
-                      conversationId: conversation.id,
-                      mailboxId: option.id === 'shared' ? null : option.id,
-                    }, {
-                      onSuccess: () => {
-                        onConversationMoved?.(option);
-                        toast.success(`Moved to ${option.name}`);
-                      },
-                    });
-                  }}
-                >
-                  <Message01Icon className={iconClassName} />
-                  Move to {option.name}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className={itemClassName}>
+                  <FolderInputIcon className={iconClassName} />
+                  Move to inbox
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-48">
+                  {moveOptions.map((option) => (
+                    <DropdownMenuItem
+                      key={option.id}
+                      className={itemClassName}
+                      onClick={() => {
+                        moveConversation.mutate({
+                          conversationId: conversation.id,
+                          mailboxId: option.id === 'shared' ? null : option.id,
+                        }, {
+                          onSuccess: () => {
+                            onConversationMoved?.(option);
+                            toast.success(`Moved to ${option.name}`);
+                          },
+                        });
+                      }}
+                    >
+                      <InboxIcon className={iconClassName} />
+                      {option.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
             </>
           )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className={
+              conversation.status === 'spam'
+                ? itemClassName
+                : `${itemClassName} text-destructive focus:text-destructive`
+            }
+            onClick={handleToggleSpam}
+          >
+            {conversation.status === 'spam' ? (
+              <>
+                <InboxIcon className={iconClassName} />
+                Restore to inbox
+              </>
+            ) : (
+              <>
+                <OctagonXIcon className={iconClassName} />
+                Mark as spam
+              </>
+            )}
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className={`${itemClassName} text-destructive focus:text-destructive`}
@@ -203,45 +251,47 @@ export function ConversationActionsMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={subjectDialogOpen} onOpenChange={setSubjectDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Set conversation subject</DialogTitle>
-            <DialogDescription>
-              Update the conversation title shown in the inbox and thread header.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <label htmlFor={`conversation-subject-${conversation.id}`} className="text-sm font-medium">
-              Subject
-            </label>
-            <Input
-              id={`conversation-subject-${conversation.id}`}
-              value={subjectDraft}
-              onChange={(event) => setSubjectDraft(event.target.value)}
-              placeholder="Enter a conversation subject"
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSubjectDialogOpen(false);
-                setSubjectDraft(conversation.subject);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveSubject}
-              disabled={updateSubject.isPending || subjectDraft.trim().length === 0}
-            >
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {subjectDialogOpen && (
+        <Dialog open={subjectDialogOpen} onOpenChange={setSubjectDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Set conversation subject</DialogTitle>
+              <DialogDescription>
+                Update the conversation title shown in the inbox and thread header.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <label htmlFor={`conversation-subject-${conversation.id}`} className="text-sm font-medium">
+                Subject
+              </label>
+              <Input
+                id={`conversation-subject-${conversation.id}`}
+                value={subjectDraft}
+                onChange={(event) => setSubjectDraft(event.target.value)}
+                placeholder="Enter a conversation subject"
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSubjectDialogOpen(false);
+                  setSubjectDraft(conversation.subject);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveSubject}
+                disabled={updateSubject.isPending || subjectDraft.trim().length === 0}
+              >
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

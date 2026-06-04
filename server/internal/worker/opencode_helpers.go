@@ -231,6 +231,11 @@ func buildOpenCodeConfigContent(execCtx *ExecutionContext, modelID, systemPrompt
 	if len(providerConfig) > 0 {
 		config["provider"] = providerConfig
 	}
+	if stagedSkillRoot := strings.TrimSpace(execCtx.StagedRuntimeSkillRoot); stagedSkillRoot != "" {
+		config["skills"] = map[string]any{
+			"paths": []string{stagedSkillRoot},
+		}
+	}
 
 	payload, err := json.Marshal(config)
 	if err != nil {
@@ -379,9 +384,13 @@ func readOnlyGitPermissionPatterns() []string {
 	}
 }
 
-func buildOpenCodeUserPrompt(execCtx *ExecutionContext, userPrompt string) string {
+func buildOpenCodeUserPrompt(execCtx *ExecutionContext, run *model.AgentRun, userPrompt string) string {
 	parts := []string{strings.TrimSpace(userPrompt)}
-	if execCtx != nil && execCtx.Task != nil && hasRepoMutationTools(resolvedProfileFor(execCtx).Tools) {
+	if execCtx != nil &&
+		execCtx.Task != nil &&
+		strings.TrimSpace(runInvocationMode(run, execCtx)) != model.InvocationModeInteractive &&
+		isEngineerStoryRun(execCtx) &&
+		!allowsCleanReviewNoop(execCtx) {
 		parts = append(parts, "This is an implementation run, not an analysis-only pass. Make the code changes in the repository, run relevant validation when practical, and finish with a concise summary of the concrete files changed.")
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n\n"))

@@ -54,11 +54,25 @@ type CRMContact struct {
 	AvatarURL        *string   `json:"avatar_url"`
 	Source           *string   `json:"source"`
 	CustomProperties JSONB     `json:"custom_properties" gorm:"type:jsonb;default:'{}'"`
-	CreatedAt        time.Time `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt        time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+	// EmailStatus tracks whether the contact's email address is deliverable.
+	// Values: "valid" (default), "invalid". Set to "invalid" after a hard
+	// bounce, bad-address Postmark bounce, or spam complaint. Used to
+	// short-circuit outbound email sends.
+	EmailStatus          string     `json:"email_status" gorm:"not null;default:'valid'"`
+	EmailStatusReason    *string    `json:"email_status_reason,omitempty"`
+	EmailStatusUpdatedAt *time.Time `json:"email_status_updated_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt            time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (CRMContact) TableName() string { return "crm_contacts" }
+
+// CRMContactEmailStatusValid marks a contact's email address as deliverable.
+const CRMContactEmailStatusValid = "valid"
+
+// CRMContactEmailStatusInvalid marks a contact's email address as undeliverable
+// (hard bounce, bad address, spam complaint, or explicit deactivation).
+const CRMContactEmailStatusInvalid = "invalid"
 
 // CreateCRMContactRequest is the payload for creating a contact.
 type CreateCRMContactRequest struct {

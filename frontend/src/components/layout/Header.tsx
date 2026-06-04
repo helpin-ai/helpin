@@ -10,6 +10,7 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useGlobalCreateStore } from "@/stores/globalCreateStore";
 import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
 import { useSupportInboxStore } from "@/stores/supportInboxStore";
+import { usePageHeaderStore } from "@/stores/pageHeaderStore";
 import { buildSettingsRoutePath, SETTINGS_SECTION_LABELS } from "@/lib/settingsSections";
 
 type Crumb = {
@@ -24,7 +25,8 @@ export function Header() {
   const [searchOpen, setSearchOpen] = useState(false);
   const setCreateDialogOpen = useSupportInboxStore((s) => s.setCreateDialogOpen);
   const openGlobalCreate = useGlobalCreateStore((s) => s.openCreate);
-  const navFilter = useSupportInboxStore((s) => s.navFilter);
+  const titleOverride = usePageHeaderStore((s) => s.titleOverride);
+  const headerActions = usePageHeaderStore((s) => s.actions);
   const isSupport = location.pathname.includes("/support");
   const isContactsIndex = /\/crm\/contacts\/?$/.test(location.pathname);
 
@@ -39,6 +41,10 @@ export function Header() {
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  const handleSearchOpenChange = (open: boolean) => {
+    setSearchOpen(open);
+  };
 
   const breadcrumbs = useMemo<Crumb[]>(() => {
     const formatLabel = (value: string) =>
@@ -179,6 +185,7 @@ export function Header() {
           >
             {breadcrumbs.map((crumb, index) => {
               const isLast = index === breadcrumbs.length - 1;
+              const label = isLast && titleOverride ? titleOverride : crumb.label;
               return (
                 <Fragment key={`${crumb.label}-${index}`}>
                   {index > 0 && (
@@ -194,7 +201,7 @@ export function Header() {
                     </button>
                   ) : (
                     <span className="max-w-[14rem] truncate font-medium text-foreground">
-                      {crumb.label}
+                      {label}
                     </span>
                   )}
                 </Fragment>
@@ -204,41 +211,47 @@ export function Header() {
         )}
       </div>
 
-      {!(isSupport && navFilter === 'mentions') && (
-        <div className="hidden lg:flex absolute inset-0 justify-center items-center pointer-events-none">
-          <button
-            type="button"
-            onClick={() => setSearchOpen(true)}
-            className="pointer-events-auto relative flex h-8 w-full max-w-xl items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
-          >
-            <Search01Icon className="h-4 w-4 shrink-0" />
-            <span className="truncate">Search {currentWorkspace?.name ?? "workspace"}...</span>
-            <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground md:inline-block">
-              ⌘K
-            </kbd>
-          </button>
+      <div className="hidden lg:flex absolute inset-0 justify-center items-center pointer-events-none">
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          className="pointer-events-auto relative flex h-8 w-full max-w-xl items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
+        >
+          <Search01Icon className="h-4 w-4 shrink-0" />
+          <span className="truncate">Search {currentWorkspace?.name ?? "workspace"}...</span>
+          <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground md:inline-block">
+            ⌘K
+          </kbd>
+        </button>
+      </div>
+
+      {headerActions ? (
+        <div className="ml-auto flex items-center gap-1.5 z-10">
+          {headerActions}
         </div>
+      ) : (
+        <>
+          {isSupport && (
+            <div className="ml-auto flex items-center z-10">
+              <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
+                <span className="hidden sm:inline">New Conversation</span>
+              </Button>
+            </div>
+          )}
+
+          {!isSupport && isContactsIndex && (
+            <div className="ml-auto flex items-center z-10">
+              <Button size="sm" onClick={() => openGlobalCreate('crm_contact')}>
+                <PlusSignIcon className="mr-1.5 h-4 w-4" />
+                <span className="hidden sm:inline">Contact</span>
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
-      {isSupport && navFilter !== 'mentions' && (
-        <div className="ml-auto flex items-center z-10">
-          <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-            <PlusSignIcon className="mr-1.5 h-4 w-4" />
-            <span className="hidden sm:inline">New Conversation</span>
-          </Button>
-        </div>
-      )}
-
-      {!isSupport && isContactsIndex && (
-        <div className="ml-auto flex items-center z-10">
-          <Button size="sm" onClick={() => openGlobalCreate('crm_contact')}>
-            <PlusSignIcon className="mr-1.5 h-4 w-4" />
-            <span className="hidden sm:inline">Contact</span>
-          </Button>
-        </div>
-      )}
-
-      <SearchCommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <SearchCommandPalette open={searchOpen} onOpenChange={handleSearchOpenChange} />
     </header>
   );
 }

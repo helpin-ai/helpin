@@ -1,8 +1,32 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { CalloutNodeView } from './CalloutNodeView';
+import { pickBlockNodeViewAttrs } from './nodeViewAttrs';
 
-export type CalloutVariant = 'blue' | 'green' | 'grey' | 'red' | 'yellow';
+export type CalloutVariant = 'info' | 'warning' | 'tip' | 'danger' | 'success' | 'blue' | 'green' | 'grey' | 'red' | 'yellow';
+export type SemanticCalloutVariant = 'info' | 'warning' | 'tip' | 'danger' | 'success';
+
+export function normalizeCalloutVariant(value?: string | null): SemanticCalloutVariant {
+  switch (value) {
+    case 'blue':
+    case 'info':
+      return 'info';
+    case 'yellow':
+    case 'warning':
+      return 'warning';
+    case 'green':
+    case 'tip':
+      return 'tip';
+    case 'red':
+    case 'danger':
+      return 'danger';
+    case 'success':
+      return 'success';
+    case 'grey':
+    default:
+      return 'info';
+  }
+}
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -21,9 +45,9 @@ export const CalloutExtension = Node.create({
   addAttributes() {
     return {
       variant: {
-        default: 'grey',
-        parseHTML: (el) => (el as HTMLElement).getAttribute('data-callout-variant') || 'grey',
-        renderHTML: (attrs) => ({ 'data-callout-variant': attrs.variant }),
+        default: 'info',
+        parseHTML: (el) => normalizeCalloutVariant((el as HTMLElement).getAttribute('data-callout-variant')),
+        renderHTML: (attrs) => ({ 'data-callout-variant': normalizeCalloutVariant(attrs.variant) }),
       },
     };
   },
@@ -31,17 +55,17 @@ export const CalloutExtension = Node.create({
   parseHTML() {
     return [
       { tag: 'aside[data-callout-variant]' },
-      { tag: 'div[data-helpin-callout]', getAttrs: (el) => ({ variant: (el as HTMLElement).getAttribute('data-helpin-callout') || 'grey' }) },
+      { tag: 'div[data-helpin-callout]', getAttrs: (el) => ({ variant: normalizeCalloutVariant((el as HTMLElement).getAttribute('data-helpin-callout')) }) },
     ];
   },
 
   renderHTML({ HTMLAttributes }) {
-    const v = HTMLAttributes['data-callout-variant'] ?? 'grey';
+    const v = normalizeCalloutVariant(HTMLAttributes['data-callout-variant'] ?? HTMLAttributes.variant);
     return ['aside', mergeAttributes(HTMLAttributes, { class: `docs-callout docs-callout--${v}` }), 0];
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(CalloutNodeView);
+    return ReactNodeViewRenderer(CalloutNodeView, { attrs: ({ HTMLAttributes }) => pickBlockNodeViewAttrs(HTMLAttributes) });
   },
 
   addKeyboardShortcuts() {
@@ -132,7 +156,7 @@ export const CalloutExtension = Node.create({
         ({ commands }) =>
           commands.insertContent({
             type: this.name,
-            attrs: { variant: attrs?.variant ?? 'grey' },
+            attrs: { variant: normalizeCalloutVariant(attrs?.variant) },
             content: [{ type: 'paragraph' }],
           }),
     };

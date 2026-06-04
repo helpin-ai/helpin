@@ -7,16 +7,27 @@ import (
 
 // Trigger type constants.
 const (
-	TriggerTaskStateEntered  = "task.state_entered"
-	TriggerStoryStateEntered = TriggerTaskStateEntered // legacy alias
-	TriggerAgentRunApproved  = "agent_run.approved"
-	TriggerGitHubPush        = "github.push"
-	TriggerGitHubPROpened    = "github.pull_request_opened"
-	TriggerGitHubPRMerged    = "github.pull_request_merged"
-	TriggerGitHubPRReviewReq = "github.pull_request_review_requested"
-	TriggerGitHubReleasePub  = "github.release_published"
-	TriggerGitHubCheckSuite  = "github.check_suite_completed"
-	TriggerCron              = "cron"
+	TriggerTaskStateEntered     = "task.state_entered"
+	TriggerStoryStateEntered    = TriggerTaskStateEntered // legacy alias
+	TriggerAgentRunApproved     = "agent_run.approved"
+	TriggerAgentRunCompleted    = "agent_run.completed"
+	TriggerDocPublished         = "doc.published"
+	TriggerAISectionRegenerated = "ai_section.regenerated"
+	TriggerAISectionApproved    = "ai_section.approved"
+	TriggerGitHubPush           = "github.push"
+	TriggerGitHubPROpened       = "github.pull_request_opened"
+	TriggerGitHubPRMerged       = "github.pull_request_merged"
+	TriggerGitHubPRClosed       = "github.pull_request_closed"
+	TriggerGitHubPRReviewReq    = "github.pull_request_review_requested"
+	TriggerGitHubReleasePub     = "github.release_published"
+	TriggerGitHubCheckSuite     = "github.check_suite_completed"
+	TriggerGitLabPush           = "gitlab.push"
+	TriggerGitLabMROpened       = "gitlab.merge_request_opened"
+	TriggerGitLabMRMerged       = "gitlab.merge_request_merged"
+	TriggerGitLabMRClosed       = "gitlab.merge_request_closed"
+	TriggerGitLabReleasePub     = "gitlab.release_published"
+	TriggerGitLabPipeline       = "gitlab.pipeline_completed"
+	TriggerCron                 = "cron"
 )
 
 // Action type constants.
@@ -31,22 +42,25 @@ const (
 
 // AutomationRule represents a user-configured trigger → action mapping.
 type AutomationRule struct {
-	ID            string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	WorkspaceID   string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
-	Name          string          `json:"name" gorm:"not null"`
-	Description   *string         `json:"description"`
-	Enabled       bool            `json:"enabled" gorm:"not null;default:true"`
-	TeamID        *string         `json:"team_id" gorm:"type:uuid;index"`
-	WorkflowID    *string         `json:"workflow_id" gorm:"type:uuid;index"`
-	TriggerType   string          `json:"trigger_type" gorm:"not null"`
-	TriggerConfig json.RawMessage `json:"trigger_config" gorm:"type:jsonb;not null;default:'{}'"`
-	ActionType    string          `json:"action_type" gorm:"not null"`
-	ActionConfig  json.RawMessage `json:"action_config" gorm:"type:jsonb;not null;default:'{}'"`
-	Position      int             `json:"position" gorm:"not null;default:0"`
-	StopOnMatch   bool            `json:"stop_on_match" gorm:"not null;default:false"`
-	CreatedBy     *string         `json:"created_by" gorm:"type:uuid"`
-	CreatedAt     time.Time       `json:"created_at" gorm:"autoCreateTime"`
-	UpdatedAt     time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
+	ID                 string          `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID        string          `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	Name               string          `json:"name" gorm:"not null"`
+	Description        *string         `json:"description"`
+	Enabled            bool            `json:"enabled" gorm:"not null;default:true"`
+	TeamID             *string         `json:"team_id" gorm:"type:uuid;index"`
+	WorkflowID         *string         `json:"workflow_id" gorm:"type:uuid;index"`
+	TriggerType        string          `json:"trigger_type" gorm:"not null"`
+	TriggerConfig      json.RawMessage `json:"trigger_config" gorm:"type:jsonb;not null;default:'{}'"`
+	ActionType         string          `json:"action_type" gorm:"not null"`
+	ActionConfig       json.RawMessage `json:"action_config" gorm:"type:jsonb;not null;default:'{}'"`
+	TemplateKey        *string         `json:"template_key,omitempty" gorm:"index"`
+	TemplateInstanceID *string         `json:"template_instance_id,omitempty" gorm:"type:uuid;index"`
+	TemplateVersion    *int            `json:"template_version,omitempty"`
+	Position           int             `json:"position" gorm:"not null;default:0"`
+	StopOnMatch        bool            `json:"stop_on_match" gorm:"not null;default:false"`
+	CreatedBy          *string         `json:"created_by" gorm:"type:uuid"`
+	CreatedAt          time.Time       `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt          time.Time       `json:"updated_at" gorm:"autoUpdateTime"`
 }
 
 func (AutomationRule) TableName() string { return "automation_rules" }
@@ -61,7 +75,9 @@ type TriggerConfigStateEntered struct {
 
 // TriggerConfigCron holds config for cron triggers.
 type TriggerConfigCron struct {
-	Category string `json:"category"` // e.g. "sprint_hourly"
+	Category string `json:"category,omitempty"` // legacy category, e.g. "workspace_hourly"
+	Preset   string `json:"preset,omitempty"`   // e.g. "hourly", "daily", "weekly"
+	Schedule string `json:"schedule,omitempty"` // cron expression
 }
 
 // ActionConfigRunCommand holds config for run_command actions.
@@ -82,8 +98,19 @@ type TriggerConfigRunApproved struct {
 	StateID string `json:"state_id"`
 }
 
+// TriggerConfigRunCompleted holds config for agent_run.completed triggers.
+type TriggerConfigRunCompleted struct {
+	StateID string `json:"state_id"`
+}
+
 // TriggerConfigGitHubPRMerged holds config for github.pull_request_merged triggers.
 type TriggerConfigGitHubPRMerged struct {
+	BaseBranch   string `json:"base_branch,omitempty"`
+	RepoFullName string `json:"repo_full_name,omitempty"`
+}
+
+// TriggerConfigGitHubPRClosed holds config for github.pull_request_closed triggers.
+type TriggerConfigGitHubPRClosed struct {
 	BaseBranch   string `json:"base_branch,omitempty"`
 	RepoFullName string `json:"repo_full_name,omitempty"`
 }
@@ -102,8 +129,11 @@ type TriggerConfigGitHubPullRequest struct {
 
 // TriggerConfigGitHubReleasePublished holds config for github.release_published triggers.
 type TriggerConfigGitHubReleasePublished struct {
-	RepoFullName string `json:"repo_full_name,omitempty"`
-	TagName      string `json:"tag_name,omitempty"`
+	RepoFullName      string   `json:"repo_full_name,omitempty"`
+	TagName           string   `json:"tag_name,omitempty"`
+	TagPattern        string   `json:"tag_pattern,omitempty"`
+	ReleaseKinds      []string `json:"release_kinds,omitempty"`
+	IncludePrerelease bool     `json:"include_prerelease,omitempty"`
 }
 
 // TriggerConfigGitHubCheckSuiteCompleted holds config for github.check_suite_completed triggers.
@@ -115,14 +145,23 @@ type TriggerConfigGitHubCheckSuiteCompleted struct {
 
 // Action config shapes (deserialized from JSONB).
 
+type ActionConfigRunAgentOutput struct {
+	Type           string  `json:"type,omitempty"`
+	SpaceID        string  `json:"space_id,omitempty"`
+	CollectionID   *string `json:"collection_id,omitempty"`
+	IdempotencyKey string  `json:"idempotency_key,omitempty"`
+}
+
 // ActionConfigRunAgent holds config for start_agent_run actions.
 type ActionConfigRunAgent struct {
-	TargetType        string  `json:"target_type,omitempty"`
-	TargetID          string  `json:"target_id,omitempty"`
-	AgentID           string  `json:"agent_id"`
-	AdditionalContext *string `json:"additional_context,omitempty"`
-	BaseBranch        string  `json:"base_branch,omitempty"`
-	WorkingBranch     string  `json:"working_branch,omitempty"`
+	TargetType            string                      `json:"target_type,omitempty"`
+	TargetID              string                      `json:"target_id,omitempty"`
+	AgentID               string                      `json:"agent_id"`
+	LegacyScheduleAgentID string                      `json:"legacy_schedule_agent_id,omitempty"`
+	AdditionalContext     *string                     `json:"additional_context,omitempty"`
+	BaseBranch            string                      `json:"base_branch,omitempty"`
+	WorkingBranch         string                      `json:"working_branch,omitempty"`
+	Output                *ActionConfigRunAgentOutput `json:"output,omitempty"`
 }
 
 // ActionConfigMoveToState holds config for move_to_state actions.
@@ -178,10 +217,17 @@ type AutomationEvent struct {
 	TargetID          string // entity UUID
 	TeamID            string // for scope matching without a task
 	RepoFullName      string
+	RepositoryID      string
 	Branch            string
 	BaseBranch        string
 	PullRequestNumber int
 	TagName           string
+	TargetCommitish   string
+	ReleaseName       string
+	ReleaseURL        string
+	PublishedAt       *time.Time
+	IsPrerelease      bool
+	ReleaseKind       string
 	Conclusion        string
 }
 

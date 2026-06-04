@@ -346,6 +346,55 @@ func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceRule(t *testi
 	}
 }
 
+func TestSupportInboxTriageEvaluateAndRoute_SkipsHumanOwnedConversation(t *testing.T) {
+	fixture := newSupportTriageTestFixture(t, nil, func(settings *model.SupportInboxSettings) {
+		settings.TriageAutoMoveEnabled = true
+		settings.TriageConfidenceThreshold = 0.9
+	})
+	billing := fixture.createMailbox(t, "Billing", "billing", true)
+
+	if _, err := fixture.triageSvc.CreateRule(fixture.ctx, fixture.workspaceID, fixture.actorID, model.CreateSupportTriageRuleRequest{
+		Name:            "Refunds",
+		Priority:        1,
+		Channels:        []string{"widget"},
+		Conditions:      model.SupportTriageRuleConditions{PhraseContains: []string{"refund"}},
+		TargetMailboxID: billing.ID,
+	}); err != nil {
+		t.Fatalf("create triage rule: %v", err)
+	}
+
+	conversation := fixture.createConversation(t, "Refund request", "buyer@example.com", nil)
+	conversation.AssignedUserID = &fixture.actorID
+	conversation.HumanTakeover = boolPtr(true)
+	conversation.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+	if err := fixture.conversationRepo.Update(fixture.ctx, conversation); err != nil {
+		t.Fatalf("mark conversation human-owned: %v", err)
+	}
+
+	message := fixture.createCustomerReply(t, conversation.ID, "I need a refund for last month.")
+	triage, err := fixture.triageSvc.EvaluateAndRoute(fixture.ctx, fixture.workspaceID, conversation.ID, message.ID)
+	if err != nil {
+		t.Fatalf("EvaluateAndRoute: %v", err)
+	}
+	if triage != nil {
+		t.Fatalf("triage = %#v, want nil for human-owned conversation", triage)
+	}
+
+	updatedConversation, err := fixture.conversationRepo.GetByID(fixture.ctx, fixture.workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("load conversation: %v", err)
+	}
+	if updatedConversation.MailboxID != nil {
+		t.Fatalf("mailbox_id = %q, want shared", derefString(updatedConversation.MailboxID))
+	}
+	if got := countTriageEvents(t, fixture.db, conversation.ID, supportTriageEventAutoMoved); got != 0 {
+		t.Fatalf("auto_moved events = %d, want 0", got)
+	}
+	if got := countTriageEvents(t, fixture.db, conversation.ID, supportTriageEventEvaluated); got != 0 {
+		t.Fatalf("evaluated events = %d, want 0", got)
+	}
+}
+
 func TestSupportInboxTriageDismissConversation(t *testing.T) {
 	fixture := newSupportTriageTestFixture(t, nil, nil)
 	marketing := fixture.createMailbox(t, "Marketing", "marketing", true)

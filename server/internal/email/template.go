@@ -51,7 +51,7 @@ func NotificationEmailHeaderHTML(workspaceName string) string {
 	return fmt.Sprintf(`<!-- Header -->
                 <tr>
                   <td style="padding: 24px 32px;">
-                    <table role="presentation" width="100%%%%" cellspacing="0" cellpadding="0" border="0">
+                    <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" border="0">
                       <tr>
                         <td style="text-align: left; vertical-align: middle;">
                           <a href="https://helpin.ai" target="_blank" style="text-decoration: none; display: inline-block;">

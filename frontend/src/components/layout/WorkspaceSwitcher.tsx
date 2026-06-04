@@ -1,20 +1,63 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { Tick01Icon, ArrowUpDownIcon, PlusSignIcon } from '@/lib/icons';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useOrganizationStore } from '@/stores/organizationStore';
 import { useWorkspaces, useOrganizations } from '@/hooks/queries';
+import { useSupportUnreadByWorkspace } from '@/hooks/queries/useSupport';
 import type { Workspace } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Favicon } from '@/components/ui/favicon';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  flattenGroupedWorkspaces,
+  isEditableShortcutTarget,
+  isMacPlatform,
+  workspaceShortcutLabel,
+} from '@/components/layout/workspaceSwitcherShortcuts';
 
 function workspaceRouteFromCurrentPath(pathname: string, slug: string): string {
   const match = pathname.match(/^\/w\/[^/]+\/?(.*)$/);
-  const rest = match?.[1] ? match[1] : 'dashboard';
+  const rest = sanitizeWorkspaceRouteRemainder(match?.[1] ? match[1] : 'dashboard');
   return `/w/${slug}/${rest}`;
+}
+
+function sanitizeWorkspaceRouteRemainder(rest: string): string {
+  const segments = rest.split('/').filter(Boolean);
+  if (segments.length === 0) return 'dashboard';
+
+  const [module, section] = segments;
+
+  if (module === 'crm') {
+    if (section === 'contacts') return 'crm/contacts';
+    if (section === 'companies') return 'crm/companies';
+    if (section === 'deals') return 'crm/deals';
+    return rest;
+  }
+
+  if (module === 'support') {
+    if (segments.length > 1 && section !== 'coverage') return 'support';
+    return rest;
+  }
+
+  if (module === 'docs') {
+    if (section === 'documents' || section === 'spaces') return 'docs';
+    return rest;
+  }
+
+  if (module === 'pm') {
+    if (section === 'tasks') return 'pm/tasks';
+    if (section === 'epics') return 'pm/epics';
+    if (section === 'objectives') return 'pm/objectives';
+    if (section === 'sprints') return 'pm/sprints';
+    if (section === 'coding-sessions') return 'pm/my-work';
+    return rest;
+  }
+
+  return rest;
 }
 
 export function WorkspaceSwitcher() {
@@ -23,8 +66,25 @@ export function WorkspaceSwitcher() {
   const { isMobile } = useSidebar();
   const { currentWorkspace, setCurrentWorkspace } = useWorkspaceStore();
   const currentOrganization = useOrganizationStore((s) => s.currentOrganization);
+  const { setCurrentOrganization } = useOrganizationStore();
   const { data: allWorkspaces = [] } = useWorkspaces(); // Fetch all workspaces across orgs
   const { data: organizations = [] } = useOrganizations();
+  const { data: supportUnread = [] } = useSupportUnreadByWorkspace();
+  const unreadByWorkspace = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of supportUnread) {
+      map.set(entry.workspace_id, entry.unread_count);
+    }
+    return map;
+  }, [supportUnread]);
+  const otherWorkspaceUnread = useMemo(() => {
+    if (!currentWorkspace) return 0;
+    let total = 0;
+    for (const [wsId, count] of unreadByWorkspace.entries()) {
+      if (wsId !== currentWorkspace.id) total += count;
+    }
+    return total;
+  }, [unreadByWorkspace, currentWorkspace]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -48,26 +108,60 @@ export function WorkspaceSwitcher() {
     return groups;
   }, [filtered, organizations, multiOrg]);
 
+  const shortcutWorkspaces = useMemo(() => flattenGroupedWorkspaces(groupedWorkspaces).slice(0, 9), [groupedWorkspaces]);
+  const workspaceShortcutIndexes = useMemo(() => {
+    const indexes = new Map<string, number>();
+    shortcutWorkspaces.forEach((workspace, index) => indexes.set(workspace.id, index));
+    return indexes;
+  }, [shortcutWorkspaces]);
+  const isMac = useMemo(() => isMacPlatform(), []);
+
+  const handleWorkspaceSelect = useCallback(
+    (workspace: Workspace) => {
+      setCurrentWorkspace(workspace);
+      // Update org if switching to a workspace from a different organization
+      if (workspace.organization_id && workspace.organization_id !== currentOrganization?.id) {
+        const newOrg = organizations.find((o) => o.id === workspace.organization_id);
+        if (newOrg) setCurrentOrganization(newOrg);
+      }
+      navigate({ to: workspaceRouteFromCurrentPath(location.pathname, workspace.slug) as string });
+      setQuery('');
+      setOpen(false);
+    },
+    [currentOrganization?.id, location.pathname, navigate, organizations, setCurrentOrganization, setCurrentWorkspace]
+  );
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableShortcutTarget(event.target) || event.altKey || event.shiftKey || !(event.metaKey || event.ctrlKey)) {
+        return;
+      }
+
+      if (!/^[1-9]$/.test(event.key)) return;
+
+      const workspace = shortcutWorkspaces[Number(event.key) - 1];
+      if (!workspace) return;
+
+      event.preventDefault();
+      handleWorkspaceSelect(workspace);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleWorkspaceSelect, shortcutWorkspaces]);
+
   if (!currentWorkspace) return null;
-
-  const { setCurrentOrganization } = useOrganizationStore();
-
-  const handleWorkspaceSelect = (workspace: Workspace) => {
-    setCurrentWorkspace(workspace);
-    // Update org if switching to a workspace from a different organization
-    if (workspace.organization_id && workspace.organization_id !== currentOrganization?.id) {
-      const newOrg = organizations.find((o) => o.id === workspace.organization_id);
-      if (newOrg) setCurrentOrganization(newOrg);
-    }
-    navigate({ to: workspaceRouteFromCurrentPath(location.pathname, workspace.slug) as string });
-    setQuery('');
-    setOpen(false);
-  };
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover
+          open={open}
+          onOpenChange={(nextOpen) => {
+            setOpen(nextOpen);
+            if (!nextOpen) setQuery('');
+          }}
+        >
           <PopoverTrigger asChild>
             <SidebarMenuButton
               size="lg"
@@ -84,7 +178,22 @@ export function WorkspaceSwitcher() {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{currentWorkspace.name}</span>
               </div>
-              <ArrowUpDownIcon className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
+              {otherWorkspaceUnread > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="ml-auto inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-red-500 px-[3px] text-[9px] font-semibold leading-none text-white"
+                      aria-label={`${otherWorkspaceUnread} unread conversations in other workspaces`}
+                    >
+                      {otherWorkspaceUnread > 99 ? '99+' : otherWorkspaceUnread}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="text-xs">
+                    {otherWorkspaceUnread} unread conversation{otherWorkspaceUnread === 1 ? '' : 's'} in other workspaces
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              <ArrowUpDownIcon className={`${otherWorkspaceUnread > 0 ? 'ml-1' : 'ml-auto'} h-3.5 w-3.5 text-muted-foreground`} />
             </SidebarMenuButton>
           </PopoverTrigger>
           <PopoverContent
@@ -114,6 +223,9 @@ export function WorkspaceSwitcher() {
                     )}
                     {group.workspaces.map((workspace) => {
                       const isActive = workspace.id === currentWorkspace.id;
+                      const unread = unreadByWorkspace.get(workspace.id) ?? 0;
+                      const shortcutIndex = workspaceShortcutIndexes.get(workspace.id);
+                      const shortcut = shortcutIndex === undefined ? null : workspaceShortcutLabel(shortcutIndex, isMac);
                       return (
                         <button
                           key={workspace.id}
@@ -135,7 +247,29 @@ export function WorkspaceSwitcher() {
                             />
                             <span className="truncate">{workspace.name}</span>
                           </div>
-                          {isActive && <Tick01Icon className="h-4 w-4 text-green-500" />}
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {shortcut && (
+                              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground/70">
+                                {shortcut}
+                              </kbd>
+                            )}
+                            {unread > 0 && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    className="inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-red-500 px-[3px] text-[9px] font-semibold leading-none text-white"
+                                    aria-label={`${unread} unread conversations`}
+                                  >
+                                    {unread > 99 ? '99+' : unread}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-xs">
+                                  {unread} unread conversation{unread === 1 ? '' : 's'}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            {isActive && <Tick01Icon className="h-4 w-4 text-green-500" />}
+                          </div>
                         </button>
                       );
                     })}

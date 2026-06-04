@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useWorkspaceAccess, usePermissions } from '@/hooks/queries/useSession';
 import { useTitle } from '@/hooks/useTitle';
+import { formatRunTokenUsage } from '@/lib/agentTokenUsage';
 import type { Agent, AgentRun } from '@/lib/pmTypes';
 import { automationService } from '@/lib/services/automationService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -48,6 +49,8 @@ const STATUS_LABELS: Record<string, string> = {
 const TARGET_LABELS: Record<string, string> = {
   epic: 'Epic',
   task: 'Task',
+  repository: 'Repository',
+  workspace: 'Workspace',
   support_conversation: 'Support',
   document: 'Document',
   crm_deal: 'Deal',
@@ -78,6 +81,11 @@ function statusVariant(status: AgentRun['status']): 'default' | 'secondary' | 'd
     default:
       return 'secondary';
   }
+}
+
+function initialRunIdFromLocation() {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('run_id');
 }
 
 function AgentRunRow({
@@ -123,7 +131,7 @@ function AgentRunRow({
           <div className="text-xs text-muted-foreground md:text-right">
             <p>{formatTimestamp(run.created_at)}</p>
             <p>
-              {run.tokens_used > 0 ? `${(run.tokens_used / 1000).toFixed(1)}k tokens` : 'No tokens yet'}
+              {formatRunTokenUsage(run, { emptyLabel: 'No tokens yet', includeUnit: true })}
             </p>
           </div>
         </div>
@@ -145,8 +153,8 @@ export function AgentRunsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totalRuns, setTotalRuns] = useState(0);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(() => initialRunIdFromLocation());
+  const [drawerOpen, setDrawerOpen] = useState(() => Boolean(initialRunIdFromLocation()));
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (!workspaceId) return;
@@ -322,7 +330,16 @@ export function AgentRunsPage() {
       <CodingSessionDrawer
         sessionId={selectedRunId}
         open={drawerOpen && !!selectedRunId}
-        onOpenChange={setDrawerOpen}
+        onOpenChange={(open) => {
+          setDrawerOpen(open);
+          if (!open && selectedRunId) {
+            const url = new URL(window.location.href);
+            if (url.searchParams.get('run_id') === selectedRunId) {
+              url.searchParams.delete('run_id');
+              window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+            }
+          }
+        }}
         title={selectedRun ? `${agentNameById[selectedRun.agent_id] ?? 'Agent'} Run` : 'Agent Run'}
         description={selectedRun ? `${formatTarget(selectedRun)} • ${formatTimestamp(selectedRun.created_at)}` : undefined}
       />

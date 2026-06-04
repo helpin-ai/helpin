@@ -9,6 +9,12 @@ import {
   resolvePublicRedirect,
   shouldAttemptRedirectResolution,
 } from './serverRedirects.mjs'
+import {
+  collectSitemapEntries,
+  renderRobotsTxt,
+  renderSitemapXml,
+  resolvePublicUrlParts,
+} from './serverSeo.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CLIENT_DIR = path.join(__dirname, 'dist', 'client')
@@ -73,6 +79,44 @@ function normalizeHeaderValue(value) {
   return Array.isArray(value) ? value.join(', ') : value ?? ''
 }
 
+function firstHeaderValue(value) {
+  return normalizeHeaderValue(value).split(',')[0].trim()
+}
+
+function normalizeIdentifier(value) {
+  const normalized = firstHeaderValue(value).toLowerCase()
+  if (!normalized || /^[a-z]+:\/\//i.test(normalized)) return ''
+  if (normalized.includes('/') || normalized.includes('\\')) return ''
+  return normalized
+}
+
+function normalizeBasepath(value) {
+  const raw = firstHeaderValue(value)
+  if (!raw || raw === '/') return ''
+
+  let decoded = raw
+  try {
+    decoded = decodeURIComponent(raw)
+  } catch {
+    return ''
+  }
+
+  if (!decoded.startsWith('/')) {
+    decoded = `/${decoded}`
+  }
+
+  decoded = decoded.replace(/\/+$/, '')
+  if (!decoded || decoded === '/') return ''
+  if (decoded.includes('//') || decoded.includes('\\')) return ''
+
+  const segments = decoded.split('/').filter(Boolean)
+  if (segments.some((segment) => segment === '.' || segment === '..')) {
+    return ''
+  }
+
+  return decoded
+}
+
 function shouldReadBody(method) {
   return !['GET', 'HEAD'].includes(method.toUpperCase())
 }
@@ -98,13 +142,20 @@ function isHtmlRequest(request, url) {
   return accept.includes('text/html') || accept.includes('*/*') || accept === ''
 }
 
-function getCacheKey(url, request) {
+function getCacheKey(url, request, hcContext) {
   const host =
-    normalizeHeaderValue(request.headers['x-forwarded-host']) ||
-    normalizeHeaderValue(request.headers.host) ||
+    firstHeaderValue(request.headers['x-forwarded-host']) ||
+    firstHeaderValue(request.headers.host) ||
     url.host
 
-  return `${request.method}:${host}${url.pathname}${url.search}`
+  return [
+    request.method,
+    host,
+    hcContext?.subdomain || '',
+    hcContext?.basepath || '',
+    url.pathname,
+    url.search,
+  ].join(':')
 }
 
 function getCachedResponse(key) {
@@ -136,7 +187,13 @@ function setCachedResponse(key, response) {
 }
 
 function getRedirectCacheKey(hcContext, url) {
-  return `${hcContext.host}:${url.pathname}${url.search}`
+  return [
+    hcContext.host,
+    hcContext.subdomain,
+    hcContext.basepath,
+    url.pathname,
+    url.search,
+  ].join(':')
 }
 
 function getCachedRedirect(key) {
@@ -262,17 +319,18 @@ async function writeFetchResponse(nodeResponse, response, url) {
 }
 
 function resolveHostInfo(request) {
-  const forwardedHost = normalizeHeaderValue(request.headers['x-forwarded-host'])
-  const host = forwardedHost || normalizeHeaderValue(request.headers.host) || 'localhost'
-  const forwardedProto = normalizeHeaderValue(request.headers['x-forwarded-proto'])
+  const forwardedHost = firstHeaderValue(request.headers['x-forwarded-host'])
+  const rawHost = firstHeaderValue(request.headers.host) || 'localhost'
+  const host = forwardedHost || rawHost
+  const forwardedProto = firstHeaderValue(request.headers['x-forwarded-proto'])
   const protocol = forwardedProto || 'http'
-  return { host, protocol, origin: `${protocol}://${host}` }
+  return { host, rawHost, protocol, origin: `${protocol}://${host}` }
 }
 
 const HOSTED_HELP_CENTER_ROOTS = ['stage.helpin.center', 'helpin.center']
 
 function normalizeHostname(host) {
-  return host.split(':')[0].trim().toLowerCase()
+  return firstHeaderValue(host).split(':')[0].trim().toLowerCase()
 }
 
 function resolveHostedSubdomain(host) {
@@ -295,32 +353,65 @@ function resolveHostedSubdomain(host) {
   return ''
 }
 
+function isLocalHostname(hostname) {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
+  )
+}
+
+function canUseExplicitTenant(tenant, rawHostname) {
+  if (!tenant) return false
+  if (isLocalHostname(rawHostname)) return true
+
+  const hostedSubdomain = resolveHostedSubdomain(rawHostname)
+  return hostedSubdomain === tenant
+}
+
 /**
  * Mirrors `resolveHelpCenterContext` in src/lib/utils.ts but adapted for the
  * Node entrypoint. Keep these in sync.
  */
-function resolveHelpCenterContext(host, pathname, search = '') {
+function resolveHelpCenterContext(host, pathname, search = '', proxy = {}) {
   const hostname = normalizeHostname(host)
-  const overrideParam = new URLSearchParams(search).get('subdomain')
+  const rawHostname = normalizeHostname(proxy.rawHost || host)
+  const searchParams = new URLSearchParams(search)
+  const queryTenant = normalizeIdentifier(
+    searchParams.get('helpin_tenant') || searchParams.get('subdomain'),
+  )
+  const headerTenant = normalizeIdentifier(proxy.tenant)
+  const explicitTenant = canUseExplicitTenant(headerTenant, rawHostname)
+    ? headerTenant
+    : canUseExplicitTenant(queryTenant, rawHostname)
+      ? queryTenant
+      : ''
+  const basepath = normalizeBasepath(
+    proxy.basepath ||
+      proxy.forwardedPrefix ||
+      searchParams.get('helpin_basepath'),
+  )
+
+  if (explicitTenant) {
+    return { subdomain: explicitTenant, basepath }
+  }
 
   const hostedSubdomain = resolveHostedSubdomain(hostname)
   if (hostedSubdomain) {
-    return { subdomain: overrideParam || hostedSubdomain, basepath: '' }
+    const overrideParam = queryTenant === hostedSubdomain ? queryTenant : ''
+    return { subdomain: overrideParam || hostedSubdomain, basepath }
   }
 
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)
-  ) {
+  if (isLocalHostname(hostname)) {
     return {
-      subdomain: overrideParam || process.env.VITE_HC_SUBDOMAIN || 'demo',
-      basepath: '',
+      subdomain:
+        queryTenant || normalizeIdentifier(process.env.VITE_HC_SUBDOMAIN) || 'demo',
+      basepath,
     }
   }
 
   // Custom domain — pass hostname through; backend resolves it.
-  return { subdomain: overrideParam || hostname, basepath: '' }
+  return { subdomain: hostname, basepath }
 }
 
 const requestContextStorage = new AsyncLocalStorage()
@@ -330,23 +421,25 @@ const requestContextStorage = new AsyncLocalStorage()
 globalThis.__hcGetRequestContext__ = () => requestContextStorage.getStore() ?? null
 
 
-function xmlEscape(value) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;')
+async function fetchHelpCenterConfig(apiBase, subdomain) {
+  if (!apiBase || !subdomain) return null
+  const configRes = await fetch(`${apiBase}/hc/${subdomain}/config`)
+  if (!configRes.ok) throw new Error(`config fetch failed: ${configRes.status}`)
+  return configRes.json()
 }
 
 async function handleRobotsTxt(_request, response, hcContext) {
-  const { origin, basepath } = hcContext
-  const body = [
-    'User-agent: *',
-    'Disallow: /preview/',
-    'Crawl-delay: 1',
-    `Sitemap: ${origin}${basepath || ''}/sitemap.xml`,
-  ].join('\n')
+  const apiBase = process.env.INTERNAL_API_URL
+  let publicUrl = { origin: hcContext.origin, basepath: hcContext.basepath }
+  try {
+    const config = await fetchHelpCenterConfig(apiBase, hcContext.subdomain)
+    if (config) {
+      publicUrl = resolvePublicUrlParts(hcContext, config)
+    }
+  } catch (error) {
+    console.error('failed to resolve robots public URL', error)
+  }
+  const body = renderRobotsTxt(publicUrl)
   response.statusCode = 200
   response.setHeader('Cache-Control', 'public, max-age=3600')
   response.setHeader('Content-Type', 'text/plain; charset=utf-8')
@@ -355,7 +448,7 @@ async function handleRobotsTxt(_request, response, hcContext) {
 
 async function handleSitemapXml(_request, response, hcContext) {
   try {
-    const { origin, basepath, subdomain } = hcContext
+    const { subdomain } = hcContext
     const apiBase = process.env.INTERNAL_API_URL
     if (!apiBase) {
       response.statusCode = 503
@@ -369,16 +462,13 @@ async function handleSitemapXml(_request, response, hcContext) {
       response.end('Sitemap unavailable')
       return
     }
-    const configRes = await fetch(`${apiBase}/hc/${subdomain}/config`)
-    if (!configRes.ok) throw new Error(`config fetch failed: ${configRes.status}`)
-    const config = await configRes.json()
+    const config = await fetchHelpCenterConfig(apiBase, subdomain)
     const locales = config.enabled_locales?.length > 1
       ? config.enabled_locales
       : [config.default_locale || 'en']
     const multilingual = config.enabled_locales?.length > 1
-    const baseUrl = `${origin}${basepath || ''}`
-    const urls = new Map()
-    urls.set(`${baseUrl}${multilingual ? `/${config.default_locale}` : '/'}`, null)
+    const publicUrl = resolvePublicUrlParts(hcContext, config)
+    const navigationByLocale = new Map()
 
     for (const locale of locales) {
       const spacesPath = multilingual
@@ -396,29 +486,15 @@ async function handleSitemapXml(_request, response, hcContext) {
         if (!navRes.ok) continue
         const navigation = await navRes.json()
 
-        for (const coll of navigation) {
-          const collPath = multilingual
-            ? `/${locale}/${coll.slug}`
-            : `/${coll.slug}`
-          urls.set(`${baseUrl}${collPath}`, null)
-
-          for (const article of coll.articles || []) {
-            const artPath = multilingual
-              ? `/${locale}/${coll.slug}/${article.slug}`
-              : `/${coll.slug}/${article.slug}`
-            urls.set(`${baseUrl}${artPath}`, article.published_at || null)
-          }
-        }
+        navigationByLocale.set(locale, [
+          ...(navigationByLocale.get(locale) || []),
+          ...navigation,
+        ])
       }
     }
 
-    const entries = Array.from(urls.entries())
-      .map(([loc, lastmod]) => {
-        const lastmodTag = lastmod ? `<lastmod>${xmlEscape(new Date(lastmod).toISOString())}</lastmod>` : ''
-        return `  <url><loc>${xmlEscape(loc)}</loc>${lastmodTag}</url>`
-      })
-      .join('\n')
-    const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</urlset>`
+    const entries = collectSitemapEntries({ publicUrl, config, navigationByLocale })
+    const body = renderSitemapXml(entries)
 
     response.statusCode = 200
     response.setHeader('Cache-Control', 'public, max-age=3600')
@@ -504,11 +580,17 @@ async function handleRequest(request, response) {
     return
   }
 
-  const { host, protocol, origin } = resolveHostInfo(request)
+  const { host, rawHost, protocol, origin } = resolveHostInfo(request)
   const url = new URL(request.url || '/', `${protocol}://${host}`)
-  const resolved = resolveHelpCenterContext(host, url.pathname, url.search)
+  const resolved = resolveHelpCenterContext(host, url.pathname, url.search, {
+    rawHost,
+    tenant: request.headers['x-helpin-hc-tenant'],
+    basepath: request.headers['x-helpin-hc-basepath'],
+    forwardedPrefix: request.headers['x-forwarded-prefix'],
+  })
   const hcContext = {
     host: normalizeHostname(host),
+    rawHost: normalizeHostname(rawHost),
     protocol,
     origin,
     pathname: url.pathname,
@@ -549,7 +631,7 @@ async function handleRequest(request, response) {
       return
     }
 
-    const cacheKey = getCacheKey(url, request)
+    const cacheKey = getCacheKey(url, request, hcContext)
 
     if (isHtmlRequest(request, routeUrl)) {
       const cached = getCachedResponse(cacheKey)

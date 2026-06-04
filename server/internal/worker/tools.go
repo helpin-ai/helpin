@@ -12,20 +12,28 @@ type ToolRegistry struct {
 	tools     map[string]ToolFunc
 	defs      []ToolDefinition
 	webSearch WebSearchClient
+	exaSearch *ExaSearchClient
+	webFetch  *WebFetchClient
 }
 
 // ToolFunc is a function that executes a tool and returns its result.
 type ToolFunc func(ctx *ExecutionContext, input json.RawMessage) (string, error)
 
 // NewToolRegistry creates a registry with all built-in tools.
-func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
+func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *ToolRegistry {
+	var exaClient *ExaSearchClient
+	if len(exaSearch) > 0 {
+		exaClient = exaSearch[0]
+	}
 	r := &ToolRegistry{
 		tools:     make(map[string]ToolFunc),
 		webSearch: webSearch,
+		exaSearch: exaClient,
+		webFetch:  NewWebFetchClient(""),
 	}
 
 	// Filesystem tools
-	r.register("read_file", "Read a bounded window of a text file at the given path (relative to the workspace root). Returns the first chunk by default; use offset_line and limit_lines to continue without dumping the whole file.", map[string]interface{}{
+	r.register("read_file", "Read a bounded window of a text file at the given path (relative to the workspace root). Use ripgrep/search_files/list_symbols first, then use read_file or read_file_range for the exact section you need.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
@@ -38,18 +46,18 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 			},
 			"limit_lines": map[string]interface{}{
 				"type":        "integer",
-				"description": "Optional maximum number of lines to return. Defaults to 200, max 400.",
+				"description": "Optional maximum number of lines to return. Defaults to 120, max 240.",
 			},
 		},
 		"required": []string{"path"},
 	}, toolReadFile)
 
-	r.register("read_files", "Read bounded windows from multiple text files in one call. Use this when you need to inspect several files without spending extra tool round-trips.", map[string]interface{}{
+	r.register("read_files", "Read small bounded windows from a few specific text files in one call. Prefer ripgrep/search_files plus read_file_range first; use this only when you already know the exact files and need small excerpts.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"files": map[string]interface{}{
 				"type":        "array",
-				"description": "Files to read. Max 8 files per call.",
+				"description": "Files to read. Max 4 files per call.",
 				"items": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -63,7 +71,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 						},
 						"limit_lines": map[string]interface{}{
 							"type":        "integer",
-							"description": "Optional maximum number of lines to return for this file. Defaults to 120, max 250.",
+							"description": "Optional maximum number of lines to return for this file. Defaults to 60, max 120.",
 						},
 					},
 					"required": []string{"path"},
@@ -144,7 +152,7 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"pattern"},
 	}, toolSearchFiles)
 
-	r.register("read_file_range", "Read specific line range from a file. Much more token-efficient than read_file for large files.", map[string]interface{}{
+	r.register("read_file_range", "Read a specific line range from a file. Prefer this after search/ripgrep when you know the relevant span; it is much more token-efficient than broad file reads.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{
@@ -255,35 +263,26 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{},
 	}, toolRunCommand)
 
+	r.register(ToolScanSemgrep, "Run Semgrep against the checked-out repository and return normalized SAST findings. Scanner output is parsed and compacted server-side.", securityScannerToolSchema(ToolScanSemgrep), toolScanSemgrep)
+	r.register(ToolScanTrivy, "Run Trivy filesystem scanning against the checked-out repository and return normalized dependency, misconfiguration, and secret findings.", securityScannerToolSchema(ToolScanTrivy), toolScanTrivy)
+	r.register(ToolScanGitleaks, "Run Gitleaks against the checked-out repository and return normalized secret findings with raw secret values redacted.", securityScannerToolSchema(ToolScanGitleaks), toolScanGitleaks)
+
 	if webSearch != nil {
-		r.register("web_search_brave", "Search the public web with Brave Search. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.", map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"query": map[string]interface{}{
-					"type":        "string",
-					"description": "Search query to run",
-				},
-				"count": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of results to return (default 5, max 10)",
-				},
-				"freshness": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional freshness hint such as pd, pw, pm, or py",
-				},
-				"domain_allowlist": map[string]interface{}{
-					"type":        "array",
-					"description": "Optional list of domains to prioritize",
-					"items": map[string]interface{}{
-						"type": "string",
-					},
-				},
-			},
-			"required": []string{"query"},
-		}, func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		r.register("web_search_brave", webSearchBraveToolDescription(), webSearchBraveToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 			return r.toolWebSearchBrave(ctx, input)
 		})
 	}
+	if r.exaSearch != nil {
+		r.register("web_search_exa", webSearchExaToolDescription(), webSearchExaToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+			return r.toolWebSearchExa(ctx, input)
+		})
+	}
+	r.register("fetch_url", fetchURLToolDescription(), fetchURLToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		return r.toolFetchURL(ctx, input)
+	})
+	r.register("crawl_url", crawlURLToolDescription(), crawlURLToolSchema(), func(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+		return r.toolCrawlURL(ctx, input)
+	})
 
 	// Git tools
 	r.register("create_branch", "Create a new git branch and switch to it.", map[string]interface{}{
@@ -399,23 +398,57 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolRequestHumanInput)
 
+	r.register(ToolRequestApproval, "Request inline approval or change feedback for a proposed artifact or plan in the interactive run drawer and wait for the human response.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"phase":             map[string]interface{}{"type": "string", "description": "Short workflow phase label such as prd, tasks, or task_doc."},
+			"preview_panel_key": map[string]interface{}{"type": "string", "description": "Optional preview panel key this approval request refers to."},
+			"title":             map[string]interface{}{"type": "string", "description": "User-facing title for the approval request."},
+			"summary":           map[string]interface{}{"type": "string", "description": "Optional short approval summary."},
+		},
+		"required":             []string{"title"},
+		"additionalProperties": false,
+	}, toolRequestApproval)
+
 	r.register(ToolRequestReviewCheckpoint, "Request an inline product review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"phase":   map[string]interface{}{"type": "string", "description": "Short product workflow phase label such as prd, stories, or story_doc."},
-			"title":   map[string]interface{}{"type": "string", "description": "User-facing title for the checkpoint."},
-			"summary": map[string]interface{}{"type": "string", "description": "Optional short review summary."},
+			"phase":             map[string]interface{}{"type": "string", "description": "Short product workflow phase label such as code_review or findings."},
+			"preview_panel_key": map[string]interface{}{"type": "string", "description": "Optional preview panel key this checkpoint refers to."},
+			"title":             map[string]interface{}{"type": "string", "description": "User-facing title for the checkpoint."},
+			"summary":           map[string]interface{}{"type": "string", "description": "Optional short review summary."},
+			"findings": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional structured review findings to persist alongside the checkpoint.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"id":            map[string]interface{}{"type": "string"},
+						"title":         map[string]interface{}{"type": "string"},
+						"body":          map[string]interface{}{"type": "string"},
+						"priority":      map[string]interface{}{"type": "string"},
+						"confidence":    map[string]interface{}{"type": "number"},
+						"code_location": map[string]interface{}{"type": "string"},
+					},
+					"required":             []string{"title", "body"},
+					"additionalProperties": false,
+				},
+			},
+			"overall_correctness":      map[string]interface{}{"type": "string"},
+			"overall_explanation":      map[string]interface{}{"type": "string"},
+			"overall_confidence_score": map[string]interface{}{"type": "number"},
 		},
 		"required":             []string{"title"},
 		"additionalProperties": false,
 	}, toolRequestReviewCheckpoint)
 
-	r.register(ToolRequestHumanApproval, "Legacy alias for request_review_checkpoint. Request an inline human approval or review checkpoint in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
+	r.register(ToolRequestHumanApproval, "Legacy alias for request_approval. Request an inline human approval in the interactive run drawer and wait for approval or change feedback.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"phase":   map[string]interface{}{"type": "string"},
-			"title":   map[string]interface{}{"type": "string"},
-			"summary": map[string]interface{}{"type": "string"},
+			"phase":             map[string]interface{}{"type": "string"},
+			"preview_panel_key": map[string]interface{}{"type": "string"},
+			"title":             map[string]interface{}{"type": "string"},
+			"summary":           map[string]interface{}{"type": "string"},
 		},
 		"required":             []string{"title"},
 		"additionalProperties": false,
@@ -498,13 +531,86 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"properties": map[string]interface{}{
 			"title": map[string]interface{}{"type": "string"},
 			"content": map[string]interface{}{
-				"description": "Task plan JSON object with summary and proposed_stories. Pass structured JSON, not a stringified blob.",
+				"description": "Task plan JSON object with summary and proposed_tasks. Pass structured JSON, not a stringified blob.",
 				"type":        "object",
 				"properties": map[string]interface{}{
-					"summary":          map[string]interface{}{"type": "string"},
-					"proposed_stories": map[string]interface{}{"type": "array"},
+					"summary": map[string]interface{}{
+						"type": "string",
+					},
+					"proposed_tasks": map[string]interface{}{
+						"type":     "array",
+						"minItems": 1,
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"ref":         map[string]interface{}{"type": "string"},
+								"name":        map[string]interface{}{"type": "string"},
+								"description": map[string]interface{}{"type": "string"},
+								"task_type":   map[string]interface{}{"type": "string"},
+								"acceptance_criteria": map[string]interface{}{
+									"type":     "array",
+									"minItems": 1,
+									"items":    map[string]interface{}{"type": "string"},
+								},
+								"dependency_refs": map[string]interface{}{
+									"type":  "array",
+									"items": map[string]interface{}{"type": "string"},
+								},
+								"slice_type": map[string]interface{}{"type": "string"},
+								"implementation_brief": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"approach": map[string]interface{}{"type": "string"},
+										"files_to_modify": map[string]interface{}{
+											"type": "array",
+											"items": map[string]interface{}{
+												"type": "object",
+												"properties": map[string]interface{}{
+													"path":        map[string]interface{}{"type": "string"},
+													"action":      map[string]interface{}{"type": "string"},
+													"description": map[string]interface{}{"type": "string"},
+												},
+												"required":             []string{"path", "action", "description"},
+												"additionalProperties": false,
+											},
+										},
+										"test_strategy": map[string]interface{}{
+											"oneOf": []map[string]interface{}{
+												{"type": "string"},
+												{
+													"type":  "array",
+													"items": map[string]interface{}{"type": "string"},
+												},
+											},
+										},
+										"vertical_layers": map[string]interface{}{
+											"type":  "array",
+											"items": map[string]interface{}{"type": "string"},
+										},
+										"depends_on_files": map[string]interface{}{
+											"type":  "array",
+											"items": map[string]interface{}{"type": "string"},
+										},
+									},
+									"required":             []string{"approach", "files_to_modify", "test_strategy"},
+									"additionalProperties": false,
+								},
+							},
+							"required":             []string{"name", "description", "task_type", "acceptance_criteria", "dependency_refs"},
+							"additionalProperties": false,
+						},
+					},
+					"open_questions": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
+					"risks": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
 				},
-				"required": []string{"summary", "proposed_stories"},
+				"required":             []string{"summary", "proposed_tasks"},
+				"additionalProperties": false,
 			},
 			"replace": map[string]interface{}{"type": "boolean"},
 		},
@@ -552,26 +658,20 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"additionalProperties": false,
 	}, toolPublishPreview)
 
-	r.register("add_task_comment", "Add a comment to the current task visible in Helpin.", map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"content": map[string]interface{}{
-				"type":        "string",
-				"description": "The comment text (supports markdown)",
-			},
-		},
-		"required": []string{"content"},
-	}, toolAddTaskComment)
-
 	r.register("list_task_checklist", "List the checklist items for the current task.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
 	}, toolListTaskChecklist)
 
-	r.register("list_workspace_teams", "List workspace teams that the agent can use for team selection or planning context.", map[string]interface{}{
-		"type":       "object",
-		"properties": map[string]interface{}{},
-	}, toolListWorkspaceTeams)
+	r.register("list_team_workflows_with_stages", "List the resolved workflow and ordered stages for one team or all workspace teams. Use this to choose a valid workflow stage before creating a task.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"team_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional team ID. Omit to return workflow summaries for all workspace teams.",
+			},
+		},
+	}, toolListTeamWorkflowsWithStages)
 
 	r.register("list_conversation_messages", "List the current support conversation messages.", map[string]interface{}{
 		"type":       "object",
@@ -654,7 +754,17 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		},
 	}, toolListDocuments)
 
-	r.register("read_document", "Read the metadata of a specific document by ID.", map[string]interface{}{
+	r.register("list_collections", "List doc collections in the workspace, optionally filtered by space. Returns collection ID, name, slug, space ID, and parent collection ID.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"space_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional space ID to filter collections",
+			},
+		},
+	}, toolListCollections)
+
+	r.register("read_document", "Read a known document by ID. Returns metadata, a bounded plain-text excerpt, and the first page of compact addressable blocks. Use get_document_blocks with offset/limit, anchor_block_id, or block_ids for more blocks; use search_documents only to find other documents.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"document_id": map[string]interface{}{
@@ -665,7 +775,126 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"document_id"},
 	}, toolReadDocument)
 
-	r.register("search_documents", "Search documents by keyword across the workspace.", map[string]interface{}{
+	r.register("get_document_blocks", "Fetch addressable blocks for a known document. By default returns a compact paged block list; use block_ids for known blocks, anchor_block_id with around for nearby context, or include_content with a small selected set for precise edits.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID whose blocks should be fetched",
+			},
+			"block_ids": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional stable block IDs to fetch. Use this when include_content is true.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"include_content": map[string]interface{}{
+				"type":        "boolean",
+				"description": "When true, include the full block node JSON. Limited to 20 blocks per call.",
+			},
+			"offset": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional zero-based block offset for paging when block_ids and anchor_block_id are omitted.",
+			},
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional page size for compact block lists (default 40, max 100).",
+			},
+			"anchor_block_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional block ID to center a window around. Use when the run context already provides a focused block ID.",
+			},
+			"around": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional number of sibling blocks before and after anchor_block_id to return (default 5, max 25).",
+			},
+		},
+		"required":             []string{"document_id"},
+		"additionalProperties": false,
+	}, toolGetDocumentBlocks)
+
+	r.register("publish_ai_section_candidate", "Publish the generated markdown body for the current Docs AI section as a review candidate. This stores a suggestion only; it does not mutate the document until a human approves it.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID from the run context.",
+			},
+			"block_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The AI section block ID from the run context.",
+			},
+			"content": map[string]interface{}{
+				"type":        "string",
+				"description": "Markdown body for the replacement section. Do not include a document title, provenance notes, or markdown fences.",
+			},
+			"sources": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional source summaries used for the candidate.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"title":       map[string]interface{}{"type": "string"},
+						"url":         map[string]interface{}{"type": "string"},
+						"source_type": map[string]interface{}{"type": "string"},
+						"excerpt":     map[string]interface{}{"type": "string"},
+					},
+					"additionalProperties": true,
+				},
+			},
+		},
+		"required":             []string{"document_id", "block_id", "content"},
+		"additionalProperties": false,
+	}, toolPublishAISectionCandidate)
+
+	r.register("publish_document_change_proposal", "Submit a proposed Docs document or block change for review in Docs. This persists a Docs proposal; after success, finish without calling request_approval.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"scope": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"document", "block"},
+				"description": "Whether the proposal replaces the whole document or one addressable block.",
+			},
+			"document_id": map[string]interface{}{
+				"type":        "string",
+				"description": "The document ID from the run context.",
+			},
+			"block_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Required when scope is block. The stable block ID to replace.",
+			},
+			"revision": map[string]interface{}{
+				"type":        "integer",
+				"description": "Required when scope is block. The current block revision from get_document_blocks.",
+			},
+			"content": map[string]interface{}{
+				"type":        "string",
+				"description": "Replacement markdown. For document scope, provide the full document. For block scope, provide replacement markdown for the focused block only.",
+			},
+			"summary": map[string]interface{}{
+				"type":        "string",
+				"description": "Short human-readable summary of the proposed change.",
+			},
+			"sources": map[string]interface{}{
+				"type":        "array",
+				"description": "Optional source summaries used for the proposal.",
+				"items": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"type":  map[string]interface{}{"type": "string", "enum": []string{"conversation", "document", "url", "agent_run", "coverage_gap"}},
+						"id":    map[string]interface{}{"type": "string"},
+						"label": map[string]interface{}{"type": "string"},
+						"url":   map[string]interface{}{"type": "string"},
+					},
+					"required":             []string{"type", "label"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"scope", "document_id", "content", "summary"},
+		"additionalProperties": false,
+	}, toolPublishDocumentChangeProposal)
+
+	r.register("search_documents", "Search documents by keyword across the workspace. Use only when you need to find other documents or the current document ID is unknown; do not use it to inspect a known current document.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
 			"query": map[string]interface{}{
@@ -680,26 +909,185 @@ func NewToolRegistry(webSearch WebSearchClient) *ToolRegistry {
 		"required": []string{"query"},
 	}, toolSearchDocuments)
 
+	r.register("get_release_context", "Load release metadata, compare commits/files against the previous published release, and resolve related tasks. Defaults from the current repository-targeted run and GitHub release event when available.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"repository_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository ID. Defaults from the current repository target when omitted.",
+			},
+			"repo_full_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository full name like owner/repo. Defaults from the current GitHub event when omitted.",
+			},
+			"tag_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional release tag name. Defaults from the current GitHub release event when omitted.",
+			},
+			"include_changed_files": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include changed files from the release comparison.",
+			},
+			"max_commits": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of commits to return. Default 100, max 200.",
+			},
+			"max_files": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of changed files to return when include_changed_files is true. Default 200, max 500.",
+			},
+		},
+		"additionalProperties": false,
+	}, toolGetReleaseContext)
+
+	r.register("find_tasks_for_git_changes", "Resolve tasks related to PRs, branches, commits, and text references for a repository. Returns evidence and confidence for each match.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"repository_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository ID. Defaults from the current repository target when omitted.",
+			},
+			"repo_full_name": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional repository full name like owner/repo. Defaults from the current GitHub event when omitted.",
+			},
+			"pr_numbers": map[string]interface{}{
+				"type":        "array",
+				"description": "Pull request numbers to resolve. Max 50.",
+				"items":       map[string]interface{}{"type": "integer"},
+			},
+			"commit_shas": map[string]interface{}{
+				"type":        "array",
+				"description": "Commit SHAs to resolve. Max 200.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"branches": map[string]interface{}{
+				"type":        "array",
+				"description": "Branch names to resolve. Max 50.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"texts": map[string]interface{}{
+				"type":        "array",
+				"description": "Free text to scan for task keys. Max 100.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+		},
+		"additionalProperties": false,
+	}, toolFindTasksForGitChanges)
+
+	r.register("get_pull_request_diff", "Load the changed files and patches for a GitHub pull request. Defaults owner/repo from the current repository-targeted run when omitted.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"owner": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository owner. Defaults from the current run repository when omitted.",
+			},
+			"repo": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository name. Defaults from the current run repository when omitted.",
+			},
+			"pull_number": map[string]interface{}{
+				"type":        "integer",
+				"description": "Pull request number.",
+			},
+		},
+		"required":             []string{"pull_number"},
+		"additionalProperties": false,
+	}, toolGetPullRequestDiff)
+
+	r.register("get_check_run_logs", "Load a GitHub check run's conclusion, output text, and annotations for diagnosing failed checks.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"owner": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository owner. Defaults from the current run repository when omitted.",
+			},
+			"repo": map[string]interface{}{
+				"type":        "string",
+				"description": "Repository name. Defaults from the current run repository when omitted.",
+			},
+			"check_run_id": map[string]interface{}{
+				"type":        "integer",
+				"description": "GitHub check run ID.",
+			},
+		},
+		"required":             []string{"check_run_id"},
+		"additionalProperties": false,
+	}, toolGetCheckRunLogs)
+
+	r.register("get_task_context", "Load compact task context with optional linked docs, document content, comments, and git links for specific task IDs.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"task_ids": map[string]interface{}{
+				"type":        "array",
+				"description": "Task IDs to load. Max 50.",
+				"items":       map[string]interface{}{"type": "string"},
+			},
+			"include_linked_docs": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include linked document metadata.",
+			},
+			"include_document_content": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include linked document content text. Only used when include_linked_docs is true.",
+			},
+			"include_comments": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include task comments.",
+			},
+			"include_git_links": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to include git links for each task.",
+			},
+		},
+		"required":             []string{"task_ids"},
+		"additionalProperties": false,
+	}, toolGetTaskContext)
+
 	r.register("list_epic_tasks", "List all non-archived tasks linked to the current epic with name, type, status, estimate, priority, and agent assignment.", map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
 	}, toolListEpicTasks)
 
 	r.registerSharedCommandTools(map[string]ToolFunc{
-		"update_task_state":       toolUpdateTaskState,
-		"update_deal_stage":       toolUpdateDealStage,
-		"add_deal_note":           toolAddDealNote,
-		"write_document_content":  toolWriteDocumentContent,
-		"link_document_to_object": toolLinkDocumentToObject,
-		"ensure_epic_spec_doc":    toolEnsureEpicSpecDoc,
-		"ensure_task_plan_doc":    toolEnsureTaskPlanDoc,
-		"approve_epic_spec":       toolApproveEpicSpec,
-		"create_task_batch":       toolCreateTaskBatch,
-		"assign_task_agent":       toolAssignTaskAgent,
-		"set_task_dependencies":   toolSetTaskDependencies,
+		"list_workspace_teams":       toolListWorkspaceTeams,
+		"update_task_state":          toolUpdateTaskState,
+		"ensure_task_label":          toolEnsureTaskLabel,
+		"list_tasks":                 toolListTasks,
+		"add_task_comment":           toolAddTaskComment,
+		"update_deal_stage":          toolUpdateDealStage,
+		"add_deal_note":              toolAddDealNote,
+		"ensure_crm_contact_company": toolEnsureCRMContactCompany,
+		"enrich_crm_contact":         toolEnrichCRMContact,
+		"enrich_crm_company":         toolEnrichCRMCompany,
+		"create_document":            toolCreateDocument,
+		"create_task":                toolCreateTask,
+		"write_document_content":     toolWriteDocumentContent,
+		"update_document_block":      toolUpdateDocumentBlock,
+		"link_document_to_object":    toolLinkDocumentToObject,
+		"ensure_epic_spec_doc":       toolEnsureEpicSpecDoc,
+		"ensure_task_plan_doc":       toolEnsureTaskPlanDoc,
+		"approve_epic_spec":          toolApproveEpicSpec,
+		"create_task_batch":          toolCreateTaskBatch,
+		"assign_task_agent":          toolAssignTaskAgent,
+		"set_task_dependencies":      toolSetTaskDependencies,
 	})
 
 	return r
+}
+
+func (r *ToolRegistry) SetWebFetchProxyURLs(proxyURLs string) {
+	if r == nil {
+		return
+	}
+	r.webFetch = NewWebFetchClient(proxyURLs)
+}
+
+func (r *ToolRegistry) webFetchClient() *WebFetchClient {
+	if r == nil || r.webFetch == nil {
+		return NewWebFetchClient("")
+	}
+	return r.webFetch
 }
 
 func (r *ToolRegistry) register(name, description string, schema interface{}, fn ToolFunc) {
@@ -770,5 +1158,8 @@ func (r *ToolRegistry) ExecuteAllowed(ctx *ExecutionContext, name string, input 
 		}
 		return "", fmt.Errorf("tool %q is not allowed for the current agent policy", name)
 	}
-	return r.Execute(ctx, name, input)
+	if _, ok := r.tools[name]; ok {
+		return r.Execute(ctx, name, input)
+	}
+	return r.Execute(ctx, canonicalName, input)
 }

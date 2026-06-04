@@ -26,6 +26,8 @@ import { BuyerSignals } from '@/components/crm/BuyerSignals';
 import { EntitySummaryCard } from '@/components/crm/EntitySummaryCard';
 import { EmailTimeline } from '@/components/crm/EmailTimeline';
 import { AssociationsList } from '@/components/crm/AssociationsList';
+import { LinkedTasksPanel } from '@/components/crm/LinkedTasksPanel';
+import { useRegisterPageContext } from '@/components/command-bar/pageContext';
 import { useTitle } from '@/hooks/useTitle';
 import type { UpdateCRMDealRequest } from '@/lib/crmTypes';
 
@@ -42,8 +44,8 @@ function MetadataRow({ icon: Icon, label, children }: { icon: React.ElementType;
   return (
     <>
       <Icon className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground" />
-      <span className="self-center text-xs text-muted-foreground">{label}</span>
-      <div className="min-w-0 self-center">{children}</div>
+      <span className="self-center text-[12px] text-muted-foreground">{label}</span>
+      <div className="min-w-0 self-center text-[12px]">{children}</div>
     </>
   );
 }
@@ -55,6 +57,11 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
   const navigate = useNavigate();
 
   const { data: deal, isLoading } = useDeal(wsId, dealId);
+  useRegisterPageContext(deal ? {
+    entity_type: 'crm_deal',
+    entity_id: deal.id,
+    display_title: deal.name,
+  } : null, 20);
   const { data: activitiesData, refetch: refetchActivities } = useDealActivities(wsId, dealId);
   const { data: associations, refetch: refetchAssociations } = useDealAssociations(wsId, dealId);
   const { data: pipelines } = usePipelines(wsId);
@@ -222,6 +229,17 @@ export function DealDetailPage({ dealId }: { dealId: string }) {
             <div className="mt-3">
               <EntitySummaryCard workspaceId={wsId} dealId={dealId} />
             </div>
+          </div>
+
+          <Separator className="my-6" />
+
+          {/* Tasks */}
+          <div>
+            <LinkedTasksPanel
+              workspaceId={wsId}
+              workspaceSlug={wsSlug}
+              dealId={dealId}
+            />
           </div>
 
           <Separator className="my-6" />

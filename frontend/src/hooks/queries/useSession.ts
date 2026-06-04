@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { workspacesService } from '@/lib/services/workspacesService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
@@ -9,11 +9,11 @@ import type { Permission, WorkspaceAccess, WorkspaceMember, WorkspaceModule } fr
  * useSession fetches the legacy my-membership endpoint.
  * Kept for backward compatibility — prefer useWorkspaceAccess for new code.
  */
-export function useSession(wsId: string) {
+export function useSession(wsId: string, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.workspaces.session(wsId),
     queryFn: async () => unwrap(await workspacesService.getMyMembership(wsId)),
-    enabled: !!wsId,
+    enabled: !!wsId && (options?.enabled ?? true),
     staleTime: 5 * 60_000,
   })
 }
@@ -45,6 +45,11 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
     const has = (perm: Permission): boolean => permSet.has(perm)
     const hasAny = (...perms: Permission[]): boolean => perms.some(p => permSet.has(p))
     const canAccessModule = (module: WorkspaceModule): boolean => moduleSet.has(module)
+    const isOwner = role === 'owner'
+    const isAdmin = role === 'owner' || role === 'admin'
+    const teamMemberships = access?.team_memberships ?? []
+    const isTeamManager = (teamId: string | null | undefined): boolean =>
+      !!teamId && teamMemberships.some(tm => tm.team_id === teamId && tm.role === 'owner')
 
     return {
       /** Check a single permission */
@@ -60,14 +65,16 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
       /** The actor's workspace role */
       role,
       /** Team memberships from the /me response */
-      teamMemberships: access?.team_memberships ?? [],
+      teamMemberships,
       /** Check if user is a team manager (team owner) for a specific team */
-      isTeamManager: (teamId: string): boolean =>
-        (access?.team_memberships ?? []).some(tm => tm.team_id === teamId && tm.role === 'owner'),
+      isTeamManager,
+      /** Check if user can manage sprints/objectives in a given team */
+      canManageTeam: (teamId: string | null | undefined): boolean =>
+        isAdmin || isTeamManager(teamId),
 
       // ── Convenience booleans (backward-compatible with useSessionRole) ──
-      isOwner: role === 'owner',
-      isAdmin: role === 'owner' || role === 'admin',
+      isOwner,
+      isAdmin,
       /** Can edit PM content (member+) */
       canEdit: has('pm.edit'),
       /** Can manage settings (admin+) */
@@ -110,6 +117,19 @@ export function usePermissions(access: WorkspaceAccess | null | undefined) {
  * useSessionRole provides backward-compatible role booleans from a WorkspaceMember.
  * @deprecated Prefer usePermissions(useWorkspaceAccess(wsId).data) for new code.
  */
+export function useUpdateSupportTaskPreferences(workspaceId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      support_default_team_id?: string
+      support_task_dialog_dismissed?: boolean
+    }) => workspacesService.updateSupportTaskPreferences(workspaceId, data).then(unwrap),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.access(workspaceId) })
+    },
+  })
+}
+
 export function useSessionRole(membership: WorkspaceMember | null | undefined) {
   const role = membership?.role || ''
   return {

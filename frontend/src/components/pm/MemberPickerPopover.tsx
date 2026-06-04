@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Tick01Icon } from '@/lib/icons';
 
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/pm/UserAvatar';
 import { formatAssignableMemberName, matchesAssignableMemberValue } from '@/lib/assignableMembers';
 import { cn } from '@/lib/utils';
@@ -13,8 +15,9 @@ type MemberValueGetter = (member: AssignableMember) => string;
 
 interface BaseMemberPickerProps {
   members: AssignableMember[];
-  renderTrigger: () => React.ReactNode;
+  renderTrigger: () => ReactNode;
   triggerClassName?: string;
+  triggerLabel?: string;
   contentClassName?: string;
   align?: PopoverAlign;
   open?: boolean;
@@ -33,10 +36,31 @@ interface MemberPickerPopoverProps extends BaseMemberPickerProps {
 interface MultiMemberPickerPopoverProps extends BaseMemberPickerProps {
   values: string[];
   onChange: (memberIds: string[]) => void;
+  /** IDs that appear on some but not all items in the selection (rendered italic + muted). */
+  partialIds?: string[];
 }
 
 const DEFAULT_TRIGGER_CLASSNAME =
   'inline-flex max-w-full min-w-0 items-center overflow-hidden rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent cursor-pointer';
+
+function TooltipWrappedTrigger({
+  label,
+  popoverOpen,
+  children,
+}: {
+  label?: string;
+  popoverOpen: boolean;
+  children: ReactElement;
+}) {
+  if (!label || popoverOpen) return children;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 function defaultGetMemberValue(member: AssignableMember) {
   return member.id;
@@ -49,6 +73,7 @@ function getSelectableMembers(members: AssignableMember[]) {
 function MemberList({
   members,
   selectedValues,
+  partialValues,
   onToggle,
   noneLabel,
   multiple,
@@ -56,6 +81,7 @@ function MemberList({
 }: {
   members: AssignableMember[];
   selectedValues: string[];
+  partialValues?: string[];
   onToggle: (value: string) => void;
   noneLabel?: string;
   multiple: boolean;
@@ -90,12 +116,16 @@ function MemberList({
               matchesAssignableMemberValue(member, value, getMemberValue),
             );
 
+            const isPartial = !!partialValues?.includes(memberId);
             return (
               <CommandItem
                 key={memberId}
                 value={optionValue}
                 onSelect={() => onToggle(memberId)}
-                className="flex min-w-0 items-center gap-2 text-xs"
+                className={cn(
+                  'flex min-w-0 items-center gap-2 text-xs',
+                  isPartial && 'italic text-muted-foreground',
+                )}
               >
                 <UserAvatar
                   name={member.display_name || member.email}
@@ -125,6 +155,7 @@ export function MemberPickerPopover({
   renderTrigger,
   noneLabel = 'None',
   triggerClassName,
+  triggerLabel,
   contentClassName,
   align = 'start',
   open,
@@ -151,6 +182,7 @@ export function MemberPickerPopover({
     <button
       type="button"
       disabled={disabled}
+      aria-label={triggerLabel}
       className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
       onClick={(event) => {
         event.stopPropagation();
@@ -167,12 +199,18 @@ export function MemberPickerPopover({
   );
 
   if (lazyMount && !disabled && !isOpen) {
-    return trigger;
+    return (
+      <TooltipWrappedTrigger label={triggerLabel} popoverOpen={isOpen}>
+        {trigger}
+      </TooltipWrappedTrigger>
+    );
   }
 
   return (
     <Popover open={isOpen} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <TooltipWrappedTrigger label={triggerLabel} popoverOpen={isOpen}>
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      </TooltipWrappedTrigger>
       {!disabled ? (
         <PopoverContent
           className={cn('z-[60] w-[240px] p-0', contentClassName)}
@@ -200,6 +238,7 @@ export function MultiMemberPickerPopover({
   onChange,
   renderTrigger,
   triggerClassName,
+  triggerLabel,
   contentClassName,
   align = 'start',
   open,
@@ -207,6 +246,7 @@ export function MultiMemberPickerPopover({
   getMemberValue = defaultGetMemberValue,
   disabled = false,
   lazyMount = false,
+  partialIds,
 }: MultiMemberPickerPopoverProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const isOpen = open ?? uncontrolledOpen;
@@ -228,6 +268,7 @@ export function MultiMemberPickerPopover({
     <button
       type="button"
       disabled={disabled}
+      aria-label={triggerLabel}
       className={cn(DEFAULT_TRIGGER_CLASSNAME, disabled && 'cursor-default hover:bg-transparent', triggerClassName)}
       onClick={(event) => {
         event.stopPropagation();
@@ -244,12 +285,18 @@ export function MultiMemberPickerPopover({
   );
 
   if (lazyMount && !disabled && !isOpen) {
-    return trigger;
+    return (
+      <TooltipWrappedTrigger label={triggerLabel} popoverOpen={isOpen}>
+        {trigger}
+      </TooltipWrappedTrigger>
+    );
   }
 
   return (
     <Popover open={isOpen} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <TooltipWrappedTrigger label={triggerLabel} popoverOpen={isOpen}>
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      </TooltipWrappedTrigger>
       {!disabled ? (
         <PopoverContent
           className={cn('z-[60] w-[240px] p-0', contentClassName)}
@@ -260,6 +307,7 @@ export function MultiMemberPickerPopover({
           <MemberList
             members={selectableMembers}
             selectedValues={values}
+            partialValues={partialIds}
             onToggle={handleToggle}
             multiple
             getMemberValue={getMemberValue}

@@ -49,4 +49,9 @@ export const workspacesService = {
   },
 
   deleteLogo: (id: string) => api.del<Workspace>(`/workspaces/${id}/logo`),
+
+  updateSupportTaskPreferences: (workspaceId: string, data: {
+    support_default_team_id?: string;
+    support_task_dialog_dismissed?: boolean;
+  }) => api.patch<{ status: string }>(`/workspaces/${workspaceId}/me/support-task-preferences`, data),
 };

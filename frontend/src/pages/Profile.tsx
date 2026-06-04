@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useTitle } from '@/hooks/useTitle';
 import { useAuthStore } from '@/stores/authStore';
 import { authService } from '@/lib/services/authService';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +21,11 @@ import {
   resolveTeamMemberAvatarSrc,
 } from '@/lib/teamMemberAvatar';
 import { getInitials } from '@/lib/utils';
-import { Camera01Icon, Loading01Icon, Mail01Icon } from '@/lib/icons';
+import {
+  Camera01Icon,
+  Loading01Icon,
+  Mail01Icon,
+} from '@/lib/icons';
 import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { EmailAccountConnect } from '@/components/crm/EmailAccountConnect';
@@ -53,10 +57,6 @@ export default function Profile() {
   const [avatarBackgroundMode, setAvatarBackgroundMode] = useState<TeamMemberAvatarBackgroundMode>(persistedAvatarBackgroundMode);
   const [avatarBackgroundColor, setAvatarBackgroundColor] = useState(persistedAvatarBackgroundColor);
 
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [changingPassword, setChangingPassword] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [pendingAvatar, setPendingAvatar] = useState<PendingAvatarFile | null>(null);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
@@ -170,29 +170,6 @@ export default function Profile() {
     }
   };
 
-  const handleChangePassword = async (e: FormEvent) => {
-    e.preventDefault();
-    if (newPassword.length < 8) {
-      toast.error('New password must be at least 8 characters');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-    setChangingPassword(true);
-    const { error } = await authService.changePassword(currentPassword, newPassword);
-    if (error) {
-      toast.error(error);
-    } else {
-      toast.success('Password updated successfully');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-    }
-    setChangingPassword(false);
-  };
-
   return (
     <div className="space-y-4">
       <AvatarPickerDialog
@@ -265,115 +242,75 @@ export default function Profile() {
 
       <h2 className="text-xl font-semibold">Profile</h2>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              className="relative group shrink-0 rounded-full"
-              onClick={() => setPickerOpen(true)}
-            >
-              <Avatar className="h-16 w-16">
-                {profileAvatarSrc && <AvatarImage src={profileAvatarSrc} alt={user?.full_name || 'Avatar'} />}
-                <AvatarFallback className="text-lg">{initials}</AvatarFallback>
-              </Avatar>
-              <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
-                {uploadingAvatar ? (
-                  <Loading01Icon className="h-5 w-5 text-white animate-spin" />
-                ) : (
-                  <Camera01Icon className="h-5 w-5 text-white" />
-                )}
-              </span>
-            </button>
-            <div>
-              <CardTitle>{user?.full_name || 'User'}</CardTitle>
-              <CardDescription className="flex items-center gap-1">
-                <Mail01Icon className="h-3 w-3" />
-                {user?.email}
-              </CardDescription>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Click your avatar to upload a photo or choose a generated style.
-              </p>
+      <section className="space-y-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Personal info</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                aria-label="Change avatar"
+                className="relative group shrink-0 rounded-full ring-1 ring-border focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                onClick={() => setPickerOpen(true)}
+              >
+                <Avatar className="h-20 w-20">
+                  {profileAvatarSrc && <AvatarImage src={profileAvatarSrc} alt={user?.full_name || 'Avatar'} />}
+                  <AvatarFallback className="text-xl">{initials}</AvatarFallback>
+                </Avatar>
+                <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {uploadingAvatar ? (
+                    <Loading01Icon className="h-5 w-5 text-white animate-spin" />
+                  ) : (
+                    <Camera01Icon className="h-5 w-5 text-white" />
+                  )}
+                </span>
+                <span className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-foreground text-background shadow-sm">
+                  <Camera01Icon className="h-3.5 w-3.5" />
+                </span>
+              </button>
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-lg font-semibold leading-tight">{user?.full_name || 'User'}</h2>
+                <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Mail01Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{user?.email}</span>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Click your avatar to upload a photo or pick a generated style.
+                </p>
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <Separator />
-        <CardContent className="pt-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="profile-name">Full Name</Label>
-              <Input
-                id="profile-name"
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                placeholder="Your full name"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input value={user?.email ?? ''} disabled />
-              <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
-            </div>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={saving || !hasProfileChanges}>
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Change Password</CardTitle>
-          <CardDescription>Update your account password.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleChangePassword} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="current-password">Current Password</Label>
-              <Input
-                id="current-password"
-                type="password"
-                value={currentPassword}
-                onChange={e => setCurrentPassword(e.target.value)}
-                placeholder="Enter current password"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New Password</Label>
-              <Input
-                id="new-password"
-                type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                placeholder="Enter new password"
-                required
-                minLength={8}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm New Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Confirm new password"
-                required
-                minLength={8}
-              />
-            </div>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={changingPassword}>
-                {changingPassword ? 'Updating...' : 'Update Password'}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+            <Separator className="my-6" />
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="profile-name">Full name</Label>
+                  <Input
+                    id="profile-name"
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    placeholder="Your full name"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="profile-email">Email</Label>
+                  <Input id="profile-email" value={user?.email ?? ''} disabled />
+                  <p className="text-xs text-muted-foreground">Email cannot be changed.</p>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={saving || !hasProfileChanges}>
+                  {saving ? 'Saving...' : 'Save changes'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </section>
 
       {currentWorkspace && user && (
         <EmailAccountConnect workspaceId={currentWorkspace.id} memberId={user.id} />

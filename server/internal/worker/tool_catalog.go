@@ -23,30 +23,45 @@ var toolCategory = map[string]string{
 	// Commands
 	"run_command": "Commands",
 
+	// Security
+	ToolScanSemgrep:  "Security",
+	ToolScanTrivy:    "Security",
+	ToolScanGitleaks: "Security",
+
 	// Web Search
 	"web_search_brave": "Web Search",
+	"web_search_exa":   "Web Search",
+	"fetch_url":        "Web Search",
+	"crawl_url":        "Web Search",
 
 	// Git
-	"create_branch":   "Git",
-	"commit_and_push": "Git",
-	"open_pr":         "Git",
+	"create_branch":              "Git",
+	"commit_and_push":            "Git",
+	"open_pr":                    "Git",
+	"get_release_context":        "Git",
+	"find_tasks_for_git_changes": "Git",
+	"get_pull_request_diff":      "Git",
+	"get_check_run_logs":         "Git",
 
 	// PM / Tasks
-	"request_user_input":        "Interaction",
-	"request_review_checkpoint": "Interaction",
-	"request_human_input":       "Interaction",
-	"request_human_approval":    "Interaction",
-	"update_plan":               "Interaction",
-	"preview_md":                "Interaction",
-	"preview_json":              "Interaction",
-	"publish_prd_draft":         "Interaction",
-	"publish_task_plan":         "Interaction",
-	"publish_task_plan_doc":     "Interaction",
-	"publish_preview":           "Interaction",
-	"add_task_comment":          "PM / Tasks",
-	"list_task_checklist":       "PM / Tasks",
-	"list_epic_tasks":           "PM / Tasks",
-	"list_workspace_teams":      "Workspace",
+	"request_approval":                "Interaction",
+	"request_user_input":              "Interaction",
+	"request_review_checkpoint":       "Interaction",
+	"request_human_input":             "Interaction",
+	"request_human_approval":          "Interaction",
+	"update_plan":                     "Interaction",
+	"preview_md":                      "Interaction",
+	"preview_json":                    "Interaction",
+	"publish_prd_draft":               "Interaction",
+	"publish_task_plan":               "Interaction",
+	"publish_task_plan_doc":           "Interaction",
+	"publish_preview":                 "Interaction",
+	"add_task_comment":                "PM / Tasks",
+	"list_task_checklist":             "PM / Tasks",
+	"list_epic_tasks":                 "PM / Tasks",
+	"get_task_context":                "PM / Tasks",
+	"list_team_workflows_with_stages": "PM / Tasks",
+	"list_workspace_teams":            "Workspace",
 
 	// Support
 	"list_conversation_messages": "Support",
@@ -59,15 +74,21 @@ var toolCategory = map[string]string{
 	"list_buyer_signals": "CRM",
 
 	// Docs
-	"list_documents":   "Docs",
-	"read_document":    "Docs",
-	"search_documents": "Docs",
+	"list_documents":                   "Docs",
+	"list_collections":                 "Docs",
+	"read_document":                    "Docs",
+	"get_document_blocks":              "Docs",
+	"publish_ai_section_candidate":     "Docs",
+	"publish_document_change_proposal": "Docs",
+	"search_documents":                 "Docs",
+	"create_document":                  "Docs",
 }
 
 var categoryOrder = []string{
 	"Filesystem",
 	"Code Analysis",
 	"Commands",
+	"Security",
 	"Web Search",
 	"Git",
 	"Interaction",
@@ -83,39 +104,14 @@ var hiddenToolCatalogAliases = map[string]bool{
 	ToolRequestHumanApproval: true,
 }
 
-// webSearchDefinition returns the catalog entry for web_search_brave, which is
-// conditionally registered in the ToolRegistry only when a WebSearchClient is
-// provided. The catalog always includes it so users can see the full tool set.
-func webSearchDefinition() model.ToolCatalogEntry {
+// webSearchDefinition returns the catalog entry for a conditionally registered
+// web search tool. The catalog always includes it so users can see the full tool set.
+func webSearchDefinition(name, description string, schema map[string]interface{}) model.ToolCatalogEntry {
 	return model.ToolCatalogEntry{
-		Name:        "web_search_brave",
-		Description: "Search the public web with Brave Search. Use this for market context, standards, competitors, and external evidence. Returns normalized JSON results.",
+		Name:        name,
+		Description: description,
 		Category:    "Web Search",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"query": map[string]interface{}{
-					"type":        "string",
-					"description": "Search query to run",
-				},
-				"count": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of results to return (default 5, max 10)",
-				},
-				"freshness": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional freshness hint such as pd, pw, pm, or py",
-				},
-				"domain_allowlist": map[string]interface{}{
-					"type":        "array",
-					"description": "Optional list of domains to prioritize",
-					"items": map[string]interface{}{
-						"type": "string",
-					},
-				},
-			},
-			"required": []string{"query"},
-		},
+		InputSchema: schema,
 	}
 }
 
@@ -125,8 +121,8 @@ func ListToolCatalog() model.ToolCatalogResponse {
 	registry := NewToolRegistry(nil)
 	defs := registry.Definitions()
 
-	seen := make(map[string]bool, len(defs)+1)
-	entries := make([]model.ToolCatalogEntry, 0, len(defs)+1)
+	seen := make(map[string]bool, len(defs)+2)
+	entries := make([]model.ToolCatalogEntry, 0, len(defs)+2)
 
 	for _, def := range defs {
 		if hiddenToolCatalogAliases[def.Name] {
@@ -152,9 +148,14 @@ func ListToolCatalog() model.ToolCatalogResponse {
 		seen[def.Name] = true
 	}
 
-	// Always include web_search_brave even if the WebSearchClient was nil.
+	// Always include web search tools even if the backing clients were nil.
 	if !seen["web_search_brave"] {
-		ws := webSearchDefinition()
+		ws := webSearchDefinition("web_search_brave", webSearchBraveToolDescription(), webSearchBraveToolSchema())
+		ws.Presets = []string{}
+		entries = append(entries, ws)
+	}
+	if !seen["web_search_exa"] {
+		ws := webSearchDefinition("web_search_exa", webSearchExaToolDescription(), webSearchExaToolSchema())
 		ws.Presets = []string{}
 		entries = append(entries, ws)
 	}

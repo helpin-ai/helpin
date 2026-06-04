@@ -29,21 +29,38 @@ func SupportMessageEvent(workspaceID string, msg *model.SupportMessage, actorID 
 	}
 
 	payload, err := json.Marshal(model.WidgetMessageReceivedPayload{
-		ID:             msg.ID,
-		ConversationID: msg.ConversationID,
-		Content:        msg.Content,
-		SenderType:     msg.SenderType,
-		SenderName:     msg.SenderDisplayName,
-		SenderAvatar:   msg.SenderAvatarURL,
-		Metadata:       nilIfEmpty(msg.Metadata),
-		CreatedAt:      msg.CreatedAt.Format(time.RFC3339),
-		ViaChannel:     derefStr(msg.ViaChannel),
-		Attachments:    msg.Attachments,
+		ID:              msg.ID,
+		ConversationID:  msg.ConversationID,
+		Content:         msg.Content,
+		SenderType:      msg.SenderType,
+		MessageType:     msg.MessageType,
+		SystemEventType: msg.SystemEventType,
+		SenderName:      msg.SenderDisplayName,
+		SenderAvatar:    msg.SenderAvatarURL,
+		Metadata:        nilIfEmpty(msg.Metadata),
+		CreatedAt:       msg.CreatedAt.Format(time.RFC3339),
+		ViaChannel:      derefStr(msg.ViaChannel),
+		Attachments:     msg.Attachments,
 	})
 	if err == nil {
 		event.Data = payload
 	}
 	return event
+}
+
+// SupportMessageDeletedEvent builds the standard websocket event for a support
+// message soft-delete. Clients invalidate the same message-list cache they use
+// for created events.
+func SupportMessageDeletedEvent(workspaceID, conversationID, messageID, actorID string) Event {
+	return Event{
+		Action:      "deleted",
+		Entity:      "support_conversation_message",
+		EntityID:    messageID,
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		ParentType:  "support_conversation",
+		ParentID:    conversationID,
+	}
 }
 
 func nilIfEmpty(value string) *string {

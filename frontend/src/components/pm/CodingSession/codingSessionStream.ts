@@ -25,7 +25,13 @@ function asNumber(value: unknown) {
 }
 
 function isPersistedRunMessageEvent(event: CodingSessionEvent) {
-  return event.runtime_metadata?.source === 'agent_run_message';
+  if (event.runtime_metadata?.source === 'agent_run_message') return true;
+  const payload = asRecord(event.payload);
+  return (
+    typeof payload?.message_id === 'string'
+    && typeof payload?.role === 'string'
+    && typeof payload?.sequence_no === 'number'
+  );
 }
 
 function isTranscriptMessageEvent(event: CodingSessionEvent) {
@@ -185,6 +191,96 @@ function cloneLiveTurnSegment(segment: CodingSessionLiveTurnSegment): CodingSess
 
 function cloneLiveTurnSegments(segments?: CodingSessionLiveTurnSegment[] | null) {
   return (segments ?? []).map(cloneLiveTurnSegment);
+}
+
+function cloneStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null): CodingSessionStreamSnapshot | null {
+  if (!snapshot) return null;
+  return {
+    ...(snapshot.live_assistant_message ? { live_assistant_message: cloneAssistantMessage(snapshot.live_assistant_message)! } : {}),
+    ...(snapshot.live_reasoning_message ? { live_reasoning_message: cloneReasoningMessage(snapshot.live_reasoning_message)! } : {}),
+    ...(snapshot.live_turn_segments ? { live_turn_segments: cloneLiveTurnSegments(snapshot.live_turn_segments) } : {}),
+    ...(snapshot.current_plan ? { current_plan: { ...snapshot.current_plan, plan: snapshot.current_plan.plan.map((step) => ({ ...step })) } } : {}),
+  };
+}
+
+function isEmptyStreamSnapshot(snapshot?: CodingSessionStreamSnapshot | null) {
+  return !snapshot
+    || (!snapshot.live_assistant_message
+      && !snapshot.live_reasoning_message
+      && (!snapshot.live_turn_segments || snapshot.live_turn_segments.length === 0)
+      && !snapshot.current_plan);
+}
+
+function chooseAssistantSnapshotMessage(
+  current?: CodingSessionLiveAssistantMessage | null,
+  incoming?: CodingSessionLiveAssistantMessage | null,
+) {
+  if (!incoming) return cloneAssistantMessage(current);
+  if (!current) return cloneAssistantMessage(incoming);
+  if (current.message_id !== incoming.message_id) return cloneAssistantMessage(incoming);
+  return cloneAssistantMessage(
+    incoming.content.length >= current.content.length ? incoming : current,
+  );
+}
+
+function chooseReasoningSnapshotMessage(
+  current?: CodingSessionLiveReasoningMessage | null,
+  incoming?: CodingSessionLiveReasoningMessage | null,
+) {
+  if (!incoming) return cloneReasoningMessage(current);
+  if (!current) return cloneReasoningMessage(incoming);
+  if (current.message_id !== incoming.message_id) return cloneReasoningMessage(incoming);
+  const incomingScore = incoming.content.length + (incoming.encrypted_value ? incoming.encrypted_value.length : 0);
+  const currentScore = current.content.length + (current.encrypted_value ? current.encrypted_value.length : 0);
+  return cloneReasoningMessage(incomingScore >= currentScore ? incoming : current);
+}
+
+function mergeSnapshotSegments(
+  current?: CodingSessionLiveTurnSegment[] | null,
+  incoming?: CodingSessionLiveTurnSegment[] | null,
+) {
+  const merged: CodingSessionLiveTurnSegment[] = [];
+  const indexes = new Map<string, number>();
+  const addSegment = (segment: CodingSessionLiveTurnSegment) => {
+    const cloned = cloneLiveTurnSegment(segment);
+    const existingIndex = indexes.get(cloned.segment_id);
+    if (typeof existingIndex === 'number') {
+      merged[existingIndex] = cloned;
+      return;
+    }
+    indexes.set(cloned.segment_id, merged.length);
+    merged.push(cloned);
+  };
+  for (const segment of current ?? []) addSegment(segment);
+  for (const segment of incoming ?? []) addSegment(segment);
+  return merged;
+}
+
+export function mergeCodingSessionStreamSnapshotSeed(
+  current?: CodingSessionStreamSnapshot | null,
+  incoming?: CodingSessionStreamSnapshot | null,
+): CodingSessionStreamSnapshot | null {
+  if (isEmptyStreamSnapshot(incoming)) return cloneStreamSnapshot(current);
+  if (isEmptyStreamSnapshot(current)) return cloneStreamSnapshot(incoming);
+
+  const liveAssistantMessage = chooseAssistantSnapshotMessage(
+    current?.live_assistant_message,
+    incoming?.live_assistant_message,
+  );
+  const liveReasoningMessage = chooseReasoningSnapshotMessage(
+    current?.live_reasoning_message,
+    incoming?.live_reasoning_message,
+  );
+  const liveTurnSegments = mergeSnapshotSegments(current?.live_turn_segments, incoming?.live_turn_segments);
+  const currentPlan = incoming?.current_plan ?? current?.current_plan;
+
+  const merged: CodingSessionStreamSnapshot = {
+    ...(liveAssistantMessage ? { live_assistant_message: liveAssistantMessage } : {}),
+    ...(liveReasoningMessage ? { live_reasoning_message: liveReasoningMessage } : {}),
+    ...(liveTurnSegments.length > 0 ? { live_turn_segments: liveTurnSegments } : {}),
+    ...(currentPlan ? { current_plan: { ...currentPlan, plan: currentPlan.plan.map((step) => ({ ...step })) } } : {}),
+  };
+  return isEmptyStreamSnapshot(merged) ? null : merged;
 }
 
 function parseLiveToolCall(value: unknown): CodingSessionLiveToolCall | null {
@@ -429,23 +525,111 @@ function transcriptToolCallsFromPayload(payload: Record<string, unknown>, messag
 }
 
 function transcriptMessageFromEvent(event: CodingSessionEvent): CodingSessionTranscriptMessage | null {
-  if (!isTranscriptMessageEvent(event)) return null;
+  if (isTranscriptMessageEvent(event)) {
+    const payload = asRecord(event.payload) ?? {};
+    const role = event.type === 'user.message.completed' ? 'user' : 'assistant';
+
+    return {
+      event_id: event.id,
+      message_id: asString(payload.message_id),
+      role,
+      content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
+      message_type: asString(payload.message_type),
+      timestamp: event.timestamp,
+      sequence_no: asNumber(payload.sequence_no) ?? event.sequence_no,
+      tool_calls: role === 'assistant'
+        ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
+        : undefined,
+      turn_segments: role === 'assistant' ? parseLiveTurnSegments(payload.turn_segments) : undefined,
+    };
+  }
+  const interactionTranscript = transcriptInteractionResolutionMessageFromEvent(event);
+  if (interactionTranscript) return interactionTranscript;
+  return null;
+}
+
+function transcriptInteractionResolutionMessageFromEvent(event: CodingSessionEvent): CodingSessionTranscriptMessage | null {
+  if (event.type !== 'interaction.resolved') return null;
   const payload = asRecord(event.payload) ?? {};
-  const role = event.type === 'user.message.completed' ? 'user' : 'assistant';
+  const interactionKind = asString(payload.interaction_kind);
+  if (interactionKind !== 'approval_request') return null;
+
+  const content = approvalRequestResolutionTranscriptContent(asRecord(payload.request_payload), asRecord(payload.response_payload));
+  if (!content) return null;
+
+  const responsePayload = asRecord(payload.response_payload);
+  const resolverUserId =
+    asString(payload.resolved_by) ?? asString(responsePayload?.resolved_by);
 
   return {
     event_id: event.id,
-    message_id: asString(payload.message_id),
-    role,
-    content: firstNonEmptyString(asString(payload.content), asString(payload.text)) ?? '',
-    message_type: asString(payload.message_type),
+    message_id: asString(payload.interaction_id) ?? event.id,
+    role: 'user',
+    content,
+    message_type: 'approval_request_resolution',
     timestamp: event.timestamp,
     sequence_no: event.sequence_no,
-    tool_calls: role === 'assistant'
-      ? transcriptToolCallsFromPayload(payload, asString(payload.message_id) ?? event.id)
-      : undefined,
-    turn_segments: role === 'assistant' ? parseLiveTurnSegments(payload.turn_segments) : undefined,
+    resolver_user_id: resolverUserId,
   };
+}
+
+function resolvedInteractionResponseNote(event: CodingSessionEvent) {
+  if (event.type !== 'interaction.resolved') return undefined;
+  const payload = asRecord(event.payload);
+  const interactionKind = asString(payload?.interaction_kind);
+  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return undefined;
+  return asString(asRecord(payload?.response_payload)?.message)?.trim();
+}
+
+function resolvedInteractionResumeMessageType(event: CodingSessionEvent) {
+  if (event.type !== 'interaction.resolved') return undefined;
+  const payload = asRecord(event.payload);
+  const interactionKind = asString(payload?.interaction_kind);
+  if (interactionKind !== 'review_checkpoint' && interactionKind !== 'approval_request') return undefined;
+  const decision = asString(asRecord(payload?.response_payload)?.decision)?.trim();
+  if (!decision) return undefined;
+  return decision === 'approve' ? 'approval' : 'request_changes';
+}
+
+function removeDuplicateResolvedInteractionResumeMessage(
+  transcriptMessages: CodingSessionTranscriptMessage[],
+  event: CodingSessionEvent,
+) {
+  const note = resolvedInteractionResponseNote(event);
+  const messageType = resolvedInteractionResumeMessageType(event);
+  if (!note || !messageType) return;
+
+  for (let index = transcriptMessages.length - 1; index >= 0; index -= 1) {
+    const message = transcriptMessages[index];
+    if (
+      message.role === 'user'
+      && message.message_type === messageType
+      && message.content.trim() === note
+      && (message.sequence_no ?? 0) <= event.sequence_no
+    ) {
+      transcriptMessages.splice(index, 1);
+      return;
+    }
+  }
+}
+
+function approvalRequestResolutionTranscriptContent(
+  requestPayload: Record<string, unknown> | null,
+  responsePayload: Record<string, unknown> | null,
+) {
+  if (!responsePayload) return '';
+  const decision = asString(responsePayload.decision);
+  if (!decision) return '';
+  const title = asString(requestPayload?.title) ?? 'approval request';
+  const note = asString(responsePayload.message);
+  const lines: string[] = [
+    decision === 'approve' ? `Approved ${title}.` : `Requested changes on ${title}.`,
+  ];
+  if (note) {
+    lines.push('');
+    lines.push(`Note: ${note}`);
+  }
+  return lines.join('\n');
 }
 
 function liveAssistantMatchesTranscript(
@@ -473,7 +657,7 @@ function parsePlanArtifact(argsText: string): RunPlanArtifact | null {
 }
 
 const TASK_PLAN_DOC_PUBLISH_TOOLS = new Set(['publish_task_plan_doc', 'publish_story_plan_doc']);
-const REVIEW_CHECKPOINT_TOOLS = new Set(['request_review_checkpoint', 'request_human_approval']);
+const APPROVAL_TOOLS = new Set(['request_approval', 'request_review_checkpoint', 'request_human_approval']);
 
 function parsePlanArtifactValue(value: unknown): RunPlanArtifact | null {
   if (typeof value === 'string') return parsePlanArtifact(value);
@@ -529,12 +713,13 @@ function isReviewStep(stepText: string) {
   return stepText.includes('publish') || stepText.includes('request') || stepText.includes('checkpoint') || stepText.includes('wait');
 }
 
-function hasReviewCheckpointEvent(events: CodingSessionEvent[]) {
+function hasApprovalEvent(events: CodingSessionEvent[]) {
   return events.some((event) => {
     if (event.type === 'approval.requested') return true;
     if (!event.type.startsWith('interaction.')) return false;
     const payload = asRecord(event.payload);
-    return asString(payload?.interaction_kind) === 'review_checkpoint';
+    const interactionKind = asString(payload?.interaction_kind);
+    return interactionKind === 'review_checkpoint' || interactionKind === 'approval_request';
   });
 }
 
@@ -552,10 +737,10 @@ function reconcileObservedPlanState(
   );
 
   const publishedTaskPlanDoc = [...TASK_PLAN_DOC_PUBLISH_TOOLS].some((toolName) => completedToolNames.has(toolName));
-  const requestedReviewCheckpoint = [...REVIEW_CHECKPOINT_TOOLS].some((toolName) => completedToolNames.has(toolName))
-    || hasReviewCheckpointEvent(events);
+  const requestedApproval = [...APPROVAL_TOOLS].some((toolName) => completedToolNames.has(toolName))
+    || hasApprovalEvent(events);
 
-  if (!publishedTaskPlanDoc && !requestedReviewCheckpoint) return plan;
+  if (!publishedTaskPlanDoc && !requestedApproval) return plan;
 
   let changed = false;
   const nextPlan: RunPlanArtifact = {
@@ -566,7 +751,7 @@ function reconcileObservedPlanState(
         changed = true;
         return { ...step, status: 'completed' };
       }
-      if (requestedReviewCheckpoint && step.status !== 'completed' && isReviewStep(normalizedStep)) {
+      if (requestedApproval && step.status !== 'completed' && isReviewStep(normalizedStep)) {
         changed = true;
         return { ...step, status: 'completed' };
       }
@@ -633,6 +818,25 @@ export function buildCodingSessionStreamState(
   let liveReasoningMessage = cloneReasoningMessage(snapshot?.live_reasoning_message);
   const liveTurnSegments = cloneLiveTurnSegments(snapshot?.live_turn_segments);
   let currentPlanLive: RunPlanArtifact | null = parsePlanArtifactValue(snapshot?.current_plan);
+  const snapshotAssistantDeltaCoverage = new Map<string, string>();
+  for (const segment of snapshot?.live_turn_segments ?? []) {
+    if (segment.kind !== 'assistant_message') continue;
+    const messageID = segment.assistant_message.message_id;
+    if (!messageID || !segment.assistant_message.content) continue;
+    snapshotAssistantDeltaCoverage.set(
+      messageID,
+      `${snapshotAssistantDeltaCoverage.get(messageID) ?? ''}${segment.assistant_message.content}`,
+    );
+  }
+  if (snapshot?.live_assistant_message?.message_id && snapshot.live_assistant_message.content) {
+    const existingCoverage = snapshotAssistantDeltaCoverage.get(snapshot.live_assistant_message.message_id);
+    if (!existingCoverage || snapshot.live_assistant_message.content.length > existingCoverage.length) {
+      snapshotAssistantDeltaCoverage.set(
+        snapshot.live_assistant_message.message_id,
+        snapshot.live_assistant_message.content,
+      );
+    }
+  }
 
   if (liveTurnSegments.length === 0 && liveAssistantMessage) {
     if (liveAssistantMessage.content) {
@@ -657,6 +861,9 @@ export function buildCodingSessionStreamState(
   for (const event of sortedEvents) {
     const transcriptMessage = transcriptMessageFromEvent(event);
     if (transcriptMessage) {
+      if (event.type === 'interaction.resolved') {
+        removeDuplicateResolvedInteractionResumeMessage(transcriptMessages, event);
+      }
       transcriptMessages.push(transcriptMessage);
       continue;
     }
@@ -674,7 +881,7 @@ export function buildCodingSessionStreamState(
     switch (event.type) {
       case 'assistant.message.started': {
         const messageID = asString(payload.message_id) ?? `assistant:${event.id}`;
-        liveAssistantMessage = ensureAssistantMessage(null, messageID, event.timestamp);
+        liveAssistantMessage = ensureAssistantMessage(liveAssistantMessage, messageID, event.timestamp);
         break;
       }
 
@@ -684,6 +891,11 @@ export function buildCodingSessionStreamState(
         const previousContent = liveAssistantMessage.content;
         // Use raw coalescing (not asString) to preserve whitespace-only deltas like " " or " found".
         const deltaContent = typeof payload.content === 'string' ? payload.content : (typeof payload.text === 'string' ? payload.text : '');
+        const coveredSnapshotPrefix = snapshotAssistantDeltaCoverage.get(messageID);
+        if (deltaContent && coveredSnapshotPrefix?.startsWith(deltaContent)) {
+          snapshotAssistantDeltaCoverage.set(messageID, coveredSnapshotPrefix.slice(deltaContent.length));
+          break;
+        }
         liveAssistantMessage.content += deltaContent;
         liveAssistantMessage.status = 'streaming';
         if (deltaContent || previousContent.length === 0) {

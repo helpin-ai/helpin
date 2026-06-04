@@ -150,6 +150,7 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 		nil,
 		notifService,
 		env.workspaceRepo,
+		nil,
 	)
 	env.checklistService = NewPMChecklistItemService(
 		repository.NewPMChecklistItemRepository(db),
@@ -192,6 +193,17 @@ func newPMMentionTestEnv(t *testing.T) *pmMentionTestEnv {
 	)
 
 	return env
+}
+
+func (e *pmMentionTestEnv) addMemberWithSettings(t *testing.T, userID, memberID, email, displayName, role string) {
+	t.Helper()
+
+	now := time.Now().UTC()
+	seedUser(t, e.db, userID, email, displayName, "hash")
+	seedWorkspaceMember(t, e.db, memberID, e.workspaceID, userID, email, displayName, role)
+	mustExec(t, e.db, `INSERT INTO user_notification_settings (id, user_id, email_enabled, email_digest_frequency, email_digest_time, email_digest_day, do_not_disturb, badge_mode, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"settings-"+userID, userID, false, "daily", "09:00", 1, false, "all", "UTC", now, now)
 }
 
 func (e *pmMentionTestEnv) expectedRecipientIDs() []string {
@@ -303,6 +315,54 @@ func TestResolveMentionRecipients_IgnoresOutOfScopeTeamHandles(t *testing.T) {
 	}
 	if len(recipients) != 0 {
 		t.Fatalf("recipient count = %d, want 0 (%v)", len(recipients), recipients)
+	}
+}
+
+func TestResolveMentionRecipients_NormalizesSpecialCharacters(t *testing.T) {
+	t.Parallel()
+
+	env := newPMMentionTestEnv(t)
+	env.addMemberWithSettings(t, "user-oconnor", "member-oconnor", "oconnor@example.com", "O'Connor", model.RoleMember)
+	env.addMemberWithSettings(t, "user-jose", "member-jose", "jose@example.com", "José Núñez", model.RoleMember)
+
+	recipients, err := resolveMentionRecipients(context.Background(), env.workspaceRepo, env.workspaceID, "@oconnor @jos.nez", env.actorUserID, nil)
+	if err != nil {
+		t.Fatalf("resolveMentionRecipients: %v", err)
+	}
+
+	sort.Strings(recipients)
+	want := []string{"user-jose", "user-oconnor"}
+	if len(recipients) != len(want) {
+		t.Fatalf("recipient count = %d, want %d (%v)", len(recipients), len(want), recipients)
+	}
+	for i := range want {
+		if recipients[i] != want[i] {
+			t.Fatalf("recipient[%d] = %q, want %q", i, recipients[i], want[i])
+		}
+	}
+}
+
+func TestResolveMentionRecipients_NotifiesAllUsersForHandleCollision(t *testing.T) {
+	t.Parallel()
+
+	env := newPMMentionTestEnv(t)
+	env.addMemberWithSettings(t, "user-john-space", "member-john-space", "john-space@example.com", "John Doe", model.RoleMember)
+	env.addMemberWithSettings(t, "user-john-dot", "member-john-dot", "john-dot@example.com", "John.Doe", model.RoleMember)
+
+	recipients, err := resolveMentionRecipients(context.Background(), env.workspaceRepo, env.workspaceID, "@john.doe", env.actorUserID, nil)
+	if err != nil {
+		t.Fatalf("resolveMentionRecipients: %v", err)
+	}
+
+	sort.Strings(recipients)
+	want := []string{"user-john-dot", "user-john-space"}
+	if len(recipients) != len(want) {
+		t.Fatalf("recipient count = %d, want %d (%v)", len(recipients), len(want), recipients)
+	}
+	for i := range want {
+		if recipients[i] != want[i] {
+			t.Fatalf("recipient[%d] = %q, want %q", i, recipients[i], want[i])
+		}
 	}
 }
 
@@ -423,6 +483,47 @@ func TestPMCommentService_CreateAndUpdate_TeamMentions(t *testing.T) {
 			t.Fatalf("update comment: %v", err)
 		}
 		assertMentionNotifications(t, env.notificationsFor(t, "story", story.Task.ID), "comment.mention", env.expectedRecipientIDs())
+	})
+
+	t.Run("update only notifies newly added mentions", func(t *testing.T) {
+		env := newPMMentionTestEnv(t)
+		story := env.createStory(t, nil)
+		comment, err := env.commentService.Create(context.Background(), model.CreateCommentRequest{
+			EntityType: "story",
+			EntityID:   story.Task.ID,
+			Body:       "@alice.eng",
+		}, env.actorUserID, env.workspaceID)
+		if err != nil {
+			t.Fatalf("create comment: %v", err)
+		}
+
+		if _, err := env.commentService.Update(context.Background(), comment.Comment.ID, model.UpdateCommentRequest{
+			Body: "@alice.eng @bob.eng",
+		}, env.actorUserID, true, env.workspaceID); err != nil {
+			t.Fatalf("update comment: %v", err)
+		}
+
+		notifications := env.notificationsFor(t, "story", story.Task.ID)
+		if len(notifications) != 2 {
+			t.Fatalf("notification count = %d, want 2", len(notifications))
+		}
+
+		got := make(map[string]model.Notification, len(notifications))
+		for _, notification := range notifications {
+			got[notification.RecipientID] = notification
+		}
+
+		alice := got[env.aliceUserID]
+		if alice.EventCount != 1 {
+			t.Fatalf("alice event_count = %d, want 1", alice.EventCount)
+		}
+		bob := got[env.bobUserID]
+		if bob.EventCount != 1 {
+			t.Fatalf("bob event_count = %d, want 1", bob.EventCount)
+		}
+		if _, ok := got[env.carolUserID]; ok {
+			t.Fatalf("did not expect notification for %s", env.carolUserID)
+		}
 	})
 
 	t.Run("create ignores out-of-scope team mentions", func(t *testing.T) {

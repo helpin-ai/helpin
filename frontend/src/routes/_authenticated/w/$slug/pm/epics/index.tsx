@@ -15,7 +15,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/pm/epics/')({
 function EpicsRoute() {
   const { team } = Route.useSearch();
   return (
-    <div className="h-full overflow-auto p-4 md:p-6">
+    <div className="h-full overflow-hidden">
       <EpicsPage teamId={team} />
     </div>
   );

@@ -6,7 +6,7 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/commandtools"
 )
 
-func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *testing.T) {
+func TestCreateTaskBatchToolSchemaRequiresStructuredImplementationBrief(t *testing.T) {
 	registry := NewToolRegistry(nil)
 
 	var schema map[string]interface{}
@@ -25,10 +25,10 @@ func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *test
 	}
 
 	properties := schema["properties"].(map[string]interface{})
-	stories := properties["stories"].(map[string]interface{})
-	storyItems := stories["items"].(map[string]interface{})
-	storyProperties := storyItems["properties"].(map[string]interface{})
-	brief := storyProperties["implementation_brief"].(map[string]interface{})
+	tasks := properties["tasks"].(map[string]interface{})
+	taskItems := tasks["items"].(map[string]interface{})
+	taskProperties := taskItems["properties"].(map[string]interface{})
+	brief := taskProperties["implementation_brief"].(map[string]interface{})
 	briefProperties := brief["properties"].(map[string]interface{})
 	filesToModify := briefProperties["files_to_modify"].(map[string]interface{})
 	fileItems := filesToModify["items"].(map[string]interface{})
@@ -46,7 +46,7 @@ func TestCreateStoryBatchToolSchemaRequiresStructuredImplementationBrief(t *test
 	}
 }
 
-func TestCreateStoryBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
+func TestCreateTaskBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
 	registry := NewToolRegistry(nil)
 
 	var schema map[string]interface{}
@@ -65,10 +65,10 @@ func TestCreateStoryBatchToolSchemaAllowsArrayTestStrategy(t *testing.T) {
 	}
 
 	properties := schema["properties"].(map[string]interface{})
-	stories := properties["stories"].(map[string]interface{})
-	storyItems := stories["items"].(map[string]interface{})
-	storyProperties := storyItems["properties"].(map[string]interface{})
-	brief := storyProperties["implementation_brief"].(map[string]interface{})
+	tasks := properties["tasks"].(map[string]interface{})
+	taskItems := tasks["items"].(map[string]interface{})
+	taskProperties := taskItems["properties"].(map[string]interface{})
+	brief := taskProperties["implementation_brief"].(map[string]interface{})
 	briefProperties := brief["properties"].(map[string]interface{})
 	testStrategy := briefProperties["test_strategy"].(map[string]interface{})
 	anyOf := testStrategy["anyOf"].([]map[string]interface{})
@@ -90,6 +90,7 @@ func TestToolCatalogUsesSharedCommandToolMetadataForCategories(t *testing.T) {
 		"approve_epic_spec":      "PM / Tasks",
 		"write_document_content": "Docs",
 		"update_deal_stage":      "CRM",
+		"enrich_crm_contact":     "CRM",
 	} {
 		if got := categories[toolName]; got != want {
 			t.Fatalf("expected tool %q to use shared category %q, got %q", toolName, want, got)
@@ -108,6 +109,37 @@ func TestToolRegistryIncludesAllSharedCommandTools(t *testing.T) {
 	for _, meta := range commandtools.AllRuntimeToolMetadata() {
 		if _, ok := definitions[meta.Alias]; !ok {
 			t.Fatalf("expected shared command-backed tool %q to be registered", meta.Alias)
+		}
+	}
+}
+
+func TestCRMEnrichmentToolSchemasAreStrict(t *testing.T) {
+	for _, alias := range []string{"ensure_crm_contact_company", "enrich_crm_contact", "enrich_crm_company"} {
+		meta, ok := commandtools.ToolMetadataForAlias(alias)
+		if !ok {
+			t.Fatalf("missing metadata for %s", alias)
+		}
+		if got := meta.InputSchema["additionalProperties"]; got != false {
+			t.Fatalf("%s additionalProperties = %#v, want false", alias, got)
+		}
+		required, ok := meta.InputSchema["required"].([]string)
+		if !ok {
+			t.Fatalf("%s required has unexpected type %#v", alias, meta.InputSchema["required"])
+		}
+		if len(required) < 2 {
+			t.Fatalf("%s required = %#v, want required fields", alias, required)
+		}
+		if alias == "ensure_crm_contact_company" {
+			continue
+		}
+		if required[1] != "fields" {
+			t.Fatalf("%s required = %#v, want object id and fields", alias, required)
+		}
+		properties := meta.InputSchema["properties"].(map[string]any)
+		fields := properties["fields"].(map[string]any)
+		item := fields["items"].(map[string]any)
+		if got := item["additionalProperties"]; got != false {
+			t.Fatalf("%s field item additionalProperties = %#v, want false", alias, got)
 		}
 	}
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -111,6 +112,7 @@ func addSettingsExtraTables(t *testing.T, db *gorm.DB) {
 			auto_sync_states BOOLEAN NOT NULL DEFAULT 1,
 			review_state_id TEXT,
 			done_state_id TEXT,
+			closed_state_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -130,7 +132,8 @@ func newSettingsService(t *testing.T) (*SettingsService, *gorm.DB) {
 	db := newTestDB(t)
 	addSettingsExtraTables(t, db)
 	repo := repository.NewSettingsRepository(db)
-	svc := NewSettingsService(repo, nil, nil, nil)
+	svc := NewSettingsService(repo, nil, nil, nil).
+		SetGitRepositoryRepository(repository.NewGitRepositoryRepository(db))
 	return svc, db
 }
 
@@ -775,16 +778,20 @@ func TestUpdateTeamRepoDefault_TrimsBranch(t *testing.T) {
 	}
 
 	// Insert a fake repository row so the FK doesn't block (SQLite doesn't enforce FK by default).
-	mustExec(t, db, `INSERT INTO git_repositories (id, workspace_id, git_integration_id, repo_full_name, repo_name, repo_owner, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-		"repo1", "ws1", "gi1", "org/repo", "repo", "org")
+	mustExec(t, db, `INSERT INTO git_repositories (
+			id, workspace_id, integration_id, provider, external_id, full_name, default_branch,
+			permissions, private, archived, selected, active, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		"repo1", "ws1", "gi1", "github", "123", "org/repo", "main", []byte("{}"), 1, 0, 1, 1)
 
 	branch := "  develop  "
 	tmpl := "  feat-{display_id}  "
+	closedStateID := "state-closed"
 	result, err := svc.UpdateTeamRepoDefault(ctx, team.ID, model.UpdateTeamRepoDefaultRequest{
 		RepositoryID:   "repo1",
 		BaseBranch:     &branch,
 		BranchTemplate: &tmpl,
+		ClosedStateID:  &closedStateID,
 	})
 	if err != nil {
 		t.Fatalf("UpdateTeamRepoDefault: %v", err)
@@ -794,6 +801,36 @@ func TestUpdateTeamRepoDefault_TrimsBranch(t *testing.T) {
 	}
 	if result.BranchTemplate != "feat-{display_id}" {
 		t.Fatalf("expected trimmed branch_template, got %q", result.BranchTemplate)
+	}
+	if result.ClosedStateID == nil || *result.ClosedStateID != closedStateID {
+		t.Fatalf("expected closed_state_id %q, got %#v", closedStateID, result.ClosedStateID)
+	}
+}
+
+func TestUpdateTeamRepoDefault_RejectsUnselectedRepository(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	team, err := svc.CreateTeam(ctx, model.CreateTeamRequest{
+		WorkspaceID: "ws1",
+		Name:        "Backend",
+	}, "")
+	if err != nil {
+		t.Fatalf("CreateTeam: %v", err)
+	}
+	mustExec(t, db, `INSERT INTO git_repositories (
+			id, workspace_id, integration_id, provider, external_id, full_name, default_branch,
+			permissions, private, archived, selected, active, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		"repo-disabled", "ws1", "gi1", "gitlab", "123", "org/disabled", "main", []byte("{}"), 1, 0, 0, 1)
+
+	_, err = svc.UpdateTeamRepoDefault(ctx, team.ID, model.UpdateTeamRepoDefaultRequest{
+		RepositoryID: "repo-disabled",
+	})
+	if err == nil || !strings.Contains(err.Error(), "repository is not available for PM delivery") {
+		t.Fatalf("expected unavailable repository error, got %v", err)
 	}
 }
 
@@ -861,5 +898,130 @@ func TestGetAll_UnknownWorkspaceAutoInitializes(t *testing.T) {
 	}
 	if len(cfg.Teams) != 0 {
 		t.Fatalf("expected 0 teams, got %d", len(cfg.Teams))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EnsureDefaultTeam
+// ---------------------------------------------------------------------------
+
+func TestEnsureDefaultTeam_CreatesSalesTeamWhenAbsent(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	seedWorkspaceMember(t, db, "wm1", "ws1", "u1", "owner@test.com", "Owner", "admin")
+
+	team, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("EnsureDefaultTeam: %v", err)
+	}
+	if team == nil {
+		t.Fatal("expected non-nil team")
+	}
+	if team.TeamType != model.TeamTypeSales {
+		t.Errorf("expected team_type %q, got %q", model.TeamTypeSales, team.TeamType)
+	}
+	if team.Name != "Sales" {
+		t.Errorf("expected default name 'Sales', got %q", team.Name)
+	}
+	if team.Handle == nil || *team.Handle != "sales" {
+		t.Errorf("expected handle 'sales', got %v", team.Handle)
+	}
+	if team.DefaultStoryType != model.PMTaskTypeChore {
+		t.Errorf("expected default task type 'chore' for sales, got %q", team.DefaultStoryType)
+	}
+}
+
+func TestEnsureDefaultTeam_Idempotent(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	seedWorkspaceMember(t, db, "wm1", "ws1", "u1", "owner@test.com", "Owner", "admin")
+
+	first, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("first EnsureDefaultTeam: %v", err)
+	}
+	second, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("second EnsureDefaultTeam: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("expected idempotent result; got %q then %q", first.ID, second.ID)
+	}
+}
+
+func TestEnsureDefaultTeam_ReturnsExistingTeamOfType(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	seedWorkspaceMember(t, db, "wm1", "ws1", "u1", "owner@test.com", "Owner", "admin")
+
+	manualHandle := "enterprise-sales"
+	manual, err := svc.CreateTeam(ctx, model.CreateTeamRequest{
+		WorkspaceID: "ws1",
+		Name:        "Enterprise Sales",
+		Handle:      &manualHandle,
+		TeamType:    model.TeamTypeSales,
+	}, "u1")
+	if err != nil {
+		t.Fatalf("seed manual sales team: %v", err)
+	}
+
+	ensured, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("EnsureDefaultTeam: %v", err)
+	}
+	if ensured.ID != manual.ID {
+		t.Fatalf("expected EnsureDefaultTeam to reuse existing sales team %q, got %q", manual.ID, ensured.ID)
+	}
+}
+
+func TestEnsureDefaultTeam_HandleCollisionSuffixes(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+	seedWorkspaceMember(t, db, "wm1", "ws1", "u1", "owner@test.com", "Owner", "admin")
+
+	// User has already taken the "sales" handle with a non-sales team.
+	handle := "sales"
+	if _, err := svc.CreateTeam(ctx, model.CreateTeamRequest{
+		WorkspaceID: "ws1",
+		Name:        "Sales Engineering",
+		Handle:      &handle,
+		TeamType:    model.TeamTypeEngineering,
+	}, "u1"); err != nil {
+		t.Fatalf("seed conflicting team: %v", err)
+	}
+
+	team, err := svc.EnsureDefaultTeam(ctx, "ws1", model.TeamTypeSales, "u1")
+	if err != nil {
+		t.Fatalf("EnsureDefaultTeam: %v", err)
+	}
+	if team.Handle == nil || *team.Handle != "sales-1" {
+		t.Fatalf("expected suffixed handle 'sales-1', got %v", team.Handle)
+	}
+	if team.TeamType != model.TeamTypeSales {
+		t.Errorf("expected team_type %q, got %q", model.TeamTypeSales, team.TeamType)
+	}
+}
+
+func TestEnsureDefaultTeam_InvalidType(t *testing.T) {
+	svc, db := newSettingsService(t)
+	ctx := context.Background()
+
+	seedUser(t, db, "u1", "owner@test.com", "Owner", "hash")
+	seedWorkspace(t, db, "ws1", "Test WS", "test-ws", "u1")
+
+	if _, err := svc.EnsureDefaultTeam(ctx, "ws1", "not-a-real-type", "u1"); err == nil {
+		t.Fatal("expected error for invalid team_type")
 	}
 }

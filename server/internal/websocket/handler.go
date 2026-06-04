@@ -253,9 +253,14 @@ func (h *Handler) sendDocPresenceSnapshot(ctx context.Context, conn *websocket.C
 
 // ServeHTTP handles the WebSocket upgrade and connection lifecycle.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Authenticate via query params (browsers can't set WS headers).
+	// Authenticate via query params for legacy clients, or cookie for the app.
 	token := r.URL.Query().Get("token")
 	workspaceID := r.URL.Query().Get("workspace_id")
+	if token == "" {
+		if cookie, err := r.Cookie("helpin_access_token"); err == nil {
+			token = cookie.Value
+		}
+	}
 
 	if token == "" || workspaceID == "" {
 		http.Error(w, "missing token or workspace_id", http.StatusUnauthorized)
@@ -263,7 +268,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims, err := h.jwtManager.ValidateToken(token)
-	if err != nil {
+	if err != nil || claims.TokenUse != auth.TokenUseAccess {
 		http.Error(w, "invalid token", http.StatusUnauthorized)
 		return
 	}

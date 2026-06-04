@@ -33,6 +33,80 @@ type CreateCRMEnrichmentRequest struct {
 	Confidence  *float64               `json:"confidence"`
 }
 
+// CRMEnrichmentFieldInput is one researched CRM field proposed by an agent.
+type CRMEnrichmentFieldInput struct {
+	Field      string      `json:"field"`
+	Value      interface{} `json:"value"`
+	SourceURL  string      `json:"source_url"`
+	Evidence   string      `json:"evidence"`
+	Confidence float64     `json:"confidence"`
+}
+
+// EnrichCRMContactRequest is the guarded agent-facing contact enrichment payload.
+type EnrichCRMContactRequest struct {
+	ContactID       string                    `json:"contact_id"`
+	Fields          []CRMEnrichmentFieldInput `json:"fields"`
+	EvidenceSummary string                    `json:"evidence_summary"`
+	DryRun          bool                      `json:"dry_run"`
+}
+
+// EnrichCRMCompanyRequest is the guarded agent-facing company enrichment payload.
+type EnrichCRMCompanyRequest struct {
+	CompanyID       string                    `json:"company_id"`
+	Fields          []CRMEnrichmentFieldInput `json:"fields"`
+	EvidenceSummary string                    `json:"evidence_summary"`
+	DryRun          bool                      `json:"dry_run"`
+}
+
+// EnsureCRMContactCompanyRequest creates or reuses a company and links it to a contact.
+type EnsureCRMContactCompanyRequest struct {
+	ContactID        string  `json:"contact_id"`
+	CompanyName      string  `json:"company_name"`
+	Domain           *string `json:"domain,omitempty"`
+	SourceURL        string  `json:"source_url"`
+	Evidence         string  `json:"evidence"`
+	Confidence       float64 `json:"confidence"`
+	AssociationLabel *string `json:"association_label,omitempty"`
+	DryRun           bool    `json:"dry_run"`
+}
+
+// EnsureCRMContactCompanyResult reports company creation/reuse and contact association.
+type EnsureCRMContactCompanyResult struct {
+	Status           string `json:"status"`
+	ContactID        string `json:"contact_id"`
+	CompanyID        string `json:"company_id,omitempty"`
+	CompanyName      string `json:"company_name"`
+	Domain           string `json:"domain,omitempty"`
+	AssociationID    string `json:"association_id,omitempty"`
+	AssociationLabel string `json:"association_label,omitempty"`
+	CreatedCompany   bool   `json:"created_company"`
+	CreatedLink      bool   `json:"created_link"`
+	DryRun           bool   `json:"dry_run"`
+}
+
+// CRMEnrichmentFieldResult describes one applied or skipped field.
+type CRMEnrichmentFieldResult struct {
+	Field               string      `json:"field"`
+	OldValue            interface{} `json:"old_value,omitempty"`
+	NewValue            interface{} `json:"new_value,omitempty"`
+	SourceURL           string      `json:"source_url,omitempty"`
+	Confidence          float64     `json:"confidence,omitempty"`
+	Reason              string      `json:"reason,omitempty"`
+	CurrentValuePresent bool        `json:"current_value_present,omitempty"`
+	ProposedValue       interface{} `json:"proposed_value,omitempty"`
+}
+
+// CRMEnrichmentApplyResult is returned by guarded contact/company enrichment.
+type CRMEnrichmentApplyResult struct {
+	Status             string                     `json:"status"`
+	ObjectType         string                     `json:"object_type"`
+	ObjectID           string                     `json:"object_id"`
+	Applied            []CRMEnrichmentFieldResult `json:"applied"`
+	Skipped            []CRMEnrichmentFieldResult `json:"skipped"`
+	EnrichmentResultID string                     `json:"enrichment_result_id,omitempty"`
+	DryRun             bool                       `json:"dry_run"`
+}
+
 // CRMEnrichmentListFilters applies filters when listing enrichments.
 type CRMEnrichmentListFilters struct {
 	ObjectType *string

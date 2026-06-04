@@ -17,6 +17,7 @@ import {
 import { formatDistanceToNow } from 'date-fns'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation'
+import { getNotificationTaskRunTarget } from '@/lib/notificationNavigation'
 import {
   useNotifications,
   useUnreadCount,
@@ -77,6 +78,7 @@ function getCategoryLabel(category: string): string {
     case 'mentions': return 'Mention'
     case 'status_changes': return 'Status'
     case 'subscriptions': return 'Update'
+    case 'agent_attention': return 'Agent attention'
     case 'support_replies': return 'Customer reply'
     case 'support_mentions': return 'Support mention'
     default: return category
@@ -236,20 +238,27 @@ function NotificationDetail({ notification }: { notification: Notification }) {
   const entityState = notification.entity_snapshot?.state || ''
   const parentTitle = notification.parent_entity_snapshot?.title
   const parentIdentifier = notification.parent_entity_snapshot?.identifier
-  const openLabel = notification.entity_type === 'support_conversation' ? 'Open conversation' : `Open ${notification.entity_type}`
+  const openLabel = notification.entity_type === 'support_conversation'
+    ? 'Open conversation'
+    : notification.entity_type === 'agent_run'
+      ? 'Open task run'
+      : `Open ${notification.entity_type}`
 
   const handleNavigateToEntity = () => {
     const type = notification.entity_type
     const id = notification.entity_id
-    if (type === 'task') {
+    const taskRunTarget = getNotificationTaskRunTarget(notification)
+    if (taskRunTarget) {
       if (!wsSlug) return
-      openTaskRoute(navigate as never, location as never, wsSlug, id)
+      openTaskRoute(navigate as never, location as never, wsSlug, taskRunTarget.taskId, { run: taskRunTarget.runId })
     } else if (type === 'epic') {
       navigate({ to: '/w/$slug/pm/epics/$epicId' as string, params: { slug: wsSlug, epicId: id } })
     } else if (type === 'objective') {
       navigate({ to: '/w/$slug/pm/objectives/$objectiveId' as string, params: { slug: wsSlug, objectiveId: id } })
     } else if (type === 'support_conversation') {
       navigate({ to: '/w/$slug/support/$conversationId' as string, params: { slug: wsSlug, conversationId: id } })
+    } else if (type === 'doc' || type === 'document') {
+      navigate({ to: '/w/$slug/docs/documents/$docId' as string, params: { slug: wsSlug, docId: id } })
     }
   }
 

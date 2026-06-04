@@ -300,8 +300,8 @@ describe('ChatWindow', () => {
     expect(handleStartNewConversation).toHaveBeenCalledTimes(1);
   });
 
-  it('shows talk to human when enabled and the conversation is idle', () => {
-    const { getByText } = render(
+  it('does not show talk to human on the first customer message', () => {
+    const { queryByText } = render(
       <ChatWindow
         config={{
           ...baseConfig,
@@ -311,6 +311,42 @@ describe('ChatWindow', () => {
           },
         }}
         messages={[sampleMessage]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(queryByText('Talk to a human')).toBeNull();
+  });
+
+  it('shows talk to human when enabled after an AI reply and the conversation is idle', () => {
+    const { getByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'ai' as const,
+            content: 'I found the setup steps.',
+            senderName: 'Helpin AI',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
         isOpen={true}
         onClose={() => {}}
         onSendMessage={() => {}}
@@ -338,7 +374,18 @@ describe('ChatWindow', () => {
             escalationMessage: "I'm handing this over to a human teammate now.",
           },
         }}
-        messages={[sampleMessage]}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'ai' as const,
+            content: 'I can help with that.',
+            senderName: 'Helpin AI',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
         isOpen={true}
         onClose={() => {}}
         onSendMessage={() => {}}
@@ -350,13 +397,146 @@ describe('ChatWindow', () => {
       />,
     );
 
-    expect(queryByText("I'm handing this over to a human teammate now.")).toBeNull();
+    expect(queryByText('We typically reply in a few minutes')).toBeNull();
 
     fireEvent.click(getByText('Talk to a human'));
 
-    expect(getByText("I'm handing this over to a human teammate now.")).toBeTruthy();
     expect(getByText('We typically reply in a few minutes')).toBeTruthy();
-    expect(getByText('Online now')).toBeTruthy();
+    expect(queryByText('Talk to a human')).toBeNull();
+  });
+
+  it('shows waiting for teammate after an escalated system handoff message', () => {
+    const { getByText, container } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          availableTeammates: [
+            { userId: 'user-1', name: 'CS Azhar', status: 'online' as const },
+            { userId: 'user-2', name: 'Nora Support', status: 'away' as const },
+          ],
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'system' as const,
+            content: 'Let me connect you with a team member who can help further.',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        activeConversation={{
+          id: 'conv-1',
+          subject: 'Need help',
+          status: 'open',
+          aiState: 'escalated',
+          flowState: 'waiting_for_human',
+        }}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(getByText('Let me connect you with a team member who can help further.')).toBeTruthy();
+    expect(getByText('A team member will reply soon')).toBeTruthy();
+    expect(container.querySelectorAll('.helpin-waiting-teammate-avatar').length).toBe(2);
+  });
+
+  it('hides talk to human once an escalation message is already in the thread', () => {
+    const { getByText, queryByText } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            showTalkToHuman: true,
+            escalationMessage: 'A teammate will join shortly.',
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'system' as const,
+            content: 'A teammate will join shortly.',
+            systemEventType: 'ai_escalated' as const,
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        activeConversation={{
+          id: 'conv-1',
+          subject: 'Need help',
+          status: 'open',
+        }}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        onEscalateToHuman={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    expect(getByText('A teammate will join shortly.')).toBeTruthy();
+    expect(getByText('A team member will reply soon')).toBeTruthy();
+    expect(queryByText('Talk to a human')).toBeNull();
+  });
+
+  it('groups consecutive Helpin AI handoff and reply messages under one sender label', () => {
+    const { container } = render(
+      <ChatWindow
+        config={{
+          ...baseConfig,
+          features: {
+            ...baseConfig.features,
+            aiEnabled: true,
+            aiFirst: true,
+          },
+        }}
+        messages={[
+          sampleMessage,
+          {
+            id: 'msg-2',
+            conversationId: 'conv-1',
+            role: 'system' as const,
+            content: 'Let me connect you with a team member who can help further.',
+            senderName: 'Helpin AI',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: 'msg-3',
+            conversationId: 'conv-1',
+            role: 'ai' as const,
+            content: 'A teammate will respond shortly.',
+            isInternal: false,
+            createdAt: new Date().toISOString(),
+          },
+        ]}
+        isOpen={true}
+        onClose={() => {}}
+        onSendMessage={() => {}}
+        onQuickReply={() => {}}
+        showPreChatForm={false}
+        onPreChatSubmit={() => {}}
+        initialView="conversation"
+      />,
+    );
+
+    const senderLabels = Array.from(container.querySelectorAll('.helpin-message-agent-name'))
+      .map((node) => node.textContent)
+      .filter((text) => text === 'Helpin AI');
+    expect(senderLabels).toHaveLength(1);
   });
 
   it('shows the active teammate in conversation header before a human reply is sent', () => {

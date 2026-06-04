@@ -51,7 +51,7 @@ export function VideoEmbedNodeView({ node, deleteNode, editor, getPos }: NodeVie
       <div
         ref={nodeViewRef}
         onClick={() => { if (editable) setFocused(true); }}
-        className={`group/video relative my-3 rounded-lg overflow-hidden ${focused ? 'ring-2 ring-primary' : ''}`}
+        className={`docs-video-embed group/video relative my-6 rounded-lg overflow-hidden ${focused ? 'ring-2 ring-primary' : ''}`}
       >
         {/* Responsive iframe container — 16:9 */}
         <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
@@ -61,7 +61,7 @@ export function VideoEmbedNodeView({ node, deleteNode, editor, getPos }: NodeVie
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
-            referrerPolicy="no-referrer"
+            referrerPolicy="strict-origin-when-cross-origin"
             title={`${PROVIDER_LABELS[provider] ?? 'Video'} embed`}
           />
         </div>

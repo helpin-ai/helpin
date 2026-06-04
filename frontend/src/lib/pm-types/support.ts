@@ -7,6 +7,16 @@ export type MessageSenderType = 'customer' | 'user' | 'agent' | 'ai';
 export type SupportConversationTriageStatus = 'not_run' | 'suggested' | 'auto_moved' | 'dismissed' | 'overridden';
 export type SupportConversationTriageSource = 'rule' | 'ai';
 export type SupportConversationTriageFeedbackAction = 'accepted' | 'dismissed' | 'corrected';
+export type SupportSystemTag = 'ai_handoff' | 'ai_resolved';
+
+export interface SupportTag {
+  id: string;
+  workspace_id: string;
+  name: string;
+  color?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface SupportConversationTriage {
   id: string;
@@ -52,8 +62,12 @@ export interface SupportConversation {
   ai_resolution_type?: 'confirmed' | 'assumed' | null;
   ai_turn_count?: number;
   customer_requested_human_at?: string;
+  human_takeover?: boolean | null;
   last_message?: string;
+  last_message_sender_type?: MessageSenderType | null;
+  last_message_sender_display_name?: string | null;
   unread_count?: number;
+  awaiting_reply?: boolean;
   mailbox_name?: string | null;
   mailbox_handle?: string | null;
   mailbox_icon?: string | null;
@@ -62,15 +76,24 @@ export interface SupportConversation {
   team_last_seen_at?: string;
   contact_last_seen_at?: string;
   triage?: SupportConversationTriage | null;
+  tags?: SupportTag[];
+  system_tags?: SupportSystemTag[];
   created_at: string;
   updated_at: string;
 }
 
 export interface UnreadStats {
-  total: number;
-  my_inbox: number;
-  unassigned: number;
+  inbox: number;
+  mine: number;
+  waiting: number;
   ai_active: number;
+  inbox_total?: number;
+  mine_total?: number;
+  waiting_total?: number;
+  ai_active_total?: number;
+  total?: number;
+  my_inbox?: number;
+  unassigned?: number;
 }
 
 export interface SupportInboxScope {
@@ -80,14 +103,58 @@ export interface SupportInboxScope {
   icon: string;
   is_shared: boolean;
   is_default: boolean;
+  total_count?: number;
   unread_count: number;
   active: boolean;
   linked_team_id?: string | null;
 }
 
+export type SupportInboxViewFilters = Record<string, string>;
+
+export interface SupportInboxView {
+  id: string;
+  workspace_id: string;
+  name: string;
+  filters: SupportInboxViewFilters;
+  is_shared: boolean;
+  view_type: 'custom' | 'default' | 'team';
+  view_key?: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupportInboxViewCount {
+  view_id: string;
+  total_count: number;
+  unread_count: number;
+}
+
+export interface CreateSupportInboxViewRequest {
+  name: string;
+  filters: SupportInboxViewFilters;
+  is_shared: boolean;
+}
+
+export interface UpdateSupportInboxViewRequest {
+  name?: string;
+  filters?: SupportInboxViewFilters;
+  is_shared?: boolean;
+}
+
+export interface UpdateSupportInboxBuiltinViewRequest {
+  view_key: string;
+  filters: SupportInboxViewFilters;
+}
+
 export interface SupportInboxScopeListResponse {
   shared_inbox: SupportInboxScope;
   mailboxes: SupportInboxScope[];
+}
+
+export interface SupportWorkspaceUnreadCount {
+  workspace_id: string;
+  unread_count: number;
 }
 
 export interface SupportMailbox {
@@ -103,6 +170,8 @@ export interface SupportMailbox {
   linked_team_name?: string | null;
   visibility_mode: 'members_only';
   assignment_mode: 'manual' | 'round_robin';
+  reply_time_preset?: string | null;
+  reply_time_custom_minutes?: number | null;
   position: number;
   active: boolean;
   member_count?: number;
@@ -148,6 +217,88 @@ export interface CreateSupportEmailRouteRequest {
   source_address?: string | null;
 }
 
+export interface SupportEmailSender {
+  id: string;
+  workspace_id: string;
+  mailbox_id?: string | null;
+  email: string;
+  local_part: string;
+  domain: string;
+  display_name: string;
+  postmark_domain_id?: number | null;
+  return_path_domain: string;
+  return_path_domain_cname_value: string;
+  return_path_domain_verified: boolean;
+  dkim_host: string;
+  dkim_text_value: string;
+  dkim_pending_host: string;
+  dkim_pending_text_value: string;
+  dkim_verified: boolean;
+  dkim_update_status: string;
+  dmarc_host: string;
+  dmarc_policy: string;
+  dmarc_record_present: boolean;
+  dmarc_last_checked_at?: string | null;
+  domain_status: 'pending_dns' | 'verified' | string;
+  forwarding_status: 'not_started' | 'pending' | 'verified' | string;
+  forwarding_address: string;
+  forwarding_verified_at?: string | null;
+  forwarding_last_checked_at?: string | null;
+  forwarding_last_error?: string | null;
+  email_route_id?: string | null;
+  verification_status: 'pending_dns' | 'verified' | string;
+  default_scope: 'none' | 'workspace' | 'mailbox' | string;
+  active: boolean;
+  last_checked_at?: string | null;
+  last_error?: string | null;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+  mailbox_name?: string | null;
+  mailbox_handle?: string | null;
+  mailbox_icon?: string | null;
+}
+
+export interface CreateSupportEmailSenderRequest {
+  email: string;
+  display_name?: string;
+  mailbox_id?: string | null;
+}
+
+export interface SetSupportEmailSenderDefaultRequest {
+  default_scope: 'none' | 'workspace' | 'mailbox';
+  mailbox_id?: string | null;
+}
+
+export interface SupportEmailSenderDomain {
+  id: string;
+  workspace_id: string;
+  domain: string;
+  from_local_part: string;
+  postmark_domain_id?: number | null;
+  return_path_domain: string;
+  return_path_domain_cname_value: string;
+  return_path_domain_verified: boolean;
+  dkim_host: string;
+  dkim_text_value: string;
+  dkim_pending_host: string;
+  dkim_pending_text_value: string;
+  dkim_verified: boolean;
+  dkim_update_status: string;
+  status: 'pending_dns' | 'verified' | string;
+  active: boolean;
+  last_checked_at?: string | null;
+  last_error?: string | null;
+  created_by_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateSupportEmailSenderDomainRequest {
+  domain: string;
+  from_local_part: string;
+}
+
 export interface CreateSupportMailboxRequest {
   name: string;
   handle: string;
@@ -172,6 +323,10 @@ export interface UpdateSupportMailboxRequest {
   workspace_member_ids?: string[];
   assignment_mode?: 'manual' | 'round_robin';
   import_linked_team?: boolean;
+  reply_time_preset?: string;
+  reply_time_custom_minutes?: number | null;
+  clear_reply_time_preset?: boolean;
+  clear_reply_time_custom_minutes?: boolean;
 }
 
 export interface SupportTriageRuleConditions {
@@ -202,6 +357,31 @@ export interface CreateSupportTriageRuleRequest {
   channels: TicketSource[];
   conditions: SupportTriageRuleConditions;
   target_mailbox_id: string;
+}
+
+export interface SupportCannedResponse {
+  id: string;
+  workspace_id: string;
+  short_code: string;
+  content: string;
+  tag: string;
+  created_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCannedResponseRequest {
+  short_code: string;
+  content: string;
+  tag?: string;
+  title?: string;
+}
+
+export interface UpdateCannedResponseRequest {
+  short_code: string;
+  content: string;
+  tag?: string;
+  title?: string;
 }
 
 export interface UpdateSupportTriageRuleRequest {
@@ -252,6 +432,30 @@ export interface SupportLinkPreview {
   host: string;
 }
 
+/**
+ * Canonical set of system_event_type values the backend emits on
+ * message_type='system' rows. Renderers branch on this instead of
+ * keyword-matching content. Source of truth:
+ * server/internal/model/support_system_event.go.
+ */
+export const SUPPORT_SYSTEM_EVENT_TYPES = [
+  'teammate_joined',
+  'assigned',
+  'unassigned',
+  'took',
+  'agent_assigned',
+  'mailbox_moved',
+  'triage_routed',
+  'triage_dismissed',
+  'ai_escalated',
+  'customer_requested_human',
+  'resolved',
+  'reopened',
+  'closed',
+] as const;
+
+export type SupportSystemEventType = (typeof SUPPORT_SYSTEM_EVENT_TYPES)[number];
+
 export interface SupportMessage {
   id: string;
   workspace_id: string;
@@ -263,14 +467,87 @@ export interface SupportMessage {
   sender_avatar_url?: string;
   content: string;
   message_type?: string;
+  system_event_type?: SupportSystemEventType;
   is_internal: boolean;
   metadata?: string;
   via_channel?: 'email' | 'widget' | null;
   email_notified_at?: string;
   email_read_at?: string;
+  cancellable_until?: string;
   attachments?: SupportAttachmentPayload[];
+  /** Sanitized HTML body — present only for inbound email messages (via_channel === 'email'). */
+  html_body?: string;
+  /** Markdown-friendly plaintext body — present only for inbound email messages. */
+  stripped_text?: string;
+  /** Delivery status of the outbound email for this message. Only set when the message was sent via email. */
+  email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
+  /** Human-readable bounce or complaint description. Empty unless delivery failed. */
+  email_delivery_error?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SupportMessageActionResponse {
+  id: string;
+  markdown?: string;
+  email_already_sent: boolean;
+}
+
+export interface SupportMessageInfo {
+  id: string;
+  sent_at: string;
+  sender: {
+    id?: string;
+    name: string;
+    type: string;
+    avatar_url?: string;
+  };
+  from: string;
+  origin: string;
+  type: string;
+  email_delivery_status?: string;
+  email_delivery_status_label?: string;
+  delivered?: {
+    channel: string;
+    delivered_at: string;
+  } | null;
+  not_delivered_reason?: string | null;
+  read: boolean;
+  read_at?: string | null;
+  edited: boolean;
+  translated: boolean;
+  automated: boolean;
+}
+
+export interface SupportMessageEmailDetail {
+  id: string;
+  message_id: string;
+  direction: 'inbound' | 'outbound' | string;
+  subject: string;
+  from_email: string;
+  to_email: string;
+  rfc_message_id?: string;
+  in_reply_to?: string;
+  references_header?: string;
+  stripped_text?: string;
+  html_body?: string;
+  status: string;
+  delivered_at?: string;
+  opened_at?: string;
+  bounced_at?: string;
+  error_message?: string;
+  created_at: string;
+  forwarded_attribution?: SupportForwardedAttribution;
+}
+
+export interface SupportForwardedAttribution {
+  original_sender_email: string;
+  original_sender_name?: string;
+  forwarded_by_email: string;
+  forwarded_by_name?: string;
+  confidence: number;
+  confidence_level: string;
+  source: string;
 }
 
 export interface SupportAIPreviewHistoryTurn {
@@ -368,6 +645,7 @@ export interface AIMessageMetadata {
     title: string;
     snippet: string;
     confidence: number;
+    url?: string;
   }>;
   ai_confidence: number;
   ai_model: string;
@@ -507,17 +785,37 @@ export interface LinkTaskRequest {
 }
 
 export interface CreateTaskFromConversationRequest {
+  name?: string;
+  description?: string;
   task_type?: 'feature' | 'bug' | 'chore';
-  priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';
-  team_id?: string;
   workflow_id?: string;
   workflow_state_id?: string;
+  epic_id?: string;
+  sprint_id?: string;
+  team_id?: string;
   owner_member_id?: string;
+  requester_member_id?: string;
+  estimate?: number;
+  priority?: 'none' | 'low' | 'medium' | 'high' | 'urgent';
+  severity?: 'none' | 'minor' | 'major' | 'critical';
+  deadline?: string;
+  position?: number;
+  blocked?: boolean;
+  blocker?: string;
+  template_id?: string;
+  external_id?: string;
+  owner_ids?: string[];
+  follower_ids?: string[];
+  label_ids?: string[];
+  attachment_ids?: string[];
+  checklist_items?: { text: string; position?: number }[];
+  external_links?: { url: string; title?: string }[];
 }
 
 export interface CreateTaskFromConversationResponse {
   task_id: string;
-  task_key?: string;
+  display_id: number;
+  task_key: string;
   task_name: string;
   summary?: string;
   copied_contact_associations: number;
@@ -531,6 +829,10 @@ export interface AssignConversationAgentRequest {
 
 export interface AssignConversationUserRequest {
   user_id: string | null;
+}
+
+export interface UpdateConversationCRMContactRequest {
+  crm_contact_id: string | null;
 }
 
 // ── Support Installation Settings ───────────────────────────────────
@@ -572,9 +874,16 @@ export interface SupportInboxSettings {
   business_hours_timezone: string;
   business_hours_schedule: Record<string, BusinessHoursDay>;
   outside_hours_message: string;
+  reply_time_preset?: string;
+  reply_time_custom_minutes?: number | null;
+  special_notice_text?: string | null;
   email_fallback_enabled: boolean;
   email_fallback_delay_secs: number;
   email_fallback_from_name: string;
+  email_fallback_max_delivery_age_secs: number;
+  forwarded_email_detection_enabled: boolean;
+  forwarded_email_detection_mode: string;
+  forwarded_email_min_confidence: number;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;

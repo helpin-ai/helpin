@@ -142,11 +142,11 @@ function PreviewPage() {
             <ArticleContent html={article.content_html} />
 
             {/* Feedback section (disabled in preview) */}
-            <div className="mt-12 pt-6 border-t border-border">
+            <div className="mt-12 border-t border-border pt-6 text-center">
               <p className="text-[13px] text-muted-foreground mb-3">
                 Was this article helpful?
               </p>
-              <div className="flex gap-2">
+              <div className="flex justify-center gap-2">
                 <button
                   type="button"
                   disabled

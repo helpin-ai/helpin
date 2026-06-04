@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractConversationListConversations,
+  getNextConversationIdAfterRemoval,
   isSupportConversationListQueryKey,
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
@@ -17,6 +19,12 @@ describe('supportQueryCache', () => {
     expect(
       isSupportConversationListQueryKey(
         ['support', 'ws-1', 'conversations', undefined],
+        'ws-1',
+      ),
+    ).toBe(true);
+    expect(
+      isSupportConversationListQueryKey(
+        ['support', 'ws-1', 'conversations', 'infinite', { mailbox_id: 'shared' }],
         'ws-1',
       ),
     ).toBe(true);
@@ -70,6 +78,45 @@ describe('supportQueryCache', () => {
     ).toEqual({ foo: 'bar' });
   });
 
+  it('updates unread counts on infinite list payloads', () => {
+    const current = {
+      pages: [
+        {
+          data: [
+            {
+              id: 'conv-1',
+              workspace_id: 'ws-1',
+              display_id: 1,
+              subject: 'Subject',
+              status: 'open',
+              priority: 'medium',
+              source: 'widget',
+              unread_count: 0,
+              created_at: '2026-04-08T00:00:00Z',
+              updated_at: '2026-04-08T00:00:00Z',
+            },
+          ],
+          total: 1,
+          page: 1,
+          per_page: 50,
+          total_pages: 1,
+          meta: {
+            unread: {
+              total: 0,
+              my_inbox: 0,
+              unassigned: 0,
+              ai_active: 0,
+            },
+          },
+        },
+      ],
+      pageParams: [1],
+    };
+
+    const updated = updateConversationListUnreadCount(current, 'conv-1', 2);
+    expect(extractConversationListConversations(updated)[0]?.unread_count).toBe(2);
+  });
+
   it('updates detail unread counts without changing unrelated entries', () => {
     const current: SupportConversation = {
       id: 'conv-1',
@@ -86,5 +133,14 @@ describe('supportQueryCache', () => {
 
     expect(updateConversationUnreadCount(current, 0)?.unread_count).toBe(0);
     expect(updateConversationUnreadCount(undefined, 0)).toBeUndefined();
+  });
+
+  it('selects the next row after removing a conversation from a list', () => {
+    const conversations = [{ id: 'conv-1' }, { id: 'conv-2' }, { id: 'conv-3' }];
+
+    expect(getNextConversationIdAfterRemoval(conversations, 'conv-1')).toBe('conv-2');
+    expect(getNextConversationIdAfterRemoval(conversations, 'conv-2')).toBe('conv-3');
+    expect(getNextConversationIdAfterRemoval(conversations, 'conv-3')).toBe('conv-2');
+    expect(getNextConversationIdAfterRemoval([], 'conv-1')).toBeNull();
   });
 });

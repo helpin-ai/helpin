@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/storage"
 	"github.com/helpin-ai/helpin/server/internal/tiptap"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
@@ -15,35 +19,99 @@ import (
 // PMCommentService contains comment business logic.
 type PMCommentService struct {
 	commentRepo         *repository.PMCommentRepository
-	taskRepo           *repository.PMTaskRepository
+	taskRepo            *repository.PMTaskRepository
 	attachmentRepo      *repository.PMAttachmentRepository
 	activityService     *PMActivityService
 	wsPublisher         *websocket.Publisher
 	notificationService *NotificationService
 	workspaceRepo       *repository.WorkspaceRepository
+	s3Client            *storage.S3Client
 	logger              *slog.Logger
 }
 
 // NewPMCommentService creates a new PMCommentService.
-func NewPMCommentService(commentRepo *repository.PMCommentRepository, taskRepo *repository.PMTaskRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository) *PMCommentService {
+func NewPMCommentService(commentRepo *repository.PMCommentRepository, taskRepo *repository.PMTaskRepository, attachmentRepo *repository.PMAttachmentRepository, activityService *PMActivityService, wsPublisher *websocket.Publisher, notificationService *NotificationService, workspaceRepo *repository.WorkspaceRepository, s3Client *storage.S3Client) *PMCommentService {
 	return &PMCommentService{
 		commentRepo:         commentRepo,
-		taskRepo:           taskRepo,
+		taskRepo:            taskRepo,
 		attachmentRepo:      attachmentRepo,
 		activityService:     activityService,
 		wsPublisher:         wsPublisher,
 		notificationService: notificationService,
 		workspaceRepo:       workspaceRepo,
+		s3Client:            s3Client,
 		logger:              slog.Default().With("service", "pm_comment"),
 	}
 }
 
-// List returns comments for an entity.
+// List returns comments for an entity, with attachment URLs resolved.
 func (s *PMCommentService) List(ctx context.Context, entityType, entityID string) ([]model.CommentWithAuthor, error) {
 	if entityType == "" || entityID == "" {
 		return nil, fmt.Errorf("entity_type and entity_id are required")
 	}
-	return s.commentRepo.List(ctx, entityType, entityID)
+	comments, err := s.commentRepo.List(ctx, entityType, entityID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range comments {
+		s.resolveAttachmentURLs(comments[i].Attachments)
+		for j := range comments[i].Replies {
+			s.resolveAttachmentURLs(comments[i].Replies[j].Attachments)
+		}
+	}
+	return comments, nil
+}
+
+// ListByEntityIDs returns comments grouped by entity ID with attachment URLs resolved.
+func (s *PMCommentService) ListByEntityIDs(ctx context.Context, entityType string, entityIDs []string) (map[string][]model.CommentWithAuthor, error) {
+	if entityType == "" {
+		return nil, fmt.Errorf("entity_type is required")
+	}
+	commentsByEntity, err := s.commentRepo.ListByEntityIDs(ctx, entityType, entityIDs)
+	if err != nil {
+		return nil, err
+	}
+	for entityID, comments := range commentsByEntity {
+		for i := range comments {
+			s.resolveAttachmentURLs(comments[i].Attachments)
+			for j := range comments[i].Replies {
+				s.resolveAttachmentURLs(comments[i].Replies[j].Attachments)
+			}
+		}
+		commentsByEntity[entityID] = comments
+	}
+	return commentsByEntity, nil
+}
+
+// Get returns a single raw comment for callers that need to enforce
+// module-specific route boundaries before mutating it.
+func (s *PMCommentService) Get(ctx context.Context, id string) (*model.PMComment, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, fmt.Errorf("comment id is required")
+	}
+	return s.commentRepo.GetByID(ctx, id)
+}
+
+// resolveAttachmentURLs populates URL / PublicURL on attachment responses so
+// the frontend can render inline previews.
+func (s *PMCommentService) resolveAttachmentURLs(attachments []model.AttachmentResponse) {
+	if s.s3Client == nil {
+		return
+	}
+	hasPublic := s.s3Client.HasPublicURL()
+	for i := range attachments {
+		a := attachments[i].Attachment
+		if a.StorageKey == "" {
+			continue
+		}
+		if hasPublic {
+			attachments[i].PublicURL = s.s3Client.PublicURL(a.StorageKey)
+		}
+		downloadURL, err := s.s3Client.GeneratePresignedGetURL(a.StorageKey, a.FileName)
+		if err == nil {
+			attachments[i].URL = downloadURL
+		}
+	}
 }
 
 // Create creates a comment.
@@ -61,16 +129,28 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 		AuthorID:   authorID,
 		Body:       strings.TrimSpace(req.Body),
 		ParentID:   req.ParentID,
+		BlockID:    req.BlockID,
+		Range:      req.Range,
+		AnchorText: strings.TrimSpace(req.AnchorText),
 	}
-	if err := s.commentRepo.Create(ctx, comment); err != nil {
-		return nil, err
-	}
-
-	// Reassign any pre-uploaded attachments to this comment.
-	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
-		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
-			s.logger.ErrorContext(ctx, "failed to reassign attachments to comment", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+	if s.attachmentRepo != nil {
+		if err := s.commentRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.commentRepo.WithTx(tx).Create(ctx, comment); err != nil {
+				return err
+			}
+			if len(req.AttachmentIDs) == 0 {
+				return nil
+			}
+			if err := s.attachmentRepo.WithTx(tx).ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to create comment with attachments", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+			return nil, err
 		}
+	} else if err := s.commentRepo.Create(ctx, comment); err != nil {
+		return nil, err
 	}
 
 	// Auto-follow task when someone comments.
@@ -85,6 +165,12 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	if len(mentions) > 0 {
 		metadata["mentions"] = mentions
 	}
+	if comment.BlockID != nil && strings.TrimSpace(*comment.BlockID) != "" {
+		metadata["block_id"] = *comment.BlockID
+	}
+	if strings.TrimSpace(comment.AnchorText) != "" {
+		metadata["anchor_text"] = comment.AnchorText
+	}
 
 	slog.InfoContext(ctx, "comment created",
 		"comment_id", comment.ID,
@@ -97,6 +183,21 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 
 	if err := s.activityService.Log(ctx, workspaceID, req.EntityType, req.EntityID, optionalActor(authorID), "comment_added", nil, nil, nil, metadata); err != nil {
 		s.logger.ErrorContext(ctx, "failed to log activity for comment create", "error", err, "comment_id", comment.ID, "entity_id", req.EntityID)
+	}
+	if comment.BlockID != nil && strings.TrimSpace(*comment.BlockID) != "" {
+		blockMetadata := map[string]interface{}{
+			"comment_id": comment.ID,
+			"block_id":   *comment.BlockID,
+		}
+		if strings.TrimSpace(comment.AnchorText) != "" {
+			blockMetadata["anchor_text"] = comment.AnchorText
+		}
+		if comment.Range != nil {
+			blockMetadata["range"] = comment.Range
+		}
+		if err := s.activityService.Log(ctx, workspaceID, req.EntityType, req.EntityID, optionalActor(authorID), "block_commented", nil, nil, nil, blockMetadata); err != nil {
+			s.logger.ErrorContext(ctx, "failed to log activity for block comment", "error", err, "comment_id", comment.ID, "entity_id", req.EntityID)
+		}
 	}
 	s.wsPublisher.Publish(websocket.Event{Action: "created", Entity: "comment", EntityID: comment.ID, WorkspaceID: workspaceID, ActorID: authorID, ParentType: req.EntityType, ParentID: req.EntityID})
 
@@ -234,12 +335,76 @@ func (s *PMCommentService) Create(ctx context.Context, req model.CreateCommentRe
 	if err != nil {
 		return nil, err
 	}
+	// Replies are nested inside their parent in the repository's grouped
+	// shape, so we have to look at both top-level threads and their replies.
 	for _, item := range comments {
 		if item.Comment.ID == comment.ID {
 			return &item, nil
 		}
+		for _, reply := range item.Replies {
+			if reply.Comment.ID == comment.ID {
+				replyCopy := reply
+				return &replyCopy, nil
+			}
+		}
+	}
+
+	created, err := s.commentRepo.GetWithAuthor(ctx, comment.ID)
+	if err != nil {
+		return nil, err
+	}
+	if created != nil {
+		s.resolveAttachmentURLs(created.Attachments)
+		return created, nil
 	}
 	return nil, fmt.Errorf("comment created but could not be loaded")
+}
+
+// SetResolved marks a comment thread resolved or reopens it. Any user with the
+// module's edit permission may resolve review threads; editing/deleting the
+// actual text remains author-gated.
+func (s *PMCommentService) SetResolved(ctx context.Context, id string, resolved bool, actorID string, workspaceID string) (*model.PMComment, error) {
+	comment, err := s.commentRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if comment == nil {
+		return nil, fmt.Errorf("comment not found")
+	}
+
+	action := "comment_reopened"
+	var resolvedAt interface{}
+	var resolvedBy interface{}
+	if resolved {
+		now := time.Now().UTC()
+		comment.ResolvedAt = &now
+		comment.ResolvedBy = &actorID
+		resolvedAt = now
+		resolvedBy = actorID
+		action = "comment_resolved"
+	} else {
+		comment.ResolvedAt = nil
+		comment.ResolvedBy = nil
+	}
+	if err := s.commentRepo.UpdateResolution(ctx, comment.ID, resolvedAt, resolvedBy); err != nil {
+		return nil, err
+	}
+
+	metadata := map[string]interface{}{
+		"comment_id": comment.ID,
+	}
+	if comment.BlockID != nil && strings.TrimSpace(*comment.BlockID) != "" {
+		metadata["block_id"] = *comment.BlockID
+	}
+	if strings.TrimSpace(comment.AnchorText) != "" {
+		metadata["anchor_text"] = comment.AnchorText
+	}
+	if err := s.activityService.Log(ctx, workspaceID, comment.EntityType, comment.EntityID, optionalActor(actorID), action, nil, nil, nil, metadata); err != nil {
+		s.logger.ErrorContext(ctx, "failed to log activity for comment resolution", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+	}
+	s.wsPublisher.Publish(websocket.Event{Action: "updated", Entity: "comment", EntityID: id, WorkspaceID: workspaceID, ActorID: actorID, ParentType: comment.EntityType, ParentID: comment.EntityID})
+	s.logger.InfoContext(ctx, "comment resolution changed", "comment_id", id, "entity_type", comment.EntityType, "entity_id", comment.EntityID, "workspace_id", workspaceID, "actor_id", actorID, "resolved", resolved)
+	return comment, nil
 }
 
 // Update updates a comment if actor is author or admin.
@@ -260,7 +425,23 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 
 	oldValue := comment.Body
 	comment.Body = strings.TrimSpace(req.Body)
-	if err := s.commentRepo.Update(ctx, comment); err != nil {
+	if s.attachmentRepo != nil {
+		if err := s.commentRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.commentRepo.WithTx(tx).Update(ctx, comment); err != nil {
+				return err
+			}
+			if len(req.AttachmentIDs) == 0 {
+				return nil
+			}
+			if err := s.attachmentRepo.WithTx(tx).ReassignToEntity(ctx, req.AttachmentIDs, "comment", comment.ID); err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to update comment with attachments", "error", err, "comment_id", comment.ID, "attachment_ids", req.AttachmentIDs)
+			return nil, err
+		}
+	} else if err := s.commentRepo.Update(ctx, comment); err != nil {
 		return nil, err
 	}
 
@@ -280,20 +461,23 @@ func (s *PMCommentService) Update(ctx context.Context, id string, req model.Upda
 				readableTeamIDs = mentionScopeForTeamID(story.TeamID)
 			}
 		}
-		if _, err := emitMentionNotification(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
-			WorkspaceID:      workspaceID,
-			ActorID:          actorID,
-			Body:             comment.Body,
-			EventType:        "comment.mention",
-			EntityType:       comment.EntityType,
-			EntityID:         comment.EntityID,
-			Title:            "mentioned you in a comment on " + entityTitle,
-			TeamID:           entityTeamID,
-			ReadableTeamIDs:  readableTeamIDs,
-			EntitySnapshot:   model.JSONB{"title": entityTitle},
-			NotificationBody: truncate(tiptap.StripHTML(comment.Body), 200),
-		}); err != nil {
-			s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+		addedMentions := diffMentionHandles(extractMentions(oldValue), extractMentions(comment.Body))
+		if len(addedMentions) > 0 {
+			if _, err := emitMentionNotificationForHandles(ctx, s.notificationService, s.workspaceRepo, pmMentionNotificationInput{
+				WorkspaceID:      workspaceID,
+				ActorID:          actorID,
+				Body:             comment.Body,
+				EventType:        "comment.mention",
+				EntityType:       comment.EntityType,
+				EntityID:         comment.EntityID,
+				Title:            "mentioned you in a comment on " + entityTitle,
+				TeamID:           entityTeamID,
+				ReadableTeamIDs:  readableTeamIDs,
+				EntitySnapshot:   model.JSONB{"title": entityTitle},
+				NotificationBody: truncate(tiptap.StripHTML(comment.Body), 200),
+			}, addedMentions); err != nil {
+				s.logger.ErrorContext(ctx, "failed to emit comment mention notification", "error", err, "comment_id", id, "entity_id", comment.EntityID)
+			}
 		}
 	}
 	s.logger.InfoContext(ctx, "comment updated", "comment_id", id, "entity_type", comment.EntityType, "entity_id", comment.EntityID, "workspace_id", workspaceID, "actor_id", actorID)

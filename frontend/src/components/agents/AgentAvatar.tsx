@@ -9,6 +9,7 @@ export type AgentPersonaKey =
   | 'forge'
   | 'echo'
   | 'lens'
+  | 'beacon'
   | 'quill'
   | 'generic';
 
@@ -25,6 +26,8 @@ const PRESET_PERSONA_MAP: Partial<Record<AgentPresetKey, AgentPersonaKey>> = {
   code_builder: 'forge',
   support_agent: 'echo',
   review_agent: 'lens',
+  crm_operator: 'beacon',
+  documentation_agent: 'quill',
 };
 
 const PERSONA_META: Record<AgentPersonaKey, AgentPersonaMeta> = {
@@ -33,6 +36,7 @@ const PERSONA_META: Record<AgentPersonaKey, AgentPersonaMeta> = {
   forge: { key: 'forge', label: 'Forge', role: 'Coding agent' },
   echo: { key: 'echo', label: 'Echo', role: 'Help chat agent' },
   lens: { key: 'lens', label: 'Lens', role: 'QA reviewer' },
+  beacon: { key: 'beacon', label: 'Beacon', role: 'CRM operator' },
   quill: { key: 'quill', label: 'Quill', role: 'Docs agent' },
   generic: { key: 'generic', label: 'Agent', role: 'Automation agent' },
 };
@@ -53,6 +57,8 @@ function personaFromName(name?: string | null): AgentPersonaKey | null {
       return 'echo';
     case 'lens':
       return 'lens';
+    case 'beacon':
+      return 'beacon';
     case 'quill':
       return 'quill';
     default:
@@ -90,6 +96,7 @@ interface AgentAvatarProps {
   className?: string;
   svgClassName?: string;
   decorative?: boolean;
+  genericBare?: boolean;
 }
 
 export function AgentAvatar({
@@ -99,6 +106,7 @@ export function AgentAvatar({
   className,
   svgClassName,
   decorative = true,
+  genericBare = false,
 }: AgentAvatarProps) {
   const persona = resolveAgentPersonaKey({ agent, name, presetKey });
   const meta = PERSONA_META[persona];
@@ -111,16 +119,17 @@ export function AgentAvatar({
     <span
       className={cn(
         'inline-flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border/70 bg-background/90 shadow-sm',
+        genericBare && persona === 'generic' && 'rounded-none border-0 bg-transparent shadow-none',
         className,
       )}
       {...accessibilityProps}
     >
-      <PersonaSvg persona={persona} className={cn('h-full w-full', svgClassName)} />
+      <PersonaSvg persona={persona} className={cn('h-full w-full', svgClassName)} genericBare={genericBare} />
     </span>
   );
 }
 
-function PersonaSvg({ persona, className }: { persona: AgentPersonaKey; className?: string }) {
+function PersonaSvg({ persona, className, genericBare = false }: { persona: AgentPersonaKey; className?: string; genericBare?: boolean }) {
   switch (persona) {
     case 'atlas':
       return (
@@ -206,31 +215,55 @@ function PersonaSvg({ persona, className }: { persona: AgentPersonaKey; classNam
           <path d="M70 30Q74 20 66 14L58 20" stroke="#BA7517" strokeWidth="3" strokeLinecap="round" />
         </svg>
       );
+    case 'beacon':
+      return (
+        <svg className={className} viewBox="0 0 80 80" fill="none">
+          <circle cx="40" cy="41" r="30" fill="#0F766E" opacity=".12" />
+          <rect x="15" y="20" width="50" height="44" rx="18" fill="#0F766E" />
+          <path d="M40 6L52 22H28L40 6Z" fill="#14B8A6" />
+          <path d="M40 11L46 19H34L40 11Z" fill="#D9FBF5" opacity=".95" />
+          <path d="M25 13C20 16 16 21 14 27" stroke="#5EEAD4" strokeWidth="2.5" strokeLinecap="round" />
+          <path d="M55 13C60 16 64 21 66 27" stroke="#5EEAD4" strokeWidth="2.5" strokeLinecap="round" />
+          <circle cx="40" cy="8" r="2.5" fill="#99F6E4" />
+          <circle cx="29" cy="38" r="7" fill="#D9FBF5" />
+          <circle cx="51" cy="38" r="7" fill="#D9FBF5" />
+          <circle cx="29" cy="38" r="3" fill="#083C39" />
+          <circle cx="51" cy="38" r="3" fill="#083C39" />
+          <circle cx="31" cy="36" r="1.3" fill="#D9FBF5" />
+          <circle cx="53" cy="36" r="1.3" fill="#D9FBF5" />
+          <path d="M33 51Q40 57 47 51" stroke="#D9FBF5" strokeWidth="2.6" strokeLinecap="round" />
+          <circle cx="58" cy="25" r="3" fill="#99F6E4" />
+          <circle cx="62" cy="31" r="2" fill="#5EEAD4" />
+          <path d="M28 62H52" stroke="#5EEAD4" strokeWidth="2" strokeLinecap="round" opacity=".75" />
+        </svg>
+      );
     case 'quill':
       return (
         <svg className={className} viewBox="0 0 80 80" fill="none">
-          <rect x="12" y="18" width="56" height="48" rx="8" fill="#185FA5" opacity=".12" />
-          <rect x="16" y="22" width="48" height="40" rx="6" fill="#185FA5" />
-          <rect x="24" y="30" width="12" height="10" rx="3" fill="#E6F1FB" />
-          <rect x="44" y="30" width="12" height="10" rx="3" fill="#E6F1FB" />
-          <circle cx="30" cy="35" r="2.5" fill="#042C53" />
-          <circle cx="50" cy="35" r="2.5" fill="#042C53" />
-          <line x1="24" y1="27" x2="36" y2="27" stroke="#E6F1FB" strokeWidth="2" strokeLinecap="round" />
-          <line x1="44" y1="27" x2="56" y2="27" stroke="#E6F1FB" strokeWidth="2" strokeLinecap="round" />
-          <rect x="30" y="48" width="20" height="4" rx="2" fill="#85B7EB" />
-          <rect x="32" y="49" width="4" height="2" rx="1" fill="#042C53" />
-          <rect x="38" y="49" width="4" height="2" rx="1" fill="#042C53" />
-          <rect x="44" y="49" width="4" height="2" rx="1" fill="#042C53" />
-          <rect x="26" y="6" width="28" height="18" rx="4" fill="#185FA5" />
-          <rect x="30" y="9" width="20" height="3" rx="1" fill="#85B7EB" />
-          <rect x="30" y="14" width="14" height="3" rx="1" fill="#85B7EB" />
-          <rect x="30" y="19" width="18" height="2" rx="1" fill="#85B7EB" opacity=".5" />
+          <circle cx="40" cy="42" r="29" fill="#185FA5" opacity=".12" />
+          <rect x="15" y="21" width="50" height="43" rx="16" fill="#185FA5" />
+          <rect x="25" y="7" width="30" height="20" rx="7" fill="#185FA5" />
+          <rect x="30" y="11" width="18" height="3" rx="1.5" fill="#A7D4FF" />
+          <rect x="30" y="16" width="13" height="3" rx="1.5" fill="#A7D4FF" />
+          <path d="M56 7C63 8 66 13 64 19C62 25 56 29 48 31C51 23 52 15 56 7Z" fill="#E6F1FB" />
+          <path d="M48 31L58 16" stroke="#185FA5" strokeWidth="2" strokeLinecap="round" />
+          <circle cx="30" cy="38" r="7" fill="#E6F1FB" />
+          <circle cx="50" cy="38" r="7" fill="#E6F1FB" />
+          <circle cx="30" cy="38" r="3" fill="#042C53" />
+          <circle cx="50" cy="38" r="3" fill="#042C53" />
+          <circle cx="32" cy="36" r="1.3" fill="#E6F1FB" />
+          <circle cx="52" cy="36" r="1.3" fill="#E6F1FB" />
+          <path d="M32 51Q40 57 48 51" stroke="#E6F1FB" strokeWidth="2.6" strokeLinecap="round" />
+          <rect x="26" y="58" width="28" height="3" rx="1.5" fill="#85B7EB" opacity=".75" />
         </svg>
       );
     default:
+      if (genericBare) {
+        return <BotIcon className={cn(className, '!h-[72%] !w-[72%] text-slate-600 dark:text-slate-300')} />;
+      }
       return (
         <div className="flex h-full w-full items-center justify-center bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-          <BotIcon className="h-1/2 w-1/2" />
+          <BotIcon className={cn(className, '!h-1/2 !w-1/2')} />
         </div>
       );
   }

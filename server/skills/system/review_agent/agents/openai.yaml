@@ -1,0 +1,27 @@
+policy:
+  completion_requires_interaction_kinds:
+    - review_checkpoint
+    - request_user_input
+  interaction_contracts:
+    - kind: review_checkpoint
+      schema: review_checkpoint_v1
+      transports:
+        native_sdk:
+          type: tool_call
+          tool_name: request_review_checkpoint
+        codex:
+          type: fenced_json
+          block_label: helpin-review
+        opencode:
+          type: fenced_json
+          block_label: helpin-review
+    - kind: request_user_input
+      schema: request_user_input_v1
+      transports:
+        native_sdk:
+          type: tool_call
+          tool_name: request_user_input
+        codex:
+          type: runtime_bridge
+        opencode:
+          type: runtime_bridge

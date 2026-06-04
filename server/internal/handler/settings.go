@@ -224,6 +224,27 @@ func (h *SettingsHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, team)
 }
 
+// EnsureDefaultTeam handles POST /api/settings/teams/ensure-default.
+// Returns the workspace's canonical team of the requested type, creating one
+// lazily if none exists. Used by CRM surfaces that need to resolve a target
+// team (e.g. sales) without requiring onboarding to have pre-created it.
+func (h *SettingsHandler) EnsureDefaultTeam(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	var req model.EnsureDefaultTeamRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	team, err := h.settingsService.EnsureDefaultTeam(r.Context(), req.WorkspaceID, req.TeamType, userID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, team)
+}
+
 // UpdateTeam handles PUT /api/settings/teams/{id}.
 func (h *SettingsHandler) UpdateTeam(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -536,6 +557,13 @@ func (h *SettingsHandler) UpdateSystem(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
+	}
+	if req.EnforceTwoFactor != nil && *req.EnforceTwoFactor {
+		claims := middleware.ClaimsFrom(r.Context())
+		if claims == nil || !claims.MFASatisfied {
+			writeError(w, http.StatusForbidden, "verify two-factor authentication before enabling enforcement")
+			return
+		}
 	}
 
 	settings, err := h.settingsService.UpdateSystem(r.Context(), workspaceID, req)

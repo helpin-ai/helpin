@@ -155,28 +155,89 @@ export function TaskTypeIcon({
 } & PMIconProps) {
   if (taskType === 'feature') {
     return (
-      <svg className={cn('text-amber-500', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-        <path d="M12 4L13.8 9.2L19 11L13.8 12.8L12 18L10.2 12.8L5 11L10.2 9.2L12 4Z" fill="currentColor" />
+      <svg className={cn('text-[#ED8B38]', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+        <g transform="translate(12 12) scale(1.08) translate(-12 -12)">
+          <path d="M12 4L14 10L20 12L14 14L12 20L10 14L4 12L10 10Z" fill="currentColor" />
+          <path d="M20 3L20.5 4.5L22 5L20.5 5.5L20 7L19.5 5.5L18 5L19.5 4.5Z" fill="currentColor" />
+          <path d="M4 17L4.5 18.5L6 19L4.5 19.5L4 21L3.5 19.5L2 19L3.5 18.5Z" fill="currentColor" />
+        </g>
       </svg>
     );
   }
   if (taskType === 'bug') {
     return (
-      <svg className={cn('text-red-500', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-        <ellipse cx="12" cy="13" rx="4.5" ry="5.5" stroke="currentColor" strokeWidth="2" />
-        <path d="M12 7V4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M9 5.5L12 7L15 5.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M7 11L4.5 9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M17 11L19.5 9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M7 15H4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path d="M17 15H19.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <svg className={cn('text-[#E24A3B]', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+        <g transform="translate(12 12.5) scale(1.18) translate(-12 -12.5)">
+          <ellipse cx="12" cy="14.5" rx="4.25" ry="4.5" fill="currentColor" />
+          <path d="M10.75 10.5Q9.25 8.5 8 6.5" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          <path d="M13.25 10.5Q14.75 8.5 16 6.5" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          <circle cx="8" cy="6.5" r="0.9" fill="currentColor" />
+          <circle cx="16" cy="6.5" r="0.9" fill="currentColor" />
+          <line x1="8" y1="12.25" x2="5.5" y2="11.25" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          <line x1="7.75" y1="14.5" x2="5" y2="14.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          <line x1="8" y1="16.75" x2="5.5" y2="17.75" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          <line x1="16" y1="12.25" x2="18.5" y2="11.25" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          <line x1="16.25" y1="14.5" x2="19" y2="14.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          <line x1="16" y1="16.75" x2="18.5" y2="17.75" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+        </g>
       </svg>
     );
   }
   return (
-    <svg className={cn('text-indigo-500', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-      <path d="M14.5 6.5L17.5 3.5L20.5 6.5L17 10L14.5 6.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-      <path d="M13.5 7.5L6 15L4 20L9 18L16.5 10.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg className={cn('text-[#3B82F6]', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <g transform="translate(12 12) scale(1.12) rotate(-40)">
+        <path d="M1.8-2L1.8 9A1.8 1.8 0 0 1-1.8 9L-1.8-2Q-2.5-3-3.5-4L-3.5-10L-2.5-10L-1.25-7L1.25-7L2.5-10L3.5-10L3.5-4Q2.5-3 1.8-2Z" fill="currentColor" />
+      </g>
+    </svg>
+  );
+}
+
+export function TaskTypeTileIcon({
+  taskType,
+  className,
+  ...props
+}: {
+  taskType: TaskType;
+} & PMIconProps) {
+  if (taskType === 'feature') {
+    return (
+      <svg className={className} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+        <rect width="48" height="48" rx="11" fill="#ED8B38" />
+        <path d="M24 8L28 20L40 24L28 28L24 40L20 28L8 24L20 20Z" fill="#F7F5F2" />
+        <path d="M40 6L41 9L44 10L41 11L40 14L39 11L36 10L39 9Z" fill="#F7F5F2" />
+        <path d="M8 34L9 37L12 38L9 39L8 42L7 39L4 38L7 37Z" fill="#F7F5F2" />
+      </svg>
+    );
+  }
+  if (taskType === 'bug') {
+    return (
+      <svg className={className} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+        <rect width="48" height="48" rx="11" fill="#E24A3B" />
+        <ellipse cx="24" cy="29" rx="8.5" ry="9" fill="#F7F5F2" />
+        <path d="M21.5 21Q18.5 17 16 13" fill="none" stroke="#F7F5F2" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M26.5 21Q29.5 17 32 13" fill="none" stroke="#F7F5F2" strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="16" cy="13" r="1.25" fill="#F7F5F2" />
+        <circle cx="32" cy="13" r="1.25" fill="#F7F5F2" />
+        <line x1="24" y1="21" x2="24" y2="37" stroke="#E24A3B" strokeWidth="1.1" strokeLinecap="round" />
+        <circle cx="20.5" cy="25" r="1" fill="#E24A3B" />
+        <circle cx="27.5" cy="25" r="1" fill="#E24A3B" />
+        <circle cx="20.5" cy="32" r="1" fill="#E24A3B" />
+        <circle cx="27.5" cy="32" r="1" fill="#E24A3B" />
+        <line x1="16" y1="24" x2="11" y2="22" stroke="#F7F5F2" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="15.5" y1="29" x2="10" y2="29" stroke="#F7F5F2" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="16" y1="34" x2="11" y2="36" stroke="#F7F5F2" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="32" y1="24" x2="37" y2="22" stroke="#F7F5F2" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="32.5" y1="29" x2="38" y2="29" stroke="#F7F5F2" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="32" y1="34" x2="37" y2="36" stroke="#F7F5F2" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg className={className} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <rect width="48" height="48" rx="11" fill="#3B82F6" />
+      <g transform="translate(24 24) rotate(-40)">
+        <path fill="#F7F5F2" d="M3.6-4L3.6 18A3.6 3.6 0 0 1-3.6 18L-3.6-4Q-5-6-7-8L-7-20L-5-20L-2.5-14L2.5-14L5-20L7-20L7-8Q5-6 3.6-4Z" />
+      </g>
     </svg>
   );
 }
@@ -289,8 +350,9 @@ export function StateTypeIcon({
       );
     case 'started':
       return (
-        <svg className={cn('text-amber-500', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-          <circle cx="12" cy="12" r="5" fill="currentColor" />
+        <svg className={cn('text-zinc-500', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+          <circle cx="12" cy="12" r="7" stroke="currentColor" strokeWidth="2" />
+          <path d="M12 5A7 7 0 0 1 12 19Z" fill="currentColor" />
         </svg>
       );
     default:

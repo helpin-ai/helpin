@@ -36,6 +36,9 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			trigger_config TEXT NOT NULL DEFAULT '{}',
 			action_type TEXT NOT NULL,
 			action_config TEXT NOT NULL DEFAULT '{}',
+			template_key TEXT,
+			template_instance_id TEXT,
+			template_version INTEGER,
 			position INTEGER NOT NULL DEFAULT 0,
 			stop_on_match BOOLEAN NOT NULL DEFAULT 0,
 			created_by TEXT,
@@ -98,6 +101,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			auto_sync_states BOOLEAN NOT NULL DEFAULT 1,
 			review_state_id TEXT,
 			done_state_id TEXT,
+			closed_state_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -106,6 +110,7 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			workspace_id TEXT NOT NULL,
 			integration_id TEXT NOT NULL,
 			provider TEXT NOT NULL DEFAULT 'github',
+			base_url TEXT,
 			external_id TEXT NOT NULL DEFAULT '',
 			full_name TEXT NOT NULL,
 			default_branch TEXT NOT NULL DEFAULT 'main',
@@ -113,6 +118,8 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			private BOOLEAN NOT NULL DEFAULT 1,
 			archived BOOLEAN NOT NULL DEFAULT 0,
 			selected BOOLEAN NOT NULL DEFAULT 1,
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -173,6 +180,80 @@ func TestEvaluateEvent_CronTrigger_SkipsStoryLoading(t *testing.T) {
 		WorkspaceID: "ws-1",
 		TriggerType: model.TriggerCron,
 	}, nil)
+}
+
+func TestExecuteScheduledRuleDisablesCronRuleWhenAgentIsMissing(t *testing.T) {
+	db := setupRuleEngineTestDB(t)
+	if err := db.Exec(`CREATE TABLE agents (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'idle',
+		runtime_kind TEXT NOT NULL DEFAULT 'native_sdk',
+		source_template_key TEXT NOT NULL DEFAULT '',
+		template_key TEXT,
+		template_instance_id TEXT,
+		template_version INTEGER,
+		trigger_mode TEXT NOT NULL DEFAULT 'manual',
+		approval_mode TEXT NOT NULL DEFAULT 'class_default',
+		is_system BOOLEAN NOT NULL DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create agents table: %v", err)
+	}
+
+	ruleRepo := repository.NewAutomationRuleRepository(db)
+	engine := NewAutomationRuleEngine(ruleRepo, nil, nil, nil, nil, nil, nil, nil)
+	engine.SetAgentService(&AgentService{agentRepo: repository.NewAgentRepository(db)})
+
+	rule := &model.AutomationRule{
+		ID:            "rule-missing-agent",
+		WorkspaceID:   "ws-1",
+		Name:          "Missing agent cron",
+		Enabled:       true,
+		TriggerType:   model.TriggerCron,
+		TriggerConfig: json.RawMessage(`{"preset":"hourly"}`),
+		ActionType:    model.ActionStartAgentRun,
+		ActionConfig:  json.RawMessage(`{"agent_id":"missing-agent","target_type":"workspace","target_id":"ws-1"}`),
+	}
+	if err := ruleRepo.Create(context.Background(), rule); err != nil {
+		t.Fatalf("create rule: %v", err)
+	}
+
+	if err := engine.ExecuteScheduledRule(context.Background(), "ws-1", rule.ID); err != nil {
+		t.Fatalf("ExecuteScheduledRule returned error: %v", err)
+	}
+
+	updated, err := ruleRepo.GetByID(context.Background(), "ws-1", rule.ID)
+	if err != nil {
+		t.Fatalf("get rule: %v", err)
+	}
+	if updated == nil || updated.Enabled {
+		t.Fatalf("expected missing-agent cron rule to be disabled, got %#v", updated)
+	}
+}
+
+func TestGitHubRunEventContextIncludesPullRequest(t *testing.T) {
+	event := model.AutomationEvent{
+		TriggerType:       model.TriggerGitHubPRMerged,
+		RepoFullName:      "acme/api",
+		RepositoryID:      "repo-1",
+		Branch:            "feature/review",
+		BaseBranch:        "main",
+		PullRequestNumber: 42,
+	}
+
+	got := githubRunEventContext(event)
+	if got.EventType != "pull_request_merged" || got.RepoFullName != "acme/api" || got.RepositoryID != "repo-1" {
+		t.Fatalf("github context = %#v", got)
+	}
+	if got.PullRequest == nil {
+		t.Fatal("expected pull request context")
+	}
+	if got.PullRequest.Number != 42 || got.PullRequest.BaseBranch != "main" || got.PullRequest.HeadBranch != "feature/review" {
+		t.Fatalf("pull request context = %#v", got.PullRequest)
+	}
 }
 
 func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.T) {
@@ -253,6 +334,7 @@ func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.
 		repository.NewTaskDeliveryTargetRepository(db),
 		repository.NewSettingsRepository(db),
 		repository.NewWorkspaceRepository(db),
+		repository.NewOrganizationRepository(db),
 		repository.NewPMTaskRepository(db),
 		nil,
 		nil,
@@ -291,6 +373,40 @@ func TestResolveRunBranchOverrides_UsesEffectiveTaskDeliveryBranches(t *testing.
 	if workingBranch != "hlp-42-ship-review-agent" {
 		t.Fatalf("workingBranch = %q, want hlp-42-ship-review-agent", workingBranch)
 	}
+}
+
+func TestExecuteMergeBranchUpdatesDeliveryStatusAfterSuccessfulMerge(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	app := &fakeGitHubAppClient{}
+	gitSvc := newGitDeliveryStatusService(db, app)
+	engine := NewAutomationRuleEngine(
+		nil,
+		nil,
+		nil,
+		repository.NewTaskDeliveryTargetRepository(db),
+		gitSvc,
+		nil,
+		NewPMActivityService(repository.NewPMActivityRepository(db)),
+		nil,
+	)
+
+	err := engine.executeMergeBranch(context.Background(),
+		&model.AutomationRule{ID: "rule-1", Name: "Merge reviewed branch"},
+		model.AutomationEvent{WorkspaceID: "ws-1", StoryID: "task-1", TaskID: "task-1"},
+		nil,
+		model.ActionConfigMergeBranch{TargetBranch: "{base_branch}"},
+	)
+	if err != nil {
+		t.Fatalf("executeMergeBranch returned error: %v", err)
+	}
+	if len(app.mergeCalls) != 1 {
+		t.Fatalf("merge calls = %d (%s), want 1", len(app.mergeCalls), formatMergeCalls(app.mergeCalls))
+	}
+	if app.mergeCalls[0].Base != "main" || app.mergeCalls[0].Head != "hel-31-fix-merge-status" {
+		t.Fatalf("unexpected merge call: %#v", app.mergeCalls[0])
+	}
+	assertMergedDeliveryStatus(t, db)
 }
 
 func TestMatchesTriggerConfig_StateType(t *testing.T) {
@@ -357,6 +473,33 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 			wantMatch: false,
 		},
 		{
+			name: "doc published matches document target",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerDocPublished,
+				TriggerConfig: json.RawMessage(`{}`),
+			},
+			event:     model.AutomationEvent{TargetType: "document", TargetID: "doc-1"},
+			wantMatch: true,
+		},
+		{
+			name: "doc published requires target",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerDocPublished,
+				TriggerConfig: json.RawMessage(`{}`),
+			},
+			event:     model.AutomationEvent{},
+			wantMatch: false,
+		},
+		{
+			name: "ai section regenerated matches section target",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerAISectionRegenerated,
+				TriggerConfig: json.RawMessage(`{}`),
+			},
+			event:     model.AutomationEvent{TargetType: "ai_section", TargetID: "section-1"},
+			wantMatch: true,
+		},
+		{
 			name: "github push matches branch",
 			rule: model.AutomationRule{
 				TriggerType:   model.TriggerGitHubPush,
@@ -393,6 +536,24 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 			wantMatch: false,
 		},
 		{
+			name: "github closed matches base branch",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubPRClosed,
+				TriggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			},
+			event:     model.AutomationEvent{BaseBranch: "main", RepoFullName: "acme/api"},
+			wantMatch: true,
+		},
+		{
+			name: "github closed repo mismatch",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubPRClosed,
+				TriggerConfig: json.RawMessage(`{"repo_full_name":"acme/web"}`),
+			},
+			event:     model.AutomationEvent{BaseBranch: "main", RepoFullName: "acme/api"},
+			wantMatch: false,
+		},
+		{
 			name: "github release matches tag",
 			rule: model.AutomationRule{
 				TriggerType:   model.TriggerGitHubReleasePub,
@@ -400,6 +561,24 @@ func TestMatchesTriggerConfig_StateType(t *testing.T) {
 			},
 			event:     model.AutomationEvent{TagName: "v1.2.3", RepoFullName: "acme/api"},
 			wantMatch: true,
+		},
+		{
+			name: "github release matches tag pattern and kind",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubReleasePub,
+				TriggerConfig: json.RawMessage(`{"tag_pattern":"v1.*","release_kinds":["minor"]}`),
+			},
+			event:     model.AutomationEvent{TagName: "v1.4.0", RepoFullName: "acme/api", ReleaseKind: "minor"},
+			wantMatch: true,
+		},
+		{
+			name: "github release blocks prerelease by default",
+			rule: model.AutomationRule{
+				TriggerType:   model.TriggerGitHubReleasePub,
+				TriggerConfig: json.RawMessage(`{"repo_full_name":"acme/api"}`),
+			},
+			event:     model.AutomationEvent{TagName: "v1.4.0-rc1", RepoFullName: "acme/api", IsPrerelease: true, ReleaseKind: "prerelease"},
+			wantMatch: false,
 		},
 		{
 			name: "github check suite conclusion mismatch",
@@ -492,7 +671,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		{
 			name:          "valid cron + run_command",
 			triggerType:   model.TriggerCron,
-			triggerConfig: json.RawMessage(`{"category":"sprint_hourly"}`),
+			triggerConfig: json.RawMessage(`{"preset":"hourly"}`),
 			actionType:    model.ActionRunCommand,
 			actionConfig:  json.RawMessage(`{"command_name":"pm.sprint_auto_create"}`),
 			wantErr:       false,
@@ -602,9 +781,25 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			wantErr:       true,
 		},
 		{
-			name:          "github release published requires explicit target",
-			triggerType:   model.TriggerGitHubReleasePub,
-			triggerConfig: json.RawMessage(`{"tag_name":"v1.2.3"}`),
+			name:          "github pr closed requires explicit target",
+			triggerType:   model.TriggerGitHubPRClosed,
+			triggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       true,
+		},
+		{
+			name:          "valid github pr closed with explicit target",
+			triggerType:   model.TriggerGitHubPRClosed,
+			triggerConfig: json.RawMessage(`{"base_branch":"main"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"repository","target_id":"repo-1"}`),
+			wantErr:       false,
+		},
+		{
+			name:          "github pr closed requires at least one filter",
+			triggerType:   model.TriggerGitHubPRClosed,
+			triggerConfig: json.RawMessage(`{}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
 			wantErr:       true,
@@ -618,11 +813,35 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			wantErr:       false,
 		},
 		{
+			name:          "github release published can rely on event target",
+			triggerType:   model.TriggerGitHubReleasePub,
+			triggerConfig: json.RawMessage(`{"tag_name":"v1.2.3"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       false,
+		},
+		{
 			name:          "github release published requires a filter",
 			triggerType:   model.TriggerGitHubReleasePub,
 			triggerConfig: json.RawMessage(`{}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       true,
+		},
+		{
+			name:          "github release published supports release kind filter only",
+			triggerType:   model.TriggerGitHubReleasePub,
+			triggerConfig: json.RawMessage(`{"release_kinds":["minor"]}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
+			wantErr:       false,
+		},
+		{
+			name:          "release docs output requires space id",
+			triggerType:   model.TriggerGitHubReleasePub,
+			triggerConfig: json.RawMessage(`{"repo_full_name":"acme/api"}`),
+			actionType:    model.ActionStartAgentRun,
+			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","output":{"type":"docs_document"}}`),
 			wantErr:       true,
 		},
 		{
@@ -652,7 +871,7 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 		{
 			name:          "valid cron start_agent_run with explicit target",
 			triggerType:   model.TriggerCron,
-			triggerConfig: json.RawMessage(`{"category":"sprint_hourly"}`),
+			triggerConfig: json.RawMessage(`{"preset":"hourly"}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1","target_type":"epic","target_id":"epic-1"}`),
 			wantErr:       false,
@@ -674,12 +893,12 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			wantErr:       true,
 		},
 		{
-			name:          "cron start_agent_run missing explicit target is invalid",
+			name:          "cron start_agent_run without explicit target is valid",
 			triggerType:   model.TriggerCron,
-			triggerConfig: json.RawMessage(`{"category":"sprint_hourly"}`),
+			triggerConfig: json.RawMessage(`{"schedule":"0 * * * *"}`),
 			actionType:    model.ActionStartAgentRun,
 			actionConfig:  json.RawMessage(`{"agent_id":"agent-1"}`),
-			wantErr:       true,
+			wantErr:       false,
 		},
 		{
 			name:          "legacy start_flow rejected",
@@ -712,6 +931,70 @@ func TestValidateRuleRequest_NewTypes(t *testing.T) {
 			err := engine.validateRuleRequest(tt.triggerType, tt.triggerConfig, tt.actionType, tt.actionConfig)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateRuleRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveCronTriggerConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		cfg          model.TriggerConfigCron
+		wantSchedule string
+		wantPreset   string
+		wantErr      bool
+	}{
+		{
+			name:         "explicit schedule wins",
+			cfg:          model.TriggerConfigCron{Schedule: "15 * * * *"},
+			wantSchedule: "15 * * * *",
+		},
+		{
+			name:         "preset maps to cron",
+			cfg:          model.TriggerConfigCron{Preset: "hourly"},
+			wantSchedule: "0 * * * *",
+			wantPreset:   "hourly",
+		},
+		{
+			name:         "legacy category maps to preset",
+			cfg:          model.TriggerConfigCron{Category: "workspace_daily"},
+			wantSchedule: "0 0 * * *",
+			wantPreset:   "daily",
+		},
+		{
+			name:         "raw cron in legacy category is accepted",
+			cfg:          model.TriggerConfigCron{Category: "0 6 * * 1"},
+			wantSchedule: "0 6 * * 1",
+		},
+		{
+			name:    "six field cron is rejected",
+			cfg:     model.TriggerConfigCron{Schedule: "0 0 6 * * 1"},
+			wantErr: true,
+		},
+		{
+			name:    "empty config is rejected",
+			cfg:     model.TriggerConfigCron{},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSchedule, gotPreset, err := resolveCronTriggerConfig(tt.cfg)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveCronTriggerConfig() error = %v", err)
+			}
+			if gotSchedule != tt.wantSchedule {
+				t.Fatalf("schedule = %q, want %q", gotSchedule, tt.wantSchedule)
+			}
+			if gotPreset != tt.wantPreset {
+				t.Fatalf("preset = %q, want %q", gotPreset, tt.wantPreset)
 			}
 		})
 	}

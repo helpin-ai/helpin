@@ -5,6 +5,7 @@ import type {
   EpicWorkflowState,
   UpdateWorkflowRequest,
   UpdateWorkflowStateRequest,
+  WorkflowState,
   WorkflowWithStates,
 } from '../pmTypes';
 
@@ -20,7 +21,7 @@ export const pmWorkflowService = {
   createState: (workspaceId: string, workflowId: string, payload: CreateWorkflowStateRequest) =>
     api.post(`/pm/workflows/${workflowId}/states${qs(workspaceId)}`, payload),
   updateState: (workspaceId: string, workflowId: string, stateId: string, payload: UpdateWorkflowStateRequest) =>
-    api.put(`/pm/workflows/${workflowId}/states/${stateId}${qs(workspaceId)}`, payload),
+    api.put<WorkflowState>(`/pm/workflows/${workflowId}/states/${stateId}${qs(workspaceId)}`, payload),
   removeState: (workspaceId: string, workflowId: string, stateId: string) =>
     api.del(`/pm/workflows/${workflowId}/states/${stateId}${qs(workspaceId)}`),
   reorderStates: (workspaceId: string, workflowId: string, stateIds: string[]) =>

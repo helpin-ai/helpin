@@ -154,7 +154,7 @@ export const EmojiPicker: FunctionComponent<EmojiPickerProps> = ({ onEmojiSelect
         }}
         disabled={disabled}
       >
-        <SmileIcon size={18} strokeWidth={1.75} />
+        <SmileIcon size={16} strokeWidth={1.75} />
       </button>
 
       {open && (

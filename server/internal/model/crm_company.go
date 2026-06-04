@@ -7,6 +7,7 @@ type CRMCompany struct {
 	ID               string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID      string    `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	DisplayID        string    `json:"display_id" gorm:"not null"`
+	ExternalID       *string   `json:"external_id,omitempty" gorm:"index"`
 	Name             string    `json:"name" gorm:"not null"`
 	Domain           *string   `json:"domain" gorm:"index"`
 	Industry         *string   `json:"industry"`
@@ -25,6 +26,7 @@ func (CRMCompany) TableName() string { return "crm_companies" }
 // CreateCRMCompanyRequest is the payload for creating a company.
 type CreateCRMCompanyRequest struct {
 	WorkspaceID      string                 `json:"workspace_id"`
+	ExternalID       *string                `json:"external_id"`
 	Name             string                 `json:"name"`
 	Domain           *string                `json:"domain"`
 	Industry         *string                `json:"industry"`
@@ -39,6 +41,7 @@ type CreateCRMCompanyRequest struct {
 // UpdateCRMCompanyRequest is the payload for updating a company.
 type UpdateCRMCompanyRequest struct {
 	Name             *string                `json:"name"`
+	ExternalID       *string                `json:"external_id"`
 	Domain           *string                `json:"domain"`
 	Industry         *string                `json:"industry"`
 	EmployeeCount    *int                   `json:"employee_count"`

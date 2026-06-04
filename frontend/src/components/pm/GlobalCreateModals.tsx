@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -8,7 +8,13 @@ import {
   UserGroupIcon,
   Cancel01Icon,
   HashtagIcon,
-  Layers01Icon,
+  AttachmentIcon,
+  Delete01Icon,
+  Upload01Icon,
+  Link01Icon,
+  LinkSquare01Icon as ExternalLinkIcon,
+  PlusSignIcon,
+  SourceCodeIcon,
 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -20,6 +26,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TiptapEditor } from '@/components/ui/tiptap-editor';
 import { DatePicker } from '@/components/ui/date-picker';
 import { CreateTaskModal } from '@/components/pm/CreateTaskModal';
+import { AgentPickerCard } from '@/components/pm/AgentPickerCard';
+import { SidebarPopoverSelect } from '@/components/pm/SidebarPopoverSelect';
 import { CreateDocumentDialog } from '@/components/docs/CreateDocumentDialog';
 import { CreateSpaceDialog } from '@/components/docs/CreateSpaceDialog';
 import { CreateCollectionDialog } from '@/components/docs/CreateCollectionDialog';
@@ -36,6 +44,8 @@ import { pmEpicService } from '@/lib/services/pmEpicService';
 import { pmSprintService } from '@/lib/services/pmSprintService';
 import { pmAutomationService } from '@/lib/services/pmAutomationService';
 import { pmAttachmentService } from '@/lib/services/pmAttachmentService';
+import { pmExternalLinkService } from '@/lib/services/pmExternalLinkService';
+import { uploadToS3 } from '@/lib/api';
 import { gitService } from '@/lib/services/gitService';
 import { toast } from 'sonner';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -56,6 +66,65 @@ import {
   type SprintAutomationPromptState,
 } from '@/components/pm/sprintAutomationPrompt';
 import { showEntityCreatedToast, entityCreatedToastIcons } from '@/components/ui/entity-created-toast';
+import { getOptionalSectionActionClass } from '@/components/pm/optionalSectionActionPill';
+import { QuickTooltip } from '@/components/ui/quick-tooltip';
+
+import pdfIcon from '@/assets/attachment/pdf-icon.png';
+import csvIcon from '@/assets/attachment/csv-icon.png';
+import excelIcon from '@/assets/attachment/excel-icon.png';
+import docIcon from '@/assets/attachment/doc-icon.png';
+import pngIcon from '@/assets/attachment/png-icon.png';
+import jpgIcon from '@/assets/attachment/jpg-icon.png';
+import svgIcon from '@/assets/attachment/svg-icon.png';
+import txtIcon from '@/assets/attachment/txt-icon.png';
+import zipIcon from '@/assets/attachment/zip-icon.png';
+import rarIcon from '@/assets/attachment/rar-icon.png';
+import htmlIcon from '@/assets/attachment/html-icon.png';
+import cssIcon from '@/assets/attachment/css-icon.png';
+import jsIcon from '@/assets/attachment/js-icon.png';
+import audioIcon from '@/assets/attachment/audio-icon.png';
+import videoIcon from '@/assets/attachment/video-icon.png';
+import defaultIcon from '@/assets/attachment/default-icon.png';
+
+const MAX_PENDING_ATTACHMENT_SIZE = 50 * 1024 * 1024;
+const CODE_REPO_TOOLTIP = 'Gives agents code context for planning and execution.';
+
+function getFileExtension(filename: string): string {
+  const parts = filename.split('.');
+  return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+}
+
+function getFileTypeIcon(extension: string): string {
+  const iconMap: Record<string, string> = {
+    pdf: pdfIcon,
+    csv: csvIcon,
+    xlsx: excelIcon,
+    xls: excelIcon,
+    doc: docIcon,
+    docx: docIcon,
+    png: pngIcon,
+    jpg: jpgIcon,
+    jpeg: jpgIcon,
+    svg: svgIcon,
+    txt: txtIcon,
+    md: txtIcon,
+    zip: zipIcon,
+    gz: zipIcon,
+    tar: zipIcon,
+    rar: rarIcon,
+    html: htmlIcon,
+    css: cssIcon,
+    js: jsIcon,
+    ts: jsIcon,
+    mp3: audioIcon,
+    wav: audioIcon,
+    mp4: videoIcon,
+    mkv: videoIcon,
+    wmv: videoIcon,
+    webm: videoIcon,
+  };
+  return iconMap[extension] || defaultIcon;
+}
 
 
 // ── Task wrapper ─────────────────────────────────────────────────────
@@ -100,17 +169,19 @@ function GlobalCreateTask({ workspaceId, onClose }: { workspaceId: string; onClo
         // Invalidate TanStack Query caches
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'tasks'] });
         qc.invalidateQueries({ queryKey: ['pm', workspaceId, 'sprints', 'planning'] });
+        const createdTask = data?.task?.task;
         window.dispatchEvent(new CustomEvent('task-created', {
-          detail: { ownerMemberId: data?.task?.owner_member_id, teamId: data?.task?.team_id },
+          detail: { ownerMemberIds: createdTask?.owner_member_ids ?? [], teamId: createdTask?.team_id },
         }));
-        return data?.task
+        return createdTask
           ? {
-              id: data.task.id,
+              id: createdTask.id,
+              agent_run_error: data?.agent_run_error,
               task: {
-                id: data.task.id,
-                name: data.task.name,
-                display_id: data.task.display_id,
-                task_key: data.task.task_key,
+                id: createdTask.id,
+                name: createdTask.name,
+                display_id: createdTask.display_id,
+                task_key: createdTask.task_key,
               },
             }
           : undefined;
@@ -142,14 +213,25 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     targetDate: '',
   });
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
+  const [assignedAgentId, setAssignedAgentId] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const [descriptionPendingUploads, setDescriptionPendingUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [showAttachments, setShowAttachments] = useState(false);
+  const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [epicExternalLinks, setEpicExternalLinks] = useState<{ url: string }[]>([]);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === meta.teamId),
     [teams, meta.teamId],
   );
   const showPlanningRepository = normalizeTeamType(selectedTeam?.team_type) === 'engineering';
+  const currentPlanningRepositoryName = useMemo(() => {
+    if (!meta.planningRepositoryId) return 'Not configured';
+    return repositories.find((repo) => repo.id === meta.planningRepositoryId)?.full_name ?? 'Not configured';
+  }, [meta.planningRepositoryId, repositories]);
   const mentionTeams = useMemo(
     () => filterMentionTeams(teams, meta.teamId ? [meta.teamId] : []),
     [teams, meta.teamId],
@@ -180,46 +262,119 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
     );
   }, [workspaceId]);
 
+  const addPendingFiles = useCallback((files: FileList | File[]) => {
+    const newFiles = Array.from(files).filter((file) => file.size <= MAX_PENDING_ATTACHMENT_SIZE);
+    if (newFiles.length === 0) return;
+    setPendingFiles((prev) => [...prev, ...newFiles]);
+  }, []);
+
+  const handleDragOver = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDraggingFiles(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDraggingFiles(false);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    setIsDraggingFiles(false);
+    if (event.dataTransfer.files.length > 0) {
+      addPendingFiles(event.dataTransfer.files);
+    }
+  };
+
   const create = async () => {
     if (!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0) return;
     setSubmitting(true);
-    const { data, error: createError } = await pmEpicService.create({
-      workspace_id: workspaceId,
-      name: name.trim(),
-      description: description.trim() || undefined,
-      epic_state_id: meta.stateId || undefined,
-      team_id: meta.teamId || undefined,
-      owner_member_id: meta.ownerMemberId || undefined,
-      planned_start_date: meta.startDate || undefined,
-      deadline: meta.targetDate || undefined,
-      planning_repository_id: showPlanningRepository ? (meta.planningRepositoryId || undefined) : undefined,
-    });
-    setSubmitting(false);
-    if (createError) {
-      setError(createError);
-      return;
-    }
-    if (data?.epic) {
-      showEntityCreatedToast({
-        entityLabel: 'Epic',
-        title: data.epic.name,
-        tone: 'pm',
-        icon: entityCreatedToastIcons.epic,
-        onOpen: currentWorkspace?.slug
-          ? () => navigate({
-              to: '/w/$slug/pm/epics/$epicId',
-              params: { slug: currentWorkspace.slug, epicId: data.epic.id },
-            })
-          : undefined,
+    try {
+      const inlineAttachmentIds = extractInlineAttachmentIds(description);
+      const { data, error: createError } = await pmEpicService.create({
+        workspace_id: workspaceId,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        attachment_ids: inlineAttachmentIds.length > 0 ? inlineAttachmentIds : undefined,
+        epic_state_id: meta.stateId || undefined,
+        team_id: meta.teamId || undefined,
+        owner_member_id: meta.ownerMemberId || undefined,
+        planned_start_date: meta.startDate || undefined,
+        deadline: meta.targetDate || undefined,
+        planning_repository_id: showPlanningRepository ? (meta.planningRepositoryId || undefined) : undefined,
+        assigned_agent_id: assignedAgentId,
+        run_on_create: Boolean(assignedAgentId),
       });
-    } else {
-      toast.success('Epic created');
+
+      if (createError) {
+        setError(createError);
+        return;
+      }
+
+      const createdEpic = data?.epic?.epic;
+
+      if (createdEpic && pendingFiles.length > 0) {
+        for (const file of pendingFiles) {
+          try {
+            const { data: initData } = await pmAttachmentService.initiateUpload(workspaceId, {
+              entity_type: 'epic',
+              entity_id: createdEpic.id,
+              file_name: file.name,
+              file_size: file.size,
+              content_type: file.type || 'application/octet-stream',
+            });
+            if (!initData) continue;
+            const uploadResult = await uploadToS3(initData.url, file, undefined, { 'x-amz-acl': 'public-read' });
+            if (uploadResult.ok) {
+              await pmAttachmentService.confirmUpload(workspaceId, initData.attachment.id);
+            }
+          } catch {
+            // Non-blocking — epic already created
+          }
+        }
+      }
+
+      // Create external links after epic creation
+      if (createdEpic) {
+        const validLinks = epicExternalLinks.filter((l) => l.url.trim());
+        for (const el of validLinks) {
+          try {
+            await pmExternalLinkService.createForEntity(workspaceId, 'epic', createdEpic.id, { url: el.url.trim() });
+          } catch {
+            // Non-blocking — epic already created
+          }
+        }
+      }
+
+      if (data?.agent_run_error) {
+        toast.warning(`Epic created, but the agent did not start: ${data.agent_run_error}`);
+      }
+
+      if (createdEpic) {
+        showEntityCreatedToast({
+          entityLabel: 'Epic',
+          title: createdEpic.name,
+          tone: 'pm',
+          icon: entityCreatedToastIcons.epic,
+          onOpen: currentWorkspace?.slug
+            ? () => navigate({
+                to: '/w/$slug/pm/epics/$epicId',
+                params: { slug: currentWorkspace.slug, epicId: createdEpic.id },
+              })
+            : undefined,
+        });
+      } else {
+        toast.success('Epic created');
+      }
+      window.dispatchEvent(new CustomEvent('epic-created'));
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create epic');
+    } finally {
+      setSubmitting(false);
     }
-    window.dispatchEvent(new CustomEvent('epic-created'));
-    onClose();
   };
 
-  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '';
+  const hasUnsavedChanges = name.trim() !== '' || description.trim() !== '' || pendingFiles.length > 0 || epicExternalLinks.some(l => l.url.trim());
 
   const handleClose = async () => {
     if (hasUnsavedChanges) {
@@ -232,13 +387,17 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
       if (!ok) return;
     }
     void cleanupInlineDraftUploads();
+    setPendingFiles([]);
+    setShowAttachments(false);
+    setEpicExternalLinks([]);
+    setShowExternalLinks(false);
     onClose();
   };
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
-        <div className="flex h-[80vh] flex-col">
+      <DialogContent className="max-w-6xl sm:max-w-6xl gap-0 overflow-hidden p-0" showCloseButton={false}>
+        <div className="flex h-[85vh] max-h-[960px] flex-col">
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
             <span className="text-lg font-semibold">Create epic</span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
@@ -252,8 +411,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
-            <div className="min-h-0 overflow-y-auto px-8 py-5">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
+            <div className="min-h-0 overflow-y-auto px-6 py-3">
               <Input
                 autoFocus
                 aria-label="Epic title"
@@ -274,16 +433,183 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   content={description}
                   onChange={(html) => { descriptionRef.current = html; setDescription(html); }}
                   placeholder="Add a description (optional)..."
-                  className="border-transparent shadow-none"
+                  className="border-transparent shadow-none [&_.tiptap]:min-h-[220px]"
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={getOptionalSectionActionClass(epicExternalLinks.length > 0 ? 'locked' : showExternalLinks ? 'open' : 'available')}
+                    disabled={epicExternalLinks.length > 0}
+                    onClick={() => setShowExternalLinks((v) => !v)}
+                  >
+                    <Link01Icon className="h-3 w-3" />
+                    External Links
+                    {epicExternalLinks.length > 0 && (
+                      <span className="text-[10px] opacity-70">({epicExternalLinks.length})</span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className={getOptionalSectionActionClass(pendingFiles.length > 0 ? 'locked' : showAttachments ? 'open' : 'available')}
+                    disabled={pendingFiles.length > 0}
+                    onClick={() => setShowAttachments((value) => !value)}
+                  >
+                    <AttachmentIcon className="h-3 w-3" />
+                    Attach Files
+                    {pendingFiles.length > 0 && (
+                      <span className="text-[10px] opacity-70">({pendingFiles.length})</span>
+                    )}
+                  </button>
+                </div>
+                {showExternalLinks && (
+                  <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-border/40">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                        <Link01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                        External Links
+                        {epicExternalLinks.length > 0 && (
+                          <span className="text-xs text-muted-foreground font-normal">({epicExternalLinks.length})</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="px-4 py-2 space-y-1">
+                      {epicExternalLinks.map((link, idx) => (
+                        <div key={idx} className="group flex items-center gap-2">
+                          <ExternalLinkIcon className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                          <input
+                            type="url"
+                            value={link.url}
+                            autoFocus={idx === epicExternalLinks.length - 1 && link.url === ''}
+                            onChange={(e) => {
+                              const next = [...epicExternalLinks];
+                              next[idx] = { url: e.target.value };
+                              setEpicExternalLinks(next);
+                            }}
+                            placeholder="https://..."
+                            className="flex-1 bg-transparent text-sm py-1 outline-none placeholder:text-muted-foreground/50"
+                          />
+                          <button
+                            type="button"
+                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity cursor-pointer"
+                            onClick={() => setEpicExternalLinks(epicExternalLinks.filter((_, i) => i !== idx))}
+                          >
+                            <Delete01Icon className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 cursor-pointer"
+                        onClick={() => setEpicExternalLinks([...epicExternalLinks, { url: '' }])}
+                      >
+                        <PlusSignIcon className="h-3 w-3" />
+                        Add link
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {showAttachments && (
+                  <div className="mt-3 shrink-0 rounded-lg border border-border/60 bg-card">
+                    <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                        <AttachmentIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                        Attachments
+                        {pendingFiles.length > 0 && (
+                          <span className="text-xs font-normal text-muted-foreground">({pendingFiles.length})</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-2 px-4 py-2">
+                      {pendingFiles.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                          {pendingFiles.map((file, idx) => {
+                            const isImage = file.type.startsWith('image/') && !file.type.includes('svg');
+                            const ext = getFileExtension(file.name);
+                            return (
+                              <div key={`${file.name}-${file.lastModified}-${idx}`} className="group relative">
+                                <div className="overflow-hidden rounded-lg border border-border/60">
+                                  {isImage ? (
+                                    <img
+                                      src={URL.createObjectURL(file)}
+                                      alt={file.name}
+                                      className="h-20 w-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-20 flex-col items-center justify-center gap-1.5 bg-muted/30">
+                                      <img
+                                        src={getFileTypeIcon(ext)}
+                                        alt={ext || 'file'}
+                                        className="h-8 w-8"
+                                      />
+                                      <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                                        {ext || 'FILE'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="absolute right-1.5 top-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                                  <button
+                                    type="button"
+                                    className="flex h-6 w-6 items-center justify-center rounded bg-background/80 text-muted-foreground backdrop-blur-sm hover:text-destructive"
+                                    onClick={() => setPendingFiles((prev) => prev.filter((_, fileIdx) => fileIdx !== idx))}
+                                  >
+                                    <Delete01Icon className="h-3 w-3" />
+                                  </button>
+                                </div>
+                                <p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.name}>
+                                  {file.name}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <label
+                        className={`flex items-center justify-center gap-2 rounded-md border border-dashed px-3 py-2 transition-colors cursor-pointer ${
+                          isDraggingFiles
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border/60 hover:border-border hover:bg-muted/30'
+                        }`}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      >
+                        <Upload01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Drop files or click to upload (max 50MB)</span>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={(event) => {
+                            if (event.target.files?.length) {
+                              addPendingFiles(event.target.files);
+                            }
+                            event.target.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
+                <div className="mt-3">
+                  <AgentPickerCard
+                    workspaceId={workspaceId}
+                    runnableTarget="epic"
+                    targetTeamId={meta.teamId || null}
+                    value={assignedAgentId}
+                    onChange={setAssignedAgentId}
+                    hasRepoContext={!showPlanningRepository || Boolean(meta.planningRepositoryId)}
+                  />
+                </div>
               </div>
             </div>
 
-            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
+            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-4">
               <p className="mb-4 text-xs text-muted-foreground">
                 Epics are collections of tasks that together represent a major initiative or feature.
               </p>
@@ -388,22 +714,23 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
                   <>
                     <Separator className="col-span-3 my-1" />
 
-                    <Layers01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
-                    <span className="text-xs text-muted-foreground self-center">Plan repo</span>
-                    <Select
+                    <SourceCodeIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground self-center" />
+                    <QuickTooltip label={CODE_REPO_TOOLTIP} side="left">
+                      <span className="text-xs text-muted-foreground self-center">Code repo</span>
+                    </QuickTooltip>
+                    <SidebarPopoverSelect
                       value={meta.planningRepositoryId || '__none__'}
-                      onValueChange={(v) => setMeta((m) => ({ ...m, planningRepositoryId: v === '__none__' ? '' : v }))}
-                    >
-                      <SelectTrigger className="min-h-8 h-auto border-0 bg-transparent px-1.5 py-1 shadow-none text-xs hover:bg-accent [&_[data-slot=select-value]]:line-clamp-none [&_[data-slot=select-value]]:whitespace-normal [&_[data-slot=select-value]]:break-words [&_[data-slot=select-value]]:text-left [&_[data-slot=select-value]]:leading-tight">
-                        <SelectValue placeholder="Not configured" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Not configured</SelectItem>
-                        {repositories.map((repo) => (
-                          <SelectItem key={repo.id} value={repo.id}>{repo.full_name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      options={[
+                        { value: '__none__', label: 'Not configured' },
+                        ...repositories.map((repo) => ({ value: repo.id, label: repo.full_name })),
+                      ]}
+                      onChange={(v) => setMeta((m) => ({ ...m, planningRepositoryId: v === '__none__' ? '' : v }))}
+                      renderTrigger={() => (
+                        <span className="block whitespace-normal break-words text-left leading-tight">
+                          {currentPlanningRepositoryName}
+                        </span>
+                      )}
+                    />
                   </>
                 ) : null}
               </div>
@@ -412,12 +739,9 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
-              {submitting ? 'Creating...' : 'Create Epic'}
+              {submitting ? 'Creating...' : assignedAgentId ? 'Create & run agent' : 'Create Epic'}
             </Button>
           </div>
         </div>
@@ -735,7 +1059,7 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
                   placeholder="Add a description (optional)..."
                   uploadConfig={{ workspaceId, entityType: 'editor_upload', entityId: workspaceId }}
                   onUploadStateChange={setDescriptionPendingUploads}
-                  className="border-transparent shadow-none"
+                  className="border-transparent shadow-none [&_.tiptap]:min-h-[180px]"
                   teams={mentionTeams}
                   members={assignableMembers}
                 />
@@ -805,9 +1129,6 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Sprint'}
@@ -1155,9 +1476,6 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Objective'}

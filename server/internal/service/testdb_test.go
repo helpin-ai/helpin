@@ -32,6 +32,25 @@ func newTestDB(t *testing.T) *gorm.DB {
 			avatar_background_mode TEXT,
 			avatar_background_color TEXT,
 			default_workspace_id TEXT,
+			totp_secret_encrypted TEXT,
+			totp_verified BOOLEAN NOT NULL DEFAULT 0,
+			recovery_codes_encrypted TEXT,
+			is_platform_admin BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE user_passkeys (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			user_id TEXT NOT NULL,
+			credential_id BLOB NOT NULL UNIQUE,
+			public_key BLOB NOT NULL,
+			attestation_type TEXT NOT NULL,
+			transport BLOB NOT NULL DEFAULT '[]',
+			sign_count INTEGER NOT NULL DEFAULT 0,
+			name TEXT NOT NULL,
+			aaguid BLOB,
+			flags INTEGER NOT NULL DEFAULT 0,
+			verified BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -94,6 +113,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			invited_by TEXT,
 			invited_at DATETIME,
 			accepted_at DATETIME,
+			support_default_team_id TEXT,
+			support_task_dialog_dismissed BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -120,6 +141,17 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME,
 			UNIQUE(team_id, workspace_member_id)
 		)`,
+		`CREATE TABLE workspace_module_grants (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			module TEXT NOT NULL,
+			subject_type TEXT NOT NULL,
+			subject_id TEXT NOT NULL,
+			access_level TEXT NOT NULL DEFAULT 'member',
+			created_by_id TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE workspace_settings (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL UNIQUE,
@@ -128,6 +160,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			notifications_enabled BOOLEAN NOT NULL DEFAULT 1,
 			auto_calculate_bonuses BOOLEAN NOT NULL DEFAULT 0,
 			team_weight INTEGER NOT NULL DEFAULT 50,
+			enforce_two_factor BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -218,6 +251,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			health TEXT NOT NULL DEFAULT 'no_health',
 			health_comment TEXT,
 			archived BOOLEAN NOT NULL DEFAULT 0,
+			assigned_agent_id TEXT,
 			orchestrator_agent_id TEXT,
 			spec_document_id TEXT,
 			planning_repository_id TEXT,
@@ -348,6 +382,29 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE pm_task_templates (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			team_id TEXT,
+			name TEXT NOT NULL,
+			description TEXT,
+			task_type TEXT,
+			priority TEXT,
+			severity TEXT,
+			estimate INTEGER,
+			label_ids TEXT,
+			owner_member_id TEXT,
+			owner_member_ids TEXT,
+			epic_id TEXT,
+			sprint_id TEXT,
+			workflow_state_id TEXT,
+			deadline TEXT,
+			checklist_items TEXT,
+			external_links TEXT,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE pm_task_owners (
 			task_id TEXT NOT NULL,
 			user_id TEXT NOT NULL,
@@ -397,6 +454,11 @@ func newTestDB(t *testing.T) *gorm.DB {
 			author_id TEXT NOT NULL,
 			body TEXT NOT NULL,
 			parent_id TEXT,
+			block_id TEXT,
+			block_range TEXT,
+			anchor_text TEXT,
+			resolved_at DATETIME,
+			resolved_by TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -487,9 +549,12 @@ func newTestDB(t *testing.T) *gorm.DB {
 		)`,
 		`CREATE TABLE pm_external_links (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-			task_id TEXT NOT NULL,
+			task_id TEXT,
+			entity_type TEXT NOT NULL DEFAULT 'task',
+			entity_id TEXT,
 			url TEXT NOT NULL,
 			title TEXT,
+			created_by_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -617,12 +682,30 @@ func newTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE git_repositories (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
-			git_integration_id TEXT NOT NULL,
-			repo_full_name TEXT NOT NULL,
-			repo_name TEXT NOT NULL,
-			repo_owner TEXT NOT NULL,
+			integration_id TEXT NOT NULL,
+			provider TEXT NOT NULL DEFAULT 'github',
+			base_url TEXT,
+			external_id TEXT NOT NULL DEFAULT '',
+			full_name TEXT NOT NULL,
 			default_branch TEXT NOT NULL DEFAULT 'main',
-			is_active BOOLEAN NOT NULL DEFAULT 1,
+			permissions TEXT NOT NULL DEFAULT '{}',
+			private BOOLEAN NOT NULL DEFAULT 1,
+			archived BOOLEAN NOT NULL DEFAULT 0,
+			selected BOOLEAN NOT NULL DEFAULT 1,
+			active BOOLEAN NOT NULL DEFAULT 1,
+			deleted_at DATETIME,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_inbox_views (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			filters TEXT NOT NULL DEFAULT '{}',
+			is_shared BOOLEAN NOT NULL DEFAULT 0,
+			view_type TEXT NOT NULL DEFAULT 'custom',
+			view_key TEXT,
+			created_by TEXT NOT NULL,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -657,6 +740,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			ai_resolution_type TEXT,
 			ai_turn_count INTEGER NOT NULL DEFAULT 0,
 			customer_requested_human_at DATETIME,
+			human_takeover BOOLEAN NOT NULL DEFAULT 0,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -672,6 +756,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			linked_team_id TEXT,
 			visibility_mode TEXT NOT NULL DEFAULT 'members_only',
 			assignment_mode TEXT NOT NULL DEFAULT 'manual',
+			reply_time_preset TEXT,
+			reply_time_custom_minutes INTEGER,
 			position INTEGER NOT NULL DEFAULT 0,
 			active BOOLEAN NOT NULL DEFAULT 1,
 			created_by_id TEXT NOT NULL,
@@ -746,6 +832,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			ticket_id TEXT,
 			sender_type TEXT NOT NULL,
 			message_type TEXT NOT NULL DEFAULT 'reply',
+			system_event_type TEXT,
 			sender_user_id TEXT,
 			sender_agent_id TEXT,
 			sender_display_name TEXT,
@@ -756,6 +843,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			via_channel TEXT,
 			email_notified_at DATETIME,
 			email_read_at DATETIME,
+			cancellable_until DATETIME,
+			deleted_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -765,6 +854,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			conversation_id TEXT,
 			epic_id TEXT,
 			task_id TEXT,
+			run_id TEXT,
 			from_agent_id TEXT,
 			to_agent_id TEXT,
 			to_user_id TEXT,
@@ -775,12 +865,12 @@ func newTestDB(t *testing.T) *gorm.DB {
 			updated_at DATETIME
 		)`,
 		`CREATE TABLE support_canned_responses (
-			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-			workspace_id TEXT NOT NULL,
-			short_code TEXT NOT NULL,
-			title TEXT NOT NULL,
-			content TEXT NOT NULL,
-			created_by_id TEXT,
+				id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+				workspace_id TEXT NOT NULL,
+				short_code TEXT NOT NULL,
+				content TEXT NOT NULL,
+				tag TEXT NOT NULL DEFAULT 'General',
+				created_by_id TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
@@ -808,6 +898,45 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE support_email_senders (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			mailbox_id TEXT,
+			email TEXT NOT NULL,
+			local_part TEXT NOT NULL,
+			domain TEXT NOT NULL,
+			display_name TEXT,
+			postmark_domain_id INTEGER,
+			return_path_domain TEXT,
+			return_path_domain_cname_value TEXT,
+			return_path_domain_verified BOOLEAN NOT NULL DEFAULT 0,
+			dkim_host TEXT,
+			dkim_text_value TEXT,
+			dkim_pending_host TEXT,
+			dkim_pending_text_value TEXT,
+			dkim_verified BOOLEAN NOT NULL DEFAULT 0,
+			dkim_update_status TEXT,
+			dmarc_host TEXT,
+			dmarc_policy TEXT,
+			dmarc_record_present BOOLEAN NOT NULL DEFAULT 0,
+			dmarc_last_checked_at DATETIME,
+			domain_status TEXT NOT NULL DEFAULT 'pending_dns',
+			forwarding_status TEXT NOT NULL DEFAULT 'not_started',
+			forwarding_verification_token TEXT,
+			forwarding_address TEXT,
+			forwarding_verified_at DATETIME,
+			forwarding_last_checked_at DATETIME,
+			forwarding_last_error TEXT,
+			email_route_id TEXT,
+			verification_status TEXT NOT NULL DEFAULT 'pending_dns',
+			default_scope TEXT NOT NULL DEFAULT 'none',
+			active BOOLEAN NOT NULL DEFAULT 0,
+			last_checked_at DATETIME,
+			last_error TEXT,
+			created_by_id TEXT NOT NULL,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 		`CREATE TABLE support_email_logs (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
@@ -816,7 +945,11 @@ func newTestDB(t *testing.T) *gorm.DB {
 			direction TEXT NOT NULL,
 			message_ids TEXT,
 			from_email TEXT,
+			from_display_name TEXT,
+			from_source TEXT,
+			from_fallback_reason TEXT,
 			to_email TEXT,
+			reply_to TEXT,
 			recipient_address TEXT,
 			subject TEXT,
 			rfc_message_id TEXT,
@@ -825,8 +958,11 @@ func newTestDB(t *testing.T) *gorm.DB {
 			postmark_message_id TEXT UNIQUE,
 			raw_body TEXT,
 			stripped_text TEXT,
+			html_body TEXT,
 			status TEXT NOT NULL DEFAULT 'sent',
+			delivered_at DATETIME,
 			opened_at DATETIME,
+			bounced_at DATETIME,
 			error_message TEXT,
 			created_at DATETIME
 		)`,
@@ -883,8 +1019,38 @@ func newTestDB(t *testing.T) *gorm.DB {
 			avatar_url TEXT,
 			source TEXT,
 			custom_properties TEXT NOT NULL DEFAULT '{}',
+			email_status TEXT NOT NULL DEFAULT 'valid',
+			email_status_reason TEXT,
+			email_status_updated_at DATETIME,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_companies (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			display_id TEXT NOT NULL,
+			external_id TEXT,
+			name TEXT NOT NULL,
+			domain TEXT,
+			industry TEXT,
+			employee_count INTEGER,
+			annual_revenue REAL,
+			description TEXT,
+			logo_url TEXT,
+			owner_member_id TEXT,
+			custom_properties TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE crm_associations (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			from_object_type TEXT NOT NULL,
+			from_object_id TEXT NOT NULL,
+			to_object_type TEXT NOT NULL,
+			to_object_id TEXT NOT NULL,
+			association_label TEXT,
+			created_at DATETIME
 		)`,
 	}
 
@@ -919,6 +1085,14 @@ func seedWorkspaceMember(t *testing.T, db *gorm.DB, id, wsID, userID, email, dis
 	now := time.Now()
 	mustExec(t, db, `INSERT INTO workspace_members (id, workspace_id, user_id, email, display_name, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, wsID, userID, email, displayName, role, "active", now, now)
+}
+
+// seedPasskey inserts a passkey into the test DB.
+func seedPasskey(t *testing.T, db *gorm.DB, id, userID, name string, credentialID, publicKey []byte, flags int, verified bool, signCount int64) {
+	t.Helper()
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO user_passkeys (id, user_id, credential_id, public_key, attestation_type, transport, sign_count, name, aaguid, flags, verified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, userID, credentialID, publicKey, "none", []byte("[]"), signCount, name, nil, flags, verified, now, now)
 }
 
 // seedWorkflow inserts a workflow with a default state into the test DB.

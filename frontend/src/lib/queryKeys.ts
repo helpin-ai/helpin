@@ -30,8 +30,13 @@ export const queryKeys = {
       filters ? (['automation', wsId, 'activity', filters] as const) : (['automation', wsId, 'activity'] as const),
     flows: (wsId: string) => ['automation', wsId, 'flows'] as const,
     flowsByWorkflow: (wsId: string, workflowId: string) => ['automation', wsId, 'flows', 'workflow', workflowId] as const,
+    flowTemplates: (wsId: string) => ['automation', wsId, 'templates'] as const,
+    flowTemplate: (wsId: string, key: string) => ['automation', wsId, 'templates', key] as const,
     triggerCatalog: (wsId: string) => ['automation', wsId, 'library', 'triggers'] as const,
     toolCatalog: (wsId: string) => ['automation', wsId, 'library', 'tools'] as const,
+    skillCatalog: (wsId: string) => ['automation', wsId, 'library', 'skills'] as const,
+    agentTemplates: (wsId: string) => ['automation', wsId, 'agent-templates'] as const,
+    agentTemplate: (wsId: string, id: string) => ['automation', wsId, 'agent-templates', id] as const,
     agentsRoot: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agents: (wsId: string) => ['automation', wsId, 'agents'] as const,
     agent: (wsId: string, id: string) => ['automation', wsId, 'agents', id] as const,
@@ -109,6 +114,8 @@ export const queryKeys = {
     checklists: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'checklists'] as const,
     attachments: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'attachments'] as const,
     externalLinks: (wsId: string, taskId: string) => ['pm', wsId, 'tasks', taskId, 'externalLinks'] as const,
+    entityExternalLinks: (wsId: string, entityType: string, entityId: string) =>
+      ['pm', wsId, entityType, entityId, 'externalLinks'] as const,
 
     search: (wsId: string, query: string) => ['pm', wsId, 'search', query] as const,
   },
@@ -128,15 +135,34 @@ export const queryKeys = {
     integrations: (wsId: string) => ['git', wsId, 'integrations'] as const,
     repositories: (wsId: string) => ['git', wsId, 'repositories'] as const,
     taskLinks: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'links'] as const,
+    taskDeliveryTarget: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'delivery-target'] as const,
   },
 
   support: {
     ...supportQueryKeys,
     conversationAssignees: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'assignees'] as const,
     conversationAssociations: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'associations'] as const,
+    messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
+    messageEmail: (wsId: string, messageId: string) => ['support', wsId, 'messages', messageId, 'email'] as const,
+    messageInfo: (wsId: string, conversationId: string, messageId: string) => ['support', wsId, 'conversations', conversationId, 'messages', messageId, 'info'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
+    unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
+    inboxScopes: (wsId: string) => ['support', wsId, 'inbox-scopes'] as const,
+    inboxViews: (wsId: string) => ['support', wsId, 'inbox-views'] as const,
+    inboxViewCounts: (wsId: string) => ['support', wsId, 'inbox-view-counts'] as const,
+    builtinInboxViews: (wsId: string) => ['support', wsId, 'builtin-inbox-views'] as const,
+    workspaceUnread: () => ['support', 'workspace-unread'] as const,
+    mailboxes: (wsId: string) => ['support', wsId, 'mailboxes'] as const,
+    mailboxMembers: (wsId: string, mailboxId: string) => ['support', wsId, 'mailboxes', mailboxId, 'members'] as const,
     emailRoutes: (wsId: string) => ['support', wsId, 'email-routes'] as const,
+    emailSenders: (wsId: string) => ['support', wsId, 'email-senders'] as const,
+    emailSenderDomains: (wsId: string) => ['support', wsId, 'email-sender-domains'] as const,
     triageRules: (wsId: string) => ['support', wsId, 'triage-rules'] as const,
+    cannedResponses: (wsId: string) => ['support', wsId, 'canned-responses'] as const,
+    cannedResponseSearch: (wsId: string, query: string) => ['support', wsId, 'canned-responses', 'search', query] as const,
+    tags: (wsId: string) => ['support', wsId, 'tags'] as const,
+    teammatePresence: (wsId: string) => ['support', wsId, 'teammates', 'presence'] as const,
+    visitorContext: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   },
 
   docs: {
@@ -144,10 +170,17 @@ export const queryKeys = {
     space: (wsId: string, id: string) => ['docs', wsId, 'spaces', id] as const,
     collections: (wsId: string, spaceId: string) => ['docs', wsId, 'spaces', spaceId, 'collections'] as const,
     allCollections: (wsId: string) => ['docs', wsId, 'allCollections'] as const,
+    collectionDeleteImpact: (wsId: string, collectionId: string) =>
+      ['docs', wsId, 'collections', collectionId, 'deleteImpact'] as const,
+    spaceDeleteImpact: (wsId: string, spaceId: string) =>
+      ['docs', wsId, 'spaces', spaceId, 'deleteImpact'] as const,
     documents: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['docs', wsId, 'documents', filters] as const) : (['docs', wsId, 'documents'] as const),
     document: (wsId: string, id: string) => ['docs', wsId, 'documents', id] as const,
     content: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'content'] as const,
+    blocks: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'blocks'] as const,
+    changeProposals: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'changeProposals'] as const,
+    changeProposal: (wsId: string, docId: string, proposalId: string) => ['docs', wsId, 'documents', docId, 'changeProposals', proposalId] as const,
     versions: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'versions'] as const,
     version: (wsId: string, docId: string, versionId: string) => ['docs', wsId, 'documents', docId, 'versions', versionId] as const,
     links: (wsId: string, docId: string) => ['docs', wsId, 'documents', docId, 'links'] as const,
@@ -190,16 +223,6 @@ export const queryKeys = {
     activities: (wsId: string, filters?: Record<string, unknown>) =>
       filters ? (['crm', wsId, 'activities', filters] as const) : (['crm', wsId, 'activities'] as const),
 
-    properties: (wsId: string, objectType?: string) =>
-      objectType ? (['crm', wsId, 'properties', objectType] as const) : (['crm', wsId, 'properties'] as const),
-    propertyGroups: (wsId: string, objectType?: string) =>
-      objectType ? (['crm', wsId, 'propertyGroups', objectType] as const) : (['crm', wsId, 'propertyGroups'] as const),
-
-    lists: (wsId: string, filters?: Record<string, unknown>) =>
-      filters ? (['crm', wsId, 'lists', filters] as const) : (['crm', wsId, 'lists'] as const),
-    list: (wsId: string, id: string) => ['crm', wsId, 'lists', id] as const,
-    listMembers: (wsId: string, listId: string) => ['crm', wsId, 'lists', listId, 'members'] as const,
-
     imports: (wsId: string) => ['crm', wsId, 'imports'] as const,
     import: (wsId: string, id: string) => ['crm', wsId, 'imports', id] as const,
 
@@ -229,9 +252,6 @@ export const queryKeys = {
     emailSyncSettings: (wsId: string) => ['crm', wsId, 'email-sync-settings'] as const,
 
     // Phase 5
-    sequences: (wsId: string) => ['crm', wsId, 'sequences'] as const,
-    sequence: (wsId: string, id: string) => ['crm', wsId, 'sequences', id] as const,
-    sequenceEnrollments: (wsId: string, seqId: string) => ['crm', wsId, 'sequences', seqId, 'enrollments'] as const,
     writingProfiles: (wsId: string) => ['crm', wsId, 'writingProfiles'] as const,
     writingProfile: (wsId: string, memberId: string) => ['crm', wsId, 'writingProfiles', memberId] as const,
 

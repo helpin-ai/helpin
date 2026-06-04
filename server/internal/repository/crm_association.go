@@ -84,9 +84,11 @@ func (r *CRMAssociationRepository) ListByObjectEnriched(ctx context.Context, wor
 	}
 
 	type nameRow struct {
-		ID        string
-		Name      string
-		DisplayID string
+		ID          string
+		Name        string
+		DisplayID   string
+		Status      *string
+		StatusColor *string
 	}
 	nameMap := map[string]nameRow{} // keyed by id
 
@@ -102,9 +104,31 @@ func (r *CRMAssociationRepository) ListByObjectEnriched(ctx context.Context, wor
 		case model.CRMObjectEpic:
 			r.db.WithContext(ctx).Raw("SELECT id, name, '' AS display_id FROM pm_epics WHERE id IN (?)", ids).Scan(&rows)
 		case model.CRMObjectTask:
-			r.db.WithContext(ctx).Raw("SELECT id, name, CAST(display_id AS TEXT) AS display_id FROM pm_tasks WHERE id IN (?)", ids).Scan(&rows)
+			if r.db.Migrator().HasTable("pm_workflow_states") {
+				r.db.WithContext(ctx).Raw(`
+					SELECT
+						t.id,
+						t.name,
+						CAST(t.display_id AS TEXT) AS display_id,
+						ws.name AS status,
+						ws.color AS status_color
+					FROM pm_tasks t
+					LEFT JOIN pm_workflow_states ws ON ws.id = t.workflow_state_id
+					WHERE t.id IN (?)
+				`, ids).Scan(&rows)
+			} else {
+				r.db.WithContext(ctx).Raw("SELECT id, name, CAST(display_id AS TEXT) AS display_id FROM pm_tasks WHERE id IN (?)", ids).Scan(&rows)
+			}
 		case model.CRMObjectSupportConversation:
-			r.db.WithContext(ctx).Raw("SELECT id, subject AS name, CAST(display_id AS TEXT) AS display_id FROM support_conversations WHERE id IN (?)", ids).Scan(&rows)
+			r.db.WithContext(ctx).Raw(`
+				SELECT
+					id,
+					subject AS name,
+					CAST(display_id AS TEXT) AS display_id,
+					status
+				FROM support_conversations
+				WHERE id IN (?)
+			`, ids).Scan(&rows)
 		}
 		for _, row := range rows {
 			nameMap[row.ID] = row
@@ -119,9 +143,11 @@ func (r *CRMAssociationRepository) ListByObjectEnriched(ctx context.Context, wor
 		}
 		row := nameMap[linkedID]
 		enriched[i] = model.CRMAssociationEnriched{
-			CRMAssociation:        a,
-			LinkedObjectName:      row.Name,
-			LinkedObjectDisplayID: row.DisplayID,
+			CRMAssociation:          a,
+			LinkedObjectName:        row.Name,
+			LinkedObjectDisplayID:   row.DisplayID,
+			LinkedObjectStatus:      row.Status,
+			LinkedObjectStatusColor: row.StatusColor,
 		}
 	}
 	return enriched, nil
@@ -134,4 +160,15 @@ func (r *CRMAssociationRepository) GetByID(ctx context.Context, id string) (*mod
 		return nil, fmt.Errorf("get association: %w", err)
 	}
 	return &assoc, nil
+}
+
+// UpdateLabel updates an association label in place.
+func (r *CRMAssociationRepository) UpdateLabel(ctx context.Context, id string, label *string) error {
+	if err := r.db.WithContext(ctx).
+		Model(&model.CRMAssociation{}).
+		Where("id = ?", id).
+		Update("association_label", label).Error; err != nil {
+		return fmt.Errorf("update association label: %w", err)
+	}
+	return nil
 }

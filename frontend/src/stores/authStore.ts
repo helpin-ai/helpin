@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { User } from '@/lib/types';
 import { authService } from '@/lib/services/authService';
+import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
 import { clearSession, getAccessToken, hydrateSessionStorage, writeSession } from '@helpin-ai/support-core';
@@ -10,9 +11,15 @@ interface AuthState {
   loading: boolean;
   serverUnreachable: boolean;
   initialize: () => Promise<void>;
-  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string }>;
+  signInWithPasskey: (
+    emailHint?: string,
+    rememberMe?: boolean,
+    options?: { useAutofill?: boolean },
+  ) => Promise<{ error: string | null; requires2FA?: boolean; twoFAToken?: string; cancelled?: boolean }>;
+  verify2FASignIn: (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe?: boolean) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
   updateUser: (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => Promise<void>;
 }
 
@@ -37,6 +44,11 @@ export async function clearClientSession() {
   }
 }
 
+export async function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
+  await writeSession({ accessToken, refreshToken, rememberMe });
+  useAuthStore.setState({ user, serverUnreachable: false });
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   loading: true,
@@ -48,20 +60,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await hydrateSessionStorage();
       const token = getAccessToken();
-      if (token) {
-        const { data, error, isNetworkError } = await authService.me();
-        if (data && !error) {
-          set({ user: data, loading: false, serverUnreachable: false });
-        } else if (isNetworkError) {
-          // Server unreachable / CORS error — keep tokens, don't log out
-          set({ loading: false, serverUnreachable: true });
-        } else {
-          // Genuine auth failure (401, invalid token, etc.) — clear session
-          await clearSession();
-          set({ loading: false, serverUnreachable: false });
-        }
+      if (!token) {
+        set({ user: null, loading: false, serverUnreachable: false });
+        return;
+      }
+      const { data, error, isNetworkError } = await authService.me();
+      if (data && !error) {
+        set({ user: data, loading: false, serverUnreachable: false });
+      } else if (isNetworkError) {
+        // Server unreachable / CORS error — keep tokens, don't log out
+        set({ loading: false, serverUnreachable: true });
       } else {
-        set({ loading: false });
+        // Genuine auth failure (401, invalid token, etc.) — clear session
+        await clearSession();
+        set({ user: null, loading: false, serverUnreachable: false });
       }
     } catch {
       set({ user: null, loading: false, serverUnreachable: false });
@@ -70,47 +82,57 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  signIn: async (email: string, password: string, rememberMe = false) => {
+  signIn: async (email: string, password: string, rememberMe = true) => {
     const { data, error } = await authService.signin(email, password, rememberMe);
     if (error || !data) return { error: error || 'Sign in failed' };
-    try {
-      await writeSession({
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
-        rememberMe,
-      });
-    } catch {
-      return { error: 'Failed to persist your session on this device' };
+
+    if (data.requires_2fa && data.two_fa_token) {
+      return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
     }
-    set({ user: data.user, serverUnreachable: false });
+    if (!data.user) {
+      return { error: 'Sign in failed' };
+    }
+
+    await persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
+    return { error: null };
+  },
+
+  signInWithPasskey: async (emailHint?: string, rememberMe = true, options?: { useAutofill?: boolean }) => {
+    const { data, error, cancelled } = await passkeyService.beginAuthentication(emailHint, rememberMe, options);
+    if (cancelled) return { error: null, cancelled: true };
+    if (error || !data) return { error: error || 'Passkey sign in failed' };
+
+    if (data.requires_2fa && data.two_fa_token) {
+      return { error: null, requires2FA: true, twoFAToken: data.two_fa_token };
+    }
+    if (!data.user) {
+      return { error: 'Passkey sign in failed' };
+    }
+
+    await persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
+    return { error: null };
+  },
+
+  verify2FASignIn: async (twoFaToken: string, code: string, useRecoveryCode: boolean, rememberMe = true) => {
+    const { data, error } = await authService.verify2FASignin(twoFaToken, code, useRecoveryCode);
+    if (error || !data) return { error: error || 'Verification failed' };
+
+    await persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
     return { error: null };
   },
 
   signUp: async (email: string, password: string, fullName: string) => {
     const { data, error } = await authService.signup(email, password, fullName);
     if (error || !data) return { error: error || 'Sign up failed' };
-    try {
-      await writeSession({
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
-        rememberMe: false,
-      });
-    } catch {
-      return { error: 'Failed to persist your session on this device' };
-    }
-    set({ user: data.user, serverUnreachable: false });
+    await persistAuthSession(data.user, data.access_token, data.refresh_token, false);
     return { error: null };
   },
 
-  signOut: () => {
-    void (async () => {
-      try {
-        await clearClientSession();
-      } finally {
-        set({ user: null });
-        window.location.replace('/login');
-      }
-    })();
+  signOut: async () => {
+    await authService.signout();
+    await clearClientSession();
+    set({ user: null });
+    window.location.replace('/login');
   },
 
   updateUser: async (data: { full_name?: string; avatar_style?: string; avatar_seed?: string; avatar_background_mode?: string; avatar_background_color?: string }) => {

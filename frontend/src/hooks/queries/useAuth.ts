@@ -29,9 +29,12 @@ export function useSignIn() {
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
       const res = await authService.signin(email, password)
       if (res.error || !res.data) throw new Error(res.error || 'Sign in failed')
+      if (!res.data.user) {
+        throw new Error(res.data.requires_2fa ? 'Two-factor verification required' : 'Sign in failed')
+      }
       await writeSession({
-        accessToken: res.data.access_token,
-        refreshToken: res.data.refresh_token,
+        accessToken: res.data.access_token ?? '',
+        refreshToken: res.data.refresh_token ?? '',
         rememberMe: false,
       })
       return res.data.user
@@ -44,6 +47,9 @@ export function useSignUp() {
     mutationFn: async ({ email, password, fullName }: { email: string; password: string; fullName: string }) => {
       const res = await authService.signup(email, password, fullName)
       if (res.error || !res.data) throw new Error(res.error || 'Sign up failed')
+      if (!res.data.user) {
+        throw new Error('Sign up failed')
+      }
       await writeSession({
         accessToken: res.data.access_token,
         refreshToken: res.data.refresh_token,

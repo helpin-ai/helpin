@@ -15,14 +15,14 @@ import (
 
 type PMRecurringTemplateService struct {
 	recurringRepo    *repository.PMRecurringTemplateRepository
-	taskRepo        *repository.PMTaskRepository
+	taskRepo         *repository.PMTaskRepository
 	workflowRepo     *repository.PMWorkflowRepository
 	sprintRepo       *repository.PMSprintRepository
 	workspaceRepo    *repository.WorkspaceRepository
 	checklistRepo    *repository.PMChecklistItemRepository
 	externalLinkRepo *repository.PMExternalLinkRepository
 	activityService  *PMActivityService
-	taskService     *PMTaskService
+	taskService      *PMTaskService
 	workflowRunner   recurringTemplateWorkflowRunner
 	wsPublisher      *websocket.Publisher
 	logger           *slog.Logger
@@ -41,7 +41,7 @@ func NewPMRecurringTemplateService(
 ) *PMRecurringTemplateService {
 	return &PMRecurringTemplateService{
 		recurringRepo:    recurringRepo,
-		taskRepo:        taskRepo,
+		taskRepo:         taskRepo,
 		workflowRepo:     workflowRepo,
 		sprintRepo:       sprintRepo,
 		workspaceRepo:    workspaceRepo,
@@ -135,14 +135,14 @@ func (s *PMRecurringTemplateService) GetByStoryID(ctx context.Context, storyID s
 		}
 	}
 	summary := &model.TaskRecurringSummary{
-		TemplateID:         tmpl.ID,
-		TemplateTitle:      tmpl.Title,
-		Status:             tmpl.Status,
-		GeneratedCount:     tmpl.GeneratedCount,
-		RuleSummary:        recurringRuleSummary(cfg),
-		NextRunAt:          tmpl.NextRunAt,
-		LastError:          tmpl.LastError,
-		Config:             cfg,
+		TemplateID:        tmpl.ID,
+		TemplateTitle:     tmpl.Title,
+		Status:            tmpl.Status,
+		GeneratedCount:    tmpl.GeneratedCount,
+		RuleSummary:       recurringRuleSummary(cfg),
+		NextRunAt:         tmpl.NextRunAt,
+		LastError:         tmpl.LastError,
+		Config:            cfg,
 		LastGeneratedTask: lastGenerated,
 	}
 	if story.RecurringOccurrenceNumber != nil {
@@ -620,7 +620,7 @@ func (s *PMRecurringTemplateService) buildSeedFromTask(ctx context.Context, stor
 	return model.PMRecurringTaskSeed{
 		Name:              story.Task.Name,
 		Description:       story.Task.Description,
-		TaskType:         story.Task.TaskType,
+		TaskType:          story.Task.TaskType,
 		WorkflowID:        story.Task.WorkflowID,
 		WorkflowStateID:   stateID,
 		EpicID:            story.Task.EpicID,
@@ -743,16 +743,20 @@ func (s *PMRecurringTemplateService) generateTaskFromTemplate(ctx context.Contex
 }
 
 func (s *PMRecurringTemplateService) seedToCreateRequest(ctx context.Context, seed model.PMRecurringTaskSeed, cfg model.PMRecurringTemplateConfig, tmpl *model.PMRecurringTemplate, scheduledFor *time.Time) (model.CreateTaskRequest, error) {
+	ownerMemberIDs := []string{}
+	if seed.OwnerMemberID != nil && strings.TrimSpace(*seed.OwnerMemberID) != "" {
+		ownerMemberIDs = []string{strings.TrimSpace(*seed.OwnerMemberID)}
+	}
 	req := model.CreateTaskRequest{
 		WorkspaceID:       tmpl.WorkspaceID,
 		Name:              seed.Name,
 		Description:       seed.Description,
-		TaskType:         seed.TaskType,
+		TaskType:          seed.TaskType,
 		WorkflowID:        seed.WorkflowID,
 		WorkflowStateID:   seed.WorkflowStateID,
 		EpicID:            seed.EpicID,
 		TeamID:            tmpl.TeamID,
-		OwnerMemberID:     seed.OwnerMemberID,
+		OwnerMemberIDs:    ownerMemberIDs,
 		RequesterMemberID: seed.RequesterMemberID,
 		Estimate:          seed.Estimate,
 		OwnerIDs:          append([]string{}, seed.OwnerIDs...),
@@ -1050,18 +1054,32 @@ func nextWeeklyOccurrence(reference time.Time, cfg model.PMRecurringTemplateConf
 	if len(cfg.Weekdays) == 0 {
 		return reference.AddDate(0, 0, 7*cfg.Interval)
 	}
-	allowed := map[int]struct{}{}
-	for _, weekday := range cfg.Weekdays {
-		allowed[weekday] = struct{}{}
+
+	// Use the first weekday (single-select in UI).
+	targetWeekday := time.Weekday(cfg.Weekdays[0])
+
+	// Jump forward by interval weeks from reference.
+	candidate := reference.AddDate(0, 0, 7*cfg.Interval)
+
+	// Find the target weekday in the landing week.
+	// First, rewind to the Monday of that week.
+	weekStart := candidate
+	for weekStart.Weekday() != time.Monday {
+		weekStart = weekStart.AddDate(0, 0, -1)
 	}
-	candidate := reference.AddDate(0, 0, 1)
-	for i := 0; i < 365; i++ {
-		if _, ok := allowed[int(candidate.Weekday())]; ok {
-			return candidate
-		}
-		candidate = candidate.AddDate(0, 0, 1)
+
+	// Advance to the target weekday within that week.
+	target := weekStart
+	for target.Weekday() != targetWeekday {
+		target = target.AddDate(0, 0, 1)
 	}
-	return reference.AddDate(0, 0, 7*cfg.Interval)
+
+	// If target landed before or on reference (same week edge case), jump another interval.
+	if !target.After(reference) {
+		return nextWeeklyOccurrence(target, cfg)
+	}
+
+	return target
 }
 
 func nextMonthlyOccurrence(reference time.Time, cfg model.PMRecurringTemplateConfig) time.Time {
@@ -1107,15 +1125,18 @@ func recurringRuleSummary(cfg model.PMRecurringTemplateConfig) string {
 			}
 			return fmt.Sprintf("Every %d days", cfg.Interval)
 		case model.PMRecurringFrequencyWeekly:
+			dayName := ""
 			if len(cfg.Weekdays) > 0 {
-				names := make([]string, 0, len(cfg.Weekdays))
-				for _, weekday := range cfg.Weekdays {
-					names = append(names, time.Weekday(weekday).String()[:3])
-				}
-				return "Weekly on " + strings.Join(names, ", ")
+				dayName = time.Weekday(cfg.Weekdays[0]).String()
 			}
 			if cfg.Interval <= 1 {
+				if dayName != "" {
+					return "Every week on " + dayName
+				}
 				return "Weekly"
+			}
+			if dayName != "" {
+				return fmt.Sprintf("Every %d weeks on %s", cfg.Interval, dayName)
 			}
 			return fmt.Sprintf("Every %d weeks", cfg.Interval)
 		case model.PMRecurringFrequencyMonthly:

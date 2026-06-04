@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
+	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/websocket"
 )
 
@@ -116,6 +117,8 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 		convRepoTx := s.conversationRepo.WithTx(tx)
 		sessionRepoTx := s.sessionRepo.WithTx(tx)
 		contactRepoTx := s.contactRepo.WithTx(tx)
+		companyRepoTx := repository.NewCRMCompanyRepository(tx)
+		assocRepoTx := repository.NewCRMAssociationRepository(tx)
 
 		// 1. Update current session
 		session.CustomerEmail = &resolved.email
@@ -129,6 +132,15 @@ func (s *SupportInboxService) UpgradeWidgetSession(ctx context.Context, sessionT
 
 		// 2. Create or match CRM contact — always as lead with source=live_chat
 		contactID = s.matchOrCreateCRMContactIdentityTx(ctx, contactRepoTx, session.WorkspaceID, identity)
+		companyID, err := s.matchOrCreateCRMCompanyIdentityTx(ctx, companyRepoTx, session.WorkspaceID, identity)
+		if err != nil {
+			return err
+		}
+		if contactID != nil && companyID != nil {
+			if err := s.ensurePrimaryContactCompanyAssociationTx(ctx, assocRepoTx, session.WorkspaceID, *contactID, *companyID); err != nil {
+				return err
+			}
+		}
 
 		// 3. Backfill ALL conversations for this anonymous_id
 		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, session.WorkspaceID, session.AnonymousID, resolved.email, resolved.displayName, contactID)
@@ -191,9 +203,20 @@ func (s *SupportInboxService) IdentifyByAnonymousID(ctx context.Context, widgetK
 		convRepoTx := s.conversationRepo.WithTx(tx)
 		sessionRepoTx := s.sessionRepo.WithTx(tx)
 		contactRepoTx := s.contactRepo.WithTx(tx)
+		companyRepoTx := repository.NewCRMCompanyRepository(tx)
+		assocRepoTx := repository.NewCRMAssociationRepository(tx)
 
 		// 1. Create or match CRM contact
 		contactID = s.matchOrCreateCRMContactIdentityTx(ctx, contactRepoTx, workspaceID, identity)
+		companyID, err := s.matchOrCreateCRMCompanyIdentityTx(ctx, companyRepoTx, workspaceID, identity)
+		if err != nil {
+			return err
+		}
+		if contactID != nil && companyID != nil {
+			if err := s.ensurePrimaryContactCompanyAssociationTx(ctx, assocRepoTx, workspaceID, *contactID, *companyID); err != nil {
+				return err
+			}
+		}
 
 		// 2. Backfill ALL conversations for this anonymous_id
 		ids, err := convRepoTx.UpdateIdentityByAnonymousID(ctx, workspaceID, anonymousID, resolved.email, resolved.displayName, contactID)
@@ -535,6 +558,32 @@ func (s *SupportInboxService) WidgetCreateMessage(ctx context.Context, sessionTo
 	s.wsPublisher.Publish(websocket.SupportMessageEvent(session.WorkspaceID, msg, "widget:"+session.ID))
 
 	if conv, err := s.conversationRepo.GetByID(ctx, session.WorkspaceID, *session.ConversationID, "", model.RoleOwner); err == nil {
+		if conv != nil && (conv.Status == model.SupportConversationStatusWaitingOnCustomer || conv.Status == model.SupportConversationStatusResolved) {
+			conv.Status = model.SupportConversationStatusOpen
+			if conv.HumanTakeover != nil && *conv.HumanTakeover {
+				conv.FlowState = strPtr(model.SupportConversationFlowStateAssignedToHuman)
+			} else {
+				conv.FlowState = strPtr(defaultConversationFlowState(conv.OpenedByUserID, conv.AssignedUserID, conv.AssignedAgentID))
+			}
+			conv.ResolvedAt = nil
+			conv.ClosedAt = nil
+			if err := s.conversationRepo.UpdateFields(ctx, session.WorkspaceID, *session.ConversationID, map[string]any{
+				"status":      conv.Status,
+				"flow_state":  derefString(conv.FlowState),
+				"resolved_at": nil,
+				"closed_at":   nil,
+				"updated_at":  time.Now(),
+			}); err != nil {
+				slog.ErrorContext(ctx, "failed to reopen widget support conversation after customer reply", "error", err, "conversation_id", *session.ConversationID)
+			} else {
+				s.wsPublisher.Publish(websocket.Event{
+					Action:      "updated",
+					Entity:      "support_conversation",
+					EntityID:    *session.ConversationID,
+					WorkspaceID: session.WorkspaceID,
+				})
+			}
+		}
 		ProcessSupportCustomerReplyNotification(ctx, s.notificationService, conv, msg.Content, displayName)
 	}
 
@@ -561,6 +610,11 @@ func (s *SupportInboxService) runWidgetPostMessageAutomation(ctx context.Context
 	}
 
 	if settings.AIEnabled && settings.AIResponseMode == "ai_first" && settings.AIAgentID != nil && s.supportAIService != nil {
+		conv, convErr := s.conversationRepo.GetByID(ctx, workspaceID, conversationID, "", model.RoleOwner)
+		if convErr == nil && conv != nil && conv.HumanTakeover != nil && *conv.HumanTakeover {
+			return
+		}
+
 		if pubErr := s.supportAIService.PublishAIRequest(ctx, workspaceID, conversationID, messageID, content); pubErr != nil {
 			slog.ErrorContext(ctx, "failed to publish AI request event",
 				"workspace_id", workspaceID,

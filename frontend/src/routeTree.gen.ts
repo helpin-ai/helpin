@@ -37,11 +37,13 @@ import { Route as AuthenticatedWSlugPmIndexRouteImport } from './routes/_authent
 import { Route as AuthenticatedWSlugDocsIndexRouteImport } from './routes/_authenticated/w/$slug/docs/index'
 import { Route as AuthenticatedWSlugCrmIndexRouteImport } from './routes/_authenticated/w/$slug/crm/index'
 import { Route as AuthenticatedWSlugAutomationIndexRouteImport } from './routes/_authenticated/w/$slug/automation/index'
+import { Route as AuthenticatedWSlugSupportCoverageRouteImport } from './routes/_authenticated/w/$slug/support/coverage'
 import { Route as AuthenticatedWSlugSupportConversationIdRouteImport } from './routes/_authenticated/w/$slug/support/$conversationId'
 import { Route as AuthenticatedWSlugSprintsSprintIdRouteImport } from './routes/_authenticated/w/$slug/sprints/$sprintId'
 import { Route as AuthenticatedWSlugSettingsWorkflowsRouteImport } from './routes/_authenticated/w/$slug/settings/workflows'
 import { Route as AuthenticatedWSlugSettingsTeamsRouteImport } from './routes/_authenticated/w/$slug/settings/teams'
 import { Route as AuthenticatedWSlugSettingsTaskTemplatesRouteImport } from './routes/_authenticated/w/$slug/settings/task-templates'
+import { Route as AuthenticatedWSlugSettingsRepositoriesRouteImport } from './routes/_authenticated/w/$slug/settings/repositories'
 import { Route as AuthenticatedWSlugSettingsRedirectsRouteImport } from './routes/_authenticated/w/$slug/settings/redirects'
 import { Route as AuthenticatedWSlugSettingsRecurringTasksRouteImport } from './routes/_authenticated/w/$slug/settings/recurring-tasks'
 import { Route as AuthenticatedWSlugSettingsMembersRouteImport } from './routes/_authenticated/w/$slug/settings/members'
@@ -55,6 +57,7 @@ import { Route as AuthenticatedWSlugSettingsDeliveryRouteImport } from './routes
 import { Route as AuthenticatedWSlugSettingsCrmPipelinesRouteImport } from './routes/_authenticated/w/$slug/settings/crm-pipelines'
 import { Route as AuthenticatedWSlugSettingsCrmEmailRouteImport } from './routes/_authenticated/w/$slug/settings/crm-email'
 import { Route as AuthenticatedWSlugSettingsCrmAutonomyRouteImport } from './routes/_authenticated/w/$slug/settings/crm-autonomy'
+import { Route as AuthenticatedWSlugSettingsCommandIntentsRouteImport } from './routes/_authenticated/w/$slug/settings/command-intents'
 import { Route as AuthenticatedWSlugSettingsChatGeneralRouteImport } from './routes/_authenticated/w/$slug/settings/chat-general'
 import { Route as AuthenticatedWSlugSettingsAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/automations'
 import { Route as AuthenticatedWSlugSettingsAiAutomationsRouteImport } from './routes/_authenticated/w/$slug/settings/ai-automations'
@@ -77,6 +80,7 @@ import { Route as AuthenticatedWSlugDocsDraftsRouteImport } from './routes/_auth
 import { Route as AuthenticatedWSlugCrmReviewRouteImport } from './routes/_authenticated/w/$slug/crm/review'
 import { Route as AuthenticatedWSlugCrmInsightsRouteImport } from './routes/_authenticated/w/$slug/crm/insights'
 import { Route as AuthenticatedWSlugAutomationToolsRouteImport } from './routes/_authenticated/w/$slug/automation/tools'
+import { Route as AuthenticatedWSlugAutomationSkillsRouteImport } from './routes/_authenticated/w/$slug/automation/skills'
 import { Route as AuthenticatedWSlugAutomationRunsRouteImport } from './routes/_authenticated/w/$slug/automation/runs'
 import { Route as AuthenticatedWSlugAutomationLibraryRouteImport } from './routes/_authenticated/w/$slug/automation/library'
 import { Route as AuthenticatedWSlugAutomationFlowsRouteImport } from './routes/_authenticated/w/$slug/automation/flows'
@@ -86,8 +90,6 @@ import { Route as AuthenticatedWSlugPmTasksIndexRouteImport } from './routes/_au
 import { Route as AuthenticatedWSlugPmSprintsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/sprints/index'
 import { Route as AuthenticatedWSlugPmObjectivesIndexRouteImport } from './routes/_authenticated/w/$slug/pm/objectives/index'
 import { Route as AuthenticatedWSlugPmEpicsIndexRouteImport } from './routes/_authenticated/w/$slug/pm/epics/index'
-import { Route as AuthenticatedWSlugCrmSequencesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/sequences/index'
-import { Route as AuthenticatedWSlugCrmListsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/lists/index'
 import { Route as AuthenticatedWSlugCrmDealsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/deals/index'
 import { Route as AuthenticatedWSlugCrmContactsIndexRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/index'
 import { Route as AuthenticatedWSlugCrmCompaniesIndexRouteImport } from './routes/_authenticated/w/$slug/crm/companies/index'
@@ -98,7 +100,6 @@ import { Route as AuthenticatedWSlugPmEpicsEpicIdRouteImport } from './routes/_a
 import { Route as AuthenticatedWSlugPmCodingSessionsSessionIdRouteImport } from './routes/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
 import { Route as AuthenticatedWSlugDocsSpacesSpaceIdRouteImport } from './routes/_authenticated/w/$slug/docs/spaces/$spaceId'
 import { Route as AuthenticatedWSlugDocsDocumentsDocIdRouteImport } from './routes/_authenticated/w/$slug/docs/documents/$docId'
-import { Route as AuthenticatedWSlugCrmSequencesSequenceIdRouteImport } from './routes/_authenticated/w/$slug/crm/sequences/$sequenceId'
 import { Route as AuthenticatedWSlugCrmDealsDealIdRouteImport } from './routes/_authenticated/w/$slug/crm/deals/$dealId'
 import { Route as AuthenticatedWSlugCrmContactsContactIdRouteImport } from './routes/_authenticated/w/$slug/crm/contacts/$contactId'
 import { Route as AuthenticatedWSlugCrmCompaniesCompanyIdRouteImport } from './routes/_authenticated/w/$slug/crm/companies/$companyId'
@@ -254,6 +255,12 @@ const AuthenticatedWSlugAutomationIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedWSlugAutomationRoute,
   } as any)
+const AuthenticatedWSlugSupportCoverageRoute =
+  AuthenticatedWSlugSupportCoverageRouteImport.update({
+    id: '/coverage',
+    path: '/coverage',
+    getParentRoute: () => AuthenticatedWSlugSupportRoute,
+  } as any)
 const AuthenticatedWSlugSupportConversationIdRoute =
   AuthenticatedWSlugSupportConversationIdRouteImport.update({
     id: '/$conversationId',
@@ -282,6 +289,12 @@ const AuthenticatedWSlugSettingsTaskTemplatesRoute =
   AuthenticatedWSlugSettingsTaskTemplatesRouteImport.update({
     id: '/settings/task-templates',
     path: '/settings/task-templates',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsRepositoriesRoute =
+  AuthenticatedWSlugSettingsRepositoriesRouteImport.update({
+    id: '/settings/repositories',
+    path: '/settings/repositories',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsRedirectsRoute =
@@ -360,6 +373,12 @@ const AuthenticatedWSlugSettingsCrmAutonomyRoute =
   AuthenticatedWSlugSettingsCrmAutonomyRouteImport.update({
     id: '/settings/crm-autonomy',
     path: '/settings/crm-autonomy',
+    getParentRoute: () => AuthenticatedWSlugRoute,
+  } as any)
+const AuthenticatedWSlugSettingsCommandIntentsRoute =
+  AuthenticatedWSlugSettingsCommandIntentsRouteImport.update({
+    id: '/settings/command-intents',
+    path: '/settings/command-intents',
     getParentRoute: () => AuthenticatedWSlugRoute,
   } as any)
 const AuthenticatedWSlugSettingsChatGeneralRoute =
@@ -494,6 +513,12 @@ const AuthenticatedWSlugAutomationToolsRoute =
     path: '/tools',
     getParentRoute: () => AuthenticatedWSlugAutomationRoute,
   } as any)
+const AuthenticatedWSlugAutomationSkillsRoute =
+  AuthenticatedWSlugAutomationSkillsRouteImport.update({
+    id: '/skills',
+    path: '/skills',
+    getParentRoute: () => AuthenticatedWSlugAutomationRoute,
+  } as any)
 const AuthenticatedWSlugAutomationRunsRoute =
   AuthenticatedWSlugAutomationRunsRouteImport.update({
     id: '/runs',
@@ -547,18 +572,6 @@ const AuthenticatedWSlugPmEpicsIndexRoute =
     id: '/pm/epics/',
     path: '/pm/epics/',
     getParentRoute: () => AuthenticatedWSlugRoute,
-  } as any)
-const AuthenticatedWSlugCrmSequencesIndexRoute =
-  AuthenticatedWSlugCrmSequencesIndexRouteImport.update({
-    id: '/sequences/',
-    path: '/sequences/',
-    getParentRoute: () => AuthenticatedWSlugCrmRoute,
-  } as any)
-const AuthenticatedWSlugCrmListsIndexRoute =
-  AuthenticatedWSlugCrmListsIndexRouteImport.update({
-    id: '/lists/',
-    path: '/lists/',
-    getParentRoute: () => AuthenticatedWSlugCrmRoute,
   } as any)
 const AuthenticatedWSlugCrmDealsIndexRoute =
   AuthenticatedWSlugCrmDealsIndexRouteImport.update({
@@ -620,12 +633,6 @@ const AuthenticatedWSlugDocsDocumentsDocIdRoute =
     path: '/documents/$docId',
     getParentRoute: () => AuthenticatedWSlugDocsRoute,
   } as any)
-const AuthenticatedWSlugCrmSequencesSequenceIdRoute =
-  AuthenticatedWSlugCrmSequencesSequenceIdRouteImport.update({
-    id: '/sequences/$sequenceId',
-    path: '/sequences/$sequenceId',
-    getParentRoute: () => AuthenticatedWSlugCrmRoute,
-  } as any)
 const AuthenticatedWSlugCrmDealsDealIdRoute =
   AuthenticatedWSlugCrmDealsDealIdRouteImport.update({
     id: '/deals/$dealId',
@@ -671,6 +678,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/automation/flows': typeof AuthenticatedWSlugAutomationFlowsRoute
   '/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
+  '/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
   '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
   '/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
@@ -693,6 +701,7 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
+  '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
@@ -706,11 +715,13 @@ export interface FileRoutesByFullPath {
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
+  '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
+  '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
   '/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
   '/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
   '/w/$slug/docs/': typeof AuthenticatedWSlugDocsIndexRoute
@@ -721,7 +732,6 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
-  '/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -732,8 +742,6 @@ export interface FileRoutesByFullPath {
   '/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
-  '/w/$slug/crm/lists/': typeof AuthenticatedWSlugCrmListsIndexRoute
-  '/w/$slug/crm/sequences/': typeof AuthenticatedWSlugCrmSequencesIndexRoute
   '/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -760,6 +768,7 @@ export interface FileRoutesByTo {
   '/w/$slug/automation/flows': typeof AuthenticatedWSlugAutomationFlowsRoute
   '/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
+  '/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
   '/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
   '/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
@@ -782,6 +791,7 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
+  '/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
@@ -795,11 +805,13 @@ export interface FileRoutesByTo {
   '/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
+  '/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
+  '/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
   '/w/$slug/automation': typeof AuthenticatedWSlugAutomationIndexRoute
   '/w/$slug/crm': typeof AuthenticatedWSlugCrmIndexRoute
   '/w/$slug/docs': typeof AuthenticatedWSlugDocsIndexRoute
@@ -810,7 +822,6 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
-  '/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -821,8 +832,6 @@ export interface FileRoutesByTo {
   '/w/$slug/crm/companies': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/w/$slug/crm/contacts': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/w/$slug/crm/deals': typeof AuthenticatedWSlugCrmDealsIndexRoute
-  '/w/$slug/crm/lists': typeof AuthenticatedWSlugCrmListsIndexRoute
-  '/w/$slug/crm/sequences': typeof AuthenticatedWSlugCrmSequencesIndexRoute
   '/w/$slug/pm/epics': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/w/$slug/pm/objectives': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/w/$slug/pm/sprints': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -856,6 +865,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/automation/flows': typeof AuthenticatedWSlugAutomationFlowsRoute
   '/_authenticated/w/$slug/automation/library': typeof AuthenticatedWSlugAutomationLibraryRoute
   '/_authenticated/w/$slug/automation/runs': typeof AuthenticatedWSlugAutomationRunsRoute
+  '/_authenticated/w/$slug/automation/skills': typeof AuthenticatedWSlugAutomationSkillsRoute
   '/_authenticated/w/$slug/automation/tools': typeof AuthenticatedWSlugAutomationToolsRoute
   '/_authenticated/w/$slug/crm/insights': typeof AuthenticatedWSlugCrmInsightsRoute
   '/_authenticated/w/$slug/crm/review': typeof AuthenticatedWSlugCrmReviewRoute
@@ -878,6 +888,7 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/ai-automations': typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   '/_authenticated/w/$slug/settings/automations': typeof AuthenticatedWSlugSettingsAutomationsRoute
   '/_authenticated/w/$slug/settings/chat-general': typeof AuthenticatedWSlugSettingsChatGeneralRoute
+  '/_authenticated/w/$slug/settings/command-intents': typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   '/_authenticated/w/$slug/settings/crm-autonomy': typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   '/_authenticated/w/$slug/settings/crm-email': typeof AuthenticatedWSlugSettingsCrmEmailRoute
   '/_authenticated/w/$slug/settings/crm-pipelines': typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
@@ -891,11 +902,13 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/settings/members': typeof AuthenticatedWSlugSettingsMembersRoute
   '/_authenticated/w/$slug/settings/recurring-tasks': typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   '/_authenticated/w/$slug/settings/redirects': typeof AuthenticatedWSlugSettingsRedirectsRoute
+  '/_authenticated/w/$slug/settings/repositories': typeof AuthenticatedWSlugSettingsRepositoriesRoute
   '/_authenticated/w/$slug/settings/task-templates': typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   '/_authenticated/w/$slug/settings/teams': typeof AuthenticatedWSlugSettingsTeamsRoute
   '/_authenticated/w/$slug/settings/workflows': typeof AuthenticatedWSlugSettingsWorkflowsRoute
   '/_authenticated/w/$slug/sprints/$sprintId': typeof AuthenticatedWSlugSprintsSprintIdRoute
   '/_authenticated/w/$slug/support/$conversationId': typeof AuthenticatedWSlugSupportConversationIdRoute
+  '/_authenticated/w/$slug/support/coverage': typeof AuthenticatedWSlugSupportCoverageRoute
   '/_authenticated/w/$slug/automation/': typeof AuthenticatedWSlugAutomationIndexRoute
   '/_authenticated/w/$slug/crm/': typeof AuthenticatedWSlugCrmIndexRoute
   '/_authenticated/w/$slug/docs/': typeof AuthenticatedWSlugDocsIndexRoute
@@ -906,7 +919,6 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/companies/$companyId': typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   '/_authenticated/w/$slug/crm/contacts/$contactId': typeof AuthenticatedWSlugCrmContactsContactIdRoute
   '/_authenticated/w/$slug/crm/deals/$dealId': typeof AuthenticatedWSlugCrmDealsDealIdRoute
-  '/_authenticated/w/$slug/crm/sequences/$sequenceId': typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   '/_authenticated/w/$slug/docs/documents/$docId': typeof AuthenticatedWSlugDocsDocumentsDocIdRoute
   '/_authenticated/w/$slug/docs/spaces/$spaceId': typeof AuthenticatedWSlugDocsSpacesSpaceIdRoute
   '/_authenticated/w/$slug/pm/coding-sessions/$sessionId': typeof AuthenticatedWSlugPmCodingSessionsSessionIdRoute
@@ -917,8 +929,6 @@ export interface FileRoutesById {
   '/_authenticated/w/$slug/crm/companies/': typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   '/_authenticated/w/$slug/crm/contacts/': typeof AuthenticatedWSlugCrmContactsIndexRoute
   '/_authenticated/w/$slug/crm/deals/': typeof AuthenticatedWSlugCrmDealsIndexRoute
-  '/_authenticated/w/$slug/crm/lists/': typeof AuthenticatedWSlugCrmListsIndexRoute
-  '/_authenticated/w/$slug/crm/sequences/': typeof AuthenticatedWSlugCrmSequencesIndexRoute
   '/_authenticated/w/$slug/pm/epics/': typeof AuthenticatedWSlugPmEpicsIndexRoute
   '/_authenticated/w/$slug/pm/objectives/': typeof AuthenticatedWSlugPmObjectivesIndexRoute
   '/_authenticated/w/$slug/pm/sprints/': typeof AuthenticatedWSlugPmSprintsIndexRoute
@@ -952,6 +962,7 @@ export interface FileRouteTypes {
     | '/w/$slug/automation/flows'
     | '/w/$slug/automation/library'
     | '/w/$slug/automation/runs'
+    | '/w/$slug/automation/skills'
     | '/w/$slug/automation/tools'
     | '/w/$slug/crm/insights'
     | '/w/$slug/crm/review'
@@ -974,6 +985,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/chat-general'
+    | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-pipelines'
@@ -987,11 +999,13 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
+    | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/support/$conversationId'
+    | '/w/$slug/support/coverage'
     | '/w/$slug/automation/'
     | '/w/$slug/crm/'
     | '/w/$slug/docs/'
@@ -1002,7 +1016,6 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
-    | '/w/$slug/crm/sequences/$sequenceId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/coding-sessions/$sessionId'
@@ -1013,8 +1026,6 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/'
     | '/w/$slug/crm/contacts/'
     | '/w/$slug/crm/deals/'
-    | '/w/$slug/crm/lists/'
-    | '/w/$slug/crm/sequences/'
     | '/w/$slug/pm/epics/'
     | '/w/$slug/pm/objectives/'
     | '/w/$slug/pm/sprints/'
@@ -1041,6 +1052,7 @@ export interface FileRouteTypes {
     | '/w/$slug/automation/flows'
     | '/w/$slug/automation/library'
     | '/w/$slug/automation/runs'
+    | '/w/$slug/automation/skills'
     | '/w/$slug/automation/tools'
     | '/w/$slug/crm/insights'
     | '/w/$slug/crm/review'
@@ -1063,6 +1075,7 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/ai-automations'
     | '/w/$slug/settings/automations'
     | '/w/$slug/settings/chat-general'
+    | '/w/$slug/settings/command-intents'
     | '/w/$slug/settings/crm-autonomy'
     | '/w/$slug/settings/crm-email'
     | '/w/$slug/settings/crm-pipelines'
@@ -1076,11 +1089,13 @@ export interface FileRouteTypes {
     | '/w/$slug/settings/members'
     | '/w/$slug/settings/recurring-tasks'
     | '/w/$slug/settings/redirects'
+    | '/w/$slug/settings/repositories'
     | '/w/$slug/settings/task-templates'
     | '/w/$slug/settings/teams'
     | '/w/$slug/settings/workflows'
     | '/w/$slug/sprints/$sprintId'
     | '/w/$slug/support/$conversationId'
+    | '/w/$slug/support/coverage'
     | '/w/$slug/automation'
     | '/w/$slug/crm'
     | '/w/$slug/docs'
@@ -1091,7 +1106,6 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies/$companyId'
     | '/w/$slug/crm/contacts/$contactId'
     | '/w/$slug/crm/deals/$dealId'
-    | '/w/$slug/crm/sequences/$sequenceId'
     | '/w/$slug/docs/documents/$docId'
     | '/w/$slug/docs/spaces/$spaceId'
     | '/w/$slug/pm/coding-sessions/$sessionId'
@@ -1102,8 +1116,6 @@ export interface FileRouteTypes {
     | '/w/$slug/crm/companies'
     | '/w/$slug/crm/contacts'
     | '/w/$slug/crm/deals'
-    | '/w/$slug/crm/lists'
-    | '/w/$slug/crm/sequences'
     | '/w/$slug/pm/epics'
     | '/w/$slug/pm/objectives'
     | '/w/$slug/pm/sprints'
@@ -1136,6 +1148,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/automation/flows'
     | '/_authenticated/w/$slug/automation/library'
     | '/_authenticated/w/$slug/automation/runs'
+    | '/_authenticated/w/$slug/automation/skills'
     | '/_authenticated/w/$slug/automation/tools'
     | '/_authenticated/w/$slug/crm/insights'
     | '/_authenticated/w/$slug/crm/review'
@@ -1158,6 +1171,7 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/ai-automations'
     | '/_authenticated/w/$slug/settings/automations'
     | '/_authenticated/w/$slug/settings/chat-general'
+    | '/_authenticated/w/$slug/settings/command-intents'
     | '/_authenticated/w/$slug/settings/crm-autonomy'
     | '/_authenticated/w/$slug/settings/crm-email'
     | '/_authenticated/w/$slug/settings/crm-pipelines'
@@ -1171,11 +1185,13 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/settings/members'
     | '/_authenticated/w/$slug/settings/recurring-tasks'
     | '/_authenticated/w/$slug/settings/redirects'
+    | '/_authenticated/w/$slug/settings/repositories'
     | '/_authenticated/w/$slug/settings/task-templates'
     | '/_authenticated/w/$slug/settings/teams'
     | '/_authenticated/w/$slug/settings/workflows'
     | '/_authenticated/w/$slug/sprints/$sprintId'
     | '/_authenticated/w/$slug/support/$conversationId'
+    | '/_authenticated/w/$slug/support/coverage'
     | '/_authenticated/w/$slug/automation/'
     | '/_authenticated/w/$slug/crm/'
     | '/_authenticated/w/$slug/docs/'
@@ -1186,7 +1202,6 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/companies/$companyId'
     | '/_authenticated/w/$slug/crm/contacts/$contactId'
     | '/_authenticated/w/$slug/crm/deals/$dealId'
-    | '/_authenticated/w/$slug/crm/sequences/$sequenceId'
     | '/_authenticated/w/$slug/docs/documents/$docId'
     | '/_authenticated/w/$slug/docs/spaces/$spaceId'
     | '/_authenticated/w/$slug/pm/coding-sessions/$sessionId'
@@ -1197,8 +1212,6 @@ export interface FileRouteTypes {
     | '/_authenticated/w/$slug/crm/companies/'
     | '/_authenticated/w/$slug/crm/contacts/'
     | '/_authenticated/w/$slug/crm/deals/'
-    | '/_authenticated/w/$slug/crm/lists/'
-    | '/_authenticated/w/$slug/crm/sequences/'
     | '/_authenticated/w/$slug/pm/epics/'
     | '/_authenticated/w/$slug/pm/objectives/'
     | '/_authenticated/w/$slug/pm/sprints/'
@@ -1415,6 +1428,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugAutomationIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugAutomationRoute
     }
+    '/_authenticated/w/$slug/support/coverage': {
+      id: '/_authenticated/w/$slug/support/coverage'
+      path: '/coverage'
+      fullPath: '/w/$slug/support/coverage'
+      preLoaderRoute: typeof AuthenticatedWSlugSupportCoverageRouteImport
+      parentRoute: typeof AuthenticatedWSlugSupportRoute
+    }
     '/_authenticated/w/$slug/support/$conversationId': {
       id: '/_authenticated/w/$slug/support/$conversationId'
       path: '/$conversationId'
@@ -1448,6 +1468,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/task-templates'
       fullPath: '/w/$slug/settings/task-templates'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/repositories': {
+      id: '/_authenticated/w/$slug/settings/repositories'
+      path: '/settings/repositories'
+      fullPath: '/w/$slug/settings/repositories'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsRepositoriesRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/redirects': {
@@ -1539,6 +1566,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/crm-autonomy'
       fullPath: '/w/$slug/settings/crm-autonomy'
       preLoaderRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRouteImport
+      parentRoute: typeof AuthenticatedWSlugRoute
+    }
+    '/_authenticated/w/$slug/settings/command-intents': {
+      id: '/_authenticated/w/$slug/settings/command-intents'
+      path: '/settings/command-intents'
+      fullPath: '/w/$slug/settings/command-intents'
+      preLoaderRoute: typeof AuthenticatedWSlugSettingsCommandIntentsRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
     }
     '/_authenticated/w/$slug/settings/chat-general': {
@@ -1695,6 +1729,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugAutomationToolsRouteImport
       parentRoute: typeof AuthenticatedWSlugAutomationRoute
     }
+    '/_authenticated/w/$slug/automation/skills': {
+      id: '/_authenticated/w/$slug/automation/skills'
+      path: '/skills'
+      fullPath: '/w/$slug/automation/skills'
+      preLoaderRoute: typeof AuthenticatedWSlugAutomationSkillsRouteImport
+      parentRoute: typeof AuthenticatedWSlugAutomationRoute
+    }
     '/_authenticated/w/$slug/automation/runs': {
       id: '/_authenticated/w/$slug/automation/runs'
       path: '/runs'
@@ -1757,20 +1798,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$slug/pm/epics/'
       preLoaderRoute: typeof AuthenticatedWSlugPmEpicsIndexRouteImport
       parentRoute: typeof AuthenticatedWSlugRoute
-    }
-    '/_authenticated/w/$slug/crm/sequences/': {
-      id: '/_authenticated/w/$slug/crm/sequences/'
-      path: '/sequences'
-      fullPath: '/w/$slug/crm/sequences/'
-      preLoaderRoute: typeof AuthenticatedWSlugCrmSequencesIndexRouteImport
-      parentRoute: typeof AuthenticatedWSlugCrmRoute
-    }
-    '/_authenticated/w/$slug/crm/lists/': {
-      id: '/_authenticated/w/$slug/crm/lists/'
-      path: '/lists'
-      fullPath: '/w/$slug/crm/lists/'
-      preLoaderRoute: typeof AuthenticatedWSlugCrmListsIndexRouteImport
-      parentRoute: typeof AuthenticatedWSlugCrmRoute
     }
     '/_authenticated/w/$slug/crm/deals/': {
       id: '/_authenticated/w/$slug/crm/deals/'
@@ -1842,13 +1869,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWSlugDocsDocumentsDocIdRouteImport
       parentRoute: typeof AuthenticatedWSlugDocsRoute
     }
-    '/_authenticated/w/$slug/crm/sequences/$sequenceId': {
-      id: '/_authenticated/w/$slug/crm/sequences/$sequenceId'
-      path: '/sequences/$sequenceId'
-      fullPath: '/w/$slug/crm/sequences/$sequenceId'
-      preLoaderRoute: typeof AuthenticatedWSlugCrmSequencesSequenceIdRouteImport
-      parentRoute: typeof AuthenticatedWSlugCrmRoute
-    }
     '/_authenticated/w/$slug/crm/deals/$dealId': {
       id: '/_authenticated/w/$slug/crm/deals/$dealId'
       path: '/deals/$dealId'
@@ -1879,6 +1899,7 @@ interface AuthenticatedWSlugAutomationRouteChildren {
   AuthenticatedWSlugAutomationFlowsRoute: typeof AuthenticatedWSlugAutomationFlowsRoute
   AuthenticatedWSlugAutomationLibraryRoute: typeof AuthenticatedWSlugAutomationLibraryRoute
   AuthenticatedWSlugAutomationRunsRoute: typeof AuthenticatedWSlugAutomationRunsRoute
+  AuthenticatedWSlugAutomationSkillsRoute: typeof AuthenticatedWSlugAutomationSkillsRoute
   AuthenticatedWSlugAutomationToolsRoute: typeof AuthenticatedWSlugAutomationToolsRoute
   AuthenticatedWSlugAutomationIndexRoute: typeof AuthenticatedWSlugAutomationIndexRoute
 }
@@ -1895,6 +1916,8 @@ const AuthenticatedWSlugAutomationRouteChildren: AuthenticatedWSlugAutomationRou
       AuthenticatedWSlugAutomationLibraryRoute,
     AuthenticatedWSlugAutomationRunsRoute:
       AuthenticatedWSlugAutomationRunsRoute,
+    AuthenticatedWSlugAutomationSkillsRoute:
+      AuthenticatedWSlugAutomationSkillsRoute,
     AuthenticatedWSlugAutomationToolsRoute:
       AuthenticatedWSlugAutomationToolsRoute,
     AuthenticatedWSlugAutomationIndexRoute:
@@ -1913,12 +1936,9 @@ interface AuthenticatedWSlugCrmRouteChildren {
   AuthenticatedWSlugCrmCompaniesCompanyIdRoute: typeof AuthenticatedWSlugCrmCompaniesCompanyIdRoute
   AuthenticatedWSlugCrmContactsContactIdRoute: typeof AuthenticatedWSlugCrmContactsContactIdRoute
   AuthenticatedWSlugCrmDealsDealIdRoute: typeof AuthenticatedWSlugCrmDealsDealIdRoute
-  AuthenticatedWSlugCrmSequencesSequenceIdRoute: typeof AuthenticatedWSlugCrmSequencesSequenceIdRoute
   AuthenticatedWSlugCrmCompaniesIndexRoute: typeof AuthenticatedWSlugCrmCompaniesIndexRoute
   AuthenticatedWSlugCrmContactsIndexRoute: typeof AuthenticatedWSlugCrmContactsIndexRoute
   AuthenticatedWSlugCrmDealsIndexRoute: typeof AuthenticatedWSlugCrmDealsIndexRoute
-  AuthenticatedWSlugCrmListsIndexRoute: typeof AuthenticatedWSlugCrmListsIndexRoute
-  AuthenticatedWSlugCrmSequencesIndexRoute: typeof AuthenticatedWSlugCrmSequencesIndexRoute
 }
 
 const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
@@ -1930,16 +1950,11 @@ const AuthenticatedWSlugCrmRouteChildren: AuthenticatedWSlugCrmRouteChildren = {
   AuthenticatedWSlugCrmContactsContactIdRoute:
     AuthenticatedWSlugCrmContactsContactIdRoute,
   AuthenticatedWSlugCrmDealsDealIdRoute: AuthenticatedWSlugCrmDealsDealIdRoute,
-  AuthenticatedWSlugCrmSequencesSequenceIdRoute:
-    AuthenticatedWSlugCrmSequencesSequenceIdRoute,
   AuthenticatedWSlugCrmCompaniesIndexRoute:
     AuthenticatedWSlugCrmCompaniesIndexRoute,
   AuthenticatedWSlugCrmContactsIndexRoute:
     AuthenticatedWSlugCrmContactsIndexRoute,
   AuthenticatedWSlugCrmDealsIndexRoute: AuthenticatedWSlugCrmDealsIndexRoute,
-  AuthenticatedWSlugCrmListsIndexRoute: AuthenticatedWSlugCrmListsIndexRoute,
-  AuthenticatedWSlugCrmSequencesIndexRoute:
-    AuthenticatedWSlugCrmSequencesIndexRoute,
 }
 
 const AuthenticatedWSlugCrmRouteWithChildren =
@@ -1975,6 +1990,7 @@ const AuthenticatedWSlugDocsRouteWithChildren =
 
 interface AuthenticatedWSlugSupportRouteChildren {
   AuthenticatedWSlugSupportConversationIdRoute: typeof AuthenticatedWSlugSupportConversationIdRoute
+  AuthenticatedWSlugSupportCoverageRoute: typeof AuthenticatedWSlugSupportCoverageRoute
   AuthenticatedWSlugSupportIndexRoute: typeof AuthenticatedWSlugSupportIndexRoute
 }
 
@@ -1982,6 +1998,8 @@ const AuthenticatedWSlugSupportRouteChildren: AuthenticatedWSlugSupportRouteChil
   {
     AuthenticatedWSlugSupportConversationIdRoute:
       AuthenticatedWSlugSupportConversationIdRoute,
+    AuthenticatedWSlugSupportCoverageRoute:
+      AuthenticatedWSlugSupportCoverageRoute,
     AuthenticatedWSlugSupportIndexRoute: AuthenticatedWSlugSupportIndexRoute,
   }
 
@@ -2016,6 +2034,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsAiAutomationsRoute: typeof AuthenticatedWSlugSettingsAiAutomationsRoute
   AuthenticatedWSlugSettingsAutomationsRoute: typeof AuthenticatedWSlugSettingsAutomationsRoute
   AuthenticatedWSlugSettingsChatGeneralRoute: typeof AuthenticatedWSlugSettingsChatGeneralRoute
+  AuthenticatedWSlugSettingsCommandIntentsRoute: typeof AuthenticatedWSlugSettingsCommandIntentsRoute
   AuthenticatedWSlugSettingsCrmAutonomyRoute: typeof AuthenticatedWSlugSettingsCrmAutonomyRoute
   AuthenticatedWSlugSettingsCrmEmailRoute: typeof AuthenticatedWSlugSettingsCrmEmailRoute
   AuthenticatedWSlugSettingsCrmPipelinesRoute: typeof AuthenticatedWSlugSettingsCrmPipelinesRoute
@@ -2029,6 +2048,7 @@ interface AuthenticatedWSlugRouteChildren {
   AuthenticatedWSlugSettingsMembersRoute: typeof AuthenticatedWSlugSettingsMembersRoute
   AuthenticatedWSlugSettingsRecurringTasksRoute: typeof AuthenticatedWSlugSettingsRecurringTasksRoute
   AuthenticatedWSlugSettingsRedirectsRoute: typeof AuthenticatedWSlugSettingsRedirectsRoute
+  AuthenticatedWSlugSettingsRepositoriesRoute: typeof AuthenticatedWSlugSettingsRepositoriesRoute
   AuthenticatedWSlugSettingsTaskTemplatesRoute: typeof AuthenticatedWSlugSettingsTaskTemplatesRoute
   AuthenticatedWSlugSettingsTeamsRoute: typeof AuthenticatedWSlugSettingsTeamsRoute
   AuthenticatedWSlugSettingsWorkflowsRoute: typeof AuthenticatedWSlugSettingsWorkflowsRoute
@@ -2078,6 +2098,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsAutomationsRoute,
   AuthenticatedWSlugSettingsChatGeneralRoute:
     AuthenticatedWSlugSettingsChatGeneralRoute,
+  AuthenticatedWSlugSettingsCommandIntentsRoute:
+    AuthenticatedWSlugSettingsCommandIntentsRoute,
   AuthenticatedWSlugSettingsCrmAutonomyRoute:
     AuthenticatedWSlugSettingsCrmAutonomyRoute,
   AuthenticatedWSlugSettingsCrmEmailRoute:
@@ -2102,6 +2124,8 @@ const AuthenticatedWSlugRouteChildren: AuthenticatedWSlugRouteChildren = {
     AuthenticatedWSlugSettingsRecurringTasksRoute,
   AuthenticatedWSlugSettingsRedirectsRoute:
     AuthenticatedWSlugSettingsRedirectsRoute,
+  AuthenticatedWSlugSettingsRepositoriesRoute:
+    AuthenticatedWSlugSettingsRepositoriesRoute,
   AuthenticatedWSlugSettingsTaskTemplatesRoute:
     AuthenticatedWSlugSettingsTaskTemplatesRoute,
   AuthenticatedWSlugSettingsTeamsRoute: AuthenticatedWSlugSettingsTeamsRoute,

@@ -1,18 +1,18 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { UnicodeSpinner } from '@/components/pm/CodingSession/UnicodeSpinner';
 import {
   BotIcon,
   SourceCodeIcon,
+  File01Icon,
   Loading01Icon,
   ArrowUp02Icon,
   TerminalIcon,
-  UserIcon,
   CancelCircleIcon,
   LockKeyIcon,
   RadioIcon,
   Wrench01Icon,
-  File01Icon,
+  Globe02Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type {
+  AgentRunArtifact,
   CodingSession,
   CodingSessionActor,
   CodingSessionInteraction,
@@ -30,9 +31,17 @@ import type {
   CodingSessionTranscriptMessage,
 } from '@/lib/pmTypes';
 import { UserAvatar } from '@/components/pm/UserAvatar';
+import { useWorkspaceMembers } from '@/hooks/queries';
 import { formatCodingSessionRelative } from './codingSessionUtils';
+import {
+  formatCodingSessionElapsed,
+  isStatusTranscriptMessage,
+} from './codingSessionPresentation';
+import type { CodingSessionComposerState } from './codingSessionComposer';
 import { ApplyPatchDiff } from './ApplyPatchDiff';
+import type { PublishedPreview } from '@/components/pm/runPreviews';
 import { CodingInteractionCard } from './CodingInteractionCard';
+import { CodingReviewHistoryPanel, type CodingReviewHistoryItem } from './CodingReviewHistoryPanel';
 import { MarkdownContent } from './MarkdownContent';
 import { PublishedToolPreviewCard } from './PublishedToolPreviewCard';
 import { describeToolCall } from './toolCallPresentation';
@@ -80,6 +89,8 @@ function partitionTurnSegments(segments: CodingSessionLiveTurnSegment[]): Segmen
 }
 
 export function CodingTranscriptPane({
+  promptArtifact,
+  reviewArtifacts = [],
   transcriptMessages,
   liveAssistantMessage,
   liveReasoningMessage,
@@ -87,13 +98,20 @@ export function CodingTranscriptPane({
   loading = false,
   onSendMessage,
   sendingMessage = false,
+  messagePlaceholder = 'Reply to agent… (⌘↵ to send)',
+  messageComposer,
   session,
   activeInteraction,
   acting,
+  availablePreviewPanelKey,
+  attachedPreview,
+  onViewPreview,
   onAuthStart,
   onAuthCancel,
   onResolveInteraction,
 }: {
+  promptArtifact?: AgentRunArtifact | null;
+  reviewArtifacts?: CodingReviewHistoryItem[];
   transcriptMessages: CodingSessionTranscriptMessage[];
   liveAssistantMessage: CodingSessionLiveAssistantMessage | null;
   liveReasoningMessage: CodingSessionLiveReasoningMessage | null;
@@ -101,15 +119,26 @@ export function CodingTranscriptPane({
   loading?: boolean;
   onSendMessage?: (content: string) => Promise<void>;
   sendingMessage?: boolean;
+  messagePlaceholder?: string;
+  messageComposer?: CodingSessionComposerState;
   session?: CodingSession | null;
   activeInteraction?: CodingSessionInteraction | null;
   acting?: string | null;
+  availablePreviewPanelKey?: string | null;
+  attachedPreview?: PublishedPreview | null;
+  onViewPreview?: (panelKey: string) => void;
   onAuthStart?: () => void;
   onAuthCancel?: () => void;
   onResolveInteraction?: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
 }) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const autoFollowRef = useRef(true);
+  const resolvedMessageComposer: CodingSessionComposerState = messageComposer ?? {
+    visible: Boolean(onSendMessage),
+    enabled: Boolean(onSendMessage),
+    mode: 'answer',
+    placeholder: messagePlaceholder,
+  };
   const visibleLiveSegments = liveTurnSegments.filter((segment) => {
     if (segment.kind === 'assistant_message') {
       return segment.assistant_message.content.trim().length > 0;
@@ -117,20 +146,58 @@ export function CodingTranscriptPane({
     return segment.tool_call.tool_name !== 'update_plan';
   });
   const showLivePlaceholder = visibleLiveSegments.length === 0 && liveAssistantMessage?.status === 'streaming';
+  const promptMessage = useMemo<CodingSessionTranscriptMessage | null>(() => {
+    const sections = parsePromptArtifactSections(promptArtifact?.inline_content);
+    const developerPrompt = sections.find((section) => section.label === 'Developer prompt');
+    if (developerPrompt) {
+      return {
+        event_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+        message_id: `prompt:${promptArtifact?.id ?? 'developer'}`,
+        role: 'user',
+        message_type: 'developer_prompt',
+        content: developerPrompt.content,
+        timestamp: promptArtifact?.created_at ?? new Date().toISOString(),
+        sequence_no: Number.MIN_SAFE_INTEGER,
+      };
+    }
+
+    const systemPrompt = session?.system_prompt?.trim();
+    if (!systemPrompt) return null;
+    return {
+      event_id: `prompt:${session?.run_id ?? 'system'}`,
+      message_id: `prompt:${session?.run_id ?? 'system'}`,
+      role: 'user',
+      message_type: 'system_prompt',
+      content: systemPrompt,
+      timestamp: session?.created_at ?? new Date().toISOString(),
+      sequence_no: Number.MIN_SAFE_INTEGER,
+    };
+  }, [promptArtifact, session?.created_at, session?.run_id, session?.system_prompt]);
 
   // Build a flat list of all renderable items for the virtualizer.
   type VirtualItem =
+    | { kind: 'context'; message: CodingSessionTranscriptMessage }
     | { kind: 'transcript'; message: CodingSessionTranscriptMessage }
+    | { kind: 'status'; message: CodingSessionTranscriptMessage }
     | { kind: 'thinking'; reasoning: CodingSessionLiveReasoningMessage }
     | { kind: 'live-message'; segment: CodingSessionLiveTurnSegment }
     | { kind: 'live-tool'; segment: CodingSessionLiveTurnSegment; isLast: boolean }
     | { kind: 'placeholder' }
-    | { kind: 'empty' };
+    | { kind: 'running'; since: string }
+    | { kind: 'empty' }
+    | { kind: 'bottom-spacer' };
 
   const items = useMemo((): VirtualItem[] => {
     const list: VirtualItem[] = [];
+    if (promptMessage) {
+      list.push({ kind: 'context', message: promptMessage });
+    }
     for (const message of transcriptMessages) {
-      list.push({ kind: 'transcript', message });
+      if (isStatusTranscriptMessage(message)) {
+        list.push({ kind: 'status', message });
+      } else {
+        list.push({ kind: 'transcript', message });
+      }
     }
     if (liveReasoningMessage) {
       list.push({ kind: 'thinking', reasoning: liveReasoningMessage });
@@ -146,11 +213,28 @@ export function CodingTranscriptPane({
     if (showLivePlaceholder) {
       list.push({ kind: 'placeholder' });
     }
+    const runningSince = session?.started_at ?? session?.created_at;
+    if (session?.status === 'running' && runningSince) {
+      list.push({ kind: 'running', since: runningSince });
+    }
     if (!loading && list.length === 0) {
       list.push({ kind: 'empty' });
     }
+    if (list.length > 0) {
+      list.push({ kind: 'bottom-spacer' });
+    }
     return list;
-  }, [transcriptMessages, liveReasoningMessage, visibleLiveSegments, showLivePlaceholder, loading]);
+  }, [
+    promptMessage,
+    transcriptMessages,
+    liveReasoningMessage,
+    visibleLiveSegments,
+    showLivePlaceholder,
+    session?.status,
+    session?.started_at,
+    session?.created_at,
+    loading,
+  ]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -185,6 +269,19 @@ export function CodingTranscriptPane({
     });
   }, [items.length, virtualizer]);
 
+  const sessionScrollKey = session?.run_id ?? session?.id ?? 'unbound';
+  const initialTailSessionKeyRef = useRef<string | null>(null);
+
+  // When opening an existing run, land on the latest activity once. After that,
+  // only auto-follow if the user stays near the tail.
+  useEffect(() => {
+    if (loading || items.length === 0) return;
+    if (initialTailSessionKeyRef.current === sessionScrollKey) return;
+    initialTailSessionKeyRef.current = sessionScrollKey;
+    autoFollowRef.current = true;
+    scrollToTail();
+  }, [items.length, loading, scrollToTail, sessionScrollKey]);
+
   // Auto-scroll to bottom when new items arrive, but only if the user is already following the tail.
   const prevItemCountRef = useRef(items.length);
   useEffect(() => {
@@ -213,11 +310,44 @@ export function CodingTranscriptPane({
   }, [streamingSignature, items.length, scrollToTail]);
 
   const triggeredBy = session?.triggered_by_user ?? null;
+  const { data: workspaceMembers } = useWorkspaceMembers(session?.workspace_id ?? '');
+
+  const memberActorByUserId = useMemo(() => {
+    const map = new Map<string, CodingSessionActor>();
+    for (const member of workspaceMembers ?? []) {
+      if (!member.user_id) continue;
+      map.set(member.user_id, {
+        id: member.user_id,
+        email: member.email,
+        full_name: member.full_name,
+        avatar_url: member.avatar_url,
+      });
+    }
+    return map;
+  }, [workspaceMembers]);
+
+  const actorForMessage = useCallback(
+    (message: CodingSessionTranscriptMessage): CodingSessionActor | null => {
+      const isResolution =
+        message.message_type === 'review_checkpoint_resolution' ||
+        message.message_type === 'approval_request_resolution';
+      if (isResolution && message.resolver_user_id) {
+        const resolver = memberActorByUserId.get(message.resolver_user_id);
+        if (resolver) return resolver;
+      }
+      return triggeredBy;
+    },
+    [memberActorByUserId, triggeredBy],
+  );
 
   const renderItem = useCallback((item: VirtualItem) => {
     switch (item.kind) {
       case 'transcript':
-        return <TranscriptEntry message={item.message} actor={triggeredBy} />;
+        return <TranscriptEntry message={item.message} actor={actorForMessage(item.message)} />;
+      case 'context':
+        return <RunContextDisclosure message={item.message} />;
+      case 'status':
+        return <StatusTimelineRow message={item.message} />;
       case 'thinking':
         return <ThinkingStrip reasoning={item.reasoning} />;
       case 'live-message': {
@@ -263,32 +393,39 @@ export function CodingTranscriptPane({
             placeholder
           />
         );
+      case 'running':
+        return <RunningActivityRow since={item.since} />;
       case 'empty':
         return (
           <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center text-sm text-muted-foreground">
-            No transcript yet. Assistant and user-visible turns will appear here once the session starts talking.
+            No activity yet. Assistant and user-visible turns will appear here once the session starts talking.
           </div>
         );
+      case 'bottom-spacer':
+        return (
+          <div
+            aria-hidden="true"
+            className="h-[calc(env(safe-area-inset-bottom)+4rem)]"
+            data-coding-session-activity-spacer
+          />
+        );
     }
-  }, [liveAssistantMessage, triggeredBy]);
+  }, [liveAssistantMessage, actorForMessage]);
 
   return (
     <section className="relative flex h-full min-h-[20rem] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm xl:min-h-0">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          <BotIcon className="h-3.5 w-3.5" />
-          Transcript
+      <div className="border-b border-border/60 px-4 py-2">
+        <div className="text-sm font-medium leading-5 text-muted-foreground">
+          Activity
         </div>
-        <Badge variant="outline" className="text-[10px]">
-          {transcriptMessages.length + (visibleLiveSegments.length > 0 || showLivePlaceholder ? 1 : 0)} turns
-        </Badge>
       </div>
 
       <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto pt-3">
-        <div
-          className="relative mx-auto w-full max-w-4xl px-4"
-          style={{ height: virtualizer.getTotalSize() }}
-        >
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-4">
+          <div
+            className="relative w-full"
+            style={{ height: virtualizer.getTotalSize() }}
+          >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const item = items[virtualRow.index];
             return (
@@ -311,33 +448,96 @@ export function CodingTranscriptPane({
               </div>
             );
           })}
+          </div>
         </div>
       </div>
-
-      {session?.status === 'running' && <RunningIndicator since={session.created_at} />}
 
       {(session?.pause_reason === 'authentication' || activeInteraction) ? (
         <InterruptionOverlay
           session={session ?? null}
           activeInteraction={activeInteraction ?? null}
           acting={acting ?? null}
+          availablePreviewPanelKey={availablePreviewPanelKey ?? null}
+          attachedPreview={attachedPreview ?? null}
+          reviewArtifacts={reviewArtifacts}
+          onViewPreview={onViewPreview}
           onAuthStart={onAuthStart ?? (() => {})}
           onAuthCancel={onAuthCancel ?? (() => {})}
           onResolveInteraction={onResolveInteraction ?? (() => {})}
         />
       ) : null}
 
-      {onSendMessage ? (
-        <MessageInput onSend={onSendMessage} sending={sendingMessage} />
+      {resolvedMessageComposer.visible ? (
+        <MessageInput
+          onSend={onSendMessage}
+          sending={sendingMessage}
+          enabled={resolvedMessageComposer.enabled && Boolean(onSendMessage)}
+          placeholder={resolvedMessageComposer.placeholder}
+          disabledReason={resolvedMessageComposer.disabledReason}
+        />
       ) : null}
     </section>
   );
+}
+
+function parsePromptArtifactSections(raw: string | null | undefined) {
+  if (!raw) return [] as Array<{ label: string; content: string }>;
+
+  const lines = raw.split('\n');
+  const sections: Array<{ label: string; content: string }> = [];
+  let currentLabel: string | null = null;
+  let currentLines: string[] = [];
+
+  const normalizeLabel = (line: string) => {
+    switch (line) {
+      case 'Developer instructions:':
+      case 'Developer prompt:':
+        return 'Developer prompt';
+      case 'Turn input:':
+      case 'User prompt:':
+        return 'User prompt';
+      case 'Pending request replay:':
+        return 'Pending request replay';
+      default:
+        return line.slice(0, -1);
+    }
+  };
+
+  const flush = () => {
+    if (!currentLabel) return;
+    const content = currentLines.join('\n').trim();
+    if (content) {
+      sections.push({ label: currentLabel, content });
+    }
+  };
+
+  for (const line of lines) {
+    if (
+      line === 'Developer instructions:'
+      || line === 'Developer prompt:'
+      || line === 'Turn input:'
+      || line === 'User prompt:'
+      || line === 'Pending request replay:'
+    ) {
+      flush();
+      currentLabel = normalizeLabel(line);
+      currentLines = [];
+      continue;
+    }
+    currentLines.push(line);
+  }
+  flush();
+  return sections;
 }
 
 function InterruptionOverlay({
   session,
   activeInteraction,
   acting,
+  availablePreviewPanelKey,
+  attachedPreview,
+  onViewPreview,
+  reviewArtifacts,
   onAuthStart,
   onAuthCancel,
   onResolveInteraction,
@@ -345,6 +545,10 @@ function InterruptionOverlay({
   session: CodingSession | null;
   activeInteraction: CodingSessionInteraction | null;
   acting: string | null;
+  availablePreviewPanelKey?: string | null;
+  attachedPreview?: PublishedPreview | null;
+  reviewArtifacts: CodingReviewHistoryItem[];
+  onViewPreview?: (panelKey: string) => void;
   onAuthStart: () => void;
   onAuthCancel: () => void;
   onResolveInteraction: (interactionId: string, responsePayload: Record<string, unknown>, followupMessage?: string) => void;
@@ -370,7 +574,11 @@ function InterruptionOverlay({
       {/* Colour fade on top of the blur layers */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-full h-48 bg-gradient-to-t from-card to-transparent" />
 
-      <div className="border-t border-border/80 bg-card/95 px-4 py-4 backdrop-blur-md">
+      <div
+        className="max-h-[70vh] overflow-y-auto border-t border-border/80 bg-card/95 px-4 py-4 backdrop-blur-md transition-shadow data-[review-flash=true]:ring-2 data-[review-flash=true]:ring-primary/35"
+        data-coding-session-interruption-panel
+      >
+        <div className="space-y-4">
       {session?.pause_reason === 'authentication' ? (
         <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-950/20">
           <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
@@ -418,49 +626,130 @@ function InterruptionOverlay({
           interaction={activeInteraction}
           acting={acting}
           onResolve={onResolveInteraction}
+          availablePreviewPanelKey={availablePreviewPanelKey}
+          attachedPreview={attachedPreview}
+          onViewPreview={onViewPreview}
           compact
         />
       ) : null}
+      {activeInteraction && reviewArtifacts.length > 0 ? (
+        <CodingReviewHistoryPanel reviewArtifacts={reviewArtifacts} />
+      ) : null}
+          <div
+            aria-hidden="true"
+            className="h-[calc(env(safe-area-inset-bottom)+5rem)]"
+            data-coding-session-interruption-spacer
+          />
+        </div>
       </div>
     </div>
   );
 }
 
-function MessageInput({ onSend, sending }: { onSend: (content: string) => Promise<void>; sending: boolean }) {
+function MessageInput({
+  onSend,
+  sending,
+  enabled,
+  placeholder,
+  disabledReason,
+}: {
+  onSend?: (content: string) => Promise<void>;
+  sending: boolean;
+  enabled: boolean;
+  placeholder: string;
+  disabledReason?: string;
+}) {
   const [value, setValue] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const disabled = !enabled || sending;
+  const resizeTextarea = useCallback((textarea = textareaRef.current) => {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(textarea.scrollHeight, 128);
+    textarea.style.height = nextHeight > 0 ? `${nextHeight}px` : '';
+    textarea.style.overflowY = textarea.scrollHeight > 128 ? 'auto' : 'hidden';
+  }, []);
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [resizeTextarea, value]);
 
   const handleSubmit = async () => {
     const trimmed = value.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || disabled || !onSend) return;
     await onSend(trimmed);
     setValue('');
   };
 
   return (
-    <div className="border-t border-border bg-background px-3 py-3">
+    <div className="border-t border-border bg-background px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3">
       <div className="flex items-center gap-2">
         <Textarea
+          ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            setValue(e.target.value);
+            resizeTextarea(e.currentTarget);
+          }}
           onKeyDown={(e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
               e.preventDefault();
               void handleSubmit();
             }
           }}
-          placeholder="Reply to agent… (⌘↵ to send)"
-          className="min-h-[2.5rem] max-h-32 resize-none text-sm"
-          disabled={sending}
+          placeholder={placeholder}
+          className="min-h-[2.5rem] max-h-32 resize-none overflow-hidden text-sm focus-visible:border-ring/70 focus-visible:ring-2 focus-visible:ring-ring/15"
+          disabled={disabled}
+          title={disabledReason}
           rows={1}
         />
         <Button
           size="icon"
           className="h-10 w-10 shrink-0 rounded-full"
           onClick={() => void handleSubmit()}
-          disabled={!value.trim() || sending}
+          disabled={!enabled || !value.trim() || sending}
+          data-coding-session-message-submit
+          title={disabledReason}
         >
           {sending ? <Loading01Icon className="h-5 w-5 animate-spin" /> : <ArrowUp02Icon className="h-5 w-5" />}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function RunContextDisclosure({ message }: { message: CodingSessionTranscriptMessage }) {
+  const label = message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt';
+  return (
+    <details className="mb-3 rounded-lg border border-border/70 bg-muted/25 px-3 py-2">
+      <summary className="cursor-pointer list-none text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Run context
+      </summary>
+      <div className="mt-2 border-t border-border/60 pt-2">
+        <div className="mb-1 text-[11px] font-medium text-muted-foreground">{label}</div>
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground/80">
+          {message.content}
+        </pre>
+      </div>
+    </details>
+  );
+}
+
+function StatusTimelineRow({ message }: { message: CodingSessionTranscriptMessage }) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted/60 text-muted-foreground">
+          <Loading01Icon className="h-3.5 w-3.5" />
+        </div>
+        <div className="mt-1 h-full min-h-[1rem] w-px bg-border/50" />
+      </div>
+      <div className="min-w-0 flex-1 pb-4">
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-xs font-medium text-muted-foreground">Status</span>
+          <span className="text-[11px] text-muted-foreground">{formatCodingSessionRelative(message.timestamp)}</span>
+        </div>
+        <p className="text-[13px] leading-6 text-muted-foreground">{message.content}</p>
       </div>
     </div>
   );
@@ -585,6 +874,20 @@ function TranscriptEntry({
     );
   }
 
+  if (message.message_type === 'developer_prompt' || message.message_type === 'system_prompt') {
+    return (
+      <PromptTranscriptCard
+        content={message.content}
+        timestamp={message.timestamp}
+        label={message.message_type === 'system_prompt' ? 'System prompt' : 'Developer prompt'}
+      />
+    );
+  }
+
+  if (message.message_type === 'review_checkpoint_resolution' || message.message_type === 'approval_request_resolution') {
+    return <ReviewDecisionTranscriptCard content={message.content} timestamp={message.timestamp} actor={actor ?? null} />;
+  }
+
   const actorLabel = actor?.full_name || actor?.email || 'User';
 
   return (
@@ -592,18 +895,12 @@ function TranscriptEntry({
       <div className="flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
         <span>{formatCodingSessionRelative(message.timestamp)}</span>
         <span className="font-medium">{actorLabel}</span>
-        {actor ? (
-          <UserAvatar
-            name={actorLabel}
-            avatarUrl={actor.avatar_url}
-            className="h-6 w-6"
-            fallbackClassName="text-[10px]"
-          />
-        ) : (
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[10px] text-white">
-            <UserIcon className="h-3 w-3" />
-          </span>
-        )}
+        <UserAvatar
+          name={actorLabel}
+          avatarUrl={actor?.avatar_url}
+          className="h-6 w-6"
+          fallbackClassName="text-[10px]"
+        />
       </div>
 
       {message.content.trim() ? (
@@ -613,6 +910,68 @@ function TranscriptEntry({
           placeholder={placeholder}
         />
       ) : null}
+    </div>
+  );
+}
+
+function PromptTranscriptCard({
+  content,
+  timestamp,
+  label,
+}: {
+  content: string;
+  timestamp: string;
+  label: string;
+}) {
+  return (
+    <div className="w-full max-w-[90%]">
+      <div className="mb-2 flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(timestamp)}</span>
+        <span className="font-medium">{label}</span>
+      </div>
+      <details className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3">
+        <summary className="cursor-pointer list-none text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </summary>
+        <pre className="mt-3 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-foreground">
+          {content}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function ReviewDecisionTranscriptCard({
+  content,
+  timestamp,
+  actor,
+}: {
+  content: string;
+  timestamp: string;
+  actor: CodingSessionActor | null;
+}) {
+  const reviewerName = actor?.full_name || actor?.email || 'Reviewer';
+  const normalizedContent = content.trim().toLowerCase();
+  const decisionLabel = normalizedContent.startsWith('requested changes')
+    ? 'requested changes'
+    : normalizedContent.startsWith('approved')
+      ? 'approved'
+      : 'reviewed';
+  return (
+    <div className="ml-auto w-full max-w-[90%]">
+      <div className="mb-2 flex items-center justify-end gap-2 px-1 text-[11px] text-muted-foreground">
+        <span>{formatCodingSessionRelative(timestamp)}</span>
+        <span className="font-medium">{reviewerName} {decisionLabel}</span>
+        <UserAvatar
+          name={reviewerName}
+          avatarUrl={actor?.avatar_url}
+          className="h-6 w-6"
+          fallbackClassName="text-[10px]"
+        />
+      </div>
+      <div className="rounded-2xl rounded-br-sm bg-blue-50 px-3.5 py-2.5 text-sm leading-relaxed text-foreground/85 shadow-sm dark:bg-blue-950/40 dark:text-foreground">
+        <MarkdownContent content={content} className="text-inherit" />
+      </div>
     </div>
   );
 }
@@ -628,18 +987,18 @@ function toolCallTimelineKey(toolCall: CodingSessionLiveToolCall) {
 
 const CONTENT_COLLAPSE_CHAR_THRESHOLD = 600;
 
-function CollapsibleMarkdown({ content }: { content: string }) {
+function CollapsibleMarkdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = content.length > CONTENT_COLLAPSE_CHAR_THRESHOLD;
 
   if (!isLong) {
-    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />;
+    return <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />;
   }
 
   return (
     <div>
       <div className={cn('relative', !expanded && 'max-h-[10rem] overflow-hidden')}>
-        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground" />
+        <MarkdownContent content={content} className="text-[13px] leading-6 text-foreground/85 dark:text-foreground" streaming={streaming} />
         {!expanded && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
         )}
@@ -683,7 +1042,7 @@ function AssistantTimelineRow({
           <span className="text-xs font-medium text-foreground">Assistant</span>
           {live ? (
             <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-              {streaming ? 'Live' : 'Finishing'}
+              {streaming ? 'Live' : 'Update'}
             </Badge>
           ) : null}
         </div>
@@ -691,7 +1050,7 @@ function AssistantTimelineRow({
         {placeholder ? (
           <div className="whitespace-pre-wrap text-[13px] leading-6 text-muted-foreground">{content}</div>
         ) : (
-          <CollapsibleMarkdown content={content} />
+          <CollapsibleMarkdown content={content} streaming={live && streaming} />
         )}
       </div>
     </div>
@@ -714,8 +1073,8 @@ function AssistantMessageBubble({
     <div className={cn(
       'max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm',
       isAssistant
-        ? 'rounded-bl-sm border border-border/60 bg-background text-foreground'
-        : 'rounded-br-sm bg-blue-600 text-white dark:bg-blue-500',
+        ? 'rounded-bl-sm border border-border/60 bg-background text-foreground/85 dark:text-foreground'
+        : 'rounded-br-sm bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground',
       placeholder && 'border-dashed text-muted-foreground',
     )}>
       {placeholder ? (
@@ -727,7 +1086,7 @@ function AssistantMessageBubble({
             {!expanded && (
               <div className={cn(
                 'pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t to-transparent',
-                isAssistant ? 'from-background' : 'from-blue-600 dark:from-blue-500',
+                isAssistant ? 'from-background' : 'from-blue-50 dark:from-blue-950/40',
               )} />
             )}
           </div>
@@ -735,7 +1094,7 @@ function AssistantMessageBubble({
             type="button"
             className={cn(
               'mt-1 text-[11px] font-medium hover:underline',
-              isAssistant ? 'text-primary' : 'text-white/80',
+              isAssistant ? 'text-primary' : 'text-blue-700 dark:text-blue-200',
             )}
             onClick={() => setExpanded((prev) => !prev)}
           >
@@ -752,34 +1111,65 @@ function AssistantMessageBubble({
 // ─── Running indicator ──────────────────────────────────────────────────────
 
 function formatElapsed(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
-  return `${s}s`;
+  return formatCodingSessionElapsed(ms);
 }
 
 /** Subscribes to a 1-second tick so elapsed time stays live. */
 function useElapsedMs(since: string): number {
   const origin = useMemo(() => new Date(since).getTime(), [since]);
-  const subscribe = useCallback((cb: () => void) => {
-    const id = setInterval(cb, 1_000);
-    return () => clearInterval(id);
-  }, []);
-  const getSnapshot = useCallback(() => Math.floor((Date.now() - origin) / 1000), [origin]);
-  const tick = useSyncExternalStore(subscribe, getSnapshot);
-  return tick * 1000;
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, [origin]);
+
+  if (!origin || Number.isNaN(origin)) return 0;
+  return Math.max(0, now - origin);
 }
 
-function RunningIndicator({ since }: { since: string }) {
+function RunningEllipsis() {
+  const [dotCount, setDotCount] = useState(1);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setDotCount((current) => current === 3 ? 1 : current + 1);
+    }, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <span aria-hidden className="inline-block w-[1.25em] text-left" data-agent-running-ellipsis>
+      {'.'.repeat(dotCount)}
+    </span>
+  );
+}
+
+function RunningActivityRow({ since }: { since: string }) {
   const elapsed = useElapsedMs(since);
   return (
-    <div className="flex items-center gap-2.5 border-t border-border bg-muted/50 px-4 py-2">
-      <Loading01Icon className="h-3.5 w-3.5 animate-spin text-primary" />
-      <span className="text-xs font-medium text-primary">Running</span>
-      <span className="ml-auto text-xs tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
+    <div className="flex gap-3" data-coding-session-running-activity>
+      <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 shadow-sm">
+        <span
+          aria-hidden
+          className="absolute inset-0 animate-ping rounded-full bg-primary/20"
+          data-agent-running-halo
+        />
+        <UnicodeSpinner
+          name="braille"
+          className="agent-working-chroma relative text-base leading-none"
+          data-agent-working-spinner
+        />
+      </div>
+      <div className="min-w-0 flex-1 pb-4">
+        <div className="flex min-h-7 items-center gap-2">
+          <span className="text-xs font-medium text-foreground/80">
+            Agent running<RunningEllipsis />
+          </span>
+          <span className="text-[11px] tabular-nums text-muted-foreground">{formatElapsed(elapsed)}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -800,6 +1190,12 @@ function toolChrome(toolName: string, isFailed: boolean, isRunning: boolean): { 
     };
   }
   const name = toolName.toLowerCase();
+  if (name.includes('web_search')) {
+    return {
+      icon: <Globe02Icon className="h-3.5 w-3.5" />,
+      iconClass: 'bg-sky-50 border-sky-200 dark:bg-sky-950/20 dark:border-sky-900/50 text-sky-600 dark:text-sky-400',
+    };
+  }
   if (name === 'run_command' || name === 'bash' || name.includes('shell') || name.includes('exec')) {
     return {
       icon: <TerminalIcon className="h-3.5 w-3.5" />,

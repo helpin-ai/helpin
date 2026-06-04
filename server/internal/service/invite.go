@@ -482,6 +482,7 @@ func (s *InviteService) RevokeInvitation(ctx context.Context, invitationID, user
 			return fmt.Errorf("revoke pending workspace member: %w", err)
 		}
 	}
+	s.cleanupInvitationPreassignments(ctx, invitationID)
 
 	s.logger.InfoContext(ctx, "invitation revoked",
 		"invitation_id", invitationID,
@@ -519,6 +520,7 @@ func (s *InviteService) autoAssignTeams(ctx context.Context, inv *model.Workspac
 				)
 			}
 		}
+		s.cleanupInvitationPreassignments(ctx, inv.ID)
 		return
 	}
 
@@ -540,6 +542,19 @@ func (s *InviteService) autoAssignTeams(ctx context.Context, inv *model.Workspac
 				"user_id", userID,
 			)
 		}
+	}
+	s.cleanupInvitationPreassignments(ctx, inv.ID)
+}
+
+// cleanupInvitationPreassignments removes all team preassignment rows for an invitation
+// that has reached a terminal state. Logged but not propagated — cleanup failure must not
+// block invitation acceptance or revocation.
+func (s *InviteService) cleanupInvitationPreassignments(ctx context.Context, invitationID string) {
+	if err := s.settingsRepo.RemoveAllInvitationTeamPreassignmentsByInvitation(ctx, invitationID); err != nil {
+		s.logger.ErrorContext(ctx, "failed to cleanup invitation preassignments",
+			"error", err,
+			"invitation_id", invitationID,
+		)
 	}
 }
 

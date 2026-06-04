@@ -6,6 +6,7 @@ import {
   startTokenRefreshTimer as startSharedTokenRefreshTimer,
   stopTokenRefreshTimer as stopSharedTokenRefreshTimer,
 } from '@helpin-ai/support-core'
+import { buildLoginPathForCurrentLocation, storeRedirectAfterLogin } from '@/lib/authRedirect'
 
 export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api'
 
@@ -13,7 +14,8 @@ export type { ApiResponse } from '@helpin-ai/support-core'
 
 const handleUnauthorized = () => {
   if (typeof window !== 'undefined') {
-    window.location.href = '/login'
+    storeRedirectAfterLogin()
+    window.location.href = buildLoginPathForCurrentLocation()
   }
 }
 

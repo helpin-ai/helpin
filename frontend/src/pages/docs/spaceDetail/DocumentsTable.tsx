@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
@@ -13,6 +14,7 @@ import {
   FolderOpenIcon,
   MoreHorizontalIcon,
   PlusSignIcon,
+  Search01Icon,
   SentIcon,
   Tick01Icon,
 } from '@/lib/icons'
@@ -22,7 +24,7 @@ import type { DocsDocument, DocStatus } from '@/lib/docsTypes'
 import type { AssignableMember } from '@/lib/types'
 import { UserAvatar } from '@/components/pm/UserAvatar'
 import { formatAssignableMemberName } from '@/lib/assignableMembers'
-import { QuickTooltip } from '@/components/ui/quick-tooltip'
+import { PendingProposalBadge } from '@/components/docs/proposals/PendingProposalBadge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -129,12 +131,18 @@ export function DocumentsTable({
   onCreateCollection,
 }: DocumentsTableProps) {
   const navigate = useNavigate()
+  const [searchQuery, setSearchQuery] = useState('')
 
   const showStatusFilter = hasCollections && (documents.length > 0 || Boolean(filterStatus))
 
+  // Filter by search query, then sort.
+  const filtered = searchQuery.trim()
+    ? documents.filter((d) => d.title?.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : documents
+
   // Sort the scoped documents. Kept local to match the existing
   // inline implementation — the caller does not need to pre-sort.
-  const displayDocs = [...documents].sort((a, b) => {
+  const displayDocs = [...filtered].sort((a, b) => {
     let cmp = 0
     switch (sortField) {
       case 'title':
@@ -166,9 +174,21 @@ export function DocumentsTable({
     <>
       {showStatusFilter && (
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`}
-          </span>
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative w-64">
+              <Search01Icon className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground/60" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-md border border-border/60 bg-background py-1 pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/50 focus:border-primary/40 focus:ring-1 focus:ring-primary/20"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground shrink-0">
+              {displayDocs.length === 1 ? '1 document' : `${displayDocs.length} documents`}
+            </span>
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -256,7 +276,7 @@ export function DocumentsTable({
               {sortField === 'title' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
             </button>
             <span className="w-36 shrink-0">Owner</span>
-            <span className="w-28 shrink-0">Collection</span>
+            <span className="w-40 shrink-0">Collection</span>
             <button
               type="button"
               onClick={() => cycleSort('status')}
@@ -265,20 +285,12 @@ export function DocumentsTable({
               Status
               {sortField === 'status' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
             </button>
-            <QuickTooltip label="Display order on the public help center">
-              <button
-                type="button"
-                onClick={() => cycleSort('position')}
-                className="w-14 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
-              >
-                Order
-                {sortField === 'position' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
-              </button>
-            </QuickTooltip>
+            {/* Order column removed — sort_key model makes position
+                numbers misleading when docs span multiple sub-collections. */}
             <button
               type="button"
               onClick={() => cycleSort('updated_at')}
-              className="w-20 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
+              className="w-24 shrink-0 flex items-center gap-1 hover:text-foreground transition-colors"
             >
               Updated
               {sortField === 'updated_at' && (sortDir === 'asc' ? <ArrowUp02Icon className="h-3 w-3" /> : <ArrowDown02Icon className="h-3 w-3" />)}
@@ -304,6 +316,7 @@ export function DocumentsTable({
                 >
                   <File01Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 truncate font-medium">{doc.title}</span>
+                  <PendingProposalBadge count={doc.pending_change_proposal_count ?? 0} />
                 </button>
                 <span className="w-36 shrink-0 truncate text-xs text-muted-foreground">
                   {owner ? (
@@ -318,20 +331,20 @@ export function DocumentsTable({
                     </span>
                   ) : '—'}
                 </span>
-                <span className="w-28 shrink-0 truncate text-xs text-muted-foreground">
+                <span className="w-40 shrink-0 truncate text-xs text-muted-foreground" title={doc.collection_id ? (collectionNames.get(doc.collection_id) ?? '') : ''}>
                   {doc.collection_id ? (
-                    <span style={{ paddingLeft: `${(collectionDepths?.get(doc.collection_id) ?? 0) * 12}px` }}>
+                    <>
+                      {(collectionDepths?.get(doc.collection_id) ?? 0) > 0 && (
+                        <span className="text-muted-foreground/50 mr-0.5">↳</span>
+                      )}
                       {collectionNames.get(doc.collection_id) ?? '—'}
-                    </span>
+                    </>
                   ) : '—'}
                 </span>
                 <span className={`w-20 shrink-0 text-xs font-medium ${statusColor(doc.status)}`}>
                   {DOC_STATUS_LABELS[doc.status] ?? doc.status}
                 </span>
-                <span className="w-14 shrink-0 text-xs text-muted-foreground">
-                  {doc.position + 1}
-                </span>
-                <span className="w-20 shrink-0 text-xs text-muted-foreground">
+                <span className="w-24 shrink-0 text-xs text-muted-foreground">
                   {timeAgo(doc.updated_at)}
                 </span>
                 {canEdit && (

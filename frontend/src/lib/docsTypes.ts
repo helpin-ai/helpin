@@ -5,9 +5,9 @@
 export type DocStatus = 'draft' | 'published' | 'archived';
 export type SpaceType = 'internal' | 'external_capable';
 export type SpaceVisibility = 'workspace_wide' | 'team_only';
-export type VersionType = 'manual' | 'auto' | 'publish' | 'revert';
+export type VersionType = 'manual' | 'auto' | 'publish' | 'revert' | 'proposal_apply';
 export type LinkContext = 'attached' | 'mentioned' | 'created_from' | 'linked_in_content';
-export type LinkedObjectType = 'epic' | 'task' | 'story' | 'project' | 'objective' | 'sprint' | 'support_conversation';
+export type LinkedObjectType = 'epic' | 'task' | 'story' | 'project' | 'objective' | 'sprint' | 'support_conversation' | 'deal' | 'contact' | 'company';
 
 // ─── Core models ────────────────────────────────────────────────────────────
 
@@ -46,6 +46,7 @@ export interface DocsCollection {
   description?: string;
   icon?: string;
   position: number;
+  sort_key: string;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -67,6 +68,7 @@ export interface DocsDocument {
   icon?: string;
   tags: string[];
   position: number;
+  sort_key: string;
   is_pinned: boolean;
   is_publicly_shared: boolean;
   share_token?: string;
@@ -80,9 +82,14 @@ export interface DocsDocument {
   updated_at: string;
   deleted_at?: string;
   hc_slug?: string;
+  hc_og_title?: string;
+  hc_og_description?: string;
+  hc_og_image_url?: string;
+  hc_og_image_alt?: string;
   has_unpublished_changes?: boolean;
   live_published_at?: string;
   live_slug?: string;
+  pending_change_proposal_count?: number;
 }
 
 export interface DocsContent {
@@ -93,6 +100,157 @@ export interface DocsContent {
   word_count: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface DocsBlock {
+  id: string;
+  workspace_id: string;
+  document_id: string;
+  parent_id?: string | null;
+  type: string;
+  content: unknown;
+  content_text?: string;
+  sort_key: string;
+  revision: number;
+  authored_by?: string | null;
+  last_edited_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string | null;
+  agent_readable?: DocsBlockAgentProjection;
+}
+
+export interface DocsBlockAgentProjection {
+  kind: string;
+  block_id: string;
+  text?: string;
+  attrs?: Record<string, unknown>;
+  entity_refs?: DocsBlockAgentRef[];
+  citations?: DocsBlockAgentRef[];
+  actions?: DocsBlockAgentAction[];
+}
+
+export interface DocsBlockAgentRef {
+  type: string;
+  id: string;
+  title?: string;
+  access?: 'granted' | 'redacted' | 'unknown';
+  redacted?: boolean;
+}
+
+export interface DocsBlockAgentAction {
+  type: string;
+  label: string;
+}
+
+export interface DocsAISectionCandidate {
+  id: string;
+  workspace_id: string;
+  document_id: string;
+  block_id: string;
+  agent_run_id?: string | null;
+  status: 'ready' | 'approved' | 'rejected' | 'failed';
+  current_content: unknown;
+  candidate_content: unknown;
+  candidate_text?: string;
+  source_refs?: unknown;
+  prompt?: string | null;
+  prompt_hash?: string | null;
+  model?: string | null;
+  created_by: string;
+  approved_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AISectionCandidateResponse {
+  candidate: DocsAISectionCandidate | null;
+  agent_run?: import('./pmTypes').AgentRun;
+  content?: DocsContent;
+}
+
+export interface DocsChangeProposalSource {
+  type: 'conversation' | 'document' | 'url' | 'agent_run' | 'coverage_gap';
+  id?: string;
+  label: string;
+  url?: string;
+}
+
+export interface DocsChangeProposal {
+  id: string;
+  workspace_id: string;
+  document_id: string;
+  block_id?: string | null;
+  agent_id?: string | null;
+  agent_run_id?: string | null;
+  scope: 'document' | 'block';
+  status: 'pending' | 'applied' | 'discarded' | string;
+  revision?: number;
+  summary: string;
+  content_markdown: string;
+  content: unknown;
+  sources?: DocsChangeProposalSource[];
+  created_by: string;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocsChangeProposalApplyResponse {
+  proposal: DocsChangeProposal;
+  content: DocsContent;
+}
+
+export interface DocsReferenceItem {
+  id: string;
+  kind: 'doc_link' | 'entity_embed' | 'citation' | 'comment' | 'agent_run' | string;
+  title: string;
+  description?: string;
+  document_id?: string;
+  block_id?: string;
+  entity_type?: string;
+  entity_id?: string;
+  reference_id?: string;
+  reference_url?: string;
+  status?: 'available' | 'unavailable' | string;
+  access?: 'granted' | 'unavailable' | string;
+  created_at?: string;
+}
+
+export interface DocsReferencesResponse {
+  items: DocsReferenceItem[];
+}
+
+export interface DocsEntityRefRequest {
+  entity_type: string;
+  entity_id: string;
+  label?: string;
+  display_id?: string | number | null;
+}
+
+export interface DocsResolvedEntityRef {
+  entity_type: string;
+  entity_id: string;
+  status: 'available' | 'unavailable';
+  access: 'granted' | 'unavailable' | 'redacted';
+  title: string;
+  display_id?: string | number | null;
+  meta?: string;
+  state_label?: string;
+  href?: string;
+}
+
+export interface ResolveDocsEntityRefsResponse {
+  refs: DocsResolvedEntityRef[];
+}
+
+export interface DocsResolvedEmbed {
+  url: string;
+  provider: string;
+  title: string;
+  description?: string;
+  image_url?: string | null;
 }
 
 export interface DocsVersion {
@@ -123,6 +281,7 @@ export interface DocsLink {
 }
 
 export type HelpcenterThemeMode = 'light' | 'dark' | 'system';
+export type HelpcenterPublicUrlMode = 'hosted_subdomain' | 'custom_domain' | 'reverse_proxy';
 
 export type HelpcenterHeaderLinkStyle = 'text' | 'button';
 
@@ -171,6 +330,9 @@ export interface DocsHelpcenterConfig {
   workspace_id: string;
   subdomain: string;
   custom_domain?: string;
+  public_url_mode: HelpcenterPublicUrlMode;
+  reverse_proxy_host?: string;
+  reverse_proxy_base_path?: string;
   brand_name: string;
   brand_logo_url?: string;
   brand_logo_dark_url?: string;
@@ -190,6 +352,10 @@ export interface DocsHelpcenterConfig {
   is_published: boolean;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   support_email?: string;
   created_at: string;
   updated_at: string;
@@ -200,6 +366,10 @@ export interface DocsHelpcenterArticle {
   document_id: string;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   helpful_count: number;
   not_helpful_count: number;
   view_count: number;
@@ -258,6 +428,10 @@ export interface DocsHelpcenterArticleTranslation {
   content_text: string;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   status: DocsHelpcenterTranslationStatus;
   source_updated_at?: string;
   source_synced: boolean;
@@ -342,6 +516,10 @@ export interface UpsertDocsHelpcenterArticleTranslationRequest {
   content: unknown;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   status?: DocsHelpcenterTranslationStatus;
 }
 
@@ -446,6 +624,17 @@ export interface UpdateDocsCollectionRequest {
   parent_collection_id?: string | null;
 }
 
+export interface DocsCollectionDeleteImpact {
+  collection_id: string;
+  collection_name: string;
+  space_id: string;
+  collection_count: number;
+  document_count: number;
+  archived_document_count: number;
+  published_document_count: number;
+  public_document_count: number;
+}
+
 export interface CreateDocsDocumentRequest {
   space_id: string;
   collection_id?: string;
@@ -476,6 +665,17 @@ export interface SaveDocsContentRequest {
   content: unknown;
 }
 
+export interface PublishDocsDocumentRequest {
+  slug?: string;
+  published_content?: unknown;
+}
+
+export interface PublishDocsHelpcenterArticleTranslationRequest {
+  locale: string;
+  slug?: string;
+  published_content?: unknown;
+}
+
 export interface CreateDocsVersionRequest {
   snapshot_label?: string;
 }
@@ -493,6 +693,9 @@ export interface CreateDocsLinkRequest {
 export interface UpdateDocsHelpcenterConfigRequest {
   subdomain?: string;
   custom_domain?: string;
+  public_url_mode?: HelpcenterPublicUrlMode;
+  reverse_proxy_host?: string;
+  reverse_proxy_base_path?: string;
   brand_name?: string;
   brand_logo_url?: string;
   brand_logo_dark_url?: string;
@@ -508,7 +711,18 @@ export interface UpdateDocsHelpcenterConfigRequest {
   is_published?: boolean;
   seo_title?: string;
   seo_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
   support_email?: string;
+}
+
+export interface UpdateDocsHelpcenterArticleMetadataRequest {
+  og_title?: string;
+  og_description?: string;
+  og_image_url?: string;
+  og_image_alt?: string;
 }
 
 export interface DocsArticleFeedbackRequest {
@@ -549,6 +763,55 @@ export interface ReorderDocsDocumentsRequest {
   document_ids: string[];
 }
 
+export interface DocsSpaceDeleteImpact {
+  space_id: string;
+  space_name: string;
+  collection_count: number;
+  document_count: number;
+  archived_document_count: number;
+  published_document_count: number;
+  public_document_count: number;
+}
+
+export interface ReorderDocsChildItem {
+  kind: 'collection' | 'article';
+  id: string;
+}
+
+/**
+ * Cross-type reorder payload. Reassigns positions to a mixed list of
+ * collections and articles that share the same parent (or the space
+ * root when parent_collection_id is nil/empty). Positions are assigned
+ * sequentially by index across both types in one server transaction.
+ */
+export interface ReorderDocsChildrenRequest {
+  parent_collection_id?: string | null;
+  items: ReorderDocsChildItem[];
+}
+
+// ─── Move (sort-key based) ──────────────────────────────────────────────────
+
+export interface MoveDocsItemRef {
+  type: 'doc' | 'collection';
+  id: string;
+}
+
+export interface MoveDocsBucketRef {
+  space_id: string;
+  parent_collection_id?: string | null;
+}
+
+export interface MoveDocsPositionRef {
+  before?: MoveDocsItemRef | null;
+  after?: MoveDocsItemRef | null;
+}
+
+export interface MoveDocsItemRequest {
+  item: MoveDocsItemRef;
+  target_bucket: MoveDocsBucketRef;
+  position: MoveDocsPositionRef;
+}
+
 // ─── Display helpers ────────────────────────────────────────────────────────
 
 export const DOC_STATUS_LABELS: Record<DocStatus, string> = {
@@ -562,4 +825,5 @@ export const VERSION_TYPE_LABELS: Record<VersionType, string> = {
   auto: 'Auto',
   publish: 'Published',
   revert: 'Reverted',
+  proposal_apply: 'Applied',
 };

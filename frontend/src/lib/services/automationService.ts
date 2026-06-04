@@ -1,4 +1,4 @@
-import { api } from '../api';
+import { api, API_BASE } from '../api';
 import type {
   AutomationInventoryResponse,
   AutomationTriggerCatalogEntry,
@@ -7,22 +7,37 @@ import type {
 } from '../types';
 import type {
   Agent,
+  AgentTemplate,
   AgentRun,
   AgentRunArtifact,
   AgentRunMessage,
   AgentTriggerUsageSummary,
   ApproveAgentRunRequest,
+  ContinueAgentRunRequest,
   AutomationRule,
   CreateAgentRequest,
+  CustomAgentDraftRequest,
+  CustomAgentDraftResponse,
+  CreateAgentFromTemplateRequest,
+  CreateAgentFromTemplateResponse,
   CreateAutomationRuleRequest,
+  FlowTemplateManifest,
+  CreateWorkspaceSkillRequest,
   HandoffAgentRunRequest,
+  InstallFlowTemplateRequest,
+  InstallFlowTemplateResponse,
+  UninstallFlowTemplateRequest,
+  UninstallFlowTemplateResponse,
   PaginatedResponse,
   ResumeAgentRunRequest,
   SendAgentRunMessageRequest,
   SendAgentRunRequestChangesRequest,
+  SkillCatalogResponse,
   ToolCatalogResponse,
   UpdateAgentRequest,
   UpdateAutomationRuleRequest,
+  UpdateWorkspaceSkillRequest,
+  WorkspaceSkillResponse,
 } from '../pmTypes';
 
 const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspaceId)}`;
@@ -35,6 +50,7 @@ const activityQS = (workspaceId: string, filters: AutomationTriggerExecutionFilt
   if (filters.status) params.set('status', filters.status);
   if (filters.source) params.set('source', filters.source);
   if (filters.reference_id) params.set('reference_id', filters.reference_id);
+  if (filters.run_id) params.set('run_id', filters.run_id);
   if (filters.fired_after) params.set('fired_after', filters.fired_after);
   if (filters.fired_before) params.set('fired_before', filters.fired_before);
   if (filters.page && filters.page > 0) params.set('page', String(filters.page));
@@ -55,6 +71,18 @@ export const automationService = {
   listFlowsByWorkflow: (workspaceId: string, workflowId: string) =>
     api.get<AutomationRule[]>(`/automation/flows${qs(workspaceId)}&workflow_id=${encodeURIComponent(workflowId)}`),
 
+  listFlowTemplates: (workspaceId: string) =>
+    api.get<FlowTemplateManifest[]>(`/automation/templates${qs(workspaceId)}`),
+
+  getFlowTemplate: (workspaceId: string, key: string) =>
+    api.get<FlowTemplateManifest>(`/automation/templates/${key}${qs(workspaceId)}`),
+
+  installFlowTemplate: (workspaceId: string, key: string, payload: InstallFlowTemplateRequest) =>
+    api.post<InstallFlowTemplateResponse>(`/automation/templates/${key}/install${qs(workspaceId)}`, payload),
+
+  uninstallFlowTemplate: (workspaceId: string, instanceId: string, payload: UninstallFlowTemplateRequest) =>
+    api.post<UninstallFlowTemplateResponse>(`/automation/template-instances/${instanceId}/uninstall${qs(workspaceId)}`, payload),
+
   createFlow: (workspaceId: string, data: CreateAutomationRuleRequest) =>
     api.post<AutomationRule>(`/automation/flows${qs(workspaceId)}`, data),
 
@@ -73,8 +101,47 @@ export const automationService = {
   listToolCatalog: (workspaceId: string) =>
     api.get<ToolCatalogResponse>(`/automation/library/tools${qs(workspaceId)}`),
 
+  listSkillCatalog: (workspaceId: string) =>
+    api.get<SkillCatalogResponse>(`/automation/library/skills${qs(workspaceId)}`),
+
+  createSkill: (workspaceId: string, data: CreateWorkspaceSkillRequest) =>
+    api.post<WorkspaceSkillResponse>(`/automation/library/skills${qs(workspaceId)}`, data),
+
+  importSkill: async (workspaceId: string, file: File, sourceRuntime?: string): Promise<{ data: WorkspaceSkillResponse | null; error: string | null }> => {
+    const formData = new FormData();
+    formData.append('archive', file);
+    if (sourceRuntime) formData.append('source_runtime', sourceRuntime);
+    try {
+      const res = await fetch(`${API_BASE}/automation/library/skills/import${qs(workspaceId)}`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        return { data: null, error: err.error || res.statusText };
+      }
+      const data = await res.json();
+      return { data, error: null };
+    } catch {
+      return { data: null, error: 'Network error' };
+    }
+  },
+
+  updateSkill: (workspaceId: string, skillId: string, data: UpdateWorkspaceSkillRequest) =>
+    api.put<WorkspaceSkillResponse>(`/automation/library/skills/${skillId}${qs(workspaceId)}`, data),
+
+  deleteSkill: (workspaceId: string, skillId: string) =>
+    api.del(`/automation/library/skills/${skillId}${qs(workspaceId)}`),
+
   listAgents: (workspaceId: string) =>
     api.get<Agent[]>(`/automation/agents${qs(workspaceId)}`),
+
+  listAgentTemplates: (workspaceId: string) =>
+    api.get<AgentTemplate[]>(`/automation/agent-templates${qs(workspaceId)}`),
+
+  getAgentTemplate: (workspaceId: string, id: string) =>
+    api.get<AgentTemplate>(`/automation/agent-templates/${id}${qs(workspaceId)}`),
 
   getAgent: (workspaceId: string, id: string) =>
     api.get<Agent>(`/automation/agents/${id}${qs(workspaceId)}`),
@@ -84,6 +151,12 @@ export const automationService = {
 
   createAgent: (workspaceId: string, payload: CreateAgentRequest) =>
     api.post<Agent>(`/automation/agents${qs(workspaceId)}`, payload),
+
+  draftCustomAgent: (workspaceId: string, payload: CustomAgentDraftRequest) =>
+    api.post<CustomAgentDraftResponse>(`/automation/agents/draft${qs(workspaceId)}`, payload),
+
+  createAgentFromTemplate: (workspaceId: string, templateId: string, payload: CreateAgentFromTemplateRequest) =>
+    api.post<CreateAgentFromTemplateResponse>(`/automation/agent-templates/${templateId}/create-agent${qs(workspaceId)}`, payload),
 
   updateAgent: (workspaceId: string, id: string, payload: UpdateAgentRequest) =>
     api.put<Agent>(`/automation/agents/${id}${qs(workspaceId)}`, payload),
@@ -114,6 +187,9 @@ export const automationService = {
 
   resumeRun: (workspaceId: string, runId: string, payload: ResumeAgentRunRequest) =>
     api.post<AgentRun>(`/automation/runs/${runId}/resume${qs(workspaceId)}`, payload),
+
+  continueRun: (workspaceId: string, runId: string, payload?: ContinueAgentRunRequest) =>
+    api.post<AgentRun>(`/automation/runs/${runId}/continue${qs(workspaceId)}`, payload ?? {}),
 
   cancelRun: (workspaceId: string, runId: string) =>
     api.post<AgentRun>(`/automation/runs/${runId}/cancel${qs(workspaceId)}`, {}),

@@ -85,7 +85,7 @@ func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 	stories := []model.ProposedTask{
 		{
 			Name:               "Stabilize ingest",
-			TaskType:          "task",
+			TaskType:           "task",
 			Priority:           &priority,
 			AcceptanceCriteria: []string{"Ingest completes successfully"},
 		},
@@ -107,7 +107,7 @@ func TestValidatePlanningStoriesSanitizesImplementationBrief(t *testing.T) {
 	stories := []model.ProposedTask{
 		{
 			Name:               "Render structured planner questions",
-			TaskType:          "feature",
+			TaskType:           "feature",
 			Priority:           &priority,
 			AcceptanceCriteria: []string{"Question blocks render inline"},
 			ImplementationBrief: &model.TaskImplementationBrief{
@@ -158,7 +158,7 @@ func TestValidatePlanningStoriesReturnsRepairOrientedErrorForMissingName(t *test
 	stories := []model.ProposedTask{
 		{
 			Description:        "Missing title field",
-			TaskType:          "feature",
+			TaskType:           "feature",
 			AcceptanceCriteria: []string{"works"},
 		},
 	}
@@ -202,7 +202,7 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 		Name:               "NATS Migration",
 		TeamID:             &teamID,
 		Health:             model.PMEpicHealthNone,
-		PlanningState:      model.EpicPlanningStateReadyForStoryPlanning,
+		PlanningState:      model.EpicPlanningStateReadyForTaskPlanning,
 		SpecClarifications: json.RawMessage("[]"),
 		CreatedBy:          &userID,
 	}); err != nil {
@@ -228,7 +228,7 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 	)
 	svc := &AgentService{
 		taskRepo:    taskRepo,
-		epicRepo:     epicRepo,
+		epicRepo:    epicRepo,
 		taskService: taskService,
 	}
 
@@ -237,7 +237,7 @@ func TestCreateStoriesFromProposalInheritsEpicTeam(t *testing.T) {
 			Ref:                "NATS-1",
 			Name:               "Add NATS configuration module",
 			Description:        "Create the initial configuration slice for NATS support.",
-			TaskType:          model.PMTaskTypeFeature,
+			TaskType:           model.PMTaskTypeFeature,
 			AcceptanceCriteria: []string{"NATS configuration can be loaded for the service"},
 		},
 	})
