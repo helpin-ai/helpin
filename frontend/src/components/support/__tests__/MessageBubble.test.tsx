@@ -271,6 +271,35 @@ Can I export my data?`,
     read.cleanup()
   })
 
+  it('does not keep showing delivered email from an expired undo window', () => {
+    const message: SupportMessage = {
+      id: 'msg-expired-cancellable-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'viewer-1',
+      sender_display_name: 'Viewer',
+      content: 'Earlier email reply.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'widget',
+      cancellable_until: '2026-04-24T12:20:00.000Z',
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:20:00.000Z',
+    }
+
+    const expired = renderBubble(message)
+    expect(expired.container.textContent).not.toContain('Delivered to email')
+    expect(expired.container.textContent).not.toContain('Undo')
+    expired.cleanup()
+
+    const active = renderBubble({ ...message, id: 'msg-active-cancellable-1', cancellable_until: '2099-04-24T12:20:00.000Z' })
+    expect(active.container.textContent).toContain('Queued for email')
+    expect(active.container.textContent).toContain('Undo')
+    expect(active.container.textContent).not.toContain('Delivered to email')
+    active.cleanup()
+  })
+
   it('renders internal note image and file attachments with image preview', () => {
     const message: SupportMessage = {
       id: 'msg-note-attachments-1',

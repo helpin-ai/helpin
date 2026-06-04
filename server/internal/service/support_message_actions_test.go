@@ -231,3 +231,66 @@ func TestSupportMessageActionsInfoReturnsDerivedFields(t *testing.T) {
 		t.Fatalf("v1 flags should be false: %#v", info)
 	}
 }
+
+func TestSupportMessageActionsInfoDistinguishesEmailDeliveryStates(t *testing.T) {
+	ctx := context.Background()
+	svc, messageRepo, emailLogRepo, _, rdbServer := setupSupportMessageActionsTestEnv(t)
+	defer rdbServer.Close()
+
+	now := time.Date(2026, 4, 30, 12, 34, 0, 0, time.UTC)
+	svc.now = func() time.Time { return now }
+	actorID := "22222222-2222-2222-2222-222222222222"
+
+	queuedUntil := now.Add(time.Minute)
+	queued := createActionMessage(t, messageRepo, model.SupportMessage{
+		ID:               "77777777-7777-7777-7777-777777777777",
+		SenderUserID:     &actorID,
+		Content:          "Queued reply",
+		CancellableUntil: &queuedUntil,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	queuedInfo, err := svc.Info(ctx, queued.WorkspaceID, queued.ConversationID, actorID, queued.ID)
+	if err != nil {
+		t.Fatalf("queued Info: %v", err)
+	}
+	if queuedInfo.EmailDeliveryStatus != "queued" || queuedInfo.EmailDeliveryStatusLabel != "Queued for email" {
+		t.Fatalf("unexpected queued delivery status: %#v", queuedInfo)
+	}
+	if queuedInfo.Delivered != nil || queuedInfo.NotDeliveredReason != nil {
+		t.Fatalf("queued message should not be delivered or failed: %#v", queuedInfo)
+	}
+
+	notifiedAt := now.Add(2 * time.Minute)
+	sent := createActionMessage(t, messageRepo, model.SupportMessage{
+		ID:              "88888888-8888-8888-8888-888888888888",
+		SenderUserID:    &actorID,
+		Content:         "Sent reply",
+		EmailNotifiedAt: &notifiedAt,
+		CreatedAt:       now.Add(time.Second),
+		UpdatedAt:       notifiedAt,
+	})
+	if err := emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:             "99999999-9999-9999-9999-999999999999",
+		WorkspaceID:    sent.WorkspaceID,
+		ConversationID: sent.ConversationID,
+		Direction:      "outbound",
+		MessageIDs:     model.DocsStringArray{sent.ID},
+		FromEmail:      "support@example.com",
+		ToEmail:        "customer@example.com",
+		Status:         "sent",
+		CreatedAt:      notifiedAt,
+	}); err != nil {
+		t.Fatalf("create sent email log: %v", err)
+	}
+	sentInfo, err := svc.Info(ctx, sent.WorkspaceID, sent.ConversationID, actorID, sent.ID)
+	if err != nil {
+		t.Fatalf("sent Info: %v", err)
+	}
+	if sentInfo.EmailDeliveryStatus != "sent" || sentInfo.EmailDeliveryStatusLabel != "Sent via email" {
+		t.Fatalf("unexpected sent delivery status: %#v", sentInfo)
+	}
+	if sentInfo.Delivered != nil || sentInfo.NotDeliveredReason != nil {
+		t.Fatalf("accepted-only message should not be delivered or failed: %#v", sentInfo)
+	}
+}

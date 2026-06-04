@@ -47,19 +47,21 @@ type SupportMessageInfoDelivery struct {
 }
 
 type SupportMessageInfo struct {
-	ID                 string                      `json:"id"`
-	SentAt             time.Time                   `json:"sent_at"`
-	Sender             SupportMessageInfoSender    `json:"sender"`
-	From               string                      `json:"from"`
-	Origin             string                      `json:"origin"`
-	Type               string                      `json:"type"`
-	Delivered          *SupportMessageInfoDelivery `json:"delivered"`
-	NotDeliveredReason *string                     `json:"not_delivered_reason"`
-	Read               bool                        `json:"read"`
-	ReadAt             *time.Time                  `json:"read_at"`
-	Edited             bool                        `json:"edited"`
-	Translated         bool                        `json:"translated"`
-	Automated          bool                        `json:"automated"`
+	ID                       string                      `json:"id"`
+	SentAt                   time.Time                   `json:"sent_at"`
+	Sender                   SupportMessageInfoSender    `json:"sender"`
+	From                     string                      `json:"from"`
+	Origin                   string                      `json:"origin"`
+	Type                     string                      `json:"type"`
+	EmailDeliveryStatus      string                      `json:"email_delivery_status,omitempty"`
+	EmailDeliveryStatusLabel string                      `json:"email_delivery_status_label,omitempty"`
+	Delivered                *SupportMessageInfoDelivery `json:"delivered"`
+	NotDeliveredReason       *string                     `json:"not_delivered_reason"`
+	Read                     bool                        `json:"read"`
+	ReadAt                   *time.Time                  `json:"read_at"`
+	Edited                   bool                        `json:"edited"`
+	Translated               bool                        `json:"translated"`
+	Automated                bool                        `json:"automated"`
 }
 
 func NewSupportMessageActionsService(
@@ -165,6 +167,7 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 		}
 		if logRow != nil {
 			info.From = supportMessageInfoFrom(msg, logRow)
+			info.EmailDeliveryStatus, info.EmailDeliveryStatusLabel = supportMessageInfoEmailStatus(msg, logRow, s.now())
 			if logRow.DeliveredAt != nil {
 				info.Delivered = &SupportMessageInfoDelivery{Channel: "email", DeliveredAt: logRow.DeliveredAt.UTC()}
 			}
@@ -173,6 +176,9 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 				info.NotDeliveredReason = &reason
 			}
 		}
+	}
+	if info.EmailDeliveryStatus == "" {
+		info.EmailDeliveryStatus, info.EmailDeliveryStatusLabel = supportMessageInfoEmailStatus(msg, nil, s.now())
 	}
 	return info, nil
 }
@@ -234,6 +240,33 @@ func supportMessageInfoType(msg *model.SupportMessage) string {
 		return strings.TrimSpace(msg.MessageType)
 	}
 	return "text"
+}
+
+func supportMessageInfoEmailStatus(msg *model.SupportMessage, logRow *model.SupportEmailLog, now time.Time) (string, string) {
+	if logRow != nil {
+		switch strings.TrimSpace(logRow.Status) {
+		case "opened":
+			return "read", "Read via email"
+		case "delivered":
+			return "delivered", "Delivered via email"
+		case "bounced":
+			return "bounced", "Delivery failed"
+		case "spam_complaint":
+			return "spam_complaint", "Marked as spam"
+		case "sent":
+			return "sent", "Sent via email"
+		}
+	}
+	if msg.EmailReadAt != nil {
+		return "read", "Read via email"
+	}
+	if msg.EmailNotifiedAt != nil {
+		return "sent", "Sent via email"
+	}
+	if msg.CancellableUntil != nil && now.Before(msg.CancellableUntil.UTC()) {
+		return "queued", "Queued for email"
+	}
+	return "", ""
 }
 
 func derefSupportMessageActionString(value *string) string {
