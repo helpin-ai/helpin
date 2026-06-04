@@ -826,6 +826,57 @@ func TestEmailFallbackRenderBodiesAddsTrackedPoweredByFooter(t *testing.T) {
 	}
 }
 
+func TestEmailFallbackRenderBodiesAddsPreviewBeforeReplyDelimiter(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{{Content: "Thanks for reaching out about billing.\nWe can help."}},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	preheaderIndex := strings.Index(htmlBody, "Thanks for reaching out about billing. We can help.")
+	delimiterIndex := strings.Index(htmlBody, supportEmailReplyDelimiter)
+	messageIndex := strings.Index(htmlBody, "<p>Thanks for reaching out about billing.")
+	if preheaderIndex < 0 {
+		t.Fatalf("expected hidden preheader with message preview, got %q", htmlBody)
+	}
+	if delimiterIndex < 0 {
+		t.Fatalf("expected reply delimiter, got %q", htmlBody)
+	}
+	if !(preheaderIndex < delimiterIndex && delimiterIndex < messageIndex) {
+		t.Fatalf("expected preheader before delimiter before message, got %q", htmlBody)
+	}
+	if !strings.HasPrefix(textBody, supportEmailReplyDelimiter+"\n\nThanks for reaching out about billing.") {
+		t.Fatalf("expected plaintext body to start with delimiter then message, got %q", textBody)
+	}
+	if strings.Contains(htmlBody, "Reply directly to this email") || strings.Contains(textBody, "Reply directly to this email") {
+		t.Fatalf("reply-directly footer text should be removed, html=%q text=%q", htmlBody, textBody)
+	}
+}
+
+func TestEmailFallbackRenderBodiesUsesAttachmentPreviewWhenMessageHasNoText(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, _ := svc.renderBodies(
+		[]model.SupportMessage{
+			{
+				Attachments: []model.SupportAttachmentPayload{{FileName: "report.pdf"}},
+			},
+		},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	if !strings.Contains(htmlBody, "Attachment from Acme Support") {
+		t.Fatalf("expected attachment-only preheader fallback, got %q", htmlBody)
+	}
+}
+
 type fakeSupportEmailAttachmentDownloader struct {
 	data map[string][]byte
 	err  error
@@ -2925,7 +2976,7 @@ func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.
 		"",
 	)
 
-	if !strings.Contains(htmlBody, `<a href="https://example.com/#helpin-conv=conv-1">open the chat</a>`) {
+	if !strings.Contains(htmlBody, `<a href="https://example.com/#helpin-conv=conv-1">View conversation in browser</a>`) {
 		t.Fatalf("expected html body to link open the chat text, got %q", htmlBody)
 	}
 	if strings.Contains(htmlBody, `>https://example.com/#helpin-conv=conv-1</a>`) {
@@ -2939,6 +2990,39 @@ func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.
 	}
 	if !strings.Contains(textBody, "Powered by Helpin AI: "+emailFallbackPoweredByFooterURL) {
 		t.Fatalf("expected plaintext Helpin AI attribution URL, got %q", textBody)
+	}
+}
+
+func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterHistory(t *testing.T) {
+	content, _ := inboundPayloadBodies(model.PostmarkInboundPayload{
+		StrippedTextReply: "Fresh customer reply.\n\n" + supportEmailReplyDelimiter + "\n\nOld quoted body",
+	})
+
+	if content != "Fresh customer reply." {
+		t.Fatalf("content = %q, want fresh reply only", content)
+	}
+}
+
+func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterFromTextFallback(t *testing.T) {
+	content, _ := inboundPayloadBodies(model.PostmarkInboundPayload{
+		TextBody: "Fresh fallback reply.\n\n" + supportEmailReplyDelimiter + "\n\nOld quoted body",
+	})
+
+	if content != "Fresh fallback reply." {
+		t.Fatalf("content = %q, want fresh reply only", content)
+	}
+}
+
+func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterFromHTMLMarkdown(t *testing.T) {
+	content, _ := inboundPayloadBodies(model.PostmarkInboundPayload{
+		HtmlBody: "<p>Fresh HTML reply.</p><p>" + supportEmailReplyDelimiter + "</p><p>Old quoted body</p>",
+	})
+
+	if strings.Contains(content, supportEmailReplyDelimiter) || strings.Contains(content, "Old quoted body") {
+		t.Fatalf("expected delimiter history stripped, got %q", content)
+	}
+	if !strings.Contains(content, "Fresh HTML reply.") {
+		t.Fatalf("expected fresh reply, got %q", content)
 	}
 }
 
