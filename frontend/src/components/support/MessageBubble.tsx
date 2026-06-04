@@ -301,7 +301,7 @@ export const MessageBubble = memo(function MessageBubble({
     && message.message_type !== 'system'
     && !message.is_internal;
   const cancellableActive = canMutateOwnReply && Number.isFinite(cancellableUntilMs) && cancellableUntilMs > Date.now();
-  const hasCancellableFooter = canMutateOwnReply && !!message.cancellable_until;
+  const hasCancellableFooter = cancellableActive;
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
@@ -780,7 +780,7 @@ export const MessageBubble = memo(function MessageBubble({
               <TickDouble01Icon className="h-3.5 w-3.5" />
               {cancellableActive ? (
                 <>
-                  <span>Sent</span>
+                  <span>Queued for email</span>
                   <span>·</span>
                   <button
                     type="button"

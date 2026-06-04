@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useMessageInfo } from '@/hooks/queries/useSupport';
+import type { SupportMessageInfo } from '@/lib/pmTypes';
 import { formatTimestamp } from './helpers';
 
 interface MessageInfoDialogProps {
@@ -23,22 +24,56 @@ function formatValue(value: string | boolean | null | undefined) {
   return value?.trim() || 'No';
 }
 
+function formatEmailStatus(info: SupportMessageInfo) {
+  if (!info.email_delivery_status_label) return '';
+  const parts = [info.email_delivery_status_label];
+  if (info.delivered?.delivered_at) {
+    parts.push(formatTimestamp(info.delivered.delivered_at));
+  }
+  if (info.not_delivered_reason) {
+    parts.push(info.not_delivered_reason);
+  }
+  return parts.join(' · ');
+}
+
+export function buildMessageInfoRows(info: SupportMessageInfo) {
+  const rows: Array<readonly [string, string | boolean | null | undefined]> = [
+    ['Identifier', info.id],
+    ['Created', formatTimestamp(info.sent_at)],
+    ['Sender', info.sender.name],
+    ['Origin', info.origin],
+  ];
+
+  if (info.from?.includes('@')) {
+    rows.push(['From', info.from]);
+  }
+  if (info.type && info.type !== 'text') {
+    rows.push(['Type', info.type]);
+  }
+
+  const emailStatus = formatEmailStatus(info);
+  if (emailStatus) {
+    rows.push(['Email status', emailStatus]);
+  }
+  if (info.read || info.read_at) {
+    rows.push(['Read', info.read_at ? formatTimestamp(info.read_at) : info.read]);
+  }
+  if (info.edited) {
+    rows.push(['Edited', info.edited]);
+  }
+  if (info.translated) {
+    rows.push(['Translated', info.translated]);
+  }
+  if (info.automated) {
+    rows.push(['Automated', info.automated]);
+  }
+
+  return rows;
+}
+
 export function MessageInfoDialog({ workspaceId, conversationId, messageId, open, onOpenChange }: MessageInfoDialogProps) {
   const { data: info, isLoading } = useMessageInfo(workspaceId, conversationId, messageId, open);
-  const rows = info ? [
-    ['Identifier', info.id],
-    ['Sent on', formatTimestamp(info.sent_at)],
-    ['Sent by', info.sender.name],
-    ['From', info.from],
-    ['Origin', info.origin],
-    ['Type', info.type],
-    ['Delivered', info.delivered ? `${info.delivered.channel} · ${formatTimestamp(info.delivered.delivered_at)}` : 'No'],
-    ['Not delivered', info.not_delivered_reason ?? 'No'],
-    ['Read', info.read_at ? formatTimestamp(info.read_at) : info.read],
-    ['Edited', info.edited],
-    ['Translated', info.translated],
-    ['Automated', info.automated],
-  ] as const : [];
+  const rows = info ? buildMessageInfoRows(info) : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
