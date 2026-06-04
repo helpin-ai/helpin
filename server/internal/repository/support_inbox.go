@@ -977,6 +977,7 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 			  AND m.deleted_at IS NULL
 			  AND m.message_type = 'reply'
 			  AND m.system_event_type IS NULL
+			  AND (m.is_internal = false OR TRIM(m.content) <> '')
 			ORDER BY m.created_at DESC LIMIT 1
 		) AS last_message,
 		(SELECT m.sender_type
