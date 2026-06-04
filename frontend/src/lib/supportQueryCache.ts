@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
-import type { ConversationListResponse, MessageSenderType, SupportConversation } from './pmTypes';
+import type { ConversationListResponse, ConversationStatus, MessageSenderType, SupportConversation } from './pmTypes';
 
 export type SupportConversationListCache =
   | ConversationListResponse
@@ -137,6 +137,15 @@ type SupportMessageActivityPatch = {
   };
 };
 
+export type SupportConversationStatusPatch = {
+  conversationId: string;
+  oldStatus?: ConversationStatus | string | null;
+  status: ConversationStatus;
+  flowState?: SupportConversation['flow_state'];
+  updatedAt?: string;
+  mailboxId?: string | null;
+};
+
 function isPublicCustomerReply(message: SupportMessageActivityPatch['message']): boolean {
   return message?.sender_type === 'customer' &&
     (message.message_type === undefined || message.message_type === 'reply') &&
@@ -246,4 +255,71 @@ export function moveConversationToTopForMessageActivity(
 
   const result = moveConversationInList(current.data, patch);
   return result.changed ? { ...current, data: result.conversations ?? current.data } : current;
+}
+
+function patchConversationForStatus(
+  conversation: SupportConversation,
+  patch: SupportConversationStatusPatch,
+): SupportConversation {
+  return {
+    ...conversation,
+    status: patch.status,
+    flow_state: patch.flowState ?? conversation.flow_state,
+    mailbox_id: patch.mailboxId === undefined ? conversation.mailbox_id : patch.mailboxId,
+    updated_at: patch.updatedAt ?? conversation.updated_at,
+  };
+}
+
+export function patchConversationStatusInCache(
+  current: SupportConversationListCache | undefined,
+  patch: SupportConversationStatusPatch,
+): SupportConversationListCache | undefined {
+  if (!current) {
+    return current;
+  }
+
+  if (isInfiniteConversationListResponse(current)) {
+    let changed = false;
+    const pages = current.pages.map((page) => {
+      if (!Array.isArray(page.data)) {
+        return page;
+      }
+      let pageChanged = false;
+      const data = page.data.map((conversation) => {
+        if (conversation.id !== patch.conversationId) {
+          return conversation;
+        }
+        pageChanged = true;
+        changed = true;
+        return patchConversationForStatus(conversation, patch);
+      });
+      return pageChanged ? { ...page, data } : page;
+    });
+    return changed ? { ...current, pages } : current;
+  }
+
+  if (!isConversationListResponse(current)) {
+    return current;
+  }
+
+  let changed = false;
+  const data = current.data.map((conversation) => {
+    if (conversation.id !== patch.conversationId) {
+      return conversation;
+    }
+    changed = true;
+    return patchConversationForStatus(conversation, patch);
+  });
+
+  return changed ? { ...current, data } : current;
+}
+
+export function patchConversationDetailStatus(
+  current: SupportConversation | undefined,
+  patch: SupportConversationStatusPatch,
+): SupportConversation | undefined {
+  if (!current || current.id !== patch.conversationId) {
+    return current;
+  }
+  return patchConversationForStatus(current, patch);
 }

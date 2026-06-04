@@ -1321,15 +1321,40 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		}
 	}
 
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "support_conversation",
-		EntityID:    ticketID,
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-	})
+	s.wsPublisher.Publish(buildSupportConversationStatusEvent(ticket, oldStatus, actorID))
 
 	return ticket, nil
+}
+
+func buildSupportConversationStatusEvent(conversation *model.SupportConversation, oldStatus, actorID string) websocket.Event {
+	if conversation == nil {
+		return websocket.Event{}
+	}
+	payload := struct {
+		OldStatus string  `json:"old_status"`
+		Status    string  `json:"status"`
+		FlowState *string `json:"flow_state"`
+		UpdatedAt string  `json:"updated_at"`
+		MailboxID *string `json:"mailbox_id"`
+	}{
+		OldStatus: oldStatus,
+		Status:    conversation.Status,
+		FlowState: conversation.FlowState,
+		UpdatedAt: conversation.UpdatedAt.UTC().Format(time.RFC3339),
+		MailboxID: conversation.MailboxID,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		data = nil
+	}
+	return websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversation.ID,
+		WorkspaceID: conversation.WorkspaceID,
+		ActorID:     actorID,
+		Data:        data,
+	}
 }
 
 // ListConversationMessages returns messages for a conversation.

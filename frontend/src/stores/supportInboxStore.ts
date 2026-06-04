@@ -192,6 +192,7 @@ interface SupportInboxState {
   setTeamInboxDialogOpen: (open: boolean) => void;
   setEditMailboxId: (id: string | null) => void;
   setActivePanel: (panel: ActivePanel) => void;
+  showReopenedConversationInInbox: (conversationId: string, conversationMailboxId?: string | null) => void;
   setDraft: (conversationId: string, content: string) => void;
   clearDraft: (conversationId: string) => void;
 }
@@ -389,6 +390,29 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     setTeamInboxDialogOpen: (open) => set({ teamInboxDialogOpen: open, ...(!open && { editMailboxId: null }) }),
     setEditMailboxId: (id) => set({ editMailboxId: id }),
     setActivePanel: (panel) => set({ activePanel: panel }),
+    showReopenedConversationInInbox: (conversationId, conversationMailboxId) => {
+      const currentMailboxId = get().selectedMailboxId;
+      const nextMailboxId = conversationMailboxId && currentMailboxId === conversationMailboxId
+        ? currentMailboxId
+        : 'all';
+      set({
+        navFilter: 'inbox',
+        selectedMailboxId: nextMailboxId,
+        statusFilter: 'all',
+        searchQuery: '',
+        conversationListFilters: defaultConversationListFiltersForNav('inbox'),
+        activeCustomViewId: null,
+        customViewDirty: false,
+        selectedConversationId: conversationId,
+        activePanel: 'thread',
+      });
+      savePersisted({
+        navCollapsed: get().navCollapsed,
+        detailSidebarCollapsed: get().detailSidebarCollapsed,
+        selectedMailboxId: nextMailboxId,
+        version: STORE_VERSION,
+      });
+    },
     setDraft: (conversationId, content) =>
       set((state) => {
         if (!content) {

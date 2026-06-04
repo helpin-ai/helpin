@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -1691,6 +1692,51 @@ func TestSupportInboxServiceUpdateConversationStatus_KeepsResolvedEventsInternal
 	}
 	if len(publicMessages) != 0 {
 		t.Fatalf("expected no widget-visible messages, got %d", len(publicMessages))
+	}
+}
+
+func TestBuildSupportConversationStatusEventIncludesStatusPayload(t *testing.T) {
+	flowState := model.SupportConversationFlowStateAssignedToHuman
+	mailboxID := "mailbox-billing"
+	updatedAt := time.Date(2026, 6, 4, 9, 30, 0, 0, time.UTC)
+	conversation := &model.SupportConversation{
+		ID:          "conv-reopen",
+		WorkspaceID: "ws-reopen",
+		MailboxID:   &mailboxID,
+		Status:      model.SupportConversationStatusOpen,
+		FlowState:   &flowState,
+		UpdatedAt:   updatedAt,
+	}
+
+	event := buildSupportConversationStatusEvent(conversation, model.SupportConversationStatusResolved, "user-1")
+
+	if event.Entity != "support_conversation" || event.Action != "updated" {
+		t.Fatalf("event = %s/%s, want support_conversation/updated", event.Entity, event.Action)
+	}
+	var payload struct {
+		OldStatus string  `json:"old_status"`
+		Status    string  `json:"status"`
+		FlowState *string `json:"flow_state"`
+		UpdatedAt string  `json:"updated_at"`
+		MailboxID *string `json:"mailbox_id"`
+	}
+	if err := json.Unmarshal(event.Data, &payload); err != nil {
+		t.Fatalf("unmarshal event data: %v", err)
+	}
+	if payload.OldStatus != model.SupportConversationStatusResolved {
+		t.Fatalf("old_status = %q, want resolved", payload.OldStatus)
+	}
+	if payload.Status != model.SupportConversationStatusOpen {
+		t.Fatalf("status = %q, want open", payload.Status)
+	}
+	if payload.FlowState == nil || *payload.FlowState != flowState {
+		t.Fatalf("flow_state = %v, want %q", payload.FlowState, flowState)
+	}
+	if payload.MailboxID == nil || *payload.MailboxID != mailboxID {
+		t.Fatalf("mailbox_id = %v, want %q", payload.MailboxID, mailboxID)
+	}
+	if payload.UpdatedAt != updatedAt.Format(time.RFC3339) {
+		t.Fatalf("updated_at = %q, want %q", payload.UpdatedAt, updatedAt.Format(time.RFC3339))
 	}
 }
 

@@ -4,6 +4,7 @@ import {
   getNextConversationIdAfterRemoval,
   isSupportConversationListQueryKey,
   moveConversationToTopForMessageActivity,
+  patchConversationStatusInCache,
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
 } from '@/lib/supportQueryCache';
@@ -281,6 +282,51 @@ describe('supportQueryCache', () => {
       awaiting_reply: true,
       last_message: 'Customer question',
       updated_at: '2026-04-08T10:00:00Z',
+    }));
+  });
+
+  it('patches status changes without changing unread count or preview', () => {
+    const current: ConversationListResponse = {
+      data: [
+        {
+          id: 'conv-reopen',
+          workspace_id: 'ws-1',
+          display_id: 1,
+          subject: 'Reopened',
+          status: 'resolved',
+          flow_state: 'resolved_by_human',
+          priority: 'medium',
+          source: 'widget',
+          unread_count: 0,
+          last_message: 'Previous reply',
+          awaiting_reply: false,
+          created_at: '2026-04-08T00:00:00Z',
+          updated_at: '2026-04-08T00:00:00Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+    };
+
+    const updated = patchConversationStatusInCache(current, {
+      conversationId: 'conv-reopen',
+      status: 'open',
+      oldStatus: 'resolved',
+      flowState: 'assigned_to_human',
+      updatedAt: '2026-04-08T11:00:00Z',
+      mailboxId: 'mailbox-billing',
+    }) as ConversationListResponse;
+
+    expect(updated.data[0]).toEqual(expect.objectContaining({
+      status: 'open',
+      flow_state: 'assigned_to_human',
+      mailbox_id: 'mailbox-billing',
+      unread_count: 0,
+      last_message: 'Previous reply',
+      awaiting_reply: false,
+      updated_at: '2026-04-08T11:00:00Z',
     }));
   });
 

@@ -4,14 +4,15 @@ import { toast } from 'sonner'
 import { useWebSocket, type DocsPresenceSnapshot, type WSEvent, type WSSend, type PresenceSnapshot } from './useWebSocket'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
+import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { useDocsPresenceStore } from '@/stores/docsPresenceStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload'
-import { isSupportConversationListQueryKey, moveConversationToTopForMessageActivity, type SupportConversationListCache } from '@/lib/supportQueryCache'
-import type { Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
+import { isSupportConversationListQueryKey, moveConversationToTopForMessageActivity, patchConversationDetailStatus, patchConversationStatusInCache, type SupportConversationListCache, type SupportConversationStatusPatch } from '@/lib/supportQueryCache'
+import type { ConversationStatus, SupportConversation, Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
 const BOARD_ENTITIES = new Set(['task'])
 const CHILD_ENTITIES = new Set(['comment', 'checklist_item', 'attachment', 'external_link', 'task_git_link'])
@@ -36,6 +37,33 @@ const AGENT_RUN_INVALIDATE_MS = 400
 const TYPING_TIMEOUT_MS = 10_000
 const DOC_EDITING_TIMEOUT_MS = 20_000
 const AGENT_RUN_PAUSE_REASONS = new Set(['none', 'human_input', 'human_approval', 'authentication'])
+const SUPPORT_CONVERSATION_STATUSES = new Set(['open', 'waiting_on_customer', 'resolved', 'spam'])
+
+function supportConversationStatusPatchFromEvent(event: WSEvent): SupportConversationStatusPatch | null {
+  const status = event.data?.status
+  if (typeof status !== 'string' || !SUPPORT_CONVERSATION_STATUSES.has(status)) {
+    return null
+  }
+  const oldStatus = typeof event.data?.old_status === 'string' ? event.data.old_status : null
+  const flowState = typeof event.data?.flow_state === 'string' || event.data?.flow_state === null
+    ? event.data.flow_state as SupportConversation['flow_state']
+    : undefined
+  const updatedAt = typeof event.data?.updated_at === 'string'
+    ? event.data.updated_at
+    : event.sent_at
+  const mailboxId = typeof event.data?.mailbox_id === 'string' || event.data?.mailbox_id === null
+    ? event.data.mailbox_id as string | null
+    : undefined
+
+  return {
+    conversationId: event.entity_id,
+    oldStatus,
+    status: status as ConversationStatus,
+    flowState,
+    updatedAt,
+    mailboxId,
+  }
+}
 
 function normalizeAgentRunPauseReason(value: unknown): Task['latest_run_pause_reason'] {
   if (typeof value !== 'string' || !value.trim()) return null
@@ -449,6 +477,28 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
           typingTimers.current.set(timerKey, timer)
         }
       } else {
+        const statusPatch = supportConversationStatusPatchFromEvent(event)
+        if (statusPatch) {
+          queryClient.setQueriesData<SupportConversationListCache>(
+            {
+              predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
+            },
+            (current) => patchConversationStatusInCache(current, statusPatch),
+          )
+          queryClient.setQueryData(
+            queryKeys.support.conversation(workspaceId, event.entity_id),
+            (current: SupportConversation | undefined) => patchConversationDetailStatus(current, statusPatch),
+          )
+
+          const inboxStore = useSupportInboxStore.getState()
+          if (
+            statusPatch.oldStatus === 'resolved' &&
+            statusPatch.status === 'open' &&
+            inboxStore.selectedConversationId === event.entity_id
+          ) {
+            inboxStore.showReopenedConversationInInbox(event.entity_id, statusPatch.mailboxId)
+          }
+        }
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) })
         queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, event.entity_id) })
         // Invalidate unread stats on any non-presence conversation update (includes reason=read)

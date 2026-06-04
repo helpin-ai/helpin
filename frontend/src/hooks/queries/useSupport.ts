@@ -11,6 +11,8 @@ import {
   getConversationListUnreadCount,
   getNextConversationIdAfterRemoval,
   isSupportConversationListQueryKey,
+  patchConversationDetailStatus,
+  patchConversationStatusInCache,
   type SupportConversationListCache,
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
@@ -922,12 +924,33 @@ export function useUpdateConversationStatus(workspaceId: string) {
   return useMutation({
     mutationFn: ({ conversationId, status }: { conversationId: string; status: ConversationStatus }) =>
       supportService.updateConversationStatus(workspaceId, conversationId, status).then(unwrap),
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
       const { conversationId, status } = variables;
+      const currentState = useSupportInboxStore.getState();
+
+      if (data) {
+        const patch = {
+          conversationId,
+          status: data.status,
+          flowState: data.flow_state,
+          updatedAt: data.updated_at,
+          mailboxId: data.mailbox_id ?? null,
+        };
+        queryClient.setQueriesData<SupportConversationListCache>(
+          {
+            predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
+          },
+          (current) => patchConversationStatusInCache(current, patch),
+        );
+        queryClient.setQueryData(
+          queryKeys.support.conversation(workspaceId, conversationId),
+          (current: SupportConversation | undefined) => patchConversationDetailStatus(current, patch),
+        );
+      }
 
       // Auto-advance: when resolving/spamming, select the next conversation in the list
       if (status === 'resolved' || status === 'spam') {
-        const { selectedConversationId, selectConversation } = useSupportInboxStore.getState();
+        const { selectedConversationId, selectConversation } = currentState;
         if (selectedConversationId === conversationId) {
           // Find the next conversation from the cached list (before invalidation)
           const cached = queryClient.getQueriesData<SupportConversationListCache>({
@@ -938,6 +961,8 @@ export function useUpdateConversationStatus(workspaceId: string) {
           );
           selectConversation(getNextConversationIdAfterRemoval(conversations, conversationId));
         }
+      } else if (status === 'open' && currentState.selectedConversationId === conversationId) {
+        currentState.showReopenedConversationInInbox(conversationId, data?.mailbox_id ?? null);
       }
 
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
