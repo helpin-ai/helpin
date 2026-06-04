@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -82,13 +83,103 @@ func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlB
 	return stripSupportEmailReplyDelimiter(payload.TextBody), htmlBody
 }
 
+var (
+	inboundCIDImageSrcRe        = regexp.MustCompile(`(?i)(\bsrc\s*=\s*["'])cid:([^"']+)(["'])`)
+	inboundCIDTextPlaceholderRe = regexp.MustCompile(`(?i)\[cid:[^\]\s]+]`)
+)
+
+func inboundPayloadBodiesWithHTML(payload model.PostmarkInboundPayload, htmlBody string) (markdown, processedHTML string) {
+	payload.HtmlBody = htmlBody
+	return inboundPayloadBodies(payload)
+}
+
+func stripInboundCIDTextPlaceholders(content string) string {
+	content = inboundCIDTextPlaceholderRe.ReplaceAllString(content, "")
+	return strings.TrimSpace(content)
+}
+
+func rewriteInboundCIDImageSources(htmlBody string, cidURLs map[string]string) string {
+	if strings.TrimSpace(htmlBody) == "" || len(cidURLs) == 0 {
+		return htmlBody
+	}
+	return inboundCIDImageSrcRe.ReplaceAllStringFunc(htmlBody, func(match string) string {
+		parts := inboundCIDImageSrcRe.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		if replacement := cidURLs[normalizeInboundContentID(parts[2])]; replacement != "" {
+			return parts[1] + replacement + parts[3]
+		}
+		return match
+	})
+}
+
+func normalizeInboundContentID(contentID string) string {
+	contentID = strings.TrimSpace(contentID)
+	contentID = strings.TrimPrefix(strings.TrimSuffix(contentID, ">"), "<")
+	contentID = strings.TrimPrefix(strings.ToLower(contentID), "cid:")
+	return contentID
+}
+
+func (s *EmailFallbackService) storeInboundEmailAttachments(
+	ctx context.Context,
+	workspaceID string,
+	conversationID string,
+	messageID string,
+	payload model.PostmarkInboundPayload,
+) ([]model.SupportAttachmentPayload, map[string]string) {
+	if s == nil || s.inboundAttachmentStore == nil || len(payload.Attachments) == 0 {
+		return nil, nil
+	}
+	attachments := make([]model.SupportAttachmentPayload, 0, len(payload.Attachments))
+	cidURLs := make(map[string]string)
+	for _, attachment := range payload.Attachments {
+		content := strings.TrimSpace(attachment.Content)
+		if content == "" {
+			continue
+		}
+		stored, err := s.inboundAttachmentStore.StoreInboundEmailAttachment(ctx, supportInboundEmailAttachmentRequest{
+			WorkspaceID:    workspaceID,
+			ConversationID: conversationID,
+			MessageID:      messageID,
+			FileName:       attachment.Name,
+			ContentType:    attachment.ContentType,
+			Base64Content:  content,
+			ContentID:      attachment.ContentID,
+			ContentLength:  attachment.ContentLength,
+		})
+		if err != nil {
+			s.logger.WarnContext(ctx, "store inbound email attachment failed",
+				"workspace_id", workspaceID,
+				"conversation_id", conversationID,
+				"message_id", messageID,
+				"file_name", strings.TrimSpace(attachment.Name),
+				"content_id", strings.TrimSpace(attachment.ContentID),
+				"error", err,
+			)
+			continue
+		}
+		if stored == nil {
+			continue
+		}
+		attachments = append(attachments, *stored)
+		if cid := normalizeInboundContentID(attachment.ContentID); cid != "" && strings.TrimSpace(stored.URL) != "" {
+			cidURLs[cid] = strings.TrimSpace(stored.URL)
+		}
+	}
+	if len(cidURLs) == 0 {
+		cidURLs = nil
+	}
+	return attachments, cidURLs
+}
+
 func stripSupportEmailReplyDelimiter(content string) string {
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
 	if index := strings.Index(normalized, supportEmailReplyDelimiter); index >= 0 {
 		normalized = normalized[:index]
 	}
-	return strings.TrimSpace(normalized)
+	return stripInboundCIDTextPlaceholders(normalized)
 }
 
 func inboundForwardedEmailScanText(payload model.PostmarkInboundPayload, fallback string) string {
@@ -212,32 +303,48 @@ type supportEmailAttachmentDownloader interface {
 	DownloadContent(ctx context.Context, attachment model.SupportAttachmentPayload) ([]byte, error)
 }
 
+type supportEmailInboundAttachmentStore interface {
+	StoreInboundEmailAttachment(ctx context.Context, req supportInboundEmailAttachmentRequest) (*model.SupportAttachmentPayload, error)
+}
+
+type supportInboundEmailAttachmentRequest struct {
+	WorkspaceID    string
+	ConversationID string
+	MessageID      string
+	FileName       string
+	ContentType    string
+	Base64Content  string
+	ContentID      string
+	ContentLength  int64
+}
+
 // EmailFallbackService manages delayed outbound email delivery and inbound replies.
 type EmailFallbackService struct {
-	redis                *redis.Client
-	hub                  *websocket.Hub
-	wsPublisher          *websocket.Publisher
-	emailClient          *email.Client
-	messageRepo          *repository.SupportMessageRepository
-	convRepo             *repository.SupportConversationRepository
-	emailLogRepo         *repository.SupportEmailLogRepository
-	webhookRepo          *repository.SupportEmailWebhookEventRepository
-	installRepo          *repository.SupportInboxInstallationRepository
-	sessionRepo          *repository.SupportInboxSessionRepository
-	workspaceRepo        *repository.WorkspaceRepository
-	contactRepo          *repository.CRMContactRepository
-	supportInboxService  *SupportInboxService
-	attachmentService    *SupportAttachmentService
-	attachmentDownloader supportEmailAttachmentDownloader
-	notificationService  *NotificationService
-	replyDomain          string
-	appBaseURL           string
-	logger               *slog.Logger
-	podID                string
-	pollInterval         time.Duration
-	leaseTTL             time.Duration
-	processingTTL        time.Duration
-	now                  func() time.Time
+	redis                  *redis.Client
+	hub                    *websocket.Hub
+	wsPublisher            *websocket.Publisher
+	emailClient            *email.Client
+	messageRepo            *repository.SupportMessageRepository
+	convRepo               *repository.SupportConversationRepository
+	emailLogRepo           *repository.SupportEmailLogRepository
+	webhookRepo            *repository.SupportEmailWebhookEventRepository
+	installRepo            *repository.SupportInboxInstallationRepository
+	sessionRepo            *repository.SupportInboxSessionRepository
+	workspaceRepo          *repository.WorkspaceRepository
+	contactRepo            *repository.CRMContactRepository
+	supportInboxService    *SupportInboxService
+	attachmentService      *SupportAttachmentService
+	attachmentDownloader   supportEmailAttachmentDownloader
+	inboundAttachmentStore supportEmailInboundAttachmentStore
+	notificationService    *NotificationService
+	replyDomain            string
+	appBaseURL             string
+	logger                 *slog.Logger
+	podID                  string
+	pollInterval           time.Duration
+	leaseTTL               time.Duration
+	processingTTL          time.Duration
+	now                    func() time.Time
 }
 
 type EmailFallbackBackfillOptions struct {
@@ -283,6 +390,7 @@ func (s *EmailFallbackService) SetAttachmentService(attachmentService *SupportAt
 	}
 	s.attachmentService = attachmentService
 	s.attachmentDownloader = attachmentService
+	s.inboundAttachmentStore = attachmentService
 	return s
 }
 
@@ -757,6 +865,7 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		messageMetadata = mergeForwardedAttributionMetadata(messageMetadata, forwardedAttribution)
 	}
 	msg := &model.SupportMessage{
+		ID:                uuid.NewString(),
 		WorkspaceID:       conv.WorkspaceID,
 		ConversationID:    conv.ID,
 		SenderType:        "customer",
@@ -781,6 +890,15 @@ func (s *EmailFallbackService) processInboundConversationReply(ctx context.Conte
 		if err := msgRepoTx.Create(ctx, msg); err != nil {
 			return err
 		}
+		attachments, cidURLs := s.storeInboundEmailAttachments(ctx, conv.WorkspaceID, conv.ID, msg.ID, payload)
+		if len(attachments) > 0 {
+			msg.Attachments = attachments
+		}
+		if len(cidURLs) > 0 {
+			_, htmlBody = inboundPayloadBodiesWithHTML(payload, rewriteInboundCIDImageSources(payload.HtmlBody, cidURLs))
+		}
+		msg.HTMLBody = htmlBody
+		msg.StrippedText = content
 
 		logRow := &model.SupportEmailLog{
 			WorkspaceID:       conv.WorkspaceID,
@@ -2156,13 +2274,20 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 			htmlChunks = append(htmlChunks, renderMessageMarkdownToHTML(text))
 		}
 		if len(msg.Attachments) > 0 {
-			if textChunk.Len() > 0 {
-				textChunk.WriteString("\n\n")
+			attachmentText := renderAttachmentTextList(msg.Attachments)
+			if attachmentText != "" {
+				if textChunk.Len() > 0 {
+					textChunk.WriteString("\n\n")
+				}
+				textChunk.WriteString(attachmentText)
 			}
-			textChunk.WriteString(renderAttachmentTextList(msg.Attachments))
-			htmlChunks = append(htmlChunks, renderAttachmentHTMLList(msg.Attachments))
+			if attachmentHTML := renderAttachmentHTMLList(msg.Attachments); attachmentHTML != "" {
+				htmlChunks = append(htmlChunks, attachmentHTML)
+			}
 		}
-		textChunks = append(textChunks, textChunk.String())
+		if textChunk.Len() > 0 {
+			textChunks = append(textChunks, textChunk.String())
+		}
 	}
 
 	var htmlBody strings.Builder
@@ -2308,6 +2433,7 @@ func isSupportEmailAttachmentCandidate(attachment model.SupportAttachmentPayload
 }
 
 func renderAttachmentTextList(attachments []model.SupportAttachmentPayload) string {
+	attachments = supportEmailLinkedAttachments(attachments)
 	if len(attachments) == 0 {
 		return ""
 	}
@@ -2329,6 +2455,7 @@ func renderAttachmentTextList(attachments []model.SupportAttachmentPayload) stri
 }
 
 func renderAttachmentHTMLList(attachments []model.SupportAttachmentPayload) string {
+	attachments = supportEmailLinkedAttachments(attachments)
 	if len(attachments) == 0 {
 		return ""
 	}
@@ -2353,6 +2480,19 @@ func renderAttachmentHTMLList(attachments []model.SupportAttachmentPayload) stri
 	}
 	htmlBody.WriteString("</ul>")
 	return htmlBody.String()
+}
+
+func supportEmailLinkedAttachments(attachments []model.SupportAttachmentPayload) []model.SupportAttachmentPayload {
+	if len(attachments) == 0 {
+		return nil
+	}
+	linked := make([]model.SupportAttachmentPayload, 0, len(attachments))
+	for _, attachment := range attachments {
+		if strings.TrimSpace(attachment.URL) != "" {
+			linked = append(linked, attachment)
+		}
+	}
+	return linked
 }
 
 func (s *EmailFallbackService) cleanup(ctx context.Context, conversationID string) error {
@@ -2828,6 +2968,7 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 	}
 
 	message := &model.SupportMessage{
+		ID:                uuid.NewString(),
 		WorkspaceID:       route.WorkspaceID,
 		SenderType:        "customer",
 		SenderDisplayName: &customerName,
@@ -2865,6 +3006,15 @@ func (s *EmailFallbackService) createInboundConversationFromRoute(ctx context.Co
 		if err := msgRepoTx.Create(ctx, message); err != nil {
 			return err
 		}
+		attachments, cidURLs := s.storeInboundEmailAttachments(ctx, route.WorkspaceID, conversation.ID, message.ID, payload)
+		if len(attachments) > 0 {
+			message.Attachments = attachments
+		}
+		if len(cidURLs) > 0 {
+			_, htmlBody = inboundPayloadBodiesWithHTML(payload, rewriteInboundCIDImageSources(payload.HtmlBody, cidURLs))
+		}
+		message.HTMLBody = htmlBody
+		message.StrippedText = content
 
 		logRow := &model.SupportEmailLog{
 			WorkspaceID:       route.WorkspaceID,

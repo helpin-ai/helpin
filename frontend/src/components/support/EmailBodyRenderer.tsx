@@ -106,6 +106,7 @@ export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBody
   const [collapsed, setCollapsed] = useState(collapsedByDefault);
   const [hasCollapsible, setHasCollapsible] = useState(false);
   const collapseSheetRef = useRef<HTMLStyleElement | null>(null);
+  const measureTimerRef = useRef<number | null>(null);
 
   const sanitized = useMemo(() => sanitize(html), [html]);
   const srcDoc = useMemo(() => buildSrcDoc(sanitized), [sanitized]);
@@ -120,11 +121,53 @@ export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBody
   const measure = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
-    // body.scrollHeight reflects content height independent of the iframe's
-    // current height; documentElement.scrollHeight is clamped to the iframe
-    // size, so it can't shrink when content collapses. Prefer body.
-    const next = doc.body.scrollHeight;
-    if (next > 0) setHeight(next);
+    const body = doc.body;
+    const children = Array.from(body.children) as HTMLElement[];
+    let visibleCount = 0;
+    const visibleBottom = children.reduce((bottom, child) => {
+      const style = doc.defaultView?.getComputedStyle(child);
+      if (!style || style.display === 'none' || style.visibility === 'hidden') {
+        return bottom;
+      }
+      const rect = child.getBoundingClientRect();
+      visibleCount += 1;
+      return Math.max(bottom, rect.bottom);
+    }, 0);
+
+    const bodyStyle = doc.defaultView?.getComputedStyle(body);
+    const paddingBottom = bodyStyle ? Number.parseFloat(bodyStyle.paddingBottom || '0') || 0 : 0;
+    // body.scrollHeight can stay at the old iframe viewport height in some
+    // browsers. Prefer visible child bounds so hidden quote blocks don't leave
+    // a tall blank iframe after collapse.
+    const measured = visibleCount > 0 ? visibleBottom + paddingBottom : body.scrollHeight;
+    const next = Math.ceil(Math.max(measured, 40));
+    setHeight(next);
+  }, []);
+
+  const scheduleMeasure = useCallback(() => {
+    measure();
+    const win = iframeRef.current?.contentWindow;
+    if (win) {
+      win.requestAnimationFrame(() => {
+        measure();
+        win.requestAnimationFrame(() => measure());
+      });
+    }
+    if (measureTimerRef.current !== null) {
+      window.clearTimeout(measureTimerRef.current);
+    }
+    measureTimerRef.current = window.setTimeout(() => {
+      measureTimerRef.current = null;
+      measure();
+    }, 80);
+  }, [measure]);
+
+  useEffect(() => {
+    return () => {
+      if (measureTimerRef.current !== null) {
+        window.clearTimeout(measureTimerRef.current);
+      }
+    };
   }, []);
 
   const handleLoad = useCallback(() => {
@@ -145,24 +188,25 @@ export function EmailBodyRenderer({ html, collapsedByDefault = true }: EmailBody
 
     setHasCollapsible(hasCollapsibleContent(doc));
     setReady(true);
-    measure();
-  }, [collapsed, measure]);
+    scheduleMeasure();
+  }, [collapsed, scheduleMeasure]);
 
   // Toggle collapse stylesheet on/off.
   useEffect(() => {
     if (!collapseSheetRef.current) return;
     collapseSheetRef.current.disabled = !collapsed;
-    measure();
-  }, [collapsed, measure]);
+    scheduleMeasure();
+  }, [collapsed, scheduleMeasure]);
 
   useEffect(() => {
     if (!ready) return;
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
-    const observer = new ResizeObserver(() => measure());
+    const observer = new ResizeObserver(() => scheduleMeasure());
     observer.observe(doc.documentElement);
+    observer.observe(doc.body);
     return () => observer.disconnect();
-  }, [ready, measure]);
+  }, [ready, scheduleMeasure]);
 
   return (
     <div className="min-w-0 max-h-[60vh] w-full max-w-full overflow-auto">

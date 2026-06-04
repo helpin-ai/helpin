@@ -1,11 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
 	"github.com/helpin-ai/helpin/server/internal/storage"
@@ -117,6 +120,75 @@ func (s *SupportAttachmentService) LinkToMessage(ctx context.Context, attachment
 		return nil
 	}
 	return s.attachmentRepo.LinkToMessage(ctx, attachmentIDs, messageID)
+}
+
+// StoreInboundEmailAttachment decodes a Postmark inbound attachment, uploads it,
+// and creates a message-linked support attachment record.
+func (s *SupportAttachmentService) StoreInboundEmailAttachment(ctx context.Context, req supportInboundEmailAttachmentRequest) (*model.SupportAttachmentPayload, error) {
+	if s == nil || s.s3Client == nil {
+		return nil, fmt.Errorf("file storage is not configured")
+	}
+	fileName := strings.TrimSpace(req.FileName)
+	if fileName == "" {
+		fileName = "attachment"
+	}
+	contentType := strings.TrimSpace(req.ContentType)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	if !allowedMIMETypes[contentType] {
+		return nil, fmt.Errorf("file type %s is not allowed", contentType)
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(req.Base64Content))
+	if err != nil {
+		return nil, fmt.Errorf("decode inbound attachment: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("attachment content is empty")
+	}
+	fileSize := int64(len(data))
+	if fileSize > maxFileSize {
+		return nil, fmt.Errorf("file exceeds maximum size of %s", formatByteLimit(maxFileSize))
+	}
+
+	messageID := strings.TrimSpace(req.MessageID)
+	attachmentID := uuid.NewString()
+	storageKey := fmt.Sprintf("workspaces/%s/support/%s/%s-%s",
+		strings.TrimSpace(req.WorkspaceID), strings.TrimSpace(req.ConversationID), attachmentID, fileName)
+	publicURL := ""
+	if s.s3Client.HasPublicURL() {
+		publicURL = s.s3Client.PublicURL(storageKey)
+	}
+	if err := s.s3Client.PutObject(ctx, storageKey, contentType, fileSize, bytes.NewReader(data), s.s3Client.HasPublicURL()); err != nil {
+		return nil, err
+	}
+
+	attachment := &model.SupportAttachment{
+		ID:             attachmentID,
+		WorkspaceID:    strings.TrimSpace(req.WorkspaceID),
+		ConversationID: strings.TrimSpace(req.ConversationID),
+		MessageID:      &messageID,
+		FileName:       fileName,
+		FileSize:       fileSize,
+		ContentType:    contentType,
+		StorageKey:     storageKey,
+		PublicURL:      publicURL,
+		UploadedByType: "customer",
+		IsUploaded:     true,
+	}
+
+	if err := s.attachmentRepo.Create(ctx, attachment); err != nil {
+		return nil, err
+	}
+
+	return &model.SupportAttachmentPayload{
+		ID:       attachment.ID,
+		FileKey:  storageKey,
+		FileName: attachment.FileName,
+		FileType: attachment.ContentType,
+		FileSize: attachment.FileSize,
+		URL:      publicURL,
+	}, nil
 }
 
 // DownloadContent returns the stored bytes for a support attachment payload.

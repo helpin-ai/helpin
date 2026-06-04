@@ -889,6 +889,27 @@ func (f fakeSupportEmailAttachmentDownloader) DownloadContent(ctx context.Contex
 	return f.data[attachment.ID], nil
 }
 
+type fakeSupportInboundEmailAttachmentStore struct {
+	requests []supportInboundEmailAttachmentRequest
+	urls     map[string]string
+}
+
+func (f *fakeSupportInboundEmailAttachmentStore) StoreInboundEmailAttachment(ctx context.Context, req supportInboundEmailAttachmentRequest) (*model.SupportAttachmentPayload, error) {
+	f.requests = append(f.requests, req)
+	id := req.ContentID
+	if id == "" {
+		id = req.FileName
+	}
+	return &model.SupportAttachmentPayload{
+		ID:       id,
+		FileKey:  "support/" + req.FileName,
+		FileName: req.FileName,
+		FileType: req.ContentType,
+		FileSize: req.ContentLength,
+		URL:      f.urls[req.ContentID],
+	}, nil
+}
+
 func TestEmailFallbackPrepareEmailAttachmentsEmbedsSmallFilesAndLeavesLargeFilesLinked(t *testing.T) {
 	svc := &EmailFallbackService{
 		attachmentDownloader: fakeSupportEmailAttachmentDownloader{
@@ -939,6 +960,37 @@ func TestEmailFallbackPrepareEmailAttachmentsEmbedsSmallFilesAndLeavesLargeFiles
 	}
 	if got := messages[0].Attachments[1].URL; got != "https://cdn.example.com/recording.mov" {
 		t.Fatalf("large file URL = %q", got)
+	}
+}
+
+func TestEmailFallbackRenderBodiesOmitsRegularEmailAttachmentsFromBody(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{
+			{
+				Content: "Here is the report.",
+				Attachments: []model.SupportAttachmentPayload{
+					{
+						FileName: "report.pdf",
+						URL:      "",
+					},
+				},
+			},
+		},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	for _, body := range []string{htmlBody, textBody} {
+		if strings.Contains(body, "Attachments:") || strings.Contains(body, "report.pdf") {
+			t.Fatalf("regular email attachment should not be duplicated in body, got %q", body)
+		}
+	}
+	if !strings.Contains(htmlBody, "<p>Here is the report.</p>") {
+		t.Fatalf("expected message text to remain visible, got %q", htmlBody)
 	}
 }
 
@@ -2354,6 +2406,82 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	}
 	if !strings.Contains(events[0].RawPayload, `"OriginalRecipient":"conv-`+conversationID+`@replies.helpin.ai"`) {
 		t.Fatalf("expected raw webhook payload to be stored, got %q", events[0].RawPayload)
+	}
+}
+
+func TestEmailFallbackProcessInboundEmailRewritesInlineCIDImages(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	store := &fakeSupportInboundEmailAttachmentStore{
+		urls: map[string]string{
+			"image001.png@01DCF421.90A2D1C0": "https://assets.example.com/image001.png",
+		},
+	}
+	env.service.inboundAttachmentStore = store
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "88888888-8888-8888-8888-888888888889"
+	customerEmail := "customer@example.com"
+	customerName := "Taylor"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Inline image",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+		CustomerName:  &customerName,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: customerEmail, Name: customerName},
+		To:                "conv-" + conversationID + "@replies.helpin.ai",
+		OriginalRecipient: "conv-" + conversationID + "@replies.helpin.ai",
+		Subject:           "Re: Inline image",
+		MessageID:         "pm-in-inline-image",
+		TextBody:          "[cid:image001.png@01DCF421.90A2D1C0]\n\nThanks,\nViktoria",
+		HtmlBody:          `<div><img width="538" height="554" src="cid:image001.png@01DCF421.90A2D1C0"><p>Thanks,<br>Viktoria</p></div>`,
+		Attachments: []model.PostmarkInboundAttachment{
+			{
+				Name:          "image001.png",
+				Content:       base64.StdEncoding.EncodeToString([]byte("png-bytes")),
+				ContentType:   "image/png",
+				ContentLength: int64(len("png-bytes")),
+				ContentID:     "image001.png@01DCF421.90A2D1C0",
+			},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-in-inline-image"}`); err != nil {
+		t.Fatalf("process inbound email: %v", err)
+	}
+
+	if len(store.requests) != 1 {
+		t.Fatalf("stored attachment requests = %d, want 1", len(store.requests))
+	}
+	if store.requests[0].MessageID == "" {
+		t.Fatalf("expected inbound attachment to be linked to generated message id")
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 inbound email log, got %d", len(logs))
+	}
+	if strings.Contains(logs[0].HTMLBody, "cid:image001") {
+		t.Fatalf("expected cid src to be rewritten, got %q", logs[0].HTMLBody)
+	}
+	if !strings.Contains(logs[0].HTMLBody, `src="https://assets.example.com/image001.png"`) {
+		t.Fatalf("expected stored asset URL in HTML body, got %q", logs[0].HTMLBody)
+	}
+	if strings.Contains(logs[0].StrippedText, "[cid:") {
+		t.Fatalf("expected cid placeholder stripped from text, got %q", logs[0].StrippedText)
 	}
 }
 

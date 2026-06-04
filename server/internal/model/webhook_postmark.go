@@ -12,22 +12,32 @@ type PostmarkHeader struct {
 	Value string `json:"Value"`
 }
 
+// PostmarkInboundAttachment captures an attachment parsed by Postmark's inbound webhook.
+type PostmarkInboundAttachment struct {
+	Name          string `json:"Name"`
+	Content       string `json:"Content"`
+	ContentType   string `json:"ContentType"`
+	ContentLength int64  `json:"ContentLength"`
+	ContentID     string `json:"ContentID,omitempty"`
+}
+
 // PostmarkInboundPayload is the payload sent by Postmark inbound webhooks.
 type PostmarkInboundPayload struct {
-	From              string            `json:"From"`
-	MessageStream     string            `json:"MessageStream"`
-	FromFull          PostmarkAddress   `json:"FromFull"`
-	To                string            `json:"To"`
-	ToFull            []PostmarkAddress `json:"ToFull"`
-	OriginalRecipient string            `json:"OriginalRecipient"`
-	Subject           string            `json:"Subject"`
-	MessageID         string            `json:"MessageID"`
-	MailboxHash       string            `json:"MailboxHash"`
-	TextBody          string            `json:"TextBody"`
-	HtmlBody          string            `json:"HtmlBody"`
-	StrippedTextReply string            `json:"StrippedTextReply"`
-	Date              string            `json:"Date"`
-	Headers           []PostmarkHeader  `json:"Headers"`
+	From              string                      `json:"From"`
+	MessageStream     string                      `json:"MessageStream"`
+	FromFull          PostmarkAddress             `json:"FromFull"`
+	To                string                      `json:"To"`
+	ToFull            []PostmarkAddress           `json:"ToFull"`
+	OriginalRecipient string                      `json:"OriginalRecipient"`
+	Subject           string                      `json:"Subject"`
+	MessageID         string                      `json:"MessageID"`
+	MailboxHash       string                      `json:"MailboxHash"`
+	TextBody          string                      `json:"TextBody"`
+	HtmlBody          string                      `json:"HtmlBody"`
+	StrippedTextReply string                      `json:"StrippedTextReply"`
+	Date              string                      `json:"Date"`
+	Headers           []PostmarkHeader            `json:"Headers"`
+	Attachments       []PostmarkInboundAttachment `json:"Attachments"`
 }
 
 // PostmarkOpenPayload is the payload sent by Postmark open tracking webhooks.
