@@ -173,6 +173,74 @@ describe('MessageBubble', () => {
     queryClient.clear()
   })
 
+  it('renders compact forwarded attribution in the email badge', () => {
+    const message: SupportMessage = {
+      id: 'msg-forwarded-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Jane Customer',
+      content: 'I need help with my invoice.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      metadata: JSON.stringify({
+        forwarded_by_email: 'founder@company.com',
+        forwarded_by_name: 'Founder',
+        original_sender_email: 'jane@customer.example',
+        original_sender_name: 'Jane Customer',
+        sender_attribution_confidence_level: 'high',
+      }),
+      created_at: '2026-06-02T10:14:00.000Z',
+      updated_at: '2026-06-02T10:14:00.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(rendered.container.textContent).toContain('Forwarded by Founder')
+    expect(rendered.container.textContent).toContain('View details')
+    expect(rendered.container.textContent).not.toContain('Received via email')
+    expect(rendered.container.textContent).not.toContain('originally from')
+    expect(rendered.container.textContent).not.toContain('jane@customer.example')
+    rendered.cleanup()
+  })
+
+  it('shows the forwarded customer body when the email has no note above the forwarded header', () => {
+    const message: SupportMessage = {
+      id: 'msg-forwarded-empty-note-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'customer',
+      sender_display_name: 'Jason Smith',
+      content: `---------- Forwarded message ---------
+From: Jason Smith <jason@the-web-dev.com>
+Date: Sun, May 31, 2026 at 2:38 PM
+Subject: Data Export
+To: Waqar from Usermaven <waqar@usermaven.com>
+
+Can I export my data?`,
+      html_body: '<div data-helpin-quote="true">Can I export my data?</div>',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'email',
+      metadata: JSON.stringify({
+        forwarded_by_email: 'waqar@usermaven.com',
+        forwarded_by_name: 'Waqar Azeem',
+        original_sender_email: 'jason@the-web-dev.com',
+        original_sender_name: 'Jason Smith',
+        sender_attribution_confidence_level: 'high',
+      }),
+      created_at: '2026-06-02T14:40:00.000Z',
+      updated_at: '2026-06-02T14:40:00.000Z',
+    }
+
+    const rendered = renderBubble(message)
+    expect(rendered.container.textContent).toContain('Can I export my data?')
+    expect(rendered.container.textContent).not.toContain('Forwarded message')
+    expect(rendered.container.textContent).not.toContain('From: Jason Smith')
+    expect(rendered.container.textContent).toContain('Forwarded by Waqar Azeem')
+    rendered.cleanup()
+  })
+
   it('renders outbound fallback email delivery receipt states', () => {
     const message: SupportMessage = {
       id: 'msg-email-status-1',
@@ -201,6 +269,35 @@ describe('MessageBubble', () => {
     const read = renderBubble({ ...message, id: 'msg-email-status-2', email_read_at: '2026-04-24T12:22:00.000Z' }, 'read_email')
     expect(read.container.textContent).toContain('Read via email')
     read.cleanup()
+  })
+
+  it('does not keep showing delivered email from an expired undo window', () => {
+    const message: SupportMessage = {
+      id: 'msg-expired-cancellable-1',
+      workspace_id: 'ws-1',
+      conversation_id: 'conv-1',
+      sender_type: 'user',
+      sender_user_id: 'viewer-1',
+      sender_display_name: 'Viewer',
+      content: 'Earlier email reply.',
+      message_type: 'reply',
+      is_internal: false,
+      via_channel: 'widget',
+      cancellable_until: '2026-04-24T12:20:00.000Z',
+      created_at: '2026-04-24T12:18:09.000Z',
+      updated_at: '2026-04-24T12:20:00.000Z',
+    }
+
+    const expired = renderBubble(message)
+    expect(expired.container.textContent).not.toContain('Delivered to email')
+    expect(expired.container.textContent).not.toContain('Undo')
+    expired.cleanup()
+
+    const active = renderBubble({ ...message, id: 'msg-active-cancellable-1', cancellable_until: '2099-04-24T12:20:00.000Z' })
+    expect(active.container.textContent).toContain('Queued for email')
+    expect(active.container.textContent).toContain('Undo')
+    expect(active.container.textContent).not.toContain('Delivered to email')
+    active.cleanup()
   })
 
   it('renders internal note image and file attachments with image preview', () => {

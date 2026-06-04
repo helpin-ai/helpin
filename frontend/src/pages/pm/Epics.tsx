@@ -756,11 +756,11 @@ function EpicVirtualTable({
                   ) : (
                     <MemoEpicDataRow
                       row={item.row}
-                      onRowClick={onRowClick}
-                      columnSizing={columnSizing}
-                      columnSizingVersion={columnSizingVersion}
-                      columnVisibility={columnVisibility}
-                      columnVisibilityVersion={columnVisibilityVersion}
+	                      onRowClick={onRowClick}
+	                      columnSizing={columnSizing}
+	                      columnSizingVersion={columnSizingVersion}
+	                      columnVisibility={columnVisibility}
+	                      columnVisibilityVersion={columnVisibilityVersion}
                     />
                   )}
                 </div>
@@ -804,11 +804,11 @@ const MemoEpicGroupRow = memo(function EpicGroupRow({ item, onToggle }: EpicGrou
 
 interface EpicDataRowProps {
   row: Row<EpicWithStats>;
-  onRowClick: (entry: EpicWithStats) => void;
-  columnSizing: Record<string, number>;
-  columnSizingVersion: string;
-  columnVisibility: VisibilityState;
-  columnVisibilityVersion: string;
+	  onRowClick: (entry: EpicWithStats) => void;
+	  columnSizing: Record<string, number>;
+	  columnSizingVersion: string;
+	  columnVisibility: VisibilityState;
+	  columnVisibilityVersion: string;
 }
 
 function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps) {
@@ -823,11 +823,11 @@ function areEpicDataRowPropsEqual(prev: EpicDataRowProps, next: EpicDataRowProps
 
 const MemoEpicDataRow = memo(function EpicDataRow({
   row,
-  onRowClick,
-  columnSizing,
-  columnSizingVersion,
-  columnVisibility,
-  columnVisibilityVersion,
+	  onRowClick,
+	  columnSizing,
+	  columnSizingVersion,
+	  columnVisibility,
+	  columnVisibilityVersion,
 }: EpicDataRowProps) {
   void columnSizingVersion;
   void columnVisibilityVersion;

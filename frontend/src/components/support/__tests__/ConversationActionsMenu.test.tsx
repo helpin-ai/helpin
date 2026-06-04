@@ -52,7 +52,7 @@ function conversation(overrides: Partial<SupportConversation> = {}): SupportConv
   }
 }
 
-function renderMenu(item: SupportConversation) {
+function renderMenu(item: SupportConversation, moveOptions: Array<{ id: string; name: string }> = []) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -62,6 +62,7 @@ function renderMenu(item: SupportConversation) {
       <ConversationActionsMenu
         workspaceId="ws-1"
         conversation={item}
+        moveOptions={moveOptions}
         trigger={<button type="button">Actions</button>}
         open
       />,
@@ -120,6 +121,19 @@ describe('ConversationActionsMenu', () => {
       { conversationId: 'conv-1', status: 'open' },
       expect.any(Object),
     )
+
+    rendered.cleanup()
+  })
+
+  it('keeps inbox destinations in a second-layer move submenu', () => {
+    const rendered = renderMenu(conversation(), [
+      { id: 'support', name: 'Support' },
+      { id: 'sales', name: 'Sales' },
+    ])
+
+    expect(document.body.textContent).toContain('Move to inbox')
+    expect(document.body.textContent).not.toContain('Move to Support')
+    expect(document.body.textContent).not.toContain('Move to Sales')
 
     rendered.cleanup()
   })

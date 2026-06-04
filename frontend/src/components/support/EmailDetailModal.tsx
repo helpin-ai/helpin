@@ -4,6 +4,7 @@ import { AttachmentIcon, Download04Icon, ArrowDown01Icon, ArrowUp01Icon, Informa
 import { useMessageEmailDetail } from '@/hooks/queries/useSupport';
 import type { SupportMessage } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
+import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 
 interface EmailDetailModalProps {
   workspaceId: string;
@@ -49,6 +50,10 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
   const htmlBody = (data?.html_body && data.html_body.trim()) || '';
   const textBody = (data?.stripped_text && data.stripped_text.trim()) || message.content || '';
   const timestamp = data?.created_at ?? message.created_at;
+  const forwardedAttribution = data?.forwarded_attribution;
+  const forwardedTextBody = forwardedAttribution && hasForwardedHeaderMarker(textBody)
+    ? cleanForwardedDisplayContent(textBody).trim()
+    : '';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -111,9 +116,39 @@ export function EmailDetailModal({ workspaceId, message, open, onOpenChange }: E
                 <dd className="text-foreground">{formatFullTimestamp(timestamp)}</dd>
               </dl>
 
+              {forwardedAttribution && (
+                <div className="mt-4 rounded-md border border-border/60 bg-muted/30 px-3 py-2.5 text-xs">
+                  <div className="mb-2 font-medium text-foreground">Forwarded email</div>
+                  <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5">
+                    <dt className="text-muted-foreground">Original sender</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere]">
+                      <span className="font-medium text-foreground">
+                        {forwardedAttribution.original_sender_name || forwardedAttribution.original_sender_email}
+                      </span>
+                      {forwardedAttribution.original_sender_name ? (
+                        <span className="ml-1 text-muted-foreground">&lt;{forwardedAttribution.original_sender_email}&gt;</span>
+                      ) : null}
+                    </dd>
+                    <dt className="text-muted-foreground">Forwarded by</dt>
+                    <dd className="min-w-0 [overflow-wrap:anywhere]">
+                      <span className="font-medium text-foreground">
+                        {forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}
+                      </span>
+                      {forwardedAttribution.forwarded_by_name ? (
+                        <span className="ml-1 text-muted-foreground">&lt;{forwardedAttribution.forwarded_by_email}&gt;</span>
+                      ) : null}
+                    </dd>
+                  </dl>
+                </div>
+              )}
+
               <div className="mt-6 border-t border-border/60 pt-6">
-                {htmlBody ? (
-                  <EmailBodyRenderer html={htmlBody} />
+                {forwardedTextBody ? (
+                  <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
+                    {forwardedTextBody}
+                  </div>
+                ) : htmlBody ? (
+                  <EmailBodyRenderer html={htmlBody} collapsedByDefault={!forwardedAttribution} />
                 ) : textBody ? (
                   <div className="whitespace-pre-wrap text-[13.5px] leading-[1.7] text-foreground [overflow-wrap:anywhere]">
                     {textBody}

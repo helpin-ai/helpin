@@ -64,6 +64,8 @@ export interface SupportConversation {
   customer_requested_human_at?: string;
   human_takeover?: boolean | null;
   last_message?: string;
+  last_message_sender_type?: MessageSenderType | null;
+  last_message_sender_display_name?: string | null;
   unread_count?: number;
   awaiting_reply?: boolean;
   mailbox_name?: string | null;
@@ -503,6 +505,8 @@ export interface SupportMessageInfo {
   from: string;
   origin: string;
   type: string;
+  email_delivery_status?: string;
+  email_delivery_status_label?: string;
   delivered?: {
     channel: string;
     delivered_at: string;
@@ -533,6 +537,17 @@ export interface SupportMessageEmailDetail {
   bounced_at?: string;
   error_message?: string;
   created_at: string;
+  forwarded_attribution?: SupportForwardedAttribution;
+}
+
+export interface SupportForwardedAttribution {
+  original_sender_email: string;
+  original_sender_name?: string;
+  forwarded_by_email: string;
+  forwarded_by_name?: string;
+  confidence: number;
+  confidence_level: string;
+  source: string;
 }
 
 export interface SupportAIPreviewHistoryTurn {
@@ -866,6 +881,9 @@ export interface SupportInboxSettings {
   email_fallback_delay_secs: number;
   email_fallback_from_name: string;
   email_fallback_max_delivery_age_secs: number;
+  forwarded_email_detection_enabled: boolean;
+  forwarded_email_detection_mode: string;
+  forwarded_email_min_confidence: number;
   brand_color: string;
   show_branding: boolean;
   color_scheme: string;

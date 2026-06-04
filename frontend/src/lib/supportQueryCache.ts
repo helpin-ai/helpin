@@ -51,6 +51,18 @@ export function getConversationListUnreadCount(
   return extractConversationListConversations(current).find((conversation) => conversation.id === conversationId)?.unread_count ?? 0;
 }
 
+export function getNextConversationIdAfterRemoval(
+  conversations: Pick<SupportConversation, 'id'>[],
+  conversationId: string,
+): string | null {
+  // Select from the current cached list before invalidation so row actions can advance without a visible jump.
+  const currentIdx = conversations.findIndex((conversation) => conversation.id === conversationId);
+  if (currentIdx === -1) {
+    return conversations[0]?.id ?? null;
+  }
+  return conversations[currentIdx + 1]?.id ?? conversations[currentIdx - 1]?.id ?? null;
+}
+
 export function updateConversationListUnreadCount(
   current: SupportConversationListCache | undefined,
   conversationId: string,

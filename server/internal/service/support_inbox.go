@@ -180,25 +180,30 @@ func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspa
 	if log == nil {
 		return nil, nil
 	}
+	var metadata map[string]any
+	if strings.TrimSpace(msg.Metadata) != "" {
+		_ = json.Unmarshal([]byte(msg.Metadata), &metadata)
+	}
 
 	return &model.SupportMessageEmailDetail{
-		ID:               log.ID,
-		MessageID:        messageID,
-		Direction:        log.Direction,
-		Subject:          log.Subject,
-		FromEmail:        log.FromEmail,
-		ToEmail:          log.ToEmail,
-		RFCMessageID:     log.RFCMessageID,
-		InReplyTo:        log.InReplyTo,
-		ReferencesHeader: log.ReferencesHeader,
-		StrippedText:     log.StrippedText,
-		HTMLBody:         log.HTMLBody,
-		Status:           log.Status,
-		DeliveredAt:      log.DeliveredAt,
-		OpenedAt:         log.OpenedAt,
-		BouncedAt:        log.BouncedAt,
-		ErrorMessage:     log.ErrorMessage,
-		CreatedAt:        log.CreatedAt,
+		ID:                   log.ID,
+		MessageID:            messageID,
+		Direction:            log.Direction,
+		Subject:              log.Subject,
+		FromEmail:            log.FromEmail,
+		ToEmail:              log.ToEmail,
+		RFCMessageID:         log.RFCMessageID,
+		InReplyTo:            log.InReplyTo,
+		ReferencesHeader:     log.ReferencesHeader,
+		StrippedText:         log.StrippedText,
+		HTMLBody:             log.HTMLBody,
+		Status:               log.Status,
+		DeliveredAt:          log.DeliveredAt,
+		OpenedAt:             log.OpenedAt,
+		BouncedAt:            log.BouncedAt,
+		ErrorMessage:         log.ErrorMessage,
+		CreatedAt:            log.CreatedAt,
+		ForwardedAttribution: forwardedAttributionFromMetadata(metadata),
 	}, nil
 }
 

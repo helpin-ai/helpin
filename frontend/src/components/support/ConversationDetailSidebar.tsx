@@ -16,7 +16,7 @@ import { useConversation, useConversationAssignees, useVisitorContext, useAssign
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { getInitial, getAvatarColor, formatTimestamp } from './helpers';
+import { getInitial, getAvatarColor } from './helpers';
 
 interface ConversationDetailSidebarProps {
   workspaceId: string;
@@ -83,6 +83,8 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
 
   const displayName = conversation?.customer_name || conversation?.customer_email || (conversation?.anonymous_id ? `Visitor #${conversation.anonymous_id.slice(0, 6)}` : 'Anonymous');
   const location = visitorContext?.location;
+  const countryCode = location?.country_code ?? conversation?.country_code;
+  const countryName = location?.country_name ?? conversation?.country_name;
   const assignableUsers = assignableMembers.filter((member) => !!member.user_id);
   const assignedMember = conversation
     ? findAssignableMember(assignableUsers, conversation.assigned_user_id, (member) => member.user_id ?? member.id)
@@ -105,7 +107,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
           subtitle="Select a conversation to see contact and context details here."
         />
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-16">
           {/* ── Contact Card ─────────────────────────────── */}
           <div className="flex flex-col items-center gap-1.5 px-3 py-4 border-b border-border/50">
             <div className="relative">
@@ -115,7 +117,7 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
               {isVisitorOnline && (
                 <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
               )}
-              <DetailCountryFlag countryCode={location?.country_code} countryName={location?.country_name} />
+              <DetailCountryFlag countryCode={countryCode} countryName={countryName} />
             </div>
             <span className="text-sm font-semibold truncate max-w-full">{displayName}</span>
             {conversation.customer_email && conversation.customer_name && (
@@ -134,18 +136,6 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
                 View CRM Contact
               </Link>
             )}
-          </div>
-
-          {/* ── Conversation Info ────────────────────────── */}
-          <div className="border-b border-border/50 px-4 py-3 space-y-1.5">
-            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
-              <span className="text-muted-foreground">Created</span>
-              <span className="font-medium text-foreground/90">{formatTimestamp(conversation.created_at)}</span>
-            </div>
-            <div className="grid grid-cols-[88px_1fr] items-center gap-2 text-[12px]">
-              <span className="text-muted-foreground">Updated</span>
-              <span className="font-medium text-foreground/90">{formatTimestamp(conversation.updated_at)}</span>
-            </div>
           </div>
 
           <CollapsibleSection title="Conversation Routing" icon={UserIcon} count={0} defaultOpen>

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,9 +12,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDeleteSupportMessage } from '@/hooks/queries/useSupport';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
-import type { AIMessageMetadata, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
+import type { AIMessageMetadata, SupportForwardedAttribution, SupportLinkPreview, SupportMessage, TicketSource } from '@/lib/pmTypes';
 import { EmailBodyRenderer } from './EmailBodyRenderer';
 import { formatMessageTime, formatTimestamp, getInitial, getAvatarColor, getEffectiveSenderType, HELPIN_AI_DISPLAY_NAME, parseAIMessageMetadata, parseSupportLinkPreviews } from './helpers';
+import { cleanForwardedDisplayContent, hasForwardedHeaderMarker } from './forwardedEmailDisplay';
 import { timeAgo } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -97,11 +98,25 @@ function previewHostLabel(preview: SupportLinkPreview): string {
   }
 }
 
-function formatCountdown(ms: number): string {
-  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+function parseForwardedAttributionMetadata(metadata?: string): SupportForwardedAttribution | null {
+  if (!metadata) return null;
+  try {
+    const parsed = JSON.parse(metadata) as Record<string, unknown>;
+    const originalEmail = typeof parsed.original_sender_email === 'string' ? parsed.original_sender_email.trim() : '';
+    const forwardedByEmail = typeof parsed.forwarded_by_email === 'string' ? parsed.forwarded_by_email.trim() : '';
+    if (!originalEmail || !forwardedByEmail) return null;
+    return {
+      original_sender_email: originalEmail,
+      original_sender_name: typeof parsed.original_sender_name === 'string' ? parsed.original_sender_name.trim() : undefined,
+      forwarded_by_email: forwardedByEmail,
+      forwarded_by_name: typeof parsed.forwarded_by_name === 'string' ? parsed.forwarded_by_name.trim() : undefined,
+      confidence: typeof parsed.sender_attribution_confidence === 'number' ? parsed.sender_attribution_confidence : 0,
+      confidence_level: typeof parsed.sender_attribution_confidence_level === 'string' ? parsed.sender_attribution_confidence_level : '',
+      source: typeof parsed.sender_attribution_source === 'string' ? parsed.sender_attribution_source : 'forwarded_body',
+    };
+  } catch {
+    return null;
+  }
 }
 
 function LinkPreviewCard({ preview }: { preview: SupportLinkPreview }) {
@@ -196,6 +211,7 @@ export const MessageBubble = memo(function MessageBubble({
   const currentUser = useAuthStore((s) => s.user);
   const aiMeta = useMemo<AIMessageMetadata | null>(() => parseAIMessageMetadata(message.metadata), [message.metadata]);
   const linkPreviews = useMemo<SupportLinkPreview[]>(() => parseSupportLinkPreviews(message.metadata), [message.metadata]);
+  const forwardedAttribution = useMemo(() => parseForwardedAttributionMetadata(message.metadata), [message.metadata]);
   const effectiveSenderType = getEffectiveSenderType(message);
   const isCustomer = effectiveSenderType === 'customer';
   const isAI = effectiveSenderType === 'ai';
@@ -238,33 +254,33 @@ export const MessageBubble = memo(function MessageBubble({
 
     return message.content;
   }, [message.content]);
-  const hasTableContent = useMemo(() => containsMarkdownTable(displayContent), [displayContent]);
+  const forwardedDisplayContent = useMemo(() => {
+    if (!forwardedAttribution) return '';
+    if (!hasForwardedHeaderMarker(displayContent)) return '';
+    return cleanForwardedDisplayContent(displayContent).trim();
+  }, [displayContent, forwardedAttribution]);
+  const visibleContent = forwardedDisplayContent || displayContent;
+  const hasTableContent = useMemo(() => containsMarkdownTable(visibleContent), [visibleContent]);
 
   // Highlight @mentions in internal notes
   const mentionParts = useMemo(() => {
     if (!isInternal) return null;
-    return renderMentionHighlights(displayContent);
-  }, [displayContent, isInternal]);
+    return renderMentionHighlights(visibleContent);
+  }, [visibleContent, isInternal]);
 
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [emailDetailOpen, setEmailDetailOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const deleteMutation = useDeleteSupportMessage(message.workspace_id, message.conversation_id);
-
-  useEffect(() => {
-    if (!message.cancellable_until) return;
-    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, [message.cancellable_until]);
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
-  const hasDisplayContent = displayContent.trim().length > 0;
-  const showBubble = !!displayContent || fileAttachments.length > 0 || linkPreviews.length > 0;
+  const hasDisplayContent = visibleContent.trim().length > 0;
+  const showBubble = !!visibleContent || fileAttachments.length > 0 || linkPreviews.length > 0;
   const hasEmailBody = message.via_channel === 'email' && !!message.html_body;
+  const renderEmailBodyAsForwardedText = hasEmailBody && !!forwardedDisplayContent;
 
   const verb = isCustomer ? 'Received' : 'Sent';
   const relativeTime = timeAgo(message.created_at);
@@ -284,9 +300,8 @@ export const MessageBubble = memo(function MessageBubble({
     && message.sender_user_id === currentUser?.id
     && message.message_type !== 'system'
     && !message.is_internal;
-  const cancellableActive = canMutateOwnReply && Number.isFinite(cancellableUntilMs) && cancellableUntilMs > nowMs;
-  const hasCancellableFooter = canMutateOwnReply && !!message.cancellable_until;
-  const countdown = cancellableActive ? formatCountdown(cancellableUntilMs - nowMs) : '0:00';
+  const cancellableActive = canMutateOwnReply && Number.isFinite(cancellableUntilMs) && cancellableUntilMs > Date.now();
+  const hasCancellableFooter = cancellableActive;
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
@@ -310,24 +325,24 @@ export const MessageBubble = memo(function MessageBubble({
   }, [deleteMutation, message.id]);
 
   const handleCopy = useCallback(() => {
-    void navigator.clipboard?.writeText(displayContent);
+    void navigator.clipboard?.writeText(visibleContent);
     toast.success('Message copied');
-  }, [displayContent]);
+  }, [visibleContent]);
 
-  const canSaveAsShortcut = displayContent.trim().length > 0 && message.message_type !== 'system';
+  const canSaveAsShortcut = visibleContent.trim().length > 0 && message.message_type !== 'system';
   const openShortcutComposer = useShortcutComposerStore((s) => s.openCreate);
   const handleSaveAsShortcut = useCallback(
-    () => openShortcutComposer({ seedContent: sanitizeSupportShortcutSeed(displayContent) }),
-    [openShortcutComposer, displayContent],
+    () => openShortcutComposer({ seedContent: sanitizeSupportShortcutSeed(visibleContent) }),
+    [openShortcutComposer, visibleContent],
   );
 
   const handleQuoteReply = useCallback(() => {
-    const quoted = displayContent
+    const quoted = visibleContent
       .split('\n')
       .map((line) => `> ${line}`)
       .join('\n');
     restoreComposerDraft(`${quoted}\n\n`);
-  }, [displayContent, restoreComposerDraft]);
+  }, [visibleContent, restoreComposerDraft]);
 
   const renderFileAttachments = (tone: 'default' | 'note' = 'default', className = '') => {
     if (fileAttachments.length === 0) return null;
@@ -558,7 +573,7 @@ export const MessageBubble = memo(function MessageBubble({
                       {mentionParts ? (
                         <p className="whitespace-pre-wrap">{mentionParts}</p>
                       ) : (
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
                       )}
                     </div>
                   )}
@@ -601,7 +616,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   const hasEmailBadge = message.via_channel === 'email';
   const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
-  const bubbleWidthClass = hasEmailBody
+  const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
     : hasTableContent
       ? 'min-w-0 max-w-[min(85%,46rem)] lg:max-w-[min(85%,48rem)]'
@@ -651,28 +666,28 @@ export const MessageBubble = memo(function MessageBubble({
                     isCustomer
                       ? `bg-muted text-foreground/85 dark:text-foreground ${isLastInGroup ? 'rounded-bl-sm' : ''}`
                       : `bg-blue-50 text-foreground/85 dark:bg-blue-950/40 dark:text-foreground ${isLastInGroup ? 'rounded-br-sm' : ''}`
-                  } ${hasTableContent || hasEmailBody ? 'overflow-hidden' : ''}`}
+                  } ${hasTableContent || (hasEmailBody && !renderEmailBodyAsForwardedText) ? 'overflow-hidden' : ''}`}
                 >
-                  {hasEmailBody ? (
+                  {hasEmailBody && !renderEmailBodyAsForwardedText ? (
                     <div className="-mx-1" data-chat-tone={isCustomer ? 'customer' : 'agent'}>
-                      <EmailBodyRenderer html={message.html_body ?? ''} />
+                      <EmailBodyRenderer html={message.html_body ?? ''} collapsedByDefault={!forwardedAttribution} />
                     </div>
                   ) : (
-                    displayContent && (
+                    visibleContent && (
                       <div
                         className="prose-chat"
                         data-chat-tone={isCustomer ? 'customer' : 'agent'}
                         data-has-table={hasTableContent ? 'true' : 'false'}
                       >
-                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{displayContent}</Markdown>
+                        <Markdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={markdownComponents}>{visibleContent}</Markdown>
                       </div>
                     )
                   )}
                   {fileAttachments.length > 0 && (
-                    renderFileAttachments('default', displayContent ? 'mt-2' : '')
+                    renderFileAttachments('default', visibleContent ? 'mt-2' : '')
                   )}
                   {linkPreviews.length > 0 && (
-                    <div className={`${displayContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
+                    <div className={`${visibleContent || fileAttachments.length > 0 ? 'mt-2' : ''} space-y-2`}>
                       {linkPreviews.map((preview) => (
                         <LinkPreviewCard
                           key={`${message.id}:${preview.url}`}
@@ -734,16 +749,20 @@ export const MessageBubble = memo(function MessageBubble({
       {(hasStatusBelow || hasCancellableFooter) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
           {hasEmailBadge && (
-            <div className={`mb-0.5 flex ${isCustomer ? '' : 'justify-end'}`}>
-              <button
-                type="button"
-                onClick={() => setEmailDetailOpen(true)}
-                className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
-              >
-                <Mail01Icon className="h-3 w-3" />
-                {isCustomer ? 'Received via email' : 'Sent via email'}
-                <span className="opacity-60">· View details</span>
-              </button>
+            <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
+              <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>
+                <button
+                  type="button"
+                  onClick={() => setEmailDetailOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                >
+                  <Mail01Icon className="h-3 w-3" />
+                  {forwardedAttribution && isCustomer
+                    ? `Forwarded by ${forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}`
+                    : isCustomer ? 'Received via email' : 'Sent via email'}
+                  <span className="opacity-60">· View details</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -761,7 +780,7 @@ export const MessageBubble = memo(function MessageBubble({
               <TickDouble01Icon className="h-3.5 w-3.5" />
               {cancellableActive ? (
                 <>
-                  <span>Sent</span>
+                  <span>Queued for email</span>
                   <span>·</span>
                   <button
                     type="button"
@@ -771,8 +790,6 @@ export const MessageBubble = memo(function MessageBubble({
                   >
                     Undo
                   </button>
-                  <span>·</span>
-                  <span>{countdown}</span>
                 </>
               ) : (
                 <span>Delivered to email</span>

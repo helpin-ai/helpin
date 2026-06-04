@@ -1,9 +1,7 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type SVGProps } from 'react';
-import * as Flags from 'country-flag-icons/react/3x2';
-import { CheckmarkCircle02Icon, CodeIcon, Mail01Icon, Message01Icon, MoreHorizontalIcon, PencilEdit01Icon } from '@/lib/icons';
+import { memo, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { ArrowTurnBackwardIcon, BotIcon, CheckmarkCircle02Icon, Mail01Icon, Message01Icon, MoreHorizontalIcon } from '@/lib/icons';
 import type { TicketSource } from '@/lib/pm-types/support';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useAuthStore } from '@/stores/authStore';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceMembers } from '@/hooks/queries/useWorkspaces';
@@ -12,54 +10,16 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { SupportConversation } from '@/lib/pmTypes';
 import { timeAgo, getInitial, getAvatarColor } from './helpers';
 import { ConversationActionsMenu, type ConversationActionMoveOption } from './ConversationActionsMenu';
-import { SUPPORT_SYSTEM_TAGS, SupportTagBadge } from './SupportTagPicker';
 
 const EMPTY_ARRAY: string[] = [];
-
-function normalizeCountryCode(code?: string | null): keyof typeof Flags | null {
-  const normalized = code?.trim().toUpperCase().replace(/-/g, '_');
-  if (!normalized || !/^[A-Z]{2,3}(?:_[A-Z]{2,3})?$/.test(normalized)) {
-    return null;
-  }
-  return normalized as keyof typeof Flags;
-}
-
-const ConversationCountryFlag = memo(function ConversationCountryFlag({
-  countryCode,
-  countryName,
-}: {
-  countryCode?: string | null;
-  countryName?: string | null;
-}) {
-  const flagKey = normalizeCountryCode(countryCode);
-  if (!flagKey) return null;
-
-  const Flag = Flags[flagKey] as ((props: SVGProps<SVGSVGElement>) => JSX.Element) | undefined;
-  if (!Flag) return null;
-
-  const label = countryName?.trim() || countryCode?.trim()?.toUpperCase() || 'Visitor country';
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-[18px] items-center justify-center overflow-hidden rounded-[3px] border border-background/80 shadow-sm">
-          <Flag aria-label={label} className="h-full w-full object-cover" />
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="left">
-        <span className="text-xs">{label}</span>
-      </TooltipContent>
-    </Tooltip>
-  );
-});
 
 type ChannelMeta = { icon: typeof Message01Icon; label: string };
 
 const CHANNEL_META: Record<TicketSource, ChannelMeta | null> = {
   widget: { icon: Message01Icon, label: 'Live chat' },
   email: { icon: Mail01Icon, label: 'Email' },
-  api: { icon: CodeIcon, label: 'API' },
-  internal: { icon: PencilEdit01Icon, label: 'Internal' },
+  api: null,
+  internal: null,
 };
 
 const ChannelIcon = memo(function ChannelIcon({ source }: { source?: TicketSource | null }) {
@@ -70,7 +30,10 @@ const ChannelIcon = memo(function ChannelIcon({ source }: { source?: TicketSourc
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="inline-flex h-3.5 w-3.5 items-center justify-center text-muted-foreground/70">
+        <span
+          aria-label={meta.label}
+          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted-foreground/70"
+        >
           <Icon className="h-3.5 w-3.5" />
         </span>
       </TooltipTrigger>
@@ -201,11 +164,28 @@ interface ConversationRowProps {
   onSelectConversation: (id: string, unreadCount?: number) => void;
 }
 
-type ConversationRowTag = {
-  id: string;
-  name: string;
-  color?: string | null;
+export type ConversationRowVisualState = {
+  isUnread: boolean;
+  needsTeamAction: boolean;
+  usesActionBackground: boolean;
+  usesUnreadTypography: boolean;
+  usesSelectionBar: boolean;
 };
+
+export function getConversationRowVisualState(
+  conversation: Pick<SupportConversation, 'unread_count' | 'awaiting_reply' | 'status'>,
+  isSelected = false,
+): ConversationRowVisualState {
+  const isUnread = (conversation.unread_count ?? 0) > 0;
+  const needsTeamAction = conversation.status === 'open' && (isUnread || Boolean(conversation.awaiting_reply));
+  return {
+    isUnread,
+    needsTeamAction,
+    usesActionBackground: !isSelected && needsTeamAction,
+    usesUnreadTypography: isUnread,
+    usesSelectionBar: isSelected,
+  };
+}
 
 export function getVisibleSupportTagCount(tagWidths: number[], availableWidth: number, gap = 4) {
   if (tagWidths.length === 0) return 0;
@@ -223,62 +203,118 @@ export function getVisibleSupportTagCount(tagWidths: number[], availableWidth: n
   return visibleCount > 0 ? visibleCount : 1;
 }
 
-function ConversationTagRail({ tags }: { tags: ConversationRowTag[] }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const measuringRef = useRef<HTMLDivElement | null>(null);
-  const [visibleCount, setVisibleCount] = useState(tags.length);
+function parseHexColor(color: string | null | undefined) {
+  const normalized = color?.trim();
+  if (!normalized) return null;
+  const shortMatch = normalized.match(/^#([0-9a-f]{3})$/i);
+  const longMatch = normalized.match(/^#([0-9a-f]{6})$/i);
+  const hex = shortMatch
+    ? shortMatch[1].split('').map((char) => `${char}${char}`).join('')
+    : longMatch?.[1];
+  if (!hex) return null;
+  return {
+    r: Number.parseInt(hex.slice(0, 2), 16),
+    g: Number.parseInt(hex.slice(2, 4), 16),
+    b: Number.parseInt(hex.slice(4, 6), 16),
+  };
+}
 
-  const recalculate = useCallback(() => {
-    const container = containerRef.current;
-    const measuring = measuringRef.current;
-    if (!container || !measuring) {
-      setVisibleCount(tags.length);
-      return;
-    }
+export function getSupportTagPillStyle(color: string | null | undefined): CSSProperties | undefined {
+  const rgb = parseHexColor(color);
+  if (!rgb) return undefined;
+  const value = `${rgb.r}, ${rgb.g}, ${rgb.b}`;
+  return {
+    backgroundColor: `rgba(${value}, 0.08)`,
+    borderColor: `rgba(${value}, 0.22)`,
+    color: `rgba(${value}, 0.82)`,
+  };
+}
 
-    const availableWidth = container.getBoundingClientRect().width || container.clientWidth;
-    const tagWidths = Array.from(measuring.children).map((child) =>
-      (child as HTMLElement).getBoundingClientRect().width
-    );
-    const nextVisibleCount = Math.min(tags.length, getVisibleSupportTagCount(tagWidths, availableWidth));
-    setVisibleCount((current) => current === nextVisibleCount ? current : nextVisibleCount);
-  }, [tags.length]);
+const AIHandoffIndicator = memo(function AIHandoffIndicator() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label="AI handed off to team"
+          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200/80 dark:bg-amber-950/35 dark:text-amber-300 dark:ring-amber-800/60"
+        >
+          <BotIcon className="h-2.5 w-2.5" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left">
+        <span className="text-xs">AI handed off to team</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+});
 
-  useLayoutEffect(() => {
-    setVisibleCount(tags.length);
-    const frame = window.requestAnimationFrame(recalculate);
-    return () => window.cancelAnimationFrame(frame);
-  }, [recalculate, tags]);
+const AgentReplyIndicator = memo(function AgentReplyIndicator({ label }: { label: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label={label}
+          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted-foreground/75"
+        >
+          <ArrowTurnBackwardIcon className="h-3.5 w-3.5 -scale-y-100" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <span className="text-xs">{label}</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+});
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(recalculate);
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [recalculate]);
+const AIResolvedIndicator = memo(function AIResolvedIndicator() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          aria-label="Resolved by AI"
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200/80 dark:bg-emerald-950/35 dark:text-emerald-300 dark:ring-emerald-800/60"
+        >
+          <BotIcon className="h-3 w-3" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left">
+        <span className="text-xs">Resolved by AI</span>
+      </TooltipContent>
+    </Tooltip>
+  );
+});
 
-  const visibleTags = tags.slice(0, visibleCount);
+const MAX_VISIBLE_USER_TAGS = 2;
+
+const UserTagStrip = memo(function UserTagStrip({
+  tags,
+}: {
+  tags: NonNullable<SupportConversation['tags']>;
+}) {
+  if (tags.length === 0) return null;
+  const visibleTags = tags.slice(0, MAX_VISIBLE_USER_TAGS);
+  const hiddenCount = Math.max(0, tags.length - visibleTags.length);
 
   return (
-    <div className="relative mt-1 min-w-0">
-      <div ref={containerRef} className="flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
-        {visibleTags.map((tag) => (
-          <SupportTagBadge key={tag.id} name={tag.name} color={tag.color} className="h-4 max-w-full shrink-0 px-1.5 text-[10px]" />
-        ))}
-      </div>
-      <div
-        ref={measuringRef}
-        aria-hidden="true"
-        className="invisible pointer-events-none absolute left-0 top-0 flex h-0 max-w-none flex-nowrap items-center gap-1 overflow-hidden"
-      >
-        {tags.map((tag) => (
-          <SupportTagBadge key={tag.id} name={tag.name} color={tag.color} className="h-4 shrink-0 px-1.5 text-[10px]" />
-        ))}
-      </div>
+    <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden">
+      {visibleTags.map((tag) => (
+        <span
+          key={tag.id}
+          className="inline-flex max-w-[7rem] shrink-0 items-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+          title={tag.name}
+          style={getSupportTagPillStyle(tag.color)}
+        >
+          <span className="min-w-0 truncate">{tag.name}</span>
+        </span>
+      ))}
+      {hiddenCount > 0 ? (
+        <span className="inline-flex shrink-0 items-center rounded-full border border-border/70 bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground">
+          +{hiddenCount}
+        </span>
+      ) : null}
     </div>
   );
-}
+});
 
 export const ConversationRow = memo(function ConversationRow({
   workspaceId,
@@ -290,10 +326,11 @@ export const ConversationRow = memo(function ConversationRow({
   const visitorLabel = conversation.anonymous_id ? `Visitor #${conversation.anonymous_id.slice(0, 6)}` : 'Anonymous';
   const displayName = conversation.customer_name || conversation.customer_email || visitorLabel;
   const unreadCount = conversation.unread_count ?? 0;
-  const isUnread = unreadCount > 0;
-  const isAwaitingReply = conversation.awaiting_reply ?? isUnread;
+  const visualState = getConversationRowVisualState(conversation, isSelected);
+  const isUnread = visualState.isUnread;
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsMounted, setActionsMounted] = useState(false);
+  const [actionsDialogOpen, setActionsDialogOpen] = useState(false);
   const typingState = useSupportPresenceStore((s) => s.typingIndicators[conversation.id]);
   const isCustomerTyping = typeof typingState === 'string';
   const agentTypingMap = useSupportPresenceStore((s) => s.agentTyping[conversation.id]);
@@ -307,26 +344,16 @@ export const ConversationRow = memo(function ConversationRow({
   const draftContent = useSupportInboxStore((s) => s.drafts[conversation.id]);
   const hasDraft = !!draftContent && !isSelected;
   const remoteViewingIds = useSupportPresenceStore((s) => s.viewingAgents[conversation.id] || EMPTY_ARRAY);
-  const currentUserId = useAuthStore((s) => s.user?.id);
-  const viewingAgentIds = isSelected && currentUserId && !remoteViewingIds.includes(currentUserId)
-    ? [...remoteViewingIds, currentUserId]
-    : remoteViewingIds;
+  const viewingAgentIds = remoteViewingIds;
   const availableMoveOptions = useMemo(
     () => moveOptions.filter((option) => option.id !== (conversation.mailbox_id ?? 'shared')),
     [conversation.mailbox_id, moveOptions]
   );
-  const rowTags = [
-    ...(conversation.system_tags ?? []).map((tag) => ({
-      id: tag,
-      name: SUPPORT_SYSTEM_TAGS[tag].name,
-      color: SUPPORT_SYSTEM_TAGS[tag].color,
-    })),
-    ...(conversation.tags ?? []).map((tag) => ({
-      id: tag.id,
-      name: tag.name,
-      color: tag.color,
-    })),
-  ];
+  const hasAIHandoff = (conversation.system_tags ?? []).includes('ai_handoff');
+  const hasAIResolved = (conversation.system_tags ?? []).includes('ai_resolved') || conversation.flow_state === 'resolved_by_ai' || conversation.ai_state === 'resolved';
+  const userTags = conversation.tags ?? [];
+  const hasAgentReplyPreview = conversation.last_message_sender_type === 'user' || conversation.last_message_sender_type === 'agent';
+  const agentReplyLabel = `${conversation.last_message_sender_display_name?.trim() || 'Agent'} replied`;
   const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
     if (event.key === 'Enter' || event.key === ' ') {
@@ -340,7 +367,7 @@ export const ConversationRow = memo(function ConversationRow({
     setActionsMounted(open);
   };
 
-  const showActionsMenu = actionsMounted || actionsOpen;
+  const showActionsMenu = actionsMounted || actionsOpen || actionsDialogOpen;
   const actionButton = (
     <button
       type="button"
@@ -371,20 +398,20 @@ export const ConversationRow = memo(function ConversationRow({
       onKeyDown={handleRowKeyDown}
       onMouseEnter={() => setActionsMounted(true)}
       onMouseLeave={() => {
-        if (!actionsOpen) {
+        if (!actionsOpen && !actionsDialogOpen) {
           setActionsMounted(false);
         }
       }}
       onFocusCapture={() => setActionsMounted(true)}
       onBlurCapture={(event) => {
-        if (!actionsOpen && !event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        if (!actionsOpen && !actionsDialogOpen && !event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setActionsMounted(false);
         }
       }}
-      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+      className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:hover:bg-muted/40 ${
         isSelected
-          ? 'bg-muted'
-          : isAwaitingReply
+          ? 'bg-muted/80 dark:bg-muted/45'
+          : visualState.usesActionBackground
             ? 'bg-blue-50/70 dark:bg-blue-950/20'
             : ''
       }`}
@@ -393,10 +420,8 @@ export const ConversationRow = memo(function ConversationRow({
       <span
         className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200 ${
           isSelected
-            ? 'h-8 bg-primary'
-            : isAwaitingReply
-              ? 'h-5 bg-blue-500'
-              : 'h-0 bg-transparent'
+            ? 'h-8 bg-muted-foreground/45'
+            : 'h-0 bg-transparent'
         }`}
       />
 
@@ -412,25 +437,29 @@ export const ConversationRow = memo(function ConversationRow({
           {isVisitorOnline && (
             <span className="absolute -left-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-green-400 ring-2 ring-background shadow-sm" />
           )}
-          <ConversationCountryFlag countryCode={conversation.country_code} countryName={conversation.country_name} />
         </div>
 
         {/* Content */}
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
           {/* Headline: name + time */}
           <div className="grid items-center gap-2" style={{ gridTemplateColumns: '1fr auto' }}>
-            <span className={`text-[13.5px] leading-tight overflow-hidden text-ellipsis whitespace-nowrap ${isAwaitingReply ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}`}>
-              {displayName}
-            </span>
-            <div className="relative flex min-w-[40px] items-center justify-end">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <ChannelIcon source={conversation.source} />
+              <span
+                data-conversation-customer-name="true"
+                className={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] leading-tight ${visualState.usesUnreadTypography ? 'font-semibold text-foreground' : 'font-medium text-foreground/90'}`}
+              >
+                {displayName}
+              </span>
+            </div>
+            <div className="relative flex h-6 min-w-6 items-center justify-end">
               <div
-                className={`flex shrink-0 items-center gap-1 transition-opacity duration-150 ${
+                className={`flex shrink-0 items-center transition-opacity duration-150 ${
                   actionsOpen
                     ? 'opacity-0'
                     : 'group-hover:opacity-0 group-focus-within:opacity-0'
                 }`}
               >
-                <ChannelIcon source={conversation.source} />
                 <span className="text-[11px] text-muted-foreground/70 tabular-nums">
                   {timeAgo(conversation.updated_at)}
                 </span>
@@ -449,6 +478,7 @@ export const ConversationRow = memo(function ConversationRow({
                     moveOptions={availableMoveOptions}
                     open={actionsOpen}
                     onOpenChange={handleActionsOpenChange}
+                    onSubjectDialogOpenChange={setActionsDialogOpen}
                     align="end"
                     trigger={actionButton}
                   />
@@ -460,13 +490,13 @@ export const ConversationRow = memo(function ConversationRow({
           {/* Context: message preview + activity */}
           <div className="grid items-center gap-1.5 mt-0.5" style={{ gridTemplateColumns: '1fr auto' }}>
             <p
-              className={`text-sm m-0 leading-[18px] ${isAwaitingReply ? 'font-medium text-foreground/80' : 'text-muted-foreground'}`}
-              style={{ display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', maxHeight: '18px' }}
+              className={`flex min-w-0 items-center gap-1 text-sm m-0 leading-[18px] ${visualState.usesUnreadTypography ? 'font-medium text-foreground/80' : 'text-muted-foreground'}`}
+              style={{ maxHeight: '18px' }}
             >
               {isCustomerTyping ? (
-                <span className="italic text-muted-foreground">{typingState || 'typing…'}</span>
+                <span className="min-w-0 truncate italic text-muted-foreground">{typingState || 'typing…'}</span>
               ) : isAgentTyping ? (
-                <span className="italic text-blue-600/70 dark:text-blue-400/70">
+                <span className="min-w-0 truncate italic text-blue-600/70 dark:text-blue-400/70">
                   {(() => {
                     const [uid, typing] = agentTypingEntries[0];
                     const { name } = resolveAgentIdentity(uid, typing, members);
@@ -478,21 +508,24 @@ export const ConversationRow = memo(function ConversationRow({
                 <>
                   <span className="inline-block w-[3px] h-3.5 align-middle rounded-full bg-blue-500 mr-1.5" />
                   <span className="text-blue-600 dark:text-blue-400 font-medium">Draft: </span>
-                  <span className="text-muted-foreground">{draftContent}</span>
+                  <span className="min-w-0 truncate text-muted-foreground">{draftContent}</span>
                 </>
               ) : conversation.last_message?.startsWith('Note: ') ? (
                 <>
-                  <span className="inline-block w-[3px] h-3.5 align-middle rounded-full bg-amber-500 mr-1.5" />
-                  <span className="text-amber-600 dark:text-amber-400 font-medium">Note: </span>
-                  <span className="text-muted-foreground">{conversation.last_message.slice(6)}</span>
+                  <span className="font-medium text-amber-600 dark:text-amber-400">Note: </span>
+                  <span className="min-w-0 truncate text-muted-foreground">{conversation.last_message.slice(6)}</span>
                 </>
               ) : (
-                conversation.last_message || conversation.subject
+                <>
+                  {hasAgentReplyPreview && <AgentReplyIndicator label={agentReplyLabel} />}
+                  <span className="min-w-0 truncate">{conversation.last_message || conversation.subject}</span>
+                </>
               )}
             </p>
 
             {/* Activity indicators or status icon */}
-            <div className="flex shrink-0 items-center">
+            <div className="flex shrink-0 items-center gap-1">
+              {hasAIHandoff && <AIHandoffIndicator />}
               {isCustomerTyping ? (
                 <TypingDotsPill />
               ) : isAgentTyping ? (
@@ -512,6 +545,8 @@ export const ConversationRow = memo(function ConversationRow({
                     <AgentAvatar key={uid} userId={uid} tooltip="viewing" />
                   ))}
                 </div>
+              ) : hasAIResolved ? (
+                <AIResolvedIndicator />
               ) : conversation.status === 'resolved' ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -522,7 +557,7 @@ export const ConversationRow = memo(function ConversationRow({
               ) : null}
             </div>
           </div>
-          {rowTags.length > 0 && <ConversationTagRail tags={rowTags} />}
+          <UserTagStrip tags={userTags} />
         </div>
       </div>
     </div>

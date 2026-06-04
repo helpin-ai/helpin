@@ -9,6 +9,7 @@ import { MessageThread } from '../MessageThread'
 const supportHooks = vi.hoisted(() => ({
   useConversation: vi.fn(),
   useConversationMessages: vi.fn(),
+  markConversationRead: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -28,6 +29,10 @@ vi.mock('@/hooks/queries/useSupport', () => ({
   useMoveConversation: () => ({ mutate: vi.fn(), isPending: false }),
   useDismissConversationTriage: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteSupportMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMarkConversationRead: () => ({ mutate: supportHooks.markConversationRead, isPending: false }),
+  useMarkConversationUnread: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateConversationSubject: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteConversation: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 vi.mock('@/hooks/queries/useSession', () => ({
@@ -65,6 +70,7 @@ describe('MessageThread', () => {
     vi.useFakeTimers()
     supportHooks.useConversation.mockReturnValue({ data: undefined, isFetched: false })
     supportHooks.useConversationMessages.mockReturnValue({ data: [], isLoading: true })
+    supportHooks.markConversationRead.mockReset()
     useWorkspaceStore.setState({ currentWorkspace: { id: 'ws-1', name: 'Acme', slug: 'acme' } })
   })
 
@@ -89,6 +95,55 @@ describe('MessageThread', () => {
     expect(container.querySelector('[data-testid="support-thread-header-skeleton"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="support-thread-message-skeleton"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="reply-composer"]')).toBeNull()
+
+    act(() => root.unmount())
+  })
+
+  it('marks an open unread thread read when the latest message is visible', () => {
+    supportHooks.useConversation.mockReturnValue({
+      isFetched: true,
+      data: {
+        id: 'conv-1',
+        workspace_id: 'ws-1',
+        display_id: 1,
+        subject: 'Question',
+        status: 'open',
+        priority: 'medium',
+        source: 'widget',
+        unread_count: 1,
+        team_last_seen_at: '2026-06-03T10:00:00.000Z',
+        created_at: '2026-06-03T09:00:00.000Z',
+        updated_at: '2026-06-03T10:01:00.000Z',
+      },
+    })
+    supportHooks.useConversationMessages.mockReturnValue({
+      isLoading: false,
+      data: [
+        {
+          id: 'msg-1',
+          workspace_id: 'ws-1',
+          conversation_id: 'conv-1',
+          sender_type: 'customer',
+          content: 'Still there?',
+          message_type: 'reply',
+          is_internal: false,
+          created_at: '2026-06-03T10:01:00.000Z',
+          updated_at: '2026-06-03T10:01:00.000Z',
+        },
+      ],
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<MessageThread workspaceId="ws-1" conversationId="conv-1" />)
+    })
+    act(() => {
+      vi.runAllTimers()
+    })
+
+    expect(supportHooks.markConversationRead).toHaveBeenCalledWith('conv-1')
 
     act(() => root.unmount())
   })

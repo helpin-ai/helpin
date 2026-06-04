@@ -106,6 +106,17 @@ func parseSettings(raw string) model.SupportInboxSettings {
 		return model.DefaultSupportInboxSettings()
 	}
 	defaults.EmailFallbackEnabled = true
+	if !defaults.ForwardedEmailDetectionEnabled && defaults.ForwardedEmailDetectionMode == "" && defaults.ForwardedEmailMinConfidence == 0 {
+		defaults.ForwardedEmailDetectionEnabled = true
+		defaults.ForwardedEmailDetectionMode = "high_confidence_any_sender"
+		defaults.ForwardedEmailMinConfidence = forwardedEmailDefaultMinConfidence
+	}
+	if defaults.ForwardedEmailDetectionMode == "" {
+		defaults.ForwardedEmailDetectionMode = "high_confidence_any_sender"
+	}
+	if defaults.ForwardedEmailMinConfidence <= 0 {
+		defaults.ForwardedEmailMinConfidence = forwardedEmailDefaultMinConfidence
+	}
 	return defaults
 }
 
@@ -234,6 +245,15 @@ func mergeSettingsUpdate(current model.SupportInboxSettings, patch model.UpdateI
 	}
 	if patch.EmailFallbackMaxDeliveryAgeSecs != nil {
 		current.EmailFallbackMaxDeliveryAgeSecs = *patch.EmailFallbackMaxDeliveryAgeSecs
+	}
+	if patch.ForwardedEmailDetectionEnabled != nil {
+		current.ForwardedEmailDetectionEnabled = *patch.ForwardedEmailDetectionEnabled
+	}
+	if patch.ForwardedEmailDetectionMode != nil {
+		current.ForwardedEmailDetectionMode = strings.TrimSpace(*patch.ForwardedEmailDetectionMode)
+	}
+	if patch.ForwardedEmailMinConfidence != nil {
+		current.ForwardedEmailMinConfidence = *patch.ForwardedEmailMinConfidence
 	}
 	if patch.WidgetName != nil {
 		current.WidgetName = *patch.WidgetName

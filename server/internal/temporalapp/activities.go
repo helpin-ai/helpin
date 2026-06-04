@@ -87,6 +87,10 @@ type CommandBarPlanAdvancer interface {
 	StartReadyCommandBarPlanSteps(ctx context.Context, input CommandBarPlanWorkflowInput) (*CommandBarPlanProgress, error)
 }
 
+type AutomationEventEvaluator interface {
+	EvaluateEvent(ctx context.Context, event model.AutomationEvent, execCtx *model.RuleExecutionContext)
+}
+
 // AgentRunActivities contains the Temporal activities that execute an agent run.
 type AgentRunActivities struct {
 	runRepo                    *repository.AgentRunRepository
@@ -136,6 +140,7 @@ type AgentRunActivities struct {
 	gitOAuthEncryptionKey      []byte
 	runEngine                  *RunEngine
 	commandBarAdvancer         CommandBarPlanAdvancer
+	ruleEngine                 AutomationEventEvaluator
 }
 
 // NewAgentRunActivities creates the activity set used by shared Temporal workers.
@@ -237,6 +242,42 @@ func NewAgentRunActivities(
 		runEngine:                  runEngine,
 		commandBarAdvancer:         commandBarAdvancer,
 	}
+}
+
+func (a *AgentRunActivities) SetRuleEngine(ruleEngine AutomationEventEvaluator) *AgentRunActivities {
+	a.ruleEngine = ruleEngine
+	return a
+}
+
+func (a *AgentRunActivities) evaluateRunCompletedRules(ctx context.Context, run *model.AgentRun) {
+	if a == nil || a.ruleEngine == nil || a.taskRepo == nil || run == nil || run.TaskID == nil {
+		return
+	}
+	if run.TargetType != "task" && run.TargetType != "story" {
+		return
+	}
+
+	task, err := a.taskRepo.GetRawByID(ctx, *run.TaskID)
+	if err != nil || task == nil {
+		slog.WarnContext(ctx, "failed to load task for agent_run.completed automation",
+			"run_id", run.ID,
+			"task_id", derefString(run.TaskID),
+			"error", err,
+		)
+		return
+	}
+
+	a.ruleEngine.EvaluateEvent(ctx, model.AutomationEvent{
+		WorkspaceID: run.WorkspaceID,
+		TriggerType: model.TriggerAgentRunCompleted,
+		TaskID:      task.ID,
+		StoryID:     task.ID,
+		StateID:     task.WorkflowStateID,
+		AgentID:     run.AgentID,
+		RunID:       run.ID,
+		TargetType:  "task",
+		TargetID:    task.ID,
+	}, nil)
 }
 
 type resolvedRunState struct {
@@ -801,6 +842,9 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		return ExecuteRunResult{}, err
 	}
 	a.runRepo.Notify(ctx, state.run)
+	if state.run.Status == model.AgentRunStatusCompleted {
+		a.evaluateRunCompletedRules(ctx, state.run)
+	}
 	if persistWorkspace && !waitForApproval && !waitForInput && !waitForAuth && !continueExecution {
 		_ = workerpkg.CleanupWorkspaceForRun(state.run.ID)
 	}

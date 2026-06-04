@@ -76,6 +76,7 @@ export function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
                   <TooltipTrigger asChild>
                     <button
                       type="button"
+                      tabIndex={-1}
                       className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border/70 text-[10px] font-semibold text-muted-foreground transition-colors hover:border-border hover:text-foreground"
                       aria-label={`Help for ${field.label}`}
                     >
@@ -88,6 +89,7 @@ export function FieldVisibilityForm({ teamId, initial, saving, onSave }: {
                 </Tooltip>
               </div>
               <Switch
+                size="sm"
                 checked={fields[field.key]}
                 onCheckedChange={(checked) => setFields((prev) => ({ ...prev, [field.key]: checked }))}
               />

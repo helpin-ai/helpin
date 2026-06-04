@@ -7,6 +7,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -20,10 +23,10 @@ import {
 import { Input } from '@/components/ui/input';
 import {
   Delete01Icon,
+  FolderInputIcon,
   InboxIcon,
   Link01Icon,
   MailOpenIcon,
-  Message01Icon,
   OctagonXIcon,
   PencilEdit01Icon,
 } from '@/lib/icons';
@@ -54,6 +57,7 @@ interface ConversationActionsMenuProps {
   onOpenChange?: (open: boolean) => void;
   onConversationDeleted?: () => void;
   onConversationMoved?: (option: ConversationActionMoveOption) => void;
+  onSubjectDialogOpenChange?: (open: boolean) => void;
 }
 
 function buildConversationLink(workspaceSlug: string | undefined, conversationId: string) {
@@ -74,6 +78,7 @@ export function ConversationActionsMenu({
   onOpenChange,
   onConversationDeleted,
   onConversationMoved,
+  onSubjectDialogOpenChange,
 }: ConversationActionsMenuProps) {
   const confirm = useConfirm();
   const markConversationRead = useMarkConversationRead(workspaceId);
@@ -95,7 +100,8 @@ export function ConversationActionsMenu({
     if (!subjectDialogOpen) {
       setSubjectDraft(conversation.subject);
     }
-  }, [conversation.subject, subjectDialogOpen]);
+    onSubjectDialogOpenChange?.(subjectDialogOpen);
+  }, [conversation.subject, onSubjectDialogOpenChange, subjectDialogOpen]);
 
   const handleToggleReadState = () => {
     const mutation = isUnread ? markConversationRead : markConversationUnread;
@@ -183,26 +189,34 @@ export function ConversationActionsMenu({
           {moveOptions.length > 0 && (
             <>
               <DropdownMenuSeparator />
-              {moveOptions.map((option) => (
-                <DropdownMenuItem
-                  key={option.id}
-                  className={itemClassName}
-                  onClick={() => {
-                    moveConversation.mutate({
-                      conversationId: conversation.id,
-                      mailboxId: option.id === 'shared' ? null : option.id,
-                    }, {
-                      onSuccess: () => {
-                        onConversationMoved?.(option);
-                        toast.success(`Moved to ${option.name}`);
-                      },
-                    });
-                  }}
-                >
-                  <Message01Icon className={iconClassName} />
-                  Move to {option.name}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className={itemClassName}>
+                  <FolderInputIcon className={iconClassName} />
+                  Move to inbox
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-48">
+                  {moveOptions.map((option) => (
+                    <DropdownMenuItem
+                      key={option.id}
+                      className={itemClassName}
+                      onClick={() => {
+                        moveConversation.mutate({
+                          conversationId: conversation.id,
+                          mailboxId: option.id === 'shared' ? null : option.id,
+                        }, {
+                          onSuccess: () => {
+                            onConversationMoved?.(option);
+                            toast.success(`Moved to ${option.name}`);
+                          },
+                        });
+                      }}
+                    >
+                      <InboxIcon className={iconClassName} />
+                      {option.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
             </>
           )}
           <DropdownMenuSeparator />

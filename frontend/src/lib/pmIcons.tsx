@@ -350,8 +350,9 @@ export function StateTypeIcon({
       );
     case 'started':
       return (
-        <svg className={cn('text-amber-500', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-          <circle cx="12" cy="12" r="5" fill="currentColor" />
+        <svg className={cn('text-zinc-500', className)} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+          <circle cx="12" cy="12" r="7" stroke="currentColor" strokeWidth="2" />
+          <path d="M12 5A7 7 0 0 1 12 19Z" fill="currentColor" />
         </svg>
       );
     default:

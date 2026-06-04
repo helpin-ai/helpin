@@ -16,6 +16,27 @@ import {
 } from '@/hooks/queries/useSupport';
 import type { SupportEmailSender } from '@/lib/pmTypes';
 
+export function buildSupportSenderEmailPreview({
+  senderEmail,
+  workspaceName,
+  agentName,
+  replyDomain,
+}: {
+  senderEmail: string;
+  workspaceName?: string;
+  agentName?: string;
+  replyDomain?: string;
+}) {
+  const resolvedAgentName = agentName?.trim() || 'Agent';
+  const resolvedWorkspaceName = workspaceName?.trim() || 'Workspace';
+  const resolvedReplyDomain = replyDomain?.trim() || 'replies.helpin.email';
+
+  return {
+    from: `${resolvedAgentName} - ${resolvedWorkspaceName} <${senderEmail.trim()}>`,
+    replyTo: `conv-{conversation_id}@${resolvedReplyDomain}`,
+  };
+}
+
 export function SupportEmailSendersTab({ workspaceId }: { workspaceId: string }) {
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -163,6 +184,8 @@ function SenderRow({
   const lastChecked = sender.last_checked_at ? new Date(sender.last_checked_at).toLocaleString() : null;
   const forwardingVerified = sender.forwarding_status === 'verified';
   const canUseForMailbox = Boolean(sender.mailbox_id) && forwardingVerified;
+  const preview = buildSupportSenderEmailPreview({ senderEmail: sender.email });
+  const selectedAsDefault = sender.active && (sender.default_scope === 'workspace' || sender.default_scope === 'mailbox');
 
   return (
     <div className="rounded-lg border p-3">
@@ -192,6 +215,19 @@ function SenderRow({
           {verified && canUseForMailbox && sender.default_scope !== 'mailbox' && <Button size="sm" variant="outline" onClick={onSetMailboxDefault} disabled={busy}>Set inbox default</Button>}
           {sender.active && <Button size="sm" variant="outline" onClick={onDisable} disabled={busy}>Disable</Button>}
         </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 rounded-md border bg-background p-2 text-xs md:grid-cols-[90px_1fr]">
+        <span className="font-medium text-muted-foreground">From</span>
+        <code className="min-w-0 truncate rounded bg-muted px-2 py-1">{preview.from}</code>
+        <span className="font-medium text-muted-foreground">Reply-To</span>
+        <code className="min-w-0 truncate rounded bg-muted px-2 py-1">{preview.replyTo}</code>
+        {!selectedAsDefault && (
+          <>
+            <span className="font-medium text-muted-foreground">Fallback</span>
+            <span className="text-muted-foreground">Helpin verified sender until this address is verified and selected as a default.</span>
+          </>
+        )}
       </div>
 
       <div className="mt-3 divide-y rounded-md border bg-muted/20">

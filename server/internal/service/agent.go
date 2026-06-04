@@ -953,6 +953,8 @@ func describeAutomationRuleTrigger(rule model.AutomationRule) string {
 		return "Runs when a task enters a matching workflow state."
 	case model.TriggerAgentRunApproved:
 		return "Runs after an interactive task run is explicitly approved."
+	case model.TriggerAgentRunCompleted:
+		return "Runs after a task agent run completes successfully."
 	case model.TriggerGitHubPush:
 		var cfg model.TriggerConfigGitHubPush
 		if err := json.Unmarshal(rule.TriggerConfig, &cfg); err == nil {

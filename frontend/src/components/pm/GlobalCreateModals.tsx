@@ -396,8 +396,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="max-w-4xl sm:max-w-4xl gap-0 overflow-hidden p-0" showCloseButton={false}>
-        <div className="flex h-[80vh] flex-col">
+      <DialogContent className="max-w-6xl sm:max-w-6xl gap-0 overflow-hidden p-0" showCloseButton={false}>
+        <div className="flex h-[85vh] max-h-[960px] flex-col">
           <div className="flex items-center justify-between border-b border-border/60 px-6 pt-4 pb-3">
             <span className="text-lg font-semibold">Create epic</span>
             <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleClose}>
@@ -411,8 +411,8 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
             </div>
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_280px] overflow-hidden">
-            <div className="min-h-0 overflow-y-auto px-8 py-5">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] overflow-hidden">
+            <div className="min-h-0 overflow-y-auto px-6 py-3">
               <Input
                 autoFocus
                 aria-label="Epic title"
@@ -609,7 +609,7 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
               </div>
             </div>
 
-            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-4 py-5">
+            <aside className="min-h-0 overflow-y-auto border-l border-border/60 px-5 py-4">
               <p className="mb-4 text-xs text-muted-foreground">
                 Epics are collections of tasks that together represent a major initiative or feature.
               </p>
@@ -739,9 +739,6 @@ function GlobalCreateEpic({ workspaceId, onClose }: { workspaceId: string; onClo
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!name.trim() || !meta.teamId || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : assignedAgentId ? 'Create & run agent' : 'Create Epic'}
@@ -1132,9 +1129,6 @@ function GlobalCreateSprint({ workspaceId, onClose }: { workspaceId: string; onC
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || !form.teamId || !form.startDate || !form.endDate || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Sprint'}
@@ -1482,9 +1476,6 @@ function GlobalCreateObjective({ workspaceId, onClose }: { workspaceId: string; 
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 border-t border-border/50 px-6 py-3">
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
-              Discard
-            </Button>
             <Button size="sm" onClick={create} disabled={!form.name.trim() || submitting || descriptionPendingUploads > 0}>
               {submitting ? <Loading01Icon className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               {submitting ? 'Creating...' : 'Create Objective'}

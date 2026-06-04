@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo, memo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, memo } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Message01Icon, BotIcon, Loading01Icon, CheckmarkCircle02Icon, CancelCircleIcon, MoreHorizontalIcon } from '@/lib/icons';
@@ -17,6 +17,7 @@ import {
   useMoveConversation,
   useDismissConversationTriage,
   useDeleteSupportMessage,
+  useMarkConversationRead,
 } from '@/hooks/queries/useSupport';
 import { useWorkspaceAccess, useUpdateSupportTaskPreferences } from '@/hooks/queries/useSession';
 import { useWorkspaceSettings } from '@/hooks/queries/useSettings';
@@ -25,7 +26,6 @@ import { CreateTaskDialog } from './CreateTaskDialog';
 import { agentService } from '@/lib/services/agentService';
 // supportService import kept for non-presence HTTP calls
 import { type AgentTypingState, useSupportPresenceStore } from '@/stores/supportPresenceStore';
-import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useAuthStore } from '@/stores/authStore';
 import { resolveTeamMemberAvatarSrc } from '@/lib/teamMemberAvatar';
 import type { AgentRun, SupportMessage, ConversationStatus } from '@/lib/pmTypes';
@@ -38,7 +38,7 @@ import { EmptyState } from './EmptyState';
 import { AgentRunsCard } from './AgentRunsCard';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SupportInboxOnboarding } from './SupportInboxOnboarding';
-import { isNearThreadBottom, shouldAutoScrollThread } from './threadAutoScroll';
+import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from './threadAutoScroll';
 
 interface MessageThreadProps {
   workspaceId: string;
@@ -265,11 +265,11 @@ export function MessageThread({
   const moveConversation = useMoveConversation(workspaceId);
   const dismissTriage = useDismissConversationTriage(workspaceId);
   const deleteMessage = useDeleteSupportMessage(workspaceId, conversationId);
+  const markConversationRead = useMarkConversationRead(workspaceId);
   const { data: access } = useWorkspaceAccess(workspaceId);
   const { data: wsSettings } = useWorkspaceSettings(workspaceId);
   const updatePreferences = useUpdateSupportTaskPreferences(workspaceId);
   const currentUser = useAuthStore((s) => s.user);
-  const setSelectedMailboxId = useSupportInboxStore((s) => s.setSelectedMailboxId);
   const isThreadLoading = !!conversationId && (!conversationFetched || isLoading);
 
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
@@ -277,6 +277,7 @@ export function MessageThread({
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const [composerReady, setComposerReady] = useState(false);
   const [historyHydrated, setHistoryHydrated] = useState(true);
+  const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
   const memberAvatarByUserId = useMemo(() => {
     const map = new Map<string, string>();
@@ -633,8 +634,12 @@ export function MessageThread({
   }, [groupedMessages, historyHydrated]);
 
   const lastMessageId = messages[messages.length - 1]?.id ?? null;
+  const initialScrollTargetMessageId = useMemo(
+    () => getInitialThreadScrollTarget(messages, conversation?.team_last_seen_at),
+    [conversation?.team_last_seen_at, messages],
+  );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!conversationId) {
       pendingInitialScrollRef.current = false;
       isNearBottomRef.current = true;
@@ -674,14 +679,29 @@ export function MessageThread({
     let cancelled = false;
     const frames: number[] = [];
     const timeouts: number[] = [];
+    const shouldUseInitialTarget = pendingInitialScrollRef.current && initialScrollTargetMessageId && initialScrollTargetMessageId !== lastMessageId;
 
-    const scrollToBottom = () => {
+    const scrollToTarget = () => {
       if (cancelled) return;
 
       const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
       if (viewport) {
+        if (shouldUseInitialTarget) {
+          const target = viewport.querySelector(`[data-support-message-id="${initialScrollTargetMessageId}"]`) as HTMLDivElement | null;
+          if (target) {
+            viewport.scrollTop = Math.max(0, target.offsetTop - 24);
+            isNearBottomRef.current = isNearThreadBottom(viewport);
+            return;
+          }
+        }
         viewport.scrollTop = viewport.scrollHeight;
         isNearBottomRef.current = true;
+        return;
+      }
+
+      if (shouldUseInitialTarget) {
+        document.querySelector(`[data-support-message-id="${initialScrollTargetMessageId}"]`)?.scrollIntoView({ block: 'start' });
+        isNearBottomRef.current = false;
         return;
       }
 
@@ -690,9 +710,10 @@ export function MessageThread({
     };
 
     const scheduleFrame = () => {
-      frames.push(window.requestAnimationFrame(scrollToBottom));
+      frames.push(window.requestAnimationFrame(scrollToTarget));
     };
 
+    scrollToTarget();
     scheduleFrame();
     timeouts.push(window.setTimeout(scheduleFrame, 0));
     timeouts.push(window.setTimeout(scheduleFrame, 80));
@@ -707,7 +728,22 @@ export function MessageThread({
       frames.forEach((frame) => window.cancelAnimationFrame(frame));
       timeouts.forEach((timeout) => window.clearTimeout(timeout));
     };
-  }, [conversationId, historyHydrated, lastMessageId, messages.length, visibleGroupedMessages.length]);
+  }, [conversationId, historyHydrated, initialScrollTargetMessageId, lastMessageId, messages.length, visibleGroupedMessages.length]);
+
+  useEffect(() => {
+    if (!conversationId || !conversation) return;
+    if (!shouldMarkOpenThreadRead({
+      unreadCount: conversation.unread_count,
+      isNearBottom: isNearBottomRef.current,
+      isLoading: isThreadLoading,
+    })) {
+      return;
+    }
+    if (lastOpenThreadReadMessageIdRef.current === lastMessageId) return;
+
+    lastOpenThreadReadMessageIdRef.current = lastMessageId;
+    markConversationRead.mutate(conversationId);
+  }, [conversation, conversationId, isThreadLoading, lastMessageId, markConversationRead]);
 
   useEffect(() => {
     const viewport = scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLDivElement | null;
@@ -845,9 +881,6 @@ export function MessageThread({
               conversation={conversation}
               moveOptions={moveOptions.map((option) => ({ id: option!.id, name: option!.name }))}
               align="end"
-              onConversationMoved={(option) => {
-                setSelectedMailboxId(option.id);
-              }}
               onConversationDeleted={() => {
                 if (!workspaceSlug) return;
                 void navigate({ to: '/w/$slug/support', params: { slug: workspaceSlug }, replace: true });
@@ -897,7 +930,6 @@ export function MessageThread({
                       mailboxId: triageBanner.mailboxId,
                     }, {
                       onSuccess: () => {
-                        setSelectedMailboxId(triageBanner.mailboxId);
                         toast.success(`Moved to ${triageBanner.mailboxName}`);
                       },
                     });
@@ -969,6 +1001,7 @@ export function MessageThread({
               <div
                 key={item.message.id}
                 className="support-thread-message"
+                data-support-message-id={item.message.id}
               >
                 <MessageBubble
                   message={item.message}

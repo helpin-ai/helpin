@@ -15,7 +15,7 @@ import (
 // PMWorkflowService contains workflow business logic.
 type PMWorkflowService struct {
 	workflowRepo *repository.PMWorkflowRepository
-	taskRepo    *repository.PMTaskRepository
+	taskRepo     *repository.PMTaskRepository
 	labelRepo    *repository.PMLabelRepository
 	wsPublisher  *websocket.Publisher
 	logger       *slog.Logger
@@ -25,7 +25,7 @@ type PMWorkflowService struct {
 func NewPMWorkflowService(workflowRepo *repository.PMWorkflowRepository, taskRepo *repository.PMTaskRepository, labelRepo *repository.PMLabelRepository, wsPublisher *websocket.Publisher) *PMWorkflowService {
 	return &PMWorkflowService{
 		workflowRepo: workflowRepo,
-		taskRepo:    taskRepo,
+		taskRepo:     taskRepo,
 		labelRepo:    labelRepo,
 		wsPublisher:  wsPublisher,
 		logger:       slog.Default().With("service", "pm_workflow"),
@@ -348,16 +348,23 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 	if req.WIPLimit != nil {
 		target.WIPLimit = req.WIPLimit
 	}
+	defaultRequested := false
 	if req.IsDefault != nil {
 		target.IsDefault = *req.IsDefault
 		if *req.IsDefault {
-			if err := s.workflowRepo.ClearDefaultStates(ctx, workflowID); err != nil {
-				return nil, err
-			}
+			defaultRequested = true
 			wf.Workflow.DefaultStateID = &target.ID
 		}
 	}
 
+	if err := ensureWorkflowStateTypeCoverage(wf.States); err != nil {
+		return nil, err
+	}
+	if defaultRequested {
+		if err := s.workflowRepo.ClearDefaultStates(ctx, workflowID); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.workflowRepo.UpdateState(ctx, target); err != nil {
 		s.logger.ErrorContext(ctx, "failed to update workflow state", "error", err, "state_id", stateID, "workflow_id", workflowID)
 		return nil, err
@@ -373,11 +380,14 @@ func (s *PMWorkflowService) UpdateState(ctx context.Context, workflowID, stateID
 	if err != nil {
 		return nil, err
 	}
-	if err := validateWorkflowStateOrder(updated.States); err != nil {
-		return nil, err
-	}
-	if err := ensureWorkflowStateTypeCoverage(updated.States); err != nil {
-		return nil, err
+	if req.StateType != nil || req.Position != nil {
+		if err := s.normalizePositions(ctx, workflowID, updated.States); err != nil {
+			return nil, err
+		}
+		updated, err = s.workflowRepo.GetByID(ctx, workflowID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, state := range updated.States {
 		if state.ID == stateID {
@@ -763,7 +773,6 @@ func validateWorkflowStateOrder(states []model.PMWorkflowState) error {
 
 func ensureWorkflowStateTypeCoverage(states []model.PMWorkflowState) error {
 	type hasType struct {
-		Backlog   bool
 		Unstarted bool
 		Started   bool
 		Done      bool
@@ -771,8 +780,6 @@ func ensureWorkflowStateTypeCoverage(states []model.PMWorkflowState) error {
 	flags := hasType{}
 	for _, state := range states {
 		switch state.StateType {
-		case model.PMStateTypeBacklog:
-			flags.Backlog = true
 		case model.PMStateTypeUnstarted:
 			flags.Unstarted = true
 		case model.PMStateTypeStarted:
@@ -781,8 +788,8 @@ func ensureWorkflowStateTypeCoverage(states []model.PMWorkflowState) error {
 			flags.Done = true
 		}
 	}
-	if !flags.Backlog || !flags.Unstarted || !flags.Started || !flags.Done {
-		return fmt.Errorf("workflow must include at least one backlog, unstarted, started, and done state")
+	if !flags.Unstarted || !flags.Started || !flags.Done {
+		return fmt.Errorf("workflow must include at least one unstarted, started, and done state")
 	}
 	return nil
 }

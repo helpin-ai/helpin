@@ -511,7 +511,7 @@ describe('ConversationList presence resync', () => {
     })
 
     const updateButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent === 'Update view') as HTMLButtonElement
-    expect(document.body.textContent).toContain('Updates this view for you only.')
+    expect(updateButton.getAttribute('title')).toBe('Updates this view for you only.')
     act(() => {
       updateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })

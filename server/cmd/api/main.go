@@ -707,6 +707,7 @@ func main() {
 	emailFallbackService.SetCRMContactRepository(crmContactRepo)
 	supportMessageActionsService := service.NewSupportMessageActionsService(supportMessageRepo, emailFallbackService, supportEmailLogRepo, wsPublisher)
 	supportAttachmentService := service.NewSupportAttachmentService(supportAttachmentRepo, s3Client)
+	emailFallbackService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetAttachmentService(supportAttachmentService)
 	supportInboxService.SetLinkPreviewService(supportLinkPreviewService)
 	supportInboxService.SetEmailFallbackService(emailFallbackService)

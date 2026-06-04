@@ -10,6 +10,7 @@ const (
 	TriggerTaskStateEntered     = "task.state_entered"
 	TriggerStoryStateEntered    = TriggerTaskStateEntered // legacy alias
 	TriggerAgentRunApproved     = "agent_run.approved"
+	TriggerAgentRunCompleted    = "agent_run.completed"
 	TriggerDocPublished         = "doc.published"
 	TriggerAISectionRegenerated = "ai_section.regenerated"
 	TriggerAISectionApproved    = "ai_section.approved"
@@ -94,6 +95,11 @@ type ActionConfigStartFlow struct {
 
 // TriggerConfigRunApproved holds config for agent_run.approved triggers.
 type TriggerConfigRunApproved struct {
+	StateID string `json:"state_id"`
+}
+
+// TriggerConfigRunCompleted holds config for agent_run.completed triggers.
+type TriggerConfigRunCompleted struct {
 	StateID string `json:"state_id"`
 }
 

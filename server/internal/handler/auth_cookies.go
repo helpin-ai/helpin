@@ -79,10 +79,5 @@ func maxAgeSeconds(ttl time.Duration) int {
 }
 
 func secureCookie(r *http.Request) bool {
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		return true
-	}
-
-	host := strings.ToLower(r.Host)
-	return !(strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") || strings.HasPrefix(host, "[::1]"))
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }

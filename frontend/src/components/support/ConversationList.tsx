@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCreateSupportInboxView, useInfiniteConversations, useInboxScopes, useMarkConversationRead, useSupportInboxViews, useSupportTags, useUpdateSupportBuiltinInboxView, useUpdateSupportInboxView } from '@/hooks/queries/useSupport';
 import { supportInboxBuiltinViewKey, useSupportInboxStore, type NavFilter } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
@@ -734,20 +735,25 @@ export function ConversationList({
                   {(canSaveCurrentView || canUpdateCurrentView) && (
                     <div className="space-y-2 border-t pt-3">
                       {canUpdateCurrentView && (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="w-full justify-center"
-                          disabled={activeCustomViewId ? updateInboxView.isPending : updateBuiltinInboxView.isPending}
-                          onClick={handleUpdateView}
-                        >
-                          Update view
-                        </Button>
-                      )}
-                      {!activeCustomViewId && canUpdateCurrentView && (
-                        <p className="text-center text-[11px] leading-4 text-muted-foreground">
-                          Updates this view for you only.
-                        </p>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="w-full justify-center"
+                                disabled={activeCustomViewId ? updateInboxView.isPending : updateBuiltinInboxView.isPending}
+                                onClick={handleUpdateView}
+                                title="Updates this view for you only."
+                              >
+                                Update view
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              <span className="text-xs">Updates this view for you only.</span>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       )}
                       <Button
                         variant="outline"
@@ -820,7 +826,7 @@ export function ConversationList({
 
       {/* Conversation list */}
       <div
-        className="flex-1 min-h-0 overflow-y-auto pb-6"
+        className="flex-1 min-h-0 overflow-y-auto pb-16"
         data-support-conversation-scroll
         onScroll={handleListScroll}
       >
