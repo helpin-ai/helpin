@@ -493,6 +493,8 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 	}
 	if err := s.messageRepo.SetCancellableUntil(ctx, msg.ID, fireAt); err != nil {
 		s.logger.WarnContext(ctx, "set support message cancellable_until failed", "error", err, "message_id", msg.ID)
+	} else {
+		s.publishMessageUpdated(workspaceID, conv.ID, msg.ID, "email_fallback:queued")
 	}
 	s.logger.InfoContext(ctx, "email fallback enqueued",
 		"workspace_id", workspaceID,

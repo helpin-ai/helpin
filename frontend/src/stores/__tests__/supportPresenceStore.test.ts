@@ -183,6 +183,15 @@ describe('supportPresenceStore', () => {
       expect(viewing['conv-1']).toEqual(['agent-a']);
       expect(viewing['conv-2']).toEqual(['agent-b']);
     });
+
+    it('moves the same agent to the latest viewed conversation', () => {
+      const { setViewingAgent } = useSupportPresenceStore.getState();
+      setViewingAgent('conv-1', 'agent-a', true);
+      setViewingAgent('conv-2', 'agent-a', true);
+      const viewing = useSupportPresenceStore.getState().viewingAgents;
+      expect(viewing['conv-1']).toEqual([]);
+      expect(viewing['conv-2']).toEqual(['agent-a']);
+    });
   });
 
   describe('replaceViewingAgents', () => {

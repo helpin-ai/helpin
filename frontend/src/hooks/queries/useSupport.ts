@@ -70,6 +70,68 @@ type SupportConversationFilters = {
   system_tags?: string;
 };
 
+type SendMessagePayload = { content: string; is_internal?: boolean; attachment_ids?: string[] };
+
+type OptimisticSupportUser = {
+  id?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+};
+
+export function buildOptimisticSupportMessage({
+  workspaceId,
+  conversationId,
+  payload,
+  user,
+  now,
+  optimisticId,
+}: {
+  workspaceId: string;
+  conversationId: string;
+  payload: SendMessagePayload;
+  user: OptimisticSupportUser | null;
+  now: string;
+  optimisticId: string;
+}): SupportMessage {
+  return {
+    id: optimisticId,
+    workspace_id: workspaceId,
+    conversation_id: conversationId,
+    sender_type: 'user',
+    sender_user_id: user?.id ?? undefined,
+    sender_display_name: user?.full_name?.trim() || user?.email?.trim() || 'You',
+    sender_avatar_url: user?.avatar_url ?? undefined,
+    content: payload.content.trim() || ' ',
+    message_type: 'reply',
+    is_internal: Boolean(payload.is_internal),
+    via_channel: 'widget',
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+export function appendOptimisticSupportMessage(current: SupportMessage[] | undefined, message: SupportMessage) {
+  const existing = current ?? [];
+  if (existing.some((item) => item.id === message.id)) return existing;
+  return [...existing, message];
+}
+
+export function reconcileOptimisticSupportMessage(
+  current: SupportMessage[] | undefined,
+  optimisticId: string,
+  persisted: SupportMessage,
+) {
+  const existing = current ?? [];
+  if (existing.some((item) => item.id === persisted.id)) {
+    return existing.filter((item) => item.id !== optimisticId);
+  }
+  if (existing.some((item) => item.id === optimisticId)) {
+    return existing.map((item) => item.id === optimisticId ? persisted : item);
+  }
+  return [...existing, persisted];
+}
+
 function invalidateSupportInboxViewCounts(queryClient: QueryClient, workspaceId: string) {
   queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
 }
@@ -736,16 +798,43 @@ export function useVisitorContext(workspaceId: string, conversationId: string | 
 export function useSendMessage(workspaceId: string, conversationId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { content: string; is_internal?: boolean; attachment_ids?: string[] }) =>
+    mutationFn: (payload: SendMessagePayload) =>
       supportService.createConversationMessage(workspaceId, conversationId!, payload).then(unwrap),
-    onSuccess: () => {
+    onMutate: async (payload) => {
+      if (!conversationId) return { previousMessages: undefined as SupportMessage[] | undefined, optimisticId: '' };
+      const key = queryKeys.support.messages(workspaceId, conversationId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<SupportMessage[]>(key);
+      const now = new Date().toISOString();
+      const optimisticId = `optimistic-${conversationId}-${Date.now()}`;
+      const optimistic = buildOptimisticSupportMessage({
+        workspaceId,
+        conversationId,
+        payload,
+        user: useAuthStore.getState().user,
+        now,
+        optimisticId,
+      });
+      queryClient.setQueryData<SupportMessage[]>(key, (current) => appendOptimisticSupportMessage(current, optimistic));
+      return { previousMessages, optimisticId };
+    },
+    onSuccess: (message, _payload, context) => {
       if (conversationId) {
+        if (context?.optimisticId) {
+          queryClient.setQueryData<SupportMessage[]>(
+            queryKeys.support.messages(workspaceId, conversationId),
+            (current) => reconcileOptimisticSupportMessage(current, context.optimisticId, message),
+          );
+        }
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _payload, context) => {
+      if (conversationId && context?.previousMessages) {
+        queryClient.setQueryData(queryKeys.support.messages(workspaceId, conversationId), context.previousMessages);
+      }
       toast.error('Failed to send message', { description: error.message });
     },
   });
