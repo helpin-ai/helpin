@@ -1,12 +1,12 @@
 import { Collapsible } from 'radix-ui';
 import { ArrowRight01Icon, MoreVerticalIcon, ArrowReloadHorizontalIcon, Setting06Icon, PlusSignIcon } from '@/lib/icons';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -18,6 +18,7 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { teamSubItems } from './config';
+import { SidebarSectionAction } from './SidebarSectionAction';
 
 type Team = {
   id: string;
@@ -49,23 +50,15 @@ export function ProjectsTeamsNav({
       <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 flex items-center justify-between">
         <span>Your Teams</span>
         {canManageTeams && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="group/plus flex h-4 w-4 items-center justify-center rounded hover:bg-muted transition-all"
-                onClick={() =>
-                  onNavigate({
-                    to: '/w/$slug/settings/$section',
-                    params: { slug: wsSlug, section: 'teams' },
-                  })
-                }
-              >
-                <PlusSignIcon className="h-3 w-3 text-muted-foreground/70 group-hover/plus:text-foreground" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">Create team</TooltipContent>
-          </Tooltip>
+          <SidebarSectionAction
+            label="Create team"
+            onClick={() =>
+              onNavigate({
+                to: '/w/$slug/settings/$section',
+                params: { slug: wsSlug, section: 'teams' },
+              })
+            }
+          />
         )}
       </SidebarGroupLabel>
       <SidebarMenu>
