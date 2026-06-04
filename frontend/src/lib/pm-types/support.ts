@@ -64,6 +64,8 @@ export interface SupportConversation {
   customer_requested_human_at?: string;
   human_takeover?: boolean | null;
   last_message?: string;
+  last_message_sender_type?: MessageSenderType | null;
+  last_message_sender_display_name?: string | null;
   unread_count?: number;
   awaiting_reply?: boolean;
   mailbox_name?: string | null;

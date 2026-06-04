@@ -9,6 +9,7 @@ import { unwrap } from '@/lib/queryUtils';
 import {
   extractConversationListConversations,
   getConversationListUnreadCount,
+  getNextConversationIdAfterRemoval,
   isSupportConversationListQueryKey,
   type SupportConversationListCache,
   updateConversationListUnreadCount,
@@ -846,10 +847,7 @@ export function useUpdateConversationStatus(workspaceId: string) {
           const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
             isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
           );
-          const currentIdx = conversations.findIndex((c) => c.id === conversationId);
-          // Pick the next one below, or the one above, or clear selection
-          const next = conversations[currentIdx + 1] ?? conversations[currentIdx - 1];
-          selectConversation(next?.id ?? null);
+          selectConversation(getNextConversationIdAfterRemoval(conversations, conversationId));
         }
       }
 
@@ -1160,6 +1158,17 @@ export function useMoveConversation(workspaceId: string) {
     mutationFn: ({ conversationId, mailboxId }: { conversationId: string; mailboxId: string | null }) =>
       supportService.moveConversation(workspaceId, conversationId, mailboxId).then(unwrap),
     onSuccess: (_data, variables) => {
+      const { selectedConversationId, selectConversation } = useSupportInboxStore.getState();
+      if (selectedConversationId === variables.conversationId) {
+        const cached = queryClient.getQueriesData<SupportConversationListCache>({
+          queryKey: queryKeys.support.conversations(workspaceId),
+        });
+        const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
+          isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
+        );
+        selectConversation(getNextConversationIdAfterRemoval(conversations, variables.conversationId));
+      }
+
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, variables.conversationId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });

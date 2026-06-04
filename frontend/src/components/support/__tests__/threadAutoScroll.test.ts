@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isNearThreadBottom, shouldAutoScrollThread } from '../threadAutoScroll';
+import { getInitialThreadScrollTarget, isNearThreadBottom, shouldAutoScrollThread, shouldMarkOpenThreadRead } from '../threadAutoScroll';
 
 describe('thread auto-scroll helpers', () => {
   describe('isNearThreadBottom', () => {
@@ -71,6 +71,62 @@ describe('thread auto-scroll helpers', () => {
           pendingInitialScroll: true,
         }),
       ).toBe(true);
+    });
+  });
+
+  describe('getInitialThreadScrollTarget', () => {
+    const base = '2026-06-03T10:00:00.000Z';
+
+    it('targets the first unread customer reply when the team has a read cursor', () => {
+      expect(
+        getInitialThreadScrollTarget(
+          [
+            { id: 'read-customer', sender_type: 'customer', message_type: 'reply', is_internal: false, created_at: base },
+            { id: 'agent', sender_type: 'user', message_type: 'reply', is_internal: false, created_at: '2026-06-03T10:01:00.000Z' },
+            { id: 'first-unread', sender_type: 'customer', message_type: 'reply', is_internal: false, created_at: '2026-06-03T10:02:00.000Z' },
+            { id: 'second-unread', sender_type: 'customer', message_type: 'reply', is_internal: false, created_at: '2026-06-03T10:03:00.000Z' },
+          ],
+          '2026-06-03T10:01:30.000Z',
+        ),
+      ).toBe('first-unread');
+    });
+
+    it('falls back to the end when there is no unread customer reply', () => {
+      expect(
+        getInitialThreadScrollTarget(
+          [
+            { id: 'customer', sender_type: 'customer', message_type: 'reply', is_internal: false, created_at: base },
+            { id: 'agent', sender_type: 'user', message_type: 'reply', is_internal: false, created_at: '2026-06-03T10:01:00.000Z' },
+          ],
+          '2026-06-03T10:02:00.000Z',
+        ),
+      ).toBe('agent');
+    });
+
+    it('ignores system events when finding the unread target', () => {
+      expect(
+        getInitialThreadScrollTarget(
+          [
+            { id: 'resolved-event', sender_type: 'system', message_type: 'system', system_event_type: 'resolved', is_internal: true, created_at: '2026-06-03T10:02:00.000Z' },
+            { id: 'customer', sender_type: 'customer', message_type: 'reply', is_internal: false, created_at: '2026-06-03T10:03:00.000Z' },
+          ],
+          '2026-06-03T10:01:00.000Z',
+        ),
+      ).toBe('customer');
+    });
+  });
+
+  describe('shouldMarkOpenThreadRead', () => {
+    it('marks the open thread read when unread messages are visible at the bottom', () => {
+      expect(shouldMarkOpenThreadRead({ unreadCount: 1, isNearBottom: true, isLoading: false })).toBe(true);
+    });
+
+    it('keeps unread when the agent is scrolled away from the new message', () => {
+      expect(shouldMarkOpenThreadRead({ unreadCount: 1, isNearBottom: false, isLoading: false })).toBe(false);
+    });
+
+    it('does not mark read while the thread is still loading', () => {
+      expect(shouldMarkOpenThreadRead({ unreadCount: 1, isNearBottom: true, isLoading: true })).toBe(false);
     });
   });
 });

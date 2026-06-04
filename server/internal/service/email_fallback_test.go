@@ -358,6 +358,7 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	conv := &model.SupportConversation{
 		ID:            conversationID,
 		WorkspaceID:   workspaceID,
+		DisplayID:     1234,
 		Subject:       "Pricing question",
 		Status:        "open",
 		AnonymousID:   &anonymousID,
@@ -459,6 +460,9 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	if captured.ReplyTo != "conv-"+conversationID+"@replies.helpin.ai" {
 		t.Fatalf("unexpected reply-to: %q", captured.ReplyTo)
 	}
+	if captured.Subject != "Re: Pricing question (#1)" {
+		t.Fatalf("unexpected subject: %q", captured.Subject)
+	}
 	if !strings.Contains(captured.From, "Alex Agent - Acme Support <inbox@acme.on.helpin.email>") {
 		t.Fatalf("unexpected from: %q", captured.From)
 	}
@@ -487,6 +491,9 @@ func TestEmailFallbackFireEmailMarksMessagesAndLogs(t *testing.T) {
 	}
 	if headerMap["Message-ID"] == "" {
 		t.Fatal("expected generated Message-ID header")
+	}
+	if headerMap["List-Unsubscribe"] != "" {
+		t.Fatalf("support reply emails should not include List-Unsubscribe, got %q", headerMap["List-Unsubscribe"])
 	}
 
 	savedMessages, err := env.messageRepo.GetByIDs(ctx, []string{msg1.ID, msg2.ID})
@@ -625,8 +632,174 @@ func TestEmailFallbackFireEmailRetriesVerifiedSenderWhenBrandedSenderRejected(t 
 	if logs[0].FromEmail != "noreply@example.com" {
 		t.Fatalf("expected fallback from in email log, got %q", logs[0].FromEmail)
 	}
+	if logs[0].FromSource != "verified_fallback_sender" {
+		t.Fatalf("expected verified fallback sender source in email log, got %q", logs[0].FromSource)
+	}
+	if logs[0].FromFallbackReason != "postmark_sender_signature_rejected" {
+		t.Fatalf("expected postmark fallback reason in email log, got %q", logs[0].FromFallbackReason)
+	}
 	if logs[0].PostmarkMessageID == nil || *logs[0].PostmarkMessageID != "pm-fallback-1" {
 		t.Fatalf("unexpected postmark message id: %#v", logs[0].PostmarkMessageID)
+	}
+}
+
+func TestEmailFallbackFireEmailUsesMailboxDefaultSenderAndLogsReplyContract(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackFromName = "Acme Support"
+	env := setupEmailFallbackTestEnv(t, settings)
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "44444444-4444-4444-4444-444444444444"
+	mailboxID := "33333333-3333-3333-3333-333333333333"
+
+	mailboxRepo := repository.NewSupportMailboxRepository(env.convRepo.DB())
+	if err := mailboxRepo.Create(ctx, &model.SupportMailbox{
+		ID:          mailboxID,
+		WorkspaceID: workspaceID,
+		Name:        "Billing",
+		Handle:      "billing",
+		Icon:        "Inbox",
+		Active:      true,
+		Position:    1,
+		CreatedByID: "22222222-2222-2222-2222-222222222222",
+	}); err != nil {
+		t.Fatalf("create mailbox: %v", err)
+	}
+	if err := env.senderRepo.Create(ctx, &model.SupportEmailSender{
+		ID:                       "55555555-5555-5555-5555-555555555555",
+		WorkspaceID:              workspaceID,
+		MailboxID:                &mailboxID,
+		Email:                    "billing@acme.test",
+		LocalPart:                "billing",
+		Domain:                   "acme.test",
+		DisplayName:              "Acme Billing",
+		ReturnPathDomainVerified: true,
+		DKIMVerified:             true,
+		DomainStatus:             "verified",
+		ForwardingStatus:         "verified",
+		VerificationStatus:       "verified",
+		DefaultScope:             "mailbox",
+		Active:                   true,
+		CreatedByID:              "22222222-2222-2222-2222-222222222222",
+	}); err != nil {
+		t.Fatalf("create sender: %v", err)
+	}
+
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		MailboxID:     &mailboxID,
+		Subject:       "Billing question",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Arooj"),
+		Content:           "I checked your invoice.",
+		MessageType:       "reply",
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	var captured capturedPostmarkRequest
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(body, &captured); err != nil {
+				return nil, err
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"ErrorCode": 0,
+					"Message": "OK",
+					"MessageID": "pm-mailbox-1",
+					"SubmittedAt": "2026-03-20T12:30:00Z",
+					"To": "customer@example.com"
+				}`)),
+			}, nil
+		}),
+	})
+
+	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
+		t.Fatalf("fire email: %v", err)
+	}
+
+	expectedReplyTo := "conv-" + conversationID + "@replies.helpin.ai"
+	if captured.From != "Arooj - Acme Support <billing@acme.test>" {
+		t.Fatalf("from = %q, want mailbox sender with agent and workspace display", captured.From)
+	}
+	if captured.ReplyTo != expectedReplyTo {
+		t.Fatalf("reply-to = %q, want %q", captured.ReplyTo, expectedReplyTo)
+	}
+	if strings.Contains(captured.TextBody, "app.helpin.ai#helpin-conv") || strings.Contains(captured.HtmlBody, "app.helpin.ai#helpin-conv") {
+		t.Fatalf("email body should not link customers to the Helpin app fallback, text=%q html=%q", captured.TextBody, captured.HtmlBody)
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected one outbound log, got %d", len(logs))
+	}
+	if logs[0].FromEmail != "billing@acme.test" {
+		t.Fatalf("log from email = %q, want billing@acme.test", logs[0].FromEmail)
+	}
+	if logs[0].FromDisplayName != "Arooj - Acme Support" {
+		t.Fatalf("log from display name = %q", logs[0].FromDisplayName)
+	}
+	if logs[0].ReplyTo != expectedReplyTo {
+		t.Fatalf("log reply-to = %q, want %q", logs[0].ReplyTo, expectedReplyTo)
+	}
+	if logs[0].FromSource != "mailbox_default_sender" {
+		t.Fatalf("log from source = %q, want mailbox_default_sender", logs[0].FromSource)
+	}
+}
+
+func TestEmailFallbackRenderBodiesIncludesMessageAttachments(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{
+			{
+				Content: "Here is the report.",
+				Attachments: []model.SupportAttachmentPayload{
+					{
+						FileName: "billing report.pdf",
+						URL:      "https://cdn.example.com/billing-report.pdf",
+					},
+				},
+			},
+		},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	for _, body := range []string{htmlBody, textBody} {
+		if !strings.Contains(body, "billing report.pdf") {
+			t.Fatalf("expected rendered email body to include attachment name, got %q", body)
+		}
+		if !strings.Contains(body, "https://cdn.example.com/billing-report.pdf") {
+			t.Fatalf("expected rendered email body to include attachment URL, got %q", body)
+		}
 	}
 }
 
@@ -717,6 +890,74 @@ func TestEmailFallbackReconcileMissedOutboundReplySendsOnce(t *testing.T) {
 	}
 	if sendCount != 1 {
 		t.Fatalf("expected no duplicate postmark send, got %d", sendCount)
+	}
+}
+
+func TestEmailFallbackReconcileSkipsOnlineVisitor(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	settings.EmailFallbackEnabled = true
+	settings.EmailFallbackDelaySecs = 120
+	env := setupEmailFallbackTestEnv(t, settings)
+	defer env.redisServer.Close()
+
+	fixedNow := time.Date(2026, 3, 20, 12, 30, 0, 0, time.UTC)
+	env.service.now = func() time.Time { return fixedNow }
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "66666666-6666-6666-6666-666666666668"
+	anonymousID := "anon-reconcile-online"
+	customerEmail := "customer@example.com"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Online missed queue reply",
+		Status:        "open",
+		AnonymousID:   &anonymousID,
+		CustomerEmail: &customerEmail,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	if err := env.service.hub.Presence.SetVisitorOnline(ctx, workspaceID, anonymousID, "conn-1"); err != nil {
+		t.Fatalf("set visitor online: %v", err)
+	}
+
+	msg := &model.SupportMessage{
+		ID:                "55555555-5555-5555-5555-555555555556",
+		WorkspaceID:       workspaceID,
+		ConversationID:    conversationID,
+		SenderType:        "user",
+		SenderDisplayName: strPtr("Alex Agent"),
+		Content:           "This reply missed the redis queue but visitor is online.",
+		MessageType:       "reply",
+		CreatedAt:         fixedNow.Add(-3 * time.Minute),
+	}
+	if err := env.messageRepo.Create(ctx, msg); err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	sendCount := 0
+	env.service.emailClient.SetHTTPClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			sendCount++
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"ErrorCode":0,"Message":"OK","MessageID":"pm-online","SubmittedAt":"2026-03-20T12:30:00Z","To":"customer@example.com"}`)),
+			}, nil
+		}),
+	})
+
+	sent, err := env.service.ReconcileMissedOutboundEmails(ctx, 10)
+	if err != nil {
+		t.Fatalf("reconcile missed outbound emails: %v", err)
+	}
+	if sent != 0 {
+		t.Fatalf("expected online visitor reconcile to send nothing, got %d", sent)
+	}
+	if sendCount != 0 {
+		t.Fatalf("expected no postmark send while visitor is online, got %d", sendCount)
 	}
 }
 
@@ -1151,7 +1392,7 @@ func TestEmailFallbackFireEmailVisitorOnlineUnreadPostponesWithinGraceWindow(t *
 	}
 }
 
-func TestEmailFallbackFireEmailVisitorOnlineUnreadSendsAfterGraceWindow(t *testing.T) {
+func TestEmailFallbackFireEmailVisitorOnlineUnreadKeepsPostponingAfterGraceWindow(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
 	settings.EmailFallbackEnabled = true
@@ -1203,37 +1444,28 @@ func TestEmailFallbackFireEmailVisitorOnlineUnreadSendsAfterGraceWindow(t *testi
 	env.service.emailClient.SetHTTPClient(&http.Client{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			sendCount++
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     make(http.Header),
-				Body: io.NopCloser(strings.NewReader(`{
-					"ErrorCode": 0,
-					"Message": "OK",
-					"MessageID": "pm-online-after-grace",
-					"SubmittedAt": "2026-03-20T12:30:00Z",
-					"To": "customer@example.com"
-				}`)),
-			}, nil
+			t.Fatalf("unexpected postmark send while visitor is still online")
+			return nil, nil
 		}),
 	})
 
 	if err := env.service.fireEmail(ctx, conversationID, []string{msg.ID}); err != nil {
 		t.Fatalf("fire email: %v", err)
 	}
-	if sendCount != 1 {
-		t.Fatalf("expected postmark send after online grace, got %d", sendCount)
+	if sendCount != 0 {
+		t.Fatalf("expected no postmark send while visitor is online, got %d", sendCount)
 	}
-	reloaded, err := env.messageRepo.GetByID(ctx, msg.ID)
+	score, err := env.redis.ZScore(ctx, emailFallbackOutboxKey, conversationID).Result()
 	if err != nil {
-		t.Fatalf("reload message: %v", err)
+		t.Fatalf("get postponed score: %v", err)
 	}
-	if reloaded.EmailNotifiedAt == nil {
-		t.Fatal("expected email_notified_at to be set")
+	if got, want := int64(score), fixedNow.Add(emailFallbackOnlineRetry).Unix(); got != want {
+		t.Fatalf("postponed score = %d, want %d", got, want)
 	}
 	if exists, err := env.redis.Exists(ctx, emailFallbackOutboxKey, env.service.msgListKey(conversationID)).Result(); err != nil {
-		t.Fatalf("check redis cleanup: %v", err)
-	} else if exists != 0 {
-		t.Fatalf("expected redis cleanup, found %d keys", exists)
+		t.Fatalf("check redis keys: %v", err)
+	} else if exists != 2 {
+		t.Fatalf("expected outbox and msg list to remain, found %d keys", exists)
 	}
 }
 
@@ -2574,7 +2806,7 @@ Can I export my data?`,
 	}
 }
 
-func TestEmailFallbackRenderBodiesIncludesUnsubscribeLink(t *testing.T) {
+func TestEmailFallbackRenderBodiesOmitsUnsubscribeLink(t *testing.T) {
 	svc := &EmailFallbackService{}
 	htmlBody, textBody := svc.renderBodies(
 		[]model.SupportMessage{{Content: "Thanks for reaching out."}},
@@ -2584,14 +2816,41 @@ func TestEmailFallbackRenderBodiesIncludesUnsubscribeLink(t *testing.T) {
 		"unsubscribe-conv-1@replies.helpin.ai",
 	)
 
-	if !strings.Contains(htmlBody, "mailto:unsubscribe-conv-1@replies.helpin.ai") {
-		t.Fatalf("expected html unsubscribe mailto link, got %q", htmlBody)
+	if strings.Contains(htmlBody, "unsubscribe-conv-1@replies.helpin.ai") || strings.Contains(strings.ToLower(htmlBody), "unsubscribe") {
+		t.Fatalf("expected html body to omit unsubscribe link, got %q", htmlBody)
 	}
 	if strings.Contains(htmlBody, "max-width:600px") {
 		t.Fatalf("expected plain html email body without template wrapper, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, "Unsubscribe: mailto:unsubscribe-conv-1@replies.helpin.ai") {
-		t.Fatalf("expected text unsubscribe mailto link, got %q", textBody)
+	if strings.Contains(textBody, "unsubscribe-conv-1@replies.helpin.ai") || strings.Contains(strings.ToLower(textBody), "unsubscribe") {
+		t.Fatalf("expected text body to omit unsubscribe link, got %q", textBody)
+	}
+}
+
+func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.T) {
+	svc := &EmailFallbackService{}
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{{Content: "Thanks for reaching out."}},
+		"Alex Agent",
+		"Acme Support",
+		"https://example.com/#helpin-conv=conv-1",
+		"",
+	)
+
+	if !strings.Contains(htmlBody, `<a href="https://example.com/#helpin-conv=conv-1">open the chat</a>`) {
+		t.Fatalf("expected html body to link open the chat text, got %q", htmlBody)
+	}
+	if strings.Contains(htmlBody, `>https://example.com/#helpin-conv=conv-1</a>`) {
+		t.Fatalf("expected html body not to expose raw chat URL as anchor text, got %q", htmlBody)
+	}
+	if !strings.Contains(htmlBody, `border-top:1px solid #e5e7eb`) {
+		t.Fatalf("expected subtle bordered attribution footer, got %q", htmlBody)
+	}
+	if !strings.Contains(htmlBody, `<a href="https://helpin.ai"`) || !strings.Contains(htmlBody, `Helpin AI</a>`) {
+		t.Fatalf("expected Helpin AI attribution link, got %q", htmlBody)
+	}
+	if !strings.Contains(textBody, "Powered by Helpin AI: https://helpin.ai") {
+		t.Fatalf("expected plaintext Helpin AI attribution URL, got %q", textBody)
 	}
 }
 

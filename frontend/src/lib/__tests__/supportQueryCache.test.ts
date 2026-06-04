@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractConversationListConversations,
+  getNextConversationIdAfterRemoval,
   isSupportConversationListQueryKey,
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
@@ -132,5 +133,14 @@ describe('supportQueryCache', () => {
 
     expect(updateConversationUnreadCount(current, 0)?.unread_count).toBe(0);
     expect(updateConversationUnreadCount(undefined, 0)).toBeUndefined();
+  });
+
+  it('selects the next row after removing a conversation from a list', () => {
+    const conversations = [{ id: 'conv-1' }, { id: 'conv-2' }, { id: 'conv-3' }];
+
+    expect(getNextConversationIdAfterRemoval(conversations, 'conv-1')).toBe('conv-2');
+    expect(getNextConversationIdAfterRemoval(conversations, 'conv-2')).toBe('conv-3');
+    expect(getNextConversationIdAfterRemoval(conversations, 'conv-3')).toBe('conv-2');
+    expect(getNextConversationIdAfterRemoval([], 'conv-1')).toBeNull();
   });
 });

@@ -50,20 +50,22 @@ type SupportConversation struct {
 	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 
 	// Virtual fields — populated by SELECT subqueries, not stored as columns.
-	LastMessage         *string                    `json:"last_message,omitempty" gorm:"->"`
-	UnreadCount         int                        `json:"unread_count" gorm:"->"`
-	AwaitingReply       bool                       `json:"awaiting_reply" gorm:"->"`
-	CountryCode         *string                    `json:"country_code,omitempty" gorm:"->"`
-	CountryName         *string                    `json:"country_name,omitempty" gorm:"->"`
-	OpenedByDisplayName *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
-	OpenedByAvatarURL   *string                    `json:"opened_by_avatar_url,omitempty" gorm:"-"`
-	OpenedByStatus      *string                    `json:"opened_by_status,omitempty" gorm:"-"`
-	MailboxName         *string                    `json:"mailbox_name,omitempty" gorm:"->"`
-	MailboxHandle       *string                    `json:"mailbox_handle,omitempty" gorm:"->"`
-	MailboxIcon         *string                    `json:"mailbox_icon,omitempty" gorm:"->"`
-	Triage              *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
-	Tags                []SupportTag               `json:"tags,omitempty" gorm:"-"`
-	SystemTags          []string                   `json:"system_tags,omitempty" gorm:"-"`
+	LastMessage                  *string                    `json:"last_message,omitempty" gorm:"->"`
+	LastMessageSenderType        *string                    `json:"last_message_sender_type,omitempty" gorm:"->"`
+	LastMessageSenderDisplayName *string                    `json:"last_message_sender_display_name,omitempty" gorm:"->"`
+	UnreadCount                  int                        `json:"unread_count" gorm:"->"`
+	AwaitingReply                bool                       `json:"awaiting_reply" gorm:"->"`
+	CountryCode                  *string                    `json:"country_code,omitempty" gorm:"->"`
+	CountryName                  *string                    `json:"country_name,omitempty" gorm:"->"`
+	OpenedByDisplayName          *string                    `json:"opened_by_display_name,omitempty" gorm:"-"`
+	OpenedByAvatarURL            *string                    `json:"opened_by_avatar_url,omitempty" gorm:"-"`
+	OpenedByStatus               *string                    `json:"opened_by_status,omitempty" gorm:"-"`
+	MailboxName                  *string                    `json:"mailbox_name,omitempty" gorm:"->"`
+	MailboxHandle                *string                    `json:"mailbox_handle,omitempty" gorm:"->"`
+	MailboxIcon                  *string                    `json:"mailbox_icon,omitempty" gorm:"->"`
+	Triage                       *SupportConversationTriage `json:"triage,omitempty" gorm:"-"`
+	Tags                         []SupportTag               `json:"tags,omitempty" gorm:"-"`
+	SystemTags                   []string                   `json:"system_tags,omitempty" gorm:"-"`
 }
 
 func (SupportConversation) TableName() string { return "support_conversations" }

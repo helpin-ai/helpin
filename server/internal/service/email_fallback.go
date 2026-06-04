@@ -205,6 +205,7 @@ type EmailFallbackService struct {
 	workspaceRepo       *repository.WorkspaceRepository
 	contactRepo         *repository.CRMContactRepository
 	supportInboxService *SupportInboxService
+	attachmentService   *SupportAttachmentService
 	notificationService *NotificationService
 	replyDomain         string
 	appBaseURL          string
@@ -249,6 +250,15 @@ func (s *EmailFallbackService) SetSupportInboxService(supportInboxService *Suppo
 		return nil
 	}
 	s.supportInboxService = supportInboxService
+	return s
+}
+
+// SetAttachmentService injects support attachment hydration for outbound fallback emails.
+func (s *EmailFallbackService) SetAttachmentService(attachmentService *SupportAttachmentService) *EmailFallbackService {
+	if s == nil {
+		return nil
+	}
+	s.attachmentService = attachmentService
 	return s
 }
 
@@ -1289,7 +1299,7 @@ func (s *EmailFallbackService) fireEmailWithoutRedisCleanup(ctx context.Context,
 	return s.fireEmailWithOptions(ctx, conversationID, messageIDs, emailFallbackFireOptions{
 		cleanupRedis:     false,
 		enforceFreshness: true,
-		checkOnline:      false,
+		checkOnline:      true,
 	})
 }
 
@@ -1404,6 +1414,15 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		)
 		return s.cleanupIfRequested(ctx, conversationID, opts.cleanupRedis)
 	}
+	if s.attachmentService != nil {
+		if err := s.attachmentService.HydrateMessages(ctx, pending); err != nil {
+			s.logger.ErrorContext(ctx, "hydrate fallback email attachments",
+				"error", err,
+				"workspace_id", conv.WorkspaceID,
+				"conversation_id", conversationID,
+			)
+		}
+	}
 
 	if opts.enforceFreshness {
 		maxAgeSecs := normalizedEmailFallbackMaxDeliveryAgeSecs(settings.EmailFallbackMaxDeliveryAgeSecs, normalizedEmailFallbackDelaySecs(settings.EmailFallbackDelaySecs))
@@ -1420,22 +1439,12 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 
 	if opts.checkOnline {
 		if online, err := s.isVisitorOnline(ctx, conv.WorkspaceID, conv.AnonymousID); err == nil && online {
-			delaySecs := normalizedEmailFallbackDelaySecs(settings.EmailFallbackDelaySecs)
-			graceUntil := latestEmailFallbackFireAt(pending, time.Duration(delaySecs)*time.Second).Add(emailFallbackOnlineRetry)
-			if graceUntil.IsZero() || s.now().Before(graceUntil) {
-				s.logger.InfoContext(ctx, "email fallback postponed — visitor online within grace window",
-					"workspace_id", conv.WorkspaceID,
-					"conversation_id", conversationID,
-					"retry_secs", int(emailFallbackOnlineRetry.Seconds()),
-					"grace_until", graceUntil,
-				)
-				return s.postpone(ctx, conversationID, emailFallbackOnlineRetry)
-			}
-			s.logger.InfoContext(ctx, "email fallback sending despite online presence — reply remains unread after grace window",
+			s.logger.InfoContext(ctx, "email fallback postponed — visitor online",
 				"workspace_id", conv.WorkspaceID,
 				"conversation_id", conversationID,
-				"grace_until", graceUntil,
+				"retry_secs", int(emailFallbackOnlineRetry.Seconds()),
 			)
+			return s.postpone(ctx, conversationID, emailFallbackOnlineRetry)
 		} else if err != nil {
 			s.logger.WarnContext(ctx, "email fallback visitor presence lookup failed",
 				"error", err,
@@ -1461,7 +1470,9 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 	if lastName := strings.TrimSpace(derefString(pending[len(pending)-1].SenderDisplayName)); lastName != "" {
 		agentName = lastName
 	}
-	fromAddress := s.resolveOutboundFromAddress(ctx, conv)
+	outboundFrom := s.resolveOutboundFromAddress(ctx, conv)
+	fromAddress := outboundFrom.Email
+	fromDisplayName := fmt.Sprintf("%s - %s", agentName, workspaceName)
 	from := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, fromAddress)
 
 	logID := uuid.NewString()
@@ -1487,7 +1498,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		"reply_to", replyTo,
 		"message_count", len(pending),
 	)
-	postmarkMessageID, sentFromAddress, err := s.sendFallbackEmailWithSenderFallback(
+	postmarkMessageID, sentFromAddress, fromFallbackReason, err := s.sendFallbackEmailWithSenderFallback(
 		ctx,
 		conv.WorkspaceID,
 		conversationID,
@@ -1513,6 +1524,10 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		)
 		return fmt.Errorf("send fallback email: %w", err)
 	}
+	fromSource := outboundFrom.Source
+	if strings.TrimSpace(fromFallbackReason) != "" {
+		fromSource = "verified_fallback_sender"
+	}
 
 	inReplyTo := headerValue(headers, "In-Reply-To")
 	notifiedAt := s.now()
@@ -1521,19 +1536,23 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		messageIDValues = append(messageIDValues, msg.ID)
 	}
 	logRow := &model.SupportEmailLog{
-		ID:                logID,
-		WorkspaceID:       conv.WorkspaceID,
-		ConversationID:    conversationID,
-		Direction:         "outbound",
-		MessageIDs:        model.DocsStringArray(messageIDValues),
-		FromEmail:         sentFromAddress,
-		ToEmail:           strings.TrimSpace(*conv.CustomerEmail),
-		Subject:           subject,
-		RFCMessageID:      rfcMessageID,
-		InReplyTo:         inReplyTo,
-		PostmarkMessageID: strPtr(strings.TrimSpace(postmarkMessageID)),
-		StrippedText:      textBody,
-		Status:            "sent",
+		ID:                 logID,
+		WorkspaceID:        conv.WorkspaceID,
+		ConversationID:     conversationID,
+		Direction:          "outbound",
+		MessageIDs:         model.DocsStringArray(messageIDValues),
+		FromEmail:          sentFromAddress,
+		FromDisplayName:    fromDisplayName,
+		FromSource:         fromSource,
+		FromFallbackReason: fromFallbackReason,
+		ToEmail:            strings.TrimSpace(*conv.CustomerEmail),
+		ReplyTo:            replyTo,
+		Subject:            subject,
+		RFCMessageID:       rfcMessageID,
+		InReplyTo:          inReplyTo,
+		PostmarkMessageID:  strPtr(strings.TrimSpace(postmarkMessageID)),
+		StrippedText:       textBody,
+		Status:             "sent",
 	}
 
 	txErr := s.convRepo.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1558,7 +1577,8 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		"conversation_id", conversationID,
 		"email_log_id", logID,
 		"postmark_message_id", strings.TrimSpace(postmarkMessageID),
-		"from_email", fromAddress,
+		"from_email", sentFromAddress,
+		"from_source", fromSource,
 		"to_email", strings.TrimSpace(*conv.CustomerEmail),
 		"message_count", len(messageIDValues),
 	)
@@ -2029,7 +2049,6 @@ func (s *EmailFallbackService) buildThreadHeaders(ctx context.Context, workspace
 	headers := []email.EmailHeader{
 		{Name: "Message-ID", Value: nextMessageID},
 		{Name: "X-Conversation-ID", Value: conversationID},
-		{Name: "List-Unsubscribe", Value: fmt.Sprintf("<mailto:%s>", s.unsubscribeAddress(conversationID))},
 	}
 	if len(previous) > 0 {
 		headers = append(headers, email.EmailHeader{Name: "In-Reply-To", Value: previous[len(previous)-1]})
@@ -2048,9 +2067,14 @@ func (s *EmailFallbackService) buildSubject(ctx context.Context, conv *model.Sup
 			base = "Support conversation"
 		}
 	}
-	shortID := conv.ID
-	if len(shortID) > 4 {
-		shortID = shortID[:4]
+	shortID := ""
+	if conv.DisplayID > 0 {
+		shortID = strconv.Itoa(conv.DisplayID)
+	} else {
+		shortID = conv.ID
+		if len(shortID) > 4 {
+			shortID = shortID[:4]
+		}
 	}
 	subject := fmt.Sprintf("%s (#%s)", base, shortID)
 
@@ -2067,16 +2091,17 @@ func (s *EmailFallbackService) buildSubject(ctx context.Context, conv *model.Sup
 }
 
 func (s *EmailFallbackService) buildChatLink(ctx context.Context, conv *model.SupportConversation) (string, error) {
-	pageURL := strings.TrimSpace(s.appBaseURL)
-	if s.sessionRepo != nil {
-		session, err := s.sessionRepo.GetLatestByConversation(ctx, conv.WorkspaceID, conv.ID)
-		if err != nil {
-			return "", err
-		}
-		if session != nil && session.LastPageURL != nil && strings.TrimSpace(*session.LastPageURL) != "" {
-			pageURL = strings.TrimSpace(*session.LastPageURL)
-		}
+	if s.sessionRepo == nil {
+		return "", nil
 	}
+	session, err := s.sessionRepo.GetLatestByConversation(ctx, conv.WorkspaceID, conv.ID)
+	if err != nil {
+		return "", err
+	}
+	if session == nil || session.LastPageURL == nil {
+		return "", nil
+	}
+	pageURL := strings.TrimSpace(*session.LastPageURL)
 	if pageURL == "" {
 		return "", nil
 	}
@@ -2093,11 +2118,22 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	textChunks := make([]string, 0, len(messages))
 	for _, msg := range messages {
 		text := strings.TrimSpace(msg.Content)
-		if text == "" {
+		if text == "" && len(msg.Attachments) == 0 {
 			continue
 		}
-		textChunks = append(textChunks, text)
-		htmlChunks = append(htmlChunks, renderMessageMarkdownToHTML(text))
+		var textChunk strings.Builder
+		if text != "" {
+			textChunk.WriteString(text)
+			htmlChunks = append(htmlChunks, renderMessageMarkdownToHTML(text))
+		}
+		if len(msg.Attachments) > 0 {
+			if textChunk.Len() > 0 {
+				textChunk.WriteString("\n\n")
+			}
+			textChunk.WriteString(renderAttachmentTextList(msg.Attachments))
+			htmlChunks = append(htmlChunks, renderAttachmentHTMLList(msg.Attachments))
+		}
+		textChunks = append(textChunks, textChunk.String())
 	}
 
 	var htmlBody strings.Builder
@@ -2110,19 +2146,13 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	htmlBody.WriteString(html.EscapeString(workspaceName))
 	htmlBody.WriteString("</p>")
 	if chatLink != "" {
-		htmlBody.WriteString(`<p>Reply directly to this email, or open the chat:<br><a href="`)
+		htmlBody.WriteString(`<p>Reply directly to this email or <a href="`)
 		htmlBody.WriteString(html.EscapeString(chatLink))
-		htmlBody.WriteString(`">`)
-		htmlBody.WriteString(html.EscapeString(chatLink))
-		htmlBody.WriteString("</a></p>")
+		htmlBody.WriteString(`">open the chat</a>.</p>`)
 	} else {
 		htmlBody.WriteString("<p>Reply directly to this email.</p>")
 	}
-	if unsubscribeEmail != "" {
-		htmlBody.WriteString(`<p><a href="mailto:`)
-		htmlBody.WriteString(html.EscapeString(unsubscribeEmail))
-		htmlBody.WriteString(`">Unsubscribe</a> from these emails.</p>`)
-	}
+	htmlBody.WriteString(`<p style="border-top:1px solid #e5e7eb;margin-top:20px;padding-top:12px;color:#6b7280;font-size:12px;line-height:18px;">Powered by <a href="https://helpin.ai" style="color:#6b7280;text-decoration:none;">Helpin AI</a></p>`)
 
 	textBody := strings.Join(textChunks, "\n\n")
 	if textBody != "" {
@@ -2134,10 +2164,56 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	} else {
 		textBody += "."
 	}
-	if unsubscribeEmail != "" {
-		textBody += "\nUnsubscribe: mailto:" + unsubscribeEmail
-	}
+	textBody += "\n\nPowered by Helpin AI: https://helpin.ai"
 	return htmlBody.String(), textBody
+}
+
+func renderAttachmentTextList(attachments []model.SupportAttachmentPayload) string {
+	if len(attachments) == 0 {
+		return ""
+	}
+	var text strings.Builder
+	text.WriteString("Attachments:")
+	for _, attachment := range attachments {
+		name := strings.TrimSpace(attachment.FileName)
+		if name == "" {
+			name = "Attachment"
+		}
+		text.WriteString("\n- ")
+		text.WriteString(name)
+		if url := strings.TrimSpace(attachment.URL); url != "" {
+			text.WriteString(": ")
+			text.WriteString(url)
+		}
+	}
+	return text.String()
+}
+
+func renderAttachmentHTMLList(attachments []model.SupportAttachmentPayload) string {
+	if len(attachments) == 0 {
+		return ""
+	}
+	var htmlBody strings.Builder
+	htmlBody.WriteString("<p><strong>Attachments:</strong></p><ul>")
+	for _, attachment := range attachments {
+		name := strings.TrimSpace(attachment.FileName)
+		if name == "" {
+			name = "Attachment"
+		}
+		htmlBody.WriteString("<li>")
+		if url := strings.TrimSpace(attachment.URL); url != "" {
+			htmlBody.WriteString(`<a href="`)
+			htmlBody.WriteString(html.EscapeString(url))
+			htmlBody.WriteString(`">`)
+			htmlBody.WriteString(html.EscapeString(name))
+			htmlBody.WriteString("</a>")
+		} else {
+			htmlBody.WriteString(html.EscapeString(name))
+		}
+		htmlBody.WriteString("</li>")
+	}
+	htmlBody.WriteString("</ul>")
+	return htmlBody.String()
 }
 
 func (s *EmailFallbackService) cleanup(ctx context.Context, conversationID string) error {
@@ -2306,18 +2382,18 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 	textBody string,
 	replyTo string,
 	headers []email.EmailHeader,
-) (string, string, error) {
+) (string, string, string, error) {
 	postmarkMessageID, err := s.emailClient.SendEmailWithHeaders(from, to, subject, htmlBody, textBody, replyTo, headers)
 	if err == nil {
-		return postmarkMessageID, fromAddress, nil
+		return postmarkMessageID, fromAddress, "", nil
 	}
 	if !email.IsSenderSignatureError(err) {
-		return "", fromAddress, err
+		return "", fromAddress, "", err
 	}
 
 	fallbackFromAddress := strings.TrimSpace(s.emailClient.FromEmail())
 	if fallbackFromAddress == "" || strings.EqualFold(fallbackFromAddress, strings.TrimSpace(fromAddress)) {
-		return "", fromAddress, err
+		return "", fromAddress, "", err
 	}
 	fallbackFrom := fmt.Sprintf("%s - %s <%s>", agentName, workspaceName, fallbackFromAddress)
 	s.logger.WarnContext(ctx, "email fallback branded sender rejected, retrying with verified sender",
@@ -2330,7 +2406,7 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 	)
 	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeaders(fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers)
 	if fallbackErr != nil {
-		return "", fallbackFromAddress, fmt.Errorf("retry with verified sender after branded sender rejection: %w", fallbackErr)
+		return "", fallbackFromAddress, "postmark_sender_signature_rejected", fmt.Errorf("retry with verified sender after branded sender rejection: %w", fallbackErr)
 	}
 	s.logger.InfoContext(ctx, "email fallback sent with verified sender fallback",
 		"workspace_id", workspaceID,
@@ -2339,19 +2415,19 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 		"fallback_from_email", fallbackFromAddress,
 		"reply_to", replyTo,
 	)
-	return postmarkMessageID, fallbackFromAddress, nil
+	return postmarkMessageID, fallbackFromAddress, "postmark_sender_signature_rejected", nil
 }
 
 // resolveOutboundFromAddress returns the preferred branded sender address for a
 // conversation's outbound email. Postmark may still reject this address until
 // the workspace/domain is verified for outbound sending; the send path retries
 // with the configured verified sender while keeping the conversation Reply-To.
-func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, conv *model.SupportConversation) string {
-	fallback := s.emailClient.FromEmail()
+func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, conv *model.SupportConversation) SupportOutboundFromAddressResult {
+	fallback := SupportOutboundFromAddressResult{Email: s.emailClient.FromEmail(), Source: "verified_fallback_sender"}
 	if s.supportInboxService == nil || conv == nil {
 		return fallback
 	}
-	addr, err := s.supportInboxService.BuildOutboundFromAddress(ctx, conv.WorkspaceID, conv.MailboxID)
+	result, err := s.supportInboxService.ResolveOutboundFromAddress(ctx, conv.WorkspaceID, conv.MailboxID)
 	if err != nil {
 		s.logger.WarnContext(ctx, "mailbox-branded outbound from unavailable, using fallback sender",
 			"error", err,
@@ -2360,10 +2436,10 @@ func (s *EmailFallbackService) resolveOutboundFromAddress(ctx context.Context, c
 		)
 		return fallback
 	}
-	if strings.TrimSpace(addr) == "" {
+	if strings.TrimSpace(result.Email) == "" {
 		return fallback
 	}
-	return addr
+	return result
 }
 
 func (s *EmailFallbackService) isVisitorOnline(ctx context.Context, workspaceID string, anonymousID *string) (bool, error) {

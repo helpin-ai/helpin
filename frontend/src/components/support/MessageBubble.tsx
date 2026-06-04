@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -117,13 +117,6 @@ function parseForwardedAttributionMetadata(metadata?: string): SupportForwardedA
   } catch {
     return null;
   }
-}
-
-function formatCountdown(ms: number): string {
-  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 function LinkPreviewCard({ preview }: { preview: SupportLinkPreview }) {
@@ -280,14 +273,7 @@ export const MessageBubble = memo(function MessageBubble({
   const [emailDetailOpen, setEmailDetailOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const deleteMutation = useDeleteSupportMessage(message.workspace_id, message.conversation_id);
-
-  useEffect(() => {
-    if (!message.cancellable_until) return;
-    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, [message.cancellable_until]);
 
   const imageAttachments = message.attachments?.filter(a => a.file_type.startsWith('image/')) ?? [];
   const fileAttachments = message.attachments?.filter(a => !a.file_type.startsWith('image/')) ?? [];
@@ -314,9 +300,8 @@ export const MessageBubble = memo(function MessageBubble({
     && message.sender_user_id === currentUser?.id
     && message.message_type !== 'system'
     && !message.is_internal;
-  const cancellableActive = canMutateOwnReply && Number.isFinite(cancellableUntilMs) && cancellableUntilMs > nowMs;
+  const cancellableActive = canMutateOwnReply && Number.isFinite(cancellableUntilMs) && cancellableUntilMs > Date.now();
   const hasCancellableFooter = canMutateOwnReply && !!message.cancellable_until;
-  const countdown = cancellableActive ? formatCountdown(cancellableUntilMs - nowMs) : '0:00';
 
   const restoreComposerDraft = useCallback((markdown: string) => {
     window.dispatchEvent(new CustomEvent(RESTORE_SUPPORT_DRAFT_EVENT, {
@@ -805,8 +790,6 @@ export const MessageBubble = memo(function MessageBubble({
                   >
                     Undo
                   </button>
-                  <span>·</span>
-                  <span>{countdown}</span>
                 </>
               ) : (
                 <span>Delivered to email</span>

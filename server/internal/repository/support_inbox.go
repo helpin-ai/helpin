@@ -975,8 +975,30 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 			FROM support_messages m
 			WHERE m.conversation_id = support_conversations.id
 			  AND m.deleted_at IS NULL
+			  AND m.message_type = 'reply'
+			  AND m.system_event_type IS NULL
 			ORDER BY m.created_at DESC LIMIT 1
 		) AS last_message,
+		(SELECT m.sender_type
+			FROM support_messages m
+			WHERE m.conversation_id = support_conversations.id
+			  AND m.deleted_at IS NULL
+			  AND m.is_internal = false
+			  AND m.message_type = 'reply'
+			  AND m.system_event_type IS NULL
+			ORDER BY m.created_at DESC
+			LIMIT 1
+		) AS last_message_sender_type,
+		(SELECT m.sender_display_name
+			FROM support_messages m
+			WHERE m.conversation_id = support_conversations.id
+			  AND m.deleted_at IS NULL
+			  AND m.is_internal = false
+			  AND m.message_type = 'reply'
+			  AND m.system_event_type IS NULL
+			ORDER BY m.created_at DESC
+			LIMIT 1
+		) AS last_message_sender_display_name,
 		(SELECT COUNT(*)
 			FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
@@ -984,6 +1006,7 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 			  AND sm.is_internal = false
 			  AND sm.sender_type = 'customer'
 			  AND sm.message_type = 'reply'
+			  AND sm.system_event_type IS NULL
 			  AND sm.created_at > COALESCE(support_conversations.team_last_seen_at, %s)
 		) AS unread_count,
 		COALESCE((
@@ -993,6 +1016,7 @@ func (r *SupportConversationRepository) List(ctx context.Context, params Convers
 			  AND m.deleted_at IS NULL
 			  AND m.is_internal = false
 			  AND m.message_type = 'reply'
+			  AND m.system_event_type IS NULL
 			ORDER BY m.created_at DESC
 			LIMIT 1
 		), false) AS awaiting_reply,
@@ -1274,7 +1298,7 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 	var conversations []model.SupportConversation
 	if err := r.db.WithContext(ctx).
 		Select(fmt.Sprintf(`support_conversations.*,
-		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.deleted_at IS NULL AND support_messages.is_internal = false ORDER BY created_at DESC LIMIT 1) AS last_message,
+		(SELECT content FROM support_messages WHERE support_messages.conversation_id = support_conversations.id AND support_messages.deleted_at IS NULL AND support_messages.is_internal = false AND support_messages.message_type = 'reply' AND support_messages.system_event_type IS NULL ORDER BY created_at DESC LIMIT 1) AS last_message,
 		(SELECT COUNT(*)
 			FROM support_messages sm
 			WHERE sm.conversation_id = support_conversations.id
@@ -1282,6 +1306,7 @@ func (r *SupportConversationRepository) ListByAnonymousID(ctx context.Context, w
 			  AND sm.is_internal = false
 			  AND sm.sender_type IN ('user', 'agent', 'ai')
 			  AND sm.message_type = 'reply'
+			  AND sm.system_event_type IS NULL
 			  AND sm.created_at > COALESCE(support_conversations.contact_last_seen_at, %s)
 		) AS unread_count`, r.epochExpr())).
 		Where("workspace_id = ? AND anonymous_id = ?", workspaceID, anonymousID).

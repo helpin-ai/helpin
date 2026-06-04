@@ -10,6 +10,20 @@ import (
 
 const sharedSupportEmailRouteLocalPart = "inbox"
 
+const (
+	supportOutboundSenderSourceMailboxDefault   = "mailbox_default_sender"
+	supportOutboundSenderSourceWorkspaceDefault = "workspace_default_sender"
+	supportOutboundSenderSourceActiveDomain     = "active_sender_domain"
+	supportOutboundSenderSourceGeneratedRoute   = "generated_route"
+)
+
+type SupportOutboundFromAddressResult struct {
+	Email     string
+	Source    string
+	SenderID  string
+	MailboxID *string
+}
+
 func (s *SupportInboxService) inboundEmailDomain() string {
 	if s != nil && strings.TrimSpace(s.routeDomain) != "" {
 		return strings.TrimSpace(s.routeDomain)
@@ -128,34 +142,46 @@ func (s *SupportInboxService) generateSupportEmailRouteKey(ctx context.Context) 
 // The workspace slug and the route domain must both be configured; otherwise an
 // error is returned so callers can fall back to a legacy global sender.
 func (s *SupportInboxService) BuildOutboundFromAddress(ctx context.Context, workspaceID string, mailboxID *string) (string, error) {
-	if s == nil {
-		return "", fmt.Errorf("support inbox service is unavailable")
+	result, err := s.ResolveOutboundFromAddress(ctx, workspaceID, mailboxID)
+	if err != nil {
+		return "", err
 	}
-	if address, ok := s.defaultEmailSenderAddress(ctx, workspaceID, mailboxID); ok {
-		return address, nil
-	}
-	if address, ok := s.activeCustomSenderAddress(ctx, workspaceID); ok {
-		return address, nil
-	}
-	mailbox := s.loadMailboxFromConversation(ctx, workspaceID, mailboxID)
-	return s.buildSupportEmailRouteAddress(ctx, workspaceID, mailbox)
+	return result.Email, nil
 }
 
-func (s *SupportInboxService) defaultEmailSenderAddress(ctx context.Context, workspaceID string, mailboxID *string) (string, bool) {
+func (s *SupportInboxService) ResolveOutboundFromAddress(ctx context.Context, workspaceID string, mailboxID *string) (SupportOutboundFromAddressResult, error) {
+	if s == nil {
+		return SupportOutboundFromAddressResult{}, fmt.Errorf("support inbox service is unavailable")
+	}
+	if result, ok := s.defaultEmailSenderAddress(ctx, workspaceID, mailboxID); ok {
+		return result, nil
+	}
+	if address, ok := s.activeCustomSenderAddress(ctx, workspaceID); ok {
+		return SupportOutboundFromAddressResult{Email: address, Source: supportOutboundSenderSourceActiveDomain, MailboxID: mailboxID}, nil
+	}
+	mailbox := s.loadMailboxFromConversation(ctx, workspaceID, mailboxID)
+	address, err := s.buildSupportEmailRouteAddress(ctx, workspaceID, mailbox)
+	if err != nil {
+		return SupportOutboundFromAddressResult{}, err
+	}
+	return SupportOutboundFromAddressResult{Email: address, Source: supportOutboundSenderSourceGeneratedRoute, MailboxID: mailboxID}, nil
+}
+
+func (s *SupportInboxService) defaultEmailSenderAddress(ctx context.Context, workspaceID string, mailboxID *string) (SupportOutboundFromAddressResult, bool) {
 	if s == nil || s.emailSenderRepo == nil {
-		return "", false
+		return SupportOutboundFromAddressResult{}, false
 	}
 	if sender, err := s.emailSenderRepo.GetMailboxDefaultVerified(ctx, workspaceID, mailboxID); err == nil && sender != nil {
 		if address := strings.TrimSpace(sender.Email); address != "" {
-			return address, true
+			return SupportOutboundFromAddressResult{Email: address, Source: supportOutboundSenderSourceMailboxDefault, SenderID: sender.ID, MailboxID: sender.MailboxID}, true
 		}
 	}
 	if sender, err := s.emailSenderRepo.GetWorkspaceDefaultVerified(ctx, workspaceID); err == nil && sender != nil {
 		if address := strings.TrimSpace(sender.Email); address != "" {
-			return address, true
+			return SupportOutboundFromAddressResult{Email: address, Source: supportOutboundSenderSourceWorkspaceDefault, SenderID: sender.ID, MailboxID: sender.MailboxID}, true
 		}
 	}
-	return "", false
+	return SupportOutboundFromAddressResult{}, false
 }
 
 func (s *SupportInboxService) activeCustomSenderAddress(ctx context.Context, workspaceID string) (string, bool) {

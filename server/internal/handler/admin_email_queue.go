@@ -38,10 +38,10 @@ func NewAdminEmailQueueHandler(
 	if config.VerifiedFallbackFromEmail == "" {
 		config.VerifiedFallbackFromEmail = strings.TrimSpace(config.ReplyFromEmail)
 	}
-	config.ExpectedBrandedFromShape = "<mailbox-handle>@<workspace-slug>." + config.SupportEmailRouteDomain
+	config.ExpectedBrandedFromShape = "{agent_name} - {workspace_name} <sender-address>"
 	config.ExpectedFallbackFromShape = config.VerifiedFallbackFromEmail
 	config.ExpectedReplyToShape = "conv-{conversation_id}@" + config.SupportEmailReplyDomain
-	config.OutboundFromBehavior = "try branded workspace sender, retry with verified fallback sender on Postmark sender-signature rejection"
+	config.OutboundFromBehavior = "use verified mailbox default sender, then workspace default sender, then active sender domain, then generated route sender; retry with verified fallback sender on Postmark sender-signature rejection while preserving Reply-To"
 
 	return &AdminEmailQueueHandler{
 		emailFallbackService: emailFallbackService,
