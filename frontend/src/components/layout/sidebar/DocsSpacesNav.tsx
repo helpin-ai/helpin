@@ -382,8 +382,10 @@ export function DocsSpacesNav({
           <SidebarGroupLabel className="flex h-7 items-center px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 justify-between">
             <span className="flex items-center gap-1">
               External Spaces
-              <QuickTooltip label="Published to your public help center">
-                <HelpCircleIcon className="h-[10px] w-[10px] text-muted-foreground/50" />
+              <QuickTooltip label="Published to your public help center" side="right">
+                <span className="inline-flex h-3 w-3 cursor-help items-center justify-center rounded text-muted-foreground/50 hover:text-muted-foreground">
+                  <HelpCircleIcon className="h-[10px] w-[10px]" />
+                </span>
               </QuickTooltip>
             </span>
             <SidebarSectionAction

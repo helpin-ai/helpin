@@ -715,7 +715,9 @@ export function DocsHome() {
                           <span className="truncate text-sm font-semibold">{t.name}</span>
                           {t.type === 'external_capable' && (
                             <QuickTooltip label="Can publish to the public help center">
-                              <GlobeIcon className="h-3 w-3 shrink-0 text-primary" />
+                              <span className="inline-flex h-3.5 w-3.5 shrink-0 cursor-help items-center justify-center rounded text-primary">
+                                <GlobeIcon className="h-3 w-3" />
+                              </span>
                             </QuickTooltip>
                           )}
                         </div>
@@ -789,8 +791,10 @@ export function DocsHome() {
               <div>
                 <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   External Spaces
-                  <QuickTooltip label="These spaces are published to your public help center">
-                    <HelpCircleIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
+                  <QuickTooltip label="These spaces are published to your public help center" side="right">
+                    <span className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded text-muted-foreground/50 hover:text-muted-foreground">
+                      <HelpCircleIcon className="h-3.5 w-3.5" />
+                    </span>
                   </QuickTooltip>
                 </h3>
                 <div className="divide-y divide-border/50 rounded-lg border border-border/60 bg-card">
