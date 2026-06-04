@@ -23,6 +23,8 @@ import {
   LinkSquare01Icon,
   Loading01Icon,
   LockIcon,
+  Mail01Icon,
+  PencilEdit01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 
@@ -46,10 +48,16 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
   const [gitlabToken, setGitlabToken] = useState('');
   const [gitlabAuthType, setGitlabAuthType] = useState<GitLabTokenAuthType>('personal_token');
   const [gitlabLabel, setGitlabLabel] = useState('');
+  const [gitlabCommitAuthorName, setGitlabCommitAuthorName] = useState('');
+  const [gitlabCommitAuthorEmail, setGitlabCommitAuthorEmail] = useState('');
   const [connectingGitLab, setConnectingGitLab] = useState(false);
   const [syncingIntegrationId, setSyncingIntegrationId] = useState<string | null>(null);
   const [disconnectingIntegrationId, setDisconnectingIntegrationId] = useState<string | null>(null);
   const [disconnectConfirm, setDisconnectConfirm] = useState<GitIntegrationDetail | null>(null);
+  const [commitIdentityIntegration, setCommitIdentityIntegration] = useState<GitIntegration | null>(null);
+  const [commitAuthorName, setCommitAuthorName] = useState('');
+  const [commitAuthorEmail, setCommitAuthorEmail] = useState('');
+  const [savingCommitIdentity, setSavingCommitIdentity] = useState(false);
 
   const hasGitHubIntegration = useMemo(() => integrations.some((item) => item.provider === 'github'), [integrations]);
   const hasGitLabIntegration = useMemo(() => integrations.some((item) => item.provider === 'gitlab'), [integrations]);
@@ -146,6 +154,8 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
     setGitlabToken('');
     setGitlabAuthType('personal_token');
     setGitlabLabel('');
+    setGitlabCommitAuthorName('');
+    setGitlabCommitAuthorEmail('');
     setGitlabDialogOpen(true);
   };
 
@@ -161,6 +171,8 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
       token: gitlabToken.trim(),
       auth_type: gitlabAuthType,
       label: gitlabLabel.trim() || undefined,
+      default_commit_author_name: gitlabCommitAuthorName.trim() || undefined,
+      default_commit_author_email: gitlabCommitAuthorEmail.trim() || undefined,
     });
     setConnectingGitLab(false);
     if (error || !data) {
@@ -172,6 +184,29 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
       : 'GitLab connected');
     setGitlabDialogOpen(false);
     await loadIntegrations();
+  };
+
+  const openCommitIdentityDialog = (integration: GitIntegration) => {
+    setCommitIdentityIntegration(integration);
+    setCommitAuthorName(integration.default_commit_author_name ?? '');
+    setCommitAuthorEmail(integration.default_commit_author_email ?? '');
+  };
+
+  const submitCommitIdentityUpdate = async () => {
+    if (!organizationId || !commitIdentityIntegration) return;
+    setSavingCommitIdentity(true);
+    const { data, error } = await gitService.updateOrgIntegration(organizationId, commitIdentityIntegration.id, {
+      default_commit_author_name: commitAuthorName.trim(),
+      default_commit_author_email: commitAuthorEmail.trim(),
+    });
+    setSavingCommitIdentity(false);
+    if (error || !data) {
+      toast.error(error || 'Failed to update commit identity');
+      return;
+    }
+    setIntegrations((items) => items.map((item) => (item.id === data.id ? data : item)));
+    setCommitIdentityIntegration(null);
+    toast.success('Commit identity updated');
   };
 
   const gitHubAccessURL = (integration: GitIntegration) => {
@@ -285,9 +320,29 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
                             {integration.last_synced_at ? ` · synced ${new Date(integration.last_synced_at).toLocaleString()}` : ''}
                           </p>
                           {integration.last_sync_error ? <p className="mt-1 text-xs text-destructive">{integration.last_sync_error}</p> : null}
+                          <div className="mt-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            <Mail01Icon className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">
+                              {integration.default_commit_author_email
+                                ? `${integration.default_commit_author_name || 'Git author'} <${integration.default_commit_author_email}>`
+                                : integration.provider === 'gitlab'
+                                  ? 'Commit author email required before Forge can push'
+                                  : 'Default commit author: Helpin Agent'}
+                            </span>
+                          </div>
                         </div>
                         {canManage ? (
                           <div className="flex shrink-0 items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              aria-label="Edit commit identity"
+                              onClick={() => openCommitIdentityDialog(integration)}
+                            >
+                              <PencilEdit01Icon className="h-4 w-4" />
+                            </Button>
                             {manageURL ? (
                               <Button
                                 type="button"
@@ -460,6 +515,32 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
                 disabled={connectingGitLab}
               />
             </div>
+            <div className="grid gap-3 rounded-md border border-border/70 bg-muted/20 p-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="gitlab-commit-author-name">Commit author name</Label>
+                <Input
+                  id="gitlab-commit-author-name"
+                  value={gitlabCommitAuthorName}
+                  onChange={(e) => setGitlabCommitAuthorName(e.target.value)}
+                  placeholder="Helpin Agent"
+                  disabled={connectingGitLab}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="gitlab-commit-author-email">Commit author email</Label>
+                <Input
+                  id="gitlab-commit-author-email"
+                  type="email"
+                  value={gitlabCommitAuthorEmail}
+                  onChange={(e) => setGitlabCommitAuthorEmail(e.target.value)}
+                  placeholder="verified-user@company.com"
+                  disabled={connectingGitLab}
+                />
+              </div>
+              <p className="sm:col-span-2 text-xs text-muted-foreground">
+                GitLab push rules may require this email to be verified for the token owner.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setGitlabDialogOpen(false)} disabled={connectingGitLab}>
@@ -468,6 +549,59 @@ export function OrgGitConnectionsTab({ organizationId, workspaceId, canManage }:
             <Button type="button" onClick={() => void submitGitLabConnect()} disabled={connectingGitLab || !gitlabToken.trim()}>
               {connectingGitLab ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               Connect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={commitIdentityIntegration !== null}
+        onOpenChange={(open) => {
+          if (!savingCommitIdentity && !open) setCommitIdentityIntegration(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Commit identity</DialogTitle>
+            <DialogDescription>
+              Default author used when Helpin creates agent commits for this Git connection.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="commit-author-name">Author name</Label>
+              <Input
+                id="commit-author-name"
+                value={commitAuthorName}
+                onChange={(e) => setCommitAuthorName(e.target.value)}
+                placeholder="Helpin Agent"
+                disabled={savingCommitIdentity}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="commit-author-email">Author email</Label>
+              <Input
+                id="commit-author-email"
+                type="email"
+                value={commitAuthorEmail}
+                onChange={(e) => setCommitAuthorEmail(e.target.value)}
+                placeholder="verified-user@company.com"
+                disabled={savingCommitIdentity}
+              />
+              {commitIdentityIntegration?.provider === 'gitlab' ? (
+                <p className="text-xs text-muted-foreground">
+                  Use an email verified for the GitLab token owner.
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCommitIdentityIntegration(null)} disabled={savingCommitIdentity}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitCommitIdentityUpdate()} disabled={savingCommitIdentity}>
+              {savingCommitIdentity ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

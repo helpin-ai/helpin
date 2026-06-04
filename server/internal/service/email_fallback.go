@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,15 +71,24 @@ func renderMessageMarkdownToHTML(content string) string {
 // succeeded; callers should treat an empty string as "no rich body".
 func inboundPayloadBodies(payload model.PostmarkInboundPayload) (markdown, htmlBody string) {
 	processed := inboundhtml.Process(payload.HtmlBody, "")
-	markdown = processed.Markdown
+	markdown = stripSupportEmailReplyDelimiter(processed.Markdown)
 	htmlBody = processed.HTML
 	if markdown != "" {
 		return markdown, htmlBody
 	}
-	if stripped := strings.TrimSpace(payload.StrippedTextReply); stripped != "" {
+	if stripped := stripSupportEmailReplyDelimiter(payload.StrippedTextReply); stripped != "" {
 		return stripped, htmlBody
 	}
-	return strings.TrimSpace(payload.TextBody), htmlBody
+	return stripSupportEmailReplyDelimiter(payload.TextBody), htmlBody
+}
+
+func stripSupportEmailReplyDelimiter(content string) string {
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	if index := strings.Index(normalized, supportEmailReplyDelimiter); index >= 0 {
+		normalized = normalized[:index]
+	}
+	return strings.TrimSpace(normalized)
 }
 
 func inboundForwardedEmailScanText(payload model.PostmarkInboundPayload, fallback string) string {
@@ -190,31 +200,44 @@ const (
 	emailFallbackReconcileTick = time.Minute
 )
 
+const (
+	supportEmailAttachmentMaxFileBytes     = 5 * 1024 * 1024
+	supportEmailAttachmentMaxTotalRawBytes = 7 * 1024 * 1024
+	emailFallbackPoweredByFooterURL        = "https://helpin.ai?utm_source=support_email&utm_medium=email&utm_campaign=powered_by_footer&utm_content=fallback_footer"
+	supportEmailReplyDelimiter             = "-- Please type your reply above this line --"
+	supportEmailPreviewMaxRunes            = 160
+)
+
+type supportEmailAttachmentDownloader interface {
+	DownloadContent(ctx context.Context, attachment model.SupportAttachmentPayload) ([]byte, error)
+}
+
 // EmailFallbackService manages delayed outbound email delivery and inbound replies.
 type EmailFallbackService struct {
-	redis               *redis.Client
-	hub                 *websocket.Hub
-	wsPublisher         *websocket.Publisher
-	emailClient         *email.Client
-	messageRepo         *repository.SupportMessageRepository
-	convRepo            *repository.SupportConversationRepository
-	emailLogRepo        *repository.SupportEmailLogRepository
-	webhookRepo         *repository.SupportEmailWebhookEventRepository
-	installRepo         *repository.SupportInboxInstallationRepository
-	sessionRepo         *repository.SupportInboxSessionRepository
-	workspaceRepo       *repository.WorkspaceRepository
-	contactRepo         *repository.CRMContactRepository
-	supportInboxService *SupportInboxService
-	attachmentService   *SupportAttachmentService
-	notificationService *NotificationService
-	replyDomain         string
-	appBaseURL          string
-	logger              *slog.Logger
-	podID               string
-	pollInterval        time.Duration
-	leaseTTL            time.Duration
-	processingTTL       time.Duration
-	now                 func() time.Time
+	redis                *redis.Client
+	hub                  *websocket.Hub
+	wsPublisher          *websocket.Publisher
+	emailClient          *email.Client
+	messageRepo          *repository.SupportMessageRepository
+	convRepo             *repository.SupportConversationRepository
+	emailLogRepo         *repository.SupportEmailLogRepository
+	webhookRepo          *repository.SupportEmailWebhookEventRepository
+	installRepo          *repository.SupportInboxInstallationRepository
+	sessionRepo          *repository.SupportInboxSessionRepository
+	workspaceRepo        *repository.WorkspaceRepository
+	contactRepo          *repository.CRMContactRepository
+	supportInboxService  *SupportInboxService
+	attachmentService    *SupportAttachmentService
+	attachmentDownloader supportEmailAttachmentDownloader
+	notificationService  *NotificationService
+	replyDomain          string
+	appBaseURL           string
+	logger               *slog.Logger
+	podID                string
+	pollInterval         time.Duration
+	leaseTTL             time.Duration
+	processingTTL        time.Duration
+	now                  func() time.Time
 }
 
 type EmailFallbackBackfillOptions struct {
@@ -259,6 +282,7 @@ func (s *EmailFallbackService) SetAttachmentService(attachmentService *SupportAt
 		return nil
 	}
 	s.attachmentService = attachmentService
+	s.attachmentDownloader = attachmentService
 	return s
 }
 
@@ -493,6 +517,8 @@ func (s *EmailFallbackService) OnAgentReply(ctx context.Context, workspaceID str
 	}
 	if err := s.messageRepo.SetCancellableUntil(ctx, msg.ID, fireAt); err != nil {
 		s.logger.WarnContext(ctx, "set support message cancellable_until failed", "error", err, "message_id", msg.ID)
+	} else {
+		s.publishMessageUpdated(workspaceID, conv.ID, msg.ID, "email_fallback:queued")
 	}
 	s.logger.InfoContext(ctx, "email fallback enqueued",
 		"workspace_id", workspaceID,
@@ -1489,7 +1515,8 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		return err
 	}
 	chatLink, _ := s.buildChatLink(ctx, conv)
-	htmlBody, textBody := s.renderBodies(pending, agentName, workspaceName, chatLink, unsubscribeEmail)
+	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
+	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
 
 	s.logger.InfoContext(ctx, "email fallback sending via postmark",
 		"workspace_id", conv.WorkspaceID,
@@ -1497,6 +1524,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		"from_email", fromAddress,
 		"reply_to", replyTo,
 		"message_count", len(pending),
+		"attachment_count", len(emailAttachments),
 	)
 	postmarkMessageID, sentFromAddress, fromFallbackReason, err := s.sendFallbackEmailWithSenderFallback(
 		ctx,
@@ -1512,6 +1540,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		textBody,
 		replyTo,
 		headers,
+		emailAttachments,
 	)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "email fallback send failed",
@@ -2137,6 +2166,10 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	}
 
 	var htmlBody strings.Builder
+	htmlBody.WriteString(renderSupportEmailHiddenPreheader(messages, workspaceName))
+	htmlBody.WriteString(`<p style="margin:0 0 16px;color:#9ca3af;font-size:12px;line-height:18px;">`)
+	htmlBody.WriteString(html.EscapeString(supportEmailReplyDelimiter))
+	htmlBody.WriteString("</p>")
 	for _, chunk := range htmlChunks {
 		htmlBody.WriteString(chunk)
 	}
@@ -2146,26 +2179,132 @@ func (s *EmailFallbackService) renderBodies(messages []model.SupportMessage, age
 	htmlBody.WriteString(html.EscapeString(workspaceName))
 	htmlBody.WriteString("</p>")
 	if chatLink != "" {
-		htmlBody.WriteString(`<p>Reply directly to this email or <a href="`)
+		htmlBody.WriteString(`<p><a href="`)
 		htmlBody.WriteString(html.EscapeString(chatLink))
-		htmlBody.WriteString(`">open the chat</a>.</p>`)
-	} else {
-		htmlBody.WriteString("<p>Reply directly to this email.</p>")
+		htmlBody.WriteString(`">View conversation in browser</a></p>`)
 	}
-	htmlBody.WriteString(`<p style="border-top:1px solid #e5e7eb;margin-top:20px;padding-top:12px;color:#6b7280;font-size:12px;line-height:18px;">Powered by <a href="https://helpin.ai" style="color:#6b7280;text-decoration:none;">Helpin AI</a></p>`)
+	htmlBody.WriteString(`<p style="border-top:1px solid #e5e7eb;margin-top:20px;padding-top:12px;color:#6b7280;font-size:12px;line-height:18px;">Powered by <a href="`)
+	htmlBody.WriteString(emailFallbackPoweredByFooterURL)
+	htmlBody.WriteString(`" style="color:#6b7280;text-decoration:none;"><strong>Helpin AI</strong></a></p>`)
 
-	textBody := strings.Join(textChunks, "\n\n")
-	if textBody != "" {
+	textBody := supportEmailReplyDelimiter + "\n\n" + strings.Join(textChunks, "\n\n")
+	if strings.TrimSpace(strings.Join(textChunks, "")) != "" {
 		textBody += "\n\n"
 	}
-	textBody += "--\n" + agentName + " via " + workspaceName + "\n\nReply directly to this email"
+	textBody += "--\n" + agentName + " via " + workspaceName
 	if chatLink != "" {
-		textBody += ", or open the chat:\n" + chatLink
-	} else {
-		textBody += "."
+		textBody += "\n\nView conversation in browser:\n" + chatLink
 	}
-	textBody += "\n\nPowered by Helpin AI: https://helpin.ai"
+	textBody += "\n\nPowered by Helpin AI: " + emailFallbackPoweredByFooterURL
 	return htmlBody.String(), textBody
+}
+
+func renderSupportEmailHiddenPreheader(messages []model.SupportMessage, workspaceName string) string {
+	preview := supportEmailPreviewText(messages, workspaceName)
+	if preview == "" {
+		return ""
+	}
+	return `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;mso-hide:all;line-height:1px;font-size:1px;">` +
+		html.EscapeString(preview) +
+		`</div>`
+}
+
+func supportEmailPreviewText(messages []model.SupportMessage, workspaceName string) string {
+	for _, msg := range messages {
+		if preview := truncateSupportEmailPreview(collapseSupportEmailPreviewWhitespace(msg.Content)); preview != "" {
+			return preview
+		}
+	}
+	for _, msg := range messages {
+		if len(msg.Attachments) > 0 {
+			name := strings.TrimSpace(workspaceName)
+			if name == "" {
+				name = "Helpin Support"
+			}
+			return "Attachment from " + name
+		}
+	}
+	return ""
+}
+
+func collapseSupportEmailPreviewWhitespace(content string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
+}
+
+func truncateSupportEmailPreview(content string) string {
+	runes := []rune(strings.TrimSpace(content))
+	if len(runes) <= supportEmailPreviewMaxRunes {
+		return string(runes)
+	}
+	if supportEmailPreviewMaxRunes <= 1 {
+		return string(runes[:supportEmailPreviewMaxRunes])
+	}
+	return strings.TrimSpace(string(runes[:supportEmailPreviewMaxRunes-1])) + "…"
+}
+
+func (s *EmailFallbackService) prepareEmailAttachments(ctx context.Context, messages []model.SupportMessage) ([]model.SupportMessage, []email.Attachment) {
+	if len(messages) == 0 || s == nil || s.attachmentDownloader == nil {
+		return messages, nil
+	}
+
+	prepared := make([]model.SupportMessage, len(messages))
+	copy(prepared, messages)
+
+	var totalRawBytes int64
+	postmarkAttachments := make([]email.Attachment, 0)
+	for msgIndex := range prepared {
+		if len(prepared[msgIndex].Attachments) == 0 {
+			continue
+		}
+		msgAttachments := make([]model.SupportAttachmentPayload, len(prepared[msgIndex].Attachments))
+		copy(msgAttachments, prepared[msgIndex].Attachments)
+		for attachmentIndex := range msgAttachments {
+			attachment := msgAttachments[attachmentIndex]
+			if !isSupportEmailAttachmentCandidate(attachment, totalRawBytes) {
+				continue
+			}
+			data, err := s.attachmentDownloader.DownloadContent(ctx, attachment)
+			if err != nil {
+				if s.logger != nil {
+					s.logger.WarnContext(ctx, "download support attachment for fallback email",
+						"error", err,
+						"attachment_id", attachment.ID,
+						"file_name", attachment.FileName,
+					)
+				}
+				continue
+			}
+			rawSize := int64(len(data))
+			if rawSize <= 0 || rawSize > supportEmailAttachmentMaxFileBytes || totalRawBytes+rawSize > supportEmailAttachmentMaxTotalRawBytes {
+				continue
+			}
+			name := strings.TrimSpace(attachment.FileName)
+			if name == "" {
+				name = "attachment"
+			}
+			contentType := strings.TrimSpace(attachment.FileType)
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			postmarkAttachments = append(postmarkAttachments, email.Attachment{
+				Name:        name,
+				ContentType: contentType,
+				Content:     base64.StdEncoding.EncodeToString(data),
+			})
+			totalRawBytes += rawSize
+			msgAttachments[attachmentIndex].URL = ""
+		}
+		prepared[msgIndex].Attachments = msgAttachments
+	}
+
+	return prepared, postmarkAttachments
+}
+
+func isSupportEmailAttachmentCandidate(attachment model.SupportAttachmentPayload, currentTotalBytes int64) bool {
+	return strings.TrimSpace(attachment.FileKey) != "" &&
+		attachment.FileSize > 0 &&
+		attachment.FileSize <= supportEmailAttachmentMaxFileBytes &&
+		currentTotalBytes+attachment.FileSize <= supportEmailAttachmentMaxTotalRawBytes
 }
 
 func renderAttachmentTextList(attachments []model.SupportAttachmentPayload) string {
@@ -2382,8 +2521,9 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 	textBody string,
 	replyTo string,
 	headers []email.EmailHeader,
+	attachments []email.Attachment,
 ) (string, string, string, error) {
-	postmarkMessageID, err := s.emailClient.SendEmailWithHeaders(from, to, subject, htmlBody, textBody, replyTo, headers)
+	postmarkMessageID, err := s.emailClient.SendEmailWithHeadersAndAttachments(from, to, subject, htmlBody, textBody, replyTo, headers, attachments)
 	if err == nil {
 		return postmarkMessageID, fromAddress, "", nil
 	}
@@ -2404,7 +2544,7 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 		"fallback_from_email", fallbackFromAddress,
 		"reply_to", replyTo,
 	)
-	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeaders(fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers)
+	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeadersAndAttachments(fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers, attachments)
 	if fallbackErr != nil {
 		return "", fallbackFromAddress, "postmark_sender_signature_rejected", fmt.Errorf("retry with verified sender after branded sender rejection: %w", fallbackErr)
 	}
