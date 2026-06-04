@@ -108,6 +108,63 @@ const pmTaskRoute = createRoute({
   ),
 })
 
+// "Open in web" stubs for web routes that SHARED support components navigate to
+// (e.g. EntityEmbedNodeView links to deals/companies; SupportInboxLayout links to
+// chat settings). Declaring them here keeps those components' typed `navigate()`
+// calls compiling against this app's router, and routes them to the browser at
+// runtime. If web adds a new navigation target the desktop slice reaches, its
+// typecheck fails — add a stub here (the CI desktop gate surfaces this in the PR).
+const crmDealRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/w/$slug/crm/deals/$dealId',
+  beforeLoad: requireAuth,
+  component: () => (
+    <OpenInWebPage
+      title="Open CRM Deal"
+      pathBuilder={({ slug, dealId }) => `/w/${slug}/crm/deals/${dealId}`}
+    />
+  ),
+})
+
+const crmCompanyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/w/$slug/crm/companies/$companyId',
+  beforeLoad: requireAuth,
+  component: () => (
+    <OpenInWebPage
+      title="Open CRM Company"
+      pathBuilder={({ slug, companyId }) => `/w/${slug}/crm/companies/${companyId}`}
+    />
+  ),
+})
+
+const chatSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/w/$slug/settings/chat-general',
+  beforeLoad: requireAuth,
+  component: () => (
+    <OpenInWebPage
+      title="Open Chat Settings"
+      pathBuilder={({ slug }) => `/w/${slug}/settings/chat-general`}
+    />
+  ),
+})
+
+// Catch-all: any web route this desktop app does not implement natively opens in
+// the browser instead of dead-ending on "not found". More specific routes above
+// win; this only matches leftover paths at runtime.
+const openInWebSplatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '$',
+  beforeLoad: requireAuth,
+  component: () => (
+    <OpenInWebPage
+      title="Open in Helpin"
+      pathBuilder={(params) => `/${params._splat ?? ''}`}
+    />
+  ),
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -115,8 +172,12 @@ const routeTree = rootRoute.addChildren([
   supportWorkspaceRoute,
   supportConversationRoute,
   crmContactRoute,
+  crmDealRoute,
+  crmCompanyRoute,
   docsDocumentRoute,
   pmTaskRoute,
+  chatSettingsRoute,
+  openInWebSplatRoute,
 ])
 
 export const router = createRouter({

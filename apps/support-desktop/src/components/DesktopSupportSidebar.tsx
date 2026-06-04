@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import {
   Sidebar,
   SidebarContent,
@@ -16,6 +16,7 @@ interface DesktopSupportSidebarProps {
 
 export function DesktopSupportSidebar({ workspaceId, wsSlug }: DesktopSupportSidebarProps) {
   const navigate = useNavigate()
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
   const {
     navFilter,
     setNavFilter,
@@ -44,12 +45,18 @@ export function DesktopSupportSidebar({ workspaceId, wsSlug }: DesktopSupportSid
           selectedMailboxId={selectedMailboxId}
           canManageSettings
           wsSlug={wsSlug}
+          pathname={pathname}
           onNavFilterChange={setNavFilter}
           onMailboxSelect={setSelectedMailboxId}
           onCreateMailbox={() => setTeamInboxDialogOpen(true)}
           onEditMailbox={(id) => { setEditMailboxId(id); setTeamInboxDialogOpen(true) }}
           onArchiveMailbox={(id) => archiveMailbox.mutate(id)}
           onNavigate={(to) => navigate({ to })}
+          // Custom inbox views are a web-only feature; desktop does not render
+          // them (no `customViews` passed), so these handlers are never invoked.
+          onCustomViewSelect={() => {}}
+          onEditCustomView={() => {}}
+          onDeleteCustomView={() => {}}
         />
       </SidebarContent>
     </Sidebar>
