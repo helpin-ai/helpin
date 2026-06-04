@@ -147,6 +147,23 @@ func (h *GitHandler) GetOrgIntegration(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, detail)
 }
 
+func (h *GitHandler) UpdateOrgIntegration(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	integrationID := chi.URLParam(r, "integrationId")
+	actorID := middleware.GetUserID(r.Context())
+	var req model.UpdateGitIntegrationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	integration, err := h.gitService.UpdateOrganizationIntegration(r.Context(), orgID, integrationID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, integration)
+}
+
 func (h *GitHandler) DeleteOrgIntegration(w http.ResponseWriter, r *http.Request) {
 	orgID := chi.URLParam(r, "id")
 	integrationID := chi.URLParam(r, "integrationId")

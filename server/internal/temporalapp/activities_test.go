@@ -3706,6 +3706,34 @@ func TestPushCodexLocalCommitPushesCommittedBranch(t *testing.T) {
 	}
 }
 
+func TestResolveRunGitIdentityRequiresGitLabCodeBuilderEmail(t *testing.T) {
+	state := &resolvedRunState{
+		run: &model.AgentRun{RuntimeKind: "codex"},
+		agent: &model.Agent{
+			RuntimeKind: "codex",
+			PresetKey:   model.AgentPresetCodeBuilder,
+		},
+		repository:  &model.GitRepository{FullName: "group/project"},
+		integration: &model.GitIntegration{Provider: "gitlab"},
+	}
+
+	if _, err := resolveRunGitIdentity(state); err == nil || !strings.Contains(err.Error(), "GitLab commit author email is required") {
+		t.Fatalf("expected GitLab commit author email error, got %v", err)
+	}
+
+	email := "verified@example.com"
+	name := "Verified Bot"
+	state.integration.DefaultCommitAuthorName = &name
+	state.integration.DefaultCommitAuthorEmail = &email
+	identity, err := resolveRunGitIdentity(state)
+	if err != nil {
+		t.Fatalf("resolve identity with configured email: %v", err)
+	}
+	if identity.Name != name || identity.Email != email {
+		t.Fatalf("identity = %#v, want name %q email %q", identity, name, email)
+	}
+}
+
 func TestEnsureGitHubPullRequestReusesExistingOpenPR(t *testing.T) {
 	t.Parallel()
 

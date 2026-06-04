@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/url"
 	"sort"
 	"strconv"
@@ -272,6 +273,10 @@ func (s *GitService) CreateIntegration(ctx context.Context, req model.CreateGitI
 	if req.Provider != "github" && req.Provider != "gitlab" {
 		return nil, fmt.Errorf("provider must be 'github' or 'gitlab'")
 	}
+	defaultCommitAuthorEmail, err := normalizeOptionalCommitAuthorEmail(req.DefaultCommitAuthorEmail)
+	if err != nil {
+		return nil, err
+	}
 	workspace, err := s.workspaceRepo.GetByID(ctx, req.WorkspaceID)
 	if err != nil {
 		return nil, err
@@ -295,18 +300,20 @@ func (s *GitService) CreateIntegration(ctx context.Context, req model.CreateGitI
 	}
 
 	integration := &model.GitIntegration{
-		WorkspaceID:    strPtr(req.WorkspaceID),
-		OrganizationID: workspace.OrganizationID,
-		Provider:       req.Provider,
-		DisplayName:    strings.TrimSpace(req.DisplayName),
-		CredentialMode: credentialMode,
-		AccountLogin:   trimPtr(req.AccountLogin),
-		BaseURL:        req.BaseURL,
-		InstallationID: trimPtr(req.InstallationID),
-		AppID:          trimPtr(req.AppID),
-		WebhookSecret:  webhookSecret,
-		AccessToken:    req.AccessToken,
-		Active:         true,
+		WorkspaceID:              strPtr(req.WorkspaceID),
+		OrganizationID:           workspace.OrganizationID,
+		Provider:                 req.Provider,
+		DisplayName:              strings.TrimSpace(req.DisplayName),
+		CredentialMode:           credentialMode,
+		AccountLogin:             trimPtr(req.AccountLogin),
+		BaseURL:                  req.BaseURL,
+		InstallationID:           trimPtr(req.InstallationID),
+		AppID:                    trimPtr(req.AppID),
+		WebhookSecret:            webhookSecret,
+		AccessToken:              req.AccessToken,
+		DefaultCommitAuthorName:  trimPtr(req.DefaultCommitAuthorName),
+		DefaultCommitAuthorEmail: trimPtr(defaultCommitAuthorEmail),
+		Active:                   true,
 	}
 
 	if err := s.integrationRepo.Create(ctx, integration); err != nil {
@@ -341,6 +348,10 @@ func (s *GitService) CreateOrganizationIntegration(ctx context.Context, organiza
 	if req.Provider != "github" && req.Provider != "gitlab" {
 		return nil, fmt.Errorf("provider must be 'github' or 'gitlab'")
 	}
+	defaultCommitAuthorEmail, err := normalizeOptionalCommitAuthorEmail(req.DefaultCommitAuthorEmail)
+	if err != nil {
+		return nil, err
+	}
 	credentialMode := "github_app"
 	if req.CredentialMode != nil && strings.TrimSpace(*req.CredentialMode) != "" {
 		credentialMode = strings.TrimSpace(*req.CredentialMode)
@@ -354,23 +365,58 @@ func (s *GitService) CreateOrganizationIntegration(ctx context.Context, organiza
 		webhookSecret = &secret
 	}
 	integration := &model.GitIntegration{
-		WorkspaceID:    workspaceID,
-		OrganizationID: strPtr(strings.TrimSpace(organizationID)),
-		Provider:       req.Provider,
-		DisplayName:    strings.TrimSpace(req.DisplayName),
-		CredentialMode: credentialMode,
-		AccountLogin:   trimPtr(req.AccountLogin),
-		BaseURL:        req.BaseURL,
-		InstallationID: trimPtr(req.InstallationID),
-		AppID:          trimPtr(req.AppID),
-		WebhookSecret:  webhookSecret,
-		AccessToken:    req.AccessToken,
-		Active:         true,
+		WorkspaceID:              workspaceID,
+		OrganizationID:           strPtr(strings.TrimSpace(organizationID)),
+		Provider:                 req.Provider,
+		DisplayName:              strings.TrimSpace(req.DisplayName),
+		CredentialMode:           credentialMode,
+		AccountLogin:             trimPtr(req.AccountLogin),
+		BaseURL:                  req.BaseURL,
+		InstallationID:           trimPtr(req.InstallationID),
+		AppID:                    trimPtr(req.AppID),
+		WebhookSecret:            webhookSecret,
+		AccessToken:              req.AccessToken,
+		DefaultCommitAuthorName:  trimPtr(req.DefaultCommitAuthorName),
+		DefaultCommitAuthorEmail: trimPtr(defaultCommitAuthorEmail),
+		Active:                   true,
 	}
 	if err := s.integrationRepo.Create(ctx, integration); err != nil {
 		return nil, err
 	}
 	s.publishSimpleEvent("created", "git_integration", integration.ID, workspaceIDForIntegration(integration), actorID)
+	return integration, nil
+}
+
+func (s *GitService) UpdateOrganizationIntegration(ctx context.Context, organizationID, integrationID string, req model.UpdateGitIntegrationRequest, actorID string) (*model.GitIntegration, error) {
+	organizationID = strings.TrimSpace(organizationID)
+	integrationID = strings.TrimSpace(integrationID)
+	if organizationID == "" || integrationID == "" {
+		return nil, fmt.Errorf("organization_id and integration_id are required")
+	}
+	if !s.isOrgAdminOrOwner(ctx, organizationID, actorID) {
+		return nil, fmt.Errorf("only organization owners or admins can update git integrations")
+	}
+	integration, err := s.integrationRepo.GetByIDForOrganization(ctx, organizationID, integrationID)
+	if err != nil {
+		return nil, fmt.Errorf("get integration: %w", err)
+	}
+	if integration == nil {
+		return nil, fmt.Errorf("integration not found")
+	}
+	if req.DefaultCommitAuthorName != nil {
+		integration.DefaultCommitAuthorName = trimPtr(req.DefaultCommitAuthorName)
+	}
+	if req.DefaultCommitAuthorEmail != nil {
+		email, err := normalizeCommitAuthorEmail(*req.DefaultCommitAuthorEmail)
+		if err != nil {
+			return nil, err
+		}
+		integration.DefaultCommitAuthorEmail = trimPtr(&email)
+	}
+	if err := s.integrationRepo.Update(ctx, integration); err != nil {
+		return nil, err
+	}
+	s.publishSimpleEvent("updated", "git_integration", integration.ID, workspaceIDForIntegration(integration), actorID)
 	return integration, nil
 }
 
@@ -847,6 +893,15 @@ func (s *GitService) ConnectGitLabWithToken(
 	integration, err := s.upsertGitLabIntegration(ctx, organizationID, workspace, credential, actorID)
 	if err != nil {
 		return nil, err
+	}
+	if req.DefaultCommitAuthorName != nil || req.DefaultCommitAuthorEmail != nil {
+		integration, err = s.UpdateOrganizationIntegration(ctx, organizationID, integration.ID, model.UpdateGitIntegrationRequest{
+			DefaultCommitAuthorName:  req.DefaultCommitAuthorName,
+			DefaultCommitAuthorEmail: req.DefaultCommitAuthorEmail,
+		}, actorID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return integration, nil
 }
@@ -2805,6 +2860,29 @@ func trimPtr(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func normalizeOptionalCommitAuthorEmail(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	normalized, err := normalizeCommitAuthorEmail(*value)
+	if err != nil {
+		return nil, err
+	}
+	return &normalized, nil
+}
+
+func normalizeCommitAuthorEmail(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	parsed, err := mail.ParseAddress(trimmed)
+	if err != nil || strings.TrimSpace(parsed.Address) == "" {
+		return "", fmt.Errorf("default_commit_author_email must be a valid email address")
+	}
+	return strings.TrimSpace(parsed.Address), nil
 }
 
 func defaultAccountLogin(value *string) string {
