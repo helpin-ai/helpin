@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -800,6 +801,93 @@ func TestEmailFallbackRenderBodiesIncludesMessageAttachments(t *testing.T) {
 		if !strings.Contains(body, "https://cdn.example.com/billing-report.pdf") {
 			t.Fatalf("expected rendered email body to include attachment URL, got %q", body)
 		}
+	}
+}
+
+func TestEmailFallbackRenderBodiesAddsTrackedPoweredByFooter(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{{Content: "Thanks."}},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	if !strings.Contains(htmlBody, "<strong>Helpin AI</strong>") {
+		t.Fatalf("html footer should bold Helpin AI, got %q", htmlBody)
+	}
+	if !strings.Contains(htmlBody, emailFallbackPoweredByFooterURL) {
+		t.Fatalf("html footer missing tracked URL, got %q", htmlBody)
+	}
+	if !strings.Contains(textBody, emailFallbackPoweredByFooterURL) {
+		t.Fatalf("text footer missing tracked URL, got %q", textBody)
+	}
+}
+
+type fakeSupportEmailAttachmentDownloader struct {
+	data map[string][]byte
+	err  error
+}
+
+func (f fakeSupportEmailAttachmentDownloader) DownloadContent(ctx context.Context, attachment model.SupportAttachmentPayload) ([]byte, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.data[attachment.ID], nil
+}
+
+func TestEmailFallbackPrepareEmailAttachmentsEmbedsSmallFilesAndLeavesLargeFilesLinked(t *testing.T) {
+	svc := &EmailFallbackService{
+		attachmentDownloader: fakeSupportEmailAttachmentDownloader{
+			data: map[string][]byte{
+				"small-file": []byte("pdf-bytes"),
+			},
+		},
+	}
+
+	messages, attachments := svc.prepareEmailAttachments(context.Background(), []model.SupportMessage{
+		{
+			Content: "Here is the report.",
+			Attachments: []model.SupportAttachmentPayload{
+				{
+					ID:       "small-file",
+					FileKey:  "support/small-file",
+					FileName: "report.pdf",
+					FileType: "application/pdf",
+					FileSize: 1024,
+					URL:      "https://cdn.example.com/report.pdf",
+				},
+				{
+					ID:       "large-file",
+					FileKey:  "support/large-file",
+					FileName: "recording.mov",
+					FileType: "video/quicktime",
+					FileSize: supportEmailAttachmentMaxFileBytes + 1,
+					URL:      "https://cdn.example.com/recording.mov",
+				},
+			},
+		},
+	})
+
+	if len(attachments) != 1 {
+		t.Fatalf("attachments len = %d, want 1", len(attachments))
+	}
+	if attachments[0].Name != "report.pdf" {
+		t.Fatalf("attachment name = %q", attachments[0].Name)
+	}
+	if attachments[0].ContentType != "application/pdf" {
+		t.Fatalf("attachment content type = %q", attachments[0].ContentType)
+	}
+	if attachments[0].Content != base64.StdEncoding.EncodeToString([]byte("pdf-bytes")) {
+		t.Fatalf("attachment content = %q", attachments[0].Content)
+	}
+	if got := messages[0].Attachments[0].URL; got != "" {
+		t.Fatalf("attached file URL should be cleared from body, got %q", got)
+	}
+	if got := messages[0].Attachments[1].URL; got != "https://cdn.example.com/recording.mov" {
+		t.Fatalf("large file URL = %q", got)
 	}
 }
 
@@ -2846,10 +2934,10 @@ func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.
 	if !strings.Contains(htmlBody, `border-top:1px solid #e5e7eb`) {
 		t.Fatalf("expected subtle bordered attribution footer, got %q", htmlBody)
 	}
-	if !strings.Contains(htmlBody, `<a href="https://helpin.ai"`) || !strings.Contains(htmlBody, `Helpin AI</a>`) {
+	if !strings.Contains(htmlBody, `<a href="`+emailFallbackPoweredByFooterURL+`"`) || !strings.Contains(htmlBody, `<strong>Helpin AI</strong></a>`) {
 		t.Fatalf("expected Helpin AI attribution link, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, "Powered by Helpin AI: https://helpin.ai") {
+	if !strings.Contains(textBody, "Powered by Helpin AI: "+emailFallbackPoweredByFooterURL) {
 		t.Fatalf("expected plaintext Helpin AI attribution URL, got %q", textBody)
 	}
 }

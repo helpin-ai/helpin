@@ -119,6 +119,18 @@ func (s *SupportAttachmentService) LinkToMessage(ctx context.Context, attachment
 	return s.attachmentRepo.LinkToMessage(ctx, attachmentIDs, messageID)
 }
 
+// DownloadContent returns the stored bytes for a support attachment payload.
+func (s *SupportAttachmentService) DownloadContent(ctx context.Context, attachment model.SupportAttachmentPayload) ([]byte, error) {
+	if s == nil || s.s3Client == nil {
+		return nil, fmt.Errorf("file storage is not configured")
+	}
+	key := strings.TrimSpace(attachment.FileKey)
+	if key == "" {
+		return nil, fmt.Errorf("attachment storage key is required")
+	}
+	return s.s3Client.GetObject(ctx, key)
+}
+
 // HydrateMessages populates the Attachments field on each message.
 func (s *SupportAttachmentService) HydrateMessages(ctx context.Context, messages []model.SupportMessage) error {
 	if len(messages) == 0 {

@@ -22,6 +22,14 @@ type EmailHeader struct {
 	Value string `json:"Value"`
 }
 
+// Attachment is a Base64-encoded file attachment for Postmark.
+type Attachment struct {
+	Name        string `json:"Name"`
+	Content     string `json:"Content"`
+	ContentType string `json:"ContentType"`
+	ContentID   string `json:"ContentID,omitempty"`
+}
+
 // NewClient creates a new Postmark client. Returns nil if serverToken is empty (feature disabled).
 func NewClient(serverToken, fromEmail string) *Client {
 	if serverToken == "" {
@@ -35,14 +43,15 @@ func NewClient(serverToken, fromEmail string) *Client {
 }
 
 type postmarkRequest struct {
-	From       string        `json:"From"`
-	To         string        `json:"To"`
-	Subject    string        `json:"Subject"`
-	HtmlBody   string        `json:"HtmlBody"`
-	TextBody   string        `json:"TextBody"`
-	ReplyTo    string        `json:"ReplyTo,omitempty"`
-	Headers    []EmailHeader `json:"Headers,omitempty"`
-	TrackOpens bool          `json:"TrackOpens,omitempty"`
+	From        string        `json:"From"`
+	To          string        `json:"To"`
+	Subject     string        `json:"Subject"`
+	HtmlBody    string        `json:"HtmlBody"`
+	TextBody    string        `json:"TextBody"`
+	ReplyTo     string        `json:"ReplyTo,omitempty"`
+	Headers     []EmailHeader `json:"Headers,omitempty"`
+	TrackOpens  bool          `json:"TrackOpens,omitempty"`
+	Attachments []Attachment  `json:"Attachments,omitempty"`
 }
 
 type postmarkResponse struct {
@@ -116,15 +125,21 @@ func (c *Client) SetHTTPClient(httpClient *http.Client) {
 // SendEmailWithHeaders sends an email with a custom From/Reply-To and extra RFC headers.
 // It returns the Postmark MessageID for durable logging.
 func (c *Client) SendEmailWithHeaders(from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader) (string, error) {
+	return c.SendEmailWithHeadersAndAttachments(from, to, subject, htmlBody, textBody, replyTo, headers, nil)
+}
+
+// SendEmailWithHeadersAndAttachments sends an email with custom headers and file attachments.
+func (c *Client) SendEmailWithHeadersAndAttachments(from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader, attachments []Attachment) (string, error) {
 	payload := postmarkRequest{
-		From:       from,
-		To:         to,
-		Subject:    subject,
-		HtmlBody:   htmlBody,
-		TextBody:   textBody,
-		ReplyTo:    replyTo,
-		Headers:    headers,
-		TrackOpens: true,
+		From:        from,
+		To:          to,
+		Subject:     subject,
+		HtmlBody:    htmlBody,
+		TextBody:    textBody,
+		ReplyTo:     replyTo,
+		Headers:     headers,
+		TrackOpens:  true,
+		Attachments: attachments,
 	}
 	return c.send(payload)
 }
