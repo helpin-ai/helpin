@@ -536,6 +536,35 @@ func TestSupportConversationRepository_ListPreviewIgnoresSystemEventsButKeepsInt
 		CreatedAt:      base.Add(3 * time.Minute),
 	})
 
+	insertConversation(t, db, model.SupportConversation{
+		ID:          "empty-internal-handoff",
+		WorkspaceID: "w",
+		DisplayID:   3,
+		Subject:     "empty internal handoff",
+		CreatedAt:   base,
+		UpdatedAt:   base.Add(5 * time.Minute),
+	})
+	insertMessage(t, db, model.SupportMessage{
+		ID:                "ai-handoff-reply",
+		WorkspaceID:       "w",
+		ConversationID:    "empty-internal-handoff",
+		SenderType:        "ai",
+		SenderDisplayName: strPtr("Helpin AI"),
+		Content:           "Let me connect you with a team member who can help further.",
+		MessageType:       "reply",
+		CreatedAt:         base.Add(time.Minute),
+	})
+	insertMessage(t, db, model.SupportMessage{
+		ID:             "empty-handoff-note",
+		WorkspaceID:    "w",
+		ConversationID: "empty-internal-handoff",
+		SenderType:     "agent",
+		Content:        "",
+		MessageType:    "reply",
+		IsInternal:     true,
+		CreatedAt:      base.Add(4 * time.Minute),
+	})
+
 	conversations, total, err := repo.List(ctx, ConversationRepositoryListParams{
 		ConversationListParams: ConversationListParams{WorkspaceID: "w"},
 		Role:                   model.RoleOwner,
@@ -543,8 +572,8 @@ func TestSupportConversationRepository_ListPreviewIgnoresSystemEventsButKeepsInt
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if total != 2 || len(conversations) != 2 {
-		t.Fatalf("total=%d len=%d, want 2", total, len(conversations))
+	if total != 3 || len(conversations) != 3 {
+		t.Fatalf("total=%d len=%d, want 3", total, len(conversations))
 	}
 
 	byID := map[string]model.SupportConversation{}
@@ -556,6 +585,9 @@ func TestSupportConversationRepository_ListPreviewIgnoresSystemEventsButKeepsInt
 	}
 	if got := byID["internal-note"].LastMessage; got == nil || *got != "Note: check billing context" {
 		t.Fatalf("internal note last_message = %v, want prefixed internal note", got)
+	}
+	if got := byID["empty-internal-handoff"].LastMessage; got == nil || *got != "Let me connect you with a team member who can help further." {
+		t.Fatalf("empty internal handoff last_message = %v, want public handoff reply", got)
 	}
 }
 
