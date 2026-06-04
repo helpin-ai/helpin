@@ -55,6 +55,7 @@ export function getNextConversationIdAfterRemoval(
   conversations: Pick<SupportConversation, 'id'>[],
   conversationId: string,
 ): string | null {
+  // Select from the current cached list before invalidation so row actions can advance without a visible jump.
   const currentIdx = conversations.findIndex((conversation) => conversation.id === conversationId);
   if (currentIdx === -1) {
     return conversations[0]?.id ?? null;
