@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
-import type { ConversationListResponse, SupportConversation } from './pmTypes';
+import type { ConversationListResponse, MessageSenderType, SupportConversation } from './pmTypes';
 
 export type SupportConversationListCache =
   | ConversationListResponse
@@ -123,4 +123,127 @@ export function updateConversationUnreadCount(
     return current;
   }
   return { ...current, unread_count: unreadCount };
+}
+
+type SupportMessageActivityPatch = {
+  conversationId: string;
+  timestamp: string;
+  message?: {
+    content?: unknown;
+    sender_type?: unknown;
+    sender_display_name?: unknown;
+    message_type?: unknown;
+    system_event_type?: unknown;
+  };
+};
+
+function isPublicCustomerReply(message: SupportMessageActivityPatch['message']): boolean {
+  return message?.sender_type === 'customer' &&
+    (message.message_type === undefined || message.message_type === 'reply') &&
+    !message.system_event_type;
+}
+
+function isPublicReply(message: SupportMessageActivityPatch['message']): boolean {
+  return typeof message?.sender_type === 'string' &&
+    (message.message_type === undefined || message.message_type === 'reply') &&
+    !message.system_event_type;
+}
+
+function patchConversationForMessageActivity(
+  conversation: SupportConversation,
+  patch: SupportMessageActivityPatch,
+): SupportConversation {
+  const next: SupportConversation = {
+    ...conversation,
+    updated_at: patch.timestamp,
+  };
+
+  if (!isPublicReply(patch.message)) {
+    return next;
+  }
+
+  const senderType = patch.message?.sender_type as MessageSenderType;
+  const content = typeof patch.message?.content === 'string' ? patch.message.content : '';
+  const senderDisplayName = typeof patch.message?.sender_display_name === 'string'
+    ? patch.message.sender_display_name
+    : conversation.last_message_sender_display_name;
+
+  return {
+    ...next,
+    last_message: content || conversation.last_message,
+    last_message_sender_type: senderType,
+    last_message_sender_display_name: senderDisplayName,
+    awaiting_reply: senderType === 'customer',
+    unread_count: isPublicCustomerReply(patch.message)
+      ? (conversation.unread_count ?? 0) + 1
+      : conversation.unread_count,
+  };
+}
+
+function moveConversationInList(
+  conversations: SupportConversation[] | undefined,
+  patch: SupportMessageActivityPatch,
+): { conversations: SupportConversation[] | undefined; changed: boolean } {
+  if (!Array.isArray(conversations)) {
+    return { conversations, changed: false };
+  }
+  const index = conversations.findIndex((conversation) => conversation.id === patch.conversationId);
+  if (index === -1) {
+    return { conversations, changed: false };
+  }
+  const patched = patchConversationForMessageActivity(conversations[index], patch);
+  const next = conversations.slice();
+  next.splice(index, 1);
+  next.unshift(patched);
+  return { conversations: next, changed: true };
+}
+
+export function moveConversationToTopForMessageActivity(
+  current: SupportConversationListCache | undefined,
+  patch: SupportMessageActivityPatch,
+): SupportConversationListCache | undefined {
+  if (!current) {
+    return current;
+  }
+
+  if (isInfiniteConversationListResponse(current)) {
+    let found: SupportConversation | null = null;
+    const pagesWithoutConversation = current.pages.map((page) => {
+      if (!Array.isArray(page.data)) {
+        return page;
+      }
+      const index = page.data.findIndex((conversation) => conversation.id === patch.conversationId);
+      if (index === -1) {
+        return page;
+      }
+      found = patchConversationForMessageActivity(page.data[index], patch);
+      return {
+        ...page,
+        data: page.data.filter((conversation) => conversation.id !== patch.conversationId),
+      };
+    });
+
+    if (!found || !pagesWithoutConversation[0] || !Array.isArray(pagesWithoutConversation[0].data)) {
+      return current;
+    }
+
+    const firstPage = pagesWithoutConversation[0];
+    return {
+      ...current,
+      pages: [
+        {
+          ...firstPage,
+          data: [found, ...firstPage.data],
+        },
+        ...pagesWithoutConversation.slice(1),
+      ],
+    };
+  }
+
+  if (!isConversationListResponse(current)) {
+    return current;
+  }
+
+  const result = moveConversationInList(current.data, patch);
+  return result.changed ? { ...current, data: result.conversations ?? current.data } : current;
 }

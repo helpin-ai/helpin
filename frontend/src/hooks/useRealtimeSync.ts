@@ -10,6 +10,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pmTaskService } from '@/lib/services/pmTaskService'
 import { queryKeys } from '@/lib/queryKeys'
 import { buildPatchedTaskFromDetail } from '@/components/pm/task-detail/taskDetailEventPayload'
+import { isSupportConversationListQueryKey, moveConversationToTopForMessageActivity, type SupportConversationListCache } from '@/lib/supportQueryCache'
 import type { Task, TaskMemberColumn, TaskStateColumn } from '@/lib/pmTypes'
 
 const BOARD_ENTITIES = new Set(['task'])
@@ -487,6 +488,16 @@ export function useRealtimeSync(workspaceId: string): { wsSend: WSSend } {
         // Batch-invalidate all support conversation queries in a single call:
         // matches conversations list, conversation detail, and messages
         const parentId = event.parent_id
+        queryClient.setQueriesData<SupportConversationListCache>(
+          {
+            predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
+          },
+          (current) => moveConversationToTopForMessageActivity(current, {
+            conversationId: parentId,
+            timestamp: event.sent_at ?? (typeof event.data?.created_at === 'string' ? event.data.created_at : new Date().toISOString()),
+            message: event.data,
+          }),
+        )
         queryClient.invalidateQueries({
           predicate: (query) => {
             const key = query.queryKey
