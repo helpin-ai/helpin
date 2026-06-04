@@ -298,6 +298,7 @@ type resolvedRunState struct {
 	integration                *model.GitIntegration
 	teamDefault                *model.PMTeamRepoDefault
 	accessToken                string
+	gitIdentity                workerpkg.GitIdentity
 	branchSync                 branchSyncState
 }
 
@@ -522,10 +523,16 @@ func (a *AgentRunActivities) ExecuteRunActivity(ctx context.Context, runID strin
 		workDir       string
 		reusedWorkDir bool
 	)
+	gitIdentity, err := resolveRunGitIdentity(state)
+	if err != nil {
+		_ = a.failRun(ctx, state, err.Error())
+		return ExecuteRunResult{}, nonRetryableRunError(err)
+	}
+	state.gitIdentity = gitIdentity
 	if persistWorkspace {
-		workDir, reusedWorkDir, err = workerpkg.PrepareWorkspaceForRun(ctx, state.integration, repoFullName(state), state.accessToken, state.run.ID)
+		workDir, reusedWorkDir, err = workerpkg.PrepareWorkspaceForRun(ctx, state.integration, repoFullName(state), state.accessToken, state.run.ID, gitIdentity)
 	} else {
-		workDir, err = workerpkg.PrepareWorkspace(ctx, state.integration, repoFullName(state), state.accessToken)
+		workDir, err = workerpkg.PrepareWorkspace(ctx, state.integration, repoFullName(state), state.accessToken, gitIdentity)
 	}
 	if err != nil {
 		_ = a.failRun(ctx, state, fmt.Sprintf("prepare workspace: %v", err))

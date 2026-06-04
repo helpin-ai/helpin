@@ -68,6 +68,21 @@ func TestPrepareWorkspaceForRunReusesCheckoutAndPreservesLocalChanges(t *testing
 	if got := strings.TrimSpace(runGitWorkspaceCmd(t, reusedDir, "git", "config", "user.email")); got != workspaceGitUserEmail {
 		t.Fatalf("expected reused workspace git user.email %q, got %q", workspaceGitUserEmail, got)
 	}
+
+	customIdentity := GitIdentity{Name: "Verified Bot", Email: "verified@example.com"}
+	reusedDir, reused, err = PrepareWorkspaceForRun(context.Background(), integration, "owner/repo", "", "run-123", customIdentity)
+	if err != nil {
+		t.Fatalf("reuse persistent workspace with custom identity: %v", err)
+	}
+	if !reused {
+		t.Fatal("expected custom identity prepare to reuse the existing checkout")
+	}
+	if got := strings.TrimSpace(runGitWorkspaceCmd(t, reusedDir, "git", "config", "user.name")); got != customIdentity.Name {
+		t.Fatalf("expected reused workspace custom git user.name %q, got %q", customIdentity.Name, got)
+	}
+	if got := strings.TrimSpace(runGitWorkspaceCmd(t, reusedDir, "git", "config", "user.email")); got != customIdentity.Email {
+		t.Fatalf("expected reused workspace custom git user.email %q, got %q", customIdentity.Email, got)
+	}
 	content, err := os.ReadFile(modifiedPath)
 	if err != nil {
 		t.Fatalf("read modified file: %v", err)

@@ -3,6 +3,7 @@ package temporalapp
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"go.temporal.io/sdk/activity"
@@ -96,13 +97,20 @@ func TestDocsAssetCleanupWorkflowSchedulesLaterAssetsBeforeFailedAssetRetriesExh
 	deleteErr := errors.New("s3 down")
 	failedAttempts := 0
 	failedAttemptsWhenNextRan := 0
+	nextRan := false
+	var attemptsMu sync.Mutex
 	env.RegisterActivityWithOptions(func(_ context.Context, input DocsAssetCleanupAssetInput) error {
 		switch input.AssetKey {
 		case "docs-import/ws-1/import-1/fail.png":
+			attemptsMu.Lock()
 			failedAttempts++
+			attemptsMu.Unlock()
 			return deleteErr
 		case "docs-import/ws-1/import-1/next.png":
+			attemptsMu.Lock()
+			nextRan = true
 			failedAttemptsWhenNextRan = failedAttempts
+			attemptsMu.Unlock()
 			return nil
 		default:
 			t.Fatalf("unexpected asset key: %s", input.AssetKey)
@@ -122,10 +130,12 @@ func TestDocsAssetCleanupWorkflowSchedulesLaterAssetsBeforeFailedAssetRetriesExh
 	if err := env.GetWorkflowError(); err != nil {
 		t.Fatalf("workflow error: %v", err)
 	}
+	attemptsMu.Lock()
+	defer attemptsMu.Unlock()
 	if failedAttempts != 5 {
 		t.Fatalf("failed asset attempts = %d, want 5", failedAttempts)
 	}
-	if failedAttemptsWhenNextRan == 0 {
+	if !nextRan {
 		t.Fatal("next asset cleanup did not run")
 	}
 	if failedAttemptsWhenNextRan >= failedAttempts {

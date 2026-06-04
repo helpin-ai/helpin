@@ -26,16 +26,21 @@ const (
 const workspaceGitUserName = "Helpin Agent"
 const workspaceGitUserEmail = "agent@helpin.ai"
 
+type GitIdentity struct {
+	Name  string
+	Email string
+}
+
 // PrepareWorkspace creates a temp workspace and clones the repository when configured.
-func PrepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration, repo, authToken string) (string, error) {
-	workDir, _, err := prepareWorkspace(ctx, gitIntegration, repo, authToken, "")
+func PrepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration, repo, authToken string, identity ...GitIdentity) (string, error) {
+	workDir, _, err := prepareWorkspace(ctx, gitIntegration, repo, authToken, "", identity...)
 	return workDir, err
 }
 
 // PrepareWorkspaceForRun returns a stable per-run workspace path so an interactive
 // runtime can pause and later resume against the same filesystem state.
-func PrepareWorkspaceForRun(ctx context.Context, gitIntegration *model.GitIntegration, repo, authToken, runID string) (string, bool, error) {
-	return prepareWorkspace(ctx, gitIntegration, repo, authToken, strings.TrimSpace(runID))
+func PrepareWorkspaceForRun(ctx context.Context, gitIntegration *model.GitIntegration, repo, authToken, runID string, identity ...GitIdentity) (string, bool, error) {
+	return prepareWorkspace(ctx, gitIntegration, repo, authToken, strings.TrimSpace(runID), identity...)
 }
 
 // CleanupWorkspaceForRun removes a stable per-run workspace created by PrepareWorkspaceForRun.
@@ -162,7 +167,7 @@ func (m *RepoSkillMask) Restore() error {
 	return firstErr
 }
 
-func prepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration, repo, authToken, runID string) (string, bool, error) {
+func prepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration, repo, authToken, runID string, identity ...GitIdentity) (string, bool, error) {
 	if runID != "" {
 		workRoot := filepath.Dir(persistentWorkspacePath(runID))
 		workDir := workRoot
@@ -170,7 +175,7 @@ func prepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration,
 			workDir = filepath.Join(workRoot, "repo")
 		}
 		if info, err := os.Stat(workDir); err == nil && info.IsDir() {
-			if err := ensureWorkspaceGitIdentity(ctx, workDir); err != nil {
+			if err := ensureWorkspaceGitIdentity(ctx, workDir, identity...); err != nil {
 				return "", false, err
 			}
 			return workDir, true, nil
@@ -182,7 +187,7 @@ func prepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration,
 		if err := os.MkdirAll(workRoot, 0o755); err != nil {
 			return "", false, fmt.Errorf("reset persistent workspace root: %w", err)
 		}
-		if err := cloneWorkspace(ctx, workRoot, workDir, gitIntegration, repo, authToken); err != nil {
+		if err := cloneWorkspace(ctx, workRoot, workDir, gitIntegration, repo, authToken, identity...); err != nil {
 			return "", false, err
 		}
 		return workDir, false, nil
@@ -196,13 +201,13 @@ func prepareWorkspace(ctx context.Context, gitIntegration *model.GitIntegration,
 	if gitIntegration != nil && repo != "" {
 		cloneDir = filepath.Join(workDir, "repo")
 	}
-	if err := cloneWorkspace(ctx, workDir, cloneDir, gitIntegration, repo, authToken); err != nil {
+	if err := cloneWorkspace(ctx, workDir, cloneDir, gitIntegration, repo, authToken, identity...); err != nil {
 		return "", false, err
 	}
 	return cloneDir, false, nil
 }
 
-func cloneWorkspace(ctx context.Context, workRoot, cloneDir string, gitIntegration *model.GitIntegration, repo, authToken string) error {
+func cloneWorkspace(ctx context.Context, workRoot, cloneDir string, gitIntegration *model.GitIntegration, repo, authToken string, identity ...GitIdentity) error {
 	if gitIntegration == nil || repo == "" {
 		return nil
 	}
@@ -237,7 +242,7 @@ func cloneWorkspace(ctx context.Context, workRoot, cloneDir string, gitIntegrati
 	unsetCmd.Dir = cloneDir
 	_ = unsetCmd.Run()
 
-	if err := ensureWorkspaceGitIdentity(ctx, cloneDir); err != nil {
+	if err := ensureWorkspaceGitIdentity(ctx, cloneDir, identity...); err != nil {
 		_ = os.RemoveAll(workRoot)
 		return err
 	}
@@ -245,16 +250,17 @@ func cloneWorkspace(ctx context.Context, workRoot, cloneDir string, gitIntegrati
 	return nil
 }
 
-func ensureWorkspaceGitIdentity(ctx context.Context, cloneDir string) error {
+func ensureWorkspaceGitIdentity(ctx context.Context, cloneDir string, identity ...GitIdentity) error {
 	if strings.TrimSpace(cloneDir) == "" {
 		return nil
 	}
 	configCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	resolved := ResolveGitIdentity(identity...)
 	for _, pair := range [][2]string{
-		{"user.name", workspaceGitUserName},
-		{"user.email", workspaceGitUserEmail},
+		{"user.name", resolved.Name},
+		{"user.email", resolved.Email},
 	} {
 		cmd := exec.CommandContext(configCtx, "git", "config", pair[0], pair[1])
 		cmd.Dir = cloneDir
@@ -267,6 +273,20 @@ func ensureWorkspaceGitIdentity(ctx context.Context, cloneDir string) error {
 		}
 	}
 	return nil
+}
+
+func ResolveGitIdentity(identity ...GitIdentity) GitIdentity {
+	resolved := GitIdentity{Name: workspaceGitUserName, Email: workspaceGitUserEmail}
+	if len(identity) == 0 {
+		return resolved
+	}
+	if name := strings.TrimSpace(identity[0].Name); name != "" {
+		resolved.Name = name
+	}
+	if email := strings.TrimSpace(identity[0].Email); email != "" {
+		resolved.Email = email
+	}
+	return resolved
 }
 
 func persistentWorkspacePath(runID string) string {

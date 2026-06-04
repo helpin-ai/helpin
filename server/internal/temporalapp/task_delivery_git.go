@@ -567,11 +567,13 @@ func (a *AgentRunActivities) pushCodexLocalCommit(ctx context.Context, workDir s
 
 	if a.artifactRepo != nil && state != nil && state.run != nil {
 		payload := map[string]any{
-			"branch":         branch,
-			"commit_sha":     sha,
-			"commit_message": strings.TrimSpace(execCtx.LocalGitCommit.CommitMessage),
-			"changed_files":  slices.Clone(execCtx.LocalGitCommit.ChangedFiles),
-			"delivery":       "pushed",
+			"branch":              branch,
+			"commit_sha":          sha,
+			"commit_message":      strings.TrimSpace(execCtx.LocalGitCommit.CommitMessage),
+			"changed_files":       slices.Clone(execCtx.LocalGitCommit.ChangedFiles),
+			"commit_author_name":  strings.TrimSpace(state.gitIdentity.Name),
+			"commit_author_email": strings.TrimSpace(state.gitIdentity.Email),
+			"delivery":            "pushed",
 		}
 		if _, err := a.appendRunArtifact(ctx, state.run, "git_delivery_result", "json", payload); err != nil {
 			slog.WarnContext(ctx, "failed to save git delivery result artifact",
@@ -583,6 +585,39 @@ func (a *AgentRunActivities) pushCodexLocalCommit(ctx context.Context, workDir s
 	}
 
 	return nil
+}
+
+func resolveRunGitIdentity(state *resolvedRunState) (workerpkg.GitIdentity, error) {
+	var configured workerpkg.GitIdentity
+	if state != nil && state.integration != nil {
+		configured.Name = derefString(state.integration.DefaultCommitAuthorName)
+		configured.Email = derefString(state.integration.DefaultCommitAuthorEmail)
+	}
+	resolved := workerpkg.ResolveGitIdentity(configured)
+	if state == nil || state.integration == nil || state.repository == nil {
+		return resolved, nil
+	}
+	if strings.EqualFold(strings.TrimSpace(state.integration.Provider), "gitlab") &&
+		runMayCreateGitCommits(state) &&
+		strings.TrimSpace(configured.Email) == "" {
+		return resolved, fmt.Errorf("GitLab commit author email is required for this integration")
+	}
+	return resolved, nil
+}
+
+func runMayCreateGitCommits(state *resolvedRunState) bool {
+	if state == nil || state.agent == nil {
+		return false
+	}
+	runtimeKind := strings.TrimSpace(executionRuntimeKind(state))
+	if runtimeKind != "codex" && runtimeKind != "opencode" {
+		return false
+	}
+	preset := strings.TrimSpace(state.agent.EffectivePresetKey())
+	if preset == "" {
+		preset = strings.TrimSpace(state.agent.SourcePresetKey)
+	}
+	return preset == model.AgentPresetCodeBuilder
 }
 
 func (a *AgentRunActivities) ensureDeliveryPullRequest(ctx context.Context, state *resolvedRunState, workingBranch string) (*ensuredDeliveryPR, error) {

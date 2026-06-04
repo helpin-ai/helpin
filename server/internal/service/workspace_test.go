@@ -40,6 +40,8 @@ func createDeleteStubTables(t *testing.T, db *gorm.DB) {
 			app_id TEXT,
 			webhook_secret TEXT,
 			access_token TEXT NOT NULL DEFAULT '',
+			default_commit_author_name TEXT,
+			default_commit_author_email TEXT,
 			active BOOLEAN NOT NULL DEFAULT 1,
 			deleted_at DATETIME,
 			last_synced_at DATETIME,

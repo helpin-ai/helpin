@@ -11,6 +11,7 @@ import type {
   TaskDeliveryTarget,
   TaskGitLink,
   CreateGitIntegrationRequest,
+  UpdateGitIntegrationRequest,
   CreateBranchRequest,
   UpdateGitRepositoryRequest,
   UpdateTaskDeliveryTargetRequest,
@@ -65,6 +66,8 @@ export const gitService = {
     api.get<GitIntegration[]>(`/organizations/${organizationId}/git/integrations`),
   getOrgIntegration: (organizationId: string, integrationId: string) =>
     api.get<GitIntegrationDetail>(`/organizations/${organizationId}/git/integrations/${integrationId}`),
+  updateOrgIntegration: (organizationId: string, integrationId: string, payload: UpdateGitIntegrationRequest) =>
+    api.put<GitIntegration>(`/organizations/${organizationId}/git/integrations/${integrationId}`, payload),
   createOrgIntegration: (organizationId: string, workspaceId: string | undefined, payload: CreateGitIntegrationRequest) =>
     api.post<GitIntegration>(`/organizations/${organizationId}/git/integrations${orgQs(workspaceId)}`, payload),
   deleteOrgIntegration: (organizationId: string, integrationId: string, workspaceId?: string) =>
