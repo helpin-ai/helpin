@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,18 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestDocsSearchRepository_PublicSearchPostgresSQLDoesNotSelectUndefinedSnippet(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("docs_search.go")
+	if err != nil {
+		t.Fatalf("read docs_search.go: %v", err)
+	}
+	if strings.Contains(string(source), "me.snippet AS snippet") {
+		t.Fatalf("Postgres public search selects me.snippet, but matched_entries does not define a snippet column")
+	}
+}
 
 func setupDocsSearchPathTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

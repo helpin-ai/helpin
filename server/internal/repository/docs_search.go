@@ -171,8 +171,7 @@ func (r *DocsSearchRepository) publicSearchPostgres(ctx context.Context, workspa
 			me.section_title AS section_title,
 			me.anchor AS anchor,
 			me.position AS position,
-			me.score AS score,
-			me.snippet AS snippet
+			me.score AS score
 		FROM matched_entries me
 		JOIN docs_helpcenter_article_publications p
 			ON p.document_id = me.document_id
