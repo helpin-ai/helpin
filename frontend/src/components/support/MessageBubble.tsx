@@ -615,6 +615,9 @@ export const MessageBubble = memo(function MessageBubble({
   );
 
   const hasEmailBadge = message.via_channel === 'email';
+  const hasEmailReceiptStatus = receiptStatus === 'sent_email' || receiptStatus === 'delivered_email' || receiptStatus === 'read_email';
+  const showStandaloneEmailBadge = hasEmailBadge && !(hasEmailReceiptStatus && !isCustomer);
+  const emailReceiptCanOpenDetails = hasEmailBadge && hasEmailReceiptStatus && !isCustomer;
   const hasStatusBelow = !!receiptStatus || !!aiMeta || hasEmailBadge;
   const bubbleWidthClass = hasEmailBody && !renderEmailBodyAsForwardedText
     ? 'min-w-0 w-[min(92%,64rem)] max-w-[calc(100%-2.25rem)]'
@@ -748,7 +751,7 @@ export const MessageBubble = memo(function MessageBubble({
       {/* Status below the bubble row — outside the avatar alignment */}
       {(hasStatusBelow || hasCancellableFooter) && (
         <div className={`mt-0.5 ${isCustomer ? 'pl-9' : 'pr-9'}`}>
-          {hasEmailBadge && (
+          {showStandaloneEmailBadge && (
             <div className={`mb-0.5 space-y-0.5 ${isCustomer ? '' : 'text-right'}`}>
               <div className={`flex ${isCustomer ? '' : 'justify-end'}`}>
                 <button
@@ -760,7 +763,6 @@ export const MessageBubble = memo(function MessageBubble({
                   {forwardedAttribution && isCustomer
                     ? `Forwarded by ${forwardedAttribution.forwarded_by_name || forwardedAttribution.forwarded_by_email}`
                     : isCustomer ? 'Received via email' : 'Sent via email'}
-                  <span className="opacity-60">· View details</span>
                 </button>
               </div>
             </div>
@@ -881,7 +883,30 @@ export const MessageBubble = memo(function MessageBubble({
             </>
           ) : receiptStatus && (
             <div className={`flex items-center gap-1 ${isCustomer ? '' : 'justify-end'}`}>
-              {receiptStatus === 'read' ? (
+              {emailReceiptCanOpenDetails ? (
+                <button
+                  type="button"
+                  onClick={() => setEmailDetailOpen(true)}
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground hover:underline"
+                >
+                  {receiptStatus === 'read_email' ? (
+                    <>
+                      <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
+                      Read via email
+                    </>
+                  ) : receiptStatus === 'delivered_email' ? (
+                    <>
+                      <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                      Delivered via email
+                    </>
+                  ) : (
+                    <>
+                      <TickDouble01Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                      Sent via email
+                    </>
+                  )}
+                </button>
+              ) : receiptStatus === 'read' ? (
                 <>
                   <TickDouble01Icon className="h-3.5 w-3.5 text-blue-500" />
                   <span className="text-[11px] text-muted-foreground">Read in chat</span>
