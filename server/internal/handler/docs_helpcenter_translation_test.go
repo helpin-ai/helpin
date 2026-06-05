@@ -266,6 +266,23 @@ func setupDocsHelpcenterTranslationHandlerTestDB(t *testing.T) *gorm.DB {
 			UNIQUE(document_id, locale),
 			UNIQUE(space_id, locale, slug)
 		)`,
+		`CREATE TABLE docs_helpcenter_search_entries (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			locale TEXT NOT NULL,
+			entry_key TEXT NOT NULL,
+			entry_type TEXT NOT NULL,
+			content TEXT NOT NULL,
+			section_title TEXT,
+			anchor TEXT,
+			position INTEGER NOT NULL DEFAULT 0,
+			rank_weight REAL NOT NULL DEFAULT 1,
+			search_config TEXT NOT NULL DEFAULT 'simple',
+			search_vector TEXT NOT NULL DEFAULT '',
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 	}
 
 	for _, stmt := range stmts {

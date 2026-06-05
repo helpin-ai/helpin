@@ -32,6 +32,16 @@ export function SearchResultItem({
   const isCompact = variant === 'compact'
   const targetLocale = result.locale || locale
   const collectionSlug = result.collection_slug
+  const bestMatch = result.matches?.[0]
+  const articlePath = buildCanonicalArticlePath(
+    multilingualEnabled,
+    targetLocale,
+    result.slug,
+    result.public_id,
+  )
+  const targetPath = bestMatch?.anchor
+    ? `${articlePath}#${encodeURIComponent(bestMatch.anchor)}`
+    : articlePath
 
   const content = (
     <>
@@ -65,6 +75,14 @@ export function SearchResultItem({
             {result.excerpt}
           </p>
         )}
+        {!isCompact && bestMatch?.section_title && (
+          <div className="mt-2 text-[11px] font-medium text-muted-foreground">
+            {bestMatch.section_title}
+          </div>
+        )}
+        {!isCompact && bestMatch?.snippet && (
+          <SearchSnippet html={bestMatch.snippet} />
+        )}
       </div>
       {isCompact && (
         <ArrowRight
@@ -82,12 +100,7 @@ export function SearchResultItem({
   if (!collectionSlug) {
     return (
       <DocsLink
-        to={buildCanonicalArticlePath(
-          multilingualEnabled,
-          targetLocale,
-          result.slug,
-          result.public_id,
-        )}
+        to={targetPath}
         onClick={onClick}
         className={className}
       >
@@ -98,16 +111,20 @@ export function SearchResultItem({
 
   return (
     <DocsLink
-      to={buildCanonicalArticlePath(
-        multilingualEnabled,
-        targetLocale,
-        result.slug,
-        result.public_id,
-      )}
+      to={targetPath}
       onClick={onClick}
       className={className}
     >
       {content}
     </DocsLink>
+  )
+}
+
+function SearchSnippet({ html }: { html: string }) {
+  return (
+    <p
+      className="search-result-snippet text-muted-foreground text-[13px] mt-1 line-clamp-2"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   )
 }

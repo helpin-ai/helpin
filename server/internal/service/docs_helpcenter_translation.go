@@ -26,6 +26,7 @@ type DocsHelpcenterTranslationService struct {
 	contentRepo     *repository.DocsContentRepository
 	spaceRepo       *repository.DocsSpaceRepository
 	collectionRepo  *repository.DocsCollectionRepository
+	searchRepo      *repository.DocsHelpcenterSearchRepository
 	llmProvider     llm.Provider
 }
 
@@ -52,6 +53,10 @@ func NewDocsHelpcenterTranslationService(
 		collectionRepo:  collectionRepo,
 		llmProvider:     llmProvider,
 	}
+}
+
+func (s *DocsHelpcenterTranslationService) SetSearchRepository(searchRepo *repository.DocsHelpcenterSearchRepository) {
+	s.searchRepo = searchRepo
 }
 
 func (s *DocsHelpcenterTranslationService) GetLocales(ctx context.Context, workspaceID string) (*model.DocsHelpcenterConfig, error) {
@@ -498,6 +503,11 @@ Rules:
 func (s *DocsHelpcenterTranslationService) UnpublishArticleTranslation(ctx context.Context, documentID, locale string) (*model.DocsHelpcenterArticleTranslation, error) {
 	if err := s.translationRepo.SetArticleTranslationStatus(ctx, documentID, locale, model.DocsHelpcenterTranslationStatusDraft, nil); err != nil {
 		return nil, err
+	}
+	if s.searchRepo != nil {
+		if err := s.searchRepo.ReplaceArticleEntries(ctx, documentID, locale, nil); err != nil {
+			return nil, fmt.Errorf("delete helpcenter translation search entries: %w", err)
+		}
 	}
 	updated, err := s.translationRepo.GetArticleTranslation(ctx, documentID, locale)
 	if err != nil {
@@ -1348,6 +1358,9 @@ func (s *DocsHelpcenterTranslationService) PublishArticleTranslation(ctx context
 	if _, err := s.publicationRepo.UpsertArticlePublication(ctx, publication); err != nil {
 		return nil, err
 	}
+	if err := s.rebuildArticleSearchEntries(ctx, publication); err != nil {
+		return nil, err
+	}
 
 	if livePublication != nil && livePublication.Slug != publication.Slug && s.redirectRepo != nil {
 		collectionSlug, err := s.localizedCollectionSlugForArticlePath(ctx, translation.CollectionID, locale)
@@ -1589,6 +1602,17 @@ func buildArticleTranslationPublication(translation *model.DocsHelpcenterArticle
 		OGImageAlt:     translation.OGImageAlt,
 		PublishedAt:    publishedAt,
 	}
+}
+
+func (s *DocsHelpcenterTranslationService) rebuildArticleSearchEntries(ctx context.Context, publication *model.DocsHelpcenterArticlePublication) error {
+	if s.searchRepo == nil || publication == nil {
+		return nil
+	}
+	entries := BuildHelpcenterSearchEntries(*publication)
+	if err := s.searchRepo.ReplaceArticleEntries(ctx, publication.DocumentID, publication.Locale, entries); err != nil {
+		return fmt.Errorf("rebuild helpcenter translation search entries: %w", err)
+	}
+	return nil
 }
 
 func translationHasUnpublishedChanges(translation *model.DocsHelpcenterArticleTranslation, publication *model.DocsHelpcenterArticlePublication) bool {

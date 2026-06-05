@@ -3,7 +3,11 @@ package repository
 import (
 	"context"
 	"fmt"
+	"html"
+	"regexp"
+	"sort"
 	"strings"
+	"unicode"
 
 	"gorm.io/gorm"
 
@@ -79,6 +83,7 @@ func (r *DocsSearchRepository) Search(ctx context.Context, workspaceID, query st
 
 // PublicSearch searches published help center article translations for a single locale.
 func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, locale, query, spaceSlug string, limit int) ([]model.PublicSearchResultResponse, error) {
+	query = strings.TrimSpace(query)
 	if query == "" {
 		return nil, nil
 	}
@@ -86,72 +91,252 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 		limit = 50
 	}
 
-	needle := "%" + strings.ToLower(strings.TrimSpace(query)) + "%"
-	dbQuery := r.db.WithContext(ctx).
-		Table("docs_helpcenter_article_translations hat").
-		Select(`
-			hat.document_id AS id,
-			COALESCE(p.title, hat.title) AS title,
-			COALESCE(p.slug, hat.slug) AS slug,
+	if r.db.Dialector.Name() != "postgres" {
+		return r.publicSearchFallback(ctx, workspaceID, locale, query, spaceSlug, limit)
+	}
+	return r.publicSearchPostgres(ctx, workspaceID, locale, query, spaceSlug, limit)
+}
+
+type publicSearchEntryRow struct {
+	ID                 string
+	Title              string
+	Slug               string
+	PublicID           string
+	Locale             string
+	Excerpt            *string
+	CollectionID       *string
+	CollectionName     *string
+	CollectionSlug     *string
+	CollectionPublicID *string
+	SpaceSlug          string
+	SpaceName          string
+	EntryType          string
+	EntryContent       string
+	SectionTitle       *string
+	Anchor             *string
+	Position           int
+	Score              float64
+}
+
+func (r *DocsSearchRepository) publicSearchPostgres(ctx context.Context, workspaceID, locale, query, spaceSlug string, limit int) ([]model.PublicSearchResultResponse, error) {
+	tsQuery := toTSQuery(query)
+	if tsQuery == "" {
+		return nil, nil
+	}
+
+	sql := `
+		WITH matched_entries AS (
+			SELECT
+				se.document_id,
+				se.entry_type,
+				se.content AS entry_content,
+				se.section_title,
+				se.anchor,
+				se.position,
+				(
+					CASE
+						WHEN lower(se.content) = lower(?) THEN 12
+						WHEN lower(se.content) LIKE lower(?) THEN 8
+						WHEN se.entry_type = 'title' THEN 4
+						ELSE 0
+					END
+					+ se.rank_weight
+					+ ts_rank_cd(se.search_vector, to_tsquery(se.search_config::regconfig, ?)) * 10
+					+ GREATEST(word_similarity(?, se.content), similarity(se.content, ?)) * 2
+				) AS score
+			FROM docs_helpcenter_search_entries se
+			WHERE se.workspace_id = ?
+				AND se.locale = ?
+				AND (
+					se.search_vector @@ to_tsquery(se.search_config::regconfig, ?)
+					OR word_similarity(?, se.content) >= 0.45
+					OR se.content ILIKE ?
+				)
+		)
+		SELECT
+			p.document_id AS id,
+			p.title AS title,
+			p.slug AS slug,
 			ha.public_id AS public_id,
-			hat.locale AS locale,
-			COALESCE(p.excerpt, hat.excerpt) AS excerpt,
-			COALESCE(p.collection_id, hat.collection_id) AS collection_id,
+			p.locale AS locale,
+			p.excerpt AS excerpt,
+			p.collection_id AS collection_id,
 			ct.name AS collection_name,
 			ct.slug AS collection_slug,
 			cc.public_id AS collection_public_id,
 			st.slug AS space_slug,
-			st.name AS space_name
-		`).
-		Joins("JOIN docs_documents d ON d.id = hat.document_id").
-		Joins("JOIN docs_helpcenter_articles ha ON ha.document_id = hat.document_id").
-		Joins("JOIN docs_helpcenter_configs cfg ON cfg.workspace_id = hat.workspace_id").
-		Joins("LEFT JOIN docs_helpcenter_article_publications p ON p.document_id = hat.document_id AND p.locale = hat.locale").
-		Joins(`
-			JOIN docs_helpcenter_space_translations st
-				ON st.space_id = hat.space_id
-				AND st.locale = hat.locale
-				AND st.status = ?
-				AND st.published_at IS NOT NULL
-		`, model.DocsHelpcenterTranslationStatusPublished).
-		Joins(`
-			LEFT JOIN docs_helpcenter_collection_translations ct
-				ON ct.collection_id = COALESCE(p.collection_id, hat.collection_id)
-				AND ct.locale = hat.locale
-				AND ct.status = ?
-				AND ct.published_at IS NOT NULL
-		`, model.DocsHelpcenterTranslationStatusPublished).
-		Joins("LEFT JOIN docs_collections cc ON cc.id = COALESCE(p.collection_id, hat.collection_id) AND cc.deleted_at IS NULL").
-		Where(`
-			hat.workspace_id = ?
-			AND hat.locale = ?
+			st.name AS space_name,
+			me.entry_type AS entry_type,
+			me.entry_content AS entry_content,
+			me.section_title AS section_title,
+			me.anchor AS anchor,
+			me.position AS position,
+			me.score AS score,
+			me.snippet AS snippet
+		FROM matched_entries me
+		JOIN docs_helpcenter_article_publications p
+			ON p.document_id = me.document_id
+			AND p.locale = ?
+		JOIN docs_documents d ON d.id = p.document_id
+		JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id
+		JOIN docs_helpcenter_space_translations st
+			ON st.space_id = p.space_id
+			AND st.locale = p.locale
+			AND st.status = ?
+			AND st.published_at IS NOT NULL
+		LEFT JOIN docs_helpcenter_collection_translations ct
+			ON ct.collection_id = p.collection_id
+			AND ct.locale = p.locale
+			AND ct.status = ?
+			AND ct.published_at IS NOT NULL
+		LEFT JOIN docs_collections cc ON cc.id = p.collection_id AND cc.deleted_at IS NULL
+		WHERE p.workspace_id = ?
 			AND d.deleted_at IS NULL
 			AND d.status = ?
 			AND ha.public_published_at IS NOT NULL
-			AND (
-				(
-					hat.status = ? AND hat.published_at IS NOT NULL
-					AND (p.document_id IS NOT NULL OR hat.locale = cfg.default_locale)
-				)
-				OR (hat.locale = cfg.default_locale AND p.document_id IS NOT NULL)
-			)
-			AND (
-				LOWER(COALESCE(p.title, hat.title, '')) LIKE ?
-				OR LOWER(COALESCE(p.content_text, hat.content_text, '')) LIKE ?
-			)
-		`, workspaceID, locale, model.DocsHelpcenterTranslationStatusPublished, model.DocStatusPublished, needle, needle)
-
-	if spaceSlug != "" {
-		dbQuery = dbQuery.Where("st.slug = ?", spaceSlug)
+	`
+	args := []interface{}{
+		query, query + "%", tsQuery, query, query,
+		workspaceID, locale, tsQuery, query, "%" + query + "%",
+		locale,
+		model.DocsHelpcenterTranslationStatusPublished,
+		model.DocsHelpcenterTranslationStatusPublished,
+		workspaceID,
+		model.DocStatusPublished,
 	}
 
-	dbQuery = dbQuery.
-		Order("COALESCE(p.updated_at, hat.updated_at) DESC").
-		Limit(limit)
+	if spaceSlug != "" {
+		sql += " AND st.slug = ?"
+		args = append(args, spaceSlug)
+	}
 
-	var results []model.PublicSearchResultResponse
-	if err := dbQuery.Scan(&results).Error; err != nil {
+	sql += " ORDER BY me.score DESC, me.position ASC LIMIT ?"
+	args = append(args, limit*4)
+
+	var rows []publicSearchEntryRow
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("docs public search: %w", err)
+	}
+	return r.groupPublicSearchRows(ctx, rows, locale, query, limit)
+}
+
+func (r *DocsSearchRepository) publicSearchFallback(ctx context.Context, workspaceID, locale, query, spaceSlug string, limit int) ([]model.PublicSearchResultResponse, error) {
+	sql := `
+		SELECT
+			p.document_id AS id,
+			p.title AS title,
+			p.slug AS slug,
+			ha.public_id AS public_id,
+			p.locale AS locale,
+			p.excerpt AS excerpt,
+			p.collection_id AS collection_id,
+			ct.name AS collection_name,
+			ct.slug AS collection_slug,
+			cc.public_id AS collection_public_id,
+			st.slug AS space_slug,
+			st.name AS space_name,
+			se.entry_type AS entry_type,
+			se.content AS entry_content,
+			se.section_title AS section_title,
+			se.anchor AS anchor,
+			se.position AS position,
+			se.rank_weight AS score
+		FROM docs_helpcenter_search_entries se
+		JOIN docs_helpcenter_article_publications p
+			ON p.document_id = se.document_id
+			AND p.locale = se.locale
+		JOIN docs_documents d ON d.id = p.document_id
+		JOIN docs_helpcenter_articles ha ON ha.document_id = p.document_id
+		JOIN docs_helpcenter_space_translations st
+			ON st.space_id = p.space_id
+			AND st.locale = p.locale
+			AND st.status = ?
+			AND st.published_at IS NOT NULL
+		LEFT JOIN docs_helpcenter_collection_translations ct
+			ON ct.collection_id = p.collection_id
+			AND ct.locale = p.locale
+			AND ct.status = ?
+			AND ct.published_at IS NOT NULL
+		LEFT JOIN docs_collections cc ON cc.id = p.collection_id AND cc.deleted_at IS NULL
+		WHERE se.workspace_id = ?
+			AND se.locale = ?
+			AND p.workspace_id = ?
+			AND d.deleted_at IS NULL
+			AND d.status = ?
+			AND ha.public_published_at IS NOT NULL
+	`
+	args := []interface{}{
+		model.DocsHelpcenterTranslationStatusPublished,
+		model.DocsHelpcenterTranslationStatusPublished,
+		workspaceID,
+		locale,
+		workspaceID,
+		model.DocStatusPublished,
+	}
+	if spaceSlug != "" {
+		sql += " AND st.slug = ?"
+		args = append(args, spaceSlug)
+	}
+
+	var rows []publicSearchEntryRow
+	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("docs public search: %w", err)
+	}
+
+	matched := make([]publicSearchEntryRow, 0, len(rows))
+	for _, row := range rows {
+		score, ok := fallbackPublicSearchScore(row, query)
+		if !ok {
+			continue
+		}
+		row.Score = score
+		matched = append(matched, row)
+	}
+	sort.SliceStable(matched, func(i, j int) bool {
+		if matched[i].Score == matched[j].Score {
+			return matched[i].Position < matched[j].Position
+		}
+		return matched[i].Score > matched[j].Score
+	})
+	return r.groupPublicSearchRows(ctx, matched, locale, query, limit)
+}
+
+func (r *DocsSearchRepository) groupPublicSearchRows(ctx context.Context, rows []publicSearchEntryRow, locale, query string, limit int) ([]model.PublicSearchResultResponse, error) {
+	results := make([]model.PublicSearchResultResponse, 0, limit)
+	byID := map[string]int{}
+	for _, row := range rows {
+		idx, ok := byID[row.ID]
+		if !ok {
+			if len(results) >= limit {
+				continue
+			}
+			results = append(results, model.PublicSearchResultResponse{
+				ID:                 row.ID,
+				Title:              row.Title,
+				Slug:               row.Slug,
+				PublicID:           row.PublicID,
+				Locale:             row.Locale,
+				Excerpt:            row.Excerpt,
+				CollectionID:       row.CollectionID,
+				CollectionName:     row.CollectionName,
+				CollectionSlug:     row.CollectionSlug,
+				CollectionPublicID: row.CollectionPublicID,
+				SpaceSlug:          row.SpaceSlug,
+				SpaceName:          row.SpaceName,
+				Matches:            []model.PublicSearchMatchResponse{},
+			})
+			idx = len(results) - 1
+			byID[row.ID] = idx
+		}
+		if len(results[idx].Matches) >= 3 {
+			continue
+		}
+		results[idx].Matches = append(results[idx].Matches, model.PublicSearchMatchResponse{
+			EntryType:    row.EntryType,
+			SectionTitle: row.SectionTitle,
+			Anchor:       row.Anchor,
+			Snippet:      buildPublicSearchSnippet(row.EntryContent, query),
+		})
 	}
 
 	// Build a localized ancestor-path string for every result that has
@@ -178,6 +363,134 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 	}
 
 	return results, nil
+}
+
+func fallbackPublicSearchScore(row publicSearchEntryRow, query string) (float64, bool) {
+	terms := publicSearchTerms(query)
+	if len(terms) == 0 {
+		return 0, false
+	}
+	words := publicSearchTerms(row.EntryContent)
+	if len(words) == 0 {
+		return 0, false
+	}
+	score := row.Score
+	for _, term := range terms {
+		matched := false
+		for _, word := range words {
+			if strings.HasPrefix(word, term) || strings.Contains(word, term) {
+				score += 4
+				matched = true
+				break
+			}
+			distance := levenshteinDistance(term, word)
+			if distance <= publicSearchTypoTolerance(term) {
+				score += 2
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return 0, false
+		}
+	}
+	if row.EntryType == model.DocsHelpcenterSearchEntryTypeTitle {
+		score += 4
+	}
+	return score, true
+}
+
+func publicSearchTerms(value string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	})
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if len([]rune(field)) >= 2 {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
+func publicSearchTypoTolerance(term string) int {
+	if len([]rune(term)) <= 6 {
+		return 1
+	}
+	return 2
+}
+
+func buildPublicSearchSnippet(content, query string) string {
+	content = strings.Join(strings.Fields(content), " ")
+	if content == "" {
+		return ""
+	}
+	terms := publicSearchTerms(query)
+	start := 0
+	lowerContent := strings.ToLower(content)
+	for _, term := range terms {
+		if idx := strings.Index(lowerContent, term); idx >= 0 {
+			start = idx - 60
+			if start < 0 {
+				start = 0
+			}
+			break
+		}
+	}
+	snippet := content[start:]
+	if start > 0 {
+		snippet = "..." + snippet
+	}
+	runes := []rune(snippet)
+	if len(runes) > 220 {
+		snippet = string(runes[:220]) + "..."
+	}
+	escaped := html.EscapeString(snippet)
+	for _, term := range terms {
+		re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(html.EscapeString(term)))
+		escaped = re.ReplaceAllStringFunc(escaped, func(match string) string {
+			return "<mark>" + match + "</mark>"
+		})
+	}
+	return escaped
+}
+
+func levenshteinDistance(a, b string) int {
+	ar := []rune(a)
+	br := []rune(b)
+	if len(ar) == 0 {
+		return len(br)
+	}
+	if len(br) == 0 {
+		return len(ar)
+	}
+	prev := make([]int, len(br)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ar); i++ {
+		curr := make([]int, len(br)+1)
+		curr[0] = i
+		for j := 1; j <= len(br); j++ {
+			cost := 0
+			if ar[i-1] != br[j-1] {
+				cost = 1
+			}
+			curr[j] = minInt(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev = curr
+	}
+	return prev[len(br)]
+}
+
+func minInt(values ...int) int {
+	min := values[0]
+	for _, value := range values[1:] {
+		if value < min {
+			min = value
+		}
+	}
+	return min
 }
 
 // buildLocalizedCollectionPath walks a collection's ancestor chain and
