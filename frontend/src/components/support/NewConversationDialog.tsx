@@ -648,9 +648,9 @@ export function NewConversationDialog({ workspaceId, workspaceSlug, open, onOpen
                             setRecipientOpen(false);
                           }}
                         >
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium">{contactName(contact)}</div>
-                              {contact.email ? <div className="truncate text-xs text-muted-foreground">{contact.email}</div> : null}
+                            <div className="min-w-0 flex flex-1 items-baseline gap-2">
+                              <span className="truncate text-sm font-medium">{contactName(contact)}</span>
+                              {contact.email ? <span className="truncate text-xs text-muted-foreground">{contact.email}</span> : null}
                             </div>
                             <Badge variant="outline" className="shrink-0">{contact.lifecycle_stage}</Badge>
                         </button>
@@ -658,7 +658,7 @@ export function NewConversationDialog({ workspaceId, workspaceSlug, open, onOpen
                       {recipientSearch.includes('@') ? (
                         <button
                           type="button"
-                          className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                          className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-blue-700 outline-none hover:bg-blue-50 focus:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-950/30 dark:focus:bg-blue-950/30"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() => {
                             setSelectedContact(null);
@@ -667,11 +667,11 @@ export function NewConversationDialog({ workspaceId, workspaceSlug, open, onOpen
                             setRecipientOpen(false);
                           }}
                         >
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-sm font-medium">{recipientSearch.trim()}</div>
-                              <div className="truncate text-xs text-muted-foreground">New email recipient</div>
+                            <div className="min-w-0 flex flex-1 items-baseline gap-2">
+                              <span className="truncate text-sm font-medium">{recipientSearch.trim()}</span>
+                              <span className="shrink-0 text-xs text-blue-600 dark:text-blue-300">New email recipient</span>
                             </div>
-                            <Badge variant="outline" className="shrink-0">New</Badge>
+                            <Badge variant="outline" className="shrink-0 border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300">New</Badge>
                         </button>
                       ) : null}
                     </div>
