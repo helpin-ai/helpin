@@ -804,6 +804,20 @@ func newTestDB(t *testing.T) *gorm.DB {
 			payload TEXT NOT NULL DEFAULT '{}',
 			created_at DATETIME
 		)`,
+		`CREATE TABLE support_tags (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			color TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE support_conversation_tags (
+			conversation_id TEXT NOT NULL,
+			tag_id TEXT NOT NULL,
+			created_at DATETIME,
+			PRIMARY KEY (conversation_id, tag_id)
+		)`,
 		`CREATE TABLE support_triage_rules (
 			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 			workspace_id TEXT NOT NULL,
@@ -951,6 +965,8 @@ func newTestDB(t *testing.T) *gorm.DB {
 			to_email TEXT,
 			reply_to TEXT,
 			recipient_address TEXT,
+			cc_emails TEXT,
+			bcc_emails TEXT,
 			subject TEXT,
 			rfc_message_id TEXT,
 			in_reply_to TEXT,

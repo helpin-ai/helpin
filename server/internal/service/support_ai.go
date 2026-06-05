@@ -1376,6 +1376,44 @@ func (s *SupportAIService) RewriteSupportDraft(
 		return nil, err
 	}
 
+	return s.rewriteSupportDraftWithHistory(ctx, workspaceID, history, req)
+}
+
+// RewriteSupportDraftWithoutConversation rewrites a support draft before a conversation exists.
+func (s *SupportAIService) RewriteSupportDraftWithoutConversation(
+	ctx context.Context,
+	workspaceID string,
+	req model.SupportAIRewriteDraftRequest,
+) (*model.SupportAIRewriteDraftResponse, error) {
+	return s.rewriteSupportDraftWithHistory(ctx, workspaceID, nil, req)
+}
+
+func (s *SupportAIService) rewriteSupportDraftWithHistory(
+	ctx context.Context,
+	workspaceID string,
+	history []model.SupportMessage,
+	req model.SupportAIRewriteDraftRequest,
+) (*model.SupportAIRewriteDraftResponse, error) {
+	if s == nil {
+		return nil, fmt.Errorf("support AI service not initialized")
+	}
+	if s.llmProvider == nil {
+		return nil, fmt.Errorf("support chat LLM provider is not configured")
+	}
+	if strings.TrimSpace(workspaceID) == "" {
+		return nil, fmt.Errorf("%w: workspace_id is required", ErrSupportRewriteInvalidInput)
+	}
+
+	content := strings.TrimSpace(req.Content)
+	if content == "" {
+		return nil, fmt.Errorf("%w: content is required", ErrSupportRewriteInvalidInput)
+	}
+
+	operation := normalizeSupportRewriteOperation(req.Operation)
+	if operation == "" {
+		return nil, fmt.Errorf("%w: unsupported operation %q", ErrSupportRewriteInvalidInput, strings.TrimSpace(req.Operation))
+	}
+
 	resp, err := s.llmProvider.ChatCompletion(ctx, llm.ChatRequest{
 		SystemPrompt: buildSupportRewriteSystemPrompt(operation),
 		Messages:     buildSupportRewriteMessages(history, content),

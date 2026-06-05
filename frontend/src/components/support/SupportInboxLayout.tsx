@@ -10,7 +10,7 @@ import { useSupportInboxViews, useSupportMailboxes } from '@/hooks/queries/useSu
 import { ConversationList } from './ConversationList';
 import { MessageThread } from './MessageThread';
 import { ConversationDetailSidebar } from './ConversationDetailSidebar';
-import { CreateConversationDialog } from './CreateConversationDialog';
+import { NewConversationDialog } from './NewConversationDialog';
 import { TeamInboxDialog } from './TeamInboxDialog';
 import { buildSupportInboxSearch, navFilterFromView, normalizeSupportInboxRouteSearch } from '@/lib/supportInboxRouting';
 import { conversationListFiltersEqual, defaultAIStatesForNav, defaultAssignmentForNav, defaultConversationListFiltersForNav, defaultStatesForNav, parseSupportInboxViewFilters, statesEqual, stringArraysEqual, type ConversationAIStateFilter, type ConversationAssignmentFilter, type ConversationListFilters, type ConversationStateFilter } from '@/lib/supportInboxFilters';
@@ -346,8 +346,9 @@ export function SupportInboxLayout() {
         </div>
       </div>
 
-      <CreateConversationDialog
+      <NewConversationDialog
         workspaceId={workspaceId}
+        workspaceSlug={slug}
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
       />

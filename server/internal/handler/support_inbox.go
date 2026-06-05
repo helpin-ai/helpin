@@ -150,6 +150,26 @@ func (h *SupportInboxHandler) CreateConversation(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusCreated, conversation)
 }
 
+// CreateConversationWithMessage handles production outbound conversation creation.
+func (h *SupportInboxHandler) CreateConversationWithMessage(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.CreateConversationWithMessageRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.WorkspaceID = workspaceID
+
+	result, err := h.supportService.CreateConversationWithMessage(r.Context(), req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
 // UpdateConversationStatus handles PUT /api/support/tickets/{id}/status.
 func (h *SupportInboxHandler) UpdateConversationStatus(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

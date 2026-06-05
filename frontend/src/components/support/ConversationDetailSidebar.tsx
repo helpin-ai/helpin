@@ -12,10 +12,11 @@ import { findAssignableMember, formatAssignableMemberName } from '@/lib/assignab
 import { SidebarAssociations } from './SidebarAssociations';
 import { SidebarVisitorContext } from './SidebarVisitorContext';
 import { SupportTagPicker } from './SupportTagPicker';
-import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser } from '@/hooks/queries/useSupport';
+import { useConversation, useConversationAssignees, useVisitorContext, useAssignConversationUser, useConversationMessages } from '@/hooks/queries/useSupport';
 import { useSupportInboxStore } from '@/stores/supportInboxStore';
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import type { SupportMessage } from '@/lib/pmTypes';
 import { getInitial, getAvatarColor } from './helpers';
 
 interface ConversationDetailSidebarProps {
@@ -60,10 +61,60 @@ const DetailCountryFlag = memo(function DetailCountryFlag({
   );
 });
 
+export interface EmailRecipientsSummary {
+  to?: string;
+  cc: string[];
+  bcc: string[];
+}
+
+function normalizeRecipients(values?: string[] | null): string[] {
+  return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean)));
+}
+
+export function getLatestEmailRecipients(messages: SupportMessage[]): EmailRecipientsSummary | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.sender_type === 'customer' || message.is_internal) {
+      continue;
+    }
+
+    const to = message.email_to?.trim();
+    const cc = normalizeRecipients(message.email_cc);
+    const bcc = normalizeRecipients(message.email_bcc);
+    if (to || cc.length > 0 || bcc.length > 0) {
+      return { to, cc, bcc };
+    }
+  }
+
+  return null;
+}
+
+function EmailRecipientRow({ label, values }: { label: string; values: string[] }) {
+  if (values.length === 0) return null;
+
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-medium uppercase tracking-tight text-muted-foreground">{label}</div>
+      <div className="space-y-1">
+        {values.map((value) => (
+          <div
+            key={`${label}-${value}`}
+            className="truncate rounded border bg-background px-2 py-1 text-xs text-foreground"
+            title={value}
+          >
+            {value}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ConversationDetailSidebar({ workspaceId, conversationId }: ConversationDetailSidebarProps) {
   const { detailSidebarCollapsed, toggleDetailSidebar } = useSupportInboxStore();
   const workspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { data: conversation } = useConversation(workspaceId, conversationId);
+  const { data: messages = [] } = useConversationMessages(workspaceId, conversationId);
   const { data: visitorContext } = useVisitorContext(workspaceId, conversationId);
   const { data: assignableMembers = [], isLoading: assigneesLoading } = useConversationAssignees(workspaceId, conversationId);
   const assignConversationUser = useAssignConversationUser(workspaceId);
@@ -89,6 +140,10 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
   const assignedMember = conversation
     ? findAssignableMember(assignableUsers, conversation.assigned_user_id, (member) => member.user_id ?? member.id)
     : undefined;
+  const latestEmailRecipients = getLatestEmailRecipients(messages);
+  const emailRecipientCount = latestEmailRecipients
+    ? [latestEmailRecipients.to, ...latestEmailRecipients.cc, ...latestEmailRecipients.bcc].filter(Boolean).length
+    : 0;
 
   return (
     <div className="flex w-[300px] flex-col border-l bg-muted/30">
@@ -192,6 +247,14 @@ export function ConversationDetailSidebar({ workspaceId, conversationId }: Conve
               selectedTags={conversation.tags ?? []}
             />
           </CollapsibleSection>
+
+          {latestEmailRecipients && (
+            <CollapsibleSection title="Email recipients" icon={Mail01Icon} count={emailRecipientCount}>
+              <EmailRecipientRow label="To" values={latestEmailRecipients.to ? [latestEmailRecipients.to] : []} />
+              <EmailRecipientRow label="Cc" values={latestEmailRecipients.cc} />
+              <EmailRecipientRow label="Bcc" values={latestEmailRecipients.bcc} />
+            </CollapsibleSection>
+          )}
 
           {/* ── Visitor Intelligence ─────────────────────── */}
           <SidebarVisitorContext

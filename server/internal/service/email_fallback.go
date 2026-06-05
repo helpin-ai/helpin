@@ -1632,6 +1632,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 	if err != nil {
 		return err
 	}
+	emailRecipients := supportMessageEmailRecipientsFromMetadata(pending[len(pending)-1].Metadata)
 	chatLink, _ := s.buildChatLink(ctx, conv)
 	preparedPending, emailAttachments := s.prepareEmailAttachments(ctx, pending)
 	htmlBody, textBody := s.renderBodies(preparedPending, agentName, workspaceName, chatLink, unsubscribeEmail)
@@ -1659,6 +1660,7 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		replyTo,
 		headers,
 		emailAttachments,
+		emailRecipients,
 	)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "email fallback send failed",
@@ -1693,6 +1695,8 @@ func (s *EmailFallbackService) fireEmailWithOptions(ctx context.Context, convers
 		FromSource:         fromSource,
 		FromFallbackReason: fromFallbackReason,
 		ToEmail:            strings.TrimSpace(*conv.CustomerEmail),
+		CCEmails:           model.DocsStringArray(emailRecipients.CC),
+		BCCEmails:          model.DocsStringArray(emailRecipients.BCC),
 		ReplyTo:            replyTo,
 		Subject:            subject,
 		RFCMessageID:       rfcMessageID,
@@ -2662,8 +2666,10 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 	replyTo string,
 	headers []email.EmailHeader,
 	attachments []email.Attachment,
+	recipients supportMessageEmailRecipients,
 ) (string, string, string, error) {
-	postmarkMessageID, err := s.emailClient.SendEmailWithHeadersAndAttachments(from, to, subject, htmlBody, textBody, replyTo, headers, attachments)
+	options := email.SendEmailOptions{CC: recipients.CC, BCC: recipients.BCC}
+	postmarkMessageID, err := s.emailClient.SendEmailWithHeadersAttachmentsAndOptions(from, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
 	if err == nil {
 		return postmarkMessageID, fromAddress, "", nil
 	}
@@ -2684,7 +2690,7 @@ func (s *EmailFallbackService) sendFallbackEmailWithSenderFallback(
 		"fallback_from_email", fallbackFromAddress,
 		"reply_to", replyTo,
 	)
-	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeadersAndAttachments(fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers, attachments)
+	postmarkMessageID, fallbackErr := s.emailClient.SendEmailWithHeadersAttachmentsAndOptions(fallbackFrom, to, subject, htmlBody, textBody, replyTo, headers, attachments, options)
 	if fallbackErr != nil {
 		return "", fallbackFromAddress, "postmark_sender_signature_rejected", fmt.Errorf("retry with verified sender after branded sender rejection: %w", fallbackErr)
 	}

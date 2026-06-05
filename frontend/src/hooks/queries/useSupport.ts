@@ -52,6 +52,7 @@ import type {
   UpdateCannedResponseRequest,
   SupportMessage,
   SupportTag,
+  CreateConversationWithMessageRequest,
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
@@ -73,7 +74,14 @@ type SupportConversationFilters = {
   system_tags?: string;
 };
 
-type SendMessagePayload = { content: string; is_internal?: boolean; attachment_ids?: string[] };
+type SendMessagePayload = {
+  content: string;
+  is_internal?: boolean;
+  channels?: Array<'chat' | 'email'>;
+  attachment_ids?: string[];
+  cc_emails?: string[];
+  bcc_emails?: string[];
+};
 
 type OptimisticSupportUser = {
   id?: string | null;
@@ -877,7 +885,10 @@ export function useDeleteSupportMessage(workspaceId: string, conversationId: str
 export function useRewriteSupportDraft(workspaceId: string, conversationId: string | null) {
   return useMutation({
     mutationFn: (payload: SupportAIRewriteDraftRequest) =>
-      supportService.rewriteConversationDraft(workspaceId, conversationId!, payload).then(unwrap),
+      (conversationId
+        ? supportService.rewriteConversationDraft(workspaceId, conversationId, payload)
+        : supportService.rewriteNewDraft(workspaceId, payload)
+      ).then(unwrap),
     onError: (error: Error) => {
       toast.error('Failed to rewrite draft', { description: error.message });
     },
@@ -1043,6 +1054,27 @@ export function useCreateConversation(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to create conversation', { description: error.message });
+    },
+  });
+}
+
+export function useCreateConversationWithMessage(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateConversationWithMessageRequest) =>
+      supportService.createConversationWithMessage(workspaceId, payload).then(unwrap),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+      if (data?.conversation?.id) {
+        queryClient.setQueryData(queryKeys.support.conversation(workspaceId, data.conversation.id), data.conversation);
+        queryClient.setQueryData(queryKeys.support.messages(workspaceId, data.conversation.id), [data.message]);
+      }
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to send conversation', { description: error.message });
     },
   });
 }

@@ -688,6 +688,10 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermSupportRead)).Put("/inbox/me/presence", h.SupportInbox.UpdateMyTeammatePresence)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations", h.SupportInbox.ListConversations)
 				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations", h.SupportInbox.CreateConversation)
+				r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/conversations/create-and-send", h.SupportInbox.CreateConversationWithMessage)
+				if h.SupportAI != nil {
+					r.With(requirePerm(authorization.PermSupportEdit)).Post("/inbox/rewrite-draft", h.SupportAI.RewriteNewSupportDraft)
+				}
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}", h.SupportInbox.GetConversation)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/assignees", h.SupportInbox.ListConversationAssignableUsers)
 				r.With(requirePerm(authorization.PermSupportRead)).Get("/inbox/conversations/{id}/associations", h.Associations.ListConversationAssociations)

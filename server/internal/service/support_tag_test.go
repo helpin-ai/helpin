@@ -11,7 +11,7 @@ import (
 
 func TestSupportTagService(t *testing.T) {
 	db := newTestDB(t)
-	mustExec(t, db, `CREATE TABLE support_tags (
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS support_tags (
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		workspace_id TEXT NOT NULL,
 		name TEXT NOT NULL,
@@ -19,7 +19,7 @@ func TestSupportTagService(t *testing.T) {
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
-	mustExec(t, db, `CREATE TABLE support_conversation_tags (
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS support_conversation_tags (
 		conversation_id TEXT NOT NULL,
 		tag_id TEXT NOT NULL,
 		created_at DATETIME,
@@ -84,7 +84,7 @@ func idsFromConversations(conversations []model.SupportConversation) []string {
 
 func TestSupportConversationTagsInList(t *testing.T) {
 	db := newTestDB(t)
-	mustExec(t, db, `CREATE TABLE support_tags (
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS support_tags (
 		id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
 		workspace_id TEXT NOT NULL,
 		name TEXT NOT NULL,
@@ -92,7 +92,7 @@ func TestSupportConversationTagsInList(t *testing.T) {
 		created_at DATETIME,
 		updated_at DATETIME
 	)`)
-	mustExec(t, db, `CREATE TABLE support_conversation_tags (
+	mustExec(t, db, `CREATE TABLE IF NOT EXISTS support_conversation_tags (
 		conversation_id TEXT NOT NULL,
 		tag_id TEXT NOT NULL,
 		created_at DATETIME,

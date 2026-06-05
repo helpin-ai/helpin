@@ -74,7 +74,7 @@ export function EpicFilterBar({
   visibleProperties,
   onVisiblePropertiesChange,
 }: EpicFilterBarProps) {
-  const hasAnyFilter = categories.some((cat) => cat.selected.length > 0) || search.length > 0;
+  const hasAnyFilter = categories.some((cat) => cat.selected.length > 0) || showArchived || search.trim().length > 0;
 
   return (
     <div className="ui-divider-bottom-fade flex flex-col gap-1 px-4 pb-2 pt-2 md:px-6">
@@ -105,21 +105,22 @@ export function EpicFilterBar({
           />
         ))}
 
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[11px] font-medium text-muted-foreground/0">
-            &nbsp;
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs text-muted-foreground"
-            onClick={onClearAll}
-            disabled={!hasAnyFilter}
-          >
-            Clear Filters
-          </Button>
-        </div>
+        {hasAnyFilter ? (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] font-medium text-muted-foreground/0">
+              &nbsp;
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              onClick={onClearAll}
+            >
+              Clear Filters
+            </Button>
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-0.5">
           <span className="text-[11px] font-medium text-muted-foreground/0">

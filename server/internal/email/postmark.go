@@ -45,6 +45,8 @@ func NewClient(serverToken, fromEmail string) *Client {
 type postmarkRequest struct {
 	From        string        `json:"From"`
 	To          string        `json:"To"`
+	Cc          string        `json:"Cc,omitempty"`
+	Bcc         string        `json:"Bcc,omitempty"`
 	Subject     string        `json:"Subject"`
 	HtmlBody    string        `json:"HtmlBody"`
 	TextBody    string        `json:"TextBody"`
@@ -52,6 +54,11 @@ type postmarkRequest struct {
 	Headers     []EmailHeader `json:"Headers,omitempty"`
 	TrackOpens  bool          `json:"TrackOpens,omitempty"`
 	Attachments []Attachment  `json:"Attachments,omitempty"`
+}
+
+type SendEmailOptions struct {
+	CC  []string
+	BCC []string
 }
 
 type postmarkResponse struct {
@@ -130,9 +137,15 @@ func (c *Client) SendEmailWithHeaders(from, to, subject, htmlBody, textBody, rep
 
 // SendEmailWithHeadersAndAttachments sends an email with custom headers and file attachments.
 func (c *Client) SendEmailWithHeadersAndAttachments(from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader, attachments []Attachment) (string, error) {
+	return c.SendEmailWithHeadersAttachmentsAndOptions(from, to, subject, htmlBody, textBody, replyTo, headers, attachments, SendEmailOptions{})
+}
+
+func (c *Client) SendEmailWithHeadersAttachmentsAndOptions(from, to, subject, htmlBody, textBody, replyTo string, headers []EmailHeader, attachments []Attachment, options SendEmailOptions) (string, error) {
 	payload := postmarkRequest{
 		From:        from,
 		To:          to,
+		Cc:          strings.Join(normalizeEmailList(options.CC), ","),
+		Bcc:         strings.Join(normalizeEmailList(options.BCC), ","),
 		Subject:     subject,
 		HtmlBody:    htmlBody,
 		TextBody:    textBody,
@@ -142,6 +155,23 @@ func (c *Client) SendEmailWithHeadersAndAttachments(from, to, subject, htmlBody,
 		Attachments: attachments,
 	}
 	return c.send(payload)
+}
+
+func normalizeEmailList(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		email := strings.TrimSpace(strings.ToLower(value))
+		if email == "" {
+			continue
+		}
+		if _, exists := seen[email]; exists {
+			continue
+		}
+		seen[email] = struct{}{}
+		result = append(result, email)
+	}
+	return result
 }
 
 func (c *Client) send(payload postmarkRequest) (string, error) {
