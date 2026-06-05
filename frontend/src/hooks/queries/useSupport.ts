@@ -1061,8 +1061,13 @@ export function useCreateConversation(workspaceId: string) {
 export function useCreateConversationWithMessage(workspaceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: CreateConversationWithMessageRequest) =>
-      supportService.createConversationWithMessage(workspaceId, payload).then(unwrap),
+    mutationFn: async (payload: CreateConversationWithMessageRequest) => {
+      const data = unwrap(await supportService.createConversationWithMessage(workspaceId, payload));
+      if (!data?.conversation?.id || !data?.message?.id) {
+        throw new Error('Conversation send returned an invalid response');
+      }
+      return data;
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });

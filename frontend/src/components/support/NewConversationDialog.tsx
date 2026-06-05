@@ -548,27 +548,31 @@ export function NewConversationDialog({ workspaceId, workspaceSlug, open, onOpen
   const handleSend = async () => {
     if (!canSend || createConversation.isPending) return;
     const customerEmail = sendEmail ? rawEmail : selectedContact?.email;
-    const response = await createConversation.mutateAsync({
-      subject: subject.trim(),
-      content: message.trim(),
-      customer_name: selectedContact ? contactName(selectedContact) : undefined,
-      customer_email: customerEmail?.trim() || undefined,
-      crm_contact_id: selectedContact?.id,
-      mailbox_id: mailboxValue(mailboxId),
-      channels,
-      tag_ids: selectedTagIds,
-      cc_emails: sendEmail ? ccEmails : [],
-      bcc_emails: sendEmail ? bccEmails : [],
-    });
-    const conversationId = response.conversation.id;
-    selectConversation(conversationId);
-    setActivePanel('thread');
-    onOpenChange(false);
-    if (workspaceSlug) {
-      void navigate({
-        to: '/w/$slug/support/$conversationId',
-        params: { slug: workspaceSlug, conversationId },
+    try {
+      const response = await createConversation.mutateAsync({
+        subject: subject.trim(),
+        content: message.trim(),
+        customer_name: selectedContact ? contactName(selectedContact) : undefined,
+        customer_email: customerEmail?.trim() || undefined,
+        crm_contact_id: selectedContact?.id,
+        mailbox_id: mailboxValue(mailboxId),
+        channels,
+        tag_ids: selectedTagIds,
+        cc_emails: sendEmail ? ccEmails : [],
+        bcc_emails: sendEmail ? bccEmails : [],
       });
+      const conversationId = response.conversation.id;
+      selectConversation(conversationId);
+      setActivePanel('thread');
+      onOpenChange(false);
+      if (workspaceSlug) {
+        void navigate({
+          to: '/w/$slug/support/$conversationId',
+          params: { slug: workspaceSlug, conversationId },
+        });
+      }
+    } catch {
+      // The mutation hook shows the user-facing error toast.
     }
   };
 
