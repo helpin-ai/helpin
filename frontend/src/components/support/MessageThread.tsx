@@ -50,6 +50,7 @@ interface MessageThreadProps {
 
 const INITIAL_THREAD_ITEM_COUNT = 60;
 const THREAD_HISTORY_HYDRATION_DELAY_MS = 120;
+const THREAD_SELECTION_FADE_MS = 160;
 const RESTORE_SUPPORT_DRAFT_EVENT = 'support:restore-draft';
 
 function TypingIndicatorBar({ conversationId }: { conversationId: string | null }) {
@@ -245,6 +246,7 @@ export function MessageThread({
   const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspace?.slug ?? '');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const previousConversationIdRef = useRef<string | null>(conversationId);
   const separatorRefs = useRef(new Map<number, HTMLDivElement>());
   const isNearBottomRef = useRef(true);
   const pendingInitialScrollRef = useRef(false);
@@ -277,6 +279,7 @@ export function MessageThread({
   const [activeStickySeparator, setActiveStickySeparator] = useState<number | null>(null);
   const [composerReady, setComposerReady] = useState(false);
   const [historyHydrated, setHistoryHydrated] = useState(true);
+  const [isThreadTransitioning, setIsThreadTransitioning] = useState(false);
   const lastOpenThreadReadMessageIdRef = useRef<string | null>(null);
   const assignedAgentId = conversation?.assigned_agent_id ?? null;
   const memberAvatarByUserId = useMemo(() => {
@@ -345,6 +348,20 @@ export function MessageThread({
 
     return null;
   }, [conversation, inboxScopes]);
+
+  useEffect(() => {
+    if (previousConversationIdRef.current === conversationId) {
+      return undefined;
+    }
+    previousConversationIdRef.current = conversationId;
+    if (!conversationId) {
+      setIsThreadTransitioning(false);
+      return undefined;
+    }
+    setIsThreadTransitioning(true);
+    const timer = window.setTimeout(() => setIsThreadTransitioning(false), THREAD_SELECTION_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [conversationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -809,7 +826,11 @@ export function MessageThread({
   }
 
   return (
-    <div className="flex flex-1 flex-col min-w-0 min-h-0">
+    <div
+      data-support-message-thread
+      data-transitioning={isThreadTransitioning ? 'true' : undefined}
+      className={`flex flex-1 flex-col min-w-0 min-h-0 transition-opacity duration-150 ease-out ${isThreadTransitioning ? 'opacity-85' : 'opacity-100'}`}
+    >
       {/* Topbar with subtle bottom shadow (Crisp-style) */}
       {conversation && (
         <div className="relative z-10 flex items-center justify-between border-b px-4 py-2.5 bg-background">
