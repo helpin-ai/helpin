@@ -55,6 +55,7 @@ import type {
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
+const CONVERSATION_HANDOFF_DELAY_MS = 180;
 
 type SupportConversationFilters = {
   status?: string;
@@ -928,7 +929,8 @@ export function useUpdateConversationStatus(workspaceId: string) {
       const { conversationId, status } = variables;
       const currentState = useSupportInboxStore.getState();
 
-      if (data) {
+      const applyStatusPatch = () => {
+        if (!data) return;
         const patch = {
           conversationId,
           status: data.status,
@@ -946,28 +948,48 @@ export function useUpdateConversationStatus(workspaceId: string) {
           queryKeys.support.conversation(workspaceId, conversationId),
           (current: SupportConversation | undefined) => patchConversationDetailStatus(current, patch),
         );
-      }
+      };
+
+      const invalidateAfterStatusChange = () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+        invalidateSupportInboxViewCounts(queryClient, workspaceId);
+      };
 
       // Auto-advance: when resolving/spamming, select the next conversation in the list
       if (status === 'resolved' || status === 'spam') {
-        const { selectedConversationId, selectConversation } = currentState;
-        if (selectedConversationId === conversationId) {
-          // Find the next conversation from the cached list (before invalidation)
-          const cached = queryClient.getQueriesData<SupportConversationListCache>({
-            queryKey: queryKeys.support.conversations(workspaceId),
-          });
-          const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
-            isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
-          );
-          selectConversation(getNextConversationIdAfterRemoval(conversations, conversationId));
-        }
+        const { selectedConversationId, startConversationHandoff } = currentState;
+        const shouldAdvanceSelection = selectedConversationId === conversationId;
+        const cached = queryClient.getQueriesData<SupportConversationListCache>({
+          queryKey: queryKeys.support.conversations(workspaceId),
+        });
+        const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
+          isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
+        );
+        const nextConversationId = shouldAdvanceSelection
+          ? getNextConversationIdAfterRemoval(conversations, conversationId)
+          : null;
+
+        startConversationHandoff(conversationId, nextConversationId);
+        window.setTimeout(() => {
+          applyStatusPatch();
+          const latestState = useSupportInboxStore.getState();
+          if (latestState.conversationHandoff?.fromConversationId === conversationId) {
+            if (shouldAdvanceSelection && latestState.selectedConversationId === conversationId) {
+              latestState.finishConversationHandoff(nextConversationId);
+            } else {
+              latestState.cancelConversationHandoff();
+            }
+          }
+          invalidateAfterStatusChange();
+        }, CONVERSATION_HANDOFF_DELAY_MS);
+        return;
       } else if (status === 'open' && currentState.selectedConversationId === conversationId) {
         currentState.showReopenedConversationInInbox(conversationId, data?.mailbox_id ?? null);
       }
 
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
-      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+      applyStatusPatch();
+      invalidateAfterStatusChange();
     },
     onError: (error: Error) => {
       toast.error('Failed to update conversation status', { description: error.message });

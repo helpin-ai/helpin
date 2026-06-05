@@ -254,6 +254,7 @@ export function ConversationList({
   const syncRouteState = useSupportInboxStore((s) => s.syncRouteState);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
+  const handoffConversationId = useSupportInboxStore((s) => s.conversationHandoff?.fromConversationId ?? null);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
@@ -871,6 +872,7 @@ export function ConversationList({
             conversation={conversation}
             moveOptions={mailboxMoveOptions}
             onSelectConversation={handleSelect}
+            isTransitioningOut={handoffConversationId === conversation.id}
           />
         ))}
         {hasNextPage && (

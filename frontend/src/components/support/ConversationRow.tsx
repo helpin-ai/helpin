@@ -162,6 +162,7 @@ interface ConversationRowProps {
   conversation: SupportConversation;
   moveOptions: ConversationActionMoveOption[];
   onSelectConversation: (id: string, unreadCount?: number) => void;
+  isTransitioningOut?: boolean;
 }
 
 export type ConversationRowVisualState = {
@@ -321,6 +322,7 @@ export const ConversationRow = memo(function ConversationRow({
   conversation,
   moveOptions,
   onSelectConversation,
+  isTransitioningOut = false,
 }: ConversationRowProps) {
   const isSelected = useSupportInboxStore((s) => s.selectedConversationId === conversation.id);
   const visitorLabel = conversation.anonymous_id ? `Visitor #${conversation.anonymous_id.slice(0, 6)}` : 'Anonymous';
@@ -408,8 +410,11 @@ export const ConversationRow = memo(function ConversationRow({
           setActionsMounted(false);
         }
       }}
+      data-transitioning-out={isTransitioningOut ? 'true' : undefined}
       className={`group relative w-full cursor-pointer px-3 py-2.5 text-left transition-all duration-200 hover:bg-muted/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 dark:hover:bg-muted/40 ${
-        isSelected
+        isTransitioningOut
+          ? 'pointer-events-none bg-emerald-50/70 opacity-60 dark:bg-emerald-950/20'
+          : isSelected
           ? 'bg-muted/80 dark:bg-muted/45'
           : visualState.usesActionBackground
             ? 'bg-blue-50/70 dark:bg-blue-950/20'
