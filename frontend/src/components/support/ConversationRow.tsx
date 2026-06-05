@@ -420,7 +420,7 @@ export const ConversationRow = memo(function ConversationRow({
       <span
         className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200 ${
           isSelected
-            ? 'h-8 bg-muted-foreground/45'
+            ? 'h-11 bg-primary/90'
             : 'h-0 bg-transparent'
         }`}
       />
