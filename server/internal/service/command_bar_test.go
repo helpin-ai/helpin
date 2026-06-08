@@ -1145,6 +1145,42 @@ func TestCommandBarSchedulerReadinessRequiresCompletedDependencies(t *testing.T)
 	}
 }
 
+func TestCommandBarExistingChildRunForParent(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	service := &AgentService{runRepo: runRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	parentRunID := "22222222-2222-2222-2222-222222222222"
+	childRunID := "33333333-3333-3333-3333-333333333333"
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             childRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        "44444444-4444-4444-4444-444444444444",
+		TargetType:     "task",
+		TargetID:       "55555555-5555-5555-5555-555555555555",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ParentRunID:    &parentRunID,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusQueued,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create child run: %v", err)
+	}
+
+	existing := service.commandBarExistingChildRunForParent(ctx, workspaceID, &parentRunID)
+	if existing == nil || existing.ID != childRunID {
+		t.Fatalf("expected existing child run %q, got %#v", childRunID, existing)
+	}
+	if got := service.commandBarExistingChildRunForParent(ctx, workspaceID, nil); got != nil {
+		t.Fatalf("expected nil for nil parent run id, got %#v", got)
+	}
+}
+
 func TestParseOneShotCommandIntentRejectsUnsupportedMutation(t *testing.T) {
 	pageContext := model.CommandBarPageContext{EntityType: "workspace", EntityID: "workspace-1"}
 	candidates := []model.CommandBarAgent{

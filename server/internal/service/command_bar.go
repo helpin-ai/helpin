@@ -3720,8 +3720,12 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 			run, err = s.startCommandBarPlanStep(ctx, input.WorkspaceID, input.ActorID, input.Prompt, input.PageContext, steps, index, input.PlanID, parentRunID)
 		}
 		if err != nil {
-			_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, err.Error())
-			return nil, err
+			if existing := s.commandBarExistingChildRunForParent(ctx, input.WorkspaceID, parentRunID); existing != nil {
+				run = existing
+			} else {
+				_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, err.Error())
+				return nil, err
+			}
 		}
 		runIDsByStep[index] = run.ID
 		started++
@@ -3735,6 +3739,17 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 		return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
 	}
 	return progress, nil
+}
+
+func (s *AgentService) commandBarExistingChildRunForParent(ctx context.Context, workspaceID string, parentRunID *string) *model.AgentRun {
+	if s == nil || s.runRepo == nil || parentRunID == nil || strings.TrimSpace(*parentRunID) == "" {
+		return nil
+	}
+	existing, err := s.runRepo.FindByParentRunID(ctx, workspaceID, strings.TrimSpace(*parentRunID))
+	if err != nil {
+		return nil
+	}
+	return existing
 }
 
 func commandBarStepDependenciesSatisfied(step model.CommandBarPlanStep, runIDsByStep map[int]string, runsByID map[string]model.AgentRun) (*string, bool) {
