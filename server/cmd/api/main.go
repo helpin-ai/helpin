@@ -246,6 +246,7 @@ func main() {
 			&model.GitRepository{},
 			&model.PMTeamRepoDefault{},
 			&model.TaskDeliveryTarget{},
+			&model.EpicDeliveryTarget{},
 			&model.TaskGitLink{},
 			&model.GitWebhookEvent{},
 			&model.AgentHandoff{},
@@ -589,6 +590,7 @@ func main() {
 	gitCredentialRepo := repository.NewGitCredentialRepository(db)
 	gitRepositoryRepo := repository.NewGitRepositoryRepository(db)
 	taskDeliveryTargetRepo := repository.NewTaskDeliveryTargetRepository(db)
+	epicDeliveryTargetRepo := repository.NewEpicDeliveryTargetRepository(db)
 	taskGitLinkRepo := repository.NewTaskGitLinkRepository(db)
 	gitWebhookEventRepo := repository.NewGitWebhookEventRepository(db)
 	agentHandoffRepo := repository.NewAgentHandoffRepository(db)
@@ -804,7 +806,9 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	).SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
+	).
+		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, pmEpicRepo).
+		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,

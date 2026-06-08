@@ -2831,6 +2831,9 @@ func (s *CommandBarService) validateDispatchSteps(ctx context.Context, workspace
 		if !ok {
 			return fmt.Errorf("agent not found for step %d", i+1)
 		}
+		if isCommandBarOrchestrationStep(step) {
+			continue
+		}
 		if err := validateCommandBarStepTargetForAgent(step, &agent, i); err != nil {
 			return err
 		}
@@ -2847,6 +2850,18 @@ func (s *CommandBarService) validateDispatchSteps(ctx context.Context, workspace
 		}
 	}
 	return nil
+}
+
+func isCommandBarOrchestrationStep(step model.CommandBarPlanStep) bool {
+	switch strings.TrimSpace(step.StepType) {
+	case model.CommandBarStepTypeEnsureEpicBranch,
+		model.CommandBarStepTypeMergeTaskToEpic,
+		model.CommandBarStepTypeResolveMergeConflict,
+		model.CommandBarStepTypeOpenEpicPullRequest:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateCommandBarStepTargetForAgent(step model.CommandBarPlanStep, agent *model.Agent, stepIndex int) error {
@@ -3641,6 +3656,16 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 	runsByID := make(map[string]model.AgentRun, len(runs))
 	activeCount := 0
 	for _, run := range runs {
+		if stepIndex := commandBarStepIndexForRun(runIDsByStep, run.ID); stepIndex >= 0 && stepIndex < len(steps) && isCommandBarOrchestrationStep(steps[stepIndex]) && model.IsAgentRunActiveStatus(run.Status) {
+			updated, err := s.advanceRunningCommandBarOrchestrationRun(ctx, input, steps, stepIndex, &run)
+			if err != nil {
+				_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, err.Error())
+				return nil, err
+			}
+			if updated != nil {
+				run = *updated
+			}
+		}
 		runsByID[run.ID] = run
 		if model.IsAgentRunActiveStatus(run.Status) {
 			activeCount++
@@ -3675,7 +3700,13 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 		if !ready {
 			continue
 		}
-		run, err := s.startCommandBarPlanStep(ctx, input.WorkspaceID, input.ActorID, input.Prompt, input.PageContext, steps, index, input.PlanID, parentRunID)
+		var run *model.AgentRun
+		var err error
+		if isCommandBarOrchestrationStep(step) {
+			run, err = s.startCommandBarOrchestrationStep(ctx, input, steps, index, parentRunID)
+		} else {
+			run, err = s.startCommandBarPlanStep(ctx, input.WorkspaceID, input.ActorID, input.Prompt, input.PageContext, steps, index, input.PlanID, parentRunID)
+		}
 		if err != nil {
 			_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, err.Error())
 			return nil, err
@@ -3710,13 +3741,270 @@ func commandBarStepDependenciesSatisfied(step model.CommandBarPlanStep, runIDsBy
 	return parentRunID, true
 }
 
+type commandBarOrchestrationOutput struct {
+	Type                string `json:"type,omitempty"`
+	Status              string `json:"status,omitempty"`
+	Message             string `json:"message,omitempty"`
+	EpicBranch          string `json:"epic_branch,omitempty"`
+	BaseBranch          string `json:"base_branch,omitempty"`
+	TaskBranch          string `json:"task_branch,omitempty"`
+	ConflictRunID       string `json:"conflict_run_id,omitempty"`
+	ConflictAttempt     int    `json:"conflict_attempt,omitempty"`
+	FinalPullRequestURL string `json:"final_pull_request_url,omitempty"`
+}
+
+func (s *AgentService) startCommandBarOrchestrationStep(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, parentRunID *string) (*model.AgentRun, error) {
+	step := steps[stepIndex]
+	now := time.Now()
+	triggerContext, err := buildCommandBarTriggerContext(input.Prompt, input.PageContext, steps, stepIndex, input.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	runInput, err := json.Marshal(model.AgentRunInputPayload{
+		Trigger: triggerContext,
+		Target: &model.AgentRunTargetContext{
+			TargetType: step.Target.EntityType,
+			TargetID:   step.Target.EntityID,
+		},
+		AdditionalContext: step.Instructions,
+	})
+	if err != nil {
+		return nil, err
+	}
+	run := &model.AgentRun{
+		ID:                uuid.NewString(),
+		WorkspaceID:       input.WorkspaceID,
+		AgentID:           step.AgentID,
+		TargetType:        firstNonEmptyString(step.Target.EntityType, input.PageContext.EntityType),
+		TargetID:          firstNonEmptyString(step.Target.EntityID, input.PageContext.EntityID),
+		RuntimeKind:       "internal",
+		InvocationMode:    "autonomous",
+		ParentRunID:       parentRunID,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonNone,
+		TriggeredByUserID: stringPtrIfNotEmpty(input.ActorID),
+		Status:            model.AgentRunStatusRunning,
+		ExecutionStage:    strPtr(step.StepType),
+		StartedAt:         &now,
+		LastHeartbeatAt:   &now,
+		Input:             runInput,
+		OutputSummary:     json.RawMessage(`{}`),
+	}
+	if step.Target.EntityType == "task" {
+		taskID := step.Target.EntityID
+		run.TaskID = &taskID
+	}
+	if err := s.runRepo.Create(ctx, run); err != nil {
+		return nil, err
+	}
+	updated, err := s.executeCommandBarOrchestrationRun(ctx, input, steps, stepIndex, run)
+	if err != nil {
+		run.Status = model.AgentRunStatusFailed
+		run.ErrorMessage = strPtr(err.Error())
+		completedAt := time.Now()
+		run.CompletedAt = &completedAt
+		run.LastHeartbeatAt = &completedAt
+		_ = s.runRepo.Update(ctx, run)
+		s.runRepo.Notify(ctx, run)
+		return nil, err
+	}
+	s.runRepo.Notify(ctx, updated)
+	return updated, nil
+}
+
+func (s *AgentService) advanceRunningCommandBarOrchestrationRun(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun) (*model.AgentRun, error) {
+	if run == nil || run.Status != model.AgentRunStatusRunning {
+		return run, nil
+	}
+	var output commandBarOrchestrationOutput
+	_ = json.Unmarshal(run.OutputSummary, &output)
+	if output.ConflictRunID == "" {
+		return run, nil
+	}
+	child, err := s.runRepo.GetByIDAny(ctx, output.ConflictRunID)
+	if err != nil || child == nil {
+		return run, err
+	}
+	if model.IsAgentRunActiveStatus(child.Status) {
+		return run, nil
+	}
+	if child.Status != model.AgentRunStatusCompleted {
+		run.Status = model.AgentRunStatusFailed
+		run.ErrorMessage = strPtr("merge conflict resolution run did not complete successfully")
+		now := time.Now()
+		run.CompletedAt = &now
+		run.LastHeartbeatAt = &now
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			return nil, err
+		}
+		s.runRepo.Notify(ctx, run)
+		return run, nil
+	}
+	return s.executeCommandBarOrchestrationRun(ctx, input, steps, stepIndex, run)
+}
+
+func (s *AgentService) executeCommandBarOrchestrationRun(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun) (*model.AgentRun, error) {
+	if s.gitService == nil {
+		return nil, fmt.Errorf("git service is not configured")
+	}
+	step := steps[stepIndex]
+	switch step.StepType {
+	case model.CommandBarStepTypeEnsureEpicBranch:
+		target, err := s.gitService.EnsureEpicBranch(ctx, input.WorkspaceID, input.PageContext.EntityID, input.ActorID, run.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, candidate := range steps {
+			if candidate.Target.EntityType == "task" && candidate.Target.EntityID != "" {
+				if _, err := s.gitService.PrepareTaskForEpicBranch(ctx, input.WorkspaceID, candidate.Target.EntityID, input.PageContext.EntityID, input.ActorID); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return s.completeCommandBarOrchestrationRun(ctx, run, commandBarOrchestrationOutput{
+			Type:       step.StepType,
+			Status:     "completed",
+			Message:    "Epic branch is ready and task delivery targets were based on it.",
+			EpicBranch: derefString(target.EpicBranch),
+			BaseBranch: derefString(target.BaseBranch),
+		})
+	case model.CommandBarStepTypeMergeTaskToEpic:
+		target, err := s.gitService.MergeTaskBranchIntoEpic(ctx, input.WorkspaceID, step.Target.EntityID, input.PageContext.EntityID, run.ID)
+		if err != nil {
+			if commandBarIsMergeConflict(err) {
+				return s.startCommandBarMergeConflictResolution(ctx, input, steps, stepIndex, run, err)
+			}
+			return nil, err
+		}
+		return s.completeCommandBarOrchestrationRun(ctx, run, commandBarOrchestrationOutput{
+			Type:       step.StepType,
+			Status:     "completed",
+			Message:    "Task branch merged into epic branch.",
+			EpicBranch: derefString(target.EpicBranch),
+			BaseBranch: derefString(target.BaseBranch),
+		})
+	case model.CommandBarStepTypeOpenEpicPullRequest:
+		target, err := s.gitService.OpenEpicFinalPullRequest(ctx, input.WorkspaceID, input.PageContext.EntityID, run.ID)
+		if err != nil {
+			return nil, err
+		}
+		return s.completeCommandBarOrchestrationRun(ctx, run, commandBarOrchestrationOutput{
+			Type:                step.StepType,
+			Status:              "completed",
+			Message:             "Final epic pull request is open.",
+			EpicBranch:          derefString(target.EpicBranch),
+			BaseBranch:          derefString(target.BaseBranch),
+			FinalPullRequestURL: derefString(target.FinalPRURL),
+		})
+	default:
+		return nil, fmt.Errorf("unsupported command-bar orchestration step %q", step.StepType)
+	}
+}
+
+func (s *AgentService) completeCommandBarOrchestrationRun(ctx context.Context, run *model.AgentRun, output commandBarOrchestrationOutput) (*model.AgentRun, error) {
+	raw, err := json.Marshal(output)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	run.Status = model.AgentRunStatusCompleted
+	run.PauseReason = model.AgentRunPauseReasonNone
+	run.ExecutionStage = strPtr("completed")
+	run.OutputSummary = raw
+	run.CompletedAt = &now
+	run.LastHeartbeatAt = &now
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return nil, err
+	}
+	s.runRepo.Notify(ctx, run)
+	return run, nil
+}
+
+func commandBarIsMergeConflict(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "merge conflict")
+}
+
+func (s *AgentService) startCommandBarMergeConflictResolution(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun, mergeErr error) (*model.AgentRun, error) {
+	var existing commandBarOrchestrationOutput
+	_ = json.Unmarshal(run.OutputSummary, &existing)
+	if existing.ConflictAttempt >= 1 && existing.ConflictRunID != "" {
+		return nil, fmt.Errorf("task branch still conflicts with epic branch after Forge conflict resolution: %w", mergeErr)
+	}
+	step := steps[stepIndex]
+	forgeStep, ok := commandBarForgeStepForTarget(steps, step.Target.EntityID)
+	if !ok {
+		return nil, fmt.Errorf("merge conflict requires Forge conflict resolution, but no Forge step was found for task %s", step.Target.DisplayTitle)
+	}
+	triggerContext, err := buildCommandBarTriggerContext(input.Prompt, input.PageContext, steps, stepIndex, input.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	additionalContext := strings.Join([]string{
+		"Resolve the merge conflict blocking this epic integration.",
+		"Your task branch could not be merged into the epic integration branch.",
+		"Update the task branch so it merges cleanly into the epic branch, then push your changes.",
+		"Do not merge the task branch into the epic branch yourself; Helpin will retry the backend merge after this run completes.",
+		"Merge error: " + mergeErr.Error(),
+	}, "\n")
+	reason := "command_bar_merge_conflict"
+	parentRunID := run.ID
+	event := &model.AgentRunEventContext{
+		RunID:  &run.ID,
+		Reason: &reason,
+	}
+	actor := stringPtrIfNotEmpty(input.ActorID)
+	child, err := s.startTargetRun(ctx, input.WorkspaceID, step.Target.EntityType, step.Target.EntityID, model.StartAgentRunRequest{
+		AgentID:           forgeStep.AgentID,
+		AdditionalContext: &additionalContext,
+		AllowedTools:      forgeStep.AllowedTools,
+	}, actor, triggerContext, event, &parentRunID)
+	if err != nil {
+		return nil, err
+	}
+	output := commandBarOrchestrationOutput{
+		Type:            step.StepType,
+		Status:          "resolving_conflict",
+		Message:         "Forge is resolving a merge conflict before Helpin retries the task-to-epic merge.",
+		ConflictRunID:   child.ID,
+		ConflictAttempt: existing.ConflictAttempt + 1,
+	}
+	raw, err := json.Marshal(output)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	run.Status = model.AgentRunStatusRunning
+	run.ExecutionStage = strPtr("resolving_conflict")
+	run.OutputSummary = raw
+	run.LastHeartbeatAt = &now
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return nil, err
+	}
+	s.runRepo.Notify(ctx, run)
+	return run, nil
+}
+
+func commandBarForgeStepForTarget(steps []model.CommandBarPlanStep, taskID string) (model.CommandBarPlanStep, bool) {
+	for _, step := range steps {
+		if step.Target.EntityID == taskID && normalizePresetKey(step.AgentKey) == model.AgentPresetCodeBuilder {
+			return step, true
+		}
+	}
+	for _, step := range steps {
+		if step.Target.EntityID == taskID && strings.EqualFold(strings.TrimSpace(step.AgentName), "Forge") {
+			return step, true
+		}
+	}
+	return model.CommandBarPlanStep{}, false
+}
+
 func commandBarStepIndexForRun(runIDsByStep map[int]string, runID string) int {
 	for index, id := range runIDsByStep {
 		if id == runID {
 			return index
 		}
 	}
-	return 0
+	return -1
 }
 
 func (s *AgentService) advanceFanOutCommandBarPlan(ctx context.Context, run *model.AgentRun, payload commandBarTriggerContextPayload) (*model.AgentRun, error) {
@@ -4911,13 +5199,20 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 	if !okLens {
 		lens, okLens = findCommandBarCandidateByName(taskCandidates, "lens")
 	}
-	if !okForge || !okLens {
+	commandAgent, okCommandAgent := findCommandBarCandidateByPreset(commandBarAllAgentCandidates(agents), model.AgentPresetCommandAgent)
+	if !okCommandAgent {
+		commandAgent, okCommandAgent = findCommandBarCandidateByName(commandBarAllAgentCandidates(agents), "Command Agent")
+	}
+	if !okForge || !okLens || !okCommandAgent {
 		missing := []string{}
 		if !okForge {
 			missing = append(missing, "Forge")
 		}
 		if !okLens {
 			missing = append(missing, "Lens")
+		}
+		if !okCommandAgent {
+			missing = append(missing, "Command Agent")
 		}
 		return &model.CommandBarParseResponse{
 			Status:      model.CommandBarParseStatusNoMatchingAgent,
@@ -4941,11 +5236,21 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 		return strings.Compare(a.ID, b.ID)
 	})
 	links := s.commandBarTaskDependencyLinks(ctx, workspaceID, tasks)
-	steps := make([]model.CommandBarPlanStep, 0, min(len(tasks)*2, maxCommandBarPlanSteps))
+	steps := make([]model.CommandBarPlanStep, 0, min(len(tasks)*3+2, maxCommandBarPlanSteps))
+	ensureEpicBranchIndex := len(steps)
+	steps = append(steps, model.CommandBarPlanStep{
+		AgentID:      commandAgent.ID,
+		AgentKey:     commandAgent.PresetKey,
+		AgentName:    commandAgent.Name,
+		PlanKind:     model.CommandBarPlanKindTaskPipeline,
+		StepType:     model.CommandBarStepTypeEnsureEpicBranch,
+		Target:       pageContext,
+		Instructions: fmt.Sprintf("Create or reuse the epic integration branch for %q from the configured base branch, then configure child task branches to use that epic branch as base.", pageContext.DisplayTitle),
+	})
 	forgeStepByTask := map[string]int{}
-	lensStepByTask := map[string]int{}
+	mergeStepByTask := map[string]int{}
 	for _, task := range tasks {
-		if len(steps)+2 > maxCommandBarPlanSteps {
+		if len(steps)+3+1 > maxCommandBarPlanSteps {
 			break
 		}
 		target := model.CommandBarPageContext{
@@ -4959,15 +5264,15 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 		forgeIndex := len(steps)
 		forgeStepByTask[task.ID] = forgeIndex
 		steps = append(steps, model.CommandBarPlanStep{
-			AgentID:      forge.ID,
-			AgentKey:     forge.PresetKey,
-			AgentName:    forge.Name,
-			PlanKind:     model.CommandBarPlanKindTaskPipeline,
-			Target:       target,
-			Instructions: fmt.Sprintf("Complete the implementation work for %s. Respect task dependencies; this task is part of epic %q. Do not run Lens yourself; Helpin schedules review as the next command-bar step.", commandBarTaskDisplayTitle(task), pageContext.DisplayTitle),
+			AgentID:              forge.ID,
+			AgentKey:             forge.PresetKey,
+			AgentName:            forge.Name,
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			Target:               target,
+			Instructions:         fmt.Sprintf("Complete the implementation work for %s on its task branch. The task branch is based on this epic's integration branch. Respect task dependencies; this task is part of epic %q. Do not run Lens yourself; Helpin schedules review as the next command-bar step.", commandBarTaskDisplayTitle(task), pageContext.DisplayTitle),
+			DependsOnStepIndexes: []int{ensureEpicBranchIndex},
 		})
 		lensIndex := len(steps)
-		lensStepByTask[task.ID] = lensIndex
 		steps = append(steps, model.CommandBarPlanStep{
 			AgentID:              lens.ID,
 			AgentKey:             lens.PresetKey,
@@ -4977,17 +5282,47 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 			Instructions:         fmt.Sprintf("Review the completed Forge work for %s. Use the linked Forge run as prior-step context when available.", commandBarTaskDisplayTitle(task)),
 			DependsOnStepIndexes: []int{forgeIndex},
 		})
+		mergeIndex := len(steps)
+		mergeStepByTask[task.ID] = mergeIndex
+		steps = append(steps, model.CommandBarPlanStep{
+			AgentID:              commandAgent.ID,
+			AgentKey:             commandAgent.PresetKey,
+			AgentName:            commandAgent.Name,
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			StepType:             model.CommandBarStepTypeMergeTaskToEpic,
+			Target:               target,
+			Instructions:         fmt.Sprintf("Merge %s's task branch into the epic integration branch after Lens completes.", commandBarTaskDisplayTitle(task)),
+			DependsOnStepIndexes: []int{lensIndex},
+		})
 	}
 	for _, link := range links {
-		sourceLens, okSource := lensStepByTask[link.SourceTaskID]
+		sourceMerge, okSource := mergeStepByTask[link.SourceTaskID]
 		targetForge, okTarget := forgeStepByTask[link.TargetTaskID]
 		if !okSource || !okTarget {
 			continue
 		}
-		steps[targetForge].DependsOnStepIndexes = appendUniqueInt(steps[targetForge].DependsOnStepIndexes, sourceLens)
+		steps[targetForge].DependsOnStepIndexes = appendUniqueInt(steps[targetForge].DependsOnStepIndexes, sourceMerge)
 	}
 	if len(steps) == 0 {
 		return nil
+	}
+	finalDeps := make([]int, 0, len(mergeStepByTask))
+	for _, task := range tasks {
+		if mergeIndex, ok := mergeStepByTask[task.ID]; ok {
+			finalDeps = append(finalDeps, mergeIndex)
+		}
+	}
+	if len(finalDeps) > 0 && len(steps)+1 <= maxCommandBarPlanSteps {
+		steps = append(steps, model.CommandBarPlanStep{
+			AgentID:              commandAgent.ID,
+			AgentKey:             commandAgent.PresetKey,
+			AgentName:            commandAgent.Name,
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			StepType:             model.CommandBarStepTypeOpenEpicPullRequest,
+			Target:               pageContext,
+			Instructions:         fmt.Sprintf("Open or reuse the final pull request from the epic integration branch for %q into the configured base branch.", pageContext.DisplayTitle),
+			DependsOnStepIndexes: finalDeps,
+		})
 	}
 	resp := commandBarMultiStepPlanResponse(steps, "Prepared a dependency-aware Forge then Lens pipeline across epic tasks.", taskCandidates)
 	resp.Plan.PlanKind = model.CommandBarPlanKindTaskPipeline

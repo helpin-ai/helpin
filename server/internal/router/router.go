@@ -833,6 +833,8 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMEdit)).Delete("/epics/{id}", h.PMEpic.Delete)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/tasks", h.PMEpic.ListTasks)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/activity", h.PMEpic.ListActivity)
+				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/delivery-target", h.Git.GetEpicDeliveryTarget)
+				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/delivery-target", h.Git.UpdateEpicDeliveryTarget)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/epics/{id}/health", h.PMEpic.UpdateHealth)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/epics/{id}/associations", h.Associations.ListEpicAssociations)
 				// Sprints (PM) — pm.read / pm.edit

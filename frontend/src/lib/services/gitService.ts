@@ -8,12 +8,14 @@ import type {
   GitBranch,
   GitAvailableRepo,
   GitRepository,
+  EpicDeliveryTarget,
   TaskDeliveryTarget,
   TaskGitLink,
   CreateGitIntegrationRequest,
   UpdateGitIntegrationRequest,
   CreateBranchRequest,
   UpdateGitRepositoryRequest,
+  UpdateEpicDeliveryTargetRequest,
   UpdateTaskDeliveryTargetRequest,
   WireGitRepositoriesConflictResponse,
   WireGitRepositoriesRequest,
@@ -118,6 +120,10 @@ export const gitService = {
     api.get<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`),
   updateTaskDeliveryTarget: (workspaceId: string, taskId: string, payload: UpdateTaskDeliveryTargetRequest) =>
     api.put<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`, payload),
+  getEpicDeliveryTarget: (workspaceId: string, epicId: string) =>
+    api.get<EpicDeliveryTarget>(`/pm/epics/${epicId}/delivery-target${qs(workspaceId)}`),
+  updateEpicDeliveryTarget: (workspaceId: string, epicId: string, payload: UpdateEpicDeliveryTargetRequest) =>
+    api.put<EpicDeliveryTarget>(`/pm/epics/${epicId}/delivery-target${qs(workspaceId)}`, payload),
   createBranch: (workspaceId: string, taskId: string, payload: CreateBranchRequest) =>
     api.post<TaskGitLink>(`/pm/tasks/${taskId}/create-branch${qs(workspaceId)}`, payload),
   /** @deprecated Use getTaskGitLinks instead */

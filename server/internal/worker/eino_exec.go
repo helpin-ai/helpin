@@ -176,24 +176,20 @@ func (f *EinoModelFactory) Resolve(ctx context.Context, agent *appmodel.Agent, t
 	return withTools, modelName, nil
 }
 
-func (f *EinoModelFactory) ResolveAgentic(ctx context.Context, agent *appmodel.Agent, tools []ToolDefinition) (einomodel.AgenticModel, string, error) {
+func (f *EinoModelFactory) ResolveAgentic(ctx context.Context, agent *appmodel.Agent, tools []ToolDefinition) (einomodel.AgenticModel, string, []einomodel.Option, error) {
 	provider, modelName := resolveProviderAndModel(agent)
 	baseModel, err := f.resolveAgenticBaseModel(ctx, provider, modelName)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	toolInfos, err := toEinoToolInfos(tools)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	if len(toolInfos) == 0 {
-		return baseModel, modelName, nil
+		return baseModel, modelName, nil, nil
 	}
-	withTools, err := baseModel.WithTools(toolInfos)
-	if err != nil {
-		return nil, "", err
-	}
-	return withTools, modelName, nil
+	return baseModel, modelName, []einomodel.Option{einomodel.WithTools(toolInfos)}, nil
 }
 
 func (f *EinoModelFactory) resolveBaseModel(ctx context.Context, provider, modelName string) (einomodel.ToolCallingChatModel, error) {
@@ -222,7 +218,7 @@ func (f *EinoModelFactory) resolveAgenticBaseModel(ctx context.Context, provider
 			return nil, fmt.Errorf("openai API key is not configured")
 		}
 		maxTokens := defaultNativeMaxTokensForProvider(provider)
-		return agenticopenai.New(ctx, &agenticopenai.Config{
+		return agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 			APIKey:    f.OpenAIAPIKey,
 			BaseURL:   resolveOpenAIResponsesBaseURL(f.OpenAIBaseURL),
 			Model:     modelName,
@@ -233,7 +229,7 @@ func (f *EinoModelFactory) resolveAgenticBaseModel(ctx context.Context, provider
 			return nil, fmt.Errorf("openrouter API key is not configured")
 		}
 		maxTokens := defaultNativeMaxTokensForProvider(provider)
-		return agenticopenai.New(ctx, &agenticopenai.Config{
+		return agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 			APIKey:    f.OpenRouterKey,
 			BaseURL:   resolveOpenRouterBaseURL(f.OpenRouterURL),
 			Model:     modelName,
@@ -444,7 +440,7 @@ func executeWithEinoAgentic(
 	onEvent func(ExecutionEvent),
 	turnLocalInstructions string,
 ) (*ExecutionResult, error) {
-	modelWithTools, _, err := factory.ResolveAgentic(ctx, agent, tools)
+	agenticModel, _, agenticOptions, err := factory.ResolveAgentic(ctx, agent, tools)
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +471,9 @@ func executeWithEinoAgentic(
 	}
 
 	for step := 0; step < maxSteps; step++ {
-		assistantMsg, assistantBlocks, usage, continuation, assistantMessageID, err := generateAssistantAgenticMessage(ctx, modelWithTools, messages, onEvent, continuationAgenticOptions(continuationResponseID)...)
+		modelOptions := append([]einomodel.Option{}, agenticOptions...)
+		modelOptions = append(modelOptions, continuationAgenticOptions(continuationResponseID)...)
+		assistantMsg, assistantBlocks, usage, continuation, assistantMessageID, err := generateAssistantAgenticMessage(ctx, agenticModel, messages, onEvent, modelOptions...)
 		if err != nil {
 			return nil, err
 		}
@@ -521,7 +519,7 @@ func executeWithEinoAgentic(
 			})
 			modelVisibleOutput := prepareToolResultForModel(executed.ToolName, executed.Output, executed.IsError)
 			logNativeToolResultForModel(ctx, execCtx, executed, modelVisibleOutput)
-			toolResultMessages = append(toolResultMessages, schema.FunctionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, modelVisibleOutput.Content))
+			toolResultMessages = append(toolResultMessages, functionToolResultAgenticMessage(executed.ToolCallID, executed.ToolName, modelVisibleOutput.Content))
 			if IsHumanInteractionTool(executed.ToolName) {
 				stopAfterToolRound = true
 			}
@@ -545,6 +543,22 @@ func continuationAgenticOptions(responseID string) []einomodel.Option {
 		agenticopenai.WithExtraFields(map[string]any{
 			"previous_response_id": responseID,
 		}),
+	}
+}
+
+func functionToolResultAgenticMessage(callID, name, content string) *schema.AgenticMessage {
+	return &schema.AgenticMessage{
+		Role: schema.AgenticRoleTypeUser,
+		ContentBlocks: []*schema.ContentBlock{
+			schema.NewContentBlock(&schema.FunctionToolResult{
+				CallID: callID,
+				Name:   name,
+				Content: []*schema.FunctionToolResultContentBlock{{
+					Type: schema.FunctionToolResultContentBlockTypeText,
+					Text: &schema.UserInputText{Text: content},
+				}},
+			}),
+		},
 	}
 }
 
@@ -839,7 +853,7 @@ func toOpenAIContinuationAgenticMessages(history []ExecutionMessage, turnLocalIn
 				if strings.TrimSpace(modelVisibleOutput.Content) == "" {
 					continue
 				}
-				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, modelVisibleOutput.Content))
+				messages = append(messages, functionToolResultAgenticMessage(block.ToolCallID, block.ToolName, modelVisibleOutput.Content))
 			}
 		case "assistant":
 			// With previous_response_id, OpenAI already has prior assistant output in
@@ -909,7 +923,7 @@ func toAgenticMessagesWithTurnLocalInstructions(systemPrompt string, history []E
 				if strings.TrimSpace(modelVisibleOutput.Content) == "" {
 					continue
 				}
-				messages = append(messages, schema.FunctionToolResultAgenticMessage(block.ToolCallID, block.ToolName, modelVisibleOutput.Content))
+				messages = append(messages, functionToolResultAgenticMessage(block.ToolCallID, block.ToolName, modelVisibleOutput.Content))
 			}
 		default:
 			return nil, fmt.Errorf("unsupported execution message role %q", msg.Role)

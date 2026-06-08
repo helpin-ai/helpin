@@ -673,6 +673,48 @@ func (r *TaskDeliveryTargetRepository) Save(ctx context.Context, target *model.T
 	return nil
 }
 
+// EpicDeliveryTargetRepository handles current delivery target state for epics.
+type EpicDeliveryTargetRepository struct {
+	db *gorm.DB
+}
+
+// NewEpicDeliveryTargetRepository creates a new EpicDeliveryTargetRepository.
+func NewEpicDeliveryTargetRepository(db *gorm.DB) *EpicDeliveryTargetRepository {
+	return &EpicDeliveryTargetRepository{db: db}
+}
+
+// GetByEpic returns the delivery target for an epic.
+func (r *EpicDeliveryTargetRepository) GetByEpic(ctx context.Context, workspaceID, epicID string) (*model.EpicDeliveryTarget, error) {
+	var target model.EpicDeliveryTarget
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND epic_id = ?", workspaceID, epicID).
+		First(&target).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get epic delivery target: %w", err)
+	}
+	return &target, nil
+}
+
+// Save persists an epic delivery target, upserting on the epic_id unique index.
+func (r *EpicDeliveryTargetRepository) Save(ctx context.Context, target *model.EpicDeliveryTarget) error {
+	if err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "epic_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"repository_id", "repo_full_name", "integration_id",
+				"base_branch", "epic_branch", "delivery_state",
+				"final_pr_number", "final_pr_title", "final_pr_url", "final_pr_status",
+				"last_commit_sha", "last_run_id", "last_synced_at", "updated_at",
+			}),
+		}).
+		Create(target).Error; err != nil {
+		return fmt.Errorf("save epic delivery target: %w", err)
+	}
+	return nil
+}
+
 // TaskGitLinkRepository handles DB operations for task git links.
 type TaskGitLinkRepository struct {
 	db *gorm.DB

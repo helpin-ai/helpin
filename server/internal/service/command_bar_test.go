@@ -2227,6 +2227,7 @@ func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
 		{ID: "agent-forge", Name: "Forge", PresetKey: model.AgentPresetCodeBuilder, AllowedTargets: json.RawMessage(`["task"]`)},
 		{ID: "agent-lens", Name: "Lens", PresetKey: model.AgentPresetReviewAgent, AllowedTargets: json.RawMessage(`["task"]`)},
 		{ID: "agent-atlas", Name: "Atlas", PresetKey: model.AgentPresetEpicPlanner, AllowedTargets: json.RawMessage(`["epic"]`)},
+		{ID: "agent-command", Name: "Command Agent", PresetKey: model.AgentPresetCommandAgent, AllowedTargets: json.RawMessage(`["epic","task"]`)},
 	}
 	resp := service.parseEpicTaskPipelineIntent(ctx, workspaceID, "We need to complete all tasks in these epics. do the ones that block the others first. fan out for tasks that can be run in parallel. for every task run forge and then lens.", model.CommandBarPageContext{
 		EntityType:   "epic",
@@ -2239,22 +2240,31 @@ func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
 	if resp.Plan.PlanKind != model.CommandBarPlanKindTaskPipeline {
 		t.Fatalf("expected task pipeline plan kind, got %q", resp.Plan.PlanKind)
 	}
-	if resp.Plan.RunCount != 6 {
-		t.Fatalf("expected 6 runs for 3 active tasks, got %d", resp.Plan.RunCount)
+	if resp.Plan.RunCount != 11 {
+		t.Fatalf("expected 11 runs for 3 active tasks, got %d", resp.Plan.RunCount)
 	}
 	steps := resp.Plan.Steps
-	for i := 0; i < len(steps); i += 2 {
-		if steps[i].AgentName != "Forge" || steps[i+1].AgentName != "Lens" {
-			t.Fatalf("expected Forge then Lens pair at steps %d/%d, got %s/%s", i, i+1, steps[i].AgentName, steps[i+1].AgentName)
+	if steps[0].StepType != model.CommandBarStepTypeEnsureEpicBranch {
+		t.Fatalf("expected first step to ensure epic branch, got %#v", steps[0])
+	}
+	for i := 1; i < 10; i += 3 {
+		if steps[i].AgentName != "Forge" || steps[i+1].AgentName != "Lens" || steps[i+2].StepType != model.CommandBarStepTypeMergeTaskToEpic {
+			t.Fatalf("expected Forge then Lens then merge at steps %d/%d/%d, got %s/%s/%s", i, i+1, i+2, steps[i].AgentName, steps[i+1].AgentName, steps[i+2].StepType)
 		}
 		if got := steps[i+1].DependsOnStepIndexes; len(got) != 1 || got[0] != i {
 			t.Fatalf("expected Lens step %d to depend on Forge step %d, got %#v", i+1, i, got)
 		}
+		if got := steps[i+2].DependsOnStepIndexes; len(got) != 1 || got[0] != i+1 {
+			t.Fatalf("expected merge step %d to depend on Lens step %d, got %#v", i+2, i+1, got)
+		}
 	}
-	if got := steps[4].DependsOnStepIndexes; !slices.Contains(got, 1) {
-		t.Fatalf("expected blocked task Forge step to depend on blocking task Lens step 1, got %#v", got)
+	if got := steps[7].DependsOnStepIndexes; !slices.Contains(got, 3) {
+		t.Fatalf("expected blocked task Forge step to depend on blocking task merge step 3, got %#v", got)
 	}
-	if strings.Contains(strings.Join([]string{steps[0].Target.EntityID, steps[2].Target.EntityID, steps[4].Target.EntityID}, ","), completedTask.ID) {
+	if steps[10].StepType != model.CommandBarStepTypeOpenEpicPullRequest {
+		t.Fatalf("expected final step to open epic pull request, got %#v", steps[10])
+	}
+	if strings.Contains(strings.Join([]string{steps[1].Target.EntityID, steps[4].Target.EntityID, steps[7].Target.EntityID}, ","), completedTask.ID) {
 		t.Fatalf("completed task should not be scheduled")
 	}
 
@@ -2269,10 +2279,10 @@ func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
 	if dependencyPromptResp.Plan.PlanKind != model.CommandBarPlanKindTaskPipeline {
 		t.Fatalf("expected dependency-aware prompt to avoid flat fan-out, got %q", dependencyPromptResp.Plan.PlanKind)
 	}
-	if dependencyPromptResp.Plan.RunCount != 6 {
-		t.Fatalf("expected dependency-aware prompt to schedule 6 runs, got %d", dependencyPromptResp.Plan.RunCount)
+	if dependencyPromptResp.Plan.RunCount != 11 {
+		t.Fatalf("expected dependency-aware prompt to schedule 11 runs, got %d", dependencyPromptResp.Plan.RunCount)
 	}
-	if got := dependencyPromptResp.Plan.Steps[4].DependsOnStepIndexes; !slices.Contains(got, 1) {
+	if got := dependencyPromptResp.Plan.Steps[7].DependsOnStepIndexes; !slices.Contains(got, 3) {
 		t.Fatalf("expected dependency-aware prompt to preserve blocks edge, got %#v", got)
 	}
 	if !slices.ContainsFunc(dependencyPromptResp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {

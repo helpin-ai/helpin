@@ -15,6 +15,12 @@ const (
 	CommandBarPlanKindTaskPipeline   = "task_pipeline_fan_out"
 	CommandBarPlanKindDAG            = "dag"
 
+	CommandBarStepTypeAgent                = ""
+	CommandBarStepTypeEnsureEpicBranch     = "ensure_epic_branch"
+	CommandBarStepTypeMergeTaskToEpic      = "merge_task_to_epic"
+	CommandBarStepTypeResolveMergeConflict = "resolve_merge_conflict"
+	CommandBarStepTypeOpenEpicPullRequest  = "open_epic_pr"
+
 	CommandBarPlanStatusRunning   = "running"
 	CommandBarPlanStatusCompleted = "completed"
 	CommandBarPlanStatusFailed    = "failed"
@@ -58,6 +64,7 @@ type CommandBarPlanStep struct {
 	AgentKey             string                `json:"agent_key,omitempty"`
 	AgentName            string                `json:"agent_name"`
 	PlanKind             string                `json:"plan_kind,omitempty"`
+	StepType             string                `json:"step_type,omitempty"`
 	Target               CommandBarPageContext `json:"target"`
 	Instructions         string                `json:"instructions"`
 	AllowedTools         []string              `json:"allowed_tools,omitempty"`

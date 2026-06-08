@@ -212,6 +212,7 @@ export interface CommandBarPlanStep {
   agent_key?: string;
   agent_name: string;
   plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out' | 'task_pipeline_fan_out' | 'dag';
+  step_type?: 'ensure_epic_branch' | 'merge_task_to_epic' | 'resolve_merge_conflict' | 'open_epic_pr';
   target: CommandBarPageContext;
   instructions: string;
   allowed_tools?: string[];

@@ -124,7 +124,7 @@ func TestNextAgenticStepStateUsesIncrementalToolResultsForContinuation(t *testin
 	}
 	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
 	toolResultMessages := []*schema.AgenticMessage{
-		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+		functionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
 	}
 
 	nextResponseID, nextMessages := nextAgenticStepState(
@@ -152,7 +152,7 @@ func TestNextAgenticStepStateAppendsAssistantAndToolsWithoutContinuation(t *test
 	}
 	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
 	toolResultMessages := []*schema.AgenticMessage{
-		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+		functionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
 	}
 
 	nextResponseID, nextMessages := nextAgenticStepState(
@@ -177,7 +177,7 @@ func TestNextAgenticStepStateDoesNotDuplicateAssistantWithoutContinuation(t *tes
 	}
 	assistantMsg := &schema.AgenticMessage{Role: schema.AgenticRoleTypeAssistant}
 	toolResultMessages := []*schema.AgenticMessage{
-		schema.FunctionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
+		functionToolResultAgenticMessage("call-1", "list_documents", "{\"ok\":true}"),
 	}
 
 	_, nextMessages := nextAgenticStepState(
@@ -532,7 +532,11 @@ func TestToAgenticMessagesCompactsLargeToolResultsForModelHistory(t *testing.T) 
 	if len(msgs[2].ContentBlocks) != 1 || msgs[2].ContentBlocks[0].FunctionToolResult == nil {
 		t.Fatalf("expected function tool result block, got %#v", msgs[2])
 	}
-	result := msgs[2].ContentBlocks[0].FunctionToolResult.Result
+	resultBlocks := msgs[2].ContentBlocks[0].FunctionToolResult.Content
+	if len(resultBlocks) != 1 || resultBlocks[0].Text == nil {
+		t.Fatalf("expected text function tool result content, got %#v", resultBlocks)
+	}
+	result := resultBlocks[0].Text.Text
 	if !strings.Contains(result, "truncated") {
 		t.Fatalf("expected compacted tool output marker, got %q", result)
 	}

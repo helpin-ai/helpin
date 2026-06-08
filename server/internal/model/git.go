@@ -244,6 +244,43 @@ func BuildTaskWorkingBranch(task *PMTask, teamDefault *PMTeamRepoDefault, worksp
 	return template
 }
 
+func BuildEpicWorkingBranch(epic *PMEpic, workspaceKey string) string {
+	epicKey := ""
+	if epic != nil && epic.ExternalID != nil {
+		epicKey = strings.TrimSpace(*epic.ExternalID)
+	}
+	if epicKey == "" && workspaceKey != "" && epic != nil {
+		epicKey = fmt.Sprintf("%s-epic-%s", strings.ToLower(workspaceKey), shortBranchID(epic.ID))
+	}
+	if epicKey == "" && epic != nil {
+		epicKey = "epic-" + shortBranchID(epic.ID)
+	}
+	if epicKey == "" {
+		epicKey = "epic"
+	}
+	name := ""
+	if epic != nil {
+		name = epic.Name
+	}
+	branch := strings.ToLower(fmt.Sprintf("epic/%s-%s", slugifyBranchToken(epicKey), slugifyBranchToken(name)))
+	branch = strings.Trim(branch, "/-")
+	if branch == "epic" || branch == "" {
+		return "epic/" + slugifyBranchToken(epicKey)
+	}
+	return branch
+}
+
+func shortBranchID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) > 8 {
+		return id[:8]
+	}
+	if id == "" {
+		return "unknown"
+	}
+	return id
+}
+
 func slugifyBranchToken(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	value = branchTokenSanitizer.ReplaceAllString(value, "-")
@@ -295,6 +332,30 @@ type TaskDeliveryTarget struct {
 
 func (TaskDeliveryTarget) TableName() string { return "task_delivery_targets" }
 
+// EpicDeliveryTarget stores the current integration branch for an epic.
+type EpicDeliveryTarget struct {
+	ID            string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	WorkspaceID   string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
+	EpicID        string     `json:"epic_id" gorm:"type:uuid;not null;uniqueIndex"`
+	RepositoryID  *string    `json:"repository_id" gorm:"type:uuid;index"`
+	RepoFullName  *string    `json:"repo_full_name"`
+	IntegrationID *string    `json:"integration_id" gorm:"type:uuid;index"`
+	BaseBranch    *string    `json:"base_branch"`
+	EpicBranch    *string    `json:"epic_branch"`
+	DeliveryState string     `json:"delivery_state" gorm:"not null;default:'unconfigured'"`
+	FinalPRNumber *int       `json:"final_pr_number"`
+	FinalPRTitle  *string    `json:"final_pr_title"`
+	FinalPRURL    *string    `json:"final_pr_url"`
+	FinalPRStatus *string    `json:"final_pr_status"`
+	LastCommitSHA *string    `json:"last_commit_sha"`
+	LastRunID     *string    `json:"last_run_id" gorm:"type:uuid"`
+	LastSyncedAt  *time.Time `json:"last_synced_at"`
+	CreatedAt     time.Time  `json:"created_at" gorm:"autoCreateTime"`
+	UpdatedAt     time.Time  `json:"updated_at" gorm:"autoUpdateTime"`
+}
+
+func (EpicDeliveryTarget) TableName() string { return "epic_delivery_targets" }
+
 // TaskGitLink links a task to a repo/branch/PR.
 type TaskGitLink struct {
 	ID            string    `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
@@ -345,6 +406,13 @@ type UpdateTaskDeliveryTargetRequest struct {
 	RepositoryID  *string `json:"repository_id"`
 	BaseBranch    *string `json:"base_branch"`
 	WorkingBranch *string `json:"working_branch"`
+}
+
+// UpdateEpicDeliveryTargetRequest updates the selected delivery target for an epic.
+type UpdateEpicDeliveryTargetRequest struct {
+	RepositoryID *string `json:"repository_id"`
+	BaseBranch   *string `json:"base_branch"`
+	EpicBranch   *string `json:"epic_branch"`
 }
 
 // SyncGitRepositoriesRequest controls manual repository synchronization.

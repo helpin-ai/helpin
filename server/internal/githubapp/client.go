@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -61,6 +62,13 @@ type PullRequest struct {
 	HeadSHA   string
 	UpdatedAt *time.Time
 	MergedAt  *time.Time
+}
+
+type EnsurePullRequestInput struct {
+	Head  string
+	Base  string
+	Title string
+	Body  string
 }
 
 type PullRequestFile struct {
@@ -666,6 +674,192 @@ func (c *Client) MergeBranch(ctx context.Context, installationID, owner, repo, b
 		return fmt.Errorf("merge conflict: %s", payload.Message)
 	}
 	return fmt.Errorf("github merge failed (%d): %s", resp.StatusCode, payload.Message)
+}
+
+// EnsureBranch creates branch from base when it does not already exist.
+func (c *Client) EnsureBranch(ctx context.Context, installationID, owner, repo, branch, base string) error {
+	if c == nil {
+		return fmt.Errorf("github app is not configured")
+	}
+	token, err := c.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return err
+	}
+	branch = strings.TrimSpace(branch)
+	base = strings.TrimSpace(base)
+	if branch == "" || base == "" {
+		return fmt.Errorf("branch and base are required")
+	}
+	if _, err := c.getGitHubRefSHA(ctx, token, owner, repo, branch); err == nil {
+		return nil
+	}
+	baseSHA, err := c.getGitHubRefSHA(ctx, token, owner, repo, base)
+	if err != nil {
+		return fmt.Errorf("resolve base branch: %w", err)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"ref": "refs/heads/" + branch,
+		"sha": baseSHA,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s/repos/%s/%s/git/refs", c.apiBaseURL, owner, repo), strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("build github create branch request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request github create branch: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == 201 || resp.StatusCode == 422 {
+		return nil
+	}
+	var payload struct {
+		Message string `json:"message"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&payload)
+	return fmt.Errorf("github create branch failed (%d): %s", resp.StatusCode, payload.Message)
+}
+
+func (c *Client) getGitHubRefSHA(ctx context.Context, token, owner, repo, branch string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/git/ref/heads/%s", c.apiBaseURL, owner, repo, branch), nil)
+	if err != nil {
+		return "", fmt.Errorf("build github ref request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request github ref: %w", err)
+	}
+	defer resp.Body.Close()
+	var payload struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+		Message string `json:"message"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&payload)
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("github ref lookup failed (%d): %s", resp.StatusCode, payload.Message)
+	}
+	if strings.TrimSpace(payload.Object.SHA) == "" {
+		return "", fmt.Errorf("github ref lookup returned empty sha")
+	}
+	return strings.TrimSpace(payload.Object.SHA), nil
+}
+
+// EnsurePullRequest creates or reuses an open pull request for head -> base.
+func (c *Client) EnsurePullRequest(ctx context.Context, installationID, owner, repo string, input EnsurePullRequestInput) (*PullRequest, error) {
+	if c == nil {
+		return nil, fmt.Errorf("github app is not configured")
+	}
+	token, err := c.MintInstallationToken(ctx, installationID)
+	if err != nil {
+		return nil, err
+	}
+	head := strings.TrimSpace(input.Head)
+	base := strings.TrimSpace(input.Base)
+	if head == "" || base == "" {
+		return nil, fmt.Errorf("head and base are required")
+	}
+	query := url.Values{}
+	query.Set("state", "open")
+	query.Set("head", owner+":"+head)
+	query.Set("base", base)
+	query.Set("per_page", "1")
+	var existing []githubPullRequestPayload
+	if err := c.doGitHubAppRequest(ctx, token, http.MethodGet, fmt.Sprintf("%s/repos/%s/%s/pulls?%s", c.apiBaseURL, owner, repo, query.Encode()), nil, &existing); err != nil {
+		return nil, err
+	}
+	if len(existing) > 0 {
+		return githubPullRequestFromPayload(existing[0]), nil
+	}
+	body := map[string]string{
+		"title": strings.TrimSpace(input.Title),
+		"body":  strings.TrimSpace(input.Body),
+		"head":  head,
+		"base":  base,
+	}
+	if body["title"] == "" {
+		body["title"] = fmt.Sprintf("Merge %s into %s", head, base)
+	}
+	var created githubPullRequestPayload
+	if err := c.doGitHubAppRequest(ctx, token, http.MethodPost, fmt.Sprintf("%s/repos/%s/%s/pulls", c.apiBaseURL, owner, repo), body, &created); err != nil {
+		return nil, err
+	}
+	return githubPullRequestFromPayload(created), nil
+}
+
+type githubPullRequestPayload struct {
+	Number    int        `json:"number"`
+	Title     string     `json:"title"`
+	HTMLURL   string     `json:"html_url"`
+	State     string     `json:"state"`
+	Merged    bool       `json:"merged"`
+	UpdatedAt *time.Time `json:"updated_at"`
+	MergedAt  *time.Time `json:"merged_at"`
+	Head      struct {
+		Ref string `json:"ref"`
+		SHA string `json:"sha"`
+	} `json:"head"`
+	Base struct {
+		Ref string `json:"ref"`
+	} `json:"base"`
+}
+
+func githubPullRequestFromPayload(payload githubPullRequestPayload) *PullRequest {
+	return &PullRequest{
+		Number:    payload.Number,
+		Title:     strings.TrimSpace(payload.Title),
+		HTMLURL:   strings.TrimSpace(payload.HTMLURL),
+		State:     strings.TrimSpace(payload.State),
+		Merged:    payload.Merged,
+		HeadRef:   strings.TrimSpace(payload.Head.Ref),
+		BaseRef:   strings.TrimSpace(payload.Base.Ref),
+		HeadSHA:   strings.TrimSpace(payload.Head.SHA),
+		UpdatedAt: payload.UpdatedAt,
+		MergedAt:  payload.MergedAt,
+	}
+}
+
+func (c *Client) doGitHubAppRequest(ctx context.Context, token, method, requestURL string, body any, out any) error {
+	var reader *strings.Reader
+	if body != nil {
+		raw, _ := json.Marshal(body)
+		reader = strings.NewReader(string(raw))
+	} else {
+		reader = strings.NewReader("")
+	}
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, reader)
+	if err != nil {
+		return fmt.Errorf("build github request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request github: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		var payload struct {
+			Message string `json:"message"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&payload)
+		return fmt.Errorf("github request failed (%d): %s", resp.StatusCode, payload.Message)
+	}
+	if out != nil {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return fmt.Errorf("decode github response: %w", err)
+		}
+	}
+	return nil
 }
 
 // GetPullRequest returns current pull request state from GitHub.

@@ -460,6 +460,39 @@ func (h *GitHandler) UpdateTaskDeliveryTarget(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, target)
 }
 
+// GetEpicDeliveryTarget handles GET /api/pm/epics/{id}/delivery-target.
+func (h *GitHandler) GetEpicDeliveryTarget(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	epicID := chi.URLParam(r, "id")
+
+	target, err := h.gitService.GetEpicDeliveryTarget(r.Context(), workspaceID, epicID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, target)
+}
+
+// UpdateEpicDeliveryTarget handles PUT /api/pm/epics/{id}/delivery-target.
+func (h *GitHandler) UpdateEpicDeliveryTarget(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	epicID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	var req model.UpdateEpicDeliveryTargetRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	target, err := h.gitService.UpdateEpicDeliveryTarget(r.Context(), workspaceID, epicID, req, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, target)
+}
+
 // CreateBranch handles POST /api/pm/tasks/{id}/create-branch.
 func (h *GitHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
