@@ -19,6 +19,8 @@ type DocsSearchRepository struct {
 	db *gorm.DB
 }
 
+const defaultPublicSearchLimit = 20
+
 // NewDocsSearchRepository creates a new DocsSearchRepository.
 func NewDocsSearchRepository(db *gorm.DB) *DocsSearchRepository {
 	return &DocsSearchRepository{db: db}
@@ -88,7 +90,7 @@ func (r *DocsSearchRepository) PublicSearch(ctx context.Context, workspaceID, lo
 		return nil, nil
 	}
 	if limit <= 0 || limit > 100 {
-		limit = 50
+		limit = defaultPublicSearchLimit
 	}
 
 	if r.db.Dialector.Name() != "postgres" {
@@ -404,12 +406,27 @@ func publicSearchTerms(value string) []string {
 		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
 	})
 	out := make([]string, 0, len(fields))
+	seen := map[string]struct{}{}
 	for _, field := range fields {
-		if len([]rune(field)) >= 2 {
-			out = append(out, field)
+		if len([]rune(field)) < 2 || isPublicSearchStopword(field) {
+			continue
 		}
+		if _, ok := seen[field]; ok {
+			continue
+		}
+		seen[field] = struct{}{}
+		out = append(out, field)
 	}
 	return out
+}
+
+func isPublicSearchStopword(term string) bool {
+	switch term {
+	case "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have", "how", "in", "into", "is", "it", "of", "on", "or", "that", "the", "this", "to", "what", "when", "where", "which", "with", "why", "you", "your":
+		return true
+	default:
+		return false
+	}
 }
 
 func publicSearchTypoTolerance(term string) int {
@@ -426,9 +443,8 @@ func buildPublicSearchSnippet(content, query string) string {
 	}
 	terms := publicSearchTerms(query)
 	start := 0
-	lowerContent := strings.ToLower(content)
 	for _, term := range terms {
-		if idx := strings.Index(lowerContent, term); idx >= 0 {
+		if idx := publicSearchTermIndex(content, term); idx >= 0 {
 			start = idx - 60
 			if start < 0 {
 				start = 0
@@ -446,12 +462,26 @@ func buildPublicSearchSnippet(content, query string) string {
 	}
 	escaped := html.EscapeString(snippet)
 	for _, term := range terms {
-		re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(html.EscapeString(term)))
-		escaped = re.ReplaceAllStringFunc(escaped, func(match string) string {
-			return "<mark>" + match + "</mark>"
-		})
+		escaped = markPublicSearchTerm(escaped, term)
 	}
 	return escaped
+}
+
+func publicSearchTermIndex(content, term string) int {
+	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])` + regexp.QuoteMeta(term) + `([^\p{L}\p{N}]|$)`)
+	loc := re.FindStringSubmatchIndex(content)
+	if loc == nil {
+		return -1
+	}
+	if loc[2] >= 0 {
+		return loc[2]
+	}
+	return loc[0]
+}
+
+func markPublicSearchTerm(content, term string) string {
+	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])(` + regexp.QuoteMeta(html.EscapeString(term)) + `)([^\p{L}\p{N}]|$)`)
+	return re.ReplaceAllString(content, `${1}<mark>${2}</mark>${3}`)
 }
 
 func levenshteinDistance(a, b string) int {

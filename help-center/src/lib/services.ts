@@ -99,7 +99,7 @@ export const helpCenterService = {
         multilingualEnabled,
         '/search',
         '/search',
-      )}?q=${encodeURIComponent(query)}${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}`,
+      )}?q=${encodeURIComponent(query)}&limit=12${spaceSlug ? `&space=${encodeURIComponent(spaceSlug)}` : ''}`,
     ),
 
   submitFeedback: (
