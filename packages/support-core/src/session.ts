@@ -77,6 +77,16 @@ export function createMemorySessionStorage(initial?: Partial<SessionSnapshot>): 
   }
 }
 
+export function createCookieSessionStorage(): SessionStorageAdapter {
+  return {
+    getAccessToken: () => null,
+    getRefreshToken: () => null,
+    getRememberMe: () => false,
+    setSession: () => {},
+    clearSession: () => {},
+  }
+}
+
 let activeSessionStorage: SessionStorageAdapter =
   typeof window === 'undefined' ? createMemorySessionStorage() : createBrowserSessionStorage()
 

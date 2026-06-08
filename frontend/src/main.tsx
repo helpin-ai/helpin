@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { configureSessionStorage, createBrowserSessionStorage } from '@helpin-ai/support-core'
+import { configureSessionStorage, createCookieSessionStorage } from '@helpin-ai/support-core'
 import { queryClient } from '@/lib/queryClient'
 import { clearClientSession, useAuthStore } from '@/stores/authStore'
 import { startTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
@@ -11,7 +11,7 @@ import { RoutePendingState } from '@/components/layout/RoutePendingState'
 import { routeTree } from './routeTree.gen'
 import './index.css'
 
-configureSessionStorage(createBrowserSessionStorage())
+configureSessionStorage(createCookieSessionStorage())
 
 function normalizePathname(pathname: string) {
   if (!pathname) return '/'
