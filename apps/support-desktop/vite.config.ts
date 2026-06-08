@@ -11,6 +11,7 @@ export default defineConfig({
   clearScreen: false,
   plugins: [react(), tailwindcss()],
   resolve: {
+    dedupe: ['react', 'react-dom', '@tanstack/react-query', 'zustand'],
     alias: [
       {
         find: '@/components/pm/task-detail/taskRouteNavigation',

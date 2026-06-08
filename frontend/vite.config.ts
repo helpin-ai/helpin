@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => {
     allowedHosts: ["helpin-dev-fe.tryunhide.com", "dev-azhar.helpin.ai"],
   },
   resolve: {
+    dedupe: ['react', 'react-dom', '@tanstack/react-query', 'zustand'],
     alias: {
       "@": path.resolve(__dirname, "./src"),
       "@helpin-ai/shared": path.resolve(__dirname, "../packages/shared/src/index.ts"),

@@ -202,12 +202,16 @@ export async function fetchWithSessionAuth(
 
 export function buildWorkspaceWebSocketUrl(apiBase: string, workspaceId: string): string {
   const token = getAccessToken()
-  if (!token || !workspaceId) {
+  if (!workspaceId) {
     return ''
   }
 
   const base = apiBase.replace(/^http/, 'ws').replace(/\/api\/?$/, '/api')
-  return `${base}/ws?token=${encodeURIComponent(token)}&workspace_id=${encodeURIComponent(workspaceId)}`
+  const params = new URLSearchParams({ workspace_id: workspaceId })
+  if (token) {
+    params.set('token', token)
+  }
+  return `${base}/ws?${params.toString()}`
 }
 
 export function startTokenRefreshTimer(apiBase: string): void {

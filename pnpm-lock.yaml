@@ -769,20 +769,16 @@ importers:
         version: 4.5.4(@types/node@25.6.0)(rollup@4.60.1)(typescript@5.9.3)(vite@6.4.1(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)(sass@1.51.0)(tsx@4.21.0))
 
   packages/support-core:
-    dependencies:
+    devDependencies:
       '@tanstack/react-query':
         specifier: ^5.90.21
-        version: 5.99.0(react@19.2.4)
-      react:
-        specifier: ^19.2.0
-        version: 19.2.4
-      zustand:
-        specifier: ^5.0.11
-        version: 5.0.12(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
-    devDependencies:
+        version: 5.99.0(react@19.2.5)
       '@types/react':
         specifier: ^19.2.7
         version: 19.2.14
+      react:
+        specifier: 19.2.5
+        version: 19.2.5
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -792,6 +788,9 @@ importers:
       vite-plugin-dts:
         specifier: ^4.5.3
         version: 4.5.4(@types/node@25.6.0)(rollup@4.60.1)(typescript@5.9.3)(vite@6.4.1(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)(sass@1.51.0)(tsx@4.21.0))
+      zustand:
+        specifier: ^5.0.11
+        version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
 
   packages/widget-core:
     dependencies:
@@ -14473,11 +14472,6 @@ snapshots:
       '@tanstack/query-core': 5.90.20
       react: 19.2.5
 
-  '@tanstack/react-query@5.99.0(react@19.2.4)':
-    dependencies:
-      '@tanstack/query-core': 5.99.0
-      react: 19.2.4
-
   '@tanstack/react-query@5.99.0(react@19.2.5)':
     dependencies:
       '@tanstack/query-core': 5.99.0
@@ -21996,11 +21990,6 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.14
 
-  use-sync-external-store@1.6.0(react@19.2.4):
-    dependencies:
-      react: 19.2.4
-    optional: true
-
   use-sync-external-store@1.6.0(react@19.2.5):
     dependencies:
       react: 19.2.5
@@ -22786,12 +22775,6 @@ snapshots:
       '@types/react': 19.2.14
       react: 19.2.5
       use-sync-external-store: 1.6.0(react@19.2.5)
-
-  zustand@5.0.12(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4)):
-    optionalDependencies:
-      '@types/react': 19.2.14
-      react: 19.2.4
-      use-sync-external-store: 1.6.0(react@19.2.4)
 
   zustand@5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5)):
     optionalDependencies:

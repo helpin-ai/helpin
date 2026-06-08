@@ -10,15 +10,18 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@tanstack/react-query": "^5.90.21",
     "react": "^19.2.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@tanstack/react-query": "^5.90.21",
     "@types/react": "^19.2.7",
+    "react": "19.2.5",
     "typescript": "~5.9.3",
     "vite": "^6.3.5",
-    "vite-plugin-dts": "^4.5.3"
+    "vite-plugin-dts": "^4.5.3",
+    "zustand": "^5.0.11"
   }
 }
