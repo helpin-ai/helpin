@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -16,9 +15,6 @@ import (
 func ValidateTimezone(tz string) error {
 	if tz == "" || tz == "UTC" || tz == "Local" {
 		return nil
-	}
-	if !strings.Contains(tz, "/") {
-		return fmt.Errorf("invalid timezone %q: expected IANA area/location identifier", tz)
 	}
 	_, err := time.LoadLocation(tz)
 	if err != nil {

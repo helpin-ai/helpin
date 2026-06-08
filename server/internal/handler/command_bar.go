@@ -212,6 +212,18 @@ func (h *CommandBarHandler) CancelPlan(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (h *CommandBarHandler) ResumePlan(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	planID := chi.URLParam(r, "planID")
+	resp, err := h.commandBarService.ResumePlan(r.Context(), workspaceID, actorID, planID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *CommandBarHandler) RetryPlan(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())

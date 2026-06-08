@@ -1822,6 +1822,9 @@ func (s *GitService) MergeTaskBranchIntoEpic(ctx context.Context, workspaceID, t
 	if err := s.MergeBranch(ctx, workspaceID, taskID, strings.TrimSpace(*epicTarget.EpicBranch)); err != nil {
 		return nil, err
 	}
+	if err := s.UpdateDeliveryStatusAfterMerge(ctx, workspaceID, taskID, "merged"); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	epicTarget.DeliveryState = "integrating"
 	epicTarget.LastSyncedAt = &now

@@ -399,6 +399,12 @@ export interface CommandBarCancelPlanResponse {
   runs?: AgentRun[];
 }
 
+export interface CommandBarResumePlanResponse {
+  plan: CommandBarPlanSummary;
+  run?: AgentRun;
+  runs?: AgentRun[];
+}
+
 export interface CommandBarRetryPlanResponse {
   plan: CommandBarPlanSummary;
   run?: AgentRun;

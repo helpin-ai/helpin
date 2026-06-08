@@ -267,6 +267,12 @@ type CommandBarCancelPlanResponse struct {
 	Runs []AgentRun            `json:"runs,omitempty"`
 }
 
+type CommandBarResumePlanResponse struct {
+	Plan CommandBarPlanSummary `json:"plan"`
+	Run  *AgentRun             `json:"run,omitempty"`
+	Runs []AgentRun            `json:"runs,omitempty"`
+}
+
 type CommandBarRetryPlanRequest struct {
 	StepIndex int `json:"step_index"`
 }

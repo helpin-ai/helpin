@@ -7,7 +7,9 @@ import {
   ArrowDown01Icon,
   ArrowUpRight01Icon,
   Bookmark01Icon,
+  Cancel01Icon,
   Loading01Icon,
+  PlayIcon,
   RotateLeft01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
@@ -36,7 +38,7 @@ import {
   type ActivityState,
 } from './utils';
 
-export type StripAction = 'rerun' | 'save_as_agent' | 'open' | 'retry' | 'cancel';
+export type StripAction = 'rerun' | 'save_as_agent' | 'open' | 'retry' | 'resume' | 'cancel';
 
 interface PlanStripProps {
   kind: 'plan';
@@ -321,6 +323,30 @@ function PlanStrip({
             icon={busy ? Loading01Icon : RotateLeft01Icon}
             label={busy ? 'Retrying…' : 'Retry'}
             onClick={() => onAction('retry')}
+            disabled={busy}
+          />
+          {hasTranscript ? null : (
+            <ActionChip
+              icon={ArrowUpRight01Icon}
+              label="Open"
+              onClick={() => onAction('open')}
+            />
+          )}
+        </ChipRow>
+      ) : null}
+
+      {onAction && state === 'running' ? (
+        <ChipRow>
+          <ActionChip
+            icon={busy ? Loading01Icon : PlayIcon}
+            label={busy ? 'Resuming…' : 'Resume'}
+            onClick={() => onAction('resume')}
+            disabled={busy}
+          />
+          <ActionChip
+            icon={Cancel01Icon}
+            label="Cancel"
+            onClick={() => onAction('cancel')}
             disabled={busy}
           />
           {hasTranscript ? null : (

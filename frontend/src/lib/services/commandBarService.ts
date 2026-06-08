@@ -10,6 +10,7 @@ import type {
   CommandBarPlanListResponse,
   CommandBarParseRequest,
   CommandBarParseResponse,
+  CommandBarResumePlanResponse,
   CommandBarRetryPlanResponse,
   CommandBarToolCatalogResponse,
   CommandBarUnmetIntent,
@@ -43,6 +44,8 @@ export const commandBarService = {
     api.post<CommandBarDispatchResponse>(`/command-bar/plans/dispatch${qs(workspaceId)}`, payload),
   cancelPlan: (workspaceId: string, planId: string) =>
     api.post<CommandBarCancelPlanResponse>(`/command-bar/plans/${encodeURIComponent(planId)}/cancel${qs(workspaceId)}`),
+  resumePlan: (workspaceId: string, planId: string) =>
+    api.post<CommandBarResumePlanResponse>(`/command-bar/plans/${encodeURIComponent(planId)}/resume${qs(workspaceId)}`),
   retryPlan: (workspaceId: string, planId: string, stepIndex: number) =>
     api.post<CommandBarRetryPlanResponse>(`/command-bar/plans/${encodeURIComponent(planId)}/retry${qs(workspaceId)}`, { step_index: stepIndex }),
   dismissPlans: (workspaceId: string, planIds: string[]) =>

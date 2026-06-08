@@ -50,7 +50,7 @@ func mustExecUserSettings(t *testing.T, db *gorm.DB, query string, args ...any) 
 // ---------------------------------------------------------------------------
 
 func TestValidateTimezone_ValidIANA(t *testing.T) {
-	valid := []string{"", "UTC", "Local", "America/New_York", "Europe/London", "Asia/Tokyo", "Pacific/Auckland"}
+	valid := []string{"", "UTC", "Local", "America/New_York", "Europe/London", "Asia/Tokyo", "Pacific/Auckland", "Japan"}
 	for _, tz := range valid {
 		if err := ValidateTimezone(tz); err != nil {
 			t.Errorf("ValidateTimezone(%q) returned error: %v", tz, err)

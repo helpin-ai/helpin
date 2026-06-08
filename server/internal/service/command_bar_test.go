@@ -14,6 +14,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -50,6 +52,25 @@ func (s *scriptedCommandBarLLM) ChatCompletion(ctx context.Context, req llm.Chat
 		return &llm.ChatResponse{Content: response}, nil
 	}
 	return &llm.ChatResponse{Content: s.response}, nil
+}
+
+type commandBarSignalTemporalClient struct {
+	tclient.Client
+	err           error
+	signalName    string
+	workflowID    string
+	signaledRunID string
+}
+
+func (c *commandBarSignalTemporalClient) SignalWorkflow(_ context.Context, workflowID, workflowRunID, signalName string, arg interface{}) error {
+	c.workflowID = workflowID
+	c.signalName = signalName
+	payload, ok := arg.(temporalapp.CommandBarRunCompletedSignal)
+	if !ok {
+		return fmt.Errorf("unexpected command bar signal payload type %T", arg)
+	}
+	c.signaledRunID = payload.RunID
+	return c.err
 }
 
 func TestParseExplicitNamedAgentsPreservesRequestOrder(t *testing.T) {
@@ -1119,29 +1140,41 @@ func TestCommandBarSchedulerReadinessRequiresCompletedDependencies(t *testing.T)
 		runningRunID:   {ID: runningRunID, Status: model.AgentRunStatusRunning},
 	}
 
-	parentRunID, ready := commandBarStepDependenciesSatisfied(
-		model.CommandBarPlanStep{DependsOnStepIndexes: []int{0}},
-		map[int]string{0: completedRunID},
-		runsByID,
-	)
-	if !ready || parentRunID == nil || *parentRunID != completedRunID {
-		t.Fatalf("expected completed dependency to make step ready, parent=%v ready=%v", parentRunID, ready)
+	linearSteps := []model.CommandBarPlanStep{
+		{},
+		{DependsOnStepIndexes: []int{0}},
+	}
+	if !commandBarStepDependenciesSatisfied(linearSteps[1], map[int]string{0: completedRunID}, runsByID) {
+		t.Fatalf("expected completed dependency to make step ready")
+	}
+	parentRunID := commandBarParentRunIDForStep(linearSteps, 1, map[int]string{0: completedRunID}, runsByID)
+	if parentRunID == nil || *parentRunID != completedRunID {
+		t.Fatalf("expected one-to-one dependency to provide parent run %q, got %v", completedRunID, parentRunID)
 	}
 
-	if _, ready := commandBarStepDependenciesSatisfied(
+	if commandBarStepDependenciesSatisfied(
 		model.CommandBarPlanStep{DependsOnStepIndexes: []int{1}},
 		map[int]string{1: runningRunID},
 		runsByID,
-	); ready {
+	) {
 		t.Fatalf("expected running dependency to keep step blocked")
 	}
 
-	if _, ready := commandBarStepDependenciesSatisfied(
+	if commandBarStepDependenciesSatisfied(
 		model.CommandBarPlanStep{DependsOnStepIndexes: []int{2}},
 		map[int]string{},
 		runsByID,
-	); ready {
+	) {
 		t.Fatalf("expected missing dependency run to keep step blocked")
+	}
+
+	sharedDependencySteps := []model.CommandBarPlanStep{
+		{},
+		{DependsOnStepIndexes: []int{0}},
+		{DependsOnStepIndexes: []int{0}},
+	}
+	if parent := commandBarParentRunIDForStep(sharedDependencySteps, 1, map[int]string{0: completedRunID}, runsByID); parent != nil {
+		t.Fatalf("expected shared dependency fan-out to avoid parent_run_id, got %v", *parent)
 	}
 }
 
@@ -1178,6 +1211,131 @@ func TestCommandBarExistingChildRunForParent(t *testing.T) {
 	}
 	if got := service.commandBarExistingChildRunForParent(ctx, workspaceID, nil); got != nil {
 		t.Fatalf("expected nil for nil parent run id, got %#v", got)
+	}
+}
+
+func TestCommandBarExistingRunForStepRequiresExactCommandBarStep(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	service := &AgentService{runRepo: runRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	parentRunID := "33333333-3333-3333-3333-333333333333"
+	childRunID := "44444444-4444-4444-4444-444444444444"
+	taskID := "55555555-5555-5555-5555-555555555555"
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:   "agent-forge",
+			AgentName: "Forge",
+			Target:    model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task"},
+		},
+		{
+			AgentID:              "agent-lens",
+			AgentName:            "Lens",
+			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task"},
+			DependsOnStepIndexes: []int{0},
+		},
+	}
+	trigger, err := buildCommandBarTriggerContext("run forge then lens", model.CommandBarPageContext{EntityType: "task", EntityID: taskID}, steps, 1, planID)
+	if err != nil {
+		t.Fatalf("build trigger: %v", err)
+	}
+	input, err := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             childRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        "agent-lens",
+		TargetType:     "task",
+		TargetID:       taskID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ParentRunID:    &parentRunID,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusQueued,
+		Input:          input,
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create child run: %v", err)
+	}
+
+	existing := service.commandBarExistingRunForStep(ctx, workspaceID, &parentRunID, planID, steps, 1)
+	if existing == nil || existing.ID != childRunID {
+		t.Fatalf("expected exact existing child run %q, got %#v", childRunID, existing)
+	}
+	if got := service.commandBarExistingRunForStep(ctx, workspaceID, &parentRunID, planID, steps, 0); got != nil {
+		t.Fatalf("expected mismatched step not to reuse child run, got %#v", got)
+	}
+}
+
+func TestCreateRunAllowsConflictChildWhenActiveRunIsParent(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	service := &AgentService{runRepo: runRepo, agentRepo: agentRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	taskID := "22222222-2222-2222-2222-222222222222"
+	parentRunID := "33333333-3333-3333-3333-333333333333"
+	forgeAgent := &model.Agent{
+		ID:                    "44444444-4444-4444-4444-444444444444",
+		WorkspaceID:           workspaceID,
+		Name:                  "Forge",
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             parentRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        "55555555-5555-5555-5555-555555555555",
+		TargetType:     "task",
+		TargetID:       taskID,
+		RuntimeKind:    "internal",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create parent run: %v", err)
+	}
+
+	_, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          forgeAgent,
+		targetType:     "task",
+		targetID:       taskID,
+		parentRunID:    &parentRunID,
+		taskID:         &taskID,
+		input:          []byte("{}"),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err == nil || !strings.Contains(err.Error(), "already active") {
+		t.Fatalf("expected active parent to block normal child run, got %v", err)
+	}
+
+	_, err = service.createRun(ctx, createRunParams{
+		workspaceID:          workspaceID,
+		agent:                forgeAgent,
+		targetType:           "task",
+		targetID:             taskID,
+		parentRunID:          &parentRunID,
+		allowActiveParentRun: true,
+		taskID:               &taskID,
+		input:                []byte("{}"),
+		invocationMode:       model.InvocationModeAutonomous,
+	})
+	if err == nil || strings.Contains(err.Error(), "already active") {
+		t.Fatalf("expected active parent exception to bypass duplicate-run guard, got %v", err)
 	}
 }
 
@@ -2346,6 +2504,93 @@ func TestParseEpicTaskPipelineIntentMissingAgentsDoesNotFallThrough(t *testing.T
 	}
 }
 
+func TestParseEpicTaskPipelineIntentSkipsPreviouslyMergedTask(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	if err := db.Exec(`CREATE TABLE pm_tasks (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		display_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		workflow_id TEXT NOT NULL,
+		workflow_state_id TEXT NOT NULL,
+		epic_id TEXT,
+		completed BOOLEAN NOT NULL DEFAULT 0,
+		archived BOOLEAN NOT NULL DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create pm_tasks: %v", err)
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	epicID := "22222222-2222-2222-2222-222222222222"
+	activeTaskID := "33333333-3333-3333-3333-333333333333"
+	mergedTaskID := "44444444-4444-4444-4444-444444444444"
+	for _, task := range []model.PMTask{
+		{ID: activeTaskID, WorkspaceID: workspaceID, DisplayID: 1, Name: "Still pending", WorkflowID: "wf", WorkflowStateID: "state", EpicID: &epicID},
+		{ID: mergedTaskID, WorkspaceID: workspaceID, DisplayID: 2, Name: "Already merged", WorkflowID: "wf", WorkflowStateID: "state", EpicID: &epicID},
+	} {
+		if err := db.Exec(`INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id,
+			epic_id, completed, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			task.ID, task.WorkspaceID, task.DisplayID, task.Name, task.WorkflowID, task.WorkflowStateID, task.EpicID,
+		).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+	if err := repository.NewAgentRunRepository(db).Create(ctx, &model.AgentRun{
+		ID:             "55555555-5555-5555-5555-555555555555",
+		WorkspaceID:    workspaceID,
+		AgentID:        "agent-command",
+		TargetType:     "task",
+		TargetID:       mergedTaskID,
+		RuntimeKind:    "internal",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusCompleted,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{"message":"Task branch merged into epic branch."}`),
+	}); err != nil {
+		t.Fatalf("create prior merge run: %v", err)
+	}
+
+	service := &CommandBarService{agentService: &AgentService{
+		taskRepo: repository.NewPMTaskRepository(db),
+		runRepo:  repository.NewAgentRunRepository(db),
+	}}
+	agents := []model.Agent{
+		{ID: "agent-forge", Name: "Forge", PresetKey: model.AgentPresetCodeBuilder, AllowedTargets: json.RawMessage(`["task"]`)},
+		{ID: "agent-lens", Name: "Lens", PresetKey: model.AgentPresetReviewAgent, AllowedTargets: json.RawMessage(`["task"]`)},
+		{ID: "agent-command", Name: "Command Agent", PresetKey: model.AgentPresetCommandAgent, AllowedTargets: json.RawMessage(`["epic","task"]`)},
+	}
+	resp := service.parseEpicTaskPipelineIntent(ctx, workspaceID, "run all tasks in this epic in parallel with forge then lens", model.CommandBarPageContext{
+		EntityType:   "epic",
+		EntityID:     epicID,
+		DisplayTitle: "Pipeline epic",
+	}, agents)
+	if resp == nil || resp.Plan == nil {
+		t.Fatalf("expected task pipeline plan, got %#v", resp)
+	}
+	if resp.Plan.RunCount != 5 {
+		t.Fatalf("expected only active task plus epic setup/final PR, got %d runs", resp.Plan.RunCount)
+	}
+	for _, step := range resp.Plan.Steps {
+		if step.Target.EntityID == mergedTaskID {
+			t.Fatalf("previously merged task should not be scheduled, got step %#v", step)
+		}
+	}
+	if !slices.ContainsFunc(resp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {
+		return g.Type == "task_pipeline_skipped_tasks" &&
+			strings.Contains(g.Message, "Already merged") &&
+			strings.Contains(g.Message, "merged into the epic branch")
+	}) {
+		t.Fatalf("expected skipped-task guardrail for prior merge, got %#v", resp.Plan.Guardrails)
+	}
+}
+
 func TestValidateDispatchStepsRequiresOneShotKindForCommandAgent(t *testing.T) {
 	db := setupCommandBarPlanTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
@@ -2650,6 +2895,184 @@ func TestAdvanceTaskPipelinePlanSchedulesFallbackWithoutRunEngine(t *testing.T) 
 	}
 	if updated.Status != model.CommandBarPlanStatusCompleted {
 		t.Fatalf("expected direct fallback to complete task pipeline plan, got %q", updated.Status)
+	}
+}
+
+func TestAdvanceTaskPipelinePlanSignalsOnlyWithRunEngine(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	temporalClient := &commandBarSignalTemporalClient{}
+	service := &AgentService{
+		runRepo:            runRepo,
+		commandBarPlanRepo: planRepo,
+		runEngine:          temporalapp.NewRunEngine(temporalClient, "test"),
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	forgeAgentID := "33333333-3333-3333-3333-333333333333"
+	lensAgentID := "44444444-4444-4444-4444-444444444444"
+	forgeRunID := "55555555-5555-5555-5555-555555555555"
+	taskID := "66666666-6666-6666-6666-666666666666"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic 1"}
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:      forgeAgentID,
+			AgentName:    "Forge",
+			PlanKind:     model.CommandBarPlanKindTaskPipeline,
+			Target:       model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task 1"},
+			Instructions: "Build task 1.",
+		},
+		{
+			AgentID:              lensAgentID,
+			AgentName:            "Lens",
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task 1"},
+			Instructions:         "Review task 1.",
+			DependsOnStepIndexes: []int{0},
+		},
+	}
+	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run forge then lens", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	runIDs, _ := json.Marshal(map[int]string{0: forgeRunID})
+	plan.RunIDsByStep = runIDs
+	plan.RunCount = 2
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	trigger, err := buildCommandBarTriggerContext("run forge then lens", pageContext, steps, 0, planID)
+	if err != nil {
+		t.Fatalf("build trigger: %v", err)
+	}
+	input, _ := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             forgeRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        forgeAgentID,
+		TargetType:     "task",
+		TargetID:       taskID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusCompleted,
+		Input:          input,
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create forge run: %v", err)
+	}
+
+	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, forgeRunID); err != nil {
+		t.Fatalf("advance task pipeline run: %v", err)
+	}
+	if temporalClient.workflowID != temporalapp.WorkflowIDForCommandBarPlan(planID) {
+		t.Fatalf("expected signal to command bar workflow, got %q", temporalClient.workflowID)
+	}
+	if temporalClient.signalName != temporalapp.WorkflowSignalCommandBarRun {
+		t.Fatalf("expected command bar run signal, got %q", temporalClient.signalName)
+	}
+	if temporalClient.signaledRunID != forgeRunID {
+		t.Fatalf("expected signal run id %q, got %q", forgeRunID, temporalClient.signaledRunID)
+	}
+	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	if updated.Status != model.CommandBarPlanStatusRunning {
+		t.Fatalf("expected signal-only path to leave plan running, got %q", updated.Status)
+	}
+	if got := decodeCommandBarPlanRunIDs(updated.RunIDsByStep); strings.TrimSpace(got[1]) != "" {
+		t.Fatalf("expected signal-only path not to start Lens directly, got run ids %#v", got)
+	}
+}
+
+func TestAdvanceTaskPipelinePlanFallsBackWhenSignalFails(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	temporalClient := &commandBarSignalTemporalClient{err: fmt.Errorf("workflow not found")}
+	service := &AgentService{
+		runRepo:            runRepo,
+		commandBarPlanRepo: planRepo,
+		runEngine:          temporalapp.NewRunEngine(temporalClient, "test"),
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	agentID := "33333333-3333-3333-3333-333333333333"
+	runOneID := "44444444-4444-4444-4444-444444444444"
+	runTwoID := "55555555-5555-5555-5555-555555555555"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic 1"}
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:      agentID,
+			AgentName:    "Forge",
+			PlanKind:     model.CommandBarPlanKindTaskPipeline,
+			Target:       model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"},
+			Instructions: "Build task 1.",
+		},
+		{
+			AgentID:              agentID,
+			AgentName:            "Lens",
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"},
+			Instructions:         "Review task 1.",
+			DependsOnStepIndexes: []int{0},
+		},
+	}
+	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run forge then lens", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	runIDs, _ := json.Marshal(map[int]string{0: runOneID, 1: runTwoID})
+	plan.RunIDsByStep = runIDs
+	plan.RunCount = 2
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	for index, runID := range []string{runOneID, runTwoID} {
+		trigger, err := buildCommandBarTriggerContext("run forge then lens", pageContext, steps, index, planID)
+		if err != nil {
+			t.Fatalf("build trigger %d: %v", index, err)
+		}
+		input, _ := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+		if err := runRepo.Create(ctx, &model.AgentRun{
+			ID:             runID,
+			WorkspaceID:    workspaceID,
+			AgentID:        agentID,
+			TargetType:     "task",
+			TargetID:       "task-1",
+			RuntimeKind:    "native_sdk",
+			InvocationMode: model.InvocationModeAutonomous,
+			ApprovalState:  "not_required",
+			PauseReason:    model.AgentRunPauseReasonNone,
+			Status:         model.AgentRunStatusCompleted,
+			Input:          input,
+			OutputSummary:  json.RawMessage("{}"),
+		}); err != nil {
+			t.Fatalf("create run %d: %v", index, err)
+		}
+	}
+
+	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, runTwoID); err != nil {
+		t.Fatalf("advance task pipeline run: %v", err)
+	}
+	if temporalClient.signaledRunID != runTwoID {
+		t.Fatalf("expected signal attempt for run %q, got %q", runTwoID, temporalClient.signaledRunID)
+	}
+	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	if updated.Status != model.CommandBarPlanStatusCompleted {
+		t.Fatalf("expected fallback to complete task pipeline plan, got %q", updated.Status)
 	}
 }
 
