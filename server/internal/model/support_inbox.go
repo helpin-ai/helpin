@@ -256,7 +256,10 @@ type SupportMessage struct {
 	EmailDeliveryStatus string `json:"email_delivery_status,omitempty" gorm:"-"`
 	// EmailDeliveryError surfaces the bounce/complaint description when the
 	// email's delivery failed. Empty otherwise.
-	EmailDeliveryError string `json:"email_delivery_error,omitempty" gorm:"-"`
+	EmailDeliveryError string          `json:"email_delivery_error,omitempty" gorm:"-"`
+	EmailTo            string          `json:"email_to,omitempty" gorm:"-"`
+	EmailCC            DocsStringArray `json:"email_cc,omitempty" gorm:"-"`
+	EmailBCC           DocsStringArray `json:"email_bcc,omitempty" gorm:"-"`
 }
 
 func (SupportMessage) TableName() string { return "support_messages" }
@@ -662,12 +665,37 @@ type CreateConversationRequest struct {
 	Source        string  `json:"source"`
 }
 
+// CreateConversationWithMessageRequest creates a support conversation and its
+// first public message in one operation.
+type CreateConversationWithMessageRequest struct {
+	WorkspaceID   string   `json:"workspace_id"`
+	MailboxID     *string  `json:"mailbox_id,omitempty"`
+	Subject       string   `json:"subject"`
+	CustomerName  *string  `json:"customer_name,omitempty"`
+	CustomerEmail *string  `json:"customer_email,omitempty"`
+	CRMContactID  *string  `json:"crm_contact_id,omitempty"`
+	Channels      []string `json:"channels,omitempty"`
+	Content       string   `json:"content"`
+	AttachmentIDs []string `json:"attachment_ids,omitempty"`
+	TagIDs        []string `json:"tag_ids,omitempty"`
+	CCEmails      []string `json:"cc_emails,omitempty"`
+	BCCEmails     []string `json:"bcc_emails,omitempty"`
+}
+
+type CreateConversationWithMessageResponse struct {
+	Conversation *SupportConversation `json:"conversation"`
+	Message      *SupportMessage      `json:"message"`
+}
+
 // CreateMessageRequest is the payload for creating a support message.
 type CreateMessageRequest struct {
 	Content       string   `json:"content"`
 	IsInternal    bool     `json:"is_internal"`
 	MessageType   string   `json:"message_type"` // reply, csat_survey, system
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
+	Channels      []string `json:"channels,omitempty"`
+	CCEmails      []string `json:"cc_emails,omitempty"`
+	BCCEmails     []string `json:"bcc_emails,omitempty"`
 }
 
 // LinkStoryRequest links a conversation to a task.

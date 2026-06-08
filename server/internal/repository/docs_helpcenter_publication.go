@@ -98,6 +98,16 @@ func (r *DocsHelpcenterPublicationRepository) ListArticlePublicationsByDocumentI
 	return publications, nil
 }
 
+func (r *DocsHelpcenterPublicationRepository) ListAllArticlePublications(ctx context.Context) ([]model.DocsHelpcenterArticlePublication, error) {
+	var publications []model.DocsHelpcenterArticlePublication
+	if err := r.db.WithContext(ctx).
+		Order("workspace_id ASC, document_id ASC, locale ASC").
+		Find(&publications).Error; err != nil {
+		return nil, fmt.Errorf("list all article publications: %w", err)
+	}
+	return publications, nil
+}
+
 func (r *DocsHelpcenterPublicationRepository) ListArticlePublicationsByWorkspaceExcludingDocuments(ctx context.Context, workspaceID string, excludeDocumentIDs []string) ([]model.DocsHelpcenterArticlePublication, error) {
 	var publications []model.DocsHelpcenterArticlePublication
 	query := r.db.WithContext(ctx).

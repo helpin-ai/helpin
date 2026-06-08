@@ -30,6 +30,7 @@ type DocsHelpcenterService struct {
 	spaceRepo       *repository.DocsSpaceRepository
 	collectionRepo  *repository.DocsCollectionRepository
 	redirectRepo    *repository.DocsRedirectRepository
+	searchRepo      *repository.DocsHelpcenterSearchRepository
 	s3Client        *storage.S3Client
 	translationSvc  *DocsHelpcenterTranslationService
 	wsPublisher     *websocket.Publisher
@@ -53,6 +54,10 @@ func NewDocsHelpcenterService(
 
 func (s *DocsHelpcenterService) SetTranslationService(translationSvc *DocsHelpcenterTranslationService) {
 	s.translationSvc = translationSvc
+}
+
+func (s *DocsHelpcenterService) SetSearchRepository(searchRepo *repository.DocsHelpcenterSearchRepository) {
+	s.searchRepo = searchRepo
 }
 
 // UploadAsset uploads a help center asset (logo, dark logo, or favicon) to S3 and returns the public URL.
@@ -318,6 +323,9 @@ func (s *DocsHelpcenterService) PublishExternally(ctx context.Context, documentI
 	if _, err := s.publicationRepo.UpsertArticlePublication(ctx, publication); err != nil {
 		return err
 	}
+	if err := s.rebuildArticleSearchEntries(ctx, publication); err != nil {
+		return err
+	}
 
 	if currentLive != nil && currentLive.Slug != slug {
 		if err := s.createSourceArticleRedirect(ctx, doc, currentLive.Slug, slug); err != nil {
@@ -398,6 +406,11 @@ func (s *DocsHelpcenterService) UnpublishExternally(ctx context.Context, documen
 	if err := s.hcRepo.SetPublicPublishedAt(ctx, documentID, nil); err != nil {
 		return err
 	}
+	if s.searchRepo != nil {
+		if err := s.searchRepo.DeleteArticleEntriesByDocumentIDs(ctx, []string{documentID}); err != nil {
+			return err
+		}
+	}
 	if s.translationSvc != nil {
 		if err := s.translationSvc.RefreshArticleSource(ctx, documentID); err != nil {
 			slog.WarnContext(ctx, "failed to refresh helpcenter article translation source after unpublish", "document_id", documentID, "error", err)
@@ -406,6 +419,17 @@ func (s *DocsHelpcenterService) UnpublishExternally(ctx context.Context, documen
 	if doc != nil {
 		publishWorkspaceEvent(s.wsPublisher, "updated", "docs_document", documentID, doc.WorkspaceID, "")
 		s.InvalidateHelpcenterCacheForWorkspace(ctx, doc.WorkspaceID)
+	}
+	return nil
+}
+
+func (s *DocsHelpcenterService) rebuildArticleSearchEntries(ctx context.Context, publication *model.DocsHelpcenterArticlePublication) error {
+	if s.searchRepo == nil || publication == nil {
+		return nil
+	}
+	entries := BuildHelpcenterSearchEntries(*publication)
+	if err := s.searchRepo.ReplaceArticleEntries(ctx, publication.DocumentID, publication.Locale, entries); err != nil {
+		return fmt.Errorf("rebuild helpcenter search entries: %w", err)
 	}
 	return nil
 }

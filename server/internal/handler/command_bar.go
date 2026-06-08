@@ -189,6 +189,8 @@ func commandBarDispatchPermissionForTarget(targetType string) (authorization.Per
 		return authorization.PermPMEdit, true
 	case "task", "epic", "workspace":
 		return authorization.PermPMEdit, true
+	case "repository", "repo", "git_repo", "git_repository":
+		return authorization.PermPMEdit, true
 	case "doc", "document":
 		return authorization.PermDocsEdit, true
 	case "contact", "crm_contact", "deal", "crm_deal":

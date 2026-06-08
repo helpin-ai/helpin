@@ -384,7 +384,7 @@ function ManageTagsDialog({
               <span className="text-sm text-muted-foreground">{tags.length} tags</span>
               <Button type="button" size="sm" onClick={startCreate}>
                 <PlusSignIcon className="h-4 w-4" />
-                Add tag
+                New tag
               </Button>
             </div>
           </div>
@@ -461,11 +461,15 @@ export function SupportTagPicker({
   workspaceId,
   conversationId,
   selectedTags,
+  selectedTagIds,
+  onSelectedTagIdsChange,
   className,
 }: {
   workspaceId: string;
-  conversationId: string;
+  conversationId?: string;
   selectedTags: SupportTag[];
+  selectedTagIds?: string[];
+  onSelectedTagIdsChange?: (tagIds: string[]) => void;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -475,13 +479,26 @@ export function SupportTagPicker({
   const createTag = useCreateSupportTag(workspaceId);
   const addTag = useAddConversationTag(workspaceId);
   const removeTag = useRemoveConversationTag(workspaceId);
-  const selectedIds = useMemo(() => new Set(selectedTags.map((tag) => tag.id)), [selectedTags]);
+  const controlled = !!onSelectedTagIdsChange;
+  const selectedIds = useMemo(
+    () => new Set(controlled ? (selectedTagIds ?? []) : selectedTags.map((tag) => tag.id)),
+    [controlled, selectedTagIds, selectedTags],
+  );
   const trimmed = search.trim();
   const hasExactMatch = trimmed
     ? tags.some((tag) => tag.name.toLowerCase() === trimmed.toLowerCase())
     : true;
 
   const toggleTag = (tagId: string) => {
+    if (controlled) {
+      onSelectedTagIdsChange(
+        selectedIds.has(tagId)
+          ? (selectedTagIds ?? []).filter((id) => id !== tagId)
+          : [...(selectedTagIds ?? []), tagId],
+      );
+      return;
+    }
+    if (!conversationId) return;
     if (selectedIds.has(tagId)) {
       removeTag.mutate({ conversationId, tagId });
     } else {
@@ -495,7 +512,11 @@ export function SupportTagPicker({
       { name: trimmed, color: automaticTagColor(trimmed, tags.map((tag) => tag.color)) },
       {
         onSuccess: (tag) => {
-          addTag.mutate({ conversationId, tagId: tag.id });
+          if (controlled) {
+            onSelectedTagIdsChange([...(selectedTagIds ?? []), tag.id]);
+          } else if (conversationId) {
+            addTag.mutate({ conversationId, tagId: tag.id });
+          }
           setSearch('');
         },
       },
@@ -509,7 +530,15 @@ export function SupportTagPicker({
           key={tag.id}
           name={tag.name}
           color={tag.color}
-          onRemove={() => removeTag.mutate({ conversationId, tagId: tag.id })}
+          onRemove={() => {
+            if (controlled) {
+              onSelectedTagIdsChange((selectedTagIds ?? []).filter((id) => id !== tag.id));
+              return;
+            }
+            if (conversationId) {
+              removeTag.mutate({ conversationId, tagId: tag.id });
+            }
+          }}
         />
       ))}
 

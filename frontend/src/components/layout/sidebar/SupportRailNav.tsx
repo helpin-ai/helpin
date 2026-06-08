@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { InboxIcon, PlusSignIcon, BookOpen01Icon, LifebuoyIcon, MoreVerticalIcon, PencilEdit01Icon, ArchiveIcon, FileSearchIcon, Delete01Icon, UserGroupIcon } from '@/lib/icons';
 import { ICON_MAP } from '@/components/ui/icon-picker';
-import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -13,6 +12,7 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { supportAiItems, supportFilterItems } from './config';
+import { SidebarSectionAction } from './SidebarSectionAction';
 import type { SupportInboxView, SupportInboxViewCount, UnreadStats } from '@/lib/pmTypes';
 
 type SupportNavFilter =
@@ -110,7 +110,7 @@ export function SupportRailNav({
     if (totalValue <= 0) return null;
 
     return (
-      <span className={`${alignRight ? 'ml-auto' : ''} flex shrink-0 items-center ${className}`}>
+      <span className={`${alignRight ? 'ml-auto' : ''} flex h-5 min-w-4 shrink-0 items-center justify-center ${className}`}>
         <span
           data-slot="support-total-count"
           className="min-w-[1ch] text-right text-xs font-medium tabular-nums text-muted-foreground"
@@ -120,6 +120,10 @@ export function SupportRailNav({
       </span>
     );
   };
+
+  const supportMenuRowClassName = 'grid h-8 grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-2 rounded-md px-2 text-sm';
+  const trailingSlotClassName = 'relative flex h-5 min-w-4 shrink-0 items-center justify-center';
+  const trailingMenuButtonClassName = 'absolute inset-0 inline-flex h-5 min-w-4 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground';
 
   return (
     <>
@@ -147,10 +151,10 @@ export function SupportRailNav({
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
                   isActive={!activeCustomViewId && navFilter === item.key && (item.key !== 'inbox' || selectedMailboxId === 'all')}
-                  className="h-8 rounded-md px-2 text-sm"
+                  className={supportMenuRowClassName}
                   onClick={() => onNavFilterChange(item.key)}
                 >
-                  <item.icon />
+                  <item.icon className="h-4 w-4" />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">{item.label}</span>
                     {renderUnreadDot(unread)}
@@ -182,10 +186,10 @@ export function SupportRailNav({
               <SidebarMenuItem key={item.key}>
                 <SidebarMenuButton
                   isActive={!activeCustomViewId && navFilter === item.key}
-                  className="h-8 rounded-md px-2 text-sm"
+                  className={supportMenuRowClassName}
                   onClick={() => onNavFilterChange(item.key)}
                 >
-                  <item.icon />
+                  <item.icon className="h-4 w-4" />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5">
                     <span className="truncate">{item.label}</span>
                     {renderUnreadDot(unread)}
@@ -205,37 +209,27 @@ export function SupportRailNav({
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={isOnCoverage}
-              className="h-8 rounded-md px-2 text-sm"
+              className={supportMenuRowClassName}
               onClick={() => onNavigate(`/w/${wsSlug}/support/coverage`)}
             >
               <FileSearchIcon className="h-4 w-4" />
-              <span>Coverage Gaps</span>
+              <span className="min-w-0 truncate">Coverage Gaps</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroup>
 
       <SidebarGroup className="p-0 pb-3">
-        <div className="flex items-center justify-between px-2 pr-3">
-          <SidebarGroupLabel className="h-7 px-0 text-[11px] uppercase tracking-wide text-muted-foreground/90">
-            Team Inboxes
-          </SidebarGroupLabel>
+        <SidebarGroupLabel className="flex h-7 items-center justify-between px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90">
+          <span>Team Inboxes</span>
           {canManageSettings && mailboxes.length > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 rounded-sm text-muted-foreground hover:text-foreground"
-                  onClick={onCreateMailbox}
-                >
-                  <PlusSignIcon className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Create Team Inbox</TooltipContent>
-            </Tooltip>
+            <SidebarSectionAction
+              label="Create Team Inbox"
+              dataSlot="support-create-team-inbox-action"
+              onClick={onCreateMailbox}
+            />
           )}
-        </div>
+        </SidebarGroupLabel>
         <SidebarMenu>
           {mailboxes.map((mailbox) => {
             const MailboxIcon = mailbox.icon ? (ICON_MAP[mailbox.icon] ?? InboxIcon) : InboxIcon;
@@ -246,7 +240,7 @@ export function SupportRailNav({
               <SidebarMenuItem key={mailbox.id} className="group/mailbox">
                 <SidebarMenuButton
                   isActive={isActiveMailbox}
-                  className="h-8 rounded-md px-2 text-sm"
+                  className={supportMenuRowClassName}
                   onClick={() => onMailboxSelect(mailbox.id)}
                 >
                   <MailboxIcon className="h-4 w-4" />
@@ -254,7 +248,7 @@ export function SupportRailNav({
                     <span className="truncate">{mailbox.name}</span>
                     {renderUnreadDot(mailbox.unread_count)}
                   </span>
-                  <span className="ml-auto relative flex h-5 min-w-5 items-center justify-center">
+                  <span className={trailingSlotClassName}>
                     {renderCounts(
                       mailbox.total_count,
                       `transition-opacity ${canManageSettings && !isMenuOpen ? 'group-hover/mailbox:opacity-0' : ''} ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`,
@@ -265,7 +259,7 @@ export function SupportRailNav({
                         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                           <span
                             role="button"
-                            className={`absolute inset-0 inline-flex items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground ${
+                            className={`${trailingMenuButtonClassName} ${
                               isMenuOpen
                                 ? 'opacity-100'
                                 : mailbox.unread_count > 0
@@ -299,11 +293,11 @@ export function SupportRailNav({
           {mailboxes.length === 0 && (
             <SidebarMenuItem>
               <SidebarMenuButton
-                className="h-8 rounded-md px-2 text-sm"
+                className={supportMenuRowClassName}
                 onClick={onCreateMailbox}
               >
                 <PlusSignIcon className="h-4 w-4" />
-                <span>Create Inbox</span>
+                <span className="min-w-0 truncate">Create Inbox</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
@@ -326,7 +320,7 @@ export function SupportRailNav({
                 <SidebarMenuItem key={view.id} className="group/custom-view">
                   <SidebarMenuButton
                     isActive={isActive}
-                    className="h-8 rounded-md px-2 text-sm"
+                    className={supportMenuRowClassName}
                     onClick={() => onCustomViewSelect(view)}
                   >
                     <FileSearchIcon className="h-4 w-4" />
@@ -335,7 +329,7 @@ export function SupportRailNav({
                       {view.is_shared && <UserGroupIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                       {renderUnreadDot(count?.unread_count)}
                     </span>
-                    <span className="ml-auto relative flex h-5 min-w-5 items-center justify-center">
+                    <span className={trailingSlotClassName}>
                       {renderCounts(
                         count?.total_count,
                         `transition-opacity ${canModifyView && !isMenuOpen ? 'group-hover/custom-view:opacity-0' : ''} ${isMenuOpen ? 'opacity-0' : 'opacity-100'}`,
@@ -346,7 +340,7 @@ export function SupportRailNav({
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                             <span
                               role="button"
-                              className={`absolute inset-0 inline-flex items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground ${
+                              className={`${trailingMenuButtonClassName} ${
                                 isMenuOpen
                                   ? 'opacity-100'
                                   : view.is_shared
@@ -393,7 +387,7 @@ export function SupportRailNav({
                 <BookOpen01Icon className="h-4 w-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">Knowledge</TooltipContent>
+            <TooltipContent side="top">Brand Knowledge</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>

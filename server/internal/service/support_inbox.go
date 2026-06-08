@@ -82,7 +82,96 @@ type supportTaskAssociationCopyCounts struct {
 	Deals     int
 }
 
+type supportMessageEmailRecipients struct {
+	CC  []string
+	BCC []string
+}
+
 var ErrSupportTaskInsufficientContext = errors.New("Not enough support context to create a useful task. Add more internal notes with the issue, impact, and expected outcome, then try again.")
+
+func normalizeSupportDeliveryChannels(channels []string) []string {
+	if len(channels) == 0 {
+		return nil
+	}
+	result := make([]string, 0, 2)
+	seen := map[string]struct{}{}
+	for _, channel := range channels {
+		switch strings.TrimSpace(strings.ToLower(channel)) {
+		case "chat", "widget":
+			if _, exists := seen["chat"]; !exists {
+				seen["chat"] = struct{}{}
+				result = append(result, "chat")
+			}
+		case "email":
+			if _, exists := seen["email"]; !exists {
+				seen["email"] = struct{}{}
+				result = append(result, "email")
+			}
+		}
+	}
+	return result
+}
+
+func supportChannelsIncludeEmail(channels []string) bool {
+	normalized := normalizeSupportDeliveryChannels(channels)
+	if len(normalized) == 0 {
+		return true
+	}
+	return slices.Contains(normalized, "email")
+}
+
+func normalizeSupportEmailList(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		email := strings.TrimSpace(strings.ToLower(value))
+		if email == "" {
+			continue
+		}
+		if _, exists := seen[email]; exists {
+			continue
+		}
+		seen[email] = struct{}{}
+		result = append(result, email)
+	}
+	return result
+}
+
+func mergeSupportMessageMetadata(existing string, channels []string, ccEmails []string, bccEmails []string) string {
+	metadata := map[string]any{}
+	if strings.TrimSpace(existing) != "" {
+		_ = json.Unmarshal([]byte(existing), &metadata)
+	}
+	if normalized := normalizeSupportDeliveryChannels(channels); len(normalized) > 0 {
+		metadata["delivery_channels"] = normalized
+	}
+	if cc := normalizeSupportEmailList(ccEmails); len(cc) > 0 {
+		metadata["email_cc"] = cc
+	}
+	if bcc := normalizeSupportEmailList(bccEmails); len(bcc) > 0 {
+		metadata["email_bcc"] = bcc
+	}
+	if len(metadata) == 0 {
+		return ""
+	}
+	bytes, err := json.Marshal(metadata)
+	if err != nil {
+		return existing
+	}
+	return string(bytes)
+}
+
+func supportMessageEmailRecipientsFromMetadata(metadata string) supportMessageEmailRecipients {
+	var parsed struct {
+		CC  []string `json:"email_cc"`
+		BCC []string `json:"email_bcc"`
+	}
+	_ = json.Unmarshal([]byte(metadata), &parsed)
+	return supportMessageEmailRecipients{
+		CC:  normalizeSupportEmailList(parsed.CC),
+		BCC: normalizeSupportEmailList(parsed.BCC),
+	}
+}
 
 // NewSupportInboxService creates a new SupportInboxService.
 func NewSupportInboxService(
@@ -192,6 +281,8 @@ func (s *SupportInboxService) GetMessageEmailDetail(ctx context.Context, workspa
 		Subject:              log.Subject,
 		FromEmail:            log.FromEmail,
 		ToEmail:              log.ToEmail,
+		CCEmails:             log.CCEmails,
+		BCCEmails:            log.BCCEmails,
 		RFCMessageID:         log.RFCMessageID,
 		InReplyTo:            log.InReplyTo,
 		ReferencesHeader:     log.ReferencesHeader,
@@ -1206,6 +1297,75 @@ func (s *SupportInboxService) CreateConversation(ctx context.Context, req model.
 	return ticket, nil
 }
 
+// CreateConversationWithMessage creates a normal support conversation and
+// immediately sends the first public teammate message.
+func (s *SupportInboxService) CreateConversationWithMessage(ctx context.Context, req model.CreateConversationWithMessageRequest, actorID string) (*model.CreateConversationWithMessageResponse, error) {
+	if strings.TrimSpace(req.WorkspaceID) == "" || strings.TrimSpace(req.Subject) == "" {
+		return nil, fmt.Errorf("workspace_id and subject are required")
+	}
+	if strings.TrimSpace(req.Content) == "" && len(req.AttachmentIDs) == 0 {
+		return nil, fmt.Errorf("content is required")
+	}
+	channels := normalizeSupportDeliveryChannels(req.Channels)
+	if len(req.Channels) > 0 && len(channels) == 0 {
+		return nil, fmt.Errorf("at least one supported channel is required")
+	}
+	if supportChannelsIncludeEmail(channels) && (req.CustomerEmail == nil || strings.TrimSpace(*req.CustomerEmail) == "") {
+		return nil, fmt.Errorf("customer_email is required for email delivery")
+	}
+
+	conversation, err := s.CreateConversation(ctx, model.CreateConversationRequest{
+		WorkspaceID:   req.WorkspaceID,
+		MailboxID:     req.MailboxID,
+		Subject:       req.Subject,
+		Priority:      "medium",
+		CustomerName:  req.CustomerName,
+		CustomerEmail: req.CustomerEmail,
+		Source:        "internal",
+	}, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if req.CRMContactID != nil && strings.TrimSpace(*req.CRMContactID) != "" {
+		conversation.CRMContactID = req.CRMContactID
+		if err := s.conversationRepo.Update(ctx, conversation); err != nil {
+			return nil, err
+		}
+	}
+	if s.tagRepo != nil {
+		for _, tagID := range req.TagIDs {
+			tagID = strings.TrimSpace(tagID)
+			if tagID == "" {
+				continue
+			}
+			if err := s.tagRepo.AddConversationTag(ctx, req.WorkspaceID, conversation.ID, tagID); err != nil {
+				return nil, err
+			}
+		}
+		hydrated := []model.SupportConversation{*conversation}
+		s.hydrateConversationTags(ctx, req.WorkspaceID, hydrated)
+		conversation.Tags = hydrated[0].Tags
+		conversation.SystemTags = hydrated[0].SystemTags
+	}
+
+	message, err := s.CreateConversationMessage(ctx, req.WorkspaceID, conversation.ID, model.CreateMessageRequest{
+		Content:       req.Content,
+		IsInternal:    false,
+		MessageType:   "reply",
+		AttachmentIDs: req.AttachmentIDs,
+		Channels:      channels,
+		CCEmails:      req.CCEmails,
+		BCCEmails:     req.BCCEmails,
+	}, "user", &actorID, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &model.CreateConversationWithMessageResponse{
+		Conversation: conversation,
+		Message:      message,
+	}, nil
+}
+
 // validConversationStatuses defines allowed status transitions.
 var validConversationStatuses = map[string]bool{
 	model.SupportConversationStatusOpen:              true,
@@ -1321,15 +1481,40 @@ func (s *SupportInboxService) UpdateConversationStatus(ctx context.Context, work
 		}
 	}
 
-	s.wsPublisher.Publish(websocket.Event{
-		Action:      "updated",
-		Entity:      "support_conversation",
-		EntityID:    ticketID,
-		WorkspaceID: workspaceID,
-		ActorID:     actorID,
-	})
+	s.wsPublisher.Publish(buildSupportConversationStatusEvent(ticket, oldStatus, actorID))
 
 	return ticket, nil
+}
+
+func buildSupportConversationStatusEvent(conversation *model.SupportConversation, oldStatus, actorID string) websocket.Event {
+	if conversation == nil {
+		return websocket.Event{}
+	}
+	payload := struct {
+		OldStatus string  `json:"old_status"`
+		Status    string  `json:"status"`
+		FlowState *string `json:"flow_state"`
+		UpdatedAt string  `json:"updated_at"`
+		MailboxID *string `json:"mailbox_id"`
+	}{
+		OldStatus: oldStatus,
+		Status:    conversation.Status,
+		FlowState: conversation.FlowState,
+		UpdatedAt: conversation.UpdatedAt.UTC().Format(time.RFC3339),
+		MailboxID: conversation.MailboxID,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		data = nil
+	}
+	return websocket.Event{
+		Action:      "updated",
+		Entity:      "support_conversation",
+		EntityID:    conversation.ID,
+		WorkspaceID: conversation.WorkspaceID,
+		ActorID:     actorID,
+		Data:        data,
+	}
 }
 
 // ListConversationMessages returns messages for a conversation.
@@ -1417,6 +1602,9 @@ func hydrateEmailBodies(
 		if log.Direction == "outbound" {
 			messages[i].EmailDeliveryStatus = log.Status
 			messages[i].EmailDeliveryError = log.ErrorMessage
+			messages[i].EmailTo = log.ToEmail
+			messages[i].EmailCC = log.CCEmails
+			messages[i].EmailBCC = log.BCCEmails
 		}
 	}
 }
@@ -1497,6 +1685,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		metaJSON, _ := json.Marshal(map[string]any{"mentioned_user_ids": mentionedUserIDs})
 		msg.Metadata = string(metaJSON)
 	}
+	msg.Metadata = mergeSupportMessageMetadata(msg.Metadata, req.Channels, req.CCEmails, req.BCCEmails)
 	if s.linkPreviewService != nil {
 		s.linkPreviewService.EnrichMessage(ctx, msg)
 	}
@@ -1638,7 +1827,7 @@ func (s *SupportInboxService) CreateConversationMessage(ctx context.Context, wor
 		if conv.AnonymousID != nil && *conv.AnonymousID != "" {
 			s.pushVisitorConversationsRefresh(ctx, workspaceID, *conv.AnonymousID)
 		}
-		if s.emailFallbackService != nil {
+		if s.emailFallbackService != nil && supportChannelsIncludeEmail(req.Channels) {
 			go func(convSnapshot *model.SupportConversation) {
 				if err := s.emailFallbackService.OnAgentReply(context.WithoutCancel(ctx), workspaceID, msg, convSnapshot); err != nil {
 					slog.ErrorContext(ctx, "enqueue email fallback failed", "conversation_id", ticketID, "message_id", msg.ID, "error", err)

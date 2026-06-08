@@ -7,7 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePMBoardStore } from '@/stores/pmBoardStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
+import { useSupportInboxStore } from '@/stores/supportInboxStore'
 import { queryKeys } from '@/lib/queryKeys'
+import type { ConversationListResponse } from '@/lib/pmTypes'
 
 const captured = {
   onEvent: null as ((event: unknown) => void) | null,
@@ -58,6 +60,24 @@ describe('useRealtimeSync task ordering events', () => {
       onlineVisitors: {},
       wsSend: null,
       wsConnected: false,
+    })
+    useSupportInboxStore.setState({
+      navFilter: 'inbox',
+      selectedMailboxId: 'all',
+      selectedConversationId: null,
+      activePanel: 'list',
+      statusFilter: 'all',
+      searchQuery: '',
+      conversationListFilters: {
+        states: ['open', 'waiting_on_customer'],
+        assignment: ['me', 'mentioned_me', 'opened_by_me', 'unassigned', 'others'],
+        mailboxIds: [],
+        tagIds: [],
+        aiStates: ['handoff'],
+        sort: 'newest',
+      },
+      activeCustomViewId: null,
+      customViewDirty: false,
     })
   })
 
@@ -536,6 +556,165 @@ describe('useRealtimeSync task ordering events', () => {
     })
 
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queryKeys.support.inboxViewCounts('ws-1') })
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('moves support conversation rows for message activity without marking agent replies unread', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'), {
+      data: [
+        {
+          id: 'conv-old',
+          workspace_id: 'ws-1',
+          display_id: 1,
+          subject: 'Older',
+          status: 'open',
+          priority: 'medium',
+          source: 'widget',
+          unread_count: 0,
+          created_at: '2026-06-04T08:00:00Z',
+          updated_at: '2026-06-04T08:00:00Z',
+        },
+        {
+          id: 'conv-replied',
+          workspace_id: 'ws-1',
+          display_id: 2,
+          subject: 'Replied',
+          status: 'open',
+          priority: 'medium',
+          source: 'widget',
+          unread_count: 2,
+          awaiting_reply: true,
+          last_message: 'Customer question',
+          created_at: '2026-06-04T08:00:00Z',
+          updated_at: '2026-06-04T08:00:00Z',
+        },
+      ],
+      total: 2,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'created',
+        entity: 'support_conversation_message',
+        entity_id: 'msg-1',
+        workspace_id: 'ws-1',
+        actor_id: 'user-2',
+        parent_id: 'conv-replied',
+        sent_at: '2026-06-04T09:00:00Z',
+        data: {
+          content: 'We will check this.',
+          sender_type: 'user',
+          message_type: 'reply',
+        },
+      })
+      await Promise.resolve()
+    })
+
+    const updated = client.getQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'))
+    expect(updated?.data.map((conversation) => conversation.id)).toEqual(['conv-replied', 'conv-old'])
+    expect(updated?.data[0]).toEqual(expect.objectContaining({
+      unread_count: 2,
+      awaiting_reply: false,
+      last_message: 'We will check this.',
+      updated_at: '2026-06-04T09:00:00Z',
+    }))
+
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('patches selected reopened conversations into the active inbox without marking unread', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'), {
+      data: [
+        {
+          id: 'conv-reopen',
+          workspace_id: 'ws-1',
+          display_id: 1,
+          subject: 'Reopen me',
+          status: 'resolved',
+          flow_state: 'resolved_by_human',
+          priority: 'medium',
+          source: 'widget',
+          mailbox_id: 'mailbox-billing',
+          unread_count: 0,
+          created_at: '2026-06-04T08:00:00Z',
+          updated_at: '2026-06-04T08:00:00Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      per_page: 50,
+      total_pages: 1,
+    })
+    useSupportInboxStore.setState({
+      navFilter: 'resolved',
+      selectedMailboxId: 'mailbox-billing',
+      selectedConversationId: 'conv-reopen',
+      activePanel: 'thread',
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness workspaceId="ws-1" />
+        </QueryClientProvider>,
+      )
+    })
+
+    await act(async () => {
+      captured.onEvent?.({
+        action: 'updated',
+        entity: 'support_conversation',
+        entity_id: 'conv-reopen',
+        workspace_id: 'ws-1',
+        actor_id: 'user-2',
+        data: {
+          old_status: 'resolved',
+          status: 'open',
+          flow_state: 'assigned_to_human',
+          updated_at: '2026-06-04T09:00:00Z',
+          mailbox_id: 'mailbox-billing',
+        },
+      })
+      await Promise.resolve()
+    })
+
+    const updated = client.getQueryData<ConversationListResponse>(queryKeys.support.conversations('ws-1'))
+    expect(updated?.data[0]).toEqual(expect.objectContaining({
+      status: 'open',
+      flow_state: 'assigned_to_human',
+      unread_count: 0,
+      updated_at: '2026-06-04T09:00:00Z',
+    }))
+    expect(useSupportInboxStore.getState()).toEqual(expect.objectContaining({
+      navFilter: 'inbox',
+      selectedMailboxId: 'mailbox-billing',
+      selectedConversationId: 'conv-reopen',
+      activePanel: 'thread',
+    }))
 
     act(() => root.unmount())
     container.remove()

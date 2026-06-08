@@ -98,10 +98,24 @@ export const useSupportPresenceStore = create<SupportPresenceState>((set) => ({
   setViewingAgent: (conversationId, actorId, viewing) =>
     set((state) => {
       const current = state.viewingAgents[conversationId] ?? []
-      if (viewing && current.includes(actorId)) return state
+      const appearsElsewhere = Object.entries(state.viewingAgents).some(
+        ([id, viewers]) => id !== conversationId && viewers.includes(actorId),
+      )
+      if (viewing && current.includes(actorId) && !appearsElsewhere) return state
       if (!viewing && !current.includes(actorId)) return state
-      const next = viewing ? [...current, actorId] : current.filter((id) => id !== actorId)
-      return { viewingAgents: { ...state.viewingAgents, [conversationId]: next } }
+
+      let viewingAgents = state.viewingAgents
+      if (viewing) {
+        viewingAgents = Object.fromEntries(
+          Object.entries(state.viewingAgents).map(([id, viewers]) => [
+            id,
+            id === conversationId ? viewers : viewers.filter((viewerId) => viewerId !== actorId),
+          ]),
+        )
+      }
+      const nextCurrent = viewingAgents[conversationId] ?? []
+      const next = viewing ? [...nextCurrent, actorId] : nextCurrent.filter((id) => id !== actorId)
+      return { viewingAgents: { ...viewingAgents, [conversationId]: next } }
     }),
   replaceViewingAgents: (conversationId, actorIds) =>
     set((state) => ({

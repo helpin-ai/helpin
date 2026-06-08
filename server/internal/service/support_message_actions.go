@@ -51,6 +51,9 @@ type SupportMessageInfo struct {
 	SentAt                   time.Time                   `json:"sent_at"`
 	Sender                   SupportMessageInfoSender    `json:"sender"`
 	From                     string                      `json:"from"`
+	ToEmail                  string                      `json:"to_email,omitempty"`
+	CCEmails                 []string                    `json:"cc_emails,omitempty"`
+	BCCEmails                []string                    `json:"bcc_emails,omitempty"`
 	Origin                   string                      `json:"origin"`
 	Type                     string                      `json:"type"`
 	EmailDeliveryStatus      string                      `json:"email_delivery_status,omitempty"`
@@ -167,6 +170,9 @@ func (s *SupportMessageActionsService) Info(ctx context.Context, workspaceID, co
 		}
 		if logRow != nil {
 			info.From = supportMessageInfoFrom(msg, logRow)
+			info.ToEmail = strings.TrimSpace(logRow.ToEmail)
+			info.CCEmails = normalizeSupportEmailList(logRow.CCEmails)
+			info.BCCEmails = normalizeSupportEmailList(logRow.BCCEmails)
 			info.EmailDeliveryStatus, info.EmailDeliveryStatusLabel = supportMessageInfoEmailStatus(msg, logRow, s.now())
 			if logRow.DeliveredAt != nil {
 				info.Delivered = &SupportMessageInfoDelivery{Channel: "email", DeliveredAt: logRow.DeliveredAt.UTC()}

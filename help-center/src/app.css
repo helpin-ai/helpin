@@ -503,3 +503,11 @@
   border-left-color: #10b981;
   background: rgba(16, 185, 129, 0.05);
 }
+
+.search-result-title mark,
+.search-result-snippet mark {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  color: var(--color-foreground);
+  padding: 0 2px;
+}

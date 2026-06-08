@@ -5,6 +5,10 @@ import { defaultConversationListFiltersForNav, parseSupportInboxViewFilters } fr
 export type NavFilter = 'inbox' | 'mine' | 'waiting' | 'resolved' | 'spam' | 'ai_active' | 'resolved_by_ai';
 export type ReplyMode = 'reply' | 'note';
 export type ActivePanel = 'nav' | 'list' | 'thread' | 'detail';
+export type ConversationHandoff = {
+  fromConversationId: string;
+  toConversationId: string | null;
+};
 
 const STORAGE_KEY = 'support_inbox_ui';
 const DRAFTS_STORAGE_KEY = 'support_inbox_drafts';
@@ -150,6 +154,7 @@ interface SupportInboxState {
   builtinViewFilters: Record<string, Record<string, string>>;
   // Selection
   selectedConversationId: string | null;
+  conversationHandoff: ConversationHandoff | null;
   // Reply
   replyMode: ReplyMode;
   // Detail sidebar
@@ -186,12 +191,16 @@ interface SupportInboxState {
   setBuiltinViewFilters: (filters: Record<string, Record<string, string>>) => void;
   setBuiltinViewFilter: (key: string, filters: Record<string, string>) => void;
   selectConversation: (id: string | null) => void;
+  startConversationHandoff: (fromConversationId: string, toConversationId: string | null) => void;
+  finishConversationHandoff: (toConversationId: string | null) => void;
+  cancelConversationHandoff: () => void;
   setReplyMode: (mode: ReplyMode) => void;
   toggleDetailSidebar: () => void;
   setCreateDialogOpen: (open: boolean) => void;
   setTeamInboxDialogOpen: (open: boolean) => void;
   setEditMailboxId: (id: string | null) => void;
   setActivePanel: (panel: ActivePanel) => void;
+  showReopenedConversationInInbox: (conversationId: string, conversationMailboxId?: string | null) => void;
   setDraft: (conversationId: string, content: string) => void;
   clearDraft: (conversationId: string) => void;
 }
@@ -211,6 +220,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     customViewDirty: false,
     builtinViewFilters: {},
     selectedConversationId: null,
+    conversationHandoff: null,
     replyMode: 'reply',
     detailSidebarCollapsed: persisted.detailSidebarCollapsed,
     createDialogOpen: false,
@@ -231,6 +241,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         conversationListFilters: savedState?.listFilters ?? defaultConversationListFiltersForNav(filter),
         selectedMailboxId: 'all',
         selectedConversationId: null,
+        conversationHandoff: null,
         activePanel: 'list',
       });
       savePersisted({
@@ -252,6 +263,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         conversationListFilters: savedState?.listFilters ?? defaultConversationListFiltersForNav('inbox'),
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
+        conversationHandoff: null,
         activePanel: 'list',
       });
       savePersisted({
@@ -267,6 +279,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         customViewDirty: false,
         selectedMailboxId: mailboxId,
         selectedConversationId: null,
+        conversationHandoff: null,
         activePanel: 'list',
       });
       savePersisted({
@@ -321,6 +334,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
           [key]: value,
         },
         selectedConversationId: null,
+        conversationHandoff: null,
       })),
     setConversationMailboxFilters: (mailboxIds) =>
       set((state) => ({
@@ -331,6 +345,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
           mailboxIds,
         },
         selectedConversationId: null,
+        conversationHandoff: null,
       })),
     resetConversationListFilters: () =>
       set({
@@ -338,6 +353,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         customViewDirty: false,
         conversationListFilters: defaultConversationListFiltersForNav(get().navFilter),
         selectedConversationId: null,
+        conversationHandoff: null,
       }),
     applyCustomView: (view) => {
       const filters = view.filters ?? {};
@@ -352,6 +368,7 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
         searchQuery: parsed.searchQuery,
         conversationListFilters: parsed.listFilters,
         selectedConversationId: null,
+        conversationHandoff: null,
         activePanel: 'list',
       });
       savePersisted({
@@ -373,7 +390,12 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
           [key]: filters,
         },
       })),
-    selectConversation: (id) => set({ selectedConversationId: id, activePanel: id ? 'thread' : 'list' }),
+    selectConversation: (id) => set({ selectedConversationId: id, conversationHandoff: null, activePanel: id ? 'thread' : 'list' }),
+    startConversationHandoff: (fromConversationId, toConversationId) =>
+      set({ conversationHandoff: { fromConversationId, toConversationId } }),
+    finishConversationHandoff: (toConversationId) =>
+      set({ selectedConversationId: toConversationId, conversationHandoff: null, activePanel: toConversationId ? 'thread' : 'list' }),
+    cancelConversationHandoff: () => set({ conversationHandoff: null }),
     setReplyMode: (mode) => set({ replyMode: mode }),
     toggleDetailSidebar: () => {
       const next = !get().detailSidebarCollapsed;
@@ -389,6 +411,30 @@ export const useSupportInboxStore = create<SupportInboxState>((set, get) => {
     setTeamInboxDialogOpen: (open) => set({ teamInboxDialogOpen: open, ...(!open && { editMailboxId: null }) }),
     setEditMailboxId: (id) => set({ editMailboxId: id }),
     setActivePanel: (panel) => set({ activePanel: panel }),
+    showReopenedConversationInInbox: (conversationId, conversationMailboxId) => {
+      const currentMailboxId = get().selectedMailboxId;
+      const nextMailboxId = conversationMailboxId && currentMailboxId === conversationMailboxId
+        ? currentMailboxId
+        : 'all';
+      set({
+        navFilter: 'inbox',
+        selectedMailboxId: nextMailboxId,
+        statusFilter: 'all',
+        searchQuery: '',
+        conversationListFilters: defaultConversationListFiltersForNav('inbox'),
+        activeCustomViewId: null,
+        customViewDirty: false,
+        selectedConversationId: conversationId,
+        conversationHandoff: null,
+        activePanel: 'thread',
+      });
+      savePersisted({
+        navCollapsed: get().navCollapsed,
+        detailSidebarCollapsed: get().detailSidebarCollapsed,
+        selectedMailboxId: nextMailboxId,
+        version: STORE_VERSION,
+      });
+    },
     setDraft: (conversationId, content) =>
       set((state) => {
         if (!content) {

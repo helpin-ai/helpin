@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -800,6 +801,196 @@ func TestEmailFallbackRenderBodiesIncludesMessageAttachments(t *testing.T) {
 		if !strings.Contains(body, "https://cdn.example.com/billing-report.pdf") {
 			t.Fatalf("expected rendered email body to include attachment URL, got %q", body)
 		}
+	}
+}
+
+func TestEmailFallbackRenderBodiesAddsTrackedPoweredByFooter(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{{Content: "Thanks."}},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	if !strings.Contains(htmlBody, "<strong>Helpin AI</strong>") {
+		t.Fatalf("html footer should bold Helpin AI, got %q", htmlBody)
+	}
+	if !strings.Contains(htmlBody, emailFallbackPoweredByFooterURL) {
+		t.Fatalf("html footer missing tracked URL, got %q", htmlBody)
+	}
+	if !strings.Contains(textBody, emailFallbackPoweredByFooterURL) {
+		t.Fatalf("text footer missing tracked URL, got %q", textBody)
+	}
+}
+
+func TestEmailFallbackRenderBodiesAddsPreviewBeforeReplyDelimiter(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{{Content: "Thanks for reaching out about billing.\nWe can help."}},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	preheaderIndex := strings.Index(htmlBody, "Thanks for reaching out about billing. We can help.")
+	delimiterIndex := strings.Index(htmlBody, supportEmailReplyDelimiter)
+	messageIndex := strings.Index(htmlBody, "<p>Thanks for reaching out about billing.")
+	if preheaderIndex < 0 {
+		t.Fatalf("expected hidden preheader with message preview, got %q", htmlBody)
+	}
+	if delimiterIndex < 0 {
+		t.Fatalf("expected reply delimiter, got %q", htmlBody)
+	}
+	if !(preheaderIndex < delimiterIndex && delimiterIndex < messageIndex) {
+		t.Fatalf("expected preheader before delimiter before message, got %q", htmlBody)
+	}
+	if !strings.HasPrefix(textBody, supportEmailReplyDelimiter+"\n\nThanks for reaching out about billing.") {
+		t.Fatalf("expected plaintext body to start with delimiter then message, got %q", textBody)
+	}
+	if strings.Contains(htmlBody, "Reply directly to this email") || strings.Contains(textBody, "Reply directly to this email") {
+		t.Fatalf("reply-directly footer text should be removed, html=%q text=%q", htmlBody, textBody)
+	}
+}
+
+func TestEmailFallbackRenderBodiesUsesAttachmentPreviewWhenMessageHasNoText(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, _ := svc.renderBodies(
+		[]model.SupportMessage{
+			{
+				Attachments: []model.SupportAttachmentPayload{{FileName: "report.pdf"}},
+			},
+		},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	if !strings.Contains(htmlBody, "Attachment from Acme Support") {
+		t.Fatalf("expected attachment-only preheader fallback, got %q", htmlBody)
+	}
+}
+
+type fakeSupportEmailAttachmentDownloader struct {
+	data map[string][]byte
+	err  error
+}
+
+func (f fakeSupportEmailAttachmentDownloader) DownloadContent(ctx context.Context, attachment model.SupportAttachmentPayload) ([]byte, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.data[attachment.ID], nil
+}
+
+type fakeSupportInboundEmailAttachmentStore struct {
+	requests []supportInboundEmailAttachmentRequest
+	urls     map[string]string
+}
+
+func (f *fakeSupportInboundEmailAttachmentStore) StoreInboundEmailAttachment(ctx context.Context, req supportInboundEmailAttachmentRequest) (*model.SupportAttachmentPayload, error) {
+	f.requests = append(f.requests, req)
+	id := req.ContentID
+	if id == "" {
+		id = req.FileName
+	}
+	return &model.SupportAttachmentPayload{
+		ID:       id,
+		FileKey:  "support/" + req.FileName,
+		FileName: req.FileName,
+		FileType: req.ContentType,
+		FileSize: req.ContentLength,
+		URL:      f.urls[req.ContentID],
+	}, nil
+}
+
+func TestEmailFallbackPrepareEmailAttachmentsEmbedsSmallFilesAndLeavesLargeFilesLinked(t *testing.T) {
+	svc := &EmailFallbackService{
+		attachmentDownloader: fakeSupportEmailAttachmentDownloader{
+			data: map[string][]byte{
+				"small-file": []byte("pdf-bytes"),
+			},
+		},
+	}
+
+	messages, attachments := svc.prepareEmailAttachments(context.Background(), []model.SupportMessage{
+		{
+			Content: "Here is the report.",
+			Attachments: []model.SupportAttachmentPayload{
+				{
+					ID:       "small-file",
+					FileKey:  "support/small-file",
+					FileName: "report.pdf",
+					FileType: "application/pdf",
+					FileSize: 1024,
+					URL:      "https://cdn.example.com/report.pdf",
+				},
+				{
+					ID:       "large-file",
+					FileKey:  "support/large-file",
+					FileName: "recording.mov",
+					FileType: "video/quicktime",
+					FileSize: supportEmailAttachmentMaxFileBytes + 1,
+					URL:      "https://cdn.example.com/recording.mov",
+				},
+			},
+		},
+	})
+
+	if len(attachments) != 1 {
+		t.Fatalf("attachments len = %d, want 1", len(attachments))
+	}
+	if attachments[0].Name != "report.pdf" {
+		t.Fatalf("attachment name = %q", attachments[0].Name)
+	}
+	if attachments[0].ContentType != "application/pdf" {
+		t.Fatalf("attachment content type = %q", attachments[0].ContentType)
+	}
+	if attachments[0].Content != base64.StdEncoding.EncodeToString([]byte("pdf-bytes")) {
+		t.Fatalf("attachment content = %q", attachments[0].Content)
+	}
+	if got := messages[0].Attachments[0].URL; got != "" {
+		t.Fatalf("attached file URL should be cleared from body, got %q", got)
+	}
+	if got := messages[0].Attachments[1].URL; got != "https://cdn.example.com/recording.mov" {
+		t.Fatalf("large file URL = %q", got)
+	}
+}
+
+func TestEmailFallbackRenderBodiesOmitsRegularEmailAttachmentsFromBody(t *testing.T) {
+	svc := &EmailFallbackService{}
+
+	htmlBody, textBody := svc.renderBodies(
+		[]model.SupportMessage{
+			{
+				Content: "Here is the report.",
+				Attachments: []model.SupportAttachmentPayload{
+					{
+						FileName: "report.pdf",
+						URL:      "",
+					},
+				},
+			},
+		},
+		"Alex Agent",
+		"Acme Support",
+		"",
+		"",
+	)
+
+	for _, body := range []string{htmlBody, textBody} {
+		if strings.Contains(body, "Attachments:") || strings.Contains(body, "report.pdf") {
+			t.Fatalf("regular email attachment should not be duplicated in body, got %q", body)
+		}
+	}
+	if !strings.Contains(htmlBody, "<p>Here is the report.</p>") {
+		t.Fatalf("expected message text to remain visible, got %q", htmlBody)
 	}
 }
 
@@ -2218,6 +2409,82 @@ func TestEmailFallbackProcessInboundEmailCreatesMessageAndDedupes(t *testing.T) 
 	}
 }
 
+func TestEmailFallbackProcessInboundEmailRewritesInlineCIDImages(t *testing.T) {
+	ctx := context.Background()
+	settings := model.DefaultSupportInboxSettings()
+	env := setupEmailFallbackInboundTestEnv(t, settings)
+
+	store := &fakeSupportInboundEmailAttachmentStore{
+		urls: map[string]string{
+			"image001.png@01DCF421.90A2D1C0": "https://assets.example.com/image001.png",
+		},
+	}
+	env.service.inboundAttachmentStore = store
+
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	conversationID := "88888888-8888-8888-8888-888888888889"
+	customerEmail := "customer@example.com"
+	customerName := "Taylor"
+	conv := &model.SupportConversation{
+		ID:            conversationID,
+		WorkspaceID:   workspaceID,
+		Subject:       "Inline image",
+		Status:        "open",
+		CustomerEmail: &customerEmail,
+		CustomerName:  &customerName,
+	}
+	if err := env.convRepo.Create(ctx, conv); err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	payload := model.PostmarkInboundPayload{
+		FromFull:          model.PostmarkAddress{Email: customerEmail, Name: customerName},
+		To:                "conv-" + conversationID + "@replies.helpin.ai",
+		OriginalRecipient: "conv-" + conversationID + "@replies.helpin.ai",
+		Subject:           "Re: Inline image",
+		MessageID:         "pm-in-inline-image",
+		TextBody:          "[cid:image001.png@01DCF421.90A2D1C0]\n\nThanks,\nViktoria",
+		HtmlBody:          `<div><img width="538" height="554" src="cid:image001.png@01DCF421.90A2D1C0"><p>Thanks,<br>Viktoria</p></div>`,
+		Attachments: []model.PostmarkInboundAttachment{
+			{
+				Name:          "image001.png",
+				Content:       base64.StdEncoding.EncodeToString([]byte("png-bytes")),
+				ContentType:   "image/png",
+				ContentLength: int64(len("png-bytes")),
+				ContentID:     "image001.png@01DCF421.90A2D1C0",
+			},
+		},
+	}
+
+	if err := env.service.ProcessInboundEmail(ctx, payload, `{"MessageID":"pm-in-inline-image"}`); err != nil {
+		t.Fatalf("process inbound email: %v", err)
+	}
+
+	if len(store.requests) != 1 {
+		t.Fatalf("stored attachment requests = %d, want 1", len(store.requests))
+	}
+	if store.requests[0].MessageID == "" {
+		t.Fatalf("expected inbound attachment to be linked to generated message id")
+	}
+
+	logs, err := env.emailLogRepo.ListByConversation(ctx, workspaceID, conversationID)
+	if err != nil {
+		t.Fatalf("list email logs: %v", err)
+	}
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 inbound email log, got %d", len(logs))
+	}
+	if strings.Contains(logs[0].HTMLBody, "cid:image001") {
+		t.Fatalf("expected cid src to be rewritten, got %q", logs[0].HTMLBody)
+	}
+	if !strings.Contains(logs[0].HTMLBody, `src="https://assets.example.com/image001.png"`) {
+		t.Fatalf("expected stored asset URL in HTML body, got %q", logs[0].HTMLBody)
+	}
+	if strings.Contains(logs[0].StrippedText, "[cid:") {
+		t.Fatalf("expected cid placeholder stripped from text, got %q", logs[0].StrippedText)
+	}
+}
+
 func TestEmailFallbackProcessInboundEmailRouteCreatesConversation(t *testing.T) {
 	ctx := context.Background()
 	settings := model.DefaultSupportInboxSettings()
@@ -2837,7 +3104,7 @@ func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.
 		"",
 	)
 
-	if !strings.Contains(htmlBody, `<a href="https://example.com/#helpin-conv=conv-1">open the chat</a>`) {
+	if !strings.Contains(htmlBody, `<a href="https://example.com/#helpin-conv=conv-1">View conversation in browser</a>`) {
 		t.Fatalf("expected html body to link open the chat text, got %q", htmlBody)
 	}
 	if strings.Contains(htmlBody, `>https://example.com/#helpin-conv=conv-1</a>`) {
@@ -2846,11 +3113,44 @@ func TestEmailFallbackRenderBodiesUsesLinkedChatAndHelpinAttribution(t *testing.
 	if !strings.Contains(htmlBody, `border-top:1px solid #e5e7eb`) {
 		t.Fatalf("expected subtle bordered attribution footer, got %q", htmlBody)
 	}
-	if !strings.Contains(htmlBody, `<a href="https://helpin.ai"`) || !strings.Contains(htmlBody, `Helpin AI</a>`) {
+	if !strings.Contains(htmlBody, `<a href="`+emailFallbackPoweredByFooterURL+`"`) || !strings.Contains(htmlBody, `<strong>Helpin AI</strong></a>`) {
 		t.Fatalf("expected Helpin AI attribution link, got %q", htmlBody)
 	}
-	if !strings.Contains(textBody, "Powered by Helpin AI: https://helpin.ai") {
+	if !strings.Contains(textBody, "Powered by Helpin AI: "+emailFallbackPoweredByFooterURL) {
 		t.Fatalf("expected plaintext Helpin AI attribution URL, got %q", textBody)
+	}
+}
+
+func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterHistory(t *testing.T) {
+	content, _ := inboundPayloadBodies(model.PostmarkInboundPayload{
+		StrippedTextReply: "Fresh customer reply.\n\n" + supportEmailReplyDelimiter + "\n\nOld quoted body",
+	})
+
+	if content != "Fresh customer reply." {
+		t.Fatalf("content = %q, want fresh reply only", content)
+	}
+}
+
+func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterFromTextFallback(t *testing.T) {
+	content, _ := inboundPayloadBodies(model.PostmarkInboundPayload{
+		TextBody: "Fresh fallback reply.\n\n" + supportEmailReplyDelimiter + "\n\nOld quoted body",
+	})
+
+	if content != "Fresh fallback reply." {
+		t.Fatalf("content = %q, want fresh reply only", content)
+	}
+}
+
+func TestEmailFallbackInboundPayloadBodiesStripReplyDelimiterFromHTMLMarkdown(t *testing.T) {
+	content, _ := inboundPayloadBodies(model.PostmarkInboundPayload{
+		HtmlBody: "<p>Fresh HTML reply.</p><p>" + supportEmailReplyDelimiter + "</p><p>Old quoted body</p>",
+	})
+
+	if strings.Contains(content, supportEmailReplyDelimiter) || strings.Contains(content, "Old quoted body") {
+		t.Fatalf("expected delimiter history stripped, got %q", content)
+	}
+	if !strings.Contains(content, "Fresh HTML reply.") {
+		t.Fatalf("expected fresh reply, got %q", content)
 	}
 }
 

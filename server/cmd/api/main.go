@@ -269,6 +269,7 @@ func main() {
 			&model.DocsHelpcenterConfig{},
 			&model.DocsHelpcenterArticle{},
 			&model.DocsHelpcenterArticlePublication{},
+			&model.DocsHelpcenterSearchEntry{},
 			&model.DocsHelpcenterSpaceTranslation{},
 			&model.DocsHelpcenterCollectionTranslation{},
 			&model.DocsHelpcenterArticleTranslation{},
@@ -604,6 +605,7 @@ func main() {
 	docsHelpcenterRepo := repository.NewDocsHelpcenterRepository(db, cfg.DocsOrderingUseSortKey)
 	docsHelpcenterTranslationRepo := repository.NewDocsHelpcenterTranslationRepository(db)
 	docsHelpcenterPublicationRepo := repository.NewDocsHelpcenterPublicationRepository(db)
+	docsHelpcenterSearchRepo := repository.NewDocsHelpcenterSearchRepository(db)
 	docsSearchRepo := repository.NewDocsSearchRepository(db)
 	docsImportRepo := repository.NewDocsImportRepository(db)
 	docsRedirectRepo := repository.NewDocsRedirectRepository(db)
@@ -935,6 +937,7 @@ func main() {
 	pmImportService.SetDocsImportDependencies(docsDocumentService, docsContentService)
 	docsLinkService := service.NewDocsLinkService(docsLinkRepo, pmTaskRepo, docsDocumentRepo, wsPublisher)
 	docsHelpcenterService := service.NewDocsHelpcenterService(docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, docsRedirectRepo, s3Client, wsPublisher)
+	docsHelpcenterService.SetSearchRepository(docsHelpcenterSearchRepo)
 
 	// Tiered cache for hot public help-center reads. L1 is an in-process LRU;
 	// L2 is Redis when available so cache entries survive pod restarts and
@@ -959,6 +962,7 @@ func main() {
 	}
 	docsHelpcenterService.SetHelpcenterCache(hcCache)
 	docsHelpcenterTranslationService := service.NewDocsHelpcenterTranslationService(docsHelpcenterTranslationRepo, docsHelpcenterRepo, docsHelpcenterPublicationRepo, docsRedirectRepo, docsDocumentRepo, docsContentRepo, docsSpaceRepo, docsCollectionRepo, llmProvider)
+	docsHelpcenterTranslationService.SetSearchRepository(docsHelpcenterSearchRepo)
 	docsImportService := service.NewDocsImportService(docsImportRepo, docsSpaceService, docsCollectionService, docsDocumentService, docsContentService, docsHelpcenterService, docsRedirectRepo, s3Client)
 	docsSpaceService.SetTranslationService(docsHelpcenterTranslationService)
 	docsCollectionService.SetTranslationService(docsHelpcenterTranslationService)
@@ -974,6 +978,7 @@ func main() {
 		ChunkRepo:       docsChunkRepo,
 		HelpcenterRepo:  docsHelpcenterRepo,
 		PublicationRepo: docsHelpcenterPublicationRepo,
+		SearchRepo:      docsHelpcenterSearchRepo,
 		TranslationRepo: docsHelpcenterTranslationRepo,
 	}
 	if s3Client != nil {

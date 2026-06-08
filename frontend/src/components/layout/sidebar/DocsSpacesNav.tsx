@@ -28,6 +28,7 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { SidebarSectionAction } from './SidebarSectionAction';
 
 function SidebarCollectionIcon({ name }: { name?: string | null }) {
   if (name) {
@@ -366,18 +367,10 @@ export function DocsSpacesNav({
         <SidebarGroup className="p-0 pb-3">
           <SidebarGroupLabel className="h-7 px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 flex items-center justify-between">
             <span>Team Spaces</span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="group/plus flex h-4 w-4 items-center justify-center rounded hover:bg-muted transition-all"
-                  onClick={() => { setShowCreateSpace(false); setTimeout(() => { setCreateSpaceType('internal'); setShowCreateSpace(true); }, 0); }}
-                >
-                  <PlusSignIcon className="h-3 w-3 text-muted-foreground/70 group-hover/plus:text-foreground" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Create space</TooltipContent>
-            </Tooltip>
+            <SidebarSectionAction
+              label="Create space"
+              onClick={() => { setShowCreateSpace(false); setTimeout(() => { setCreateSpaceType('internal'); setShowCreateSpace(true); }, 0); }}
+            />
           </SidebarGroupLabel>
           <SidebarMenu>
             {internalSpaces.map(renderSpaceItem)}
@@ -389,22 +382,16 @@ export function DocsSpacesNav({
           <SidebarGroupLabel className="flex h-7 items-center px-2 text-[11px] uppercase tracking-wide text-muted-foreground/90 justify-between">
             <span className="flex items-center gap-1">
               External Spaces
-              <QuickTooltip label="Published to your public help center">
-                <HelpCircleIcon className="h-[10px] w-[10px] text-muted-foreground/50" />
+              <QuickTooltip label="Published to your public help center" side="right">
+                <span className="inline-flex h-3 w-3 cursor-help items-center justify-center rounded text-muted-foreground/50 hover:text-muted-foreground">
+                  <HelpCircleIcon className="h-[10px] w-[10px]" />
+                </span>
               </QuickTooltip>
             </span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="group/plus flex h-4 w-4 items-center justify-center rounded hover:bg-muted transition-all"
-                  onClick={() => { setShowCreateSpace(false); setTimeout(() => { setCreateSpaceType('external_capable'); setShowCreateSpace(true); }, 0); }}
-                >
-                  <PlusSignIcon className="h-3 w-3 text-muted-foreground/70 group-hover/plus:text-foreground" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Create space</TooltipContent>
-            </Tooltip>
+            <SidebarSectionAction
+              label="Create space"
+              onClick={() => { setShowCreateSpace(false); setTimeout(() => { setCreateSpaceType('external_capable'); setShowCreateSpace(true); }, 0); }}
+            />
           </SidebarGroupLabel>
           <SidebarMenu>
             {externalSpaces.map(renderSpaceItem)}

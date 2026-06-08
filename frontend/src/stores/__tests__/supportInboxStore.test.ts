@@ -34,6 +34,7 @@ function resetStore() {
     customViewDirty: false,
     builtinViewFilters: {},
     selectedConversationId: null,
+    conversationHandoff: null,
     replyMode: 'reply',
     createDialogOpen: false,
     activePanel: 'list',
@@ -205,6 +206,55 @@ describe('supportInboxStore', () => {
       aiStates: ['handoff'],
       sort: 'oldest',
     });
+  });
+
+  it('keeps the matching team inbox active when reopening a selected resolved conversation', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'resolved',
+      selectedMailboxId: 'mailbox-billing',
+      selectedConversationId: 'conv-1',
+      activePanel: 'thread',
+    });
+
+    useSupportInboxStore.getState().showReopenedConversationInInbox('conv-1', 'mailbox-billing');
+
+    expect(useSupportInboxStore.getState().navFilter).toBe('inbox');
+    expect(useSupportInboxStore.getState().selectedMailboxId).toBe('mailbox-billing');
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-1');
+    expect(useSupportInboxStore.getState().conversationListFilters.states).toEqual(['open', 'waiting_on_customer']);
+  });
+
+  it('falls back to all inboxes when reopening a selected conversation from another team inbox', () => {
+    useSupportInboxStore.setState({
+      navFilter: 'resolved',
+      selectedMailboxId: 'mailbox-billing',
+      selectedConversationId: 'conv-1',
+      activePanel: 'thread',
+    });
+
+    useSupportInboxStore.getState().showReopenedConversationInInbox('conv-1', 'mailbox-sales');
+
+    expect(useSupportInboxStore.getState().navFilter).toBe('inbox');
+    expect(useSupportInboxStore.getState().selectedMailboxId).toBe('all');
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-1');
+  });
+
+  it('tracks a conversation handoff while resolving and clears it after completion', () => {
+    useSupportInboxStore.setState({ selectedConversationId: 'conv-1', activePanel: 'thread' });
+
+    useSupportInboxStore.getState().startConversationHandoff('conv-1', 'conv-2');
+
+    expect(useSupportInboxStore.getState().conversationHandoff).toEqual({
+      fromConversationId: 'conv-1',
+      toConversationId: 'conv-2',
+    });
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-1');
+
+    useSupportInboxStore.getState().finishConversationHandoff('conv-2');
+
+    expect(useSupportInboxStore.getState().conversationHandoff).toBeNull();
+    expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-2');
+    expect(useSupportInboxStore.getState().activePanel).toBe('thread');
   });
 
   it('uses visible Assignment defaults for built-in sidebar items', () => {

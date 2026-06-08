@@ -27,9 +27,11 @@ Object.defineProperty(window, 'matchMedia', {
 function renderSupportRail({
   customViews = [],
   customViewCounts = {},
+  canManageSettings = false,
 }: {
   customViews?: SupportInboxView[]
   customViewCounts?: Record<string, SupportInboxViewCount>
+  canManageSettings?: boolean
 } = {}) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -94,7 +96,7 @@ function renderSupportRail({
             }}
             customViews={customViews}
             customViewCounts={customViewCounts}
-            canManageSettings={false}
+            canManageSettings={canManageSettings}
             wsSlug="test-docs"
             pathname="/w/test-docs/support"
             onNavFilterChange={vi.fn()}
@@ -209,6 +211,41 @@ describe('SupportRailNav', () => {
     const customView = buttonByText(rendered.container, 'Escalations')
     expect(customView?.textContent).toContain('7')
     expect(customView?.querySelector('[data-slot="support-unread-dot"]')).toBeTruthy()
+
+    rendered.cleanup()
+  })
+
+  it('uses a shared trailing slot for team inbox counts', () => {
+    const rendered = renderSupportRail({ canManageSettings: true })
+
+    const teamInbox = buttonByText(rendered.container, 'Test')
+    const teamCountSlot = teamInbox?.querySelector('[data-slot="support-total-count"]')?.parentElement
+    const inboxCountSlot = buttonByText(rendered.container, 'Inbox')
+      ?.querySelector('[data-slot="support-total-count"]')
+      ?.parentElement
+
+    expect(inboxCountSlot?.className).toContain('min-w-4')
+    expect(inboxCountSlot?.className).toContain('justify-center')
+    expect(teamCountSlot?.className).toContain('min-w-4')
+    expect(teamCountSlot?.className).toContain('justify-center')
+
+    rendered.cleanup()
+  })
+
+  it('matches the Docs and PM sidebar plus button styling', () => {
+    const rendered = renderSupportRail({ canManageSettings: true })
+
+    const createAction = rendered.container.querySelector('[data-slot="support-create-team-inbox-action"]')
+    const createIcon = createAction?.querySelector('svg')
+
+    expect(createAction?.className).toContain('group/plus')
+    expect(createAction?.className).toContain('-mr-0.5')
+    expect(createAction?.className).toContain('h-5')
+    expect(createAction?.className).toContain('w-5')
+    expect(createAction?.className).toContain('hover:bg-muted')
+    expect(createIcon?.className.baseVal).toContain('h-3')
+    expect(createIcon?.className.baseVal).toContain('w-3')
+    expect(createIcon?.className.baseVal).toContain('group-hover/plus:text-foreground')
 
     rendered.cleanup()
   })

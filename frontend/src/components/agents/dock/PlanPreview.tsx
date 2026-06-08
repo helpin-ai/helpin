@@ -131,6 +131,8 @@ function GuardrailList({
 function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const desc = describeStep(step.instructions);
+  const prompt = extractUserRequest(step.instructions);
+  const planItems = extractInstructionItems(step.instructions, 'plan');
   const targetTitle = step.target?.display_title || step.target?.entity_id || '';
   const TargetIcon = targetIcon(step.target?.entity_type);
   const tools = step.allowed_tools ?? [];
@@ -153,6 +155,26 @@ function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
         <p className="mt-1.5 line-clamp-3 text-xs leading-snug text-muted-foreground">
           {desc}
         </p>
+      ) : null}
+      {prompt ? (
+        <div className="mt-2 rounded border border-border/60 bg-background/70 px-2 py-1.5">
+          <div className="text-[10px] font-medium uppercase text-muted-foreground">Prompt</div>
+          <p className="mt-0.5 line-clamp-4 break-words text-[11px] leading-snug text-foreground/90">
+            {prompt}
+          </p>
+        </div>
+      ) : null}
+      {planItems.length ? (
+        <div className="mt-2 rounded border border-border/60 bg-background/70 px-2 py-1.5">
+          <div className="text-[10px] font-medium uppercase text-muted-foreground">Plan</div>
+          <ol className="mt-1 list-decimal space-y-1 pl-4 text-[11px] leading-snug text-foreground/90">
+            {planItems.map((item, index) => (
+              <li key={`${index}-${item}`} className="break-words">
+                {item}
+              </li>
+            ))}
+          </ol>
+        </div>
       ) : null}
       {tools.length ? (
         <div className="mt-2">
@@ -179,6 +201,49 @@ function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
       ) : null}
     </div>
   );
+}
+
+function extractInstructionItems(
+  instructions: string | undefined | null,
+  section: 'plan' | 'constraints',
+): string[] {
+  const text = (instructions ?? '').trim();
+  if (!text) return [];
+  const sectionLabel = `${section}:`;
+  const lines = text.split('\n');
+  const sectionIdx = lines.findIndex((line) => line.trim().toLowerCase() === sectionLabel);
+  if (sectionIdx < 0) return [];
+  const items: string[] = [];
+  for (let i = sectionIdx + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const lower = line.toLowerCase();
+    if (
+      lower === 'goal:' ||
+      lower === 'plan:' ||
+      lower === 'constraints:' ||
+      lower.startsWith('target:') ||
+      lower.startsWith('user request:')
+    ) {
+      break;
+    }
+    items.push(line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '').trim());
+  }
+  return items.filter(Boolean);
+}
+
+function extractUserRequest(instructions: string | undefined | null): string {
+  const text = (instructions ?? '').trim();
+  if (!text) return '';
+  const lines = text.split('\n');
+  const requestIdx = lines.findIndex((line) => line.trim().toLowerCase() === 'user request:');
+  if (requestIdx < 0) return '';
+  return lines
+    .slice(requestIdx + 1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
 
 function targetIcon(type?: string) {

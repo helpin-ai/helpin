@@ -28,7 +28,7 @@ const minOpenRouterCommandRouterTimeout = 8 * time.Second
 const commandBarPlannerValidationReasonPrefix = "Command Agent planner output invalid: "
 
 var commandBarTaskKeyPattern = regexp.MustCompile(`\b([A-Z][A-Z0-9]{1,11})-(\d{1,9})\b`)
-var commandBarTypedUUIDPattern = regexp.MustCompile(`(?i)\b(document|doc|task|story|epic|deal|crm deal|crm_deal|contact|crm contact|crm_contact)\s+(?:id|uuid)\s*[:#-]?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b`)
+var commandBarTypedUUIDPattern = regexp.MustCompile(`(?i)\b(document|doc|task|story|epic|deal|crm deal|crm_deal|contact|crm contact|crm_contact|repository|repo|git repo|git_repository|git_repo)\s+(?:id|uuid)\s*[:#-]?\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b`)
 
 type commandBarTriggerContextPayload struct {
 	PlanID      string                      `json:"plan_id,omitempty"`
@@ -127,6 +127,18 @@ type commandBarChatClassifierTargetResolution struct {
 	InferredPriorTarget *model.CommandBarPageContext `json:"inferred_prior_target,omitempty"`
 	CandidateTargets    []commandBarWorkingEntityRef `json:"candidate_targets,omitempty"`
 	Instruction         string                       `json:"instruction,omitempty"`
+}
+
+type commandBarRepositoryChoiceContext struct {
+	Mode         string                       `json:"mode"`
+	Repositories []commandBarRepositoryChoice `json:"repositories"`
+}
+
+type commandBarRepositoryChoice struct {
+	ID            string `json:"id"`
+	FullName      string `json:"full_name"`
+	Provider      string `json:"provider,omitempty"`
+	DefaultBranch string `json:"default_branch,omitempty"`
 }
 
 type CommandBarService struct {
@@ -386,23 +398,48 @@ func (s *CommandBarService) commandBarThreadForTurn(ctx context.Context, workspa
 }
 
 func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspaceID, actorID, text string, pageContext model.CommandBarPageContext, access CommandBarChatAccess, history []model.CommandBarMessage) (*model.CommandBarProposal, string, error) {
+	effectiveText := text
+	explicitTargetResolved := false
+	repositoryChoiceResolved := false
 	if explicitTarget, ok, err := s.resolveCommandBarExplicitTarget(ctx, workspaceID, text); err != nil {
 		proposal := &model.CommandBarProposal{Type: model.CommandBarProposalNoMatch, Reason: err.Error()}
 		return proposal, err.Error(), nil
 	} else if ok {
 		pageContext = normalizeCommandBarPageContext(explicitTarget, workspaceID)
+		explicitTargetResolved = true
+	} else if choiceTarget, ok, err := s.resolveCommandBarRepositoryChoiceTarget(ctx, workspaceID, text, history); err != nil {
+		proposal := &model.CommandBarProposal{Type: model.CommandBarProposalNoMatch, Reason: err.Error()}
+		return proposal, err.Error(), nil
+	} else if ok {
+		pageContext = normalizeCommandBarPageContext(choiceTarget, workspaceID)
+		explicitTargetResolved = true
+		repositoryChoiceResolved = true
 	} else if inferredTarget, ok, _ := s.inferCommandBarTargetFromHistory(ctx, workspaceID, history); ok {
 		pageContext = normalizeCommandBarPageContext(inferredTarget, workspaceID)
 	}
-
-	if denied := commandBarDeniedReadOnlyDomainAnswer(text, access); denied != "" {
-		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: denied}, denied, nil
+	if explicitTargetResolved && (repositoryChoiceResolved || commandBarLooksLikeTargetClarification(text)) {
+		if pending := commandBarPendingTargetRequestFromHistory(history); pending != "" {
+			effectiveText = pending + "\n\nTarget clarification: " + text
+		}
 	}
 
-	classification, err := s.classifyCommandBarChatIntent(ctx, workspaceID, text, pageContext, access, history)
+	if denied := commandBarDeniedReadOnlyDomainAnswer(effectiveText, access); denied != "" {
+		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: denied}, denied, nil
+	}
+	if commandBarShouldUseRunPlannerBeforeInline(effectiveText, pageContext) {
+		proposal, content, handled, err := s.commandBarRunPlanProposalFromParse(ctx, workspaceID, actorID, effectiveText, pageContext)
+		if err != nil {
+			return nil, "", err
+		}
+		if handled {
+			return proposal, content, nil
+		}
+	}
+
+	classification, err := s.classifyCommandBarChatIntent(ctx, workspaceID, effectiveText, pageContext, access, history)
 	if err != nil {
 		slog.WarnContext(ctx, "ask agents chat intent classification failed", "error", err, "workspace_id", workspaceID)
-		answer, inlineContext := s.inlineReadOnlyAnswer(ctx, workspaceID, actorID, text, pageContext, access, history)
+		answer, inlineContext := s.inlineReadOnlyAnswer(ctx, workspaceID, actorID, effectiveText, pageContext, access, history)
 		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: answer, Context: inlineContext}, answer, nil
 	}
 	route := normalizeCommandBarChatRoute("")
@@ -411,10 +448,10 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 	}
 	switch route {
 	case "inline_read_only":
-		answer, inlineContext := s.inlineReadOnlyAnswer(ctx, workspaceID, actorID, text, pageContext, access, history)
+		answer, inlineContext := s.inlineReadOnlyAnswer(ctx, workspaceID, actorID, effectiveText, pageContext, access, history)
 		return &model.CommandBarProposal{Type: model.CommandBarProposalInlineAnswer, Answer: answer, Context: inlineContext}, answer, nil
 	case "create_agent":
-		return s.commandBarCreateAgentChatProposal(ctx, workspaceID, text, pageContext)
+		return s.commandBarCreateAgentChatProposal(ctx, workspaceID, effectiveText, pageContext)
 	case "clarification":
 		answer := strings.TrimSpace(classification.Answer)
 		if answer == "" {
@@ -426,17 +463,28 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 		proposal := &model.CommandBarProposal{Type: model.CommandBarProposalClarification, Answer: answer, Reason: strings.TrimSpace(classification.Reason)}
 		return proposal, answer, nil
 	default:
-		if classification == nil && shouldCreateReusableAgentFromChat(text) {
-			return s.commandBarCreateAgentChatProposal(ctx, workspaceID, text, pageContext)
+		if classification == nil && shouldCreateReusableAgentFromChat(effectiveText) {
+			return s.commandBarCreateAgentChatProposal(ctx, workspaceID, effectiveText, pageContext)
 		}
 	}
 
+	proposal, content, handled, err := s.commandBarRunPlanProposalFromParse(ctx, workspaceID, actorID, effectiveText, pageContext)
+	if err != nil {
+		return nil, "", err
+	}
+	if handled {
+		return proposal, content, nil
+	}
+	return &model.CommandBarProposal{Type: model.CommandBarProposalNoMatch, Reason: "No available agent matched this request."}, "No available agent matched this request.", nil
+}
+
+func (s *CommandBarService) commandBarRunPlanProposalFromParse(ctx context.Context, workspaceID, actorID, text string, pageContext model.CommandBarPageContext) (*model.CommandBarProposal, string, bool, error) {
 	parsed, err := s.ParseIntent(ctx, workspaceID, actorID, model.CommandBarParseRequest{
 		Text:        text,
 		PageContext: pageContext,
 	})
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 	if parsed.Status == model.CommandBarParseStatusPlan && parsed.Plan != nil {
 		proposal := &model.CommandBarProposal{
@@ -444,14 +492,17 @@ func (s *CommandBarService) commandBarChatProposal(ctx context.Context, workspac
 			Plan:       parsed.Plan,
 			Guardrails: parsed.Plan.Guardrails,
 		}
-		return proposal, commandBarPlanProposalContent(*parsed.Plan), nil
+		return proposal, commandBarPlanProposalContent(*parsed.Plan), true, nil
+	}
+	if proposal, content, ok := s.commandBarRepositoryTargetClarification(ctx, workspaceID, parsed.Reason); ok {
+		return proposal, content, true, nil
 	}
 	proposal := &model.CommandBarProposal{
 		Type:        model.CommandBarProposalNoMatch,
 		Reason:      parsed.Reason,
 		Suggestions: parsed.Suggestions,
 	}
-	return proposal, firstNonEmptyString(strings.TrimSpace(parsed.Reason), "No available agent matched this request."), nil
+	return proposal, firstNonEmptyString(strings.TrimSpace(parsed.Reason), "No available agent matched this request."), true, nil
 }
 
 func (s *CommandBarService) commandBarCreateAgentChatProposal(ctx context.Context, workspaceID, text string, pageContext model.CommandBarPageContext) (*model.CommandBarProposal, string, error) {
@@ -889,6 +940,111 @@ func commandBarWorkingContextFromHistory(history []model.CommandBarMessage) *com
 	return commandBarNormalizeWorkingContext(working)
 }
 
+func commandBarPendingTargetRequestFromHistory(history []model.CommandBarMessage) string {
+	for i := len(history) - 1; i >= 0; i-- {
+		message := history[i]
+		if message.Role != model.CommandBarMessageRoleAssistant {
+			continue
+		}
+		proposal, err := decodeCommandBarProposal(message.ProposalJSON)
+		if err != nil || !commandBarProposalRequestsTarget(proposal, message.Content) {
+			continue
+		}
+		for j := i - 1; j >= 0; j-- {
+			prior := history[j]
+			if prior.Role != model.CommandBarMessageRoleUser {
+				continue
+			}
+			return strings.TrimSpace(prior.Content)
+		}
+	}
+	return ""
+}
+
+func commandBarProposalRequestsTarget(proposal *model.CommandBarProposal, content string) bool {
+	if proposal == nil {
+		return containsAny(strings.ToLower(strings.TrimSpace(content)), "target", "scope")
+	}
+	switch proposal.Type {
+	case model.CommandBarProposalClarification:
+		return true
+	case model.CommandBarProposalNoMatch:
+		reason := strings.ToLower(strings.TrimSpace(firstNonEmptyString(proposal.Reason, content)))
+		return containsAny(reason, "target", "scope", "please name")
+	default:
+		return false
+	}
+}
+
+func commandBarLooksLikeTargetClarification(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	if containsAny(lower, "changelog", "change log", "release notes", "latest commits", "create document", "create a doc", "write", "summarize", "review", "run forge", "run lens") {
+		return false
+	}
+	return containsAny(lower, "target", "scope", "repository", "repo", "document", "doc", "task", "story", "epic", "deal", "contact")
+}
+
+func (s *CommandBarService) resolveCommandBarRepositoryChoiceTarget(ctx context.Context, workspaceID, text string, history []model.CommandBarMessage) (model.CommandBarPageContext, bool, error) {
+	index, ok := commandBarRepositoryChoiceIndex(text)
+	if !ok {
+		return model.CommandBarPageContext{}, false, nil
+	}
+	choices := commandBarLastRepositoryChoicesFromHistory(history)
+	if len(choices) == 0 {
+		return model.CommandBarPageContext{}, false, nil
+	}
+	if index < 0 || index >= len(choices) {
+		return model.CommandBarPageContext{}, true, fmt.Errorf("Please choose a repository number from 1 to %d.", len(choices))
+	}
+	target, err := s.commandBarValidateExplicitTarget(ctx, workspaceID, "repository", choices[index].ID)
+	if err != nil {
+		return model.CommandBarPageContext{}, true, err
+	}
+	return target, true, nil
+}
+
+func commandBarRepositoryChoiceIndex(text string) (int, bool) {
+	trimmed := strings.TrimSpace(strings.ToLower(text))
+	trimmed = strings.TrimPrefix(trimmed, "#")
+	switch trimmed {
+	case "first", "the first one", "first one":
+		return 0, true
+	case "second", "the second one", "second one":
+		return 1, true
+	case "third", "the third one", "third one":
+		return 2, true
+	}
+	value, err := strconv.Atoi(trimmed)
+	if err != nil || value <= 0 {
+		return 0, false
+	}
+	return value - 1, true
+}
+
+func commandBarLastRepositoryChoicesFromHistory(history []model.CommandBarMessage) []commandBarRepositoryChoice {
+	for i := len(history) - 1; i >= 0; i-- {
+		message := history[i]
+		if message.Role != model.CommandBarMessageRoleAssistant {
+			continue
+		}
+		proposal, err := decodeCommandBarProposal(message.ProposalJSON)
+		if err != nil || proposal == nil || len(proposal.Context) == 0 {
+			continue
+		}
+		var context commandBarRepositoryChoiceContext
+		if err := json.Unmarshal(proposal.Context, &context); err != nil {
+			continue
+		}
+		if context.Mode == "repository_target_choices" && len(context.Repositories) > 0 {
+			return context.Repositories
+		}
+	}
+	return nil
+}
+
 func (s *CommandBarService) inferCommandBarTargetFromHistory(ctx context.Context, workspaceID string, history []model.CommandBarMessage) (model.CommandBarPageContext, bool, bool) {
 	working := commandBarWorkingContextFromHistory(history)
 	candidates := commandBarRunnableTargetRefs(working)
@@ -939,7 +1095,7 @@ func commandBarRunnableTargetRefs(working *commandBarWorkingContext) []commandBa
 	for _, entity := range working.ReferencedEntities {
 		entity.Type = normalizeCommandBarTargetType(entity.Type)
 		switch entity.Type {
-		case "task", "epic", "document", "crm_contact", "crm_deal":
+		case "task", "epic", "document", "crm_contact", "crm_deal", "repository":
 		default:
 			continue
 		}
@@ -1711,6 +1867,82 @@ func commandBarPlanProposalContent(plan model.CommandBarPlan) string {
 	return fmt.Sprintf("I found a %d-step plan. Review the chain before starting.", count)
 }
 
+func commandBarShouldUseRunPlannerBeforeInline(text string, pageContext model.CommandBarPageContext) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	if normalizeCommandBarTargetType(pageContext.EntityType) == "repository" {
+		return true
+	}
+	if containsAny(lower, "commit", "commits", "changelog", "change log", "release notes", "git history", "git log") &&
+		containsAny(lower, "repository", "repo", "git", "one shot", "one-shot", "agent", "create doc", "create document", "docs") {
+		return true
+	}
+	return false
+}
+
+func (s *CommandBarService) commandBarRepositoryTargetClarification(ctx context.Context, workspaceID, reason string) (*model.CommandBarProposal, string, bool) {
+	if !commandBarReasonNeedsRepositoryTarget(reason) {
+		return nil, "", false
+	}
+	choices, err := s.commandBarRepositoryChoices(ctx, workspaceID)
+	if err != nil || len(choices) == 0 {
+		return nil, "", false
+	}
+	lines := []string{"Choose a repository target to run this on:"}
+	for i, choice := range choices {
+		label := strings.TrimSpace(choice.FullName)
+		if choice.DefaultBranch != "" {
+			label += " (" + choice.DefaultBranch + ")"
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s", i+1, label))
+	}
+	lines = append(lines, "Reply with the repository full name or number.")
+	content := strings.Join(lines, "\n")
+	raw, _ := json.Marshal(commandBarRepositoryChoiceContext{
+		Mode:         "repository_target_choices",
+		Repositories: choices,
+	})
+	return &model.CommandBarProposal{
+		Type:    model.CommandBarProposalClarification,
+		Answer:  content,
+		Reason:  strings.TrimSpace(reason),
+		Context: raw,
+	}, content, true
+}
+
+func commandBarReasonNeedsRepositoryTarget(reason string) bool {
+	lower := strings.ToLower(strings.TrimSpace(reason))
+	return containsAny(lower, "repository", "repo") && containsAny(lower, "target", "needs", "name")
+}
+
+func (s *CommandBarService) commandBarRepositoryChoices(ctx context.Context, workspaceID string) ([]commandBarRepositoryChoice, error) {
+	if s == nil || s.agentService == nil || s.agentService.gitService == nil {
+		return nil, nil
+	}
+	repos, err := s.agentService.gitService.ListRepositories(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	choices := make([]commandBarRepositoryChoice, 0, len(repos))
+	for _, repo := range repos {
+		choices = append(choices, commandBarRepositoryChoice{
+			ID:            strings.TrimSpace(repo.ID),
+			FullName:      strings.TrimSpace(repo.FullName),
+			Provider:      strings.TrimSpace(repo.Provider),
+			DefaultBranch: strings.TrimSpace(repo.DefaultBranch),
+		})
+	}
+	slices.SortFunc(choices, func(a, b commandBarRepositoryChoice) int {
+		return strings.Compare(strings.ToLower(a.FullName), strings.ToLower(b.FullName))
+	})
+	if len(choices) > 10 {
+		choices = choices[:10]
+	}
+	return choices, nil
+}
+
 func commandBarCreateAgentRequestFromDraft(workspaceID string, draft model.CustomAgentDraft, req model.ConfirmCommandBarChatProposalRequest) model.CreateAgentRequest {
 	name := strings.TrimSpace(draft.Name)
 	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
@@ -1964,6 +2196,9 @@ func (s *CommandBarService) resolveCommandBarExplicitTarget(ctx context.Context,
 	if target, ok, err := s.resolveCommandBarTypedExplicitTarget(ctx, workspaceID, text); ok || err != nil {
 		return target, ok, err
 	}
+	if target, ok, err := s.resolveCommandBarNamedRepositoryTarget(ctx, workspaceID, text); ok || err != nil {
+		return target, ok, err
+	}
 	matches := commandBarTaskKeyPattern.FindAllStringSubmatch(strings.ToUpper(text), -1)
 	if len(matches) == 0 {
 		return model.CommandBarPageContext{}, false, nil
@@ -2044,7 +2279,7 @@ func (s *CommandBarService) resolveCommandBarTypedExplicitTarget(ctx context.Con
 			continue
 		}
 		switch targetType {
-		case "task", "document", "epic", "crm_deal", "crm_contact":
+		case "task", "document", "epic", "crm_deal", "crm_contact", "repository":
 		default:
 			continue
 		}
@@ -2065,6 +2300,87 @@ func (s *CommandBarService) resolveCommandBarTypedExplicitTarget(ctx context.Con
 		return model.CommandBarPageContext{}, true, err
 	}
 	return target, true, nil
+}
+
+func (s *CommandBarService) resolveCommandBarNamedRepositoryTarget(ctx context.Context, workspaceID, text string) (model.CommandBarPageContext, bool, error) {
+	if !containsAny(strings.ToLower(strings.TrimSpace(text)), "repository", "repo", "git") {
+		return model.CommandBarPageContext{}, false, nil
+	}
+	if s == nil || s.agentService == nil || s.agentService.gitService == nil {
+		return model.CommandBarPageContext{}, false, nil
+	}
+	repos, err := s.agentService.gitService.ListRepositories(ctx, workspaceID)
+	if err != nil {
+		return model.CommandBarPageContext{}, true, err
+	}
+	fullMatches := make([]model.GitRepository, 0, 1)
+	nameMatches := make([]model.GitRepository, 0, 1)
+	for _, repo := range repos {
+		fullName := strings.TrimSpace(repo.FullName)
+		if fullName == "" {
+			continue
+		}
+		if commandBarTextContainsRepositoryRef(text, fullName) {
+			fullMatches = append(fullMatches, repo)
+			continue
+		}
+		baseName := fullName
+		if slash := strings.LastIndex(baseName, "/"); slash >= 0 {
+			baseName = baseName[slash+1:]
+		}
+		if baseName != fullName && commandBarTextContainsRepositoryRef(text, baseName) {
+			nameMatches = append(nameMatches, repo)
+		}
+	}
+	matches := fullMatches
+	if len(matches) == 0 {
+		matches = nameMatches
+	}
+	if len(matches) == 0 {
+		return model.CommandBarPageContext{}, false, nil
+	}
+	if len(matches) > 1 {
+		names := make([]string, 0, len(matches))
+		for _, repo := range matches {
+			names = append(names, strings.TrimSpace(repo.FullName))
+		}
+		slices.Sort(names)
+		return model.CommandBarPageContext{}, true, fmt.Errorf("Multiple repositories match this request: %s. Please name the owner/repo.", strings.Join(names, ", "))
+	}
+	return commandBarRepositoryPageContext(matches[0]), true, nil
+}
+
+func commandBarTextContainsRepositoryRef(text, ref string) bool {
+	normalizedText := " " + commandBarNormalizeRepositoryRefText(text) + " "
+	normalizedRef := commandBarNormalizeRepositoryRefText(ref)
+	if normalizedRef == "" {
+		return false
+	}
+	return strings.Contains(normalizedText, " "+normalizedRef+" ")
+}
+
+func commandBarNormalizeRepositoryRefText(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastSpace := true
+	for _, r := range value {
+		keep := (r >= 'a' && r <= 'z') ||
+			(r >= '0' && r <= '9') ||
+			r == '/' ||
+			r == '.' ||
+			r == '_' ||
+			r == '-'
+		if keep {
+			b.WriteRune(r)
+			lastSpace = false
+			continue
+		}
+		if !lastSpace {
+			b.WriteByte(' ')
+			lastSpace = true
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func (s *CommandBarService) commandBarValidateExplicitTarget(ctx context.Context, workspaceID, targetType, targetID string) (model.CommandBarPageContext, error) {
@@ -2150,9 +2466,37 @@ func (s *CommandBarService) commandBarValidateExplicitTarget(ctx context.Context
 			return model.CommandBarPageContext{}, fmt.Errorf("I could not find contact %s in this workspace.", targetID)
 		}
 		return commandBarFillTargetDisplayTitle(model.CommandBarPageContext{EntityType: "crm_contact", EntityID: contact.ID, DisplayTitle: crmContactDisplayName(contact)}), nil
+	case "repository":
+		if s == nil || s.agentService == nil || s.agentService.gitService == nil {
+			return model.CommandBarPageContext{}, fmt.Errorf("Repository target resolution is not configured.")
+		}
+		repo, err := s.agentService.gitService.GetRepositoryByID(ctx, workspaceID, targetID)
+		if err != nil {
+			return model.CommandBarPageContext{}, err
+		}
+		if repo == nil || repo.WorkspaceID != workspaceID {
+			return model.CommandBarPageContext{}, fmt.Errorf("I could not find repository %s in this workspace.", targetID)
+		}
+		if repo.Archived || !repo.Selected {
+			return model.CommandBarPageContext{}, fmt.Errorf("Repository %s is not available for agent runs.", repo.FullName)
+		}
+		return commandBarRepositoryPageContext(*repo), nil
 	default:
 		return model.CommandBarPageContext{}, fmt.Errorf("Unsupported target type %q.", targetType)
 	}
+}
+
+func commandBarRepositoryPageContext(repo model.GitRepository) model.CommandBarPageContext {
+	return commandBarFillTargetDisplayTitle(model.CommandBarPageContext{
+		EntityType:   "repository",
+		EntityID:     strings.TrimSpace(repo.ID),
+		DisplayTitle: strings.TrimSpace(repo.FullName),
+		Metadata: map[string]interface{}{
+			"provider":       strings.TrimSpace(repo.Provider),
+			"full_name":      strings.TrimSpace(repo.FullName),
+			"default_branch": strings.TrimSpace(repo.DefaultBranch),
+		},
+	})
 }
 
 func (s *CommandBarService) commandBarValidatePlanTargetIfConfigured(ctx context.Context, workspaceID string, target model.CommandBarPageContext) (model.CommandBarPageContext, error) {
@@ -2181,6 +2525,10 @@ func (s *CommandBarService) commandBarValidatePlanTargetIfConfigured(ctx context
 		}
 	case "crm_contact":
 		if s == nil || (s.crmContactService == nil && (s.agentService == nil || s.agentService.crmContactRepo == nil)) {
+			return target, nil
+		}
+	case "repository":
+		if s == nil || s.agentService == nil || s.agentService.gitService == nil {
 			return target, nil
 		}
 	default:
@@ -2241,6 +2589,16 @@ func commandBarRequiredTargetTypesForStep(step model.CommandBarPlanStep, agent m
 			required = append(required, "crm_deal")
 		case "enrich_crm_contact", "ensure_crm_contact_company":
 			required = append(required, "crm_contact")
+		case "list_commits",
+			"read_file",
+			"read_file_range",
+			"read_files",
+			"list_directory",
+			"search_files",
+			"ripgrep",
+			"grep",
+			"list_symbols":
+			required = append(required, "repository")
 		}
 	}
 	return normalizeCommandBarTargetTypes(required)
@@ -4025,6 +4383,7 @@ func (s *CommandBarService) commandBarOneShotPlanFromLLMValidated(text string, p
 		return nil, err.Error()
 	}
 	allowedTools = commandBarFilterOneShotTools(allowedTools, agent.AllowedTools, toolIntent)
+	allowedTools, toolIntent = commandBarCompleteRepositoryOneShotTools(text, target, allowedTools, agent.AllowedTools, toolIntent)
 	if len(allowedTools) == 0 {
 		return nil, "selected one-shot tools are not enabled for Command Agent."
 	}
@@ -4829,20 +5188,29 @@ func oneShotCommandToolsForIntent(text string, pageContext model.CommandBarPageC
 		recognized = true
 		tools = append(tools, "read_document", "get_document_blocks")
 		if !hasConcreteDocument || commandBarPromptRequestsDocumentSearch(lower) {
-			tools = append(tools, "list_documents", "list_collections", "search_documents")
+			tools = append(tools, "list_spaces", "list_documents", "list_collections", "search_documents")
 		}
 	}
 	if containsAny(lower, "web", "website", "url", "internet", "research", "source", "sources", "stale", "latest", "fetch", "crawl", "find info", "find information", "enrich") {
 		recognized = true
 		tools = append(tools, "web_search_exa", "web_search_brave", "fetch_url", "crawl_url")
 	}
+	if targetType == "repository" || containsAny(lower, "commit", "commits", "changelog", "change log", "release notes", "repository", "repo", "git history", "git log", "codebase", "source code") {
+		recognized = true
+		// Read-only repo tools only — no run_command, no writes. list_repositories
+		// lets the agent discover/confirm the repo; the rest read the clone once the
+		// run targets a repository.
+		tools = append(tools, "list_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols")
+	}
 	if targetType == "document" && containsAny(lower, "link", "attach", "associate", "reference") && containsAny(lower, "task", "story", "epic", "deal", "contact", "company", "crm", "support") {
 		recognized = true
 		tools = append(tools, "request_approval", "link_document_to_object")
 	}
-	if containsAny(lower, "create doc", "create document", "new doc", "new document", "draft doc", "draft document", "write a doc", "write an article") {
+	if containsAny(lower, "create doc", "create document", "new doc", "new document", "draft doc", "draft document", "write a doc", "write an article", "changelog", "create a changelog") {
 		recognized = true
-		tools = append(tools, "create_document")
+		// Discovery tools so the agent can resolve a space/collection (and ask the
+		// user when several exist) instead of failing on a missing space_id.
+		tools = append(tools, "list_spaces", "list_collections", "create_document")
 	}
 	if effectiveTargetType == "all_tasks" {
 		recognized = true
@@ -4941,10 +5309,12 @@ func safeOneShotCommandToolsForTarget(pageContext model.CommandBarPageContext, a
 	case "document":
 		tools = append(tools, "read_document", "get_document_blocks", "web_search_exa", "web_search_brave", "fetch_url", "crawl_url", "list_deals", "list_contacts", "list_buyer_signals")
 		if strings.TrimSpace(pageContext.EntityID) == "" {
-			tools = append(tools, "list_documents", "list_collections", "search_documents")
+			tools = append(tools, "list_spaces", "list_documents", "list_collections", "search_documents")
 		}
 	case "crm_contact", "crm_deal":
 		tools = append(tools, "list_deals", "list_contacts", "list_buyer_signals")
+	case "repository":
+		tools = append(tools, "list_repositories", "list_commits", "read_file", "read_file_range", "read_files", "list_directory", "search_files", "ripgrep", "grep", "list_symbols")
 	default:
 		return nil
 	}
@@ -5001,6 +5371,16 @@ func commandBarHasUsefulOneShotContextTool(tools []string) bool {
 			"read_document",
 			"get_document_blocks",
 			"search_documents",
+			"list_repositories",
+			"list_commits",
+			"read_file",
+			"read_file_range",
+			"read_files",
+			"list_directory",
+			"search_files",
+			"ripgrep",
+			"grep",
+			"list_symbols",
 			"list_deals",
 			"list_contacts",
 			"list_buyer_signals":
@@ -5033,6 +5413,49 @@ func commandBarFilterOneShotTools(requestedTools, agentTools []string, toolInten
 		filtered = append(filtered, tool)
 	}
 	return filtered
+}
+
+func commandBarCompleteRepositoryOneShotTools(text string, pageContext model.CommandBarPageContext, selectedTools, agentTools []string, toolIntent string) ([]string, string) {
+	if normalizeCommandBarTargetType(pageContext.EntityType) != "repository" {
+		return selectedTools, toolIntent
+	}
+	lower := strings.ToLower(strings.TrimSpace(text))
+	historyIntent := containsAny(lower, "commit", "commits", "changelog", "change log", "release notes", "git history", "git log")
+	documentCreateIntent := containsAny(lower, "create doc", "create a doc", "create document", "create a document", "new doc", "new document", "write a doc", "changelog doc", "changelog document", "create a changelog")
+	if !historyIntent && !documentCreateIntent {
+		return selectedTools, toolIntent
+	}
+
+	desiredTools := []string{"update_plan", "request_user_input"}
+	if historyIntent {
+		desiredTools = append(desiredTools,
+			"list_repositories",
+			"list_commits",
+			"read_file",
+			"read_file_range",
+			"read_files",
+			"list_directory",
+			"search_files",
+			"ripgrep",
+			"grep",
+			"list_symbols",
+		)
+	}
+	if documentCreateIntent {
+		desiredTools = append(desiredTools, "list_spaces", "list_collections", "create_document")
+	}
+
+	merged := commandBarFilterAllowedTools(append(append([]string{}, selectedTools...), desiredTools...), agentTools)
+	if len(merged) == 0 {
+		return selectedTools, toolIntent
+	}
+	if commandBarToolsIncludeMutation(merged) {
+		return merged, "mutate"
+	}
+	if normalizeCommandBarToolIntent(toolIntent) == "" {
+		return merged, "read_only"
+	}
+	return merged, toolIntent
 }
 
 func normalizeCommandBarToolIntent(intent string) string {
@@ -5184,6 +5607,20 @@ func oneShotExecutionBrief(text string, pageContext model.CommandBarPageContext,
 		constraints := []string{
 			"Do not create, update, or move tasks for an analytical question.",
 			"Ask for clarification if the team or attention criteria cannot be resolved from available data.",
+		}
+		return goal, plan, constraints
+	case targetType == "repository":
+		goal := "Complete the requested repository investigation using the selected repository target and enabled tools."
+		plan := []string{
+			"Confirm the repository target and inspect recent commits on the requested branch or default branch.",
+			"Read only the files needed to understand noteworthy changes behind the selected commits.",
+			"Organize the findings into the requested changelog or release-note format.",
+			"Create the document only if a document creation tool is enabled; otherwise return the changelog draft.",
+		}
+		constraints := []string{
+			"Do not use workspace as a substitute for the repository target.",
+			"Keep code inspection scoped to the commits and files needed for the changelog.",
+			"Ask for clarification if the destination docs space or collection cannot be resolved safely.",
 		}
 		return goal, plan, constraints
 	case targetType == "document" || containsAny(lower, "doc", "document", "article", "stale"):
@@ -5517,6 +5954,8 @@ func normalizeCommandBarTargetType(targetType string) string {
 		return "crm_contact"
 	case "doc":
 		return "document"
+	case "repo", "git_repository", "git_repo":
+		return "repository"
 	default:
 		return targetType
 	}
@@ -5547,7 +5986,7 @@ func commandBarEffectiveTargetType(pageContext model.CommandBarPageContext) stri
 
 func validateCommandBarSupportedTarget(targetType string) error {
 	switch normalizeCommandBarTargetType(targetType) {
-	case "task", "epic", "workspace", "document", "crm_contact", "crm_deal":
+	case "task", "epic", "workspace", "document", "crm_contact", "crm_deal", "repository":
 		return nil
 	default:
 		return fmt.Errorf("command bar v1 does not support %s targets yet", targetType)

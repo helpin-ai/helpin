@@ -148,4 +148,108 @@ describe('SearchResultItem', () => {
     expect(link).not.toBeNull()
     expect(link?.getAttribute('href')).toBe('/articles/single-locale-abc123ef')
   })
+
+  it('links to the best matched section and renders highlighted snippets', () => {
+    renderWithDocsContext(
+      <SearchResultItem
+        locale="en"
+        result={{
+          id: 'article-1',
+          title: 'Webhook troubleshooting',
+          slug: 'webhook-troubleshooting',
+          public_id: 'abc123ef',
+          locale: 'en',
+          excerpt: 'Intro',
+          collection_name: 'Billing',
+          collection_slug: 'billing',
+          space_slug: 'docs',
+          space_name: 'Docs',
+          matches: [
+            {
+              entry_type: 'body',
+              section_title: 'Delivery failures',
+              anchor: 'delivery-failures',
+              snippet: 'Fix <mark>webhook</mark> delivery failures',
+            },
+          ],
+        }}
+      />,
+      { enabledLocales: ['en'], multilingualEnabled: false },
+    )
+
+    const link = screen.getByText('Webhook troubleshooting').closest('a')
+    expect(link).not.toBeNull()
+    expect(link?.getAttribute('href')).toBe(
+      '/articles/webhook-troubleshooting-abc123ef#delivery-failures',
+    )
+    expect(screen.getByText('Delivery failures')).toBeTruthy()
+    expect(screen.getByText('webhook').tagName).toBe('MARK')
+  })
+
+  it('renders highlighted title matches', () => {
+    renderWithDocsContext(
+      <SearchResultItem
+        locale="en"
+        result={{
+          id: 'article-1',
+          title: 'Content Attribution',
+          slug: 'content-attribution',
+          public_id: 'abc123ef',
+          locale: 'en',
+          excerpt: null,
+          collection_name: 'Attribution',
+          collection_slug: 'attribution',
+          space_slug: 'docs',
+          space_name: 'Docs',
+          matches: [
+            {
+              entry_type: 'title',
+              snippet: 'Content <mark>Attribution</mark>',
+            },
+          ],
+        }}
+      />,
+      { enabledLocales: ['en'], multilingualEnabled: false },
+    )
+
+    expect(
+      screen.getAllByText('Attribution').some((node) => node.tagName === 'MARK'),
+    ).toBe(true)
+  })
+
+  it('renders highlighted snippets in compact search results', () => {
+    renderWithDocsContext(
+      <SearchResultItem
+        locale="en"
+        variant="compact"
+        result={{
+          id: 'article-1',
+          title: 'Ecommerce analytics',
+          slug: 'ecommerce-analytics',
+          public_id: 'abc123ef',
+          locale: 'en',
+          excerpt: null,
+          collection_name: 'Analytics',
+          collection_slug: 'analytics',
+          space_slug: 'docs',
+          space_name: 'Docs',
+          matches: [
+            {
+              entry_type: 'body',
+              section_title: 'Ecommerce attribution',
+              anchor: 'ecommerce-attribution',
+              snippet: 'Marketing channel and source <mark>attribution</mark>',
+            },
+          ],
+        }}
+      />,
+      { enabledLocales: ['en'], multilingualEnabled: false },
+    )
+
+    expect(screen.getByText('attribution').tagName).toBe('MARK')
+    const link = screen.getByText('Ecommerce analytics').closest('a')
+    expect(link?.getAttribute('href')).toBe(
+      '/articles/ecommerce-analytics-abc123ef#ecommerce-attribution',
+    )
+  })
 })

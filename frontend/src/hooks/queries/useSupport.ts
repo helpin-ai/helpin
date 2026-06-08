@@ -11,6 +11,8 @@ import {
   getConversationListUnreadCount,
   getNextConversationIdAfterRemoval,
   isSupportConversationListQueryKey,
+  patchConversationDetailStatus,
+  patchConversationStatusInCache,
   type SupportConversationListCache,
   updateConversationListUnreadCount,
   updateConversationUnreadCount,
@@ -50,9 +52,11 @@ import type {
   UpdateCannedResponseRequest,
   SupportMessage,
   SupportTag,
+  CreateConversationWithMessageRequest,
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
+const CONVERSATION_HANDOFF_DELAY_MS = 180;
 
 type SupportConversationFilters = {
   status?: string;
@@ -69,6 +73,75 @@ type SupportConversationFilters = {
   tag_ids?: string;
   system_tags?: string;
 };
+
+type SendMessagePayload = {
+  content: string;
+  is_internal?: boolean;
+  channels?: Array<'chat' | 'email'>;
+  attachment_ids?: string[];
+  cc_emails?: string[];
+  bcc_emails?: string[];
+};
+
+type OptimisticSupportUser = {
+  id?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+  avatar_url?: string | null;
+};
+
+export function buildOptimisticSupportMessage({
+  workspaceId,
+  conversationId,
+  payload,
+  user,
+  now,
+  optimisticId,
+}: {
+  workspaceId: string;
+  conversationId: string;
+  payload: SendMessagePayload;
+  user: OptimisticSupportUser | null;
+  now: string;
+  optimisticId: string;
+}): SupportMessage {
+  return {
+    id: optimisticId,
+    workspace_id: workspaceId,
+    conversation_id: conversationId,
+    sender_type: 'user',
+    sender_user_id: user?.id ?? undefined,
+    sender_display_name: user?.full_name?.trim() || user?.email?.trim() || 'You',
+    sender_avatar_url: user?.avatar_url ?? undefined,
+    content: payload.content.trim() || ' ',
+    message_type: 'reply',
+    is_internal: Boolean(payload.is_internal),
+    via_channel: 'widget',
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+export function appendOptimisticSupportMessage(current: SupportMessage[] | undefined, message: SupportMessage) {
+  const existing = current ?? [];
+  if (existing.some((item) => item.id === message.id)) return existing;
+  return [...existing, message];
+}
+
+export function reconcileOptimisticSupportMessage(
+  current: SupportMessage[] | undefined,
+  optimisticId: string,
+  persisted: SupportMessage,
+) {
+  const existing = current ?? [];
+  if (existing.some((item) => item.id === persisted.id)) {
+    return existing.filter((item) => item.id !== optimisticId);
+  }
+  if (existing.some((item) => item.id === optimisticId)) {
+    return existing.map((item) => item.id === optimisticId ? persisted : item);
+  }
+  return [...existing, persisted];
+}
 
 function invalidateSupportInboxViewCounts(queryClient: QueryClient, workspaceId: string) {
   queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxViewCounts(workspaceId) });
@@ -736,16 +809,43 @@ export function useVisitorContext(workspaceId: string, conversationId: string | 
 export function useSendMessage(workspaceId: string, conversationId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { content: string; is_internal?: boolean; attachment_ids?: string[] }) =>
+    mutationFn: (payload: SendMessagePayload) =>
       supportService.createConversationMessage(workspaceId, conversationId!, payload).then(unwrap),
-    onSuccess: () => {
+    onMutate: async (payload) => {
+      if (!conversationId) return { previousMessages: undefined as SupportMessage[] | undefined, optimisticId: '' };
+      const key = queryKeys.support.messages(workspaceId, conversationId);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previousMessages = queryClient.getQueryData<SupportMessage[]>(key);
+      const now = new Date().toISOString();
+      const optimisticId = `optimistic-${conversationId}-${Date.now()}`;
+      const optimistic = buildOptimisticSupportMessage({
+        workspaceId,
+        conversationId,
+        payload,
+        user: useAuthStore.getState().user,
+        now,
+        optimisticId,
+      });
+      queryClient.setQueryData<SupportMessage[]>(key, (current) => appendOptimisticSupportMessage(current, optimistic));
+      return { previousMessages, optimisticId };
+    },
+    onSuccess: (message, _payload, context) => {
       if (conversationId) {
+        if (context?.optimisticId) {
+          queryClient.setQueryData<SupportMessage[]>(
+            queryKeys.support.messages(workspaceId, conversationId),
+            (current) => reconcileOptimisticSupportMessage(current, context.optimisticId, message),
+          );
+        }
         queryClient.invalidateQueries({ queryKey: queryKeys.support.messages(workspaceId, conversationId) });
       }
       queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
       invalidateSupportInboxViewCounts(queryClient, workspaceId);
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _payload, context) => {
+      if (conversationId && context?.previousMessages) {
+        queryClient.setQueryData(queryKeys.support.messages(workspaceId, conversationId), context.previousMessages);
+      }
       toast.error('Failed to send message', { description: error.message });
     },
   });
@@ -785,7 +885,10 @@ export function useDeleteSupportMessage(workspaceId: string, conversationId: str
 export function useRewriteSupportDraft(workspaceId: string, conversationId: string | null) {
   return useMutation({
     mutationFn: (payload: SupportAIRewriteDraftRequest) =>
-      supportService.rewriteConversationDraft(workspaceId, conversationId!, payload).then(unwrap),
+      (conversationId
+        ? supportService.rewriteConversationDraft(workspaceId, conversationId, payload)
+        : supportService.rewriteNewDraft(workspaceId, payload)
+      ).then(unwrap),
     onError: (error: Error) => {
       toast.error('Failed to rewrite draft', { description: error.message });
     },
@@ -833,27 +936,71 @@ export function useUpdateConversationStatus(workspaceId: string) {
   return useMutation({
     mutationFn: ({ conversationId, status }: { conversationId: string; status: ConversationStatus }) =>
       supportService.updateConversationStatus(workspaceId, conversationId, status).then(unwrap),
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
       const { conversationId, status } = variables;
+      const currentState = useSupportInboxStore.getState();
+
+      const applyStatusPatch = () => {
+        if (!data) return;
+        const patch = {
+          conversationId,
+          status: data.status,
+          flowState: data.flow_state,
+          updatedAt: data.updated_at,
+          mailboxId: data.mailbox_id ?? null,
+        };
+        queryClient.setQueriesData<SupportConversationListCache>(
+          {
+            predicate: (query) => isSupportConversationListQueryKey(query.queryKey, workspaceId),
+          },
+          (current) => patchConversationStatusInCache(current, patch),
+        );
+        queryClient.setQueryData(
+          queryKeys.support.conversation(workspaceId, conversationId),
+          (current: SupportConversation | undefined) => patchConversationDetailStatus(current, patch),
+        );
+      };
+
+      const invalidateAfterStatusChange = () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+        invalidateSupportInboxViewCounts(queryClient, workspaceId);
+      };
 
       // Auto-advance: when resolving/spamming, select the next conversation in the list
       if (status === 'resolved' || status === 'spam') {
-        const { selectedConversationId, selectConversation } = useSupportInboxStore.getState();
-        if (selectedConversationId === conversationId) {
-          // Find the next conversation from the cached list (before invalidation)
-          const cached = queryClient.getQueriesData<SupportConversationListCache>({
-            queryKey: queryKeys.support.conversations(workspaceId),
-          });
-          const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
-            isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
-          );
-          selectConversation(getNextConversationIdAfterRemoval(conversations, conversationId));
-        }
+        const { selectedConversationId, startConversationHandoff } = currentState;
+        const shouldAdvanceSelection = selectedConversationId === conversationId;
+        const cached = queryClient.getQueriesData<SupportConversationListCache>({
+          queryKey: queryKeys.support.conversations(workspaceId),
+        });
+        const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
+          isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
+        );
+        const nextConversationId = shouldAdvanceSelection
+          ? getNextConversationIdAfterRemoval(conversations, conversationId)
+          : null;
+
+        startConversationHandoff(conversationId, nextConversationId);
+        window.setTimeout(() => {
+          applyStatusPatch();
+          const latestState = useSupportInboxStore.getState();
+          if (latestState.conversationHandoff?.fromConversationId === conversationId) {
+            if (shouldAdvanceSelection && latestState.selectedConversationId === conversationId) {
+              latestState.finishConversationHandoff(nextConversationId);
+            } else {
+              latestState.cancelConversationHandoff();
+            }
+          }
+          invalidateAfterStatusChange();
+        }, CONVERSATION_HANDOFF_DELAY_MS);
+        return;
+      } else if (status === 'open' && currentState.selectedConversationId === conversationId) {
+        currentState.showReopenedConversationInInbox(conversationId, data?.mailbox_id ?? null);
       }
 
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
-      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+      applyStatusPatch();
+      invalidateAfterStatusChange();
     },
     onError: (error: Error) => {
       toast.error('Failed to update conversation status', { description: error.message });
@@ -907,6 +1054,32 @@ export function useCreateConversation(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to create conversation', { description: error.message });
+    },
+  });
+}
+
+export function useCreateConversationWithMessage(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: CreateConversationWithMessageRequest) => {
+      const data = unwrap(await supportService.createConversationWithMessage(workspaceId, payload));
+      if (!data?.conversation?.id || !data?.message?.id) {
+        throw new Error('Conversation send returned an invalid response');
+      }
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+      if (data?.conversation?.id) {
+        queryClient.setQueryData(queryKeys.support.conversation(workspaceId, data.conversation.id), data.conversation);
+        queryClient.setQueryData(queryKeys.support.messages(workspaceId, data.conversation.id), [data.message]);
+      }
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to send conversation', { description: error.message });
     },
   });
 }

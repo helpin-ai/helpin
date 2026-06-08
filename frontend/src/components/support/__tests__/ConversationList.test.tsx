@@ -27,7 +27,13 @@ vi.mock('@/hooks/queries/useSupport', () => ({
 }))
 
 vi.mock('../ConversationRow', () => ({
-  ConversationRow: ({ conversation }: { conversation: { id: string } }) => <div data-conversation-id={conversation.id} />,
+  ConversationRow: ({
+    conversation,
+    isTransitioningOut,
+  }: {
+    conversation: { id: string };
+    isTransitioningOut?: boolean;
+  }) => <div data-conversation-id={conversation.id} data-transitioning-out={isTransitioningOut ? 'true' : undefined} />,
 }))
 
 import { ConversationList } from '../ConversationList'
@@ -41,6 +47,7 @@ describe('ConversationList presence resync', () => {
       statusFilter: 'all',
       searchQuery: '',
       selectedConversationId: null,
+      conversationHandoff: null,
       navFilter: 'inbox',
       selectedMailboxId: 'all',
       conversationListFilters: {
@@ -159,6 +166,30 @@ describe('ConversationList presence resync', () => {
     })
 
     expect(useSupportInboxStore.getState().selectedConversationId).toBe('conv-2')
+
+    act(() => root.unmount())
+  })
+
+  it('marks the conversation being resolved as transitioning out', () => {
+    useSupportInboxStore.setState({
+      selectedConversationId: 'conv-1',
+      activePanel: 'thread',
+      conversationHandoff: {
+        fromConversationId: 'conv-1',
+        toConversationId: 'conv-2',
+      },
+    })
+
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<ConversationList workspaceId="ws-1" userId="user-1" />)
+    })
+
+    expect(container.querySelector('[data-conversation-id="conv-1"]')?.getAttribute('data-transitioning-out')).toBe('true')
+    expect(container.querySelector('[data-conversation-id="conv-2"]')?.getAttribute('data-transitioning-out')).toBeNull()
 
     act(() => root.unmount())
   })
