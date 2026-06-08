@@ -52,9 +52,11 @@ import type {
   UpdateCannedResponseRequest,
   SupportMessage,
   SupportTag,
+  CreateConversationWithMessageRequest,
 } from '@/lib/pmTypes';
 
 const SUPPORT_CONVERSATIONS_PER_PAGE = 50;
+const CONVERSATION_HANDOFF_DELAY_MS = 180;
 
 type SupportConversationFilters = {
   status?: string;
@@ -72,7 +74,14 @@ type SupportConversationFilters = {
   system_tags?: string;
 };
 
-type SendMessagePayload = { content: string; is_internal?: boolean; attachment_ids?: string[] };
+type SendMessagePayload = {
+  content: string;
+  is_internal?: boolean;
+  channels?: Array<'chat' | 'email'>;
+  attachment_ids?: string[];
+  cc_emails?: string[];
+  bcc_emails?: string[];
+};
 
 type OptimisticSupportUser = {
   id?: string | null;
@@ -876,7 +885,10 @@ export function useDeleteSupportMessage(workspaceId: string, conversationId: str
 export function useRewriteSupportDraft(workspaceId: string, conversationId: string | null) {
   return useMutation({
     mutationFn: (payload: SupportAIRewriteDraftRequest) =>
-      supportService.rewriteConversationDraft(workspaceId, conversationId!, payload).then(unwrap),
+      (conversationId
+        ? supportService.rewriteConversationDraft(workspaceId, conversationId, payload)
+        : supportService.rewriteNewDraft(workspaceId, payload)
+      ).then(unwrap),
     onError: (error: Error) => {
       toast.error('Failed to rewrite draft', { description: error.message });
     },
@@ -928,7 +940,8 @@ export function useUpdateConversationStatus(workspaceId: string) {
       const { conversationId, status } = variables;
       const currentState = useSupportInboxStore.getState();
 
-      if (data) {
+      const applyStatusPatch = () => {
+        if (!data) return;
         const patch = {
           conversationId,
           status: data.status,
@@ -946,28 +959,48 @@ export function useUpdateConversationStatus(workspaceId: string) {
           queryKeys.support.conversation(workspaceId, conversationId),
           (current: SupportConversation | undefined) => patchConversationDetailStatus(current, patch),
         );
-      }
+      };
+
+      const invalidateAfterStatusChange = () => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
+        invalidateSupportInboxViewCounts(queryClient, workspaceId);
+      };
 
       // Auto-advance: when resolving/spamming, select the next conversation in the list
       if (status === 'resolved' || status === 'spam') {
-        const { selectedConversationId, selectConversation } = currentState;
-        if (selectedConversationId === conversationId) {
-          // Find the next conversation from the cached list (before invalidation)
-          const cached = queryClient.getQueriesData<SupportConversationListCache>({
-            queryKey: queryKeys.support.conversations(workspaceId),
-          });
-          const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
-            isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
-          );
-          selectConversation(getNextConversationIdAfterRemoval(conversations, conversationId));
-        }
+        const { selectedConversationId, startConversationHandoff } = currentState;
+        const shouldAdvanceSelection = selectedConversationId === conversationId;
+        const cached = queryClient.getQueriesData<SupportConversationListCache>({
+          queryKey: queryKeys.support.conversations(workspaceId),
+        });
+        const conversations: SupportConversation[] = cached.flatMap(([queryKey, data]) =>
+          isSupportConversationListQueryKey(queryKey, workspaceId) ? extractConversationListConversations(data) : []
+        );
+        const nextConversationId = shouldAdvanceSelection
+          ? getNextConversationIdAfterRemoval(conversations, conversationId)
+          : null;
+
+        startConversationHandoff(conversationId, nextConversationId);
+        window.setTimeout(() => {
+          applyStatusPatch();
+          const latestState = useSupportInboxStore.getState();
+          if (latestState.conversationHandoff?.fromConversationId === conversationId) {
+            if (shouldAdvanceSelection && latestState.selectedConversationId === conversationId) {
+              latestState.finishConversationHandoff(nextConversationId);
+            } else {
+              latestState.cancelConversationHandoff();
+            }
+          }
+          invalidateAfterStatusChange();
+        }, CONVERSATION_HANDOFF_DELAY_MS);
+        return;
       } else if (status === 'open' && currentState.selectedConversationId === conversationId) {
         currentState.showReopenedConversationInInbox(conversationId, data?.mailbox_id ?? null);
       }
 
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversation(workspaceId, conversationId) });
-      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+      applyStatusPatch();
+      invalidateAfterStatusChange();
     },
     onError: (error: Error) => {
       toast.error('Failed to update conversation status', { description: error.message });
@@ -1021,6 +1054,32 @@ export function useCreateConversation(workspaceId: string) {
     },
     onError: (error: Error) => {
       toast.error('Failed to create conversation', { description: error.message });
+    },
+  });
+}
+
+export function useCreateConversationWithMessage(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: CreateConversationWithMessageRequest) => {
+      const data = unwrap(await supportService.createConversationWithMessage(workspaceId, payload));
+      if (!data?.conversation?.id || !data?.message?.id) {
+        throw new Error('Conversation send returned an invalid response');
+      }
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.conversations(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.inboxScopes(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.support.unreadStats(workspaceId) });
+      if (data?.conversation?.id) {
+        queryClient.setQueryData(queryKeys.support.conversation(workspaceId, data.conversation.id), data.conversation);
+        queryClient.setQueryData(queryKeys.support.messages(workspaceId, data.conversation.id), [data.message]);
+      }
+      invalidateSupportInboxViewCounts(queryClient, workspaceId);
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to send conversation', { description: error.message });
     },
   });
 }

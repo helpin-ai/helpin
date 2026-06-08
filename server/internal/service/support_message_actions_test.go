@@ -218,6 +218,9 @@ func TestSupportMessageActionsInfoReturnsDerivedFields(t *testing.T) {
 	if info.ID != msg.ID || info.Sender.Name != "Agent Smith" || info.Sender.AvatarURL == nil || *info.Sender.AvatarURL != avatarURL {
 		t.Fatalf("unexpected sender info: %#v", info)
 	}
+	if info.ToEmail != "customer@example.com" {
+		t.Fatalf("to_email = %q, want customer@example.com", info.ToEmail)
+	}
 	if info.From != "support@example.com" || info.Origin != "chat" || info.Type != "text" {
 		t.Fatalf("unexpected origin fields: %#v", info)
 	}
@@ -229,6 +232,48 @@ func TestSupportMessageActionsInfoReturnsDerivedFields(t *testing.T) {
 	}
 	if info.Edited || info.Translated || info.Automated {
 		t.Fatalf("v1 flags should be false: %#v", info)
+	}
+}
+
+func TestSupportMessageActionsInfoReturnsEmailCcAndBcc(t *testing.T) {
+	ctx := context.Background()
+	svc, messageRepo, emailLogRepo, _, rdbServer := setupSupportMessageActionsTestEnv(t)
+	defer rdbServer.Close()
+
+	actorID := "22222222-2222-2222-2222-222222222222"
+	msg := createActionMessage(t, messageRepo, model.SupportMessage{
+		SenderUserID:      &actorID,
+		SenderDisplayName: strPtr("Agent Smith"),
+		Content:           "Looping in finance",
+	})
+	if err := emailLogRepo.Create(ctx, &model.SupportEmailLog{
+		ID:             "77777777-7777-7777-7777-777777777777",
+		WorkspaceID:    msg.WorkspaceID,
+		ConversationID: msg.ConversationID,
+		Direction:      "outbound",
+		MessageIDs:     model.DocsStringArray{msg.ID},
+		FromEmail:      "support@example.com",
+		ToEmail:        "customer@example.com",
+		CCEmails:       model.DocsStringArray{"finance@example.com", "manager@example.com"},
+		BCCEmails:      model.DocsStringArray{"audit@example.com"},
+		Status:         "sent",
+		CreatedAt:      time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("create email log: %v", err)
+	}
+
+	info, err := svc.Info(ctx, msg.WorkspaceID, msg.ConversationID, actorID, msg.ID)
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.ToEmail != "customer@example.com" {
+		t.Fatalf("to_email = %q, want customer@example.com", info.ToEmail)
+	}
+	if len(info.CCEmails) != 2 || info.CCEmails[0] != "finance@example.com" || info.CCEmails[1] != "manager@example.com" {
+		t.Fatalf("cc_emails = %#v", info.CCEmails)
+	}
+	if len(info.BCCEmails) != 1 || info.BCCEmails[0] != "audit@example.com" {
+		t.Fatalf("bcc_emails = %#v", info.BCCEmails)
 	}
 }
 

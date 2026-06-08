@@ -254,6 +254,7 @@ export function ConversationList({
   const syncRouteState = useSupportInboxStore((s) => s.syncRouteState);
   const selectConversation = useSupportInboxStore((s) => s.selectConversation);
   const selectedConversationId = useSupportInboxStore((s) => s.selectedConversationId);
+  const handoffConversationId = useSupportInboxStore((s) => s.conversationHandoff?.fromConversationId ?? null);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
@@ -598,6 +599,24 @@ export function ConversationList({
             <div className="min-w-0 flex-1 px-1.5 text-sm font-medium">
               <div className="truncate">{listTitle}</div>
             </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    aria-label="New conversation"
+                    onClick={onCreateConversationClick}
+                  >
+                    <PlusSignIcon className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <span className="text-xs">New conversation</span>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -871,6 +890,7 @@ export function ConversationList({
             conversation={conversation}
             moveOptions={mailboxMoveOptions}
             onSelectConversation={handleSelect}
+            isTransitioningOut={handoffConversationId === conversation.id}
           />
         ))}
         {hasNextPage && (

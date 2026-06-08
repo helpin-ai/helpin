@@ -44,4 +44,19 @@ describe('buildMessageInfoRows', () => {
     expect(rows.map(([label]) => label)).not.toContain('Delivered')
     expect(rows.map(([label]) => label)).not.toContain('Not delivered')
   })
+
+  it('renders email recipients for messages with cc and bcc metadata', () => {
+    const rows = buildMessageInfoRows({
+      ...baseInfo,
+      from: 'support@example.com',
+      to_email: 'customer@example.com',
+      cc_emails: ['finance@example.com', 'manager@example.com'],
+      bcc_emails: ['audit@example.com'],
+    })
+
+    expect(rows).toContainEqual(['From', 'support@example.com'])
+    expect(rows).toContainEqual(['To', 'customer@example.com'])
+    expect(rows).toContainEqual(['Cc', 'finance@example.com, manager@example.com'])
+    expect(rows).toContainEqual(['Bcc', 'audit@example.com'])
+  })
 })

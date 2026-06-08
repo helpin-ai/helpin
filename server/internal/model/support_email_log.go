@@ -17,6 +17,8 @@ type SupportEmailLog struct {
 	ToEmail            string          `json:"to_email" gorm:"size:255"`
 	ReplyTo            string          `json:"reply_to,omitempty" gorm:"size:255"`
 	RecipientAddress   string          `json:"recipient_address,omitempty" gorm:"size:255"`
+	CCEmails           DocsStringArray `json:"cc_emails,omitempty" gorm:"type:text[]"`
+	BCCEmails          DocsStringArray `json:"bcc_emails,omitempty" gorm:"type:text[]"`
 	Subject            string          `json:"subject" gorm:"size:500"`
 	RFCMessageID       string          `json:"rfc_message_id" gorm:"size:255"`
 	InReplyTo          string          `json:"in_reply_to" gorm:"size:255"`
@@ -43,6 +45,8 @@ type SupportMessageEmailDetail struct {
 	Subject              string                       `json:"subject"`
 	FromEmail            string                       `json:"from_email"`
 	ToEmail              string                       `json:"to_email"`
+	CCEmails             DocsStringArray              `json:"cc_emails,omitempty"`
+	BCCEmails            DocsStringArray              `json:"bcc_emails,omitempty"`
 	RFCMessageID         string                       `json:"rfc_message_id,omitempty"`
 	InReplyTo            string                       `json:"in_reply_to,omitempty"`
 	ReferencesHeader     string                       `json:"references_header,omitempty"`

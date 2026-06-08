@@ -447,6 +447,20 @@ func TestDocsHelpcenterPublicLocale_SearchOnlyReturnsRequestedLocale(t *testing.
 	}).Error; err != nil {
 		t.Fatalf("seed fr article publication: %v", err)
 	}
+	if err := db.Create(&model.DocsHelpcenterSearchEntry{
+		ID:           "search-handler-i18n-fr-title",
+		WorkspaceID:  "ws-handler-i18n",
+		DocumentID:   "document-handler-i18n-fr",
+		Locale:       "fr",
+		EntryKey:     "title",
+		EntryType:    model.DocsHelpcenterSearchEntryTypeTitle,
+		Content:      "Bonjour en francais",
+		Position:     0,
+		RankWeight:   8,
+		SearchConfig: "simple",
+	}).Error; err != nil {
+		t.Fatalf("seed fr search entry: %v", err)
+	}
 
 	h := newDocsHelpcenterPublicHandlerForTest(db)
 	req := httptest.NewRequest(http.MethodGet, "/api/hc/handler-i18n/fr/search?q=bonjour", nil)

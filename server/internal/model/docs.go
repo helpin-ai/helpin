@@ -1060,19 +1060,20 @@ type PreviewArticleResponse struct {
 // ancestors beyond itself. The frontend can render it unchanged above
 // the title to give nested search hits obvious context.
 type PublicSearchResultResponse struct {
-	ID                     string  `json:"id"`
-	Title                  string  `json:"title"`
-	Slug                   string  `json:"slug"`
-	PublicID               string  `json:"public_id"`
-	Locale                 string  `json:"locale,omitempty"`
-	RequestedLocale        string  `json:"requested_locale,omitempty"`
-	IsFallback             bool    `json:"is_fallback,omitempty"`
-	Excerpt                *string `json:"excerpt"`
-	CollectionID           *string `json:"collection_id,omitempty"`
-	CollectionName         *string `json:"collection_name"`
-	CollectionSlug         *string `json:"collection_slug,omitempty"`
-	CollectionPublicID     *string `json:"collection_public_id,omitempty"`
-	CollectionAncestorPath *string `json:"collection_ancestor_path,omitempty"`
-	SpaceSlug              string  `json:"space_slug"`
-	SpaceName              string  `json:"space_name"`
+	ID                     string                      `json:"id"`
+	Title                  string                      `json:"title"`
+	Slug                   string                      `json:"slug"`
+	PublicID               string                      `json:"public_id"`
+	Locale                 string                      `json:"locale,omitempty"`
+	RequestedLocale        string                      `json:"requested_locale,omitempty"`
+	IsFallback             bool                        `json:"is_fallback,omitempty"`
+	Excerpt                *string                     `json:"excerpt"`
+	CollectionID           *string                     `json:"collection_id,omitempty"`
+	CollectionName         *string                     `json:"collection_name"`
+	CollectionSlug         *string                     `json:"collection_slug,omitempty"`
+	CollectionPublicID     *string                     `json:"collection_public_id,omitempty"`
+	CollectionAncestorPath *string                     `json:"collection_ancestor_path,omitempty"`
+	SpaceSlug              string                      `json:"space_slug"`
+	SpaceName              string                      `json:"space_name"`
+	Matches                []PublicSearchMatchResponse `json:"matches,omitempty" gorm:"-"`
 }

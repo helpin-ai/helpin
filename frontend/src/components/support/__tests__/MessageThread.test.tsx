@@ -99,6 +99,49 @@ describe('MessageThread', () => {
     act(() => root.unmount())
   })
 
+  it('marks the thread as transitioning briefly when the selected conversation changes', () => {
+    supportHooks.useConversation.mockReturnValue({
+      isFetched: true,
+      data: {
+        id: 'conv-1',
+        workspace_id: 'ws-1',
+        display_id: 1,
+        subject: 'Question',
+        status: 'open',
+        priority: 'medium',
+        source: 'widget',
+        unread_count: 0,
+        created_at: '2026-06-03T09:00:00.000Z',
+        updated_at: '2026-06-03T10:01:00.000Z',
+      },
+    })
+    supportHooks.useConversationMessages.mockReturnValue({ isLoading: false, data: [] })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+
+    act(() => {
+      root.render(<MessageThread workspaceId="ws-1" conversationId="conv-1" />)
+    })
+    act(() => {
+      vi.runAllTimers()
+    })
+
+    act(() => {
+      root.render(<MessageThread workspaceId="ws-1" conversationId="conv-2" />)
+    })
+
+    expect(container.querySelector('[data-support-message-thread]')?.getAttribute('data-transitioning')).toBe('true')
+
+    act(() => {
+      vi.advanceTimersByTime(180)
+    })
+
+    expect(container.querySelector('[data-support-message-thread]')?.getAttribute('data-transitioning')).toBeNull()
+
+    act(() => root.unmount())
+  })
+
   it('marks an open unread thread read when the latest message is visible', () => {
     supportHooks.useConversation.mockReturnValue({
       isFetched: true,

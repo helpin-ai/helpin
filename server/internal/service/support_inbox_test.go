@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -783,6 +784,93 @@ func TestSupportConversationRepository(t *testing.T) {
 			t.Fatalf("expected billing mailbox workload count 2, got %d", workloadCount)
 		}
 	})
+}
+
+func TestSupportInboxServiceCreateConversationWithMessageAssignsCreatorAndStoresEmailRecipients(t *testing.T) {
+	ctx := context.Background()
+	db := newTestDB(t)
+
+	workspaceID := "ws-new-conversation"
+	actorID := "user-new-conversation"
+	seedUser(t, db, actorID, "agent@example.com", "Agent User", "hash")
+	seedWorkspace(t, db, workspaceID, "New Conversation Workspace", "new-conversation", actorID)
+	seedWorkspaceMember(t, db, "wm-new-conversation", workspaceID, actorID, "agent@example.com", "Agent User", model.RoleAdmin)
+
+	now := time.Now()
+	mustExec(t, db, `INSERT INTO support_tags (id, workspace_id, name, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"tag-new-conversation", workspaceID, "VIP", "#2563eb", now, now)
+
+	conversationRepo := repository.NewSupportConversationRepository(db)
+	messageRepo := repository.NewSupportMessageRepository(db)
+	svc := NewSupportInboxService(
+		conversationRepo,
+		repository.NewSupportMailboxRepository(db),
+		messageRepo,
+		repository.NewAgentRepository(db),
+		repository.NewCRMAssociationRepository(db),
+		repository.NewSupportInboxInstallationRepository(db),
+		repository.NewSupportInboxSessionRepository(db),
+		repository.NewSupportCannedResponseRepository(db),
+		nil,
+		nil,
+		repository.NewCRMContactRepository(db),
+		repository.NewUserRepository(db),
+		repository.NewDocsSpaceRepository(db),
+		repository.NewDocsCollectionRepository(db, false),
+		repository.NewDocsHelpcenterRepository(db, false),
+	).SetSupportTagRepo(repository.NewSupportTagRepository(db))
+
+	result, err := svc.CreateConversationWithMessage(ctx, model.CreateConversationWithMessageRequest{
+		WorkspaceID:   workspaceID,
+		Subject:       "Renewal question",
+		CustomerName:  strPtr("Jane Customer"),
+		CustomerEmail: strPtr("jane@example.com"),
+		Channels:      []string{"chat", "email"},
+		Content:       "Hi Jane, following up here.",
+		CCEmails:      []string{"finance@example.com"},
+		BCCEmails:     []string{"audit@example.com"},
+		TagIDs:        []string{"tag-new-conversation"},
+	}, actorID)
+	if err != nil {
+		t.Fatalf("CreateConversationWithMessage: %v", err)
+	}
+	if result.Conversation == nil || result.Message == nil {
+		t.Fatalf("expected conversation and message, got %#v", result)
+	}
+	if result.Conversation.Subject != "Renewal question" {
+		t.Fatalf("subject = %q", result.Conversation.Subject)
+	}
+	if result.Conversation.AssignedUserID == nil || *result.Conversation.AssignedUserID != actorID {
+		t.Fatalf("assigned_user_id = %#v, want %q", result.Conversation.AssignedUserID, actorID)
+	}
+	if result.Message.ConversationID != result.Conversation.ID || result.Message.Content != "Hi Jane, following up here." {
+		t.Fatalf("unexpected first message: %#v", result.Message)
+	}
+	var metadata struct {
+		DeliveryChannels []string `json:"delivery_channels"`
+		CCEmails         []string `json:"email_cc"`
+		BCCEmails        []string `json:"email_bcc"`
+	}
+	if err := json.Unmarshal([]byte(result.Message.Metadata), &metadata); err != nil {
+		t.Fatalf("parse message metadata %q: %v", result.Message.Metadata, err)
+	}
+	if !slices.Equal(metadata.DeliveryChannels, []string{"chat", "email"}) {
+		t.Fatalf("delivery_channels = %#v", metadata.DeliveryChannels)
+	}
+	if !slices.Equal(metadata.CCEmails, []string{"finance@example.com"}) {
+		t.Fatalf("cc metadata = %#v", metadata.CCEmails)
+	}
+	if !slices.Equal(metadata.BCCEmails, []string{"audit@example.com"}) {
+		t.Fatalf("bcc metadata = %#v", metadata.BCCEmails)
+	}
+
+	tags, err := repository.NewSupportTagRepository(db).ListByConversationIDs(ctx, workspaceID, []string{result.Conversation.ID})
+	if err != nil {
+		t.Fatalf("list tags: %v", err)
+	}
+	if len(tags[result.Conversation.ID]) != 1 || tags[result.Conversation.ID][0].ID != "tag-new-conversation" {
+		t.Fatalf("conversation tags = %#v", tags[result.Conversation.ID])
+	}
 }
 
 // ---------------------------------------------------------------------------

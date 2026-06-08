@@ -56,6 +56,31 @@ func TestRewriteSupportDraftUsesHaikuAndReturnsContent(t *testing.T) {
 	}
 }
 
+func TestRewriteSupportDraftWithoutConversationUsesDraftOnly(t *testing.T) {
+	fakeLLM := &scriptedSupportRewriteLLM{
+		response: llm.ChatResponse{
+			Content: `{"content":"Hello Jane, thanks for reaching out."}`,
+		},
+	}
+	svc := &SupportAIService{
+		llmProvider: fakeLLM,
+	}
+
+	resp, err := svc.RewriteSupportDraftWithoutConversation(context.Background(), "ws-1", model.SupportAIRewriteDraftRequest{
+		Content:   "hi jane",
+		Operation: supportRewriteFriendly,
+	})
+	if err != nil {
+		t.Fatalf("RewriteSupportDraftWithoutConversation() error = %v", err)
+	}
+	if resp.Content != "Hello Jane, thanks for reaching out." {
+		t.Fatalf("content = %q", resp.Content)
+	}
+	if len(fakeLLM.lastReq.Messages) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(fakeLLM.lastReq.Messages))
+	}
+}
+
 func TestRewriteSupportDraftRejectsUnsupportedOperation(t *testing.T) {
 	svc := &SupportAIService{
 		llmProvider: &scriptedSupportRewriteLLM{},

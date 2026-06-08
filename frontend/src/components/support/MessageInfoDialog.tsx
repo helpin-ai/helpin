@@ -36,6 +36,10 @@ function formatEmailStatus(info: SupportMessageInfo) {
   return parts.join(' · ');
 }
 
+function formatEmailList(values: string[] | null | undefined) {
+  return values?.map((value) => value.trim()).filter(Boolean).join(', ') ?? '';
+}
+
 export function buildMessageInfoRows(info: SupportMessageInfo) {
   const rows: Array<readonly [string, string | boolean | null | undefined]> = [
     ['Identifier', info.id],
@@ -46,6 +50,17 @@ export function buildMessageInfoRows(info: SupportMessageInfo) {
 
   if (info.from?.includes('@')) {
     rows.push(['From', info.from]);
+  }
+  if (info.to_email?.includes('@')) {
+    rows.push(['To', info.to_email]);
+  }
+  const cc = formatEmailList(info.cc_emails);
+  if (cc) {
+    rows.push(['Cc', cc]);
+  }
+  const bcc = formatEmailList(info.bcc_emails);
+  if (bcc) {
+    rows.push(['Bcc', bcc]);
   }
   if (info.type && info.type !== 'text') {
     rows.push(['Type', info.type]);

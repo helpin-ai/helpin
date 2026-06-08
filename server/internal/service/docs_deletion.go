@@ -35,6 +35,7 @@ type DocsDocumentDeletionDependencies struct {
 	ChunkRepo       *repository.DocsChunkRepository
 	HelpcenterRepo  *repository.DocsHelpcenterRepository
 	PublicationRepo *repository.DocsHelpcenterPublicationRepository
+	SearchRepo      *repository.DocsHelpcenterSearchRepository
 	TranslationRepo *repository.DocsHelpcenterTranslationRepository
 	AssetStore      docsAssetStore
 	CleanupEnqueuer DocsAssetCleanupEnqueuer
@@ -54,6 +55,11 @@ func (s *DocsDocumentService) deleteDocumentRows(ctx context.Context, documentID
 func deleteDocumentRowsWithDeps(ctx context.Context, deps DocsDocumentDeletionDependencies, documentIDs []string) error {
 	if deps.PublicationRepo != nil {
 		if err := deps.PublicationRepo.DeleteArticlePublicationsByDocumentIDs(ctx, documentIDs); err != nil {
+			return err
+		}
+	}
+	if deps.SearchRepo != nil {
+		if err := deps.SearchRepo.DeleteArticleEntriesByDocumentIDs(ctx, documentIDs); err != nil {
 			return err
 		}
 	}

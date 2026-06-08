@@ -196,6 +196,13 @@ export interface NavTreeNode {
 
 // ─── Search ─────────────────────────────────────────────────────────────────
 
+export interface SearchMatch {
+  entry_type: 'title' | 'excerpt' | 'heading' | 'body'
+  section_title?: string | null
+  anchor?: string | null
+  snippet: string
+}
+
 export interface SearchResult {
   id: string
   title: string
@@ -218,6 +225,7 @@ export interface SearchResult {
   space_slug: string
   space_name?: string
   highlights?: string[]
+  matches?: SearchMatch[]
 }
 
 // ─── Router Context ─────────────────────────────────────────────────────────

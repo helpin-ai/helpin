@@ -483,6 +483,12 @@ export interface SupportMessage {
   email_delivery_status?: 'sent' | 'delivered' | 'opened' | 'bounced' | 'spam_complaint' | string;
   /** Human-readable bounce or complaint description. Empty unless delivery failed. */
   email_delivery_error?: string;
+  /** Primary outbound email recipient, populated for messages sent via email. */
+  email_to?: string;
+  /** Outbound email CC recipients, populated for messages sent via email. */
+  email_cc?: string[];
+  /** Outbound email BCC recipients, populated for messages sent via email. */
+  email_bcc?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -503,6 +509,9 @@ export interface SupportMessageInfo {
     avatar_url?: string;
   };
   from: string;
+  to_email?: string;
+  cc_emails?: string[];
+  bcc_emails?: string[];
   origin: string;
   type: string;
   email_delivery_status?: string;
@@ -773,6 +782,29 @@ export interface CreateConversationRequest {
 export interface CreateMessageRequest {
   content: string;
   is_internal?: boolean;
+  channels?: ('chat' | 'email')[];
+  cc_emails?: string[];
+  bcc_emails?: string[];
+  attachment_ids?: string[];
+}
+
+export interface CreateConversationWithMessageRequest {
+  mailbox_id?: string | null;
+  subject: string;
+  customer_name?: string;
+  customer_email?: string;
+  crm_contact_id?: string;
+  channels?: ('chat' | 'email')[];
+  content: string;
+  attachment_ids?: string[];
+  tag_ids?: string[];
+  cc_emails?: string[];
+  bcc_emails?: string[];
+}
+
+export interface CreateConversationWithMessageResponse {
+  conversation: SupportConversation;
+  message: SupportMessage;
 }
 
 /** @deprecated Use LinkTaskRequest instead */
