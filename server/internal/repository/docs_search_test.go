@@ -35,7 +35,7 @@ func TestPublicSearchTermsFiltersStopwordsAndDuplicates(t *testing.T) {
 	}
 }
 
-func TestBuildPublicSearchSnippetHighlightsWholeTermsOnly(t *testing.T) {
+func TestBuildPublicSearchSnippetIgnoresStopwordsInsideWords(t *testing.T) {
 	t.Parallel()
 
 	snippet := buildPublicSearchSnippet(
@@ -52,6 +52,22 @@ func TestBuildPublicSearchSnippetHighlightsWholeTermsOnly(t *testing.T) {
 	}
 	if !strings.Contains(snippet, "<mark>days</mark>") || !strings.Contains(snippet, "<mark>convert</mark>") {
 		t.Fatalf("snippet did not highlight meaningful terms: %s", snippet)
+	}
+}
+
+func TestBuildPublicSearchSnippetHighlightsMeaningfulTermPrefixes(t *testing.T) {
+	t.Parallel()
+
+	snippet := buildPublicSearchSnippet(
+		"Installing Usermaven requires installation before platform setup.",
+		"install form",
+	)
+	if !strings.Contains(snippet, "<mark>Install</mark>ing") ||
+		!strings.Contains(snippet, "<mark>install</mark>ation") {
+		t.Fatalf("snippet did not highlight meaningful word prefixes: %s", snippet)
+	}
+	if strings.Contains(snippet, "plat<mark>form</mark>") {
+		t.Fatalf("snippet highlighted query term in the middle of a word: %s", snippet)
 	}
 }
 

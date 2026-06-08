@@ -468,7 +468,7 @@ func buildPublicSearchSnippet(content, query string) string {
 }
 
 func publicSearchTermIndex(content, term string) int {
-	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])` + regexp.QuoteMeta(term) + `([^\p{L}\p{N}]|$)`)
+	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])` + regexp.QuoteMeta(term))
 	loc := re.FindStringSubmatchIndex(content)
 	if loc == nil {
 		return -1
@@ -480,8 +480,8 @@ func publicSearchTermIndex(content, term string) int {
 }
 
 func markPublicSearchTerm(content, term string) string {
-	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])(` + regexp.QuoteMeta(html.EscapeString(term)) + `)([^\p{L}\p{N}]|$)`)
-	return re.ReplaceAllString(content, `${1}<mark>${2}</mark>${3}`)
+	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])(` + regexp.QuoteMeta(html.EscapeString(term)) + `)`)
+	return re.ReplaceAllString(content, `${1}<mark>${2}</mark>`)
 }
 
 func levenshteinDistance(a, b string) int {
