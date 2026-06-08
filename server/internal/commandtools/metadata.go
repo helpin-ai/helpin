@@ -207,16 +207,28 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 		},
 	},
 	{
+		CommandName: "git.list_repositories",
+		Alias:       "list_repositories",
+		Category:    "Git",
+		Description: "List the git repositories connected to this workspace (id, full name, default branch, provider). Use this to discover a repository to target or to ask the user which repo to use.",
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{},
+			"required":             []string{},
+			"additionalProperties": false,
+		},
+	},
+	{
 		CommandName: "docs.create_document",
 		Alias:       "create_document",
 		Category:    "Docs",
-		Description: "Create a new document in Helpin Docs. Accepts optional markdown content that will be auto-converted to rich text.",
+		Description: "Create a new document in Helpin Docs. Accepts optional markdown content that will be auto-converted to rich text. If space_id is omitted it defaults to the workspace's only space; when several spaces exist, call list_spaces and ask the user which to use.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"space_id": map[string]any{
 					"type":        "string",
-					"description": "The space ID where the document will be created",
+					"description": "The space ID where the document will be created. Optional — omit to use the workspace's only space; required when multiple spaces exist (use list_spaces to discover IDs).",
 				},
 				"title": map[string]any{
 					"type":        "string",
@@ -240,7 +252,7 @@ var sharedRuntimeTools = []RuntimeToolMetadata{
 					"description": "Optional tags for the document",
 				},
 			},
-			"required":             []string{"space_id", "title"},
+			"required":             []string{"title"},
 			"additionalProperties": false,
 		},
 	},

@@ -950,6 +950,9 @@ export function AskAgentsDock() {
                     plan={item.plan}
                     runsById={runsById}
                     busyPlanId={busyPlanId}
+                    // One-shot / single-agent plans start expanded so the agent's
+                    // output renders inline in the bar instead of behind a sheet.
+                    defaultOpen={item.plan.steps.length === 1}
                     onAction={(a) => handleStripAction(a, { kind: 'plan', plan: item.plan })}
                     resultSlot={summary ? <InlineResultCard>{summary}</InlineResultCard> : null}
                   />

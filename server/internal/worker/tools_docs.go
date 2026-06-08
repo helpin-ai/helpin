@@ -42,6 +42,65 @@ func toolListDocuments(ctx *ExecutionContext, input json.RawMessage) (string, er
 	return toCompactJSONString(summaries), nil
 }
 
+func toolListSpaces(ctx *ExecutionContext, input json.RawMessage) (string, error) {
+	if ctx.Services == nil || ctx.Services.ListSpaces == nil {
+		return "", fmt.Errorf("docs access is not available for this agent")
+	}
+	spaces, err := ctx.Services.ListSpaces(ctx.Context, ctx.WorkspaceID)
+	if err != nil {
+		return "", fmt.Errorf("list spaces: %w", err)
+	}
+	if len(spaces) == 0 {
+		return "No spaces found. Create a docs space before creating documents.", nil
+	}
+
+	type spaceSummary struct {
+		ID     string  `json:"id"`
+		Name   string  `json:"name"`
+		Slug   string  `json:"slug"`
+		Type   string  `json:"type"`
+		TeamID *string `json:"team_id,omitempty"`
+	}
+	summaries := make([]spaceSummary, 0, len(spaces))
+	for _, sp := range spaces {
+		summaries = append(summaries, spaceSummary{ID: sp.ID, Name: sp.Name, Slug: sp.Slug, Type: sp.Type, TeamID: sp.TeamID})
+	}
+	return toCompactJSONString(summaries), nil
+}
+
+// resolveDefaultDocsSpace picks a space for create_document when the caller did
+// not supply one. A single space is used automatically; when several exist the
+// agent must choose, so we return the options in the error for it to surface to
+// the user (e.g. via request_user_input) or pass an explicit space_id.
+func resolveDefaultDocsSpace(ctx *ExecutionContext) (string, error) {
+	if ctx.Services == nil || ctx.Services.ListSpaces == nil {
+		return "", fmt.Errorf("space_id is required")
+	}
+	spaces, err := ctx.Services.ListSpaces(ctx.Context, ctx.WorkspaceID)
+	if err != nil {
+		return "", fmt.Errorf("resolve space: %w", err)
+	}
+	if len(spaces) == 0 {
+		return "", fmt.Errorf("no docs spaces exist in this workspace; create a space first")
+	}
+	if len(spaces) == 1 {
+		return spaces[0].ID, nil
+	}
+	type spaceOption struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	options := make([]spaceOption, 0, len(spaces))
+	for _, sp := range spaces {
+		options = append(options, spaceOption{ID: sp.ID, Name: sp.Name, Slug: sp.Slug})
+	}
+	return "", fmt.Errorf(
+		"space_id is required: this workspace has multiple docs spaces, ask the user which one to use and pass its space_id. Available spaces: %s",
+		toCompactJSONString(options),
+	)
+}
+
 func toolListCollections(ctx *ExecutionContext, input json.RawMessage) (string, error) {
 	if ctx.Services == nil || ctx.Services.ListCollections == nil {
 		return "", fmt.Errorf("docs access is not available for this agent")
@@ -380,11 +439,15 @@ func toolCreateDocument(ctx *ExecutionContext, input json.RawMessage) (string, e
 	}
 	params.SpaceID = strings.TrimSpace(params.SpaceID)
 	params.Title = strings.TrimSpace(params.Title)
-	if params.SpaceID == "" {
-		return "", fmt.Errorf("space_id is required")
-	}
 	if params.Title == "" {
 		return "", fmt.Errorf("title is required")
+	}
+	if params.SpaceID == "" {
+		resolved, err := resolveDefaultDocsSpace(ctx)
+		if err != nil {
+			return "", err
+		}
+		params.SpaceID = resolved
 	}
 	if existing, ok, err := existingOutputDocument(ctx, params.SpaceID, params.CollectionID); err != nil {
 		return "", err

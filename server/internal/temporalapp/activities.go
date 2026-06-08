@@ -1587,12 +1587,23 @@ func (a *AgentRunActivities) hydrateRunRepositoryTarget(ctx context.Context, sta
 		return fmt.Errorf("git integration repository is not configured")
 	}
 
-	repo, err := a.gitRepo.GetByIDAny(ctx, repoID)
+	// The target id may be a repository UUID or an "owner/repo" full name (e.g.
+	// when chosen by name from the command bar). Resolve full names within the
+	// workspace instead of failing the UUID lookup.
+	var (
+		repo *model.GitRepository
+		err  error
+	)
+	if strings.Contains(repoID, "/") {
+		repo, err = a.gitRepo.GetByFullName(ctx, state.run.WorkspaceID, repoID)
+	} else {
+		repo, err = a.gitRepo.GetByIDAny(ctx, repoID)
+	}
 	if err != nil {
 		return err
 	}
 	if repo == nil {
-		return fmt.Errorf("repository target not found")
+		return fmt.Errorf("repository target %q not found in this workspace", repoID)
 	}
 	if repo.WorkspaceID != state.run.WorkspaceID {
 		return fmt.Errorf("repository target does not belong to this workspace")
@@ -2418,6 +2429,9 @@ func (a *AgentRunActivities) serviceBridge() *workerpkg.ServiceBridge {
 				return nil, fmt.Errorf("docs document key repository is not available")
 			}
 			return a.docsDocumentKeyRepo.GetByKey(ctx, workspaceID, keyType, key)
+		},
+		ListSpaces: func(ctx context.Context, workspaceID string) ([]model.DocsSpace, error) {
+			return a.docsSpaceRepo.ListByWorkspace(ctx, workspaceID)
 		},
 		ListCollections: func(ctx context.Context, workspaceID string, spaceID *string) ([]model.DocsCollection, error) {
 			if spaceID != nil && strings.TrimSpace(*spaceID) != "" {

@@ -338,6 +338,225 @@ func TestChatTurnInfersPriorDocumentTargetForOneShot(t *testing.T) {
 	}
 }
 
+func TestParseIntentResolvesRepositoryNameTargetForOneShot(t *testing.T) {
+	service, _, workspaceID, repoID := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target. usermaven",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot repository plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected one-shot step, got %#v", step)
+	}
+	if step.Target.EntityType != "repository" || step.Target.EntityID != repoID {
+		t.Fatalf("expected resolved repository target, got %#v", step.Target)
+	}
+	if step.Target.DisplayTitle != "helpin/usermaven" {
+		t.Fatalf("expected repository display title, got %#v", step.Target)
+	}
+	for _, required := range []string{"list_commits", "list_directory", "create_document"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+}
+
+func TestParseIntentResolvesRepositoryNameBeforeRepositoryKeyword(t *testing.T) {
+	service, _, workspaceID, _ := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+	repoID := "55555555-5555-5555-5555-555555555555"
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check the latest commits in main branch in the last month and create a changelog doc in docs. target scope is usermaven/usermven repository, get the repo uuid first",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot repository plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.Target.EntityType != "repository" || step.Target.EntityID != repoID {
+		t.Fatalf("expected resolved repository target, got %#v", step.Target)
+	}
+}
+
+func TestParseIntentCompletesUnderspecifiedLLMRepositoryChangelogTools(t *testing.T) {
+	service, _, workspaceID, repoID := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+	service.llmProvider = &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"one_shot_command",
+		"agent_id":"33333333-3333-3333-3333-333333333333",
+		"instructions":"Inspect the repository and create the changelog.",
+		"one_shot_tools":["list_directory"],
+		"tool_intent":"read_only",
+		"rationale":"The request needs repository context.",
+		"confidence":0.94
+	}`}
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target. usermaven",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot repository plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.Target.EntityType != "repository" || step.Target.EntityID != repoID {
+		t.Fatalf("expected resolved repository target, got %#v", step.Target)
+	}
+	for _, required := range []string{"list_commits", "read_files", "list_directory", "list_spaces", "list_collections", "create_document"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected completed repository changelog tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+	if !commandBarToolsIncludeMutation(step.AllowedTools) {
+		t.Fatalf("expected document creation to make tool set mutating, got %#v", step.AllowedTools)
+	}
+	if !strings.Contains(step.Instructions, "Confirm the repository target") {
+		t.Fatalf("expected repository-specific one-shot instructions, got %q", step.Instructions)
+	}
+}
+
+func TestParseIntentRequiresRepositoryTargetForRepoTools(t *testing.T) {
+	service, _, workspaceID, _ := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusNoMatchingAgent {
+		t.Fatalf("expected repository target clarification, got %#v", resp)
+	}
+	if !strings.Contains(resp.Reason, "repository target") {
+		t.Fatalf("expected repository target reason, got %q", resp.Reason)
+	}
+}
+
+func TestChatTurnMergesTargetClarificationWithPendingRequest(t *testing.T) {
+	service, db, workspaceID, repoID := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+	chatRepo := repository.NewCommandBarChatRepository(db)
+	service.SetChatRepository(chatRepo)
+	actorID := "actor-1"
+	thread := &model.CommandBarThread{
+		ID:          uuid.NewString(),
+		WorkspaceID: workspaceID,
+		ActorID:     &actorID,
+		Title:       "Changelog request",
+		Status:      model.CommandBarThreadStatusOpen,
+		CreatedAt:   time.Now().Add(-3 * time.Minute),
+		UpdatedAt:   time.Now().Add(-3 * time.Minute),
+	}
+	if err := chatRepo.CreateThread(ctx, thread); err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+	original := "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target"
+	if err := chatRepo.CreateMessage(ctx, &model.CommandBarMessage{
+		ID:          uuid.NewString(),
+		ThreadID:    thread.ID,
+		WorkspaceID: workspaceID,
+		ActorID:     &actorID,
+		Role:        model.CommandBarMessageRoleUser,
+		Content:     original,
+		CreatedAt:   time.Now().Add(-2 * time.Minute),
+	}); err != nil {
+		t.Fatalf("create user message: %v", err)
+	}
+	if err := chatRepo.CreateMessage(ctx, &model.CommandBarMessage{
+		ID:           uuid.NewString(),
+		ThreadID:     thread.ID,
+		WorkspaceID:  workspaceID,
+		ActorID:      &actorID,
+		Role:         model.CommandBarMessageRoleAssistant,
+		Content:      "What should I use as the target or scope for this request?",
+		ProposalJSON: mustJSON(&model.CommandBarProposal{Type: model.CommandBarProposalClarification, Answer: "What should I use as the target or scope for this request?"}),
+		CreatedAt:    time.Now().Add(-1 * time.Minute),
+	}); err != nil {
+		t.Fatalf("create assistant message: %v", err)
+	}
+
+	resp, err := service.ChatTurn(ctx, workspaceID, actorID, model.CommandBarChatTurnRequest{
+		ThreadID:    &thread.ID,
+		Text:        "target scope is helpin/usermaven repository, get the repo uuid first",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalRunPlan || resp.Proposal.Plan == nil || len(resp.Proposal.Plan.Steps) != 1 {
+		t.Fatalf("expected run plan proposal, got %#v", resp.Proposal)
+	}
+	step := resp.Proposal.Plan.Steps[0]
+	if step.Target.EntityType != "repository" || step.Target.EntityID != repoID {
+		t.Fatalf("expected resolved repository target, got %#v", step.Target)
+	}
+	if !strings.Contains(step.Instructions, "latest commits in main branch") {
+		t.Fatalf("expected original request in one-shot instructions, got %q", step.Instructions)
+	}
+}
+
+func TestChatTurnAsksRepositoryChoiceThenRunsSelectedRepository(t *testing.T) {
+	service, db, workspaceID, _ := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+	chatRepo := repository.NewCommandBarChatRepository(db)
+	service.SetChatRepository(chatRepo)
+	actorID := "actor-1"
+	original := "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target"
+
+	first, err := service.ChatTurn(ctx, workspaceID, actorID, model.CommandBarChatTurnRequest{
+		Text:        original,
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("first chat turn: %v", err)
+	}
+	if first.Proposal == nil || first.Proposal.Type != model.CommandBarProposalClarification {
+		t.Fatalf("expected repository clarification, got %#v", first.Proposal)
+	}
+	if !strings.Contains(first.AssistantMessage.Content, "Choose a repository target") ||
+		!strings.Contains(first.AssistantMessage.Content, "helpin/usermaven") ||
+		!strings.Contains(first.AssistantMessage.Content, "usermaven/usermven") {
+		t.Fatalf("expected repository choices in assistant content, got %q", first.AssistantMessage.Content)
+	}
+
+	second, err := service.ChatTurn(ctx, workspaceID, actorID, model.CommandBarChatTurnRequest{
+		ThreadID:    &first.Thread.ID,
+		Text:        "2",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("second chat turn: %v", err)
+	}
+	if second.Proposal == nil || second.Proposal.Type != model.CommandBarProposalRunPlan || second.Proposal.Plan == nil || len(second.Proposal.Plan.Steps) != 1 {
+		t.Fatalf("expected selected repository run plan, got %#v", second.Proposal)
+	}
+	step := second.Proposal.Plan.Steps[0]
+	if step.Target.EntityType != "repository" || step.Target.EntityID != "55555555-5555-5555-5555-555555555555" {
+		t.Fatalf("expected second repository target, got %#v", step.Target)
+	}
+	if !strings.Contains(step.Instructions, "latest commits in main branch") {
+		t.Fatalf("expected original request in one-shot instructions, got %q", step.Instructions)
+	}
+}
+
 func TestChatTurnClassifiesExplicitTaskStatusAsInlineReadOnly(t *testing.T) {
 	service, db, workspaceID, _ := setupCommandBarTargetResolutionTest(t)
 	ctx := context.Background()
@@ -2611,6 +2830,60 @@ func setupCommandBarDocumentTargetResolutionTest(t *testing.T) (*CommandBarServi
 	service := NewCommandBarService(&AgentService{agentRepo: agentRepo, docsDocumentRepo: docRepo}, nil, nil, nil, nil).
 		SetReadOnlyDataServices(docsSvc, nil, nil, nil)
 	return service, db, workspaceID, documentID
+}
+
+func setupCommandBarRepositoryTargetResolutionTest(t *testing.T) (*CommandBarService, *gorm.DB, string, string) {
+	t.Helper()
+	db := setupCommandBarPlanTestDB(t)
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	repoID := "44444444-4444-4444-4444-444444444444"
+	now := time.Now()
+	mustExec(t, db, `CREATE TABLE git_repositories (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		integration_id TEXT NOT NULL,
+		provider TEXT NOT NULL DEFAULT 'github',
+		base_url TEXT,
+		external_id TEXT NOT NULL DEFAULT '',
+		full_name TEXT NOT NULL,
+		default_branch TEXT NOT NULL DEFAULT 'main',
+		permissions TEXT NOT NULL DEFAULT '{}',
+		private BOOLEAN NOT NULL DEFAULT 1,
+		archived BOOLEAN NOT NULL DEFAULT 0,
+		selected BOOLEAN NOT NULL DEFAULT 1,
+		active BOOLEAN NOT NULL DEFAULT 1,
+		deleted_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+	mustExec(t, db, `CREATE TABLE agent_team_access (
+		agent_id TEXT NOT NULL,
+		team_id TEXT NOT NULL,
+		created_at DATETIME,
+		PRIMARY KEY (agent_id, team_id)
+	)`)
+	mustExec(t, db, `INSERT INTO git_repositories (id, workspace_id, integration_id, provider, external_id, full_name, default_branch, permissions, private, archived, selected, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		repoID, workspaceID, "integration-1", "github", "1001", "helpin/usermaven", "main", []byte(`{}`), true, false, true, true, now, now)
+	mustExec(t, db, `INSERT INTO git_repositories (id, workspace_id, integration_id, provider, external_id, full_name, default_branch, permissions, private, archived, selected, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"55555555-5555-5555-5555-555555555555", workspaceID, "integration-1", "github", "1002", "usermaven/usermven", "main", []byte(`{}`), true, false, true, true, now, now)
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+		allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, 1, 'Command Agent', ?, 'idle', 'native_sdk', ?, ?, ?, 'never', 1, 'interactive', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"33333333-3333-3333-3333-333333333333",
+		workspaceID,
+		model.AgentPresetCommandAgent,
+		[]byte(`["update_plan","request_user_input","list_repositories","list_commits","read_file","read_file_range","read_files","list_directory","search_files","ripgrep","grep","list_symbols","list_spaces","list_collections","create_document"]`),
+		[]byte(`[]`),
+		[]byte(`["workspace","repository"]`),
+	).Error; err != nil {
+		t.Fatalf("seed command agent: %v", err)
+	}
+	agentRepo := repository.NewAgentRepository(db)
+	gitSvc := NewGitService(nil, repository.NewGitRepositoryRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, "", "", "")
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo, gitService: gitSvc}, nil, nil, nil, nil)
+	return service, db, workspaceID, repoID
 }
 
 func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {
