@@ -1,7 +1,6 @@
-import { StrictMode, useEffect } from 'react'
+import { StrictMode, Suspense, lazy, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { RouterProvider } from '@tanstack/react-router'
 import { Toaster } from 'sonner'
 import { configureSessionStorage, createBrowserSessionStorage, useUnreadStats } from '@helpin-ai/support-core'
@@ -15,6 +14,10 @@ import { registerNotificationClickHandler, setupNotificationClickListener } from
 import { router } from '@desktop/router'
 import { createTauriSessionStorage } from '@desktop/lib/sessionStorage'
 import './index.css'
+
+const ReactQueryDevtools = import.meta.env.DEV
+  ? lazy(() => import('@tanstack/react-query-devtools').then((module) => ({ default: module.ReactQueryDevtools })))
+  : null
 
 configureSessionStorage(
   isTauriDesktop() ? createTauriSessionStorage() : createBrowserSessionStorage(),
@@ -86,7 +89,11 @@ function App() {
       <DesktopShellSync />
       <InnerApp />
       <Toaster richColors />
-      <ReactQueryDevtools initialIsOpen={false} />
+      {ReactQueryDevtools ? (
+        <Suspense fallback={null}>
+          <ReactQueryDevtools initialIsOpen={false} />
+        </Suspense>
+      ) : null}
     </QueryClientProvider>
   )
 }

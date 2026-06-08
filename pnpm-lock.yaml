@@ -119,13 +119,13 @@ importers:
         version: link:../../packages/support-core
       '@tanstack/react-query':
         specifier: ^5.90.21
-        version: 5.99.0(react@19.2.4)
+        version: 5.99.0(react@19.2.5)
       '@tanstack/react-query-devtools':
         specifier: ^5.91.3
-        version: 5.99.0(@tanstack/react-query@5.99.0(react@19.2.4))(react@19.2.4)
+        version: 5.99.0(@tanstack/react-query@5.99.0(react@19.2.5))(react@19.2.5)
       '@tanstack/react-router':
         specifier: ^1.168.22
-        version: 1.168.22(react-dom@19.2.5(react@19.2.4))(react@19.2.4)
+        version: 1.168.22(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@tauri-apps/api':
         specifier: ^2.8.0
         version: 2.10.1
@@ -137,19 +137,19 @@ importers:
         version: 2.4.2
       next-themes:
         specifier: ^0.4.6
-        version: 0.4.6(react-dom@19.2.5(react@19.2.4))(react@19.2.4)
+        version: 0.4.6(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       react:
-        specifier: ^19.2.0
-        version: 19.2.4
+        specifier: 19.2.5
+        version: 19.2.5
       react-dom:
-        specifier: ^19.2.0
-        version: 19.2.5(react@19.2.4)
+        specifier: 19.2.5
+        version: 19.2.5(react@19.2.5)
       sonner:
         specifier: ^2.0.7
-        version: 2.0.7(react-dom@19.2.5(react@19.2.4))(react@19.2.4)
+        version: 2.0.7(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       zustand:
         specifier: ^5.0.11
-        version: 5.0.12(@types/react@19.2.14)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
+        version: 5.0.12(@types/react@19.2.14)(react@19.2.5)(use-sync-external-store@1.6.0(react@19.2.5))
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.2.1
@@ -14462,12 +14462,6 @@ snapshots:
       '@tanstack/react-query': 5.90.21(react@19.2.5)
       react: 19.2.5
 
-  '@tanstack/react-query-devtools@5.99.0(@tanstack/react-query@5.99.0(react@19.2.4))(react@19.2.4)':
-    dependencies:
-      '@tanstack/query-devtools': 5.99.0
-      '@tanstack/react-query': 5.99.0(react@19.2.4)
-      react: 19.2.4
-
   '@tanstack/react-query-devtools@5.99.0(@tanstack/react-query@5.99.0(react@19.2.5))(react@19.2.5)':
     dependencies:
       '@tanstack/query-devtools': 5.99.0
@@ -14519,15 +14513,6 @@ snapshots:
       isbot: 5.1.36
       react: 19.2.5
       react-dom: 19.2.5(react@19.2.5)
-
-  '@tanstack/react-router@1.168.22(react-dom@19.2.5(react@19.2.4))(react@19.2.4)':
-    dependencies:
-      '@tanstack/history': 1.161.6
-      '@tanstack/react-store': 0.9.3(react-dom@19.2.5(react@19.2.4))(react@19.2.4)
-      '@tanstack/router-core': 1.168.15
-      isbot: 5.1.39
-      react: 19.2.4
-      react-dom: 19.2.5(react@19.2.4)
 
   '@tanstack/react-router@1.168.22(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
     dependencies:
@@ -14584,13 +14569,6 @@ snapshots:
       react: 19.2.5
       react-dom: 19.2.5(react@19.2.5)
       use-sync-external-store: 1.6.0(react@19.2.5)
-
-  '@tanstack/react-store@0.9.3(react-dom@19.2.5(react@19.2.4))(react@19.2.4)':
-    dependencies:
-      '@tanstack/store': 0.9.3
-      react: 19.2.4
-      react-dom: 19.2.5(react@19.2.4)
-      use-sync-external-store: 1.6.0(react@19.2.4)
 
   '@tanstack/react-store@0.9.3(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
     dependencies:
@@ -19926,11 +19904,6 @@ snapshots:
 
   netmask@2.0.2: {}
 
-  next-themes@0.4.6(react-dom@19.2.5(react@19.2.4))(react@19.2.4):
-    dependencies:
-      react: 19.2.4
-      react-dom: 19.2.5(react@19.2.4)
-
   next-themes@0.4.6(react-dom@19.2.5(react@19.2.5))(react@19.2.5):
     dependencies:
       react: 19.2.5
@@ -20664,11 +20637,6 @@ snapshots:
       loose-envify: 1.4.0
       react: 18.3.1
       scheduler: 0.23.2
-
-  react-dom@19.2.5(react@19.2.4):
-    dependencies:
-      react: 19.2.4
-      scheduler: 0.27.0
 
   react-dom@19.2.5(react@19.2.5):
     dependencies:
@@ -21406,11 +21374,6 @@ snapshots:
       ip-address: 10.1.0
       smart-buffer: 4.2.0
 
-  sonner@2.0.7(react-dom@19.2.5(react@19.2.4))(react@19.2.4):
-    dependencies:
-      react: 19.2.4
-      react-dom: 19.2.5(react@19.2.4)
-
   sonner@2.0.7(react-dom@19.2.5(react@19.2.5))(react@19.2.5):
     dependencies:
       react: 19.2.5
@@ -22036,6 +21999,7 @@ snapshots:
   use-sync-external-store@1.6.0(react@19.2.4):
     dependencies:
       react: 19.2.4
+    optional: true
 
   use-sync-external-store@1.6.0(react@19.2.5):
     dependencies:

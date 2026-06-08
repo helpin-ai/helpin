@@ -4,7 +4,7 @@ import { authService } from '@/lib/services/authService';
 import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
-import { clearSession, getAccessToken, hydrateSessionStorage, writeSession } from '@helpin-ai/support-core';
+import { clearSession, hydrateSessionStorage, writeSession } from '@helpin-ai/support-core';
 
 interface AuthState {
   user: User | null;
@@ -59,11 +59,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     _initializing = true;
     try {
       await hydrateSessionStorage();
-      const token = getAccessToken();
-      if (!token) {
-        set({ user: null, loading: false, serverUnreachable: false });
-        return;
-      }
       const { data, error, isNetworkError } = await authService.me();
       if (data && !error) {
         set({ user: data, loading: false, serverUnreachable: false });

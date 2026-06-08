@@ -30,8 +30,8 @@ function resolveRequestUrl(apiBase: string, path: string): string {
 
 function mergeAuthHeaders(token: string | null, headers?: HeadersInit): HeadersInit {
   return {
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   }
 }
 
@@ -46,17 +46,30 @@ async function parseError(response: Response): Promise<{ error: string }> {
   return response.json().catch(() => ({ error: response.statusText }))
 }
 
+function shouldSkipAuthRefresh(path: string): boolean {
+  const pathname = path.split(/[?#]/, 1)[0]
+  return [
+    '/auth/refresh',
+    '/auth/signin',
+    '/auth/signup',
+    '/auth/forgot-password',
+    '/auth/reset-password',
+    '/auth/verify-email',
+    '/auth/2fa/verify-signin',
+    '/auth/passkey/authentication-options',
+    '/auth/passkey/authenticate',
+  ].includes(pathname)
+}
+
 async function tryRefreshToken(apiBase: string): Promise<boolean> {
   const refreshToken = getRefreshToken()
-  if (!refreshToken) {
-    return false
-  }
 
   try {
     const response = await fetch(resolveRequestUrl(apiBase, '/auth/refresh'), {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
     })
 
     if (!response.ok) {
@@ -84,10 +97,11 @@ async function fetchWithAuthRetry(
   const token = getAccessToken()
   let response = await fetch(resolveRequestUrl(apiBase, path), {
     ...init,
+    credentials: 'include',
     headers: mergeAuthHeaders(token, init.headers),
   })
 
-  if (response.status !== 401 || path.startsWith('/auth/')) {
+  if (response.status !== 401 || shouldSkipAuthRefresh(path)) {
     return response
   }
 
@@ -95,19 +109,24 @@ async function fetchWithAuthRetry(
   if (!refreshed) {
     await clearSession()
     stopTokenRefreshTimer()
-    onUnauthorized?.()
+    if (path !== '/auth/me') {
+      onUnauthorized?.()
+    }
     return response
   }
 
   response = await fetch(resolveRequestUrl(apiBase, path), {
     ...init,
+    credentials: 'include',
     headers: mergeAuthHeaders(getAccessToken(), init.headers),
   })
 
   if (response.status === 401) {
     await clearSession()
     stopTokenRefreshTimer()
-    onUnauthorized?.()
+    if (path !== '/auth/me') {
+      onUnauthorized?.()
+    }
   }
 
   return response
