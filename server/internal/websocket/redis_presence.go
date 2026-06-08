@@ -304,7 +304,31 @@ func (p *RedisPresence) GetViewers(ctx context.Context, workspaceID, conversatio
 	if err != nil {
 		return nil, fmt.Errorf("redis presence GetViewers: %w", err)
 	}
-	return members, nil
+	if len(members) == 0 {
+		return []string{}, nil
+	}
+
+	viewers := make([]string, 0, len(members))
+	staleMembers := make([]interface{}, 0)
+	for _, userID := range members {
+		keys, err := p.scanKeys(ctx, viewingConnKey(workspaceID, conversationID, userID, "*"), 1)
+		if err != nil {
+			return nil, fmt.Errorf("redis presence GetViewers scan conn keys: %w", err)
+		}
+		if len(keys) == 0 {
+			staleMembers = append(staleMembers, userID)
+			continue
+		}
+		viewers = append(viewers, userID)
+	}
+
+	if len(staleMembers) > 0 {
+		if err := p.rdb.SRem(ctx, setKey, staleMembers...).Err(); err != nil {
+			return nil, fmt.Errorf("redis presence GetViewers prune stale members: %w", err)
+		}
+	}
+
+	return viewers, nil
 }
 
 // GetActiveViewing returns the conversation this connection is currently viewing.

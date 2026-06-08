@@ -80,6 +80,114 @@ func TestUpsertSpecClarificationsSectionReplacesExistingSection(t *testing.T) {
 	}
 }
 
+func TestApproveEpicSpecIsIdempotentForAlreadyApprovedSpec(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	for _, stmt := range []string{
+		`CREATE TABLE docs_contents (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			document_id TEXT NOT NULL UNIQUE,
+			content BLOB,
+			content_text TEXT,
+			word_count INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+		`CREATE TABLE docs_versions (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			document_id TEXT NOT NULL,
+			content BLOB,
+			content_text TEXT,
+			snapshot_label TEXT,
+			version_type TEXT NOT NULL,
+			word_count INTEGER NOT NULL DEFAULT 0,
+			created_by TEXT NOT NULL,
+			created_at DATETIME
+		)`,
+		`CREATE TABLE agent_runs (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			workspace_id TEXT NOT NULL,
+			agent_id TEXT NOT NULL,
+			target_type TEXT NOT NULL,
+			target_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			pause_reason TEXT,
+			output_summary BLOB,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatalf("create docs table: %v", err)
+		}
+	}
+
+	workspaceID := "ws-approve-idempotent"
+	epicID := "epic-approve-idempotent"
+	actorID := "user-approve-idempotent"
+	docID := "doc-approve-idempotent"
+	versionID := "ver-approved"
+
+	if err := db.Create(&model.PMEpic{
+		ID:                    epicID,
+		WorkspaceID:           workspaceID,
+		Name:                  "Epic",
+		SpecDocumentID:        &docID,
+		SpecClarifications:    json.RawMessage(`[]`),
+		ApprovedSpecVersionID: &versionID,
+	}).Error; err != nil {
+		t.Fatalf("create epic: %v", err)
+	}
+	if err := db.Exec(
+		`INSERT INTO docs_contents (id, document_id, content, content_text, word_count, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"content-1", docID, json.RawMessage(`{"type":"doc"}`), "Approved spec", 2,
+	).Error; err != nil {
+		t.Fatalf("create docs content: %v", err)
+	}
+	if err := db.Exec(
+		`INSERT INTO docs_versions (id, document_id, content, content_text, snapshot_label, version_type, word_count, created_by, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		versionID, docID, json.RawMessage(`{"type":"doc"}`), "Approved spec", "Approved Spec", "manual", 2, actorID,
+	).Error; err != nil {
+		t.Fatalf("create approved version: %v", err)
+	}
+
+	svc := &AgentService{
+		epicRepo:        repository.NewPMEpicRepository(db),
+		runRepo:         repository.NewAgentRunRepository(db),
+		docsContentRepo: repository.NewDocsContentRepository(db),
+		docsVersionRepo: repository.NewDocsVersionRepository(db),
+		activitySvc:     NewPMActivityService(repository.NewPMActivityRepository(db)),
+	}
+
+	if _, err := svc.ApproveEpicSpec(ctx, workspaceID, epicID, actorID, model.ApproveEpicSpecRequest{}); err != nil {
+		t.Fatalf("first ApproveEpicSpec: %v", err)
+	}
+	if _, err := svc.ApproveEpicSpec(ctx, workspaceID, epicID, actorID, model.ApproveEpicSpecRequest{}); err != nil {
+		t.Fatalf("second ApproveEpicSpec: %v", err)
+	}
+
+	var versionCount int64
+	if err := db.Table("docs_versions").Where("document_id = ?", docID).Count(&versionCount).Error; err != nil {
+		t.Fatalf("count docs versions: %v", err)
+	}
+	if versionCount != 1 {
+		t.Fatalf("expected approval to reuse existing version, got %d versions", versionCount)
+	}
+
+	var activityCount int64
+	if err := db.Model(&model.PMActivityLog{}).
+		Where("entity_id = ? AND action = ? AND field_name = ?", epicID, "updated", "approved_spec_version_id").
+		Count(&activityCount).Error; err != nil {
+		t.Fatalf("count approval activity: %v", err)
+	}
+	if activityCount != 0 {
+		t.Fatalf("expected repeated approval to avoid duplicate activity, got %d entries", activityCount)
+	}
+}
+
 func TestValidatePlanningStoriesNormalizesPlannerEnums(t *testing.T) {
 	priority := "critical"
 	stories := []model.ProposedTask{
