@@ -212,12 +212,23 @@ func (r *DocsSearchRepository) publicSearchPostgres(ctx context.Context, workspa
 	}
 
 	sql += " ORDER BY me.score DESC, me.position ASC LIMIT ?"
-	args = append(args, limit*4)
+	args = append(args, limit*10)
 
 	var rows []publicSearchEntryRow
 	if err := r.db.WithContext(ctx).Raw(sql, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("docs public search: %w", err)
 	}
+	matched := make([]publicSearchEntryRow, 0, len(rows))
+	for _, row := range rows {
+		score, ok := fallbackPublicSearchScore(row, query)
+		if !ok {
+			continue
+		}
+		row.Score = score
+		matched = append(matched, row)
+	}
+	sortPublicSearchRows(matched, query)
+	rows = matched
 	return r.groupPublicSearchRows(ctx, rows, locale, query, limit)
 }
 
@@ -293,16 +304,12 @@ func (r *DocsSearchRepository) publicSearchFallback(ctx context.Context, workspa
 		row.Score = score
 		matched = append(matched, row)
 	}
-	sort.SliceStable(matched, func(i, j int) bool {
-		if matched[i].Score == matched[j].Score {
-			return matched[i].Position < matched[j].Position
-		}
-		return matched[i].Score > matched[j].Score
-	})
+	sortPublicSearchRows(matched, query)
 	return r.groupPublicSearchRows(ctx, matched, locale, query, limit)
 }
 
 func (r *DocsSearchRepository) groupPublicSearchRows(ctx context.Context, rows []publicSearchEntryRow, locale, query string, limit int) ([]model.PublicSearchResultResponse, error) {
+	sortPublicSearchRows(rows, query)
 	results := make([]model.PublicSearchResultResponse, 0, limit)
 	byID := map[string]int{}
 	for _, row := range rows {
@@ -379,14 +386,8 @@ func fallbackPublicSearchScore(row publicSearchEntryRow, query string) (float64,
 	for _, term := range terms {
 		matched := false
 		for _, word := range words {
-			if strings.HasPrefix(word, term) || strings.Contains(word, term) {
+			if publicSearchWordMatchesTerm(word, term) {
 				score += 4
-				matched = true
-				break
-			}
-			distance := levenshteinDistance(term, word)
-			if distance <= publicSearchTypoTolerance(term) {
-				score += 2
 				matched = true
 				break
 			}
@@ -399,6 +400,46 @@ func fallbackPublicSearchScore(row publicSearchEntryRow, query string) (float64,
 		score += 4
 	}
 	return score, true
+}
+
+func sortPublicSearchRows(rows []publicSearchEntryRow, query string) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		left := publicSearchRowSortScore(rows[i], query)
+		right := publicSearchRowSortScore(rows[j], query)
+		if left == right {
+			return rows[i].Position < rows[j].Position
+		}
+		return left > right
+	})
+}
+
+func publicSearchRowSortScore(row publicSearchEntryRow, query string) float64 {
+	score := row.Score
+	switch row.EntryType {
+	case model.DocsHelpcenterSearchEntryTypeTitle:
+		score += 6
+	case model.DocsHelpcenterSearchEntryTypeHeading:
+		score += 3
+	}
+	snippet := buildPublicSearchSnippet(row.EntryContent, query)
+	if strings.Contains(snippet, "<mark>") {
+		score += 8
+	}
+	return score
+}
+
+func publicSearchWordMatchesTerm(word, term string) bool {
+	if strings.HasPrefix(word, term) {
+		return true
+	}
+	if len([]rune(term)) < 4 || len([]rune(word)) < 4 {
+		return false
+	}
+	if []rune(word)[0] != []rune(term)[0] {
+		return false
+	}
+	distance := levenshteinDistance(term, word)
+	return distance <= publicSearchTypoTolerance(term)
 }
 
 func publicSearchTerms(value string) []string {

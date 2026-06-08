@@ -71,6 +71,75 @@ func TestBuildPublicSearchSnippetHighlightsMeaningfulTermPrefixes(t *testing.T) 
 	}
 }
 
+func TestFallbackPublicSearchScoreRequiresWordStartMatches(t *testing.T) {
+	t.Parallel()
+
+	row := publicSearchEntryRow{
+		EntryType:    model.DocsHelpcenterSearchEntryTypeHeading,
+		EntryContent: "Attributes Explained",
+		Score:        1,
+	}
+	if _, ok := fallbackPublicSearchScore(row, "attribution"); ok {
+		t.Fatalf("fallbackPublicSearchScore matched %q for attribution", row.EntryContent)
+	}
+
+	row.EntryContent = "Attribution Explained"
+	if _, ok := fallbackPublicSearchScore(row, "attribution"); !ok {
+		t.Fatalf("fallbackPublicSearchScore did not match %q for attribution", row.EntryContent)
+	}
+}
+
+func TestGroupPublicSearchRowsPrefersHighlightedMatches(t *testing.T) {
+	t.Parallel()
+
+	repo := NewDocsSearchRepository(setupDocsSearchPathTestDB(t))
+	anchor := "attribution-analysis"
+	rows := []publicSearchEntryRow{
+		{
+			ID:           "doc-1",
+			Title:        "Content Attribution",
+			Slug:         "content-attribution",
+			PublicID:     "pub-1",
+			Locale:       "en",
+			SpaceSlug:    "docs",
+			SpaceName:    "Docs",
+			EntryType:    model.DocsHelpcenterSearchEntryTypeHeading,
+			EntryContent: "Attributes Explained",
+			Position:     0,
+			Score:        12,
+		},
+		{
+			ID:           "doc-1",
+			Title:        "Content Attribution",
+			Slug:         "content-attribution",
+			PublicID:     "pub-1",
+			Locale:       "en",
+			SpaceSlug:    "docs",
+			SpaceName:    "Docs",
+			EntryType:    model.DocsHelpcenterSearchEntryTypeHeading,
+			EntryContent: "Attribution analysis",
+			SectionTitle: func() *string { value := "Attribution analysis"; return &value }(),
+			Anchor:       &anchor,
+			Position:     1,
+			Score:        8,
+		},
+	}
+
+	results, err := repo.groupPublicSearchRows(context.Background(), rows, "en", "attribution", 10)
+	if err != nil {
+		t.Fatalf("groupPublicSearchRows: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	if got := results[0].Matches[0].Snippet; !strings.Contains(got, "<mark>Attribution</mark>") {
+		t.Fatalf("first match snippet = %q, want highlighted attribution match first", got)
+	}
+	if results[0].Matches[0].Anchor == nil || *results[0].Matches[0].Anchor != anchor {
+		t.Fatalf("first match anchor = %+v, want %q", results[0].Matches[0].Anchor, anchor)
+	}
+}
+
 func setupDocsSearchPathTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
