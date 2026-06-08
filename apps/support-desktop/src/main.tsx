@@ -4,7 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { Toaster } from 'sonner'
 import { configureSessionStorage, createBrowserSessionStorage, useUnreadStats } from '@helpin-ai/support-core'
-import { setupVisibilityRefresh, startTokenRefreshTimer } from '@/lib/api'
+import { setupVisibilityRefresh, startTokenRefreshTimer, stopTokenRefreshTimer } from '@/lib/api'
 import { queryClient } from '@/lib/queryClient'
 import { useAuthStore } from '@/stores/authStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -62,12 +62,19 @@ function InnerApp() {
 
   useEffect(() => {
     useAuthStore.getState().initialize()
-    setupVisibilityRefresh()
   }, [])
 
   useEffect(() => {
-    if (user) {
-      startTokenRefreshTimer()
+    if (!user) {
+      stopTokenRefreshTimer()
+      return
+    }
+
+    startTokenRefreshTimer()
+    const cleanupVisibilityRefresh = setupVisibilityRefresh()
+    return () => {
+      cleanupVisibilityRefresh()
+      stopTokenRefreshTimer()
     }
   }, [user])
 

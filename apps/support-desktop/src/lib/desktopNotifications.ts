@@ -8,6 +8,7 @@ const COOLDOWN_MS = 5_000
 const MAX_SEEN = 200
 
 const recentlySeen = new Set<string>()
+const pendingNotifications = new Set<string>()
 const seenOrder: string[] = []
 const lastNotifyAt = new Map<string, number>()
 
@@ -49,8 +50,8 @@ interface NotifyPayload {
   }
 }
 
-async function sendNativeNotification(payload: NotifyPayload) {
-  if (!isTauriDesktop() || !permissionGranted) return
+async function sendNativeNotification(payload: NotifyPayload): Promise<boolean> {
+  if (!isTauriDesktop() || !permissionGranted) return false
 
   try {
     const { sendNotification } = await import('@tauri-apps/plugin-notification')
@@ -61,8 +62,9 @@ async function sendNativeNotification(payload: NotifyPayload) {
       extra: payload.extra,
       autoCancel: true,
     })
+    return true
   } catch {
-    // Notification send failed — silently ignore.
+    return false
   }
 }
 
@@ -111,17 +113,27 @@ function dedupeKey(event: SupportRealtimeEvent): string {
   return `${event.entity}:${event.entity_id}:${event.sent_at ?? ''}`
 }
 
-function isDuplicate(event: SupportRealtimeEvent): boolean {
+function reserveNotification(event: SupportRealtimeEvent): string | null {
   const key = dedupeKey(event)
-  if (recentlySeen.has(key)) return true
+  if (recentlySeen.has(key) || pendingNotifications.has(key)) return null
 
+  pendingNotifications.add(key)
+  return key
+}
+
+function recordNotificationSent(key: string, conversationId: string) {
+  pendingNotifications.delete(key)
   recentlySeen.add(key)
   seenOrder.push(key)
   if (seenOrder.length > MAX_SEEN) {
     const oldest = seenOrder.shift()!
     recentlySeen.delete(oldest)
   }
-  return false
+  recordNotify(conversationId)
+}
+
+function releaseNotificationReservation(key: string) {
+  pendingNotifications.delete(key)
 }
 
 function isOnCooldown(conversationId: string): boolean {
@@ -168,9 +180,6 @@ export function handleSupportRealtimeEvent(
   // Don't notify for own messages.
   if (event.actor_id === ctx.currentUserId) return
 
-  // Dedupe: skip if we've already processed this event.
-  if (isDuplicate(event)) return
-
   const conversationId = event.parent_id ?? event.entity_id
   if (!conversationId) return
 
@@ -179,7 +188,6 @@ export function handleSupportRealtimeEvent(
 
   // Cooldown: avoid notification storms from rapid messages.
   if (isOnCooldown(conversationId)) return
-  recordNotify(conversationId)
 
   // Build notification content.
   const senderName = typeof event.data?.sender_name === 'string'
@@ -193,7 +201,10 @@ export function handleSupportRealtimeEvent(
     ? event.data.content
     : 'New message'
 
-  sendNativeNotification({
+  const reservationKey = reserveNotification(event)
+  if (!reservationKey) return
+
+  void sendNativeNotification({
     id: notificationId,
     title,
     body: preview.length > 120 ? `${preview.slice(0, 117)}...` : preview,
@@ -201,5 +212,11 @@ export function handleSupportRealtimeEvent(
       workspaceSlug: ctx.workspaceSlug,
       conversationId,
     },
+  }).then((sent) => {
+    if (sent) {
+      recordNotificationSent(reservationKey, conversationId)
+    } else {
+      releaseNotificationReservation(reservationKey)
+    }
   })
 }

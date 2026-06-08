@@ -6,7 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { configureSessionStorage, createCookieSessionStorage } from '@helpin-ai/support-core'
 import { queryClient } from '@/lib/queryClient'
 import { clearClientSession, useAuthStore } from '@/stores/authStore'
-import { startTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
+import { startTokenRefreshTimer, stopTokenRefreshTimer, setupVisibilityRefresh } from '@/lib/api'
 import { RoutePendingState } from '@/components/layout/RoutePendingState'
 import { routeTree } from './routeTree.gen'
 import './index.css'
@@ -59,13 +59,20 @@ function InnerApp() {
 
   useEffect(() => {
     useAuthStore.getState().initialize()
-    setupVisibilityRefresh()
   }, [])
 
   // Start proactive token refresh when user is authenticated
   useEffect(() => {
-    if (user) {
-      startTokenRefreshTimer()
+    if (!user) {
+      stopTokenRefreshTimer()
+      return
+    }
+
+    startTokenRefreshTimer()
+    const cleanupVisibilityRefresh = setupVisibilityRefresh()
+    return () => {
+      cleanupVisibilityRefresh()
+      stopTokenRefreshTimer()
     }
   }, [user])
 

@@ -25,6 +25,6 @@ export function stopTokenRefreshTimer(): void {
   stopSharedTokenRefreshTimer()
 }
 
-export function setupVisibilityRefresh(): void {
-  setupSharedVisibilityRefresh(API_BASE)
+export function setupVisibilityRefresh(): () => void {
+  return setupSharedVisibilityRefresh(API_BASE)
 }

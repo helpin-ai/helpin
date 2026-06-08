@@ -9,6 +9,7 @@ export interface ApiResponse<T> {
 
 interface ApiClientOptions {
   onUnauthorized?: () => void
+  clearOnUnauthorized?: boolean
 }
 
 interface ApiClient {
@@ -46,19 +47,9 @@ async function parseError(response: Response): Promise<{ error: string }> {
   return response.json().catch(() => ({ error: response.statusText }))
 }
 
-function shouldSkipAuthRefresh(path: string): boolean {
+function shouldAttemptAuthRefresh(path: string): boolean {
   const pathname = path.split(/[?#]/, 1)[0]
-  return [
-    '/auth/refresh',
-    '/auth/signin',
-    '/auth/signup',
-    '/auth/forgot-password',
-    '/auth/reset-password',
-    '/auth/verify-email',
-    '/auth/2fa/verify-signin',
-    '/auth/passkey/authentication-options',
-    '/auth/passkey/authenticate',
-  ].includes(pathname)
+  return pathname === '/auth/me' || !pathname.startsWith('/auth/')
 }
 
 async function tryRefreshToken(apiBase: string): Promise<boolean> {
@@ -69,7 +60,7 @@ async function tryRefreshToken(apiBase: string): Promise<boolean> {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
+      body: refreshToken ? JSON.stringify({ refresh_token: refreshToken }) : undefined,
     })
 
     if (!response.ok) {
@@ -92,8 +83,9 @@ async function fetchWithAuthRetry(
   apiBase: string,
   path: string,
   init: RequestInit = {},
-  onUnauthorized?: () => void,
+  options: ApiClientOptions = {},
 ): Promise<Response> {
+  const shouldClearOnUnauthorized = options.clearOnUnauthorized !== false
   const token = getAccessToken()
   let response = await fetch(resolveRequestUrl(apiBase, path), {
     ...init,
@@ -101,16 +93,18 @@ async function fetchWithAuthRetry(
     headers: mergeAuthHeaders(token, init.headers),
   })
 
-  if (response.status !== 401 || shouldSkipAuthRefresh(path)) {
+  if (response.status !== 401 || !shouldAttemptAuthRefresh(path)) {
     return response
   }
 
   const refreshed = await tryRefreshToken(apiBase)
   if (!refreshed) {
-    await clearSession()
-    stopTokenRefreshTimer()
+    if (shouldClearOnUnauthorized) {
+      await clearSession()
+      stopTokenRefreshTimer()
+    }
     if (path !== '/auth/me') {
-      onUnauthorized?.()
+      options.onUnauthorized?.()
     }
     return response
   }
@@ -122,10 +116,12 @@ async function fetchWithAuthRetry(
   })
 
   if (response.status === 401) {
-    await clearSession()
-    stopTokenRefreshTimer()
+    if (shouldClearOnUnauthorized) {
+      await clearSession()
+      stopTokenRefreshTimer()
+    }
     if (path !== '/auth/me') {
-      onUnauthorized?.()
+      options.onUnauthorized?.()
     }
   }
 
@@ -146,7 +142,7 @@ async function request<T>(
         ...options,
         headers: mergeJsonHeaders(getAccessToken(), options.headers),
       },
-      onUnauthorized,
+      { onUnauthorized },
     )
 
     if (!response.ok) {
@@ -196,7 +192,7 @@ export async function fetchWithSessionAuth(
       ...init,
       headers: mergeAuthHeaders(token, init.headers),
     },
-    options.onUnauthorized,
+    { ...options, clearOnUnauthorized: options.clearOnUnauthorized ?? false },
   )
 }
 

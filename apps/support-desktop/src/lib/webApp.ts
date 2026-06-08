@@ -4,7 +4,12 @@ export const WEB_BASE_URL =
   import.meta.env.VITE_WEB_BASE_URL || API_BASE.replace(/\/api\/?$/, '')
 
 export function buildWorkspaceWebUrl(pathname: string) {
-  return new URL(pathname, `${WEB_BASE_URL.replace(/\/+$/, '')}/`).toString()
+  const base = new URL(`${WEB_BASE_URL.replace(/\/+$/, '')}/`)
+  const url = new URL(pathname, base)
+  if (url.origin !== base.origin) {
+    return new URL(`${url.pathname}${url.search}${url.hash}`, base).toString()
+  }
+  return url.toString()
 }
 
 export function openWorkspaceWebUrl(pathname: string) {
