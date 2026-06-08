@@ -110,6 +110,8 @@ export interface FlowTemplateManifest {
   inputs: FlowTemplateInput[];
   flow: {
     action: string;
+    name_template?: string;
+    description_template?: string;
     target?: Record<string, string>;
     conditions?: Record<string, string>[];
     parameters?: Record<string, unknown>;
@@ -119,6 +121,7 @@ export interface FlowTemplateManifest {
 
 export interface InstallFlowTemplateRequest {
   name?: string;
+  description?: string;
   agent_name?: string;
   inputs: Record<string, unknown>;
   agent_overrides?: import('./agents').CreateAgentFromTemplateOverrides;

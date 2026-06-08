@@ -199,6 +199,11 @@ type TemplateAgentSetup = {
   max_concurrent_runs: string;
 };
 
+type TemplateFlowSetup = {
+  name: string;
+  description: string;
+};
+
 type FlowTemplateInstallStep = 'inputs' | 'review';
 
 type TemplateSelectOption = {
@@ -207,6 +212,34 @@ type TemplateSelectOption = {
   description?: string;
   indent?: number;
 };
+
+export const NO_REPOSITORY_VALUE = '__no_repository__';
+
+function isOptionalRepositoryInput(input: FlowTemplateInput) {
+  return input.type === 'repository' && !input.required;
+}
+
+export function templateSelectOptions(
+  input: FlowTemplateInput,
+  repositories: Pick<GitRepository, 'id' | 'full_name'>[],
+): TemplateSelectOption[] {
+  const options = repositories.map((repo) => ({ value: repo.id, label: repo.full_name }));
+  if (!isOptionalRepositoryInput(input)) return options;
+  return [
+    { value: NO_REPOSITORY_VALUE, label: 'No repository', description: 'Skip repository context' },
+    ...options,
+  ];
+}
+
+export function templateSelectValue(input: FlowTemplateInput, value: unknown) {
+  if (isOptionalRepositoryInput(input) && !stringValue(value)) return NO_REPOSITORY_VALUE;
+  return stringValue(value);
+}
+
+export function templateSelectChangeValue(input: FlowTemplateInput, value: string) {
+  if (isOptionalRepositoryInput(input) && value === NO_REPOSITORY_VALUE) return '';
+  return value;
+}
 
 type FlowLogicRow = {
   connector: string;
@@ -643,7 +676,11 @@ function normalizeTargetList(targets: AgentTargetType[]) {
   }, []);
 }
 
-function defaultTemplateInputs(template: FlowTemplateManifest, workspace?: Pick<Workspace, 'name' | 'website_url'> | null) {
+export function defaultTemplateInputs(
+  template: FlowTemplateManifest,
+  workspace?: Pick<Workspace, 'name' | 'website_url'> | null,
+  repositories: Pick<GitRepository, 'id'>[] = [],
+) {
   const inputs = Object.fromEntries(template.inputs.map((input) => [
     input.key,
     input.default ?? (
@@ -656,6 +693,13 @@ function defaultTemplateInputs(template: FlowTemplateManifest, workspace?: Pick<
             : ''
     ),
   ]));
+  if (repositories.length === 1) {
+    for (const input of template.inputs) {
+      if (input.type === 'repository' && !String(inputs[input.key] ?? '').trim()) {
+        inputs[input.key] = repositories[0].id;
+      }
+    }
+  }
   if (template.key === 'competitive_intelligence_digest') {
     if (!String(inputs.target_company ?? '').trim() && workspace?.name?.trim()) {
       inputs.target_company = workspace.name.trim();
@@ -700,6 +744,63 @@ function defaultTemplateAgentSetup(template: FlowTemplateManifest, inputs: Recor
   };
 }
 
+function buildTemplateRenderInputs(
+  template: FlowTemplateManifest,
+  inputs: Record<string, unknown>,
+  context: {
+    agents: Agent[];
+    workflows: WorkflowWithStates[];
+    repositories: GitRepository[];
+    spaces: DocsSpace[];
+    collections: DocsCollection[];
+    teams: WorkspaceTeam[];
+    timezone: string;
+  },
+  agentSetup?: TemplateAgentSetup | null,
+) {
+  const renderInputs: Record<string, unknown> = { ...inputs, template_name: template.name };
+  for (const input of template.inputs) {
+    renderInputs[`${input.key}_label`] = formatTemplateReviewValue(input, inputs[input.key], context);
+  }
+  const repositoryID = String(inputs.repository_id ?? inputs.source_repository_id ?? '').trim();
+  const repository = context.repositories.find((repo) => repo.id === repositoryID);
+  if (repository?.full_name) {
+    renderInputs.repo_full_name = repository.full_name;
+    renderInputs.repository_name = repository.full_name;
+  }
+  const pickedAgentID = String(inputs.agent_id ?? '').trim();
+  const pickedAgentName = context.agents.find((agent) => agent.id === pickedAgentID)?.name;
+  renderInputs.agent_name = agentSetup?.name?.trim() || pickedAgentName || 'the selected agent';
+  return renderInputs;
+}
+
+function defaultTemplateFlowSetup(
+  template: FlowTemplateManifest,
+  inputs: Record<string, unknown>,
+  context: {
+    agents: Agent[];
+    workflows: WorkflowWithStates[];
+    repositories: GitRepository[];
+    spaces: DocsSpace[];
+    collections: DocsCollection[];
+    teams: WorkspaceTeam[];
+    timezone: string;
+  },
+  agentSetup?: TemplateAgentSetup | null,
+): TemplateFlowSetup {
+  const renderInputs = buildTemplateRenderInputs(template, inputs, context, agentSetup);
+  const nameFromTemplate = template.flow.name_template?.trim()
+    ? renderTemplateText(template.flow.name_template, renderInputs)
+    : '';
+  const targetLabel = String(renderInputs.repo_full_name ?? '').trim();
+  const name = nameFromTemplate || (targetLabel ? `${template.name} - ${targetLabel}` : template.name);
+  const descriptionFromTemplate = template.flow.description_template?.trim()
+    ? renderTemplateText(template.flow.description_template, renderInputs)
+    : '';
+  const description = descriptionFromTemplate || template.short_description;
+  return { name, description };
+}
+
 function defaultTemplateRunContext(template: FlowTemplateManifest, inputs: Record<string, unknown>) {
   const context = template.flow.additional_context?.trim();
   if (context) return renderTemplateText(context, inputs);
@@ -707,7 +808,7 @@ function defaultTemplateRunContext(template: FlowTemplateManifest, inputs: Recor
 }
 
 function templateNeedsReviewStep(template: FlowTemplateManifest) {
-  return Boolean(template.agent.create || (template.agent.reuse_system && template.flow.additional_context?.trim()));
+  return Boolean(template.agent.create || template.agent.pick_existing || template.agent.reuse_system || template.flow.name_template || template.flow.description_template);
 }
 
 function normalizeTemplateMaxRuns(value: string) {
@@ -1020,6 +1121,13 @@ function templateInputAllowsSpace(input: FlowTemplateInput, space: DocsSpace) {
   const requested = input.space_type?.trim() || 'internal';
   if (requested === 'any') return true;
   return space.type === requested;
+}
+
+function templateSpaceSelectLabel(input: FlowTemplateInput) {
+  const requested = input.space_type?.trim() || 'internal';
+  if (requested === 'external_capable') return 'Select public help space';
+  if (requested === 'any') return 'Select docs space';
+  return 'Select internal docs space';
 }
 
 function groupTemplateInputs(inputs: FlowTemplateInput[], values: Record<string, unknown>) {
@@ -1677,7 +1785,7 @@ function FlowFilterBar({
   );
 }
 
-function FlowRow({
+export function FlowRow({
   rule,
   statesById,
   agentNames,
@@ -1736,7 +1844,6 @@ function FlowRow({
         <div className="min-w-0 space-y-2">
           <div className="flex items-center gap-2">
             <FlowStatePill state={flowState} />
-            <FlowTitle rule={rule} statesById={statesById} agentNames={agentNames} />
             {agentMissing && (
               <Badge variant="destructive" className="text-xs">Missing agent</Badge>
             )}
@@ -1802,6 +1909,13 @@ function FlowRow({
                 </DropdownMenu>
               </div>
             )}
+          </div>
+          <div className="min-w-0 space-y-1">
+            <p className="truncate text-sm font-semibold text-foreground">{rule.name}</p>
+            {rule.description?.trim() ? (
+              <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{rule.description}</p>
+            ) : null}
+            <FlowTitle rule={rule} statesById={statesById} agentNames={agentNames} />
           </div>
 
           {metadataPills.length > 0 ? (
@@ -2059,20 +2173,26 @@ function FlowComposer({
 
         <div className="space-y-5">
           <div className="space-y-2">
-            <Input
-              value={draft.name}
-              onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Flow name (e.g. Review merged PRs)"
-              className="h-10 text-base font-medium"
-              autoFocus={mode === 'create'}
-            />
-            <Textarea
-              rows={2}
-              value={draft.description}
-              onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))}
-              placeholder="Optional description — what is this flow for?"
-              className="resize-none text-sm"
-            />
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Flow name</label>
+              <Input
+                value={draft.name}
+                onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Review merged PRs"
+                className="h-10 text-base font-medium"
+                autoFocus={mode === 'create'}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Internal description</label>
+              <Textarea
+                rows={2}
+                value={draft.description}
+                onChange={(event) => updateDraft((current) => ({ ...current, description: event.target.value }))}
+                placeholder="What this flow is for, who owns it, or what it should do."
+                className="resize-none text-sm"
+              />
+            </div>
           </div>
 
           <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
@@ -2748,6 +2868,7 @@ function FlowTemplateInstallDialog({
   onOpenChange,
   template,
   values,
+  flowSetup,
   agentSetup,
   additionalInstructions,
   agents,
@@ -2763,6 +2884,7 @@ function FlowTemplateInstallDialog({
   canEdit,
   onBack,
   onValueChange,
+  onFlowSetupChange,
   onAgentSetupChange,
   onAgentInstructionsEdited,
   onAdditionalInstructionsChange,
@@ -2772,6 +2894,7 @@ function FlowTemplateInstallDialog({
   onOpenChange: (open: boolean) => void;
   template: FlowTemplateManifest | null;
   values: Record<string, unknown>;
+  flowSetup: TemplateFlowSetup | null;
   agentSetup: TemplateAgentSetup | null;
   additionalInstructions: string;
   agents: Agent[];
@@ -2787,6 +2910,7 @@ function FlowTemplateInstallDialog({
   canEdit: boolean;
   onBack: () => void;
   onValueChange: (key: string, value: unknown) => void;
+  onFlowSetupChange: (setup: TemplateFlowSetup | null) => void;
   onAgentSetupChange: (setup: TemplateAgentSetup | null) => void;
   onAgentInstructionsEdited: () => void;
   onAdditionalInstructionsChange: (value: string) => void;
@@ -2813,12 +2937,13 @@ function FlowTemplateInstallDialog({
 
   const reviewValidation = useMemo(() => {
     if (!template) return null;
+    if (!flowSetup?.name.trim()) return 'Flow name is required';
     if (template.agent.create) {
       if (!agentSetup?.name.trim()) return 'Agent name is required';
       if (!agentSetup.allowed_targets.length) return 'Choose at least one place this agent can run';
     }
     return null;
-  }, [agentSetup, template]);
+  }, [agentSetup, flowSetup, template]);
   const validation = step === 'inputs' ? inputValidation : reviewValidation;
 
   if (!template) return null;
@@ -2833,6 +2958,11 @@ function FlowTemplateInstallDialog({
   const setAgentSetup = (updates: Partial<TemplateAgentSetup>) => {
     if (!agentSetup) return;
     onAgentSetupChange({ ...agentSetup, ...updates });
+  };
+
+  const setFlowSetup = (updates: Partial<TemplateFlowSetup>) => {
+    if (!flowSetup) return;
+    onFlowSetupChange({ ...flowSetup, ...updates });
   };
 
   const toggleTarget = (target: AgentTargetType) => {
@@ -2922,19 +3052,49 @@ function FlowTemplateInstallDialog({
               ))}
             </div>
           ) : (
-            <TemplateLogicSummary
-              template={template}
-              values={values}
-              context={{
-                agents,
-                workflows,
-                repositories,
-                spaces,
-                collections,
-                teams,
-                timezone,
-              }}
-            />
+            <div className="space-y-5">
+              {flowSetup && (
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="text-sm font-medium">Flow details</h3>
+                    <p className="text-xs text-muted-foreground">
+                      This is how the installed flow will appear in the automation list.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Flow name</label>
+                    <Input
+                      className="rounded-lg border-border bg-background"
+                      value={flowSetup.name}
+                      onChange={(event) => setFlowSetup({ name: event.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Internal description</label>
+                    <Textarea
+                      value={flowSetup.description}
+                      rows={3}
+                      placeholder="What this flow is for, who owns it, or what it should do."
+                      className="min-h-24 resize-y rounded-lg border-border bg-background"
+                      onChange={(event) => setFlowSetup({ description: event.target.value })}
+                    />
+                  </div>
+                </section>
+              )}
+              <TemplateLogicSummary
+                template={template}
+                values={values}
+                context={{
+                  agents,
+                  workflows,
+                  repositories,
+                  spaces,
+                  collections,
+                  teams,
+                  timezone,
+                }}
+              />
+            </div>
           )}
 
           {step === 'review' && agentSetup && template.agent.create && (
@@ -3347,12 +3507,11 @@ function TemplateInputControl({
           })
           .map((agent) => ({ value: agent.id, label: agent.name }));
       case 'repository':
-        return repositories.map((repo) => ({ value: repo.id, label: repo.full_name }));
+        return templateSelectOptions(input, repositories);
       case 'space':
         return spaces.filter((space) => templateInputAllowsSpace(input, space)).map((space) => ({
           value: space.id,
           label: space.name,
-          description: space.type === 'external_capable' ? 'Public help space' : 'Internal docs space',
         }));
       case 'collection':
         return collections
@@ -3381,7 +3540,8 @@ function TemplateInputControl({
   })();
 
   if (selectOptions) {
-    const selectedOption = selectOptions.find((option) => option.value === stringValue(value));
+    const selectValue = templateSelectValue(input, value);
+    const selectedOption = selectOptions.find((option) => option.value === selectValue);
     const richDestinationSelect = input.type === 'space' || input.type === 'collection';
     const disabledUntilDependencySelected = (input.type === 'collection' || input.type === 'workflow_state') && Boolean(input.depends_on) && !dependentValue;
     const dependencyPlaceholder = input.type === 'collection'
@@ -3392,7 +3552,7 @@ function TemplateInputControl({
     return (
       <div className="space-y-1.5">
         {label}
-        <Select value={stringValue(value)} onValueChange={onChange} disabled={disabledUntilDependencySelected}>
+        <Select value={selectValue} onValueChange={(nextValue) => onChange(templateSelectChangeValue(input, nextValue))} disabled={disabledUntilDependencySelected}>
           <SelectTrigger className="w-full justify-between rounded-lg border-border bg-background">
             <SelectValue placeholder={disabledUntilDependencySelected ? dependencyPlaceholder : `Select ${input.label.toLowerCase()}`}>
               {selectedOption?.label}
@@ -3401,11 +3561,11 @@ function TemplateInputControl({
           <SelectContent className={cn(richDestinationSelect && 'min-w-[20rem]')}>
             <SelectGroup>
               {richDestinationSelect && (
-                <SelectLabel>{input.type === 'space' ? 'Select space' : 'Select collection'}</SelectLabel>
+                <SelectLabel>{input.type === 'space' ? templateSpaceSelectLabel(input) : 'Select collection'}</SelectLabel>
               )}
               {selectOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value} textValue={option.label}>
-                  {richDestinationSelect ? (
+                  {richDestinationSelect || option.description ? (
                     <span className="flex min-w-0 flex-col items-start gap-0.5 py-0.5" style={{ paddingLeft: `${(option.indent ?? 0) * 12}px` }}>
                       <span className="max-w-[18rem] truncate text-sm font-medium">{option.label}</span>
                       {option.description && <span className="max-w-[18rem] truncate text-xs text-muted-foreground">{option.description}</span>}
@@ -3626,6 +3786,8 @@ export function AutomationFlowsPage({
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<FlowTemplateManifest | null>(null);
   const [templateInputs, setTemplateInputs] = useState<Record<string, unknown>>({});
+  const [templateFlowSetup, setTemplateFlowSetup] = useState<TemplateFlowSetup | null>(null);
+  const [templateFlowSetupEdited, setTemplateFlowSetupEdited] = useState(false);
   const [templateAgentSetup, setTemplateAgentSetup] = useState<TemplateAgentSetup | null>(null);
   const [templateAgentInstructionsEdited, setTemplateAgentInstructionsEdited] = useState(false);
   const [templateAdditionalInstructions, setTemplateAdditionalInstructions] = useState('');
@@ -3771,9 +3933,13 @@ export function AutomationFlowsPage({
       return;
     }
     setSelectedTemplate(template);
-    const inputs = defaultTemplateInputs(template, workspace);
+    const inputs = defaultTemplateInputs(template, workspace, repositories);
+    const agentSetup = defaultTemplateAgentSetup(template, inputs);
+    const templateContext = { agents, workflows, repositories, spaces: docsSpaces, collections: docsCollections, teams, timezone: scheduleTimezone };
     setTemplateInputs(inputs);
-    setTemplateAgentSetup(defaultTemplateAgentSetup(template, inputs));
+    setTemplateAgentSetup(agentSetup);
+    setTemplateFlowSetup(defaultTemplateFlowSetup(template, inputs, templateContext, agentSetup));
+    setTemplateFlowSetupEdited(false);
     setTemplateAgentInstructionsEdited(false);
     setTemplateAdditionalInstructions('');
   };
@@ -3781,6 +3947,8 @@ export function AutomationFlowsPage({
   const backToGallery = () => {
     setComposerOpen(false);
     setSelectedTemplate(null);
+    setTemplateFlowSetup(null);
+    setTemplateFlowSetupEdited(false);
     setTemplateAgentSetup(null);
     setTemplateAgentInstructionsEdited(false);
     setTemplateAdditionalInstructions('');
@@ -3796,6 +3964,17 @@ export function AutomationFlowsPage({
       }
     }
     setTemplateInputs(nextInputs);
+    if (!templateFlowSetupEdited) {
+      const nextAgentSetup = !templateAgentInstructionsEdited && selectedTemplate.agent.create
+        ? defaultTemplateAgentSetup(selectedTemplate, nextInputs)
+        : templateAgentSetup;
+      setTemplateFlowSetup(defaultTemplateFlowSetup(
+        selectedTemplate,
+        nextInputs,
+        { agents, workflows, repositories, spaces: docsSpaces, collections: docsCollections, teams, timezone: scheduleTimezone },
+        nextAgentSetup,
+      ));
+    }
     if (!templateAgentInstructionsEdited && selectedTemplate.agent.create) {
       setTemplateAgentSetup((current) => current
         ? { ...current, system_prompt: defaultTemplateAgentInstructions(selectedTemplate, nextInputs) }
@@ -3869,7 +4048,8 @@ export function AutomationFlowsPage({
       const result = await installFlowTemplate.mutateAsync({
         templateKey: selectedTemplate.key,
         payload: {
-          name: selectedTemplate.name,
+          name: templateFlowSetup?.name.trim() || selectedTemplate.name,
+          description: templateFlowSetup?.description.trim() || undefined,
           agent_name: templateAgentSetup?.name.trim() || undefined,
           inputs: installInputs,
           agent_overrides: templateAgentSetup && selectedTemplate.agent.create
@@ -3889,6 +4069,8 @@ export function AutomationFlowsPage({
       });
       toast.success(`${result.template.name} installed`);
       setSelectedTemplate(null);
+      setTemplateFlowSetup(null);
+      setTemplateFlowSetupEdited(false);
       setTemplateAgentSetup(null);
       setTemplateAgentInstructionsEdited(false);
       setTemplateAdditionalInstructions('');
@@ -3946,6 +4128,8 @@ export function AutomationFlowsPage({
         onOpenChange={(open) => {
           if (!open) {
             setSelectedTemplate(null);
+            setTemplateFlowSetup(null);
+            setTemplateFlowSetupEdited(false);
             setTemplateAgentSetup(null);
             setTemplateAgentInstructionsEdited(false);
             setTemplateAdditionalInstructions('');
@@ -3953,6 +4137,7 @@ export function AutomationFlowsPage({
         }}
         template={selectedTemplate}
         values={templateInputs}
+        flowSetup={templateFlowSetup}
         agentSetup={templateAgentSetup}
         additionalInstructions={templateAdditionalInstructions}
         agents={agents}
@@ -3968,12 +4153,18 @@ export function AutomationFlowsPage({
         canEdit={permissions.canAdminAutomations}
         onBack={() => {
           setSelectedTemplate(null);
+          setTemplateFlowSetup(null);
+          setTemplateFlowSetupEdited(false);
           setTemplateAgentSetup(null);
           setTemplateAgentInstructionsEdited(false);
           setTemplateAdditionalInstructions('');
           setGalleryOpen(true);
         }}
         onValueChange={updateTemplateInput}
+        onFlowSetupChange={(setup) => {
+          setTemplateFlowSetup(setup);
+          setTemplateFlowSetupEdited(true);
+        }}
         onAgentSetupChange={setTemplateAgentSetup}
         onAgentInstructionsEdited={() => setTemplateAgentInstructionsEdited(true)}
         onAdditionalInstructionsChange={setTemplateAdditionalInstructions}

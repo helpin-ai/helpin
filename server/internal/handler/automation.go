@@ -215,6 +215,7 @@ func (h *AutomationHandler) GetFlowTemplate(w http.ResponseWriter, r *http.Reque
 
 type installFlowTemplateRequest struct {
 	Name           string                                  `json:"name"`
+	Description    string                                  `json:"description,omitempty"`
 	AgentName      string                                  `json:"agent_name,omitempty"`
 	Inputs         map[string]any                          `json:"inputs"`
 	AgentOverrides *model.CreateAgentFromTemplateOverrides `json:"agent_overrides,omitempty"`
@@ -243,6 +244,7 @@ func (h *AutomationHandler) InstallFlowTemplate(w http.ResponseWriter, r *http.R
 		TemplateKey:    templateKey,
 		ActorID:        middleware.GetUserID(r.Context()),
 		Name:           req.Name,
+		Description:    req.Description,
 		AgentName:      req.AgentName,
 		Inputs:         req.Inputs,
 		AgentOverrides: req.AgentOverrides,
