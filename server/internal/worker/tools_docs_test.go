@@ -755,3 +755,84 @@ func TestToolPublishDocumentChangeProposalAllowsMatchingDocumentTarget(t *testin
 		t.Fatalf("unexpected output %q", output)
 	}
 }
+
+func TestToolListSpaces(t *testing.T) {
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		Services: &ServiceBridge{
+			ListSpaces: func(ctx context.Context, workspaceID string) ([]model.DocsSpace, error) {
+				if workspaceID != "ws-1" {
+					t.Fatalf("expected workspace ws-1, got %q", workspaceID)
+				}
+				return []model.DocsSpace{
+					{ID: "space-1", Name: "Engineering", Slug: "engineering", Type: "internal"},
+					{ID: "space-2", Name: "Help Center", Slug: "help", Type: "public"},
+				}, nil
+			},
+		},
+	}
+
+	output, err := toolListSpaces(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("toolListSpaces returned error: %v", err)
+	}
+	if !strings.Contains(output, "space-1") || !strings.Contains(output, "space-2") {
+		t.Fatalf("expected both space ids in output, got %q", output)
+	}
+}
+
+func TestToolCreateDocumentAutoResolvesSingleSpace(t *testing.T) {
+	var createdWith model.CreateDocsDocumentRequest
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		Services: &ServiceBridge{
+			ListSpaces: func(ctx context.Context, workspaceID string) ([]model.DocsSpace, error) {
+				return []model.DocsSpace{{ID: "space-only", Name: "Docs", Slug: "docs", Type: "internal"}}, nil
+			},
+			CreateDocument: func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error) {
+				createdWith = req
+				return &model.DocsDocument{ID: "doc-1", Title: req.Title, Status: "draft", SpaceID: req.SpaceID}, nil
+			},
+		},
+	}
+
+	output, err := toolCreateDocument(ctx, json.RawMessage(`{"title":"Changelog"}`))
+	if err != nil {
+		t.Fatalf("toolCreateDocument returned error: %v", err)
+	}
+	if createdWith.SpaceID != "space-only" {
+		t.Fatalf("expected auto-resolved space-only, got %q", createdWith.SpaceID)
+	}
+	if !strings.Contains(output, "doc-1") {
+		t.Fatalf("expected created document id in output, got %q", output)
+	}
+}
+
+func TestToolCreateDocumentRequiresChoiceWhenMultipleSpaces(t *testing.T) {
+	ctx := &ExecutionContext{
+		Context:     context.Background(),
+		WorkspaceID: "ws-1",
+		Services: &ServiceBridge{
+			ListSpaces: func(ctx context.Context, workspaceID string) ([]model.DocsSpace, error) {
+				return []model.DocsSpace{
+					{ID: "space-1", Name: "Engineering", Slug: "engineering", Type: "internal"},
+					{ID: "space-2", Name: "Help Center", Slug: "help", Type: "public"},
+				}, nil
+			},
+			CreateDocument: func(ctx context.Context, workspaceID, userID string, req model.CreateDocsDocumentRequest, content json.RawMessage) (*model.DocsDocument, error) {
+				t.Fatalf("create should not be called when the space is ambiguous")
+				return nil, nil
+			},
+		},
+	}
+
+	_, err := toolCreateDocument(ctx, json.RawMessage(`{"title":"Changelog"}`))
+	if err == nil {
+		t.Fatalf("expected an error asking the agent to choose a space")
+	}
+	if !strings.Contains(err.Error(), "space-1") || !strings.Contains(err.Error(), "space-2") {
+		t.Fatalf("expected available space ids in error, got %q", err.Error())
+	}
+}

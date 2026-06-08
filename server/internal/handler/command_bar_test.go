@@ -26,6 +26,22 @@ func TestAuthorizeCommandBarDispatchAllowsMixedTargetsForEditor(t *testing.T) {
 	}
 }
 
+func TestAuthorizeCommandBarDispatchAllowsRepositoryTarget(t *testing.T) {
+	req := httptest.NewRequest("POST", "/command-bar/plans/dispatch", nil)
+	actor := &authorization.Actor{Role: model.RoleMember}
+	req = req.WithContext(authorization.WithActor(req.Context(), actor))
+
+	err := authorizeCommandBarDispatch(req, model.CommandBarDispatchRequest{
+		PageContext: model.CommandBarPageContext{EntityType: "repository"},
+		Steps: []model.CommandBarPlanStep{
+			{Target: model.CommandBarPageContext{EntityType: "repository"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected repository target dispatch to be authorized: %v", err)
+	}
+}
+
 func TestAuthorizeCommandBarDispatchRejectsMissingTargetPermission(t *testing.T) {
 	req := httptest.NewRequest("POST", "/command-bar/plans/dispatch", nil)
 	actor := &authorization.Actor{Role: model.RoleViewer}

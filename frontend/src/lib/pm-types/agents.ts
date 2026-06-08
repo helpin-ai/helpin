@@ -200,7 +200,7 @@ export interface StartAgentRunRequest {
 }
 
 export interface CommandBarPageContext {
-  entity_type: 'task' | 'epic' | 'document' | 'crm_contact' | 'crm_deal' | 'workspace';
+  entity_type: 'task' | 'epic' | 'document' | 'crm_contact' | 'crm_deal' | 'workspace' | 'repository';
   entity_id: string;
   display_title: string;
   related_ids?: Record<string, string[]>;
