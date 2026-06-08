@@ -32,7 +32,7 @@ spec:
           emptyDir: {}
       containers:
         - name: helpin-server
-          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.241
+          image: ghcr.io/helpin-ai/helpin/server:server-v0.95.242
           envFrom:
             - secretRef:
                 name: helpin-secrets
@@ -41,11 +41,11 @@ spec:
               value: "true"
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 750m
+              memory: 1536Mi
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "3"
+              memory: 3Gi
           ports:
             - containerPort: 8080
           volumeMounts:
