@@ -25,6 +25,36 @@ func TestDocsSearchRepository_PublicSearchPostgresSQLDoesNotSelectUndefinedSnipp
 	}
 }
 
+func TestPublicSearchTermsFiltersStopwordsAndDuplicates(t *testing.T) {
+	t.Parallel()
+
+	terms := publicSearchTerms("Days to convert to DAYS")
+	got := strings.Join(terms, ",")
+	if got != "days,convert" {
+		t.Fatalf("publicSearchTerms() = %q, want %q", got, "days,convert")
+	}
+}
+
+func TestBuildPublicSearchSnippetHighlightsWholeTermsOnly(t *testing.T) {
+	t.Parallel()
+
+	snippet := buildPublicSearchSnippet(
+		"Visitors took days to convert. Customers pressed the button automatically.",
+		"days to convert",
+	)
+	if strings.Contains(snippet, "<mark>to</mark>") {
+		t.Fatalf("snippet highlights stopword 'to': %s", snippet)
+	}
+	if strings.Contains(snippet, "cus<mark>to</mark>mer") ||
+		strings.Contains(snippet, "but<mark>to</mark>n") ||
+		strings.Contains(snippet, "au<mark>to</mark>matically") {
+		t.Fatalf("snippet highlights query terms inside larger words: %s", snippet)
+	}
+	if !strings.Contains(snippet, "<mark>days</mark>") || !strings.Contains(snippet, "<mark>convert</mark>") {
+		t.Fatalf("snippet did not highlight meaningful terms: %s", snippet)
+	}
+}
+
 func setupDocsSearchPathTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

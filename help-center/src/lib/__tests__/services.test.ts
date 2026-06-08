@@ -42,7 +42,7 @@ describe('helpCenterService', () => {
       /\/api\/hc\/contentpen\/fr\/c\/bases$/,
     )
     expect(fetchMock.mock.calls[1]?.[0]).toMatch(
-      /\/api\/hc\/contentpen\/fr\/search\?q=bonjour&space=demarrage$/,
+      /\/api\/hc\/contentpen\/fr\/search\?q=bonjour&limit=12&space=demarrage$/,
     )
   })
 
@@ -85,7 +85,7 @@ describe('helpCenterService', () => {
       /\/api\/hc\/docs\.contentpen\.ai\/articles\/start-here-abc123ef$/,
     )
     expect(fetchMock.mock.calls[2]?.[0]).toMatch(
-      /\/api\/hc\/docs\.contentpen\.ai\/search\?q=publish&space=help-center$/,
+      /\/api\/hc\/docs\.contentpen\.ai\/search\?q=publish&limit=12&space=help-center$/,
     )
     expect(fetchMock.mock.calls[3]?.[0]).toMatch(
       /\/api\/hc\/docs\.contentpen\.ai\/articles\/start-here-abc123ef\/feedback$/,
