@@ -29,6 +29,7 @@ jobs:
       admin: ${{ steps.filter.outputs.admin }}
       packages: ${{ steps.filter.outputs.packages }}
       helpcenter: ${{ steps.filter.outputs.helpcenter }}
+      desktop: ${{ steps.filter.outputs.desktop }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,6 +49,7 @@ jobs:
             echo "admin=true" >> "$GITHUB_OUTPUT"
             echo "packages=true" >> "$GITHUB_OUTPUT"
             echo "helpcenter=true" >> "$GITHUB_OUTPUT"
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -65,6 +67,7 @@ jobs:
           ADMIN=false
           PACKAGES=false
           HELPCENTER=false
+          DESKTOP=false
 
           if echo "$CHANGED" | grep -qE '^server/|^\.github/workflows/ci\.yml$'; then
             SERVER=true
@@ -81,13 +84,20 @@ jobs:
           if echo "$CHANGED" | grep -qE '^help-center/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$|^\.github/workflows/ci\.yml$'; then
             HELPCENTER=true
           fi
+          # Desktop reuses frontend/src via the `@` alias and depends on the
+          # workspace packages, so web/package changes can break it — gate on all
+          # of those, the desktop app itself, and root/workspace config.
+          if echo "$CHANGED" | grep -qE '^apps/support-desktop/|^frontend/|^packages/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$|^\.github/workflows/ci\.yml$'; then
+            DESKTOP=true
+          fi
 
           echo "server=$SERVER" >> "$GITHUB_OUTPUT"
           echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
           echo "admin=$ADMIN" >> "$GITHUB_OUTPUT"
           echo "packages=$PACKAGES" >> "$GITHUB_OUTPUT"
           echo "helpcenter=$HELPCENTER" >> "$GITHUB_OUTPUT"
-          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER"
+          echo "desktop=$DESKTOP" >> "$GITHUB_OUTPUT"
+          echo "Detected: server=$SERVER frontend=$FRONTEND admin=$ADMIN packages=$PACKAGES helpcenter=$HELPCENTER desktop=$DESKTOP"
 
   # ------------------------- Server -------------------------
   server:
@@ -272,3 +282,30 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build admin
         run: pnpm --dir apps/admin run build
+
+  # ------------------- Support Desktop (Tauri) --------------
+  # The desktop app reuses frontend/src via the `@` alias, so a web change can
+  # break it. This gate runs its `tsc -b && vite build` in the same PR that
+  # changes web/packages, surfacing breakage at the source instead of at the
+  # next branch sync. (Validates the JS bundle only; the native Tauri build is
+  # separate.)
+  desktop:
+    name: Support Desktop CI
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: arc-runners-helpin-ai
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # widget-core is resolved from its compiled dist for type-checking; build
+      # it (turbo pulls in @helpin-ai/shared via ^build) before the desktop build.
+      - name: Build workspace deps (widget-core, shared)
+        run: pnpm --filter @helpin-ai/widget-core build
+      - name: Build support-desktop (tsc -b && vite build)
+        run: pnpm --dir apps/support-desktop run build

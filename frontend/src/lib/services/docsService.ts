@@ -1,4 +1,4 @@
-import { api, API_BASE } from '../api';
+import { api, API_BASE, fetchWithSessionAuth } from '../api';
 import type {
   DocsSpace,
   DocsCollection,
@@ -263,9 +263,8 @@ export const docsService = {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await fetch(`${API_BASE}/docs/helpcenter/upload?workspace_id=${encodeURIComponent(wsId)}&type=${assetType}`, {
+      const res = await fetchWithSessionAuth(API_BASE, `/docs/helpcenter/upload?workspace_id=${encodeURIComponent(wsId)}&type=${assetType}`, {
         method: 'POST',
-        credentials: 'include',
         body: formData,
       });
       if (!res.ok) {

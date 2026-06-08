@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { create } from 'zustand'
 import { API_BASE } from '@/lib/api'
 import { useSupportPresenceStore } from '@/stores/supportPresenceStore'
+import { buildWorkspaceWebSocketUrl } from '@helpin-ai/support-core'
 
 export interface WSEvent {
   event_id?: string
@@ -61,11 +62,7 @@ interface UseWebSocketOptions {
 export type WSSend = (type: string, data: Record<string, unknown>) => void
 
 function getWSUrl(workspaceId: string): string {
-  if (!workspaceId) return ''
-
-  // Swap http(s) → ws(s) and replace trailing /api with /api/ws
-  const base = API_BASE.replace(/^http/, 'ws').replace(/\/api\/?$/, '/api')
-  return `${base}/ws?workspace_id=${encodeURIComponent(workspaceId)}`
+  return buildWorkspaceWebSocketUrl(API_BASE, workspaceId)
 }
 
 export function useWebSocket({ workspaceId, onEvent, onPresenceSnapshot, onDocsPresenceSnapshot }: UseWebSocketOptions) {

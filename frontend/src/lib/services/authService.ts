@@ -1,4 +1,4 @@
-import { api, API_BASE } from '../api';
+import { api, API_BASE, fetchWithSessionAuth } from '../api';
 import type {
   AuthResponse,
   RecoveryCodesResponse,
@@ -48,9 +48,8 @@ export const authService = {
     const formData = new FormData();
     formData.append('avatar', file);
     try {
-      const res = await fetch(`${API_BASE}/auth/me/avatar`, {
+      const res = await fetchWithSessionAuth(API_BASE, '/auth/me/avatar', {
         method: 'POST',
-        credentials: 'include',
         body: formData,
       });
       if (!res.ok) {

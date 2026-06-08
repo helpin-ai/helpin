@@ -1,4 +1,4 @@
-import { API_BASE } from '../api';
+import { API_BASE, fetchWithSessionAuth } from '../api';
 
 export interface ShortcutImportPreviewSummary {
   total_tasks: number;
@@ -186,9 +186,8 @@ export interface ShortcutImportOptionsPayload {
 
 async function jsonRequest<T>(path: string, body: unknown): Promise<{ data: T | null; error: string | null }> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetchWithSessionAuth(API_BASE, path, {
       method: 'POST',
-      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -206,8 +205,7 @@ async function jsonRequest<T>(path: string, body: unknown): Promise<{ data: T | 
 }
 
 function statusRequest<T>(path: string): Promise<{ data: T | null; error: string | null }> {
-  return fetch(`${API_BASE}${path}`, {
-    credentials: 'include',
+  return fetchWithSessionAuth(API_BASE, path, {
     headers: {
       'Content-Type': 'application/json',
     },
@@ -224,9 +222,8 @@ function statusRequest<T>(path: string): Promise<{ data: T | null; error: string
 }
 
 function postStatusRequest<T>(path: string): Promise<{ data: T | null; error: string | null }> {
-  return fetch(`${API_BASE}${path}`, {
+  return fetchWithSessionAuth(API_BASE, path, {
     method: 'POST',
-    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },

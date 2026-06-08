@@ -4,6 +4,7 @@ import { authService } from '@/lib/services/authService';
 import { passkeyService } from '@/lib/services/passkeyService';
 import { stopTokenRefreshTimer } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
+import { clearSession, hydrateSessionStorage, writeSession } from '@helpin-ai/support-core';
 
 interface AuthState {
   user: User | null;
@@ -24,9 +25,11 @@ interface AuthState {
 
 let _initializing = false;
 
-export function clearClientSession() {
+export async function clearClientSession() {
   stopTokenRefreshTimer();
   queryClient.clear();
+
+  await clearSession();
 
   try {
     localStorage.clear();
@@ -41,16 +44,8 @@ export function clearClientSession() {
   }
 }
 
-export function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
-  void accessToken;
-  void refreshToken;
-  try {
-    localStorage.setItem('remember_me', rememberMe ? '1' : '0');
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-  } catch {
-    // Ignore storage access failures after cookie-based login.
-  }
+export async function persistAuthSession(user: User, accessToken: string, refreshToken: string, rememberMe: boolean) {
+  await writeSession({ accessToken, refreshToken, rememberMe });
   useAuthStore.setState({ user, serverUnreachable: false });
 }
 
@@ -63,21 +58,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (_initializing) return;
     _initializing = true;
     try {
+      await hydrateSessionStorage();
       const { data, error, isNetworkError } = await authService.me();
       if (data && !error) {
         set({ user: data, loading: false, serverUnreachable: false });
       } else if (isNetworkError) {
-        // Server unreachable / CORS error — preserve the browser cookie session.
+        // Server unreachable / CORS error — keep tokens, don't log out
         set({ loading: false, serverUnreachable: true });
       } else {
-        try {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-        } catch {
-          // Ignore storage access failures.
-        }
+        // Genuine auth failure (401, invalid token, etc.) — clear session
+        await clearSession();
         set({ user: null, loading: false, serverUnreachable: false });
       }
+    } catch {
+      set({ user: null, loading: false, serverUnreachable: false });
     } finally {
       _initializing = false;
     }
@@ -94,7 +88,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       return { error: 'Sign in failed' };
     }
 
-    persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
+    await persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
     return { error: null };
   },
 
@@ -110,7 +104,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       return { error: 'Passkey sign in failed' };
     }
 
-    persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
+    await persistAuthSession(data.user, data.access_token ?? '', data.refresh_token ?? '', rememberMe);
     return { error: null };
   },
 
@@ -118,20 +112,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { data, error } = await authService.verify2FASignin(twoFaToken, code, useRecoveryCode);
     if (error || !data) return { error: error || 'Verification failed' };
 
-    persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
+    await persistAuthSession(data.user, data.access_token, data.refresh_token, rememberMe);
     return { error: null };
   },
 
   signUp: async (email: string, password: string, fullName: string) => {
     const { data, error } = await authService.signup(email, password, fullName);
     if (error || !data) return { error: error || 'Sign up failed' };
-    persistAuthSession(data.user, data.access_token, data.refresh_token, false);
+    await persistAuthSession(data.user, data.access_token, data.refresh_token, false);
     return { error: null };
   },
 
   signOut: async () => {
     await authService.signout();
-    clearClientSession();
+    await clearClientSession();
     set({ user: null });
     window.location.replace('/login');
   },

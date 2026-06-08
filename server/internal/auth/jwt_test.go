@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,16 +197,23 @@ func TestValidateToken_Tampered(t *testing.T) {
 		t.Fatalf("GenerateTokenPair() error = %v", err)
 	}
 
-	// Tamper with the token by flipping a character in the signature (last segment).
-	tampered := []byte(accessToken)
-	lastIdx := len(tampered) - 1
-	if tampered[lastIdx] == 'A' {
-		tampered[lastIdx] = 'B'
-	} else {
-		tampered[lastIdx] = 'A'
+	// Tamper with the token by flipping the first character in the signature.
+	// The final base64url character may contain unused padding bits, so changing
+	// only that character can decode to the same signature bytes.
+	parts := strings.Split(accessToken, ".")
+	if len(parts) != 3 || parts[2] == "" {
+		t.Fatalf("generated token has invalid JWT shape: %q", accessToken)
 	}
+	signature := []byte(parts[2])
+	if signature[0] == 'A' {
+		signature[0] = 'B'
+	} else {
+		signature[0] = 'A'
+	}
+	parts[2] = string(signature)
+	tampered := strings.Join(parts, ".")
 
-	_, err = mgr.ValidateToken(string(tampered))
+	_, err = mgr.ValidateToken(tampered)
 	if err == nil {
 		t.Error("ValidateToken() expected error for tampered token, got nil")
 	}

@@ -50,6 +50,7 @@ waqar-images/
 .agents/skills/
 .worktrees/
 node_modules/
+.pnpm-store/
 .turbo/
 dist/
 packages/*/lib/
