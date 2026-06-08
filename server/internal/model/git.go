@@ -319,6 +319,8 @@ type TaskDeliveryTarget struct {
 	BaseBranch     *string    `json:"base_branch"`
 	WorkingBranch  *string    `json:"working_branch"`
 	DeliveryState  string     `json:"delivery_state" gorm:"not null;default:'unconfigured'"`
+	TargetSource   string     `json:"target_source" gorm:"not null;default:'manual'"`
+	SourceEpicID   *string    `json:"source_epic_id" gorm:"type:uuid;index"`
 	ActivePRNumber *int       `json:"active_pr_number"`
 	ActivePRTitle  *string    `json:"active_pr_title"`
 	ActivePRURL    *string    `json:"active_pr_url"`
@@ -331,6 +333,21 @@ type TaskDeliveryTarget struct {
 }
 
 func (TaskDeliveryTarget) TableName() string { return "task_delivery_targets" }
+
+const (
+	TaskDeliveryTargetSourceManual      = "manual"
+	TaskDeliveryTargetSourceTeamDefault = "team_default"
+	TaskDeliveryTargetSourceEpic        = "epic"
+)
+
+func NormalizeTaskDeliveryTargetSource(source string) string {
+	switch source {
+	case TaskDeliveryTargetSourceTeamDefault, TaskDeliveryTargetSourceEpic:
+		return source
+	default:
+		return TaskDeliveryTargetSourceManual
+	}
+}
 
 // EpicDeliveryTarget stores the current integration branch for an epic.
 type EpicDeliveryTarget struct {

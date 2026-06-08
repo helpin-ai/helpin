@@ -932,6 +932,8 @@ func ensureGitDeliveryStatusTables(t *testing.T, db *gorm.DB) {
 			base_branch TEXT,
 			working_branch TEXT,
 			delivery_state TEXT NOT NULL DEFAULT 'unconfigured',
+			target_source TEXT NOT NULL DEFAULT 'manual',
+			source_epic_id TEXT,
 			active_pr_number INTEGER,
 			active_pr_title TEXT,
 			active_pr_url TEXT,
@@ -1099,6 +1101,9 @@ func TestEpicDeliveryBranchFlowEnsuresMergesAndOpensFinalPR(t *testing.T) {
 	if taskTarget.WorkingBranch == nil || *taskTarget.WorkingBranch == "" {
 		t.Fatalf("expected task working branch to be set, got %#v", taskTarget.WorkingBranch)
 	}
+	if taskTarget.TargetSource != model.TaskDeliveryTargetSourceEpic || taskTarget.SourceEpicID == nil || *taskTarget.SourceEpicID != "epic-1" {
+		t.Fatalf("task target source = %q/%#v, want epic/epic-1", taskTarget.TargetSource, taskTarget.SourceEpicID)
+	}
 
 	if _, err := svc.MergeTaskBranchIntoEpic(ctx, "ws-1", "task-1", "epic-1", "run-merge"); err != nil {
 		t.Fatalf("MergeTaskBranchIntoEpic returned error: %v", err)
@@ -1127,6 +1132,81 @@ func TestEpicDeliveryBranchFlowEnsuresMergesAndOpensFinalPR(t *testing.T) {
 	}
 	if finalTarget.DeliveryState != "pr_open" {
 		t.Fatalf("final delivery state = %q, want pr_open", finalTarget.DeliveryState)
+	}
+}
+
+func TestSyncTaskDeliveryTargetToEpicPreservesManualTargetUnlessForced(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	ensureEpicDeliveryTargetTable(t, db)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO workspaces (
+		id, name, slug, workspace_key, owner_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"ws-1", "Demo Workspace", "demo", "HEL", "user-1", now, now)
+	mustExec(t, db, `INSERT INTO pm_epics (
+		id, workspace_id, name, external_id, team_id, planning_repository_id, position, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		"epic-1", "ws-1", "Checkout automation", "HEL-900", "team-1", "repo-1", now, now)
+
+	svc := newGitDeliveryStatusService(db, nil)
+	target, changed, err := svc.SyncTaskDeliveryTargetToEpic(context.Background(), "ws-1", "task-1", "epic-1", "user-1", false)
+	if err != nil {
+		t.Fatalf("SyncTaskDeliveryTargetToEpic returned error: %v", err)
+	}
+	if changed {
+		t.Fatal("expected manual target to be preserved")
+	}
+	if target.BaseBranch == nil || *target.BaseBranch != "main" || target.TargetSource != model.TaskDeliveryTargetSourceManual {
+		t.Fatalf("target after non-force sync = %#v, want manual main", target)
+	}
+
+	target, changed, err = svc.SyncTaskDeliveryTargetToEpic(context.Background(), "ws-1", "task-1", "epic-1", "user-1", true)
+	if err != nil {
+		t.Fatalf("forced SyncTaskDeliveryTargetToEpic returned error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected forced sync to update target")
+	}
+	if target.BaseBranch == nil || *target.BaseBranch != "epic/hel-900-checkout-automation" {
+		t.Fatalf("target base branch = %#v, want epic branch", target.BaseBranch)
+	}
+	if target.TargetSource != model.TaskDeliveryTargetSourceEpic || target.SourceEpicID == nil || *target.SourceEpicID != "epic-1" {
+		t.Fatalf("target source = %q/%#v, want epic/epic-1", target.TargetSource, target.SourceEpicID)
+	}
+}
+
+func TestSyncTaskDeliveryTargetToEpicRebasesTeamDefaultTarget(t *testing.T) {
+	db := newTestDB(t)
+	seedGitDeliveryStatusFixture(t, db)
+	ensureEpicDeliveryTargetTable(t, db)
+	now := time.Now().UTC()
+	mustExec(t, db, `INSERT INTO workspaces (
+		id, name, slug, workspace_key, owner_id, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"ws-1", "Demo Workspace", "demo", "HEL", "user-1", now, now)
+	mustExec(t, db, `INSERT INTO pm_epics (
+		id, workspace_id, name, external_id, team_id, planning_repository_id, position, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		"epic-1", "ws-1", "Checkout automation", "HEL-900", "team-1", "repo-1", now, now)
+	mustExec(t, db, `INSERT INTO pm_tasks (
+		id, workspace_id, display_id, name, task_type, workflow_id, workflow_state_id, team_id, priority, severity, position, created_at, updated_at
+	) VALUES (?, ?, ?, ?, 'feature', ?, ?, ?, 'none', 'none', 1, ?, ?)`,
+		"task-2", "ws-1", 32, "Build checkout", "wf-1", "state-review", "team-1", now, now)
+
+	svc := newGitDeliveryStatusService(db, nil)
+	target, changed, err := svc.SyncTaskDeliveryTargetToEpic(context.Background(), "ws-1", "task-2", "epic-1", "user-1", false)
+	if err != nil {
+		t.Fatalf("SyncTaskDeliveryTargetToEpic returned error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected team-default target to inherit epic branch")
+	}
+	if target.BaseBranch == nil || *target.BaseBranch != "epic/hel-900-checkout-automation" {
+		t.Fatalf("target base branch = %#v, want epic branch", target.BaseBranch)
+	}
+	if target.TargetSource != model.TaskDeliveryTargetSourceEpic || target.SourceEpicID == nil || *target.SourceEpicID != "epic-1" {
+		t.Fatalf("target source = %q/%#v, want epic/epic-1", target.TargetSource, target.SourceEpicID)
 	}
 }
 

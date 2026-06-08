@@ -809,6 +809,7 @@ func main() {
 	).
 		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, pmEpicRepo).
 		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
+	pmTaskService.SetGitService(gitService)
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,

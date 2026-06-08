@@ -662,7 +662,7 @@ func (r *TaskDeliveryTargetRepository) Save(ctx context.Context, target *model.T
 			Columns: []clause.Column{{Name: "task_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"repository_id", "repo_full_name", "integration_id",
-				"base_branch", "working_branch", "delivery_state",
+				"base_branch", "working_branch", "delivery_state", "target_source", "source_epic_id",
 				"active_pr_number", "active_pr_title", "active_pr_url", "active_pr_status",
 				"last_commit_sha", "last_run_id", "last_synced_at", "updated_at",
 			}),

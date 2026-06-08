@@ -93,6 +93,8 @@ export interface GitBranch {
   is_default: boolean;
 }
 
+export type TaskDeliveryTargetSource = 'manual' | 'team_default' | 'epic';
+
 export interface TaskDeliveryTarget {
   id: string;
   workspace_id: string;
@@ -103,6 +105,8 @@ export interface TaskDeliveryTarget {
   base_branch?: string;
   working_branch?: string;
   delivery_state: string;
+  target_source?: TaskDeliveryTargetSource;
+  source_epic_id?: string | null;
   active_pr_number?: number;
   active_pr_title?: string;
   active_pr_url?: string;

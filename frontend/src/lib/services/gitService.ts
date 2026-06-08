@@ -120,6 +120,8 @@ export const gitService = {
     api.get<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`),
   updateTaskDeliveryTarget: (workspaceId: string, taskId: string, payload: UpdateTaskDeliveryTargetRequest) =>
     api.put<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target${qs(workspaceId)}`, payload),
+  useTaskEpicDeliveryTarget: (workspaceId: string, taskId: string) =>
+    api.post<TaskDeliveryTarget>(`/pm/tasks/${taskId}/delivery-target/use-epic${qs(workspaceId)}`, {}),
   getEpicDeliveryTarget: (workspaceId: string, epicId: string) =>
     api.get<EpicDeliveryTarget>(`/pm/epics/${epicId}/delivery-target${qs(workspaceId)}`),
   updateEpicDeliveryTarget: (workspaceId: string, epicId: string, payload: UpdateEpicDeliveryTargetRequest) =>

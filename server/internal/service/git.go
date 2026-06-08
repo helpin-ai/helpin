@@ -1451,6 +1451,7 @@ func (s *GitService) GetTaskDeliveryTarget(ctx context.Context, workspaceID, sto
 		WorkspaceID:   workspaceID,
 		TaskID:        storyID,
 		DeliveryState: "unconfigured",
+		TargetSource:  model.TaskDeliveryTargetSourceManual,
 	}
 
 	if story.TeamID != nil && *story.TeamID != "" {
@@ -1473,6 +1474,7 @@ func (s *GitService) GetTaskDeliveryTarget(ctx context.Context, workspaceID, sto
 				}
 				target.BaseBranch = &baseBranch
 				target.DeliveryState = "ready"
+				target.TargetSource = model.TaskDeliveryTargetSourceTeamDefault
 			}
 		}
 	}
@@ -1529,6 +1531,8 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 	if target.RepositoryID != nil && target.BaseBranch != nil {
 		target.DeliveryState = "ready"
 	}
+	target.TargetSource = model.TaskDeliveryTargetSourceManual
+	target.SourceEpicID = nil
 
 	if err := s.deliveryRepo.Save(ctx, target); err != nil {
 		return nil, err
@@ -1739,32 +1743,44 @@ func (s *GitService) EnsureEpicBranch(ctx context.Context, workspaceID, epicID, 
 }
 
 func (s *GitService) PrepareTaskForEpicBranch(ctx context.Context, workspaceID, taskID, epicID, actorID string) (*model.TaskDeliveryTarget, error) {
+	target, _, err := s.SyncTaskDeliveryTargetToEpic(ctx, workspaceID, taskID, epicID, actorID, true)
+	return target, err
+}
+
+func (s *GitService) SyncTaskDeliveryTargetToEpic(ctx context.Context, workspaceID, taskID, epicID, actorID string, force bool) (*model.TaskDeliveryTarget, bool, error) {
 	epicTarget, err := s.GetEpicDeliveryTarget(ctx, workspaceID, epicID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if epicTarget.RepositoryID == nil || epicTarget.EpicBranch == nil {
-		return nil, ErrEpicDeliveryTargetRequired
+		return nil, false, ErrEpicDeliveryTargetRequired
 	}
 	taskTarget, err := s.GetTaskDeliveryTarget(ctx, workspaceID, taskID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	source := model.NormalizeTaskDeliveryTargetSource(taskTarget.TargetSource)
+	hasConfiguredTarget := taskTarget.RepositoryID != nil && taskTarget.BaseBranch != nil && strings.TrimSpace(*taskTarget.BaseBranch) != ""
+	if !force && source == model.TaskDeliveryTargetSourceManual && hasConfiguredTarget && taskTarget.DeliveryState != "unconfigured" {
+		return taskTarget, false, nil
 	}
 	taskTarget.RepositoryID = epicTarget.RepositoryID
 	taskTarget.RepoFullName = epicTarget.RepoFullName
 	taskTarget.IntegrationID = epicTarget.IntegrationID
 	epicBranch := strings.TrimSpace(*epicTarget.EpicBranch)
 	taskTarget.BaseBranch = &epicBranch
+	taskTarget.TargetSource = model.TaskDeliveryTargetSourceEpic
+	taskTarget.SourceEpicID = &epicID
 	if taskTarget.WorkingBranch == nil || strings.TrimSpace(*taskTarget.WorkingBranch) == "" {
 		_, working, err := s.ResolveTaskRunBranchValues(ctx, workspaceID, taskID)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		taskTarget.WorkingBranch = &working
 	}
 	taskTarget.DeliveryState = "ready"
 	if err := s.deliveryRepo.Save(ctx, taskTarget); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if s.wsPublisher != nil {
 		s.wsPublisher.Publish(websocket.Event{
@@ -1777,7 +1793,22 @@ func (s *GitService) PrepareTaskForEpicBranch(ctx context.Context, workspaceID, 
 			ActorID:     actorID,
 		})
 	}
-	return taskTarget, nil
+	return taskTarget, true, nil
+}
+
+func (s *GitService) UseTaskEpicDeliveryTarget(ctx context.Context, workspaceID, taskID, actorID string) (*model.TaskDeliveryTarget, error) {
+	task, err := s.taskRepo.GetRawByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil || task.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("task not found")
+	}
+	if task.EpicID == nil || strings.TrimSpace(*task.EpicID) == "" {
+		return nil, fmt.Errorf("task has no epic")
+	}
+	target, _, err := s.SyncTaskDeliveryTargetToEpic(ctx, workspaceID, taskID, strings.TrimSpace(*task.EpicID), actorID, true)
+	return target, err
 }
 
 func (s *GitService) MergeTaskBranchIntoEpic(ctx context.Context, workspaceID, taskID, epicID, runID string) (*model.EpicDeliveryTarget, error) {

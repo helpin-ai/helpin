@@ -16,6 +16,7 @@ import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branc
 import { gitService } from '@/lib/services/gitService';
 import { gitCommitURL, gitRepoURL } from '@/lib/gitUrls';
 import type {
+  EpicDeliveryTarget,
   GitRepository,
   TaskDeliveryTarget,
   TaskDetail,
@@ -51,6 +52,7 @@ interface Props {
 export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _onTaskUpdated: (task: TaskDetail) => void) {
   const [repositories, setRepositories] = useState<GitRepository[]>([]);
   const [target, setTarget] = useState<TaskDeliveryTarget | null>(null);
+  const [epicTarget, setEpicTarget] = useState<EpicDeliveryTarget | null>(null);
   const [repositoryId, setRepositoryId] = useState('');
   const [baseBranch, setBaseBranch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -61,10 +63,14 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
 
     const load = async () => {
       setLoading(true);
+      const epicId = taskDetail.task.epic_id;
       const [reposRes, targetRes] = await Promise.all([
         gitService.listRepositories(workspaceId),
         gitService.getTaskDeliveryTarget(workspaceId, taskDetail.task.id),
       ]);
+      const epicTargetRes = epicId
+        ? await gitService.getEpicDeliveryTarget(workspaceId, epicId).catch(() => null)
+        : null;
       if (!mounted) {
         return;
       }
@@ -84,6 +90,11 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
         setRepositoryId(nextTarget?.repository_id ?? '');
         setBaseBranch(nextTarget?.base_branch ?? '');
       }
+      if (epicTargetRes?.data) {
+        setEpicTarget(epicTargetRes.data);
+      } else {
+        setEpicTarget(null);
+      }
       setLoading(false);
     };
 
@@ -91,7 +102,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
     return () => {
       mounted = false;
     };
-  }, [taskDetail.task.id, workspaceId]);
+  }, [taskDetail.task.epic_id, taskDetail.task.id, workspaceId]);
 
   const hidden = !loading && repositories.length === 0 && !target;
 
@@ -105,6 +116,35 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
   const repoProvider = selectedRepository?.provider;
   const repoBaseURL = selectedRepository?.base_url;
   const isConfigured = Boolean(target?.repository_id);
+  const targetSource = target?.target_source ?? 'manual';
+  const sourceLabel = targetSource === 'epic'
+    ? 'Epic branch'
+    : targetSource === 'team_default'
+      ? 'Team default'
+      : 'Manual';
+  const sourceClassName = targetSource === 'epic'
+    ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400'
+    : targetSource === 'team_default'
+      ? 'bg-muted text-muted-foreground'
+      : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-300';
+  const epicBranchOption = epicTarget?.repository_id && epicTarget.epic_branch
+    ? { value: epicTarget.epic_branch, label: `Epic branch: ${epicTarget.epic_branch}` }
+    : null;
+  const branchOptions = [
+    ...(epicBranchOption ? [epicBranchOption] : []),
+    ...(branchPreview ? [{ value: branchPreview, label: taskBranchOptionLabel(branchPreview) }] : []),
+  ].filter((option, index, options) => options.findIndex((item) => item.value === option.value) === index);
+  const canUseEpicTarget = Boolean(
+    taskDetail.task.epic_id &&
+    epicTarget?.repository_id &&
+    epicTarget.epic_branch &&
+    (
+      targetSource !== 'epic' ||
+      target?.source_epic_id !== taskDetail.task.epic_id ||
+      target?.repository_id !== epicTarget.repository_id ||
+      target?.base_branch !== epicTarget.epic_branch
+    ),
+  );
   const deliveryTargetSaved =
     repositoryId === (target?.repository_id ?? '') &&
     (!repositoryId || resolvedBaseBranch === (target?.base_branch ?? ''));
@@ -208,6 +248,27 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
     toast.success('Delivery target updated');
   };
 
+  const handleUseEpicTarget = async () => {
+    if (!taskDetail.task.epic_id) {
+      toast.error('Task has no epic');
+      return false;
+    }
+    setSavingTarget(true);
+    const { data, error } = await gitService.useTaskEpicDeliveryTarget(workspaceId, taskDetail.task.id);
+    setSavingTarget(false);
+    if (error) {
+      toast.error(error);
+      return false;
+    }
+    setTarget(data ?? null);
+    if (data) {
+      setRepositoryId(data.repository_id ?? '');
+      setBaseBranch(data.base_branch ?? '');
+    }
+    toast.success('Delivery target updated');
+    return true;
+  };
+
   const deliveryStateCfg = target?.delivery_state
     ? (DELIVERY_STATE_CONFIG[target.delivery_state] ?? { label: target.delivery_state.replace(/_/g, ' '), className: 'bg-muted text-muted-foreground' })
     : null;
@@ -215,6 +276,7 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
   return {
     repositories,
     target,
+    epicTarget,
     repositoryId,
     setRepositoryId,
     baseBranch,
@@ -227,12 +289,18 @@ export function useTaskDelivery(workspaceId: string, taskDetail: TaskDetail, _on
     isConfigured,
     deliveryTargetSaved,
     deliveryStateCfg,
+    targetSource,
+    sourceLabel,
+    sourceClassName,
+    branchOptions,
+    canUseEpicTarget,
     selectedRepository,
     repoProvider,
     repoBaseURL,
     handleSaveDelivery,
     handleBaseBranchChange,
     handleRepoChange,
+    handleUseEpicTarget,
     ensureDeliveryTargetSaved,
   };
 }
@@ -276,6 +344,11 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
               {d.deliveryStateCfg.label}
             </span>
           )}
+          {d.target && (
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${d.sourceClassName}`}>
+              {d.sourceLabel}
+            </span>
+          )}
         </div>
       </button>
 
@@ -307,7 +380,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">
-                  Team defaults prefill this. Task delivery can override it.
+                  {d.sourceLabel}
                 </p>
                 {d.repositoryId && !d.deliveryTargetSaved && (
                   <p className="text-[11px] text-amber-700 dark:text-amber-400">
@@ -327,11 +400,7 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
                   onChange={d.setBaseBranch}
                   placeholder={d.selectedRepository?.default_branch || 'main'}
                   emptyLabel={repositoryDefaultBranchLabel(d.selectedRepository?.default_branch)}
-                  extraOptions={
-                    d.branchPreview
-                      ? [{ value: d.branchPreview, label: taskBranchOptionLabel(d.branchPreview) }]
-                      : []
-                  }
+                  extraOptions={d.branchOptions}
                   disabled={d.savingTarget}
                 />
               </div>
@@ -359,6 +428,17 @@ export function TaskDeliveryPanel({ workspaceId, taskDetail, onTaskUpdated }: Pr
               {d.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <FloppyDiskIcon className="h-3 w-3" />}
               Save
             </Button>
+            {d.canUseEpicTarget && (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={d.handleUseEpicTarget}
+                disabled={d.savingTarget}
+              >
+                {d.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <GitBranchIcon className="h-3 w-3" />}
+                Use epic branch
+              </Button>
+            )}
           </div>
 
           {/* Summary */}

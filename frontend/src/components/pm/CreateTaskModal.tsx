@@ -52,6 +52,7 @@ import type {
   TaskType,
   WorkflowWithStates,
   EpicWithStats,
+  EpicDeliveryTarget,
 } from "@/lib/pmTypes";
 import { pmEpicService } from "@/lib/services/pmEpicService";
 import { pmSprintService } from "@/lib/services/pmSprintService";
@@ -428,6 +429,7 @@ export function CreateTaskModal({
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showExternalLinks, setShowExternalLinks] = useState(false);
+  const [selectedEpicDeliveryTarget, setSelectedEpicDeliveryTarget] = useState<EpicDeliveryTarget | null>(null);
   const [showAttachments, setShowAttachments] = useState(false);
   const [recurringDraft, setRecurringDraft] = useState<RecurringTemplateFormValue | null>(null);
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
@@ -746,6 +748,26 @@ export function CreateTaskModal({
     if (isEpicSelectableForTaskTeam(selectedEpic.epic.team_id ?? null, form.team_id || null)) return;
     setForm((current) => (current.epic_id ? { ...current, epic_id: '' } : current));
   }, [epics, form.epic_id, form.team_id]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!form.epic_id || isTemplateMode) {
+      setSelectedEpicDeliveryTarget(null);
+      return;
+    }
+    gitService.getEpicDeliveryTarget(workspaceId, form.epic_id)
+      .then((res) => {
+        if (!mounted) return;
+        setSelectedEpicDeliveryTarget(res.data ?? null);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setSelectedEpicDeliveryTarget(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [form.epic_id, isTemplateMode, workspaceId]);
 
   const canSubmit = useMemo(
     () =>
@@ -1835,6 +1857,14 @@ export function CreateTaskModal({
                     }
                     renderTrigger={() => <span>{currentEpicName}</span>}
                   />
+                </MetadataRow>
+                )}
+
+                {fieldVis.epic && selectedEpicDeliveryTarget?.repository_id && selectedEpicDeliveryTarget.epic_branch && (
+                <MetadataRow icon={SourceCodeIcon} label="Delivery">
+                  <span className="min-w-0 truncate font-mono text-xs">
+                    {selectedEpicDeliveryTarget.epic_branch}
+                  </span>
                 </MetadataRow>
                 )}
 

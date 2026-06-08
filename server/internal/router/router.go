@@ -880,6 +880,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/git-links", h.Git.GetTaskGitLinks)
 				r.With(requirePerm(authorization.PermPMRead)).Get("/tasks/{id}/delivery-target", h.Git.GetTaskDeliveryTarget)
 				r.With(requirePerm(authorization.PermPMEdit)).Put("/tasks/{id}/delivery-target", h.Git.UpdateTaskDeliveryTarget)
+				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/delivery-target/use-epic", h.Git.UseTaskEpicDeliveryTarget)
 				r.With(requirePerm(authorization.PermPMEdit)).Post("/tasks/{id}/create-branch", h.Git.CreateBranch)
 
 				// Comments — pm.read / pm.edit

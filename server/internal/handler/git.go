@@ -460,6 +460,20 @@ func (h *GitHandler) UpdateTaskDeliveryTarget(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, target)
 }
 
+// UseTaskEpicDeliveryTarget handles POST /api/pm/tasks/{id}/delivery-target/use-epic.
+func (h *GitHandler) UseTaskEpicDeliveryTarget(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	storyID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+
+	target, err := h.gitService.UseTaskEpicDeliveryTarget(r.Context(), workspaceID, storyID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, target)
+}
+
 // GetEpicDeliveryTarget handles GET /api/pm/epics/{id}/delivery-target.
 func (h *GitHandler) GetEpicDeliveryTarget(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
