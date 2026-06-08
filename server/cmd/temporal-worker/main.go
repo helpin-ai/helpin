@@ -122,6 +122,7 @@ func main() {
 	storyRepo := repository.NewPMTaskRepository(db)
 	taskLinkRepo := repository.NewPMTaskLinkRepository(db)
 	epicRepo := repository.NewPMEpicRepository(db)
+	epicDeliveryTargetRepo := repository.NewEpicDeliveryTargetRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	workflowRepo := repository.NewPMWorkflowRepository(db)
 	labelRepo := repository.NewPMLabelRepository(db)
@@ -417,7 +418,9 @@ func main() {
 		cfg.AppBaseURL,
 		cfg.GitHubAppSlug,
 		cfg.JWTSecret,
-	).SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
+	).
+		SetEpicDeliveryDependencies(epicDeliveryTargetRepo, epicRepo).
+		SetGitLabDependencies(gitCredentialRepo, resolveGitOAuthEncryptionKey(cfg))
 	agentService := service.NewAgentService(
 		agentRepo,
 		workspacePresetVersionRepo,
