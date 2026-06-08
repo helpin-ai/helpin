@@ -110,6 +110,39 @@ func agentRunActivityMetadata(agent *model.Agent, run *model.AgentRun, action st
 	return md
 }
 
+func agentRunActivityNoteSnippet(content string) string {
+	snippet := strings.Join(strings.Fields(content), " ")
+	runes := []rune(snippet)
+	if len(runes) <= 80 {
+		return snippet
+	}
+	return string(runes[:77]) + "..."
+}
+
+func agentRunActivityActionForResumeIntent(intent string) string {
+	switch intent {
+	case model.AgentRunResumeIntentApprove:
+		return "approved"
+	case model.AgentRunResumeIntentRequestChanges:
+		return "changes_requested"
+	case model.AgentRunResumeIntentReply:
+		return "note_added"
+	default:
+		return ""
+	}
+}
+
+func agentRunActivityExtraForMessage(intent string, message *model.AgentRunMessage) map[string]interface{} {
+	if intent != model.AgentRunResumeIntentReply || message == nil {
+		return nil
+	}
+	snippet := agentRunActivityNoteSnippet(message.Content)
+	if snippet == "" {
+		return nil
+	}
+	return map[string]interface{}{"note_snippet": snippet}
+}
+
 func buildAgentRunInputPayload(targetType, targetID string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, output *model.AgentRunOutputContext, additionalContext *string, allowedTools []string) ([]byte, error) {
 	payload := model.AgentRunInputPayload{
 		Trigger:      trigger,
@@ -3044,6 +3077,7 @@ func (s *AgentService) CancelRun(ctx context.Context, workspaceID, runID, actorI
 	_ = s.runEngine.CancelRun(ctx, derefString(run.WorkflowID), derefString(run.WorkflowRunID))
 
 	_ = s.markAgentIdle(ctx, workspaceID, run.AgentID)
+	s.logTargetAgentRunActivity(ctx, run, actorID, "cancelled", nil)
 	s.publishRunEvent(run, actorID)
 
 	return run, nil
@@ -3320,6 +3354,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 				"intent", signal.Intent,
 			)
 		}
+		s.logTargetAgentRunActivity(ctx, run, actorID, agentRunActivityActionForResumeIntent(intent), agentRunActivityExtraForMessage(intent, message))
 		s.publishRunEvent(run, actorID)
 		return run, message, nil
 	}
@@ -3363,6 +3398,7 @@ func (s *AgentService) resumeRunWithIntent(ctx context.Context, workspaceID, run
 			"intent", signal.Intent,
 		)
 	}
+	s.logTargetAgentRunActivity(ctx, run, actorID, agentRunActivityActionForResumeIntent(intent), agentRunActivityExtraForMessage(intent, message))
 	s.publishRunEvent(run, actorID)
 	return run, message, nil
 }
@@ -4389,6 +4425,34 @@ func (s *AgentService) publishRunMessageEvent(run *model.AgentRun, message *mode
 		Data:        data,
 	})
 	s.publishCodingSessionMessageEvent(run, message, actorID)
+}
+
+func (s *AgentService) logTargetAgentRunActivity(ctx context.Context, run *model.AgentRun, actorID, action string, extra map[string]interface{}) {
+	if s == nil || s.activitySvc == nil || run == nil {
+		return
+	}
+	entityType := strings.TrimSpace(run.TargetType)
+	if entityType != "task" && entityType != "epic" {
+		return
+	}
+	entityID := strings.TrimSpace(run.TargetID)
+	if entityID == "" {
+		return
+	}
+
+	var agent *model.Agent
+	if s.agentRepo != nil {
+		loaded, err := s.agentRepo.GetByID(ctx, run.WorkspaceID, run.AgentID)
+		if err == nil {
+			agent = loaded
+		}
+	}
+	metadata := agentRunActivityMetadata(agent, run, action)
+	for key, value := range extra {
+		metadata[key] = value
+	}
+
+	_ = s.activitySvc.Log(ctx, run.WorkspaceID, entityType, entityID, strPtr(actorID), "updated", strPtr("agent_run"), nil, strPtr(action), metadata)
 }
 
 func (s *AgentService) createRunMessage(ctx context.Context, run *model.AgentRun, role, messageType, content string) (*model.AgentRunMessage, error) {
