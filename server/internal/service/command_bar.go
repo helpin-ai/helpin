@@ -3562,6 +3562,18 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	}
 	planKind := commandBarPlanKindForSteps(payload.Steps)
 	if planKind == model.CommandBarPlanKindTaskPipeline || planKind == model.CommandBarPlanKindDAG {
+		if s.commandBarPlanRepo != nil && payload.PlanID != "" {
+			if _, err := s.StartReadyCommandBarPlanSteps(ctx, temporalapp.CommandBarPlanWorkflowInput{
+				WorkspaceID: run.WorkspaceID,
+				ActorID:     derefString(run.TriggeredByUserID),
+				PlanID:      payload.PlanID,
+				Prompt:      payload.Prompt,
+				PageContext: payload.PageContext,
+				Steps:       payload.Steps,
+			}); err != nil {
+				return nil, err
+			}
+		}
 		if s.runEngine != nil && payload.PlanID != "" {
 			_ = s.runEngine.SignalCommandBarPlanRunCompleted(ctx, payload.PlanID, completedRunID)
 		}

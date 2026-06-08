@@ -2540,6 +2540,83 @@ func TestAdvanceFanOutCommandBarPlanWaitsForAllRuns(t *testing.T) {
 	}
 }
 
+func TestAdvanceTaskPipelinePlanSchedulesFallbackWithoutRunEngine(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	service := &AgentService{runRepo: runRepo, commandBarPlanRepo: planRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	agentID := "33333333-3333-3333-3333-333333333333"
+	runOneID := "44444444-4444-4444-4444-444444444444"
+	runTwoID := "55555555-5555-5555-5555-555555555555"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic 1"}
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:      agentID,
+			AgentName:    "Forge",
+			PlanKind:     model.CommandBarPlanKindTaskPipeline,
+			Target:       model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"},
+			Instructions: "Build task 1.",
+		},
+		{
+			AgentID:              agentID,
+			AgentName:            "Lens",
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"},
+			Instructions:         "Review task 1.",
+			DependsOnStepIndexes: []int{0},
+		},
+	}
+	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run forge then lens", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	runIDs, _ := json.Marshal(map[int]string{0: runOneID, 1: runTwoID})
+	plan.RunIDsByStep = runIDs
+	plan.RunCount = 2
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	for index, runID := range []string{runOneID, runTwoID} {
+		trigger, err := buildCommandBarTriggerContext("run forge then lens", pageContext, steps, index, planID)
+		if err != nil {
+			t.Fatalf("build trigger %d: %v", index, err)
+		}
+		input, _ := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+		if err := runRepo.Create(ctx, &model.AgentRun{
+			ID:             runID,
+			WorkspaceID:    workspaceID,
+			AgentID:        agentID,
+			TargetType:     "task",
+			TargetID:       "task-1",
+			RuntimeKind:    "native_sdk",
+			InvocationMode: model.InvocationModeAutonomous,
+			ApprovalState:  "not_required",
+			PauseReason:    model.AgentRunPauseReasonNone,
+			Status:         model.AgentRunStatusCompleted,
+			Input:          input,
+			OutputSummary:  json.RawMessage("{}"),
+		}); err != nil {
+			t.Fatalf("create run %d: %v", index, err)
+		}
+	}
+
+	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, runTwoID); err != nil {
+		t.Fatalf("advance task pipeline run: %v", err)
+	}
+	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	if updated.Status != model.CommandBarPlanStatusCompleted {
+		t.Fatalf("expected direct fallback to complete task pipeline plan, got %q", updated.Status)
+	}
+}
+
 func TestDecodeCommandBarPlanRunIDsUsesStringKeys(t *testing.T) {
 	raw := json.RawMessage(`{"0":"run-0","2":"run-2","bad":"ignored"}`)
 	got := decodeCommandBarPlanRunIDs(raw)
