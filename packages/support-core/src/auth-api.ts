@@ -217,9 +217,7 @@ export function buildWorkspaceWebSocketUrl(apiBase: string, workspaceId: string)
 export function startTokenRefreshTimer(apiBase: string): void {
   stopTokenRefreshTimer()
   refreshTimerId = setInterval(() => {
-    if (getRefreshToken()) {
-      void tryRefreshToken(apiBase)
-    }
+    void tryRefreshToken(apiBase)
   }, TOKEN_REFRESH_INTERVAL)
 }
 
@@ -240,7 +238,7 @@ export function setupVisibilityRefresh(apiBase: string): () => void {
   }
 
   const handler = () => {
-    if (document.visibilityState === 'visible' && getRefreshToken()) {
+    if (document.visibilityState === 'visible') {
       void tryRefreshToken(apiBase)
     }
   }
