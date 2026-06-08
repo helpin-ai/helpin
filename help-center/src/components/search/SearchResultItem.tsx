@@ -32,7 +32,14 @@ export function SearchResultItem({
   const isCompact = variant === 'compact'
   const targetLocale = result.locale || locale
   const collectionSlug = result.collection_slug
-  const bestMatch = result.matches?.[0]
+  const titleMatch = result.matches?.find(
+    (match) => match.entry_type === 'title' && hasHighlight(match.snippet),
+  )
+  const bestMatch =
+    result.matches?.find((match) => hasHighlight(match.snippet)) ??
+    result.matches?.[0]
+  const snippetMatch =
+    bestMatch && bestMatch !== titleMatch ? bestMatch : undefined
   const articlePath = buildCanonicalArticlePath(
     multilingualEnabled,
     targetLocale,
@@ -51,7 +58,14 @@ export function SearchResultItem({
       />
       <div className="min-w-0 flex-1">
         <h3 className={`font-medium ${isCompact ? 'text-[13px]' : 'text-sm mb-1'}`}>
-          {result.title}
+          {titleMatch ? (
+            <HighlightedText
+              className="search-result-title"
+              html={titleMatch.snippet}
+            />
+          ) : (
+            result.title
+          )}
         </h3>
         {(result.space_name || result.collection_name || result.collection_ancestor_path) && (
           <div className={`flex items-center gap-1.5 text-[11px] text-muted-foreground/60 ${isCompact ? 'mt-0.5' : 'mb-1'}`}>
@@ -80,8 +94,8 @@ export function SearchResultItem({
             {bestMatch.section_title}
           </div>
         )}
-        {!isCompact && bestMatch?.snippet && (
-          <SearchSnippet html={bestMatch.snippet} />
+        {snippetMatch?.snippet && (
+          <SearchSnippet compact={isCompact} html={snippetMatch.snippet} />
         )}
       </div>
       {isCompact && (
@@ -120,10 +134,35 @@ export function SearchResultItem({
   )
 }
 
-function SearchSnippet({ html }: { html: string }) {
+function hasHighlight(html: string | undefined) {
+  return Boolean(html?.includes('<mark>'))
+}
+
+function HighlightedText({
+  className,
+  html,
+}: {
+  className?: string
+  html: string
+}) {
+  return (
+    <span
+      className={className}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
+
+function SearchSnippet({
+  compact = false,
+  html,
+}: {
+  compact?: boolean
+  html: string
+}) {
   return (
     <p
-      className="search-result-snippet text-muted-foreground text-[13px] mt-1 line-clamp-2"
+      className={`search-result-snippet text-muted-foreground mt-1 line-clamp-2 ${compact ? 'text-[11px]' : 'text-[13px]'}`}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )

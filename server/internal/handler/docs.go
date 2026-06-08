@@ -2040,7 +2040,7 @@ func (h *DocsHandler) PublicSearchArticles(w http.ResponseWriter, r *http.Reques
 	}
 	query := r.URL.Query().Get("q")
 	spaceSlug := r.URL.Query().Get("space")
-	limit := 50
+	limit := 0
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if n, err := strconv.Atoi(l); err == nil {
 			limit = n
