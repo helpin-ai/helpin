@@ -2171,200 +2171,206 @@ export function FlowRow({
     <>
       <div
         className={cn(
-          'group grid gap-3 border-b border-border/60 bg-card px-4 py-3 transition-colors last:border-b-0 hover:bg-muted/20 lg:grid-cols-[minmax(300px,1.3fr)_minmax(280px,1.1fr)_220px_118px_34px] lg:items-center lg:gap-4',
-          isIncomplete || flowState === 'error' ? 'bg-destructive/[0.025]' : undefined,
+          'group rounded-lg border bg-card px-4 py-3 transition-colors hover:border-border hover:bg-muted/10',
+          isIncomplete || flowState === 'error' ? 'border-destructive/35 bg-destructive/[0.025]' : 'border-border/70',
         )}
       >
-        <div className="min-w-0 space-y-1.5" data-testid="flow-row-title-area">
-          <div className="flex min-w-0 items-center gap-2">
-            <TruncatedTextWithTooltip
-              testId="flow-row-name-text"
-              className="truncate text-sm font-semibold text-foreground"
-            >
-              {rule.name}
-            </TruncatedTextWithTooltip>
-            {agentMissing && (
-              <Badge variant="destructive" className="shrink-0 text-xs">Missing agent</Badge>
-            )}
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1 space-y-1.5" data-testid="flow-row-title-area">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <FlowStatePill state={flowState} />
+              <TruncatedTextWithTooltip
+                testId="flow-row-name-text"
+                className="min-w-0 max-w-full truncate text-sm font-semibold text-foreground"
+              >
+                {rule.name}
+              </TruncatedTextWithTooltip>
+              {agentMissing && (
+                <Badge variant="destructive" className="shrink-0 text-xs">Missing agent</Badge>
+              )}
+            </div>
+            {rule.description?.trim() ? (
+              <TruncatedTextWithTooltip
+                testId="flow-row-description-text"
+                className="line-clamp-2 text-xs leading-relaxed text-muted-foreground"
+              >
+                {rule.description.trim()}
+              </TruncatedTextWithTooltip>
+            ) : null}
           </div>
-          {rule.description?.trim() ? (
-            <TruncatedTextWithTooltip
-              testId="flow-row-description-text"
-              className="line-clamp-2 text-xs leading-relaxed text-muted-foreground"
-            >
-              {rule.description.trim()}
-            </TruncatedTextWithTooltip>
-          ) : null}
-        </div>
 
-        <div className="min-w-0 space-y-1 text-xs">
-          <p className="truncate text-muted-foreground">
-            <span className="font-medium text-foreground">Trigger</span>{' '}
-            {trigger.value ? `${trigger.label} ${trigger.value}` : trigger.label}
-          </p>
-          <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-            <span className="shrink-0 font-medium leading-5 text-foreground">Action</span>
-            {rule.action_type === 'start_agent_run' && agentName ? (
-              <span className="inline-flex min-w-0 items-center gap-1.5 leading-5" data-testid="flow-row-action-agent">
-                <span className="shrink-0 leading-5" data-testid="flow-row-action-verb">{action.verb}</span>
-                <span className="truncate font-medium leading-5 text-foreground" data-testid="flow-row-action-agent-name">{action.value}</span>
-                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center" data-testid="flow-row-action-agent-avatar">
-                  <AgentAvatar
-                    name={agentName}
-                    className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none"
-                    genericBare
-                  />
-                </span>
-              </span>
-            ) : (
-              <span className="truncate">{action.label}</span>
+          <div className="flex shrink-0 items-center gap-1">
+            {canEdit && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground opacity-100 transition-opacity hover:text-foreground md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                      aria-label={rule.enabled ? 'Disable flow' : 'Enable flow'}
+                      onClick={() => onToggle(rule)}
+                    >
+                      {rule.enabled ? (
+                        <PauseIcon className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                      ) : (
+                        <PlayIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{rule.enabled ? 'Disable flow' : 'Enable flow'}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
-          </div>
-        </div>
 
-        <div className="grid gap-2">
-          {totalRuns !== undefined ? (
-            <FlowStat value={totalRuns} label="Total runs" />
-          ) : null}
-          <div className={cn('text-[11px] text-muted-foreground', totalRuns !== undefined && 'border-t border-border/60 pt-1.5')}>
-            {currentRunLabel ? (
-              <span className="font-medium text-foreground/80">{currentRunLabel}</span>
-            ) : hasRunActivity ? (
-              <span className="inline-flex items-baseline gap-1">
-                <span>Last run</span>
-                {lastRunPath ? (
-                  <a
-                    href={lastRunPath}
-                    className="font-mono text-foreground/80 underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
-                  >
-                    {lastRunLabel}
-                  </a>
-                ) : lastExecutionPath ? (
-                  <a
-                    href={lastExecutionPath}
-                    className="font-mono text-foreground/80 underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
-                  >
-                    {lastRunLabel}
-                  </a>
-                ) : (
-                  <span className="font-mono text-foreground/80">{lastRunLabel}</span>
+            <DropdownMenu onOpenChange={(open) => {
+              if (!open) {
+                window.requestAnimationFrame(() => {
+                  menuTriggerRef.current?.blur();
+                });
+              }
+            }}>
+              <DropdownMenuTrigger asChild>
+                <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  <MoreHorizontalIcon className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                onCloseAutoFocus={(event) => {
+                  event.preventDefault();
+                  menuTriggerRef.current?.blur();
+                }}
+              >
+                {canEdit && (
+                  <>
+                    <DropdownMenuItem onClick={() => onEdit(rule)}>
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onToggle(rule)}>
+                      {rule.enabled ? 'Disable' : 'Enable'}
+                    </DropdownMenuItem>
+                  </>
                 )}
-              </span>
-            ) : (
-              <span className="font-medium text-foreground/80">No runs yet</span>
-            )}
-          </div>
-          {!currentRunLabel && hasRunActivity && blockerLabel ? (
-            <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
-          ) : !currentRunLabel && hasRunActivity && nextRunLabel && !blockerLabel ? (
-            <div className="text-[11px] text-muted-foreground">
-              <span className="inline-flex items-baseline gap-1">
-                <span>Next run</span>
-                <span className="font-mono text-foreground/80">{nextRunLabel}</span>
-              </span>
-            </div>
-          ) : !currentRunLabel && !hasRunActivity && blockerLabel ? (
-            <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
-          ) : !currentRunLabel && !hasRunActivity && nextRunLabel ? (
-            <div className="text-[11px] text-muted-foreground">
-              <span className="inline-flex items-baseline gap-1">
-                <span>Next run</span>
-                <span className="font-mono text-foreground/80">{nextRunLabel}</span>
-              </span>
-            </div>
-          ) : !currentRunLabel && !hasRunActivity ? (
-            <div className="text-[11px] text-muted-foreground">Waiting for trigger</div>
-          ) : null}
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-medium uppercase text-muted-foreground lg:hidden">Status</span>
-          <FlowStatePill state={flowState} />
-          {canEdit && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 text-muted-foreground opacity-100 transition-opacity hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
-                    aria-label={rule.enabled ? 'Disable flow' : 'Enable flow'}
-                    onClick={() => onToggle(rule)}
+                {workspaceSlug && (
+                  <DropdownMenuItem asChild>
+                    <a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>
+                      View runs
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                {lastRunPath && (
+                  <DropdownMenuItem asChild>
+                    <a href={lastRunPath}>
+                      Open last run
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                {!lastRunPath && lastExecutionPath && (
+                  <DropdownMenuItem asChild>
+                    <a href={lastExecutionPath}>
+                      View last run
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDelete(rule)}
                   >
-                    {rule.enabled ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{rule.enabled ? 'Disable flow' : 'Enable flow'}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
+                    Delete
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
-        <div className="flex justify-end">
-          <DropdownMenu onOpenChange={(open) => {
-            if (!open) {
-              window.requestAnimationFrame(() => {
-                menuTriggerRef.current?.blur();
-              });
-            }
-          }}>
-            <DropdownMenuTrigger asChild>
-              <Button ref={menuTriggerRef} variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreHorizontalIcon className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              onCloseAutoFocus={(event) => {
-                event.preventDefault();
-                menuTriggerRef.current?.blur();
-              }}
-            >
-              {canEdit && (
-                <>
-                  <DropdownMenuItem onClick={() => onEdit(rule)}>
-                    Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => onToggle(rule)}>
-                    {rule.enabled ? 'Disable' : 'Enable'}
-                  </DropdownMenuItem>
-                </>
+        <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
+          <div className="min-w-0 space-y-1.5 text-xs">
+            <p className="truncate text-muted-foreground">
+              <span className="font-medium text-foreground">Trigger</span>{' '}
+              {trigger.value ? `${trigger.label} ${trigger.value}` : trigger.label}
+            </p>
+            <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+              <span className="shrink-0 font-medium leading-5 text-foreground">Action</span>
+              {rule.action_type === 'start_agent_run' && agentName ? (
+                <span className="inline-flex min-w-0 items-center gap-1.5 leading-5" data-testid="flow-row-action-agent">
+                  <span className="shrink-0 leading-5" data-testid="flow-row-action-verb">{action.verb}</span>
+                  <span className="truncate font-medium leading-5 text-foreground" data-testid="flow-row-action-agent-name">{action.value}</span>
+                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center" data-testid="flow-row-action-agent-avatar">
+                    <AgentAvatar
+                      name={agentName}
+                      className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none"
+                      genericBare
+                    />
+                  </span>
+                </span>
+              ) : (
+                <span className="truncate">{action.label}</span>
               )}
-              {workspaceSlug && (
-                <DropdownMenuItem asChild>
-                  <a href={buildAutomationActivityPath(workspaceSlug, activitySearch, 'trigger-executions')}>
-                    Activity
-                  </a>
-                </DropdownMenuItem>
+            </div>
+          </div>
+
+          <div className="grid gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+            {totalRuns !== undefined ? (
+              <FlowStat value={totalRuns} label="Total runs" />
+            ) : null}
+            <div className={cn('text-[11px] text-muted-foreground', totalRuns !== undefined && 'border-t border-border/60 pt-1.5')}>
+              {currentRunLabel ? (
+                <span className="font-medium text-foreground/80">{currentRunLabel}</span>
+              ) : hasRunActivity ? (
+                <span className="inline-flex items-baseline gap-1">
+                  <span>Last run</span>
+                  {lastRunPath ? (
+                    <a
+                      href={lastRunPath}
+                      className="font-mono text-foreground/80 underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
+                    >
+                      {lastRunLabel}
+                    </a>
+                  ) : lastExecutionPath ? (
+                    <a
+                      href={lastExecutionPath}
+                      className="font-mono text-foreground/80 underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
+                    >
+                      {lastRunLabel}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-foreground/80">{lastRunLabel}</span>
+                  )}
+                </span>
+              ) : (
+                <span className="font-medium text-foreground/80">No runs yet</span>
               )}
-              {lastRunPath && (
-                <DropdownMenuItem asChild>
-                  <a href={lastRunPath}>
-                    Open last run
-                  </a>
-                </DropdownMenuItem>
-              )}
-              {!lastRunPath && lastExecutionPath && (
-                <DropdownMenuItem asChild>
-                  <a href={lastExecutionPath}>
-                    View last run
-                  </a>
-                </DropdownMenuItem>
-              )}
-              {canEdit && (
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => onDelete(rule)}
-                >
-                  Delete
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            </div>
+            {!currentRunLabel && hasRunActivity && blockerLabel ? (
+              <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
+            ) : !currentRunLabel && hasRunActivity && nextRunLabel && !blockerLabel ? (
+              <div className="text-[11px] text-muted-foreground">
+                <span className="inline-flex items-baseline gap-1">
+                  <span>Next run</span>
+                  <span className="font-mono text-foreground/80">{nextRunLabel}</span>
+                </span>
+              </div>
+            ) : !currentRunLabel && !hasRunActivity && blockerLabel ? (
+              <div className="text-[11px] font-medium text-foreground/80">{blockerLabel}</div>
+            ) : !currentRunLabel && !hasRunActivity && nextRunLabel ? (
+              <div className="text-[11px] text-muted-foreground">
+                <span className="inline-flex items-baseline gap-1">
+                  <span>Next run</span>
+                  <span className="font-mono text-foreground/80">{nextRunLabel}</span>
+                </span>
+              </div>
+            ) : !currentRunLabel && !hasRunActivity ? (
+              <div className="text-[11px] text-muted-foreground">Waiting for trigger</div>
+            ) : null}
+          </div>
         </div>
+
         {flowState === 'error' && lastErrorMessage && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive lg:col-span-5">
+          <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
             ⚠ {lastErrorMessage}
           </div>
         )}
@@ -4741,14 +4747,7 @@ export function AutomationFlowsPage({
           {/* Flow list */}
           <div>
             {filteredFlows.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-border/70 bg-card">
-                <div className="hidden border-b border-border/70 bg-muted/20 px-4 py-2 text-[11px] font-semibold uppercase text-muted-foreground lg:grid lg:grid-cols-[minmax(300px,1.3fr)_minmax(280px,1.1fr)_220px_118px_34px] lg:items-center lg:gap-4">
-                  <div>Flow</div>
-                  <div>Trigger and action</div>
-                  <div>Activity</div>
-                  <div>Status</div>
-                  <div />
-                </div>
+              <div className="space-y-2">
                 {filteredFlows.map((rule) => (
                   <FlowRow
                     key={rule.id}
