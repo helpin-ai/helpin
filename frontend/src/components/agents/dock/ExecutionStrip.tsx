@@ -7,7 +7,9 @@ import {
   ArrowDown01Icon,
   ArrowUpRight01Icon,
   Bookmark01Icon,
+  Cancel01Icon,
   Loading01Icon,
+  PlayIcon,
   RotateLeft01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
@@ -17,6 +19,7 @@ import { FanOutRail } from './FanOutRail';
 import { TaskPipelineRail } from './TaskPipelineRail';
 import { DagRail } from './DagRail';
 import { PendingInteractionCard } from './PendingInteractionCard';
+import { DockTranscript, dockTranscriptHasContent } from './DockTranscript';
 import { useAgentRunStream } from './useAgentRunStream';
 import type { RunPlanArtifact } from '@/lib/pmTypes';
 import {
@@ -35,7 +38,7 @@ import {
   type ActivityState,
 } from './utils';
 
-export type StripAction = 'rerun' | 'save_as_agent' | 'open' | 'retry' | 'cancel';
+export type StripAction = 'rerun' | 'save_as_agent' | 'open' | 'retry' | 'resume' | 'cancel';
 
 interface PlanStripProps {
   kind: 'plan';
@@ -46,6 +49,8 @@ interface PlanStripProps {
   onAction?: (action: StripAction) => void;
   /** Render the result body inline as a soft card. Pass null to suppress. */
   resultSlot?: React.ReactNode;
+  /** Start expanded — used for single-output (one-shot) plans. */
+  defaultOpen?: boolean;
 }
 
 interface RunStripProps {
@@ -108,7 +113,7 @@ function liveStreamSummary(plan: RunPlanArtifact | null): string | null {
 }
 
 export function ExecutionStrip(props: ExecutionStripProps) {
-  const initialOpen = props.kind === 'run' ? props.defaultOpen ?? false : false;
+  const initialOpen = props.defaultOpen ?? false;
   const [open, setOpen] = useState(initialOpen);
 
   if (props.kind === 'plan') return <PlanStrip {...props} open={open} setOpen={setOpen} />;
@@ -152,6 +157,24 @@ function PlanStrip({
     return null;
   })();
   const stream = useAgentRunStream(workspaceId, activeRunId, !!activeRunId);
+  // Single-step plans (one-shot / known-agent) render the run's full output
+  // inline, the same way standalone runs do. Stream the lone run while active,
+  // and once after it finishes whenever the row is open.
+  const isSingleStep = plan.steps.length === 1;
+  const singleRunId = isSingleStep ? Object.values(plan.runIdsByStep)[0] ?? null : null;
+  const singleRun = singleRunId ? runsById[singleRunId] : null;
+  const singleActive = singleRun ? ACTIVE_RUN_STATUSES.has(singleRun.status) : false;
+  // While the lone run is active the header already streams it (activeRunId), so
+  // reuse that state. Only open a second stream once it's terminal and the row
+  // is expanded, to fetch the finished transcript without polling.
+  const needTerminalTranscript = !!singleRunId && singleRunId !== activeRunId && open;
+  const terminalTranscript = useAgentRunStream(workspaceId, singleRunId, needTerminalTranscript, 0);
+  const transcriptState = singleRunId
+    ? singleRunId === activeRunId
+      ? stream.streamState
+      : terminalTranscript.streamState
+    : null;
+  const hasTranscript = dockTranscriptHasContent(transcriptState, singleActive);
   const liveSummary = liveStreamSummary(stream.currentPlan);
   const summary = state === 'running' && liveSummary ? `${baseSummary} · ${liveSummary}` : baseSummary;
   const isFanOut = plan.planKind === 'fan_out';
@@ -159,7 +182,9 @@ function PlanStrip({
   const isDAG = plan.planKind === 'dag';
   const showRail = plan.steps.length > 1 || isFanOut || isTaskPipeline || isDAG;
   const firstRunId = Object.values(plan.runIdsByStep)[0];
-  const showHeaderOpen = !!onAction && !!(activeRunId || firstRunId);
+  // Output is inline once the transcript is present, so the sheet shortcut is
+  // only offered when there's no inline output to read (e.g. coding runs).
+  const showHeaderOpen = !!onAction && !!(activeRunId || firstRunId) && !hasTranscript;
 
   const renderRail = () => {
     if (isTaskPipeline) return <TaskPipelineRail plan={plan} runsById={runsById} />;
@@ -214,6 +239,9 @@ function PlanStrip({
             <p className="text-[11px] italic text-muted-foreground">"{plan.prompt}"</p>
           ) : null}
           {showRail ? renderRail() : null}
+          {isSingleStep && hasTranscript ? (
+            <DockTranscript stream={transcriptState} active={singleActive} />
+          ) : (
           <div className="space-y-1.5">
             {plan.steps.map((step, i) => {
               const runId = plan.runIdsByStep[i];
@@ -252,6 +280,7 @@ function PlanStrip({
               );
             })}
           </div>
+          )}
         </div>
       ) : null}
 
@@ -268,7 +297,7 @@ function PlanStrip({
         />
       ) : null}
 
-      {resultSlot}
+      {hasTranscript ? null : resultSlot}
 
       {onAction && completed ? (
         <ChipRow>
@@ -278,11 +307,13 @@ function PlanStrip({
             label="Save as agent"
             onClick={() => onAction('save_as_agent')}
           />
-          <ActionChip
-            icon={ArrowUpRight01Icon}
-            label="Open"
-            onClick={() => onAction('open')}
-          />
+          {hasTranscript ? null : (
+            <ActionChip
+              icon={ArrowUpRight01Icon}
+              label="Open"
+              onClick={() => onAction('open')}
+            />
+          )}
         </ChipRow>
       ) : null}
 
@@ -294,11 +325,37 @@ function PlanStrip({
             onClick={() => onAction('retry')}
             disabled={busy}
           />
+          {hasTranscript ? null : (
+            <ActionChip
+              icon={ArrowUpRight01Icon}
+              label="Open"
+              onClick={() => onAction('open')}
+            />
+          )}
+        </ChipRow>
+      ) : null}
+
+      {onAction && state === 'running' ? (
+        <ChipRow>
           <ActionChip
-            icon={ArrowUpRight01Icon}
-            label="Open"
-            onClick={() => onAction('open')}
+            icon={busy ? Loading01Icon : PlayIcon}
+            label={busy ? 'Resuming…' : 'Resume'}
+            onClick={() => onAction('resume')}
+            disabled={busy}
           />
+          <ActionChip
+            icon={Cancel01Icon}
+            label="Cancel"
+            onClick={() => onAction('cancel')}
+            disabled={busy}
+          />
+          {hasTranscript ? null : (
+            <ActionChip
+              icon={ArrowUpRight01Icon}
+              label="Open"
+              onClick={() => onAction('open')}
+            />
+          )}
         </ChipRow>
       ) : null}
     </div>
@@ -309,10 +366,12 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
   const state = classifyRun(run);
   const dot: DotKind = activityToDot(state, state === 'running');
   const isActive = ACTIVE_RUN_STATUSES.has(run.status);
-  // Stream whenever the run is active. We keep the pending-interaction card
-  // mounted inside a grid-rows-animated wrapper, so it has to stay populated
-  // through the collapse transition instead of unmounting on close.
-  const stream = useAgentRunStream(workspaceId, run.id, isActive);
+  const expanded = !compact || open;
+  // Stream while the run is active, and also once after it finishes whenever the
+  // row is expanded, so the agent's full output renders inline in the dock
+  // instead of only behind the session sheet. Don't poll terminal runs.
+  const stream = useAgentRunStream(workspaceId, run.id, isActive || expanded, isActive ? 5_000 : 0);
+  const hasTranscript = dockTranscriptHasContent(stream.streamState, isActive);
   const liveSummary = liveStreamSummary(stream.currentPlan);
   const outputSummary = outputSummaryText(run);
   // Prefer the pending interaction's title ("Approve pricing reply to
@@ -328,12 +387,25 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
   const display = getAgentRunDisplayStatus(run);
   const awaitingApproval = display === 'awaiting_approval';
   const canCancel = ACTIVE_RUN_STATUSES.has(run.status);
-  const expanded = !compact || open;
-  const showHeaderOpen = !!onAction;
+  // Hide the sheet shortcut once output is inline — the transcript is the result.
+  const showHeaderOpen = !!onAction && !hasTranscript;
 
   const body = (
     <div className="space-y-2">
-      {open ? (
+      {/* Primary output: the agent's full transcript, rendered inline so a
+          one-shot run's result is readable in the bar. Falls back to the live
+          plan / terse summary only until transcript segments arrive. */}
+      {hasTranscript ? (
+        <div className="space-y-2 pl-4">
+          {open && targetLabel(run) ? (
+            <p className="text-[11px] text-muted-foreground">{targetLabel(run)}</p>
+          ) : null}
+          <DockTranscript stream={stream.streamState} active={isActive} />
+          {run.error_message ? (
+            <p className="rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">{run.error_message}</p>
+          ) : null}
+        </div>
+      ) : open ? (
         <div className="space-y-2 pl-4 text-xs leading-snug">
           {targetLabel(run) ? (
             <p className="text-[11px] text-muted-foreground">{targetLabel(run)}</p>
@@ -381,7 +453,7 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
         />
       ) : null}
 
-      {resultSlot}
+      {hasTranscript ? null : resultSlot}
 
       {onAction ? (
         <ChipRow
@@ -426,7 +498,11 @@ function RunStrip({ workspaceId, run, busy, onAction, resultSlot, open, setOpen,
               subtle
             />
           ) : null}
-          <ActionChip icon={ArrowUpRight01Icon} label="Open" onClick={() => onAction('open')} />
+          {/* Output is inline once the transcript is present, so the prominent
+              "Open the session sheet" chip is only offered as a fallback. */}
+          {hasTranscript ? null : (
+            <ActionChip icon={ArrowUpRight01Icon} label="Open" onClick={() => onAction('open')} />
+          )}
         </ChipRow>
       ) : null}
     </div>

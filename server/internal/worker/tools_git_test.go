@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,5 +89,46 @@ func writeTestRepoFile(t *testing.T, repoDir, name, content string) {
 	path := filepath.Join(repoDir, name)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write repo file %s: %v", name, err)
+	}
+}
+
+func TestToolListCommitsRequiresRepository(t *testing.T) {
+	ctx := &ExecutionContext{Context: context.Background(), WorkspaceID: "ws-1"}
+	if _, err := toolListCommits(ctx, json.RawMessage(`{"branch":"main"}`)); err == nil ||
+		!strings.Contains(err.Error(), "requires a repository target") {
+		t.Fatalf("expected repository-required error, got %v", err)
+	}
+}
+
+func TestToolListCommitsReadsLog(t *testing.T) {
+	repoDir := initTestGitRepo(t)
+	for _, cfg := range [][]string{{"config", "user.email", "agent@helpin.test"}, {"config", "user.name", "Agent"}} {
+		cmd := exec.Command("git", cfg...)
+		cmd.Dir = repoDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", cfg, err, out)
+		}
+	}
+	commit := func(file, msg string) {
+		writeTestRepoFile(t, repoDir, file, msg+"\n")
+		for _, args := range [][]string{{"add", "-A"}, {"commit", "-m", msg}} {
+			cmd := exec.Command("git", args...)
+			cmd.Dir = repoDir
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+		}
+	}
+	commit("a.txt", "first commit")
+	commit("b.txt", "second commit")
+
+	ctx := &ExecutionContext{Context: context.Background(), WorkspaceID: "ws-1", WorkDir: repoDir}
+	// No branch → logs HEAD; the best-effort fetch fails (no origin) and is ignored.
+	out, err := toolListCommits(ctx, json.RawMessage(`{"limit":10}`))
+	if err != nil {
+		t.Fatalf("toolListCommits returned error: %v", err)
+	}
+	if !strings.Contains(out, "first commit") || !strings.Contains(out, "second commit") {
+		t.Fatalf("expected both commit subjects in output, got %q", out)
 	}
 }

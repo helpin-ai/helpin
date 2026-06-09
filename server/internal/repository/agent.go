@@ -593,6 +593,31 @@ func (r *AgentRunRepository) FindByParentRunID(ctx context.Context, workspaceID,
 	return &run, nil
 }
 
+// FindCompletedByTargetStage returns the latest completed run for a target and execution stage.
+func (r *AgentRunRepository) FindCompletedByTargetStage(ctx context.Context, workspaceID, targetType, targetID, stage string) (*model.AgentRun, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("agent run repository is not configured")
+	}
+	var run model.AgentRun
+	if err := r.db.WithContext(ctx).
+		Where(
+			"workspace_id = ? AND target_type = ? AND target_id = ? AND execution_stage = ? AND status = ?",
+			workspaceID,
+			targetType,
+			targetID,
+			stage,
+			model.AgentRunStatusCompleted,
+		).
+		Order("completed_at DESC, created_at DESC").
+		First(&run).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find completed target stage run: %w", err)
+	}
+	return &run, nil
+}
+
 // Create creates a new run.
 func (r *AgentRunRepository) Create(ctx context.Context, run *model.AgentRun) error {
 	if err := r.db.WithContext(ctx).Create(run).Error; err != nil {

@@ -20,7 +20,7 @@ import {
   type PlanLayer,
   type TaskNode,
 } from './planLayers';
-import { describeStep } from './utils';
+import { describeStep, stepDisplayName } from './utils';
 
 type Plan = NonNullable<Extract<CommandBarParseResponse, { status: 'plan' }>['plan']>;
 
@@ -131,14 +131,17 @@ function GuardrailList({
 function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const desc = describeStep(step.instructions);
+  const prompt = extractUserRequest(step.instructions);
+  const planItems = extractInstructionItems(step.instructions, 'plan');
   const targetTitle = step.target?.display_title || step.target?.entity_id || '';
   const TargetIcon = targetIcon(step.target?.entity_type);
   const tools = step.allowed_tools ?? [];
+  const stepName = stepDisplayName(step);
   return (
     <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
       <div className="flex items-center gap-2">
         <BotIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate text-sm font-medium text-foreground">{step.agent_name}</span>
+        <span className="truncate text-sm font-medium text-foreground">{stepName}</span>
       </div>
       {targetTitle ? (
         <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded-full border border-primary/20 bg-background/80 px-2 py-1 text-[11px] text-foreground">
@@ -153,6 +156,26 @@ function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
         <p className="mt-1.5 line-clamp-3 text-xs leading-snug text-muted-foreground">
           {desc}
         </p>
+      ) : null}
+      {prompt ? (
+        <div className="mt-2 rounded border border-border/60 bg-background/70 px-2 py-1.5">
+          <div className="text-[10px] font-medium uppercase text-muted-foreground">Prompt</div>
+          <p className="mt-0.5 line-clamp-4 break-words text-[11px] leading-snug text-foreground/90">
+            {prompt}
+          </p>
+        </div>
+      ) : null}
+      {planItems.length ? (
+        <div className="mt-2 rounded border border-border/60 bg-background/70 px-2 py-1.5">
+          <div className="text-[10px] font-medium uppercase text-muted-foreground">Plan</div>
+          <ol className="mt-1 list-decimal space-y-1 pl-4 text-[11px] leading-snug text-foreground/90">
+            {planItems.map((item, index) => (
+              <li key={`${index}-${item}`} className="break-words">
+                {item}
+              </li>
+            ))}
+          </ol>
+        </div>
       ) : null}
       {tools.length ? (
         <div className="mt-2">
@@ -179,6 +202,49 @@ function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
       ) : null}
     </div>
   );
+}
+
+function extractInstructionItems(
+  instructions: string | undefined | null,
+  section: 'plan' | 'constraints',
+): string[] {
+  const text = (instructions ?? '').trim();
+  if (!text) return [];
+  const sectionLabel = `${section}:`;
+  const lines = text.split('\n');
+  const sectionIdx = lines.findIndex((line) => line.trim().toLowerCase() === sectionLabel);
+  if (sectionIdx < 0) return [];
+  const items: string[] = [];
+  for (let i = sectionIdx + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const lower = line.toLowerCase();
+    if (
+      lower === 'goal:' ||
+      lower === 'plan:' ||
+      lower === 'constraints:' ||
+      lower.startsWith('target:') ||
+      lower.startsWith('user request:')
+    ) {
+      break;
+    }
+    items.push(line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '').trim());
+  }
+  return items.filter(Boolean);
+}
+
+function extractUserRequest(instructions: string | undefined | null): string {
+  const text = (instructions ?? '').trim();
+  if (!text) return '';
+  const lines = text.split('\n');
+  const requestIdx = lines.findIndex((line) => line.trim().toLowerCase() === 'user request:');
+  if (requestIdx < 0) return '';
+  return lines
+    .slice(requestIdx + 1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
 
 function targetIcon(type?: string) {
@@ -383,11 +449,12 @@ function AgentChain({ plan, stepIndexes }: { plan: Plan; stepIndexes: number[] }
     <div className="flex shrink-0 items-center gap-1">
       {stepIndexes.map((i, idx) => {
         const step = plan.steps[i];
-        const initial = step.agent_name.trim().charAt(0).toUpperCase() || '·';
+        const label = stepDisplayName(step);
+        const initial = label.trim().charAt(0).toUpperCase() || '·';
         return (
           <div key={i} className="flex items-center gap-1">
             <span
-              title={step.agent_name}
+              title={label}
               className="grid h-4 w-4 place-items-center rounded-full border border-border/70 bg-background text-[9px] font-semibold text-muted-foreground"
             >
               {initial}

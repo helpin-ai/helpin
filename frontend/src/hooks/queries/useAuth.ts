@@ -3,6 +3,7 @@ import { authService } from '@/lib/services/authService'
 import { queryKeys } from '@/lib/queryKeys'
 import { unwrap } from '@/lib/queryUtils'
 import type { User } from '@/lib/types'
+import { writeSession } from '@helpin-ai/support-core'
 
 export function useCurrentUser(enabled = true) {
   return useQuery({
@@ -31,6 +32,11 @@ export function useSignIn() {
       if (!res.data.user) {
         throw new Error(res.data.requires_2fa ? 'Two-factor verification required' : 'Sign in failed')
       }
+      await writeSession({
+        accessToken: res.data.access_token ?? '',
+        refreshToken: res.data.refresh_token ?? '',
+        rememberMe: false,
+      })
       return res.data.user
     },
   })
@@ -44,6 +50,11 @@ export function useSignUp() {
       if (!res.data.user) {
         throw new Error('Sign up failed')
       }
+      await writeSession({
+        accessToken: res.data.access_token,
+        refreshToken: res.data.refresh_token,
+        rememberMe: false,
+      })
       return res.data.user
     },
   })

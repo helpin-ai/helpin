@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { Loading01Icon, Target01Icon } from '@/lib/icons';
+import { GitBranchIcon, Loading01Icon, Target01Icon } from '@/lib/icons';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { pmEpicService } from '@/lib/services/pmEpicService';
 import { agentService } from '@/lib/services/agentService';
-import type { EpicWithStats, Task } from '@/lib/pmTypes';
+import { gitService } from '@/lib/services/gitService';
+import type { EpicDeliveryTarget, EpicWithStats, Task } from '@/lib/pmTypes';
 import { getEpicDoneTaskCount, getEpicTaskCount } from '@/lib/pmTypes';
 import { useEpicPanelStore } from '@/stores/epicPanelStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -48,6 +49,7 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
 
   const [epic, setEpic] = useState<EpicWithStats | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [deliveryTarget, setDeliveryTarget] = useState<EpicDeliveryTarget | null>(null);
   const [loading, setLoading] = useState(false);
   const [startingAgentRun, setStartingAgentRun] = useState(false);
   const { data: access } = useWorkspaceAccess(workspaceId);
@@ -78,6 +80,7 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
     if (!activeEpicId || !workspaceId) {
       setEpic(null);
       setTasks([]);
+      setDeliveryTarget(null);
       return;
     }
 
@@ -86,7 +89,8 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
     Promise.all([
       pmEpicService.get(workspaceId, activeEpicId),
       pmEpicService.listTasks(workspaceId, activeEpicId),
-    ]).then(([epicRes, tasksRes]) => {
+      gitService.getEpicDeliveryTarget(workspaceId, activeEpicId).catch(() => ({ data: null, error: 'Failed to load epic delivery target', status: 0 })),
+    ]).then(([epicRes, tasksRes, deliveryRes]) => {
       if (cancelled) return;
       if (epicRes.error || !epicRes.data) {
         toast.error(epicRes.error || 'Failed to load epic');
@@ -95,10 +99,12 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
       }
       setEpic(epicRes.data);
       setTasks(tasksRes.data ?? []);
+      setDeliveryTarget(deliveryRes.data ?? null);
       setLoading(false);
     }).catch(() => {
       if (cancelled) return;
       toast.error('Failed to load epic');
+      setDeliveryTarget(null);
       setLoading(false);
       handleClose();
     });
@@ -226,6 +232,43 @@ export function GlobalEpicPanel({ workspaceId }: GlobalEpicPanelProps) {
                   </div>
                 </div>
               </section>
+
+              {deliveryTarget && (deliveryTarget.repo_full_name || deliveryTarget.epic_branch || deliveryTarget.final_pr_url) && (
+                <>
+                  <Separator className="my-5" />
+                  <section>
+                    <div className="mb-3 flex items-center gap-2">
+                      <GitBranchIcon className="h-4 w-4 text-muted-foreground" />
+                      <h3 className="text-sm font-semibold text-foreground">Delivery</h3>
+                    </div>
+                    <div className="grid gap-3 text-sm md:grid-cols-2">
+                      <div>
+                        <div className="text-xs uppercase text-muted-foreground">Repository</div>
+                        <div className="mt-1 truncate text-foreground">{deliveryTarget.repo_full_name || 'Not configured'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-muted-foreground">Status</div>
+                        <div className="mt-1 text-foreground">{deliveryTarget.delivery_state.replaceAll('_', ' ')}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-muted-foreground">Base branch</div>
+                        <div className="mt-1 truncate font-mono text-xs text-foreground">{deliveryTarget.base_branch || 'Not set'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs uppercase text-muted-foreground">Epic branch</div>
+                        <div className="mt-1 truncate font-mono text-xs text-foreground">{deliveryTarget.epic_branch || 'Not set'}</div>
+                      </div>
+                    </div>
+                    {deliveryTarget.final_pr_url && (
+                      <Button variant="outline" size="sm" className="mt-3" asChild>
+                        <a href={deliveryTarget.final_pr_url} target="_blank" rel="noreferrer">
+                          Final PR #{deliveryTarget.final_pr_number ?? ''}
+                        </a>
+                      </Button>
+                    )}
+                  </section>
+                </>
+              )}
 
               {epic.epic.description && (
                 <>

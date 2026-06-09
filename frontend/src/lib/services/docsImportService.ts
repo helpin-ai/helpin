@@ -1,4 +1,4 @@
-import { api, API_BASE } from '../api';
+import { api, API_BASE, fetchWithSessionAuth } from '../api';
 
 const qs = (wsId: string) => `?workspace_id=${encodeURIComponent(wsId)}`;
 
@@ -140,14 +140,10 @@ export const docsImportService = {
       formData.append('source_commit', payload.source_commit);
     }
     try {
-      const res = await fetch(
-        `${API_BASE}/docs/import/nextra/preview${qs(workspaceId)}`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          body: formData,
-        },
-      );
+      const res = await fetchWithSessionAuth(API_BASE, `/docs/import/nextra/preview${qs(workspaceId)}`, {
+        method: 'POST',
+        body: formData,
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         return { data: null, error: err.error || res.statusText };

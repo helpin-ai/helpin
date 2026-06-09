@@ -381,3 +381,30 @@ func TestExecuteAllowedUsesCanonicalScannerToolAlias(t *testing.T) {
 		t.Fatalf("expected semgrep output, got %s", output)
 	}
 }
+
+func TestListRepositoriesToolUsesInternalCommandExecutorWhenAvailable(t *testing.T) {
+	registry := NewToolRegistry(nil)
+	var gotCommand string
+	ctx := &ExecutionContext{
+		Context:      context.Background(),
+		WorkspaceID:  "ws-1",
+		AllowedTools: map[string]bool{"list_repositories": true},
+		Services: &ServiceBridge{
+			ExecuteInternalCommand: func(ctx context.Context, meta model.InternalCommandContext, name string, input json.RawMessage) (json.RawMessage, error) {
+				gotCommand = name
+				return json.RawMessage(`{"repositories":[{"id":"repo-1","full_name":"acme/app"}],"total":1}`), nil
+			},
+		},
+	}
+
+	output, err := registry.ExecuteAllowed(ctx, "list_repositories", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("ExecuteAllowed returned error: %v", err)
+	}
+	if gotCommand != "git.list_repositories" {
+		t.Fatalf("expected git.list_repositories, got %q", gotCommand)
+	}
+	if !strings.Contains(output, "acme/app") {
+		t.Fatalf("expected repo full name in output, got %q", output)
+	}
+}

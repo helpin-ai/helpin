@@ -2,7 +2,7 @@ import type { AgentRun } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/stores/commandBarStore';
 import { cn } from '@/lib/utils';
 import { StatusDot } from './StatusDot';
-import { groupStepsByTarget, stepDotState } from './utils';
+import { groupStepsByTarget, stepDisplayName, stepDotState } from './utils';
 
 interface TaskPipelineRailProps {
   plan: CommandBarRunPlan;
@@ -36,14 +36,15 @@ export function TaskPipelineRail({ plan, runsById, maxRows = 6 }: TaskPipelineRa
             {group.stepIndexes.map((stepIndex, i) => {
               const step = plan.steps[stepIndex];
               const state = stepDotState(plan, stepIndex, runsById);
+              const label = stepDisplayName(step);
               return (
                 <div key={`${step.agent_id}-${stepIndex}`} className="flex items-center gap-1">
                   <StatusDot state={state} />
                   <span
                     className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
-                    title={step.agent_name}
+                    title={label}
                   >
-                    {step.agent_name}
+                    {label}
                   </span>
                   {i < group.stepIndexes.length - 1 ? (
                     <span

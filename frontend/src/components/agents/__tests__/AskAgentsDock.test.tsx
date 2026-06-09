@@ -17,10 +17,13 @@ const mocks = vi.hoisted(() => ({
   listChatThreads: vi.fn(),
   dispatchPlan: vi.fn(),
   cancelPlan: vi.fn(),
+  resumePlan: vi.fn(),
   retryPlan: vi.fn(),
   confirmChatCreateAgent: vi.fn(),
   listRecentRuns: vi.fn(),
   getRun: vi.fn(),
+  getRunSnapshot: vi.fn(),
+  listRunEvents: vi.fn(),
   approveRun: vi.fn(),
   cancelRun: vi.fn(),
 }));
@@ -33,6 +36,7 @@ vi.mock('@/lib/services/commandBarService', () => ({
     listChatThreads: mocks.listChatThreads,
     dispatchPlan: mocks.dispatchPlan,
     cancelPlan: mocks.cancelPlan,
+    resumePlan: mocks.resumePlan,
     retryPlan: mocks.retryPlan,
     confirmChatCreateAgent: mocks.confirmChatCreateAgent,
   },
@@ -42,6 +46,8 @@ vi.mock('@/lib/services/agentService', () => ({
   agentService: {
     listRecentRuns: mocks.listRecentRuns,
     getRun: mocks.getRun,
+    getRunSnapshot: mocks.getRunSnapshot,
+    listRunEvents: mocks.listRunEvents,
     approveRun: mocks.approveRun,
     cancelRun: mocks.cancelRun,
   },
@@ -69,6 +75,8 @@ beforeEach(() => {
   mocks.listPlans.mockResolvedValue({ data: { plans: [] }, error: null });
   mocks.listRecentRuns.mockResolvedValue({ data: { runs: [] }, error: null });
   mocks.listChatThreads.mockResolvedValue({ data: { threads: [] }, error: null });
+  mocks.getRunSnapshot.mockResolvedValue({ data: { stream_state_snapshot: null }, error: null });
+  mocks.listRunEvents.mockResolvedValue({ data: { events: [], next_sequence_no: 0 }, error: null });
   mocks.chatTurn.mockResolvedValue({ data: null, error: null });
   mocks.dispatchPlan.mockResolvedValue({ data: null, error: null });
   mocks.confirmChatCreateAgent.mockResolvedValue({ data: { agent: { id: 'agent-1' } }, error: null });

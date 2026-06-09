@@ -28,28 +28,37 @@ import (
 )
 
 var ErrTaskDeliveryTargetRequired = errors.New("story has no delivery target configured")
+var ErrEpicDeliveryTargetRequired = errors.New("epic has no delivery target configured")
 
 // GitService contains git integration and story delivery business logic.
 type GitService struct {
-	integrationRepo *repository.GitIntegrationRepository
-	credentialRepo  *repository.GitCredentialRepository
-	repoRepo        *repository.GitRepositoryRepository
-	linkRepo        *repository.TaskGitLinkRepository
-	deliveryRepo    *repository.TaskDeliveryTargetRepository
-	settingsRepo    *repository.SettingsRepository
-	workspaceRepo   *repository.WorkspaceRepository
-	orgRepo         *repository.OrganizationRepository
-	taskRepo        *repository.PMTaskRepository
-	activitySvc     *PMActivityService
-	wsPublisher     *websocket.Publisher
-	ruleEngine      *AutomationRuleEngine
-	githubApp       gitHubAppClient
-	gitlabFactory   gitLabClientFactory
-	encryptionKey   []byte
-	availableRepos  *availableReposCache
-	appBaseURL      string
-	githubAppSlug   string
-	stateSecret     string
+	integrationRepo  *repository.GitIntegrationRepository
+	credentialRepo   *repository.GitCredentialRepository
+	repoRepo         *repository.GitRepositoryRepository
+	linkRepo         *repository.TaskGitLinkRepository
+	deliveryRepo     *repository.TaskDeliveryTargetRepository
+	epicDeliveryRepo *repository.EpicDeliveryTargetRepository
+	settingsRepo     *repository.SettingsRepository
+	workspaceRepo    *repository.WorkspaceRepository
+	orgRepo          *repository.OrganizationRepository
+	taskRepo         *repository.PMTaskRepository
+	epicRepo         *repository.PMEpicRepository
+	activitySvc      *PMActivityService
+	wsPublisher      *websocket.Publisher
+	ruleEngine       *AutomationRuleEngine
+	githubApp        gitHubAppClient
+	gitlabFactory    gitLabClientFactory
+	encryptionKey    []byte
+	availableRepos   *availableReposCache
+	appBaseURL       string
+	githubAppSlug    string
+	stateSecret      string
+}
+
+func (s *GitService) SetEpicDeliveryDependencies(deliveryRepo *repository.EpicDeliveryTargetRepository, epicRepo *repository.PMEpicRepository) *GitService {
+	s.epicDeliveryRepo = deliveryRepo
+	s.epicRepo = epicRepo
+	return s
 }
 
 type gitHubAppClient interface {
@@ -59,6 +68,8 @@ type gitHubAppClient interface {
 	ListReleases(ctx context.Context, installationID, owner, repo string, opts githubapp.ListReleasesOptions) ([]githubapp.Release, error)
 	GetInstallation(ctx context.Context, installationID string) (*githubapp.Installation, error)
 	GetPullRequest(ctx context.Context, installationID, owner, repo string, number int) (*githubapp.PullRequest, error)
+	EnsureBranch(ctx context.Context, installationID, owner, repo, branch, base string) error
+	EnsurePullRequest(ctx context.Context, installationID, owner, repo string, input githubapp.EnsurePullRequestInput) (*githubapp.PullRequest, error)
 	MergeBranch(ctx context.Context, installationID, owner, repo, base, head, commitMessage string) error
 }
 
@@ -1440,6 +1451,7 @@ func (s *GitService) GetTaskDeliveryTarget(ctx context.Context, workspaceID, sto
 		WorkspaceID:   workspaceID,
 		TaskID:        storyID,
 		DeliveryState: "unconfigured",
+		TargetSource:  model.TaskDeliveryTargetSourceManual,
 	}
 
 	if story.TeamID != nil && *story.TeamID != "" {
@@ -1462,6 +1474,7 @@ func (s *GitService) GetTaskDeliveryTarget(ctx context.Context, workspaceID, sto
 				}
 				target.BaseBranch = &baseBranch
 				target.DeliveryState = "ready"
+				target.TargetSource = model.TaskDeliveryTargetSourceTeamDefault
 			}
 		}
 	}
@@ -1518,6 +1531,8 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 	if target.RepositoryID != nil && target.BaseBranch != nil {
 		target.DeliveryState = "ready"
 	}
+	target.TargetSource = model.TaskDeliveryTargetSourceManual
+	target.SourceEpicID = nil
 
 	if err := s.deliveryRepo.Save(ctx, target); err != nil {
 		return nil, err
@@ -1538,6 +1553,372 @@ func (s *GitService) UpdateTaskDeliveryTarget(ctx context.Context, workspaceID, 
 		})
 	}
 	return target, nil
+}
+
+// GetEpicDeliveryTarget resolves or creates the current integration branch for an epic.
+func (s *GitService) GetEpicDeliveryTarget(ctx context.Context, workspaceID, epicID string) (*model.EpicDeliveryTarget, error) {
+	if s.epicDeliveryRepo == nil || s.epicRepo == nil {
+		return nil, fmt.Errorf("epic delivery target is not configured")
+	}
+	target, err := s.epicDeliveryRepo.GetByEpic(ctx, workspaceID, epicID)
+	if err != nil {
+		return nil, err
+	}
+	if target != nil {
+		return target, nil
+	}
+
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, err
+	}
+	if epicWithStats == nil || epicWithStats.Epic.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("epic not found")
+	}
+	epic := &epicWithStats.Epic
+	workspace, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if workspace == nil {
+		return nil, fmt.Errorf("workspace not found")
+	}
+
+	target = &model.EpicDeliveryTarget{
+		WorkspaceID:   workspaceID,
+		EpicID:        epicID,
+		DeliveryState: "unconfigured",
+	}
+	if err := s.applyDefaultEpicDeliveryTarget(ctx, target, epic, workspace.WorkspaceKey); err != nil {
+		return nil, err
+	}
+	if err := s.epicDeliveryRepo.Save(ctx, target); err != nil {
+		return nil, err
+	}
+	return target, nil
+}
+
+// UpdateEpicDeliveryTarget updates the selected delivery target for an epic.
+func (s *GitService) UpdateEpicDeliveryTarget(ctx context.Context, workspaceID, epicID string, req model.UpdateEpicDeliveryTargetRequest, actorID string) (*model.EpicDeliveryTarget, error) {
+	target, err := s.GetEpicDeliveryTarget(ctx, workspaceID, epicID)
+	if err != nil {
+		return nil, err
+	}
+	if req.RepositoryID != nil && strings.TrimSpace(*req.RepositoryID) != "" {
+		repo, err := s.repoRepo.GetEnabledByID(ctx, workspaceID, strings.TrimSpace(*req.RepositoryID))
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository is not available for PM delivery")
+		}
+		target.RepositoryID = &repo.ID
+		target.RepoFullName = &repo.FullName
+		target.IntegrationID = &repo.IntegrationID
+		if req.BaseBranch == nil || strings.TrimSpace(*req.BaseBranch) == "" {
+			base := defaultBranch(repo.DefaultBranch)
+			req.BaseBranch = &base
+		}
+	}
+	if req.BaseBranch != nil && strings.TrimSpace(*req.BaseBranch) != "" {
+		baseBranch := strings.TrimSpace(*req.BaseBranch)
+		target.BaseBranch = &baseBranch
+	}
+	if req.EpicBranch != nil && strings.TrimSpace(*req.EpicBranch) != "" {
+		epicBranch := strings.TrimSpace(*req.EpicBranch)
+		target.EpicBranch = &epicBranch
+	}
+	if target.RepositoryID != nil && strings.TrimSpace(*target.RepositoryID) != "" {
+		repo, err := s.repoRepo.GetEnabledByID(ctx, workspaceID, *target.RepositoryID)
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("repository is not available for PM delivery")
+		}
+		target.RepositoryID = &repo.ID
+		target.RepoFullName = &repo.FullName
+		target.IntegrationID = &repo.IntegrationID
+	}
+	if target.RepositoryID != nil && target.BaseBranch != nil && target.EpicBranch != nil {
+		target.DeliveryState = "ready"
+	}
+	if err := s.epicDeliveryRepo.Save(ctx, target); err != nil {
+		return nil, err
+	}
+	if s.activitySvc != nil && actorID != "" {
+		_ = s.activitySvc.Log(ctx, workspaceID, "epic", epicID, &actorID, "updated", strPtr("delivery_target"), nil, target.RepoFullName, nil)
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "epic_delivery_target",
+			EntityID:    target.ID,
+			WorkspaceID: workspaceID,
+			ParentType:  "epic",
+			ParentID:    epicID,
+			ActorID:     actorID,
+		})
+	}
+	return target, nil
+}
+
+func (s *GitService) applyDefaultEpicDeliveryTarget(ctx context.Context, target *model.EpicDeliveryTarget, epic *model.PMEpic, workspaceKey string) error {
+	var teamDefault *model.PMTeamRepoDefault
+	if epic.TeamID != nil && strings.TrimSpace(*epic.TeamID) != "" {
+		var err error
+		teamDefault, err = s.settingsRepo.GetTeamRepoDefault(ctx, *epic.TeamID)
+		if err != nil {
+			return err
+		}
+	}
+
+	var repo *model.GitRepository
+	if epic.PlanningRepositoryID != nil && strings.TrimSpace(*epic.PlanningRepositoryID) != "" {
+		var err error
+		repo, err = s.repoRepo.GetEnabledByID(ctx, target.WorkspaceID, strings.TrimSpace(*epic.PlanningRepositoryID))
+		if err != nil {
+			return err
+		}
+		if repo == nil {
+			return fmt.Errorf("planning repository is not available for PM delivery")
+		}
+	} else if teamDefault != nil && strings.TrimSpace(teamDefault.RepositoryID) != "" {
+		var err error
+		repo, err = s.repoRepo.GetEnabledByID(ctx, target.WorkspaceID, teamDefault.RepositoryID)
+		if err != nil {
+			return err
+		}
+	}
+	if repo == nil {
+		return nil
+	}
+
+	baseBranch := defaultBranch(repo.DefaultBranch)
+	if teamDefault != nil && teamDefault.RepositoryID == repo.ID && strings.TrimSpace(teamDefault.BaseBranch) != "" {
+		baseBranch = strings.TrimSpace(teamDefault.BaseBranch)
+	}
+	epicBranch := model.BuildEpicWorkingBranch(epic, workspaceKey)
+	target.RepositoryID = &repo.ID
+	target.RepoFullName = &repo.FullName
+	target.IntegrationID = &repo.IntegrationID
+	target.BaseBranch = &baseBranch
+	target.EpicBranch = &epicBranch
+	target.DeliveryState = "ready"
+	return nil
+}
+
+func (s *GitService) EnsureEpicBranch(ctx context.Context, workspaceID, epicID, actorID, runID string) (*model.EpicDeliveryTarget, error) {
+	target, err := s.GetEpicDeliveryTarget(ctx, workspaceID, epicID)
+	if err != nil {
+		return nil, err
+	}
+	if target.RepositoryID == nil || target.RepoFullName == nil || target.IntegrationID == nil || target.BaseBranch == nil || target.EpicBranch == nil {
+		return nil, ErrEpicDeliveryTargetRequired
+	}
+	if s.githubApp == nil {
+		return nil, fmt.Errorf("github app is not configured")
+	}
+	integration, owner, repo, err := s.githubIntegrationAndRepoParts(ctx, workspaceID, *target.IntegrationID, *target.RepoFullName)
+	if err != nil {
+		return nil, err
+	}
+	if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+		return nil, fmt.Errorf("git integration has no installation ID")
+	}
+	if err := s.githubApp.EnsureBranch(ctx, *integration.InstallationID, owner, repo, strings.TrimSpace(*target.EpicBranch), strings.TrimSpace(*target.BaseBranch)); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	target.DeliveryState = "in_progress"
+	target.LastSyncedAt = &now
+	if strings.TrimSpace(runID) != "" {
+		target.LastRunID = &runID
+	}
+	if err := s.epicDeliveryRepo.Save(ctx, target); err != nil {
+		return nil, err
+	}
+	s.publishEpicDeliveryTargetUpdated(workspaceID, epicID, actorID, target)
+	return target, nil
+}
+
+func (s *GitService) PrepareTaskForEpicBranch(ctx context.Context, workspaceID, taskID, epicID, actorID string) (*model.TaskDeliveryTarget, error) {
+	target, _, err := s.SyncTaskDeliveryTargetToEpic(ctx, workspaceID, taskID, epicID, actorID, true)
+	return target, err
+}
+
+func (s *GitService) SyncTaskDeliveryTargetToEpic(ctx context.Context, workspaceID, taskID, epicID, actorID string, force bool) (*model.TaskDeliveryTarget, bool, error) {
+	epicTarget, err := s.GetEpicDeliveryTarget(ctx, workspaceID, epicID)
+	if err != nil {
+		return nil, false, err
+	}
+	if epicTarget.RepositoryID == nil || epicTarget.EpicBranch == nil {
+		return nil, false, ErrEpicDeliveryTargetRequired
+	}
+	taskTarget, err := s.GetTaskDeliveryTarget(ctx, workspaceID, taskID)
+	if err != nil {
+		return nil, false, err
+	}
+	source := model.NormalizeTaskDeliveryTargetSource(taskTarget.TargetSource)
+	hasConfiguredTarget := taskTarget.RepositoryID != nil && taskTarget.BaseBranch != nil && strings.TrimSpace(*taskTarget.BaseBranch) != ""
+	if !force && source == model.TaskDeliveryTargetSourceManual && hasConfiguredTarget && taskTarget.DeliveryState != "unconfigured" {
+		return taskTarget, false, nil
+	}
+	taskTarget.RepositoryID = epicTarget.RepositoryID
+	taskTarget.RepoFullName = epicTarget.RepoFullName
+	taskTarget.IntegrationID = epicTarget.IntegrationID
+	epicBranch := strings.TrimSpace(*epicTarget.EpicBranch)
+	taskTarget.BaseBranch = &epicBranch
+	taskTarget.TargetSource = model.TaskDeliveryTargetSourceEpic
+	taskTarget.SourceEpicID = &epicID
+	if taskTarget.WorkingBranch == nil || strings.TrimSpace(*taskTarget.WorkingBranch) == "" {
+		_, working, err := s.ResolveTaskRunBranchValues(ctx, workspaceID, taskID)
+		if err != nil {
+			return nil, false, err
+		}
+		taskTarget.WorkingBranch = &working
+	}
+	taskTarget.DeliveryState = "ready"
+	if err := s.deliveryRepo.Save(ctx, taskTarget); err != nil {
+		return nil, false, err
+	}
+	if s.wsPublisher != nil {
+		s.wsPublisher.Publish(websocket.Event{
+			Action:      "updated",
+			Entity:      "task_delivery_target",
+			EntityID:    taskTarget.ID,
+			WorkspaceID: workspaceID,
+			ParentType:  "task",
+			ParentID:    taskID,
+			ActorID:     actorID,
+		})
+	}
+	return taskTarget, true, nil
+}
+
+func (s *GitService) UseTaskEpicDeliveryTarget(ctx context.Context, workspaceID, taskID, actorID string) (*model.TaskDeliveryTarget, error) {
+	task, err := s.taskRepo.GetRawByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil || task.WorkspaceID != workspaceID {
+		return nil, fmt.Errorf("task not found")
+	}
+	if task.EpicID == nil || strings.TrimSpace(*task.EpicID) == "" {
+		return nil, fmt.Errorf("task has no epic")
+	}
+	target, _, err := s.SyncTaskDeliveryTargetToEpic(ctx, workspaceID, taskID, strings.TrimSpace(*task.EpicID), actorID, true)
+	return target, err
+}
+
+func (s *GitService) MergeTaskBranchIntoEpic(ctx context.Context, workspaceID, taskID, epicID, runID string) (*model.EpicDeliveryTarget, error) {
+	epicTarget, err := s.GetEpicDeliveryTarget(ctx, workspaceID, epicID)
+	if err != nil {
+		return nil, err
+	}
+	if epicTarget.EpicBranch == nil || strings.TrimSpace(*epicTarget.EpicBranch) == "" {
+		return nil, ErrEpicDeliveryTargetRequired
+	}
+	if err := s.MergeBranch(ctx, workspaceID, taskID, strings.TrimSpace(*epicTarget.EpicBranch)); err != nil {
+		return nil, err
+	}
+	if err := s.UpdateDeliveryStatusAfterMerge(ctx, workspaceID, taskID, "merged"); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	epicTarget.DeliveryState = "integrating"
+	epicTarget.LastSyncedAt = &now
+	if strings.TrimSpace(runID) != "" {
+		epicTarget.LastRunID = &runID
+	}
+	if err := s.epicDeliveryRepo.Save(ctx, epicTarget); err != nil {
+		return nil, err
+	}
+	return epicTarget, nil
+}
+
+func (s *GitService) OpenEpicFinalPullRequest(ctx context.Context, workspaceID, epicID, runID string) (*model.EpicDeliveryTarget, error) {
+	target, err := s.GetEpicDeliveryTarget(ctx, workspaceID, epicID)
+	if err != nil {
+		return nil, err
+	}
+	if target.IntegrationID == nil || target.RepoFullName == nil || target.BaseBranch == nil || target.EpicBranch == nil {
+		return nil, ErrEpicDeliveryTargetRequired
+	}
+	if s.githubApp == nil {
+		return nil, fmt.Errorf("github app is not configured")
+	}
+	integration, owner, repo, err := s.githubIntegrationAndRepoParts(ctx, workspaceID, *target.IntegrationID, *target.RepoFullName)
+	if err != nil {
+		return nil, err
+	}
+	if integration.InstallationID == nil || strings.TrimSpace(*integration.InstallationID) == "" {
+		return nil, fmt.Errorf("git integration has no installation ID")
+	}
+	epicWithStats, err := s.epicRepo.GetByID(ctx, epicID)
+	if err != nil {
+		return nil, err
+	}
+	title := fmt.Sprintf("Merge epic %s", strings.TrimSpace(*target.EpicBranch))
+	if epicWithStats != nil && strings.TrimSpace(epicWithStats.Epic.Name) != "" {
+		title = "Merge epic: " + strings.TrimSpace(epicWithStats.Epic.Name)
+	}
+	pr, err := s.githubApp.EnsurePullRequest(ctx, *integration.InstallationID, owner, repo, githubapp.EnsurePullRequestInput{
+		Head:  strings.TrimSpace(*target.EpicBranch),
+		Base:  strings.TrimSpace(*target.BaseBranch),
+		Title: title,
+		Body:  "Created by Helpin after all epic task branches were merged into the epic integration branch.",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pr != nil {
+		target.FinalPRNumber = &pr.Number
+		target.FinalPRTitle = &pr.Title
+		target.FinalPRURL = &pr.HTMLURL
+		status := statusForGitHubPullRequest(pr)
+		target.FinalPRStatus = &status
+	}
+	now := time.Now()
+	target.DeliveryState = "pr_open"
+	target.LastSyncedAt = &now
+	if strings.TrimSpace(runID) != "" {
+		target.LastRunID = &runID
+	}
+	if err := s.epicDeliveryRepo.Save(ctx, target); err != nil {
+		return nil, err
+	}
+	return target, nil
+}
+
+func (s *GitService) githubIntegrationAndRepoParts(ctx context.Context, workspaceID, integrationID, repoFullName string) (*model.GitIntegration, string, string, error) {
+	integration, err := s.integrationRepo.GetByID(ctx, workspaceID, strings.TrimSpace(integrationID))
+	if err != nil {
+		return nil, "", "", fmt.Errorf("load git integration: %w", err)
+	}
+	if integration == nil || strings.TrimSpace(integration.Provider) != "github" {
+		return nil, "", "", fmt.Errorf("epic branch orchestration currently requires a GitHub integration")
+	}
+	owner, repo, ok := splitRepoFullName(strings.TrimSpace(repoFullName))
+	if !ok {
+		return nil, "", "", fmt.Errorf("invalid repo full name: %s", repoFullName)
+	}
+	return integration, owner, repo, nil
+}
+
+func (s *GitService) publishEpicDeliveryTargetUpdated(workspaceID, epicID, actorID string, target *model.EpicDeliveryTarget) {
+	if s == nil || s.wsPublisher == nil || target == nil {
+		return
+	}
+	s.wsPublisher.Publish(websocket.Event{
+		Action:      "updated",
+		Entity:      "epic_delivery_target",
+		EntityID:    target.ID,
+		WorkspaceID: workspaceID,
+		ParentType:  "epic",
+		ParentID:    epicID,
+		ActorID:     actorID,
+	})
 }
 
 // ResolveTaskDeliveryTargetForRun returns a delivery target suitable for a given execution policy.
