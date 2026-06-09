@@ -733,6 +733,38 @@ func (r *AgentTriggerExecutionRepository) ListLatestAutomationRuleExecutions(ctx
 	return result, nil
 }
 
+// CountAutomationRuleExecutions returns the lifetime trigger execution count
+// for each automation rule reference in the workspace.
+func (r *AgentTriggerExecutionRepository) CountAutomationRuleExecutions(ctx context.Context, workspaceID string, ruleIDs []string) (map[string]int64, error) {
+	if len(ruleIDs) == 0 {
+		return map[string]int64{}, nil
+	}
+
+	type countRow struct {
+		ReferenceID string
+		Count       int64
+	}
+	var rows []countRow
+	if err := r.db.WithContext(ctx).
+		Model(&model.AgentTriggerExecution{}).
+		Select("reference_id, COUNT(*) AS count").
+		Where("workspace_id = ? AND binding_kind = ? AND reference_type = ? AND reference_id IN ?", workspaceID, "automation_rule", "automation_rule", ruleIDs).
+		Group("reference_id").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("count automation rule executions: %w", err)
+	}
+
+	counts := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		refID := strings.TrimSpace(row.ReferenceID)
+		if refID == "" {
+			continue
+		}
+		counts[refID] = row.Count
+	}
+	return counts, nil
+}
+
 // ListByWorkspace returns recent trigger executions in a workspace with
 // optional filters and pagination.
 func (r *AgentTriggerExecutionRepository) ListByWorkspace(
@@ -743,6 +775,9 @@ func (r *AgentTriggerExecutionRepository) ListByWorkspace(
 ) ([]model.AgentTriggerExecution, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.AgentTriggerExecution{}).Where("workspace_id = ?", workspaceID)
 
+	if filters.ExecutionID != nil && strings.TrimSpace(*filters.ExecutionID) != "" {
+		query = query.Where("id = ?", strings.TrimSpace(*filters.ExecutionID))
+	}
 	if filters.AgentID != nil && strings.TrimSpace(*filters.AgentID) != "" {
 		query = query.Where("agent_id = ?", strings.TrimSpace(*filters.AgentID))
 	}

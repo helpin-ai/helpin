@@ -263,8 +263,10 @@ func (s *AutomationInventoryService) automationRuleItems(ctx context.Context, wo
 	}
 
 	healthByRuleID := map[string]model.AutomationHealthSummary{}
+	runCountsByRuleID := map[string]int64{}
 	if s.triggerExecRepo != nil {
-		latestExecutions, err := s.triggerExecRepo.ListLatestAutomationRuleExecutions(ctx, workspaceID, collectRuleIDs(rules))
+		ruleIDs := collectRuleIDs(rules)
+		latestExecutions, err := s.triggerExecRepo.ListLatestAutomationRuleExecutions(ctx, workspaceID, ruleIDs)
 		if err != nil {
 			return nil, fmt.Errorf("list automation rule executions for inventory: %w", err)
 		}
@@ -273,6 +275,10 @@ func (s *AutomationInventoryService) automationRuleItems(ctx context.Context, wo
 				continue
 			}
 			healthByRuleID[strings.TrimSpace(*execution.ReferenceID)] = summarizeRuleExecution(execution)
+		}
+		runCountsByRuleID, err = s.triggerExecRepo.CountAutomationRuleExecutions(ctx, workspaceID, ruleIDs)
+		if err != nil {
+			return nil, fmt.Errorf("count automation rule executions for inventory: %w", err)
 		}
 	}
 
@@ -289,6 +295,10 @@ func (s *AutomationInventoryService) automationRuleItems(ctx context.Context, wo
 		if !rule.Enabled {
 			health = inactiveHealth("Disabled")
 		}
+		health.Metrics = ensureMetrics(health.Metrics)
+		health.Metrics["trigger_type"] = rule.TriggerType
+		health.Metrics["action_type"] = rule.ActionType
+		health.Metrics["total_runs"] = runCountsByRuleID[rule.ID]
 		items = append(items, inventoryItemFromCatalog(entry,
 			fmt.Sprintf("automation_rule:rule:%s", rule.ID),
 			model.AutomationScopeWorkspace, workspaceID,
@@ -774,7 +784,13 @@ func summarizeRuleExecution(execution model.AgentTriggerExecution) model.Automat
 		Status:     status,
 		LastSeenAt: lastSeenAt,
 		Freshness:  summarizeFreshness(status, lastSeenAt),
-		Metrics:    model.JSONB{},
+		Metrics: model.JSONB{
+			"last_execution_id": execution.ID,
+			"last_run_status":   execution.Status,
+		},
+	}
+	if execution.RunID != nil && strings.TrimSpace(*execution.RunID) != "" {
+		summary.Metrics["last_run_id"] = strings.TrimSpace(*execution.RunID)
 	}
 	if execution.CompletedAt != nil && strings.TrimSpace(execution.Status) == model.AgentTriggerExecutionStatusCompleted {
 		completedAt := execution.CompletedAt.UTC()

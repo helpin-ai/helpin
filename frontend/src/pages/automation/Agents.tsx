@@ -3232,7 +3232,7 @@ export function AgentsPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-4 pb-20">
+    <div className="mx-auto max-w-7xl space-y-4 pb-20">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">Agents</h1>

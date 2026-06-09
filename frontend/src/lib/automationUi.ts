@@ -2,6 +2,7 @@ import type { AutomationTriggerExecutionSearchPreset, WorkflowRuleSearchPreset }
 
 export type AutomationActivitySearch = Partial<AutomationTriggerExecutionSearchPreset> & {
   page?: number;
+  execution_id?: string;
   run_id?: string;
   fired_after?: string;
   fired_before?: string;

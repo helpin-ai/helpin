@@ -334,6 +334,7 @@ func (h *AutomationHandler) ListActivity(w http.ResponseWriter, r *http.Request)
 	}
 
 	filters := model.TriggerExecutionListFilters{
+		ExecutionID: queryStringPtr(r, "execution_id"),
 		AgentID:     queryStringPtr(r, "agent_id"),
 		BindingID:   queryStringPtr(r, "binding_id"),
 		TriggerType: queryStringPtrWithFallback(r, "trigger_type"),

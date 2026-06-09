@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Automation Flows List Mockup</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f7f5;
+      --panel: #ffffff;
+      --panel-subtle: #fbfbfa;
+      --text: #1c1d1f;
+      --muted: #6d7179;
+      --line: #deded9;
+      --line-soft: #ececea;
+      --accent: #2563eb;
+      --accent-soft: #eff5ff;
+      --green: #16803c;
+      --green-soft: #eaf7ee;
+      --amber: #986b16;
+      --amber-soft: #fff7df;
+      --red: #b42318;
+      --red-soft: #fff0ee;
+      --violet: #6d40b4;
+      --violet-soft: #f4efff;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      letter-spacing: 0;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .page {
+      min-height: 100svh;
+      padding: 28px;
+    }
+
+    .shell {
+      max-width: 1260px;
+      margin: 0 auto;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .title {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 650;
+      line-height: 1.2;
+    }
+
+    .subtle {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .search {
+      width: 260px;
+      height: 34px;
+      border: 1px solid var(--line);
+      background: var(--panel-subtle);
+      padding: 0 11px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .primary {
+      height: 34px;
+      border: 1px solid #1d4ed8;
+      background: var(--accent);
+      color: #fff;
+      padding: 0 12px;
+      font-size: 13px;
+      font-weight: 550;
+    }
+
+    .tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--line-soft);
+      background: var(--panel-subtle);
+    }
+
+    .tab {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 6px 10px;
+      font-size: 13px;
+      font-weight: 550;
+    }
+
+    .tab.active {
+      background: #202124;
+      color: #fff;
+    }
+
+    .header,
+    .flow-row {
+      display: grid;
+      grid-template-columns: minmax(280px, 1.5fr) minmax(150px, .78fr) minmax(210px, 1fr) minmax(150px, .72fr) minmax(170px, .82fr) 34px;
+      align-items: center;
+      column-gap: 18px;
+    }
+
+    .header {
+      min-height: 38px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+
+    .flow-row {
+      min-height: 86px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--line-soft);
+      background: var(--panel);
+      transition: background .14s ease, box-shadow .14s ease;
+    }
+
+    .flow-row:hover {
+      background: #fcfcfb;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .flow-row:last-child {
+      border-bottom: 0;
+    }
+
+    .flow-main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .name-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .flow-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .description {
+      max-width: 620px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      width: fit-content;
+      max-width: 100%;
+      border: 1px solid var(--line);
+      background: var(--panel-subtle);
+      color: #35383d;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 550;
+      white-space: nowrap;
+    }
+
+    .pill.agent {
+      border-color: #d7ccf4;
+      background: var(--violet-soft);
+      color: var(--violet);
+    }
+
+    .pill.scope {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      width: fit-content;
+      border: 1px solid transparent;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .status.running {
+      border-color: #b9e6c5;
+      background: var(--green-soft);
+      color: var(--green);
+    }
+
+    .status.paused {
+      border-color: #f2dd9a;
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+
+    .status.error {
+      border-color: #ffd0ca;
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .logic {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .logic b {
+      font-weight: 650;
+      color: var(--text);
+    }
+
+    .logic span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+    }
+
+    .scope-stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .activity {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px 10px;
+      min-width: 0;
+    }
+
+    .activity .last {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .metric {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .metric strong {
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .menu {
+      width: 30px;
+      height: 30px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .menu:hover {
+      border-color: var(--line);
+      background: var(--panel-subtle);
+      color: var(--text);
+    }
+
+    .drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(440px, 100vw);
+      height: 100svh;
+      border-left: 1px solid var(--line);
+      background: var(--panel);
+      transform: translateX(100%);
+      transition: transform .18s ease;
+      box-shadow: -18px 0 40px rgb(0 0 0 / .08);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .drawer h2 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.25;
+    }
+
+    .close {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      background: var(--panel-subtle);
+      cursor: pointer;
+    }
+
+    .drawer-body {
+      padding: 16px 18px 24px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    .section h3 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 110px minmax(0, 1fr);
+      gap: 8px 12px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .kv dt {
+      color: var(--muted);
+    }
+
+    .kv dd {
+      margin: 0;
+      min-width: 0;
+    }
+
+    .instruction {
+      border: 1px solid var(--line);
+      background: var(--panel-subtle);
+      padding: 10px;
+      color: #363a40;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 980px) {
+      .page {
+        padding: 14px;
+      }
+
+      .toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .actions {
+        width: 100%;
+      }
+
+      .search {
+        width: 100%;
+      }
+
+      .header {
+        display: none;
+      }
+
+      .flow-row {
+        grid-template-columns: minmax(0, 1fr) 30px;
+        row-gap: 12px;
+      }
+
+      .flow-main,
+      .status,
+      .logic,
+      .scope-stack,
+      .activity {
+        grid-column: 1 / 2;
+      }
+
+      .menu {
+        grid-column: 2 / 3;
+        grid-row: 1;
+        align-self: start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="shell" aria-label="Automation flows mockup">
+      <div class="toolbar">
+        <div class="title">
+          <h1>Automation flows</h1>
+          <div class="subtle">Rules that connect workspace events to agents, workflow actions, and scheduled checks.</div>
+        </div>
+        <div class="actions">
+          <div class="search">Filter flows...</div>
+          <button class="primary" type="button">New flow</button>
+        </div>
+      </div>
+
+      <div class="tabs" aria-label="Flow filters">
+        <button class="tab active" type="button">All 8</button>
+        <button class="tab" type="button">Engineering 5</button>
+        <button class="tab" type="button">Docs 3</button>
+      </div>
+
+      <div class="header">
+        <div>Flow</div>
+        <div>Status</div>
+        <div>Trigger and action</div>
+        <div>Scope</div>
+        <div>Activity</div>
+        <div></div>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-main">
+          <div class="name-line">
+            <div class="flow-name">Release notes for helpin/api</div>
+            <span class="pill agent">Quill</span>
+          </div>
+          <div class="description">When a GitHub release is published, draft customer-facing release notes in the selected Docs collection.</div>
+        </div>
+        <span class="status running">Running</span>
+        <div class="logic">
+          <span><b>Trigger</b> Release published</span>
+          <span><b>Action</b> Run release notes writer</span>
+        </div>
+        <div class="scope-stack">
+          <span class="pill scope">Repo: helpin/api</span>
+          <span class="pill scope">Docs: Changelog</span>
+        </div>
+        <div class="activity">
+          <div class="metric"><strong>4</strong><span>runs 7d</span></div>
+          <div class="metric"><strong>1</strong><span>needs review</span></div>
+          <div class="last">Last run 2h ago</div>
+        </div>
+        <button class="menu" type="button" data-drawer="release" aria-label="View details">...</button>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-main">
+          <div class="name-line">
+            <div class="flow-name">API docs freshness sweep</div>
+            <span class="pill agent">Docs Auditor</span>
+          </div>
+          <div class="description">Review API docs against the source repository and flag drift before stale examples reach customers.</div>
+        </div>
+        <span class="status running">Running</span>
+        <div class="logic">
+          <span><b>Trigger</b> Every week on Mon at 05:00 Asia/Karachi</span>
+          <span><b>Action</b> Run docs auditor</span>
+        </div>
+        <div class="scope-stack">
+          <span class="pill scope">Docs: API reference</span>
+          <span class="pill scope">Repo: No repository</span>
+        </div>
+        <div class="activity">
+          <div class="metric"><strong>1</strong><span>runs 7d</span></div>
+          <div class="metric"><strong>0</strong><span>needs review</span></div>
+          <div class="last">Last run yesterday</div>
+        </div>
+        <button class="menu" type="button" data-drawer="docs" aria-label="View details">...</button>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-main">
+          <div class="name-line">
+            <div class="flow-name">Triage failing checks</div>
+            <span class="pill agent">Build Fixer</span>
+          </div>
+          <div class="description">Open an investigation run when CI finishes with a failure on the default branch.</div>
+        </div>
+        <span class="status error">Error</span>
+        <div class="logic">
+          <span><b>Trigger</b> Check suite completes</span>
+          <span><b>Action</b> Run build fixer</span>
+        </div>
+        <div class="scope-stack">
+          <span class="pill scope">Repo: helpin/frontend</span>
+          <span class="pill scope">Conclusion: failure</span>
+        </div>
+        <div class="activity">
+          <div class="metric"><strong>12</strong><span>runs 7d</span></div>
+          <div class="metric"><strong>5</strong><span>needs review</span></div>
+          <div class="last">Last error 18m ago</div>
+        </div>
+        <button class="menu" type="button" data-drawer="checks" aria-label="View details">...</button>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-main">
+          <div class="name-line">
+            <div class="flow-name">Move approved stories to ready</div>
+          </div>
+          <div class="description">Keep workflow status aligned after implementation plans are approved.</div>
+        </div>
+        <span class="status paused">Paused</span>
+        <div class="logic">
+          <span><b>Trigger</b> Interactive run approved</span>
+          <span><b>Action</b> Move task to Ready</span>
+        </div>
+        <div class="scope-stack">
+          <span class="pill scope">Team: Product</span>
+        </div>
+        <div class="activity">
+          <div class="metric"><strong>0</strong><span>runs 7d</span></div>
+          <div class="metric"><strong>0</strong><span>needs review</span></div>
+          <div class="last">Last run never</div>
+        </div>
+        <button class="menu" type="button" data-drawer="workflow" aria-label="View details">...</button>
+      </div>
+    </section>
+  </main>
+
+  <aside class="drawer" id="drawer" aria-label="Flow details">
+    <div class="drawer-head">
+      <div>
+        <h2 id="drawer-title">Release notes for helpin/api</h2>
+        <div class="subtle" id="drawer-subtitle">Running · Last run 2h ago</div>
+      </div>
+      <button class="close" type="button" id="close">x</button>
+    </div>
+    <div class="drawer-body">
+      <section class="section">
+        <h3>Overview</h3>
+        <dl class="kv">
+          <dt>Flow</dt><dd id="overview-flow">Release notes for helpin/api</dd>
+          <dt>Agent</dt><dd id="overview-agent">Quill</dd>
+          <dt>Status</dt><dd id="overview-status">Running</dd>
+        </dl>
+      </section>
+      <section class="section">
+        <h3>Trigger</h3>
+        <dl class="kv">
+          <dt>Event</dt><dd id="trigger-event">GitHub release published</dd>
+          <dt>Repository</dt><dd id="trigger-repo">helpin/api</dd>
+          <dt>Filters</dt><dd id="trigger-filters">Normal releases only</dd>
+        </dl>
+      </section>
+      <section class="section">
+        <h3>Action</h3>
+        <dl class="kv">
+          <dt>Type</dt><dd id="action-type">Run agent</dd>
+          <dt>Target</dt><dd id="action-target">Repository event context</dd>
+          <dt>Output</dt><dd id="action-output">Docs collection: Changelog</dd>
+        </dl>
+      </section>
+      <section class="section">
+        <h3>Instructions</h3>
+        <div class="instruction" id="instructions">Use release context to draft clear customer-facing notes. Separate shipped changes, fixes, breaking changes, and known limitations.</div>
+      </section>
+    </div>
+  </aside>
+
+  <script>
+    const data = {
+      release: {
+        title: 'Release notes for helpin/api',
+        subtitle: 'Running · Last run 2h ago',
+        agent: 'Quill',
+        status: 'Running',
+        event: 'GitHub release published',
+        repo: 'helpin/api',
+        filters: 'Normal releases only',
+        action: 'Run agent',
+        target: 'Repository event context',
+        output: 'Docs collection: Changelog',
+        instructions: 'Use release context to draft clear customer-facing notes. Separate shipped changes, fixes, breaking changes, and known limitations.'
+      },
+      docs: {
+        title: 'API docs freshness sweep',
+        subtitle: 'Running · Last run yesterday',
+        agent: 'Docs Auditor',
+        status: 'Running',
+        event: 'Cron schedule',
+        repo: 'No repository selected',
+        filters: 'Every week on Mon at 05:00 Asia/Karachi',
+        action: 'Run agent',
+        target: 'Workspace docs context',
+        output: 'Docs collection: API reference',
+        instructions: 'Check selected API docs against available source context and flag inaccurate endpoints, schemas, examples, and release drift.'
+      },
+      checks: {
+        title: 'Triage failing checks',
+        subtitle: 'Error · Last error 18m ago',
+        agent: 'Build Fixer',
+        status: 'Error',
+        event: 'GitHub check suite completed',
+        repo: 'helpin/frontend',
+        filters: 'Conclusion: failure',
+        action: 'Run agent',
+        target: 'Repository',
+        output: 'Interactive run requiring approval',
+        instructions: 'Summarize the failing checks, identify the likely owner area, and propose a minimal fix path before making changes.'
+      },
+      workflow: {
+        title: 'Move approved stories to ready',
+        subtitle: 'Paused · Last run never',
+        agent: 'No agent',
+        status: 'Paused',
+        event: 'Agent run approved',
+        repo: 'Not applicable',
+        filters: 'Team: Product',
+        action: 'Move task',
+        target: 'Ready workflow state',
+        output: 'Task status update',
+        instructions: 'No prompt context. This flow performs a workflow transition.'
+      }
+    };
+
+    const drawer = document.getElementById('drawer');
+    const fields = {
+      title: document.getElementById('drawer-title'),
+      subtitle: document.getElementById('drawer-subtitle'),
+      flow: document.getElementById('overview-flow'),
+      agent: document.getElementById('overview-agent'),
+      status: document.getElementById('overview-status'),
+      event: document.getElementById('trigger-event'),
+      repo: document.getElementById('trigger-repo'),
+      filters: document.getElementById('trigger-filters'),
+      action: document.getElementById('action-type'),
+      target: document.getElementById('action-target'),
+      output: document.getElementById('action-output'),
+      instructions: document.getElementById('instructions')
+    };
+
+    document.querySelectorAll('[data-drawer]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const item = data[button.dataset.drawer];
+        fields.title.textContent = item.title;
+        fields.subtitle.textContent = item.subtitle;
+        fields.flow.textContent = item.title;
+        fields.agent.textContent = item.agent;
+        fields.status.textContent = item.status;
+        fields.event.textContent = item.event;
+        fields.repo.textContent = item.repo;
+        fields.filters.textContent = item.filters;
+        fields.action.textContent = item.action;
+        fields.target.textContent = item.target;
+        fields.output.textContent = item.output;
+        fields.instructions.textContent = item.instructions;
+        drawer.classList.add('open');
+      });
+    });
+
+    document.getElementById('close').addEventListener('click', () => {
+      drawer.classList.remove('open');
+    });
+  </script>
+</body>
+</html>

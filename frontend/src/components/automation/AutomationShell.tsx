@@ -12,7 +12,7 @@ export function AutomationShell({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto max-w-6xl space-y-5">
+    <div className="mx-auto max-w-7xl space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">{title}</h1>

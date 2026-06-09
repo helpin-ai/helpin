@@ -40,6 +40,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 export type AutomationActivitySearch = {
   page: number;
+  execution_id?: string;
   agent_id?: string;
   binding_id?: string;
   trigger_type?: string;
@@ -734,7 +735,8 @@ export function AutomationActivityPage({
   const [smartFilter, setSmartFilter] = useState('');
   const [searchExpanded, setSearchExpanded] = useState(false);
   const hasActiveFilter = Boolean(
-    search.agent_id
+    search.execution_id
+      || search.agent_id
       || search.binding_id
       || search.trigger_type
       || search.status
@@ -774,6 +776,7 @@ export function AutomationActivityPage({
     () => ({
       page: search.page,
       per_page: EXECUTIONS_PER_PAGE,
+      execution_id: trimFilterValue(search.execution_id),
       agent_id: trimFilterValue(search.agent_id),
       binding_id: trimFilterValue(search.binding_id),
       trigger_type: trimFilterValue(search.trigger_type),
@@ -904,12 +907,14 @@ export function AutomationActivityPage({
     setSmartFilter('');
     onSearchChange({
       page: 1,
+      execution_id: undefined,
       agent_id: undefined,
       binding_id: undefined,
       trigger_type: undefined,
       status: undefined,
       source: undefined,
       reference_id: undefined,
+      run_id: undefined,
       fired_after: undefined,
       fired_before: undefined,
     });

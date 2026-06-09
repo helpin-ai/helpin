@@ -298,11 +298,28 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		TriggerType:   testStringPtr(model.TriggerCron),
 		ReferenceID:   testStringPtr("rule-cron-1"),
 		ReferenceType: testStringPtr("automation_rule"),
+		RunID:         testStringPtr("run-rule-cron-1"),
 		Status:        model.AgentTriggerExecutionStatusCompleted,
 		FiredAt:       now,
 		CompletedAt:   &completedAt,
 	}).Error; err != nil {
 		t.Fatalf("create automation trigger execution: %v", err)
+	}
+	previousCompletedAt := now.Add(-25 * time.Hour)
+	if err := db.Create(&model.AgentTriggerExecution{
+		ID:            "exec-rule-cron-previous",
+		WorkspaceID:   workspaceID,
+		AgentID:       "agent-1",
+		BindingID:     "automation_rule.cron",
+		BindingKind:   "automation_rule",
+		TriggerType:   testStringPtr(model.TriggerCron),
+		ReferenceID:   testStringPtr("rule-cron-1"),
+		ReferenceType: testStringPtr("automation_rule"),
+		Status:        model.AgentTriggerExecutionStatusCompleted,
+		FiredAt:       now.Add(-25 * time.Hour),
+		CompletedAt:   &previousCompletedAt,
+	}).Error; err != nil {
+		t.Fatalf("create previous automation trigger execution: %v", err)
 	}
 
 	svc := NewAutomationInventoryService(
@@ -381,6 +398,15 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 	ruleItem := itemsByCatalog["automation_rule"][0]
 	if ruleItem.Health.LastSuccessAt == nil || !ruleItem.Health.LastSuccessAt.Equal(completedAt) {
 		t.Fatalf("expected automation rule last_success_at %v, got %v", completedAt, ruleItem.Health.LastSuccessAt)
+	}
+	if got := ruleItem.Health.Metrics["total_runs"]; got != float64(2) && got != int64(2) && got != 2 {
+		t.Fatalf("expected automation rule total_runs 2, got %#v", got)
+	}
+	if got := ruleItem.Health.Metrics["last_execution_id"]; got != "exec-rule-cron-1" {
+		t.Fatalf("expected automation rule last_execution_id exec-rule-cron-1, got %#v", got)
+	}
+	if got := ruleItem.Health.Metrics["last_run_id"]; got != "run-rule-cron-1" {
+		t.Fatalf("expected automation rule last_run_id run-rule-cron-1, got %#v", got)
 	}
 
 	triggerCatalog, err := svc.triggerCatalogItems(ctx, workspaceID)

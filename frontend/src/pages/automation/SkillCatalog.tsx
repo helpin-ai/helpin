@@ -673,7 +673,7 @@ export function SkillCatalogContent({
   }
 
   return (
-    <div className={cn('space-y-5', !embedded && 'mx-auto max-w-5xl')}>
+    <div className={cn('space-y-5', !embedded && 'mx-auto max-w-7xl')}>
       {!embedded && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">

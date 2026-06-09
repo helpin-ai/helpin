@@ -44,6 +44,7 @@ const qs = (workspaceId: string) => `?workspace_id=${encodeURIComponent(workspac
 
 const activityQS = (workspaceId: string, filters: AutomationTriggerExecutionFilters = {}) => {
   const params = new URLSearchParams({ workspace_id: workspaceId });
+  if (filters.execution_id) params.set('execution_id', filters.execution_id);
   if (filters.agent_id) params.set('agent_id', filters.agent_id);
   if (filters.binding_id) params.set('binding_id', filters.binding_id);
   if (filters.trigger_type) params.set('trigger_type', filters.trigger_type);

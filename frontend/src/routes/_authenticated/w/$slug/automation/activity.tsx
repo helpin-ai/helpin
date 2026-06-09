@@ -3,6 +3,7 @@ import { AutomationActivityPage } from '@/pages/automation/AutomationActivity';
 
 type AutomationActivitySearch = {
   page: number;
+  execution_id?: string;
   agent_id?: string;
   binding_id?: string;
   trigger_type?: string;
@@ -22,6 +23,7 @@ export const Route = createFileRoute('/_authenticated/w/$slug/automation/activit
       : typeof search.page === 'string' && Number.parseInt(search.page, 10) > 0
         ? Number.parseInt(search.page, 10)
         : 1,
+    execution_id: typeof search.execution_id === 'string' ? search.execution_id : undefined,
     agent_id: typeof search.agent_id === 'string' ? search.agent_id : undefined,
     binding_id: typeof search.binding_id === 'string' ? search.binding_id : undefined,
     trigger_type: typeof search.trigger_type === 'string' ? search.trigger_type : undefined,
