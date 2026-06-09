@@ -303,24 +303,43 @@ func (r *AgentRunRepository) ListWorkspaceRunsWithoutTriggerExecutions(ctx conte
 		return []model.AgentRun{}, 0, nil
 	}
 	bindingKind := ""
+	bindingKinds := splitCSVFilter(filters.BindingKind)
 	if filters.BindingKind != nil {
 		bindingKind = strings.TrimSpace(*filters.BindingKind)
-		if bindingKind != "" && bindingKind != "agent_run" && bindingKind != model.AgentRunTriggerSourceCommandBar && bindingKind != model.AgentRunTriggerSourceManual {
+		if len(bindingKinds) == 1 {
+			bindingKind = bindingKinds[0]
+		}
+		if len(bindingKinds) > 0 && !csvFilterIncludes(bindingKinds, "agent_run") && !csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceCommandBar) && !csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceManual) {
 			return []model.AgentRun{}, 0, nil
 		}
 	}
 	bindingID := ""
+	bindingIDs := splitCSVFilter(filters.BindingID)
 	if filters.BindingID != nil && strings.TrimSpace(*filters.BindingID) != "" {
 		bindingID = strings.TrimSpace(*filters.BindingID)
-		if bindingID != "agent_run.run" && bindingID != "agent_run.child_run" && bindingID != "command_bar.run" && manualRunTargetTypeForBindingID(bindingID) == "" {
+		if len(bindingIDs) == 1 {
+			bindingID = bindingIDs[0]
+		}
+		hasRunnableBindingID := false
+		for _, value := range bindingIDs {
+			if value == "agent_run.run" || value == "agent_run.child_run" || value == "command_bar.run" || manualRunTargetTypeForBindingID(value) != "" {
+				hasRunnableBindingID = true
+				break
+			}
+		}
+		if len(bindingIDs) > 0 && !hasRunnableBindingID {
 			return []model.AgentRun{}, 0, nil
 		}
 	}
 	triggerType := ""
+	triggerTypes := splitCSVFilter(filters.TriggerType)
 	if filters.TriggerType != nil && strings.TrimSpace(*filters.TriggerType) != "" {
 		triggerType = strings.TrimSpace(*filters.TriggerType)
+		if len(triggerTypes) == 1 {
+			triggerType = triggerTypes[0]
+		}
 	}
-	if triggerType != "" && triggerType != model.AgentRunTriggerTypeCommandBar && triggerType != model.AgentRunTriggerTypeManual {
+	if len(triggerTypes) > 0 && !csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeCommandBar) && !csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeManual) {
 		return []model.AgentRun{}, 0, nil
 	}
 	if filters.ReferenceID != nil && strings.TrimSpace(*filters.ReferenceID) != "" {
@@ -331,17 +350,17 @@ func (r *AgentRunRepository) ListWorkspaceRunsWithoutTriggerExecutions(ctx conte
 		Model(&model.AgentRun{}).
 		Joins("LEFT JOIN agent_trigger_executions ON agent_trigger_executions.workspace_id = agent_runs.workspace_id AND agent_trigger_executions.run_id = agent_runs.id").
 		Where("agent_runs.workspace_id = ? AND agent_trigger_executions.id IS NULL", workspaceID)
-	if filters.AgentID != nil && strings.TrimSpace(*filters.AgentID) != "" {
-		query = query.Where("agent_runs.agent_id = ?", strings.TrimSpace(*filters.AgentID))
+	if values := splitCSVFilter(filters.AgentID); len(values) > 0 {
+		query = query.Where("agent_runs.agent_id IN ?", values)
 	}
-	if filters.Status != nil && strings.TrimSpace(*filters.Status) != "" {
-		query = query.Where("agent_runs.status = ?", strings.TrimSpace(*filters.Status))
+	if values := splitCSVFilter(filters.Status); len(values) > 0 {
+		query = query.Where("agent_runs.status IN ?", values)
 	}
-	if bindingKind == model.AgentRunTriggerSourceCommandBar || bindingID == "command_bar.run" || triggerType == model.AgentRunTriggerTypeCommandBar {
+	if csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceCommandBar) || csvFilterIncludes(bindingIDs, "command_bar.run") || csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeCommandBar) {
 		query = query.Where(agentRunInputTriggerStringPredicate(r.db, "source"), model.AgentRunTriggerSourceCommandBar)
 	}
 	manualTargetType := manualRunTargetTypeForBindingID(bindingID)
-	if bindingKind == model.AgentRunTriggerSourceManual || triggerType == model.AgentRunTriggerTypeManual || manualTargetType != "" {
+	if csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceManual) || csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeManual) || manualTargetType != "" {
 		query = query.Where(agentRunInputManualTriggerPredicate(r.db), model.AgentRunTriggerSourceManual)
 	}
 	if manualTargetType != "" {
@@ -410,6 +429,39 @@ func manualRunTargetTypeForBindingID(bindingID string) string {
 	default:
 		return ""
 	}
+}
+
+func splitCSVFilter(value *string) []string {
+	if value == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	values := make([]string, 0)
+	for _, part := range strings.Split(*value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		values = append(values, part)
+	}
+	return values
+}
+
+func csvFilterIncludes(values []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // ListRecentForActor returns the most recent runs triggered by the given user
@@ -778,23 +830,23 @@ func (r *AgentTriggerExecutionRepository) ListByWorkspace(
 	if filters.ExecutionID != nil && strings.TrimSpace(*filters.ExecutionID) != "" {
 		query = query.Where("id = ?", strings.TrimSpace(*filters.ExecutionID))
 	}
-	if filters.AgentID != nil && strings.TrimSpace(*filters.AgentID) != "" {
-		query = query.Where("agent_id = ?", strings.TrimSpace(*filters.AgentID))
+	if values := splitCSVFilter(filters.AgentID); len(values) > 0 {
+		query = query.Where("agent_id IN ?", values)
 	}
-	if filters.BindingID != nil && strings.TrimSpace(*filters.BindingID) != "" {
-		query = query.Where("binding_id = ?", strings.TrimSpace(*filters.BindingID))
+	if values := splitCSVFilter(filters.BindingID); len(values) > 0 {
+		query = query.Where("binding_id IN ?", values)
 	}
-	if filters.TriggerType != nil && strings.TrimSpace(*filters.TriggerType) != "" {
-		query = query.Where("trigger_type = ?", strings.TrimSpace(*filters.TriggerType))
+	if values := splitCSVFilter(filters.TriggerType); len(values) > 0 {
+		query = query.Where("trigger_type IN ?", values)
 	}
-	if filters.BindingKind != nil && strings.TrimSpace(*filters.BindingKind) != "" {
-		query = query.Where("binding_kind = ?", strings.TrimSpace(*filters.BindingKind))
+	if values := splitCSVFilter(filters.BindingKind); len(values) > 0 {
+		query = query.Where("binding_kind IN ?", values)
 	}
-	if filters.Status != nil && strings.TrimSpace(*filters.Status) != "" {
-		query = query.Where("status = ?", strings.TrimSpace(*filters.Status))
+	if values := splitCSVFilter(filters.Status); len(values) > 0 {
+		query = query.Where("status IN ?", values)
 	}
-	if filters.ReferenceID != nil && strings.TrimSpace(*filters.ReferenceID) != "" {
-		query = query.Where("reference_id = ?", strings.TrimSpace(*filters.ReferenceID))
+	if values := splitCSVFilter(filters.ReferenceID); len(values) > 0 {
+		query = query.Where("reference_id IN ?", values)
 	}
 	if filters.RunID != nil && strings.TrimSpace(*filters.RunID) != "" {
 		query = query.Where("run_id = ?", strings.TrimSpace(*filters.RunID))
