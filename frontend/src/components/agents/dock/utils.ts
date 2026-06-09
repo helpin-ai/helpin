@@ -175,6 +175,21 @@ export function describeStepTarget(step: CommandBarPlanStep): string {
   return step.target?.display_title ?? step.target?.entity_id ?? '';
 }
 
+export function stepDisplayName(step: CommandBarPlanStep): string {
+  switch (step.step_type) {
+    case 'ensure_epic_branch':
+      return 'Epic branch';
+    case 'merge_task_to_epic':
+      return 'Merge';
+    case 'resolve_merge_conflict':
+      return 'Resolve';
+    case 'open_epic_pr':
+      return 'Final PR';
+    default:
+      return step.agent_name;
+  }
+}
+
 /**
  * Goal extraction for one-shot brief instructions of the form:
  *   "One-shot execution brief\nGoal:\n{goal}\nPlan:\n..."

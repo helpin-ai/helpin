@@ -625,6 +625,25 @@ export function AskAgentsDock() {
     [updatePlan, workspace?.id],
   );
 
+  const resumePlan = useCallback(
+    async (plan: CommandBarRunPlan) => {
+      if (!workspace?.id) return;
+      setBusyPlanId(plan.id);
+      try {
+        const res = await commandBarService.resumePlan(workspace.id, plan.id);
+        if (res.error || !res.data) {
+          toast.error(res.error ?? 'Failed to resume plan');
+          return;
+        }
+        const resumedRuns = res.data.runs ?? (res.data.run ? [res.data.run] : []);
+        updatePlan(res.data.plan, resumedRuns);
+      } finally {
+        setBusyPlanId(null);
+      }
+    },
+    [updatePlan, workspace?.id],
+  );
+
   const retryPlan = useCallback(
     async (plan: CommandBarRunPlan) => {
       if (!workspace?.id) return;
@@ -768,6 +787,10 @@ export function AskAgentsDock() {
         else retryRun(target.run);
         return;
       }
+      if (action === 'resume') {
+        if (target.kind === 'plan') void resumePlan(target.plan);
+        return;
+      }
       if (action === 'cancel') {
         if (target.kind === 'plan') void cancelPlan(target.plan.id);
         else void runCancel(target.run);
@@ -777,6 +800,7 @@ export function AskAgentsDock() {
       cancelPlan,
       findRunStep,
       openRunDrawer,
+      resumePlan,
       retryPlan,
       retryRun,
       runApprove,
@@ -890,6 +914,8 @@ export function AskAgentsDock() {
               busyPlanId={busyPlanId}
               busyRunId={busyRunId}
               onSelect={onListSelect}
+              onResumePlan={(p) => void resumePlan(p)}
+              onCancelPlan={(p) => void cancelPlan(p.id)}
               onRetryPlan={(p) => void retryPlan(p)}
               onRetryRun={retryRun}
             />

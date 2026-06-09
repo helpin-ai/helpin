@@ -492,7 +492,7 @@ func TestSyncPostRunExecutionStateCopiesLocalCommitMetadata(t *testing.T) {
 
 func TestValidateCodexResolvedMergeStateRejectsUnmergedPaths(t *testing.T) {
 	repoDir := t.TempDir()
-	runGitCmd(t, repoDir, "git", "init")
+	runGitCmd(t, repoDir, "git", "init", "-b", "master")
 	configureGitIdentity(t, repoDir)
 	writeTestFile(t, filepath.Join(repoDir, "README.md"), "base\n")
 	runGitCmd(t, repoDir, "git", "add", "README.md")

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import type { AgentRun } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/stores/commandBarStore';
-import { Loading01Icon, RotateLeft01Icon } from '@/lib/icons';
+import { Cancel01Icon, Loading01Icon, PlayIcon, RotateLeft01Icon } from '@/lib/icons';
 import { cn } from '@/lib/utils';
 import { StatusDot, type DotKind } from './StatusDot';
 import { PipelineRail } from './PipelineRail';
@@ -37,6 +37,8 @@ interface RunListViewProps {
   busyPlanId?: string | null;
   busyRunId?: string | null;
   onSelect: (item: ListItem) => void;
+  onResumePlan: (plan: CommandBarRunPlan) => void;
+  onCancelPlan: (plan: CommandBarRunPlan) => void;
   onRetryPlan: (plan: CommandBarRunPlan) => void;
   onRetryRun: (run: AgentRun) => void;
 }
@@ -49,6 +51,8 @@ export function RunListView({
   busyPlanId,
   busyRunId,
   onSelect,
+  onResumePlan,
+  onCancelPlan,
   onRetryPlan,
   onRetryRun,
 }: RunListViewProps) {
@@ -128,6 +132,8 @@ export function RunListView({
                 busyPlanId={busyPlanId}
                 busyRunId={busyRunId}
                 onSelect={onSelect}
+                onResumePlan={onResumePlan}
+                onCancelPlan={onCancelPlan}
                 onRetryPlan={onRetryPlan}
                 onRetryRun={onRetryRun}
               />
@@ -173,6 +179,8 @@ function ListRow({
   busyPlanId,
   busyRunId,
   onSelect,
+  onResumePlan,
+  onCancelPlan,
   onRetryPlan,
   onRetryRun,
 }: {
@@ -181,6 +189,8 @@ function ListRow({
   busyPlanId?: string | null;
   busyRunId?: string | null;
   onSelect: (item: ListItem) => void;
+  onResumePlan: (plan: CommandBarRunPlan) => void;
+  onCancelPlan: (plan: CommandBarRunPlan) => void;
   onRetryPlan: (plan: CommandBarRunPlan) => void;
   onRetryRun: (run: AgentRun) => void;
 }) {
@@ -195,6 +205,8 @@ function ListRow({
   let rail: React.ReactNode = null;
   let busy = false;
   let onRetry: (() => void) | null = null;
+  let onResume: (() => void) | null = null;
+  let onCancel: (() => void) | null = null;
   let errorMessage: string | null = null;
 
   if (item.kind === 'plan') {
@@ -212,6 +224,10 @@ function ListRow({
         <PipelineRail plan={plan} runsById={runsById} />
       ) : null;
     busy = busyPlanId === plan.id;
+    if (state === 'running') {
+      onResume = () => onResumePlan(plan);
+      onCancel = () => onCancelPlan(plan);
+    }
     if (state === 'attention' || state === 'cancelled') {
       onRetry = () => onRetryPlan(plan);
       const failedRun = Object.values(plan.runIdsByStep)
@@ -275,7 +291,42 @@ function ListRow({
               </>
             ) : null}
           </span>
-          {onRetry ? (
+          {onResume || onCancel ? (
+            <div className="flex shrink-0 items-center gap-1">
+              {onResume ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onResume?.();
+                  }}
+                  disabled={busy}
+                  className="inline-flex shrink-0 items-center gap-1 rounded border border-border/70 bg-background/80 px-1.5 py-0.5 text-[11px] font-medium text-foreground transition hover:border-foreground/30 hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {busy ? (
+                    <Loading01Icon className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <PlayIcon className="h-3 w-3" />
+                  )}
+                  {busy ? 'Resuming…' : 'Resume'}
+                </button>
+              ) : null}
+              {onCancel ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCancel?.();
+                  }}
+                  disabled={busy}
+                  className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded border border-border/70 bg-background/80 text-muted-foreground transition hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-label="Cancel plan"
+                >
+                  <Cancel01Icon className="h-3 w-3" />
+                </button>
+              ) : null}
+            </div>
+          ) : onRetry ? (
             <button
               type="button"
               onClick={(e) => {

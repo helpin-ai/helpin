@@ -253,6 +253,12 @@ vi.mock('@/lib/services/pmRecurringTemplateService', () => ({
 }))
 
 vi.mock('@/lib/api', () => ({
+  api: {
+    get: vi.fn(async () => ({ data: null, error: null })),
+    post: vi.fn(async () => ({ data: null, error: null })),
+    put: vi.fn(async () => ({ data: null, error: null })),
+    del: vi.fn(async () => ({ data: null, error: null })),
+  },
   uploadToS3: vi.fn(async () => ({ ok: true })),
 }))
 

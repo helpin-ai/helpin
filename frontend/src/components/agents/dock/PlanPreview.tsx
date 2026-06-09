@@ -20,7 +20,7 @@ import {
   type PlanLayer,
   type TaskNode,
 } from './planLayers';
-import { describeStep } from './utils';
+import { describeStep, stepDisplayName } from './utils';
 
 type Plan = NonNullable<Extract<CommandBarParseResponse, { status: 'plan' }>['plan']>;
 
@@ -136,11 +136,12 @@ function SingleStepCard({ step }: { step: CommandBarPlanStep }) {
   const targetTitle = step.target?.display_title || step.target?.entity_id || '';
   const TargetIcon = targetIcon(step.target?.entity_type);
   const tools = step.allowed_tools ?? [];
+  const stepName = stepDisplayName(step);
   return (
     <div className="rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
       <div className="flex items-center gap-2">
         <BotIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate text-sm font-medium text-foreground">{step.agent_name}</span>
+        <span className="truncate text-sm font-medium text-foreground">{stepName}</span>
       </div>
       {targetTitle ? (
         <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded-full border border-primary/20 bg-background/80 px-2 py-1 text-[11px] text-foreground">
@@ -448,11 +449,12 @@ function AgentChain({ plan, stepIndexes }: { plan: Plan; stepIndexes: number[] }
     <div className="flex shrink-0 items-center gap-1">
       {stepIndexes.map((i, idx) => {
         const step = plan.steps[i];
-        const initial = step.agent_name.trim().charAt(0).toUpperCase() || '·';
+        const label = stepDisplayName(step);
+        const initial = label.trim().charAt(0).toUpperCase() || '·';
         return (
           <div key={i} className="flex items-center gap-1">
             <span
-              title={step.agent_name}
+              title={label}
               className="grid h-4 w-4 place-items-center rounded-full border border-border/70 bg-background text-[9px] font-semibold text-muted-foreground"
             >
               {initial}

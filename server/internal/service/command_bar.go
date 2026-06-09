@@ -2831,6 +2831,9 @@ func (s *CommandBarService) validateDispatchSteps(ctx context.Context, workspace
 		if !ok {
 			return fmt.Errorf("agent not found for step %d", i+1)
 		}
+		if isCommandBarOrchestrationStep(step) {
+			continue
+		}
 		if err := validateCommandBarStepTargetForAgent(step, &agent, i); err != nil {
 			return err
 		}
@@ -2847,6 +2850,18 @@ func (s *CommandBarService) validateDispatchSteps(ctx context.Context, workspace
 		}
 	}
 	return nil
+}
+
+func isCommandBarOrchestrationStep(step model.CommandBarPlanStep) bool {
+	switch strings.TrimSpace(step.StepType) {
+	case model.CommandBarStepTypeEnsureEpicBranch,
+		model.CommandBarStepTypeMergeTaskToEpic,
+		model.CommandBarStepTypeResolveMergeConflict,
+		model.CommandBarStepTypeOpenEpicPullRequest:
+		return true
+	default:
+		return false
+	}
 }
 
 func validateCommandBarStepTargetForAgent(step model.CommandBarPlanStep, agent *model.Agent, stepIndex int) error {
@@ -3086,6 +3101,71 @@ func (s *CommandBarService) CancelPlan(ctx context.Context, workspaceID, actorID
 	return &model.CommandBarCancelPlanResponse{
 		Plan: commandBarPlanSummary(*updatedPlan, updatedRuns),
 		Runs: updatedRuns,
+	}, nil
+}
+
+func (s *CommandBarService) ResumePlan(ctx context.Context, workspaceID, actorID, planID string) (*model.CommandBarResumePlanResponse, error) {
+	if s == nil || s.planRepo == nil || s.agentService == nil || s.agentService.runRepo == nil {
+		return nil, fmt.Errorf("command bar plan service is not configured")
+	}
+	plan, err := s.planRepo.GetByID(ctx, workspaceID, strings.TrimSpace(planID))
+	if err != nil {
+		return nil, err
+	}
+	if plan == nil || !commandBarPlanOwnedByActor(plan, actorID) {
+		return nil, fmt.Errorf("command bar plan not found")
+	}
+	if plan.Status != model.CommandBarPlanStatusRunning {
+		return nil, fmt.Errorf("only running command bar plans can be resumed")
+	}
+	var pageContext model.CommandBarPageContext
+	if err := json.Unmarshal(plan.PageContext, &pageContext); err != nil {
+		return nil, fmt.Errorf("decode command bar plan context: %w", err)
+	}
+	var steps []model.CommandBarPlanStep
+	if err := json.Unmarshal(plan.Steps, &steps); err != nil {
+		return nil, fmt.Errorf("decode command bar plan steps: %w", err)
+	}
+	progress, err := s.agentService.StartReadyCommandBarPlanSteps(ctx, temporalapp.CommandBarPlanWorkflowInput{
+		WorkspaceID: workspaceID,
+		ActorID:     actorID,
+		PlanID:      plan.ID,
+		Prompt:      plan.Prompt,
+		PageContext: pageContext,
+		Steps:       steps,
+	})
+	if err != nil {
+		return nil, err
+	}
+	updatedPlan, err := s.planRepo.GetByID(ctx, workspaceID, plan.ID)
+	if err != nil {
+		return nil, err
+	}
+	if updatedPlan == nil {
+		return nil, fmt.Errorf("command bar plan not found")
+	}
+	latestRunIDsByStep := decodeCommandBarPlanRunIDs(updatedPlan.RunIDsByStep)
+	latestRunIDs := make([]string, 0, len(latestRunIDsByStep))
+	for _, runID := range latestRunIDsByStep {
+		latestRunIDs = append(latestRunIDs, runID)
+	}
+	latestRuns, err := s.agentService.runRepo.ListByIDs(ctx, workspaceID, latestRunIDs)
+	if err != nil {
+		return nil, err
+	}
+	var startedRun *model.AgentRun
+	if progress != nil && len(progress.Started) > 0 {
+		for i := range latestRuns {
+			if latestRuns[i].ID == progress.Started[0] {
+				startedRun = &latestRuns[i]
+				break
+			}
+		}
+	}
+	return &model.CommandBarResumePlanResponse{
+		Plan: commandBarPlanSummary(*updatedPlan, latestRuns),
+		Run:  startedRun,
+		Runs: latestRuns,
 	}, nil
 }
 
@@ -3548,7 +3628,28 @@ func (s *AgentService) AdvanceCommandBarPlanAfterRun(ctx context.Context, comple
 	planKind := commandBarPlanKindForSteps(payload.Steps)
 	if planKind == model.CommandBarPlanKindTaskPipeline || planKind == model.CommandBarPlanKindDAG {
 		if s.runEngine != nil && payload.PlanID != "" {
-			_ = s.runEngine.SignalCommandBarPlanRunCompleted(ctx, payload.PlanID, completedRunID)
+			if err := s.runEngine.SignalCommandBarPlanRunCompleted(ctx, payload.PlanID, completedRunID); err == nil {
+				return nil, nil
+			} else {
+				slog.WarnContext(ctx, "command bar plan signal failed; running scheduler fallback",
+					"error", err,
+					"workspace_id", run.WorkspaceID,
+					"plan_id", payload.PlanID,
+					"run_id", completedRunID,
+				)
+			}
+		}
+		if s.commandBarPlanRepo != nil && payload.PlanID != "" {
+			if _, err := s.StartReadyCommandBarPlanSteps(ctx, temporalapp.CommandBarPlanWorkflowInput{
+				WorkspaceID: run.WorkspaceID,
+				ActorID:     derefString(run.TriggeredByUserID),
+				PlanID:      payload.PlanID,
+				Prompt:      payload.Prompt,
+				PageContext: payload.PageContext,
+				Steps:       payload.Steps,
+			}); err != nil {
+				return nil, err
+			}
 		}
 		return nil, nil
 	}
@@ -3641,6 +3742,16 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 	runsByID := make(map[string]model.AgentRun, len(runs))
 	activeCount := 0
 	for _, run := range runs {
+		if stepIndex := commandBarStepIndexForRun(runIDsByStep, run.ID); stepIndex >= 0 && stepIndex < len(steps) && isCommandBarOrchestrationStep(steps[stepIndex]) && model.IsAgentRunActiveStatus(run.Status) {
+			updated, err := s.advanceRunningCommandBarOrchestrationRun(ctx, input, steps, stepIndex, &run)
+			if err != nil {
+				_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, err.Error())
+				return nil, err
+			}
+			if updated != nil {
+				run = *updated
+			}
+		}
 		runsByID[run.ID] = run
 		if model.IsAgentRunActiveStatus(run.Status) {
 			activeCount++
@@ -3667,18 +3778,50 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 	}
 
 	started := 0
+	observedConcurrentProgress := false
 	for index, step := range steps {
 		if strings.TrimSpace(runIDsByStep[index]) != "" {
 			continue
 		}
-		parentRunID, ready := commandBarStepDependenciesSatisfied(step, runIDsByStep, runsByID)
-		if !ready {
+		if !commandBarStepDependenciesSatisfied(step, runIDsByStep, runsByID) {
 			continue
 		}
-		run, err := s.startCommandBarPlanStep(ctx, input.WorkspaceID, input.ActorID, input.Prompt, input.PageContext, steps, index, input.PlanID, parentRunID)
+		latestPlan, err := s.commandBarPlanRepo.GetByID(ctx, input.WorkspaceID, input.PlanID)
 		if err != nil {
-			_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, err.Error())
 			return nil, err
+		}
+		if latestPlan == nil {
+			return progress, nil
+		}
+		if latestPlan.Status == model.CommandBarPlanStatusCancelled || latestPlan.Status == model.CommandBarPlanStatusFailed || latestPlan.Status == model.CommandBarPlanStatusCompleted {
+			return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: latestPlan.Status}, nil
+		}
+		latestRunIDsByStep := decodeCommandBarPlanRunIDs(latestPlan.RunIDsByStep)
+		if existingRunID := strings.TrimSpace(latestRunIDsByStep[index]); existingRunID != "" {
+			runIDsByStep[index] = existingRunID
+			observedConcurrentProgress = true
+			if existing, err := s.runRepo.GetByID(ctx, input.WorkspaceID, existingRunID); err == nil && existing != nil {
+				runsByID[existing.ID] = *existing
+				if model.IsAgentRunActiveStatus(existing.Status) {
+					activeCount++
+				}
+			}
+			continue
+		}
+		parentRunID := commandBarParentRunIDForStep(steps, index, runIDsByStep, runsByID)
+		var run *model.AgentRun
+		if isCommandBarOrchestrationStep(step) {
+			run, err = s.startCommandBarOrchestrationStep(ctx, input, steps, index, parentRunID)
+		} else {
+			run, err = s.startCommandBarPlanStep(ctx, input.WorkspaceID, input.ActorID, input.Prompt, input.PageContext, steps, index, input.PlanID, parentRunID)
+		}
+		if err != nil {
+			if existing := s.commandBarExistingRunForStep(ctx, input.WorkspaceID, parentRunID, input.PlanID, steps, index); existing != nil {
+				run = existing
+			} else {
+				_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, err.Error())
+				return nil, err
+			}
 		}
 		runIDsByStep[index] = run.ID
 		started++
@@ -3687,27 +3830,361 @@ func (s *AgentService) StartReadyCommandBarPlanSteps(ctx context.Context, input 
 			return nil, err
 		}
 	}
-	if started == 0 && activeCount == 0 {
+	if started == 0 && activeCount == 0 && !observedConcurrentProgress {
 		_ = s.commandBarPlanRepo.MarkFailed(ctx, input.WorkspaceID, input.PlanID, "Command-bar plan has no runnable steps; check task dependencies for a cycle or missing completed prerequisite.")
 		return &temporalapp.CommandBarPlanProgress{Terminal: true, Status: model.CommandBarPlanStatusFailed}, nil
 	}
 	return progress, nil
 }
 
-func commandBarStepDependenciesSatisfied(step model.CommandBarPlanStep, runIDsByStep map[int]string, runsByID map[string]model.AgentRun) (*string, bool) {
-	var parentRunID *string
+func (s *AgentService) commandBarExistingChildRunForParent(ctx context.Context, workspaceID string, parentRunID *string) *model.AgentRun {
+	if s == nil || s.runRepo == nil || parentRunID == nil || strings.TrimSpace(*parentRunID) == "" {
+		return nil
+	}
+	existing, err := s.runRepo.FindByParentRunID(ctx, workspaceID, strings.TrimSpace(*parentRunID))
+	if err != nil {
+		return nil
+	}
+	return existing
+}
+
+func (s *AgentService) commandBarExistingRunForStep(ctx context.Context, workspaceID string, parentRunID *string, planID string, steps []model.CommandBarPlanStep, stepIndex int) *model.AgentRun {
+	existing := s.commandBarExistingChildRunForParent(ctx, workspaceID, parentRunID)
+	if existing == nil || !commandBarRunMatchesStep(existing, planID, steps, stepIndex) {
+		return nil
+	}
+	return existing
+}
+
+func commandBarRunMatchesStep(run *model.AgentRun, planID string, steps []model.CommandBarPlanStep, stepIndex int) bool {
+	if run == nil || stepIndex < 0 || stepIndex >= len(steps) {
+		return false
+	}
+	step := steps[stepIndex]
+	if strings.TrimSpace(run.AgentID) != strings.TrimSpace(step.AgentID) {
+		return false
+	}
+	if normalizeCommandBarTargetType(run.TargetType) != normalizeCommandBarTargetType(step.Target.EntityType) || strings.TrimSpace(run.TargetID) != strings.TrimSpace(step.Target.EntityID) {
+		return false
+	}
+	payload, ok := commandBarRunPayload(run)
+	if !ok {
+		return false
+	}
+	return strings.TrimSpace(payload.PlanID) == strings.TrimSpace(planID) && payload.StepIndex == stepIndex
+}
+
+func commandBarStepDependenciesSatisfied(step model.CommandBarPlanStep, runIDsByStep map[int]string, runsByID map[string]model.AgentRun) bool {
 	for _, dep := range step.DependsOnStepIndexes {
 		runID := strings.TrimSpace(runIDsByStep[dep])
 		if runID == "" {
-			return nil, false
+			return false
 		}
 		run, ok := runsByID[runID]
 		if !ok || run.Status != model.AgentRunStatusCompleted {
-			return nil, false
+			return false
 		}
-		parentRunID = &runID
 	}
-	return parentRunID, true
+	return true
+}
+
+func commandBarParentRunIDForStep(steps []model.CommandBarPlanStep, stepIndex int, runIDsByStep map[int]string, runsByID map[string]model.AgentRun) *string {
+	if stepIndex < 0 || stepIndex >= len(steps) {
+		return nil
+	}
+	step := steps[stepIndex]
+	if len(step.DependsOnStepIndexes) != 1 {
+		return nil
+	}
+	dependencyIndex := step.DependsOnStepIndexes[0]
+	if commandBarDependencyConsumerCount(steps, dependencyIndex) != 1 {
+		return nil
+	}
+	runID := strings.TrimSpace(runIDsByStep[dependencyIndex])
+	if runID == "" {
+		return nil
+	}
+	run, ok := runsByID[runID]
+	if !ok || run.Status != model.AgentRunStatusCompleted {
+		return nil
+	}
+	id := run.ID
+	return &id
+}
+
+func commandBarDependencyConsumerCount(steps []model.CommandBarPlanStep, dependencyIndex int) int {
+	count := 0
+	for _, step := range steps {
+		for _, dep := range step.DependsOnStepIndexes {
+			if dep == dependencyIndex {
+				count++
+				break
+			}
+		}
+	}
+	return count
+}
+
+type commandBarOrchestrationOutput struct {
+	Type                string `json:"type,omitempty"`
+	Status              string `json:"status,omitempty"`
+	Message             string `json:"message,omitempty"`
+	EpicBranch          string `json:"epic_branch,omitempty"`
+	BaseBranch          string `json:"base_branch,omitempty"`
+	TaskBranch          string `json:"task_branch,omitempty"`
+	ConflictRunID       string `json:"conflict_run_id,omitempty"`
+	ConflictAttempt     int    `json:"conflict_attempt,omitempty"`
+	FinalPullRequestURL string `json:"final_pull_request_url,omitempty"`
+}
+
+func (s *AgentService) startCommandBarOrchestrationStep(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, parentRunID *string) (*model.AgentRun, error) {
+	step := steps[stepIndex]
+	now := time.Now()
+	triggerContext, err := buildCommandBarTriggerContext(input.Prompt, input.PageContext, steps, stepIndex, input.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	runInput, err := json.Marshal(model.AgentRunInputPayload{
+		Trigger: triggerContext,
+		Target: &model.AgentRunTargetContext{
+			TargetType: step.Target.EntityType,
+			TargetID:   step.Target.EntityID,
+		},
+		AdditionalContext: step.Instructions,
+	})
+	if err != nil {
+		return nil, err
+	}
+	run := &model.AgentRun{
+		ID:                uuid.NewString(),
+		WorkspaceID:       input.WorkspaceID,
+		AgentID:           step.AgentID,
+		TargetType:        firstNonEmptyString(step.Target.EntityType, input.PageContext.EntityType),
+		TargetID:          firstNonEmptyString(step.Target.EntityID, input.PageContext.EntityID),
+		RuntimeKind:       "internal",
+		InvocationMode:    "autonomous",
+		ParentRunID:       parentRunID,
+		ApprovalState:     "not_required",
+		PauseReason:       model.AgentRunPauseReasonNone,
+		TriggeredByUserID: stringPtrIfNotEmpty(input.ActorID),
+		Status:            model.AgentRunStatusRunning,
+		ExecutionStage:    strPtr(step.StepType),
+		StartedAt:         &now,
+		LastHeartbeatAt:   &now,
+		Input:             runInput,
+		OutputSummary:     json.RawMessage(`{}`),
+	}
+	if step.Target.EntityType == "task" {
+		taskID := step.Target.EntityID
+		run.TaskID = &taskID
+	}
+	if err := s.runRepo.Create(ctx, run); err != nil {
+		return nil, err
+	}
+	updated, err := s.executeCommandBarOrchestrationRun(ctx, input, steps, stepIndex, run)
+	if err != nil {
+		run.Status = model.AgentRunStatusFailed
+		run.ErrorMessage = strPtr(err.Error())
+		completedAt := time.Now()
+		run.CompletedAt = &completedAt
+		run.LastHeartbeatAt = &completedAt
+		_ = s.runRepo.Update(ctx, run)
+		s.runRepo.Notify(ctx, run)
+		return nil, err
+	}
+	s.runRepo.Notify(ctx, updated)
+	return updated, nil
+}
+
+func (s *AgentService) advanceRunningCommandBarOrchestrationRun(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun) (*model.AgentRun, error) {
+	if run == nil || run.Status != model.AgentRunStatusRunning {
+		return run, nil
+	}
+	var output commandBarOrchestrationOutput
+	_ = json.Unmarshal(run.OutputSummary, &output)
+	if output.ConflictRunID == "" {
+		return run, nil
+	}
+	child, err := s.runRepo.GetByIDAny(ctx, output.ConflictRunID)
+	if err != nil || child == nil {
+		return run, err
+	}
+	if model.IsAgentRunActiveStatus(child.Status) {
+		return run, nil
+	}
+	if child.Status != model.AgentRunStatusCompleted {
+		run.Status = model.AgentRunStatusFailed
+		run.ErrorMessage = strPtr("merge conflict resolution run did not complete successfully")
+		now := time.Now()
+		run.CompletedAt = &now
+		run.LastHeartbeatAt = &now
+		if err := s.runRepo.Update(ctx, run); err != nil {
+			return nil, err
+		}
+		s.runRepo.Notify(ctx, run)
+		return run, nil
+	}
+	return s.executeCommandBarOrchestrationRun(ctx, input, steps, stepIndex, run)
+}
+
+func (s *AgentService) executeCommandBarOrchestrationRun(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun) (*model.AgentRun, error) {
+	if s.gitService == nil {
+		return nil, fmt.Errorf("git service is not configured")
+	}
+	step := steps[stepIndex]
+	switch step.StepType {
+	case model.CommandBarStepTypeEnsureEpicBranch:
+		target, err := s.gitService.EnsureEpicBranch(ctx, input.WorkspaceID, input.PageContext.EntityID, input.ActorID, run.ID)
+		if err != nil {
+			return nil, err
+		}
+		preparedTaskIDs := make(map[string]bool)
+		for _, candidate := range steps {
+			if candidate.Target.EntityType == "task" && candidate.Target.EntityID != "" {
+				if preparedTaskIDs[candidate.Target.EntityID] {
+					continue
+				}
+				preparedTaskIDs[candidate.Target.EntityID] = true
+				if _, err := s.gitService.PrepareTaskForEpicBranch(ctx, input.WorkspaceID, candidate.Target.EntityID, input.PageContext.EntityID, input.ActorID); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return s.completeCommandBarOrchestrationRun(ctx, run, commandBarOrchestrationOutput{
+			Type:       step.StepType,
+			Status:     "completed",
+			Message:    "Epic branch is ready and task delivery targets were based on it.",
+			EpicBranch: derefString(target.EpicBranch),
+			BaseBranch: derefString(target.BaseBranch),
+		})
+	case model.CommandBarStepTypeMergeTaskToEpic:
+		target, err := s.gitService.MergeTaskBranchIntoEpic(ctx, input.WorkspaceID, step.Target.EntityID, input.PageContext.EntityID, run.ID)
+		if err != nil {
+			if commandBarIsMergeConflict(err) {
+				return s.startCommandBarMergeConflictResolution(ctx, input, steps, stepIndex, run, err)
+			}
+			return nil, err
+		}
+		return s.completeCommandBarOrchestrationRun(ctx, run, commandBarOrchestrationOutput{
+			Type:       step.StepType,
+			Status:     "completed",
+			Message:    "Task branch merged into epic branch.",
+			EpicBranch: derefString(target.EpicBranch),
+			BaseBranch: derefString(target.BaseBranch),
+		})
+	case model.CommandBarStepTypeOpenEpicPullRequest:
+		target, err := s.gitService.OpenEpicFinalPullRequest(ctx, input.WorkspaceID, input.PageContext.EntityID, run.ID)
+		if err != nil {
+			return nil, err
+		}
+		return s.completeCommandBarOrchestrationRun(ctx, run, commandBarOrchestrationOutput{
+			Type:                step.StepType,
+			Status:              "completed",
+			Message:             "Final epic pull request is open.",
+			EpicBranch:          derefString(target.EpicBranch),
+			BaseBranch:          derefString(target.BaseBranch),
+			FinalPullRequestURL: derefString(target.FinalPRURL),
+		})
+	default:
+		return nil, fmt.Errorf("unsupported command-bar orchestration step %q", step.StepType)
+	}
+}
+
+func (s *AgentService) completeCommandBarOrchestrationRun(ctx context.Context, run *model.AgentRun, output commandBarOrchestrationOutput) (*model.AgentRun, error) {
+	raw, err := json.Marshal(output)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	run.Status = model.AgentRunStatusCompleted
+	run.PauseReason = model.AgentRunPauseReasonNone
+	run.ExecutionStage = strPtr("completed")
+	run.OutputSummary = raw
+	run.CompletedAt = &now
+	run.LastHeartbeatAt = &now
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return nil, err
+	}
+	s.runRepo.Notify(ctx, run)
+	return run, nil
+}
+
+func commandBarIsMergeConflict(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "merge conflict")
+}
+
+func (s *AgentService) startCommandBarMergeConflictResolution(ctx context.Context, input temporalapp.CommandBarPlanWorkflowInput, steps []model.CommandBarPlanStep, stepIndex int, run *model.AgentRun, mergeErr error) (*model.AgentRun, error) {
+	var existing commandBarOrchestrationOutput
+	_ = json.Unmarshal(run.OutputSummary, &existing)
+	if existing.ConflictAttempt >= 1 && existing.ConflictRunID != "" {
+		return nil, fmt.Errorf("task branch still conflicts with epic branch after Forge conflict resolution: %w", mergeErr)
+	}
+	step := steps[stepIndex]
+	forgeStep, ok := commandBarForgeStepForTarget(steps, step.Target.EntityID)
+	if !ok {
+		return nil, fmt.Errorf("merge conflict requires Forge conflict resolution, but no Forge step was found for task %s", step.Target.DisplayTitle)
+	}
+	triggerContext, err := buildCommandBarTriggerContext(input.Prompt, input.PageContext, steps, stepIndex, input.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	additionalContext := strings.Join([]string{
+		"Resolve the merge conflict blocking this epic integration.",
+		"Your task branch could not be merged into the epic integration branch.",
+		"Update the task branch so it merges cleanly into the epic branch, then push your changes.",
+		"Do not merge the task branch into the epic branch yourself; Helpin will retry the backend merge after this run completes.",
+		"Merge error: " + mergeErr.Error(),
+	}, "\n")
+	reason := "command_bar_merge_conflict"
+	parentRunID := run.ID
+	event := &model.AgentRunEventContext{
+		RunID:  &run.ID,
+		Reason: &reason,
+	}
+	actor := stringPtrIfNotEmpty(input.ActorID)
+	child, err := s.startTargetRunWithOptions(ctx, input.WorkspaceID, step.Target.EntityType, step.Target.EntityID, model.StartAgentRunRequest{
+		AgentID:           forgeStep.AgentID,
+		AdditionalContext: &additionalContext,
+		AllowedTools:      forgeStep.AllowedTools,
+	}, actor, triggerContext, event, &parentRunID, startTargetRunOptions{allowActiveParentRun: true})
+	if err != nil {
+		return nil, err
+	}
+	output := commandBarOrchestrationOutput{
+		Type:            step.StepType,
+		Status:          "resolving_conflict",
+		Message:         "Forge is resolving a merge conflict before Helpin retries the task-to-epic merge.",
+		ConflictRunID:   child.ID,
+		ConflictAttempt: existing.ConflictAttempt + 1,
+	}
+	raw, err := json.Marshal(output)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	run.Status = model.AgentRunStatusRunning
+	run.ExecutionStage = strPtr("resolving_conflict")
+	run.OutputSummary = raw
+	run.LastHeartbeatAt = &now
+	if err := s.runRepo.Update(ctx, run); err != nil {
+		return nil, err
+	}
+	s.runRepo.Notify(ctx, run)
+	return run, nil
+}
+
+func commandBarForgeStepForTarget(steps []model.CommandBarPlanStep, taskID string) (model.CommandBarPlanStep, bool) {
+	for _, step := range steps {
+		if step.Target.EntityID == taskID && normalizePresetKey(step.AgentKey) == model.AgentPresetCodeBuilder {
+			return step, true
+		}
+	}
+	for _, step := range steps {
+		if step.Target.EntityID == taskID && strings.EqualFold(strings.TrimSpace(step.AgentName), "Forge") {
+			return step, true
+		}
+	}
+	return model.CommandBarPlanStep{}, false
 }
 
 func commandBarStepIndexForRun(runIDsByStep map[int]string, runID string) int {
@@ -3716,7 +4193,7 @@ func commandBarStepIndexForRun(runIDsByStep map[int]string, runID string) int {
 			return index
 		}
 	}
-	return 0
+	return -1
 }
 
 func (s *AgentService) advanceFanOutCommandBarPlan(ctx context.Context, run *model.AgentRun, payload commandBarTriggerContextPayload) (*model.AgentRun, error) {
@@ -4911,13 +5388,20 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 	if !okLens {
 		lens, okLens = findCommandBarCandidateByName(taskCandidates, "lens")
 	}
-	if !okForge || !okLens {
+	commandAgent, okCommandAgent := findCommandBarCandidateByPreset(commandBarAllAgentCandidates(agents), model.AgentPresetCommandAgent)
+	if !okCommandAgent {
+		commandAgent, okCommandAgent = findCommandBarCandidateByName(commandBarAllAgentCandidates(agents), "Command Agent")
+	}
+	if !okForge || !okLens || !okCommandAgent {
 		missing := []string{}
 		if !okForge {
 			missing = append(missing, "Forge")
 		}
 		if !okLens {
 			missing = append(missing, "Lens")
+		}
+		if !okCommandAgent {
+			missing = append(missing, "Command Agent")
 		}
 		return &model.CommandBarParseResponse{
 			Status:      model.CommandBarParseStatusNoMatchingAgent,
@@ -4927,9 +5411,19 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 		}
 	}
 	tasks := s.commandBarEpicTasks(ctx, workspaceID, pageContext)
-	tasks = slices.DeleteFunc(tasks, func(task model.PMTask) bool { return task.Completed })
+	var skippedTasks []commandBarSkippedTask
+	tasks, skippedTasks = commandBarFilterCompletedTasks(tasks, skippedTasks)
+	tasks, skippedTasks = s.commandBarUnmergedEpicTasks(ctx, workspaceID, pageContext.EntityID, tasks, skippedTasks)
 	if len(tasks) == 0 {
-		return nil
+		return &model.CommandBarParseResponse{
+			Status: model.CommandBarParseStatusNoMatchingAgent,
+			Reason: commandBarSkippedTasksMessage(
+				skippedTasks,
+				"All epic tasks are already completed or merged into the epic branch.",
+			),
+			Suggestions: defaultCommandBarSuggestions("task"),
+			Candidates:  taskCandidates,
+		}
 	}
 	slices.SortFunc(tasks, func(a, b model.PMTask) int {
 		if a.DisplayID < b.DisplayID {
@@ -4941,11 +5435,21 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 		return strings.Compare(a.ID, b.ID)
 	})
 	links := s.commandBarTaskDependencyLinks(ctx, workspaceID, tasks)
-	steps := make([]model.CommandBarPlanStep, 0, min(len(tasks)*2, maxCommandBarPlanSteps))
+	steps := make([]model.CommandBarPlanStep, 0, min(len(tasks)*3+2, maxCommandBarPlanSteps))
+	ensureEpicBranchIndex := len(steps)
+	steps = append(steps, model.CommandBarPlanStep{
+		AgentID:      commandAgent.ID,
+		AgentKey:     commandAgent.PresetKey,
+		AgentName:    commandAgent.Name,
+		PlanKind:     model.CommandBarPlanKindTaskPipeline,
+		StepType:     model.CommandBarStepTypeEnsureEpicBranch,
+		Target:       pageContext,
+		Instructions: fmt.Sprintf("Create or reuse the epic integration branch for %q from the configured base branch, then configure child task branches to use that epic branch as base.", pageContext.DisplayTitle),
+	})
 	forgeStepByTask := map[string]int{}
-	lensStepByTask := map[string]int{}
+	mergeStepByTask := map[string]int{}
 	for _, task := range tasks {
-		if len(steps)+2 > maxCommandBarPlanSteps {
+		if len(steps)+3+1 > maxCommandBarPlanSteps {
 			break
 		}
 		target := model.CommandBarPageContext{
@@ -4959,15 +5463,15 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 		forgeIndex := len(steps)
 		forgeStepByTask[task.ID] = forgeIndex
 		steps = append(steps, model.CommandBarPlanStep{
-			AgentID:      forge.ID,
-			AgentKey:     forge.PresetKey,
-			AgentName:    forge.Name,
-			PlanKind:     model.CommandBarPlanKindTaskPipeline,
-			Target:       target,
-			Instructions: fmt.Sprintf("Complete the implementation work for %s. Respect task dependencies; this task is part of epic %q. Do not run Lens yourself; Helpin schedules review as the next command-bar step.", commandBarTaskDisplayTitle(task), pageContext.DisplayTitle),
+			AgentID:              forge.ID,
+			AgentKey:             forge.PresetKey,
+			AgentName:            forge.Name,
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			Target:               target,
+			Instructions:         fmt.Sprintf("Complete the implementation work for %s on its task branch. The task branch is based on this epic's integration branch. Respect task dependencies; this task is part of epic %q. Do not run Lens yourself; Helpin schedules review as the next command-bar step.", commandBarTaskDisplayTitle(task), pageContext.DisplayTitle),
+			DependsOnStepIndexes: []int{ensureEpicBranchIndex},
 		})
 		lensIndex := len(steps)
-		lensStepByTask[task.ID] = lensIndex
 		steps = append(steps, model.CommandBarPlanStep{
 			AgentID:              lens.ID,
 			AgentKey:             lens.PresetKey,
@@ -4977,17 +5481,47 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 			Instructions:         fmt.Sprintf("Review the completed Forge work for %s. Use the linked Forge run as prior-step context when available.", commandBarTaskDisplayTitle(task)),
 			DependsOnStepIndexes: []int{forgeIndex},
 		})
+		mergeIndex := len(steps)
+		mergeStepByTask[task.ID] = mergeIndex
+		steps = append(steps, model.CommandBarPlanStep{
+			AgentID:              commandAgent.ID,
+			AgentKey:             commandAgent.PresetKey,
+			AgentName:            commandAgent.Name,
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			StepType:             model.CommandBarStepTypeMergeTaskToEpic,
+			Target:               target,
+			Instructions:         fmt.Sprintf("Merge %s's task branch into the epic integration branch after Lens completes.", commandBarTaskDisplayTitle(task)),
+			DependsOnStepIndexes: []int{lensIndex},
+		})
 	}
 	for _, link := range links {
-		sourceLens, okSource := lensStepByTask[link.SourceTaskID]
+		sourceMerge, okSource := mergeStepByTask[link.SourceTaskID]
 		targetForge, okTarget := forgeStepByTask[link.TargetTaskID]
 		if !okSource || !okTarget {
 			continue
 		}
-		steps[targetForge].DependsOnStepIndexes = appendUniqueInt(steps[targetForge].DependsOnStepIndexes, sourceLens)
+		steps[targetForge].DependsOnStepIndexes = appendUniqueInt(steps[targetForge].DependsOnStepIndexes, sourceMerge)
 	}
 	if len(steps) == 0 {
 		return nil
+	}
+	finalDeps := make([]int, 0, len(mergeStepByTask))
+	for _, task := range tasks {
+		if mergeIndex, ok := mergeStepByTask[task.ID]; ok {
+			finalDeps = append(finalDeps, mergeIndex)
+		}
+	}
+	if len(finalDeps) > 0 && len(steps)+1 <= maxCommandBarPlanSteps {
+		steps = append(steps, model.CommandBarPlanStep{
+			AgentID:              commandAgent.ID,
+			AgentKey:             commandAgent.PresetKey,
+			AgentName:            commandAgent.Name,
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			StepType:             model.CommandBarStepTypeOpenEpicPullRequest,
+			Target:               pageContext,
+			Instructions:         fmt.Sprintf("Open or reuse the final pull request from the epic integration branch for %q into the configured base branch.", pageContext.DisplayTitle),
+			DependsOnStepIndexes: finalDeps,
+		})
 	}
 	resp := commandBarMultiStepPlanResponse(steps, "Prepared a dependency-aware Forge then Lens pipeline across epic tasks.", taskCandidates)
 	resp.Plan.PlanKind = model.CommandBarPlanKindTaskPipeline
@@ -4996,6 +5530,13 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 		Severity: "info",
 		Message:  "Temporal will run unblocked task pipelines in parallel and start Lens as soon as each Forge run completes.",
 	})
+	if len(skippedTasks) > 0 {
+		resp.Plan.Guardrails = append(resp.Plan.Guardrails, model.CommandBarGuardrail{
+			Type:     "task_pipeline_skipped_tasks",
+			Severity: "info",
+			Message:  commandBarSkippedTasksMessage(skippedTasks, ""),
+		})
+	}
 	if dependencyAware {
 		resp.Plan.Guardrails = append(resp.Plan.Guardrails, model.CommandBarGuardrail{
 			Type:     "task_dependency_context",
@@ -5050,6 +5591,152 @@ func (s *CommandBarService) commandBarEpicTasks(ctx context.Context, workspaceID
 		return nil
 	}
 	return tasks
+}
+
+type commandBarSkippedTask struct {
+	ID     string
+	Title  string
+	Reason string
+}
+
+func commandBarFilterCompletedTasks(tasks []model.PMTask, skipped []commandBarSkippedTask) ([]model.PMTask, []commandBarSkippedTask) {
+	if len(tasks) == 0 {
+		return tasks, skipped
+	}
+	filtered := make([]model.PMTask, 0, len(tasks))
+	for _, task := range tasks {
+		if task.Completed {
+			skipped = append(skipped, commandBarSkippedTask{
+				ID:     task.ID,
+				Title:  commandBarTaskDisplayTitle(task),
+				Reason: "completed",
+			})
+			continue
+		}
+		filtered = append(filtered, task)
+	}
+	return filtered, skipped
+}
+
+func (s *CommandBarService) commandBarUnmergedEpicTasks(ctx context.Context, workspaceID, epicID string, tasks []model.PMTask, skipped []commandBarSkippedTask) ([]model.PMTask, []commandBarSkippedTask) {
+	if len(tasks) == 0 || s == nil || s.agentService == nil {
+		return tasks, skipped
+	}
+	filtered := make([]model.PMTask, 0, len(tasks))
+	for _, task := range tasks {
+		merged, err := s.commandBarTaskAlreadyMergedToEpic(ctx, workspaceID, epicID, task.ID)
+		if err != nil {
+			slog.WarnContext(ctx, "command bar task merge-state lookup failed", "error", err, "workspace_id", workspaceID, "epic_id", epicID, "task_id", task.ID)
+			filtered = append(filtered, task)
+			continue
+		}
+		if merged {
+			skipped = append(skipped, commandBarSkippedTask{
+				ID:     task.ID,
+				Title:  commandBarTaskDisplayTitle(task),
+				Reason: "merged into the epic branch",
+			})
+			continue
+		}
+		filtered = append(filtered, task)
+	}
+	return filtered, skipped
+}
+
+func (s *CommandBarService) commandBarTaskAlreadyMergedToEpic(ctx context.Context, workspaceID, epicID, taskID string) (bool, error) {
+	if s == nil || s.agentService == nil || strings.TrimSpace(taskID) == "" {
+		return false, nil
+	}
+	if s.agentService.gitService != nil {
+		target, err := s.agentService.gitService.GetTaskDeliveryTarget(ctx, workspaceID, taskID)
+		if err != nil {
+			return false, err
+		}
+		if target != nil && commandBarTaskDeliveryTargetIsMerged(*target, epicID) {
+			return true, nil
+		}
+	}
+	if s.agentService.runRepo != nil {
+		run, err := s.agentService.runRepo.FindCompletedByTargetStage(ctx, workspaceID, "task", taskID, model.CommandBarStepTypeMergeTaskToEpic)
+		if err != nil {
+			return false, err
+		}
+		if run != nil {
+			return true, nil
+		}
+		runs, err := s.agentService.runRepo.ListByTarget(ctx, workspaceID, "task", taskID)
+		if err != nil {
+			return false, err
+		}
+		if slices.ContainsFunc(runs, commandBarRunLooksLikeCompletedTaskMerge) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func commandBarRunLooksLikeCompletedTaskMerge(run model.AgentRun) bool {
+	if run.Status != model.AgentRunStatusCompleted {
+		return false
+	}
+	if strings.TrimSpace(derefString(run.ExecutionStage)) == model.CommandBarStepTypeMergeTaskToEpic {
+		return true
+	}
+	var output commandBarOrchestrationOutput
+	if len(run.OutputSummary) > 0 {
+		_ = json.Unmarshal(run.OutputSummary, &output)
+	}
+	if strings.TrimSpace(output.Type) == model.CommandBarStepTypeMergeTaskToEpic {
+		return true
+	}
+	message := strings.ToLower(strings.TrimSpace(output.Message))
+	if strings.Contains(message, "merged into epic branch") || strings.Contains(message, "task branch merged") {
+		return true
+	}
+	raw := strings.ToLower(string(run.OutputSummary))
+	return strings.Contains(raw, model.CommandBarStepTypeMergeTaskToEpic) || strings.Contains(raw, "merged into epic branch")
+}
+
+func commandBarSkippedTasksMessage(skipped []commandBarSkippedTask, fallback string) string {
+	if len(skipped) == 0 {
+		return fallback
+	}
+	labels := make([]string, 0, min(len(skipped), 3))
+	for i, task := range skipped {
+		if i >= 3 {
+			break
+		}
+		label := strings.TrimSpace(task.Title)
+		if label == "" {
+			label = strings.TrimSpace(task.ID)
+		}
+		if label == "" {
+			label = "untitled task"
+		}
+		reason := strings.TrimSpace(task.Reason)
+		if reason != "" {
+			label = fmt.Sprintf("%s (%s)", label, reason)
+		}
+		labels = append(labels, label)
+	}
+	remainder := len(skipped) - len(labels)
+	taskWord := "task"
+	if len(skipped) != 1 {
+		taskWord = "tasks"
+	}
+	message := fmt.Sprintf("Skipped %d %s already completed or merged into the epic branch: %s", len(skipped), taskWord, strings.Join(labels, ", "))
+	if remainder > 0 {
+		message = fmt.Sprintf("%s, and %d more", message, remainder)
+	}
+	return message + "."
+}
+
+func commandBarTaskDeliveryTargetIsMerged(target model.TaskDeliveryTarget, epicID string) bool {
+	if strings.TrimSpace(target.DeliveryState) != "merged" && strings.TrimSpace(derefString(target.ActivePRStatus)) != "merged" {
+		return false
+	}
+	sourceEpicID := strings.TrimSpace(derefString(target.SourceEpicID))
+	return sourceEpicID == "" || strings.TrimSpace(epicID) == "" || sourceEpicID == strings.TrimSpace(epicID)
 }
 
 func (s *CommandBarService) commandBarTaskDependencyLinks(ctx context.Context, workspaceID string, tasks []model.PMTask) []model.PMTaskLink {
