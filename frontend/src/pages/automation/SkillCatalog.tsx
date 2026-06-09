@@ -677,7 +677,7 @@ export function SkillCatalogContent({
       {!embedded && (
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
-            <h1 className="text-[22px] font-semibold tracking-tight">Skill Catalog</h1>
+            <h1 className="text-xl font-semibold">Skill Catalog</h1>
             <p className="text-[13px] text-muted-foreground">
               Reusable prompt fragments agents compose at runtime.
             </p>

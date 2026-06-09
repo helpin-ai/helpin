@@ -4715,8 +4715,8 @@ export function AutomationFlowsPage({
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Automation flows</h1>
-          <p className="text-sm text-muted-foreground">Event-driven automations that trigger agents and workflow actions.</p>
+          <h1 className="text-xl font-semibold">Automation flows</h1>
+          <p className="text-sm text-muted-foreground">Event-driven and time-based automations that trigger agents and workflow actions.</p>
         </div>
         {permissions.canAdminAutomations && (
           <Button size="sm" onClick={openCreateComposer}>
