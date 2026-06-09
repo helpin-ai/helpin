@@ -2244,14 +2244,9 @@ export function FlowRow({
                 }}
               >
                 {canEdit && (
-                  <>
-                    <DropdownMenuItem onClick={() => onEdit(rule)}>
-                      Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onToggle(rule)}>
-                      {rule.enabled ? 'Disable' : 'Enable'}
-                    </DropdownMenuItem>
-                  </>
+                  <DropdownMenuItem onClick={() => onEdit(rule)}>
+                    Edit
+                  </DropdownMenuItem>
                 )}
                 {workspaceSlug && (
                   <DropdownMenuItem asChild>
@@ -2275,12 +2270,17 @@ export function FlowRow({
                   </DropdownMenuItem>
                 )}
                 {canEdit && (
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => onDelete(rule)}
-                  >
-                    Delete
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem onClick={() => onToggle(rule)}>
+                      {rule.enabled ? 'Disable' : 'Enable'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => onDelete(rule)}
+                    >
+                      Delete
+                    </DropdownMenuItem>
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
