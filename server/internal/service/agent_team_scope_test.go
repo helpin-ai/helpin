@@ -220,6 +220,7 @@ func setupAgentScopeTestDB(t *testing.T) *gorm.DB {
 			id text PRIMARY KEY,
 			workspace_id text NOT NULL,
 			agent_id text NOT NULL,
+			actor_id text,
 			binding_id text NOT NULL,
 			binding_kind text NOT NULL,
 			trigger_type text,

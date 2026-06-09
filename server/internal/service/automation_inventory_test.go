@@ -180,6 +180,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
+			actor_id TEXT,
 			binding_id TEXT NOT NULL,
 			binding_kind TEXT NOT NULL,
 			trigger_type TEXT,
@@ -331,6 +332,7 @@ func TestAutomationInventoryService_AssemblesBuiltIns(t *testing.T) {
 		repository.NewAgentTriggerExecutionRepository(db),
 		repository.NewAgentRunRepository(db),
 		repository.NewAgentRepository(db),
+		nil,
 		nil,
 		nil,
 	)
@@ -501,6 +503,7 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
 			agent_id TEXT NOT NULL,
+			actor_id TEXT,
 			binding_id TEXT NOT NULL,
 			binding_kind TEXT NOT NULL,
 			trigger_type TEXT,
@@ -556,6 +559,7 @@ func TestAutomationActivityIncludesRunsWithoutTriggerExecutions(t *testing.T) {
 		repository.NewAgentTriggerExecutionRepository(db),
 		repository.NewAgentRunRepository(db),
 		repository.NewAgentRepository(db),
+		nil,
 		nil,
 		nil,
 	)

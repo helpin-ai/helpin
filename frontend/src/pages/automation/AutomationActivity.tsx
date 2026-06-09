@@ -535,6 +535,7 @@ function sourceLabel(value?: string) {
 }
 
 function buildExecutionTriggerLabel(item: AutomationTriggerExecutionListItem) {
+  if (item.binding_kind === 'automation_rule' && item.trigger_type === 'manual') return 'Run now';
   if (item.trigger_type === 'cron' || item.binding_id === 'automation_rule.cron') return 'Cron';
   if (item.binding_kind === 'manual') return 'Manual';
   if (item.binding_kind === 'automation_rule') return item.trigger_title || sourceLabel(item.binding_kind);
@@ -913,6 +914,12 @@ function TimelineRow({
           <span>Ran <span className="font-mono text-foreground/80">{relativeTime(item.fired_at)}</span></span>
           <span className="text-muted-foreground/40">·</span>
           <span>Duration <span className="font-mono text-foreground/80">{duration}</span></span>
+          {item.actor_name ? (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span>Ran by <span className="font-medium text-foreground/80">{item.actor_name}</span></span>
+            </>
+          ) : null}
         </div>
 
         {item.error_message ? (

@@ -88,6 +88,9 @@ func ResolveBindingForTrigger(source, triggerType, targetType string) (bindingID
 			return "manual.doc_run", "manual", true
 		}
 	case model.AgentRunTriggerSourceAutomationRule:
+		if triggerType == model.AgentRunTriggerTypeManual {
+			return "automation_rule.manual_run", "automation_rule", true
+		}
 		if triggerType == model.TriggerCron {
 			return "automation_rule.cron", "automation_rule", true
 		}

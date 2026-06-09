@@ -41,7 +41,7 @@ import { pmWorkflowService } from '@/lib/services/pmWorkflowService';
 import { AGENT_RUNTIME_LABELS } from '@/lib/agentRuntime';
 import { buildAutomationActivityPath, buildAutomationFlowsPath } from '@/lib/automationUi';
 import { buildSettingsRoutePath } from '@/lib/settingsSections';
-import { getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
+import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
 import type {
   Agent,
   AgentExecutionConfig,
@@ -682,6 +682,24 @@ function runNowTargetOptions(agent: Agent | null): AgentTargetType[] {
 function defaultRunNowTarget(agent: Agent | null): AgentTargetType | '' {
   const targets = runNowTargetOptions(agent);
   return targets.includes('workspace') ? 'workspace' : (targets[0] ?? '');
+}
+
+function agentRunNowBlocker(agent: Agent, stats?: AgentRunStats) {
+  if (agent.is_system) return 'Built-in agents run from their product surface.';
+  const lastRun = stats?.lastRun;
+  if (lastRun && ACTIVE_RUN_STATUSES.has(lastRun.status)) {
+    const displayStatus = getAgentRunDisplayStatus(lastRun);
+    if (displayStatus === 'awaiting_approval') return 'Agent has a run waiting for approval.';
+    if (displayStatus === 'awaiting_auth') return 'Agent has a run waiting for sign-in.';
+    if (displayStatus === 'awaiting_input') return 'Agent has a run waiting for input.';
+    if (lastRun.status === 'queued') return 'Agent already has a queued run.';
+    if (lastRun.status === 'running') return 'Agent is already running.';
+    return 'Agent already has an active run.';
+  }
+  if (runNowTargetOptions(agent).length === 0) {
+    return 'This agent does not have a manually runnable target enabled.';
+  }
+  return '';
 }
 
 function createEmptyCustomForm(): AgentFormData {
@@ -1641,6 +1659,9 @@ function AgentCard({
   const role = agentRoleLabel(agent, presets);
   const purpose = agentPurpose(agent, presets);
   const attention = needsAttention(agent, stats);
+  const runNowBlocker = agentRunNowBlocker(agent, stats);
+  const showRunNow = canEdit && !agent.is_system;
+  const canRunNow = showRunNow && !runNowBlocker;
 
   return (
     <Card
@@ -1677,6 +1698,15 @@ function AgentCard({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+                {showRunNow ? (
+                  <DropdownMenuItem
+                    disabled={!canRunNow}
+                    title={runNowBlocker || undefined}
+                    onClick={() => onRunNow(agent)}
+                  >
+                    Run now
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem asChild>
                   <a href={buildAutomationActivityPath(workspaceSlug, { page: 1, agent_id: agent.id })}>View runs</a>
                 </DropdownMenuItem>
@@ -1737,20 +1767,37 @@ function AgentCard({
 
         {canEdit ? (
           <div className="flex justify-end gap-2">
-            {!agent.is_system ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 px-2.5 text-xs"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRunNow(agent);
-                }}
-              >
-                <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
-                Run now
-              </Button>
+            {showRunNow ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      'inline-flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
+                      canRunNow ? 'cursor-pointer' : 'cursor-not-allowed',
+                    )}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!canRunNow}
+                      className={cn(
+                        'h-8 px-2.5 text-xs',
+                        canRunNow ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed',
+                      )}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onRunNow(agent);
+                      }}
+                    >
+                      <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
+                      Run now
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}
+              </Tooltip>
             ) : null}
             <Button
               type="button"
@@ -1824,25 +1871,44 @@ export function AgentActions({
   onDelete: (agent: Agent) => void;
   canEdit: boolean;
 }) {
-  const canRunNow = !agent.is_system && canEdit;
+  const runNowBlocker = agentRunNowBlocker(agent, stats);
+  const showRunNow = canEdit && !agent.is_system;
+  const canRunNow = showRunNow && !runNowBlocker;
   const runsPath = buildAutomationActivityPath(workspaceSlug, { page: 1, agent_id: agent.id });
 
   return (
     <div className="flex items-center justify-end gap-1">
-      {canRunNow ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-2.5 text-xs"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRunNow(agent);
-          }}
-        >
-          <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
-          Run now
-        </Button>
+      {showRunNow ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className={cn(
+                'inline-flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
+                canRunNow ? 'cursor-pointer' : 'cursor-not-allowed',
+              )}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canRunNow}
+                className={cn(
+                  'h-8 px-2.5 text-xs',
+                  canRunNow ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed',
+                )}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRunNow(agent);
+                }}
+              >
+                <ZapIcon className="mr-1.5 h-3.5 w-3.5" />
+                Run now
+              </Button>
+            </span>
+          </TooltipTrigger>
+          {runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}
+        </Tooltip>
       ) : null}
 
       <DropdownMenu>
@@ -1862,6 +1928,15 @@ export function AgentActions({
           align="end"
           onClick={(event) => event.stopPropagation()}
         >
+          {showRunNow ? (
+            <DropdownMenuItem
+              disabled={!canRunNow}
+              title={runNowBlocker || undefined}
+              onClick={() => onRunNow(agent)}
+            >
+              Run now
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem asChild>
             <a href={runsPath}>View runs</a>
           </DropdownMenuItem>
@@ -1920,7 +1995,7 @@ function AgentRow({
   return (
     <div
       className={cn(
-        'grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3.5 transition-colors last:border-b-0 hover:bg-muted/25',
+        'group grid cursor-pointer items-center gap-4 border-b border-border/60 px-4 py-3.5 transition-colors last:border-b-0 hover:bg-muted/25',
         AGENTS_LIST_GRID_CLASS,
         attention && 'bg-amber-500/[0.03]',
       )}

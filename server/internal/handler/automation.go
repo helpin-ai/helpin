@@ -179,6 +179,24 @@ func (h *AutomationHandler) DeleteFlow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, model.MessageResponse{Message: "flow deleted"})
 }
 
+// RunFlowNow handles POST /api/automation/flows/{id}/run.
+func (h *AutomationHandler) RunFlowNow(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	flowID := chi.URLParam(r, "id")
+	actorID := middleware.GetUserID(r.Context())
+	if workspaceID == "" || flowID == "" {
+		writeError(w, http.StatusBadRequest, "workspace_id and flow_id are required")
+		return
+	}
+
+	run, err := h.ruleEngine.ExecuteManualRule(r.Context(), workspaceID, flowID, actorID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, run)
+}
+
 // ListFlowTemplates handles GET /api/automation/templates.
 func (h *AutomationHandler) ListFlowTemplates(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)

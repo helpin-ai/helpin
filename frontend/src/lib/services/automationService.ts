@@ -93,6 +93,9 @@ export const automationService = {
   updateFlow: (workspaceId: string, flowId: string, data: UpdateAutomationRuleRequest) =>
     api.put<AutomationRule>(`/automation/flows/${flowId}${qs(workspaceId)}`, data),
 
+  runFlowNow: (workspaceId: string, flowId: string) =>
+    api.post<AgentRun>(`/automation/flows/${flowId}/run${qs(workspaceId)}`, {}),
+
   deleteFlow: (workspaceId: string, flowId: string) =>
     api.del(`/automation/flows/${flowId}${qs(workspaceId)}`),
 

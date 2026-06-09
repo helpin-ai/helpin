@@ -30,6 +30,7 @@ type AutomationInventoryService struct {
 	triggerExecRepo      *repository.AgentTriggerExecutionRepository
 	runRepo              *repository.AgentRunRepository
 	agentRepo            *repository.AgentRepository
+	workspaceRepo        *repository.WorkspaceRepository
 	taskRepo             *repository.PMTaskRepository
 	installationRepo     *repository.SupportInboxInstallationRepository
 }
@@ -43,6 +44,7 @@ func NewAutomationInventoryService(
 	triggerExecRepo *repository.AgentTriggerExecutionRepository,
 	runRepo *repository.AgentRunRepository,
 	agentRepo *repository.AgentRepository,
+	workspaceRepo *repository.WorkspaceRepository,
 	taskRepo *repository.PMTaskRepository,
 	installationRepo *repository.SupportInboxInstallationRepository,
 ) *AutomationInventoryService {
@@ -55,6 +57,7 @@ func NewAutomationInventoryService(
 		triggerExecRepo:      triggerExecRepo,
 		runRepo:              runRepo,
 		agentRepo:            agentRepo,
+		workspaceRepo:        workspaceRepo,
 		taskRepo:             taskRepo,
 		installationRepo:     installationRepo,
 	}
@@ -414,6 +417,17 @@ func (s *AutomationInventoryService) ListTriggerExecutions(
 		}
 	}
 
+	actorNames := map[string]string{}
+	if s.workspaceRepo != nil {
+		members, err := s.workspaceRepo.ListMembers(ctx, workspaceID)
+		if err != nil {
+			return nil, fmt.Errorf("list members for trigger executions: %w", err)
+		}
+		for _, member := range members {
+			actorNames[member.UserID] = member.FullName
+		}
+	}
+
 	ruleNames := map[string]string{}
 	if s.automationRuleRepo != nil {
 		rules, err := s.automationRuleRepo.ListByWorkspace(ctx, workspaceID)
@@ -430,10 +444,18 @@ func (s *AutomationInventoryService) ListTriggerExecutions(
 		bindingTitle, managePath := describeTriggerBinding(execution, ruleNames)
 		triggerTitle := triggerTitleForExecution(execution)
 		referenceTitle := referenceTitleForExecution(execution, ruleNames)
+		actorName := (*string)(nil)
+		if execution.ActorID != nil {
+			if name := strings.TrimSpace(actorNames[strings.TrimSpace(*execution.ActorID)]); name != "" {
+				actorName = &name
+			}
+		}
 		items = append(items, model.AutomationTriggerExecutionListItem{
 			ExecutionID:    execution.ID,
 			AgentID:        execution.AgentID,
 			AgentName:      agentDisplayName(execution.AgentID, agentNames),
+			ActorID:        execution.ActorID,
+			ActorName:      actorName,
 			BindingID:      execution.BindingID,
 			BindingKind:    execution.BindingKind,
 			BindingTitle:   bindingTitle,

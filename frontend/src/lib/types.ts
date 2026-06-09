@@ -513,6 +513,8 @@ export interface AutomationTriggerExecutionListItem {
   execution_id: string;
   agent_id: string;
   agent_name: string;
+  actor_id?: string;
+  actor_name?: string;
   binding_id: string;
   binding_kind: string;
   binding_title: string;

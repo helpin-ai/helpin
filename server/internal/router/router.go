@@ -507,6 +507,7 @@ func New(h Handlers, jwtManager *auth.JWTManager, authz *authorization.AuthzServ
 					r.With(requirePerm(authorization.PermPMAdminAutomations)).Post("/", h.Automation.CreateFlow)
 					r.Route("/{id}", func(r chi.Router) {
 						r.With(requirePerm(authorization.PermPMRead)).Get("/", h.Automation.GetFlow)
+						r.With(requirePerm(authorization.PermPMEdit)).Post("/run", h.Automation.RunFlowNow)
 						r.With(requirePerm(authorization.PermPMAdminAutomations)).Put("/", h.Automation.UpdateFlow)
 						r.With(requirePerm(authorization.PermPMAdminAutomations)).Delete("/", h.Automation.DeleteFlow)
 					})

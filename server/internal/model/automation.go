@@ -150,6 +150,8 @@ type AutomationTriggerExecutionListItem struct {
 	ExecutionID    string     `json:"execution_id"`
 	AgentID        string     `json:"agent_id"`
 	AgentName      string     `json:"agent_name"`
+	ActorID        *string    `json:"actor_id,omitempty"`
+	ActorName      *string    `json:"actor_name,omitempty"`
 	BindingID      string     `json:"binding_id"`
 	BindingKind    string     `json:"binding_kind"`
 	BindingTitle   string     `json:"binding_title"`

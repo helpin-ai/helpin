@@ -1217,6 +1217,7 @@ func (s *AgentService) recordTriggerExecution(
 	execution := &model.AgentTriggerExecution{
 		WorkspaceID:   workspaceID,
 		AgentID:       agentID,
+		ActorID:       trigger.ActorID,
 		BindingID:     bindingID,
 		BindingKind:   bindingKind,
 		TriggerType:   triggerType,

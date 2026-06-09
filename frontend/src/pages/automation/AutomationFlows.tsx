@@ -9,7 +9,6 @@ import {
   BookOpen01Icon,
   Cancel01Icon,
   MoreHorizontalIcon,
-  PauseIcon,
   PlayIcon,
   PlusSignIcon,
   SourceCodeIcon,
@@ -1796,6 +1795,25 @@ function flowIsIncomplete(rule: AutomationRule, agentNames: Map<string, string>)
   return false;
 }
 
+function flowRunNowBlocker(rule: AutomationRule, agentNames: Map<string, string>) {
+  if (rule.trigger_type !== 'cron') return 'Run now is only available for scheduled flows. Event flows run when their trigger happens.';
+  if (rule.action_type !== 'start_agent_run') return 'Run now is only supported for agent flows.';
+  const agentId = stringValue(rule.action_config?.agent_id);
+  if (!agentId || !agentNames.has(agentId)) return 'Complete the flow setup before running it.';
+  const targetType = stringValue(rule.action_config?.target_type) || 'event';
+  const targetId = stringValue(rule.action_config?.target_id);
+  if (rule.trigger_type === 'cron' && targetType === 'event') return '';
+  if (targetType === 'workspace') return '';
+  if (targetType !== 'event' && targetId) return '';
+  return 'This flow needs an event to run.';
+}
+
+function flowRunNowRuntimeBlocker(lastRunStatus?: string) {
+  const status = lastRunStatus?.trim().toLowerCase();
+  if (status === 'queued' || status === 'running') return 'Flow is already running.';
+  return '';
+}
+
 type FlowState = 'active' | 'paused' | 'error' | 'needs_review' | 'incomplete';
 
 function flowNeedsReview(healthItem?: AutomationInventoryItem) {
@@ -2128,9 +2146,12 @@ export function FlowRow({
   workspaceSlug,
   timezone = 'UTC',
   canEdit,
+  canRunNowAction,
   onEdit,
   onToggle,
+  onRunNow,
   onDelete,
+  runningNow,
 }: {
   rule: AutomationRule;
   statesById: Map<string, WorkflowState>;
@@ -2140,9 +2161,12 @@ export function FlowRow({
   workspaceSlug?: string;
   timezone?: string;
   canEdit: boolean;
+  canRunNowAction: boolean;
   onEdit: (rule: AutomationRule) => void;
   onToggle: (rule: AutomationRule) => void;
+  onRunNow: (rule: AutomationRule) => void;
   onDelete: (rule: AutomationRule) => void;
+  runningNow?: boolean;
 }) {
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const isIncomplete = flowIsIncomplete(rule, agentNames);
@@ -2166,6 +2190,10 @@ export function FlowRow({
   const lastExecutionPath = workspaceSlug && lastExecutionId
     ? buildAutomationActivityPath(workspaceSlug, { ...activitySearch, execution_id: lastExecutionId }, 'trigger-executions')
     : null;
+  const runNowBlocker = flowRunNowRuntimeBlocker(lastRunStatus) || flowRunNowBlocker(rule, agentNames);
+  const supportsRunNow = rule.trigger_type === 'cron';
+  const showRunNow = canRunNowAction;
+  const canRunNow = showRunNow && supportsRunNow && !runNowBlocker;
 
   return (
     <>
@@ -2200,29 +2228,36 @@ export function FlowRow({
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
-            {canEdit && (
+            {showRunNow ? (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0 text-muted-foreground opacity-100 transition-opacity hover:text-foreground md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                      aria-label={rule.enabled ? 'Disable flow' : 'Enable flow'}
-                      onClick={() => onToggle(rule)}
-                    >
-                      {rule.enabled ? (
-                        <PauseIcon className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                      ) : (
-                        <PlayIcon className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span
+                      className={cn(
+                        'inline-flex opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100',
+                        canRunNow && !runningNow ? 'cursor-pointer' : 'cursor-not-allowed',
                       )}
-                    </Button>
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={!canRunNow || runningNow}
+                        className={cn(
+                          'h-7 gap-1.5 px-2 text-xs',
+                          canRunNow && !runningNow ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed',
+                        )}
+                        onClick={() => onRunNow(rule)}
+                      >
+                        <ZapIcon className="h-3.5 w-3.5" />
+                        {runningNow ? 'Running…' : 'Run now'}
+                      </Button>
+                    </span>
                   </TooltipTrigger>
-                  <TooltipContent>{rule.enabled ? 'Disable flow' : 'Enable flow'}</TooltipContent>
+                  {runNowBlocker ? <TooltipContent>{runNowBlocker}</TooltipContent> : null}
                 </Tooltip>
               </TooltipProvider>
-            )}
+            ) : null}
 
             <DropdownMenu onOpenChange={(open) => {
               if (!open) {
@@ -2267,6 +2302,14 @@ export function FlowRow({
                     <a href={lastExecutionPath}>
                       View last run
                     </a>
+                  </DropdownMenuItem>
+                )}
+                {showRunNow && (
+                  <DropdownMenuItem
+                    disabled={!canRunNow || runningNow}
+                    onClick={() => onRunNow(rule)}
+                  >
+                    {runningNow ? 'Running…' : 'Run now'}
                   </DropdownMenuItem>
                 )}
                 {canEdit && (
@@ -4224,6 +4267,7 @@ export function AutomationFlowsPage({
   const [composerMode, setComposerMode] = useState<FlowComposerMode>('create');
   const [draft, setDraft] = useState<FlowDraft>(defaultDraft());
   const [saving, setSaving] = useState(false);
+  const [runningFlowId, setRunningFlowId] = useState<string | null>(null);
   const searchSignature = useMemo(() => JSON.stringify(search), [search]);
   const [appliedSearchSignature, setAppliedSearchSignature] = useState('');
 
@@ -4425,6 +4469,23 @@ export function AutomationFlowsPage({
       toast.error(res.error);
       return;
     }
+    await refreshAll();
+  };
+
+  const handleRunNow = async (rule: AutomationRule) => {
+    const blocker = flowRunNowBlocker(rule, agentNames);
+    if (blocker) {
+      toast.error(blocker);
+      return;
+    }
+    setRunningFlowId(rule.id);
+    const res = await automationService.runFlowNow(workspaceId, rule.id);
+    setRunningFlowId(null);
+    if (res.error) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success('Flow run started');
     await refreshAll();
   };
 
@@ -4759,9 +4820,12 @@ export function AutomationFlowsPage({
                     workspaceSlug={workspaceSlug}
                     timezone={scheduleTimezone}
                     canEdit={permissions.canAdminAutomations}
+                    canRunNowAction={permissions.canEdit}
                     onEdit={openEditComposer}
                     onToggle={handleToggle}
+                    onRunNow={handleRunNow}
                     onDelete={openDeleteFlow}
+                    runningNow={runningFlowId === rule.id}
                   />
                 ))}
               </div>

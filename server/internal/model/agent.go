@@ -211,6 +211,7 @@ type AgentTriggerExecution struct {
 	ID            string     `json:"id" gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	WorkspaceID   string     `json:"workspace_id" gorm:"type:uuid;not null;index"`
 	AgentID       string     `json:"agent_id" gorm:"type:uuid;not null;index"`
+	ActorID       *string    `json:"actor_id,omitempty" gorm:"type:uuid;index"`
 	BindingID     string     `json:"binding_id" gorm:"not null;index"`
 	BindingKind   string     `json:"binding_kind" gorm:"not null;index"`
 	TriggerType   *string    `json:"trigger_type"`
@@ -533,6 +534,7 @@ type AgentRunTriggerContext struct {
 	Source      string          `json:"source,omitempty"`
 	TriggerType string          `json:"trigger_type,omitempty"`
 	RuleID      *string         `json:"rule_id,omitempty"`
+	ActorID     *string         `json:"actor_id,omitempty"`
 	FiredAt     *time.Time      `json:"fired_at,omitempty"`
 	Context     json.RawMessage `json:"context,omitempty"`
 }
