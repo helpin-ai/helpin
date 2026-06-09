@@ -40,13 +40,14 @@ function AutomationActivityRoute() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
 
-  const handleSearchChange = (updates: Partial<AutomationActivitySearch>) => {
+  const handleSearchChange = (updates: Partial<AutomationActivitySearch>, options?: { preserveScroll?: boolean }) => {
     navigate({
       search: {
         ...search,
         ...updates,
       },
       replace: true,
+      ...(options?.preserveScroll ? { resetScroll: false } : {}),
     });
   };
 

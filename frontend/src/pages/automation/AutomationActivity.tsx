@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -17,7 +17,9 @@ import {
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AutomationShell } from '@/components/automation/AutomationShell';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
+import { openEpicRoute } from '@/components/pm/epic-detail/epicRouteNavigation';
 import { ACTIVE_RUN_STATUSES, getAgentRunDisplayStatus, isPausedAgentRun } from '@/components/pm/agentRunConstants';
+import { openTaskRoute } from '@/components/pm/task-detail/taskRouteNavigation';
 import { LINEAR_CARD_CLASS } from '@/components/settings/settingsConstants';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,7 +35,6 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAgents, useAutomationActivity, useAutomationOverview, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import { buildAutomationFlowsPath } from '@/lib/automationUi';
@@ -496,15 +497,12 @@ function multiFilterValue(values: string[]) {
 
 function dateFilterValue(search: AutomationActivitySearch) {
   if (!search.fired_after || search.fired_before) return undefined;
-  const firedAfter = new Date(search.fired_after).getTime();
-  if (Number.isNaN(firedAfter)) return undefined;
-  const ageHours = (Date.now() - firedAfter) / 3_600_000;
-  if (Math.abs(ageHours - 24) <= 1) return '24h';
-  if (Math.abs(ageHours - 24 * 7) <= 4) return '7d';
-  if (Math.abs(ageHours - 24 * 30) <= 12) return '30d';
-  if (Math.abs(ageHours - 24 * 90) <= 24) return '90d';
-  if (Math.abs(ageHours - 24 * 180) <= 48) return '180d';
-  if (Math.abs(ageHours - 24 * 365) <= 72) return '365d';
+  const firedAfter = search.fired_after.trim();
+  for (const option of DATE_FILTER_OPTIONS) {
+    if (option.value !== 'all' && firedAfter === getTimeFilterDate(option.value)) {
+      return option.value;
+    }
+  }
   return undefined;
 }
 
@@ -520,7 +518,7 @@ function sourceLabel(value?: string) {
     case 'manual':
       return 'Manual';
     case 'automation_rule':
-      return 'Rule';
+      return 'Flow';
     case 'schedule':
       return 'Scheduled';
     case 'support_widget':
@@ -537,15 +535,29 @@ function sourceLabel(value?: string) {
 }
 
 function buildExecutionTriggerLabel(item: AutomationTriggerExecutionListItem) {
+  if (item.trigger_type === 'cron' || item.binding_id === 'automation_rule.cron') return 'Cron';
   if (item.binding_kind === 'manual') return 'Manual';
+  if (item.binding_kind === 'automation_rule') return item.trigger_title || sourceLabel(item.binding_kind);
   return item.trigger_title || item.binding_title || sourceLabel(item.binding_kind);
 }
 
+function buildExecutionPrimaryLabel(item: AutomationTriggerExecutionListItem) {
+  if (item.binding_kind === 'automation_rule') {
+    return item.reference_title?.trim() || item.binding_title?.trim() || 'Flow run';
+  }
+  return buildExecutionTargetLabel(item);
+}
+
 function buildExecutionTargetLabel(item: AutomationTriggerExecutionListItem) {
-  if (item.reference_title?.trim()) return item.reference_title.trim();
   if (item.target_type && item.target_id) return `${item.target_type.replace(/_/g, ' ')} · ${truncateMiddle(item.target_id, 8, 4)}`;
+  if (item.reference_type === 'automation_rule') return 'Workspace event';
+  if (item.reference_title?.trim()) return item.reference_title.trim();
   if (item.reference_type && item.reference_id) return `${item.reference_type.replace(/_/g, ' ')} · ${truncateMiddle(item.reference_id, 8, 4)}`;
   return 'Workspace event';
+}
+
+function normalTargetType(value?: string | null) {
+  return value?.trim().toLowerCase().replace(/^pm_/, '') ?? '';
 }
 
 function buildExecutionFlowHref(item: AutomationTriggerExecutionListItem, workspaceSlug?: string) {
@@ -788,17 +800,25 @@ function TimelineRow({
   workspaceSlug,
   onOpenRun,
   onOpenFlow,
+  onOpenTarget,
 }: {
   item: AutomationTriggerExecutionListItem;
   agent?: Agent;
   workspaceSlug?: string;
   onOpenRun: (runId: string) => void;
   onOpenFlow: (href: string) => void;
+  onOpenTarget: (item: AutomationTriggerExecutionListItem) => void;
 }) {
   const duration = formatDuration(item.started_at, item.completed_at);
+  const primaryLabel = buildExecutionPrimaryLabel(item);
   const targetLabel = buildExecutionTargetLabel(item);
   const triggerLabel = buildExecutionTriggerLabel(item);
+  const sourceKindLabel = sourceLabel(item.binding_kind);
   const flowHref = buildExecutionFlowHref(item, workspaceSlug);
+  const showTargetMeta = targetLabel !== primaryLabel;
+  const showSourceKind = sourceKindLabel.trim().toLowerCase() !== triggerLabel.trim().toLowerCase();
+  const targetType = normalTargetType(item.target_type);
+  const canOpenTarget = Boolean(item.target_id && ['task', 'epic', 'support_conversation'].includes(targetType));
   const canOpenRun = Boolean(item.run_id);
 
   const handleRowActivate = canOpenRun ? () => onOpenRun(item.run_id!) : undefined;
@@ -832,38 +852,52 @@ function TimelineRow({
       </div>
 
       <div className="min-w-0 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusBadge status={item.status} />
-          <TriggerKindChip kind={item.binding_kind} />
-          <span className="text-sm font-medium text-foreground">{targetLabel}</span>
+          {showSourceKind ? <TriggerKindChip kind={item.binding_kind} /> : null}
+          {flowHref && item.binding_kind === 'automation_rule' ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenFlow(flowHref);
+              }}
+              className="inline-flex min-w-0 items-center gap-1 text-sm font-medium text-foreground underline decoration-border underline-offset-4 hover:text-primary"
+            >
+              <span className="truncate">{primaryLabel}</span>
+              <ArrowUpRight01Icon className="h-3 w-3 shrink-0" />
+            </button>
+          ) : (
+            <span className="min-w-0 truncate text-sm font-medium text-foreground">{primaryLabel}</span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span>{triggerLabel}</span>
-          {item.binding_title && (
+          <span className="text-muted-foreground/60">Trigger</span>
+          <span className="text-foreground">{triggerLabel}</span>
+          {showTargetMeta ? (
             <>
-              <span className="text-muted-foreground/60">via</span>
-              {flowHref ? (
+              <span className="text-muted-foreground/40">·</span>
+              <span className="text-muted-foreground/60">Target</span>
+              {canOpenTarget ? (
                 <button
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    onOpenFlow(flowHref);
+                    onOpenTarget(item);
                   }}
-                  className="inline-flex items-center gap-1 text-foreground underline decoration-border underline-offset-4 hover:text-primary"
+                  className="text-foreground underline decoration-border underline-offset-4 hover:text-primary"
                 >
-                  {item.binding_title}
-                  <ArrowUpRight01Icon className="h-3 w-3" />
+                  {targetLabel}
                 </button>
               ) : (
-                <span className="text-foreground">{item.binding_title}</span>
+                <span className="text-foreground">{targetLabel}</span>
               )}
             </>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <div className="flex min-w-0 items-center gap-2">
+          ) : null}
+          <span className="text-muted-foreground/40">·</span>
+          <span className="text-muted-foreground/60">Agent</span>
+          <div className="flex min-w-0 items-center gap-1.5">
             {agent?.is_system ? (
               <AgentAvatar agent={agent} className="h-5 w-5 rounded-none border-0 bg-transparent shadow-none" genericBare />
             ) : (
@@ -871,24 +905,24 @@ function TimelineRow({
                 <BotIcon className="h-3 w-3" />
               </span>
             )}
-            <span>{item.agent_name}</span>
+            <span className="text-foreground">{item.agent_name}</span>
           </div>
-          <span className="font-mono">{relativeTime(item.fired_at)}</span>
-          <span className="font-mono">{duration}</span>
-          {item.error_message ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="max-w-[28rem] truncate text-rose-600 dark:text-rose-400">{item.error_message}</span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="start" className="max-w-md whitespace-pre-wrap break-words text-xs">
-                {item.error_message}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span>Ran <span className="font-mono text-foreground/80">{relativeTime(item.fired_at)}</span></span>
+          <span className="text-muted-foreground/40">·</span>
+          <span>Duration <span className="font-mono text-foreground/80">{duration}</span></span>
+        </div>
+
+        {item.error_message ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-destructive">
+            ⚠ {item.error_message}
+          </div>
+        ) : null}
       </div>
 
-      <div className="flex items-start justify-end">
+      <div className="flex h-full flex-col items-end justify-center gap-2">
         {canOpenRun ? (
           <Button
             type="button"
@@ -913,12 +947,13 @@ export function AutomationActivityPage({
   onSearchChange,
 }: {
   search: AutomationActivitySearch;
-  onSearchChange: (updates: Partial<AutomationActivitySearch>) => void;
+  onSearchChange: (updates: Partial<AutomationActivitySearch>, options?: { preserveScroll?: boolean }) => void;
 }) {
   useTitle('Automation Activity');
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const workspaceId = workspace?.id ?? '';
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: access } = useWorkspaceAccess(workspaceId);
   const permissions = usePermissions(access);
 
@@ -943,8 +978,7 @@ export function AutomationActivityPage({
   const openRun = useCallback((runId: string) => {
     setSelectedRunId(runId);
     setDrawerOpen(true);
-    onSearchChange({ run_id: runId });
-  }, [onSearchChange]);
+  }, []);
 
   useEffect(() => {
     const runId = trimFilterValue(search.run_id);
@@ -956,6 +990,29 @@ export function AutomationActivityPage({
   const openFlow = useCallback((href: string) => {
     void navigate({ to: href });
   }, [navigate]);
+
+  const openTarget = useCallback((item: AutomationTriggerExecutionListItem) => {
+    const slug = workspace?.slug;
+    const targetID = item.target_id?.trim();
+    if (!slug || !targetID) return;
+
+    switch (normalTargetType(item.target_type)) {
+      case 'task':
+        openTaskRoute(navigate as never, { pathname: location.pathname } as never, slug, targetID);
+        return;
+      case 'epic':
+        openEpicRoute(navigate as never, { pathname: location.pathname } as never, slug, targetID);
+        return;
+      case 'support_conversation':
+        void navigate({
+          to: '/w/$slug/support/$conversationId' as string,
+          params: { slug, conversationId: targetID },
+        });
+        return;
+      default:
+        return;
+    }
+  }, [location.pathname, navigate, workspace?.slug]);
 
   const { data: agents = [] } = useAgents(workspaceId);
   const overviewQuery = useAutomationOverview(workspaceId, true);
@@ -995,6 +1052,7 @@ export function AutomationActivityPage({
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
+  const isRefreshing = runsQuery.isFetching || executionsQuery.isFetching || overviewQuery.isFetching;
 
   useEffect(() => {
     const handler = () => {
@@ -1229,6 +1287,31 @@ export function AutomationActivityPage({
     handleClearFilters();
   }, [handleClearFilters]);
 
+  const applyAllRunsShortcut = useCallback((updates: Partial<AutomationActivitySearch>, visibleKeys: ActivityFilterKey[]) => {
+    setActiveTab('timeline');
+    setVisibleActivityFilterKeys(visibleKeys);
+    onSearchChange({
+      page: 1,
+      execution_id: undefined,
+      agent_id: undefined,
+      binding_id: undefined,
+      trigger_type: undefined,
+      status: undefined,
+      source: undefined,
+      reference_id: undefined,
+      run_id: undefined,
+      fired_after: undefined,
+      fired_before: undefined,
+      ...updates,
+    });
+  }, [onSearchChange]);
+
+  const openNeedsYouShortcut = useCallback(() => {
+    setActiveTab('needs_you');
+    setVisibleActivityFilterKeys([]);
+    handleClearFilters();
+  }, [handleClearFilters]);
+
   const handleApproveRun = useCallback(async (runId: string) => {
     if (!workspaceId) return;
     setApprovingRunId(runId);
@@ -1271,8 +1354,15 @@ export function AutomationActivityPage({
       title="Activity"
       description="Answer the operator question first: what needs a human, what is healthy, and where the failures are clustering."
       actions={(
-        <Button variant="outline" size="sm" onClick={() => void Promise.all([runsQuery.refetch(), executionsQuery.refetch()])}>
-          <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isRefreshing}
+          onClick={() => void Promise.all([runsQuery.refetch(), executionsQuery.refetch(), overviewQuery.refetch()])}
+        >
+          {isRefreshing
+            ? <Loading01Icon className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            : <ArrowReloadHorizontalIcon className="mr-1.5 h-3.5 w-3.5" />}
           Refresh
         </Button>
       )}
@@ -1285,6 +1375,7 @@ export function AutomationActivityPage({
             sublabel={pausedRuns.length > 0 ? `Oldest blocked ${oldestBlocked ?? '\u2014'}` : 'No paused runs waiting on a human'}
             tone={pausedRuns.length > 0 ? 'warn' : 'neutral'}
             spark={needsYouBars}
+            onClick={openNeedsYouShortcut}
           />
           <SummaryCard
             label="Runs · 24h"
@@ -1292,6 +1383,7 @@ export function AutomationActivityPage({
             sublabel={recent24hRuns.length > 0 ? `${recent24hRuns.filter((run) => run.status === 'completed').length} completed in the latest day` : 'No recent runs'}
             tone="neutral"
             spark={recentStatusBars}
+            onClick={() => applyAllRunsShortcut({ fired_after: getTimeFilterDate('24h') }, ['date'])}
           />
           <SummaryCard
             label="Failed · 24h"
@@ -1299,18 +1391,7 @@ export function AutomationActivityPage({
             sublabel={recent24hRuns.filter((run) => run.status === 'failed').length > 0 ? 'Investigate repeated failures and flaky flows' : 'No recent failures'}
             tone={recent24hRuns.some((run) => run.status === 'failed') ? 'bad' : 'neutral'}
             spark={recentFailureBars}
-            onClick={
-              recent24hRuns.some((run) => run.status === 'failed')
-                ? () => {
-                    setActiveTab('timeline');
-                    onSearchChange({
-                      status: 'failed',
-                      fired_after: getTimeFilterDate('24h'),
-                      page: 1,
-                    });
-                  }
-                : undefined
-            }
+            onClick={() => applyAllRunsShortcut({ status: 'failed', fired_after: getTimeFilterDate('24h') }, ['status', 'date'])}
           />
           <SummaryCard
             label="Fleet Health"
@@ -1461,9 +1542,8 @@ export function AutomationActivityPage({
                       <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{group.label}</p>
                     </div>
                     <div className="rounded-2xl border border-border/70 bg-card/80">
-                      <div className="relative pl-3">
-                        <div className="absolute bottom-3 left-[1.08rem] top-3 border-l border-dashed border-border/80" />
-                        <div className="relative divide-y divide-border/60">
+                      <div className="pl-3">
+                        <div className="divide-y divide-border/60">
                           {group.rows.map((item) => (
                             <TimelineRow
                               key={item.execution_id}
@@ -1472,6 +1552,7 @@ export function AutomationActivityPage({
                               workspaceSlug={workspace?.slug}
                               onOpenRun={openRun}
                               onOpenFlow={openFlow}
+                              onOpenTarget={openTarget}
                             />
                           ))}
                         </div>
@@ -1521,7 +1602,7 @@ export function AutomationActivityPage({
         onOpenChange={(open) => {
           setDrawerOpen(open);
           if (!open && search.run_id) {
-            onSearchChange({ run_id: undefined });
+            onSearchChange({ run_id: undefined }, { preserveScroll: true });
           }
         }}
         title="Agent Run"
