@@ -179,7 +179,7 @@ function buildExecutionHistoryHref(
   basePath?: string,
 ) {
   const base = basePath ?? buildAutomationActivityPath(slug);
-  const params = new URLSearchParams({ page: '1' });
+  const params = new URLSearchParams();
   if (filters.agent_id) params.set('agent_id', filters.agent_id);
   if (filters.binding_id) params.set('binding_id', filters.binding_id);
   if (filters.trigger_type) params.set('trigger_type', filters.trigger_type);
@@ -188,7 +188,8 @@ function buildExecutionHistoryHref(
   if (filters.status) params.set('status', filters.status);
   if (filters.fired_after) params.set('fired_after', filters.fired_after);
   if (filters.fired_before) params.set('fired_before', filters.fired_before);
-  return `${base}?${params.toString()}#trigger-executions`;
+  const query = params.toString();
+  return `${base}${query ? `?${query}` : ''}#trigger-executions`;
 }
 
 function buildWorkflowHref(slug: string | undefined, search?: WorkflowRuleSearchPreset, basePath?: string) {
@@ -202,7 +203,6 @@ function buildWorkflowHref(slug: string | undefined, search?: WorkflowRuleSearch
   if (search.template) params.set('template', search.template);
   if (search.template_title) params.set('template_title', search.template_title);
   if (search.template_description) params.set('template_description', search.template_description);
-  if (search.create_event_rule) params.set('create_event_rule', '1');
   if (search.trigger_type) params.set('trigger_type', search.trigger_type);
   if (search.agent_id) params.set('agent_id', search.agent_id);
   if (search.repo_full_name) params.set('repo_full_name', search.repo_full_name);

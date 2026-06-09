@@ -96,7 +96,9 @@ describe('FlowRow', () => {
         statesById={new Map()}
         agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
         canEdit={false}
+        canRunNowAction={false}
         onEdit={() => {}}
+        onRunNow={() => {}}
         onToggle={() => {}}
         onDelete={() => {}}
       />,
@@ -127,7 +129,9 @@ describe('FlowRow', () => {
           statesById={new Map()}
           agentNames={new Map([['agent-1', 'Release Notes Writer agent']])}
           canEdit={false}
+          canRunNowAction={false}
           onEdit={() => {}}
+          onRunNow={() => {}}
           onToggle={() => {}}
           onDelete={() => {}}
         />,
@@ -160,7 +164,9 @@ describe('FlowRow', () => {
           agentNames={agentNames}
           healthItem={item.healthItem}
           canEdit={false}
+          canRunNowAction={false}
           onEdit={() => {}}
+          onRunNow={() => {}}
           onToggle={() => {}}
           onDelete={() => {}}
         />,
@@ -189,14 +195,16 @@ describe('FlowRow', () => {
         })}
         workspaceSlug="test-docs"
         canEdit={false}
+        canRunNowAction={false}
         onEdit={() => {}}
+        onRunNow={() => {}}
         onToggle={() => {}}
         onDelete={() => {}}
       />,
     );
 
     const lastRunLink = container?.querySelector('a[href*="run_id=run-123"]');
-    expect(lastRunLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?page=1&source=automation_rule&reference_id=rule-1&run_id=run-123#trigger-executions');
+    expect(lastRunLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?source=automation_rule&reference_id=rule-1&run_id=run-123#trigger-executions');
   });
 
   it('links the last run to the latest activity record when no agent run exists', () => {
@@ -211,14 +219,16 @@ describe('FlowRow', () => {
         })}
         workspaceSlug="test-docs"
         canEdit={false}
+        canRunNowAction={false}
         onEdit={() => {}}
+        onRunNow={() => {}}
         onToggle={() => {}}
         onDelete={() => {}}
       />,
     );
 
     const lastRunLink = container?.querySelector('a[href*="execution_id=exec-123"]');
-    expect(lastRunLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?page=1&source=automation_rule&reference_id=rule-1&execution_id=exec-123#trigger-executions');
+    expect(lastRunLink?.getAttribute('href')).toBe('/w/test-docs/automation/activity?source=automation_rule&reference_id=rule-1&execution_id=exec-123#trigger-executions');
   });
 
   it('prioritizes running, paused, incomplete, next run, and waiting activity states', () => {
@@ -247,7 +257,9 @@ describe('FlowRow', () => {
           agentNames={agentNames}
           healthItem={item.healthItem}
           canEdit={false}
+          canRunNowAction={false}
           onEdit={() => {}}
+          onRunNow={() => {}}
           onToggle={() => {}}
           onDelete={() => {}}
         />,

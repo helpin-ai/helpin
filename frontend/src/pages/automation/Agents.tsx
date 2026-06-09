@@ -1178,14 +1178,15 @@ function resolveTriggerHistoryPath(
   item?: Pick<AgentTriggerUsage, 'execution_search'>,
 ) {
   const base = buildAutomationActivityPath(workspaceSlug);
-  const params = new URLSearchParams({ page: '1' });
+  const params = new URLSearchParams();
   if (agentID) params.set('agent_id', agentID);
   if (item?.execution_search?.binding_id) params.set('binding_id', item.execution_search.binding_id);
   if (item?.execution_search?.trigger_type) params.set('trigger_type', item.execution_search.trigger_type);
   if (item?.execution_search?.source) params.set('source', item.execution_search.source);
   if (item?.execution_search?.reference_id) params.set('reference_id', item.execution_search.reference_id);
   if (item?.execution_search?.status) params.set('status', item.execution_search.status);
-  return `${base}?${params.toString()}#trigger-executions`;
+  const query = params.toString();
+  return `${base}${query ? `?${query}` : ''}#trigger-executions`;
 }
 
 function AgentTriggerPanel({

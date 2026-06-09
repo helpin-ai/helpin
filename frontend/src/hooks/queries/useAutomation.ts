@@ -53,6 +53,7 @@ export function useAutomationActivity(wsId: string, filters: AutomationTriggerEx
     queryKey: queryKeys.automation.activity(wsId, filters as Record<string, unknown>),
     queryFn: async () => sanitizeActivity(unwrap(await automationService.listActivity(wsId, filters))),
     enabled: !!wsId && enabled,
+    placeholderData: (previousData) => previousData,
     staleTime: 30_000,
   });
 }

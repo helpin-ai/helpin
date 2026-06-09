@@ -62,7 +62,6 @@ export type AutomationFlowsSearch = {
   show_trigger_title?: string;
   show_rule?: string;
   show_rule_title?: string;
-  create_event_rule?: boolean;
   trigger_type?: string;
   agent_id?: string;
   repo_full_name?: string;
@@ -4344,7 +4343,7 @@ export function AutomationFlowsPage({
   }, [inventoryQuery, rulesQuery]);
 
   const resetComposerSearch = useCallback(() => {
-    if (search.template || search.trigger_type || search.create_event_rule || search.workflow || search.show_trigger || search.show_trigger_title || search.show_rule || search.show_rule_title || search.template_title || search.template_description || search.agent_id || search.repo_full_name || search.branch || search.base_branch || search.tag_name || search.conclusion || search.target_mode || search.target_id) {
+    if (search.template || search.trigger_type || search.workflow || search.show_trigger || search.show_trigger_title || search.show_rule || search.show_rule_title || search.template_title || search.template_description || search.agent_id || search.repo_full_name || search.branch || search.base_branch || search.tag_name || search.conclusion || search.target_mode || search.target_id) {
       onSearchChange({
         workflow: undefined,
         template: undefined,
@@ -4354,7 +4353,6 @@ export function AutomationFlowsPage({
         show_trigger_title: search.show_trigger_title,
         show_rule: search.show_rule,
         show_rule_title: search.show_rule_title,
-        create_event_rule: undefined,
         trigger_type: undefined,
         agent_id: undefined,
         repo_full_name: undefined,

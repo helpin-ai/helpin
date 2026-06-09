@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { AutomationActivityPage } from '@/pages/automation/AutomationActivity';
 
 type AutomationActivitySearch = {
-  page: number;
+  page?: number;
   execution_id?: string;
   agent_id?: string;
   binding_id?: string;
@@ -18,11 +18,11 @@ type AutomationActivitySearch = {
 export const Route = createFileRoute('/_authenticated/w/$slug/automation/activity')({
   component: AutomationActivityRoute,
   validateSearch: (search: Record<string, unknown>): AutomationActivitySearch => ({
-    page: typeof search.page === 'number'
-      ? Math.max(1, Math.floor(search.page))
-      : typeof search.page === 'string' && Number.parseInt(search.page, 10) > 0
+    page: typeof search.page === 'number' && Math.floor(search.page) > 1
+      ? Math.floor(search.page)
+      : typeof search.page === 'string' && Number.parseInt(search.page, 10) > 1
         ? Number.parseInt(search.page, 10)
-        : 1,
+        : undefined,
     execution_id: typeof search.execution_id === 'string' ? search.execution_id : undefined,
     agent_id: typeof search.agent_id === 'string' ? search.agent_id : undefined,
     binding_id: typeof search.binding_id === 'string' ? search.binding_id : undefined,
@@ -41,11 +41,16 @@ function AutomationActivityRoute() {
   const navigate = useNavigate({ from: Route.fullPath });
 
   const handleSearchChange = (updates: Partial<AutomationActivitySearch>, options?: { preserveScroll?: boolean }) => {
+    const nextSearch: AutomationActivitySearch = {
+      ...search,
+      ...updates,
+    };
+    if (!nextSearch.page || nextSearch.page <= 1) {
+      delete nextSearch.page;
+    }
+
     navigate({
-      search: {
-        ...search,
-        ...updates,
-      },
+      search: nextSearch,
       replace: true,
       ...(options?.preserveScroll ? { resetScroll: false } : {}),
     });

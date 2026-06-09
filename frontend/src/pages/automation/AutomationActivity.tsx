@@ -51,7 +51,7 @@ import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 export type AutomationActivitySearch = {
-  page: number;
+  page?: number;
   execution_id?: string;
   agent_id?: string;
   binding_id?: string;
@@ -969,6 +969,7 @@ export function AutomationActivityPage({
   const [approvingRunId, setApprovingRunId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'timeline' | 'needs_you' | null>(null);
   const [visibleActivityFilterKeys, setVisibleActivityFilterKeys] = useState<ActivityFilterKey[]>([]);
+  const [loadedExecutionPages, setLoadedExecutionPages] = useState(() => Math.max(1, search.page ?? 1));
   const hasActiveFilter = Boolean(
     search.execution_id
       || search.agent_id
@@ -1023,11 +1024,8 @@ export function AutomationActivityPage({
 
   const { data: agents = [] } = useAgents(workspaceId);
   const overviewQuery = useAutomationOverview(workspaceId, true);
-
-  const executionFilters = useMemo<AutomationTriggerExecutionFilters>(
-    () => ({
-      page: search.page,
-      per_page: EXECUTIONS_PER_PAGE,
+  const activityFilterSignature = useMemo(
+    () => JSON.stringify({
       execution_id: trimFilterValue(search.execution_id),
       agent_id: trimFilterValue(search.agent_id),
       binding_id: trimFilterValue(search.binding_id),
@@ -1039,7 +1037,40 @@ export function AutomationActivityPage({
       fired_after: trimFilterValue(search.fired_after),
       fired_before: trimFilterValue(search.fired_before),
     }),
-    [search],
+    [
+      search.agent_id,
+      search.binding_id,
+      search.execution_id,
+      search.fired_after,
+      search.fired_before,
+      search.reference_id,
+      search.run_id,
+      search.source,
+      search.status,
+      search.trigger_type,
+    ],
+  );
+
+  useEffect(() => {
+    setLoadedExecutionPages(Math.max(1, search.page ?? 1));
+  }, [activityFilterSignature, search.page]);
+
+  const executionFilters = useMemo<AutomationTriggerExecutionFilters>(
+    () => ({
+      page: 1,
+      per_page: EXECUTIONS_PER_PAGE * loadedExecutionPages,
+      execution_id: trimFilterValue(search.execution_id),
+      agent_id: trimFilterValue(search.agent_id),
+      binding_id: trimFilterValue(search.binding_id),
+      trigger_type: trimFilterValue(search.trigger_type),
+      status: trimFilterValue(search.status),
+      source: trimFilterValue(search.source),
+      reference_id: trimFilterValue(search.reference_id),
+      run_id: trimFilterValue(search.run_id),
+      fired_after: trimFilterValue(search.fired_after),
+      fired_before: trimFilterValue(search.fired_before),
+    }),
+    [loadedExecutionPages, search],
   );
 
   const executionsQuery = useAutomationActivity(workspaceId, executionFilters, permissions.canManageSettings);
@@ -1082,8 +1113,8 @@ export function AutomationActivityPage({
   const pausedRuns = useMemo(() => workspaceRuns.filter((run) => ACTIVE_RUN_STATUSES.has(run.status) && isPausedAgentRun(run)), [workspaceRuns]);
   const rawExecutions = executionsQuery.data?.data;
   const executions = Array.isArray(rawExecutions) ? rawExecutions : [];
-  const executionPage = executionsQuery.data?.page ?? search.page;
-  const executionTotalPages = executionsQuery.data?.total_pages ?? 0;
+  const executionTotal = executionsQuery.data?.total ?? 0;
+  const hasMoreExecutions = executions.length < executionTotal;
   const rawItems = overviewQuery.data?.items;
   const items = Array.isArray(rawItems) ? rawItems : [];
   const agentFilterOptions = useMemo(
@@ -1149,7 +1180,7 @@ export function AutomationActivityPage({
         source: value ? 'automation_rule' : undefined,
         execution_id: undefined,
         run_id: undefined,
-        page: 1,
+        page: undefined,
       });
       return;
     }
@@ -1160,7 +1191,7 @@ export function AutomationActivityPage({
         reference_id: sourceValues.includes('automation_rule') ? search.reference_id : undefined,
         execution_id: undefined,
         run_id: undefined,
-        page: 1,
+        page: undefined,
       });
       return;
     }
@@ -1168,7 +1199,7 @@ export function AutomationActivityPage({
       [key]: value,
       execution_id: undefined,
       run_id: undefined,
-      page: 1,
+      page: undefined,
     });
   }, [onSearchChange, search.reference_id]);
 
@@ -1179,7 +1210,7 @@ export function AutomationActivityPage({
       fired_before: undefined,
       execution_id: undefined,
       run_id: undefined,
-      page: 1,
+      page: undefined,
     });
   }, [onSearchChange]);
 
@@ -1275,7 +1306,7 @@ export function AutomationActivityPage({
 
   const handleClearFilters = useCallback(() => {
     onSearchChange({
-      page: 1,
+      page: undefined,
       execution_id: undefined,
       agent_id: undefined,
       binding_id: undefined,
@@ -1298,7 +1329,7 @@ export function AutomationActivityPage({
     setActiveTab('timeline');
     setVisibleActivityFilterKeys(visibleKeys);
     onSearchChange({
-      page: 1,
+      page: undefined,
       execution_id: undefined,
       agent_id: undefined,
       binding_id: undefined,
@@ -1574,29 +1605,22 @@ export function AutomationActivityPage({
               </div>
             )}
 
-            {executionTotalPages > 1 && (
-              <div className="flex items-center justify-between">
+            {executionTotal > 0 && (
+              <div className="flex flex-col items-center gap-2 pt-1">
                 <p className="text-xs text-muted-foreground">
-                  Page {executionPage} of {executionTotalPages}
+                  Showing {executions.length} of {executionTotal} runs
                 </p>
-                <div className="flex items-center gap-2">
+                {hasMoreExecutions ? (
                   <Button
+                    type="button"
                     variant="outline"
                     size="sm"
-                    disabled={executionPage <= 1}
-                    onClick={() => onSearchChange({ page: Math.max(1, executionPage - 1) })}
+                    disabled={executionsQuery.isFetching}
+                    onClick={() => setLoadedExecutionPages((current) => current + 1)}
                   >
-                    Previous
+                    {executionsQuery.isFetching ? 'Loading…' : 'Load older runs'}
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={executionPage >= executionTotalPages}
-                    onClick={() => onSearchChange({ page: executionPage + 1 })}
-                  >
-                    Next
-                  </Button>
-                </div>
+                ) : null}
               </div>
             )}
           </TabsContent>

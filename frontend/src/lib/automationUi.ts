@@ -18,7 +18,6 @@ export type AutomationFlowsSearch = {
   show_trigger_title?: string;
   show_rule?: string;
   show_rule_title?: string;
-  create_event_rule?: boolean;
   trigger_type?: string;
   agent_id?: string;
   repo_full_name?: string;
@@ -35,6 +34,7 @@ function buildPathWithSearch(base: string, search?: Record<string, string | numb
   if (search) {
     for (const [key, value] of Object.entries(search)) {
       if (value === undefined || value === '') continue;
+      if (key === 'page' && Number(value) <= 1) continue;
       if (typeof value === 'boolean') {
         if (value) params.set(key, '1');
         continue;
