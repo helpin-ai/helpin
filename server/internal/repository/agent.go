@@ -302,13 +302,8 @@ func (r *AgentRunRepository) ListWorkspaceRunsWithoutTriggerExecutions(ctx conte
 	if workspaceID == "" {
 		return []model.AgentRun{}, 0, nil
 	}
-	bindingKind := ""
 	bindingKinds := splitCSVFilter(filters.BindingKind)
 	if filters.BindingKind != nil {
-		bindingKind = strings.TrimSpace(*filters.BindingKind)
-		if len(bindingKinds) == 1 {
-			bindingKind = bindingKinds[0]
-		}
 		if len(bindingKinds) > 0 && !csvFilterIncludes(bindingKinds, "agent_run") && !csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceCommandBar) && !csvFilterIncludes(bindingKinds, model.AgentRunTriggerSourceManual) {
 			return []model.AgentRun{}, 0, nil
 		}
@@ -331,14 +326,7 @@ func (r *AgentRunRepository) ListWorkspaceRunsWithoutTriggerExecutions(ctx conte
 			return []model.AgentRun{}, 0, nil
 		}
 	}
-	triggerType := ""
 	triggerTypes := splitCSVFilter(filters.TriggerType)
-	if filters.TriggerType != nil && strings.TrimSpace(*filters.TriggerType) != "" {
-		triggerType = strings.TrimSpace(*filters.TriggerType)
-		if len(triggerTypes) == 1 {
-			triggerType = triggerTypes[0]
-		}
-	}
 	if len(triggerTypes) > 0 && !csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeCommandBar) && !csvFilterIncludes(triggerTypes, model.AgentRunTriggerTypeManual) {
 		return []model.AgentRun{}, 0, nil
 	}
