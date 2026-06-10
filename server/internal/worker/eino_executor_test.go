@@ -24,7 +24,7 @@ func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSelectivePath(t 
 	if strings.Contains(systemPrompt, "Full aggregated skill blob.") {
 		t.Fatalf("did not expect selective native system prompt to inline full resolved skill instructions\n%s", systemPrompt)
 	}
-	if !strings.Contains(systemPrompt, "You are Epic Planner.") {
+	if !strings.Contains(systemPrompt, "You are Atlas, the workspace epic planner.") {
 		t.Fatalf("expected selective native system prompt to preserve base preset identity\n%s", systemPrompt)
 	}
 	if !strings.Contains(systemPrompt, "## Current Epic") {

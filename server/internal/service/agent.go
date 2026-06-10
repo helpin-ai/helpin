@@ -61,6 +61,8 @@ func defaultSystemAgentNameForPresetKey(presetKey string) string {
 		return "Echo"
 	case model.AgentPresetDocumentationAgent:
 		return "Quill"
+	case model.AgentPresetMarketer:
+		return "Mira"
 	case model.AgentPresetCodeBuilder:
 		return "Forge"
 	case model.AgentPresetReviewAgent:

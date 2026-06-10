@@ -2140,7 +2140,6 @@ export function FlowRow({
   rule,
   statesById,
   agentNames,
-  teamName,
   healthItem,
   workspaceSlug,
   timezone = 'UTC',

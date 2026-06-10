@@ -34,9 +34,89 @@ func TestListBuiltInSkillsContainsExpectedKeys(t *testing.T) {
 		"docs_information_architecture",
 		"release_to_docs_update",
 		"support_gap_to_docs",
+		"marketing_context",
+		"marketing_plan",
+		"marketing_copywriting",
+		"marketing_conversion",
+		"marketing_customer_research",
+		"marketing_lifecycle",
+		"marketing_launch",
+		"marketing_seo_content",
+		"marketing_competitive",
+		"marketing_lead_generation",
+		"marketing_outbound",
+		"marketing_ads_creative",
+		"marketing_community_partnerships",
+		"marketing_revops",
+		"marketing_monetization",
+		"marketing_external_research",
+		"marketing_competitor_research",
+		"marketing_distribution_research",
+		"marketing_seo_research",
+		"marketing_release_marketing",
 	} {
 		if !containsString(keys, key) {
 			t.Fatalf("expected built-in skill %q in registry, got %v", key, keys)
+		}
+	}
+}
+
+func TestMiraBundleIncludesMarketingSkills(t *testing.T) {
+	bundle, ok := BuiltInPresetSkillBundleForPreset(model.AgentPresetMarketer)
+	if !ok {
+		t.Fatal("expected Mira marketer bundle")
+	}
+	for _, expected := range []string{
+		"marketing_context",
+		"marketing_plan",
+		"marketing_copywriting",
+		"marketing_conversion",
+		"marketing_customer_research",
+		"marketing_lifecycle",
+		"marketing_launch",
+		"marketing_seo_content",
+		"marketing_competitive",
+		"marketing_lead_generation",
+		"marketing_outbound",
+		"marketing_ads_creative",
+		"marketing_community_partnerships",
+		"marketing_revops",
+		"marketing_monetization",
+		"marketing_external_research",
+		"marketing_competitor_research",
+		"marketing_distribution_research",
+		"marketing_seo_research",
+		"marketing_release_marketing",
+		"general_agent_behavior",
+	} {
+		if !containsString(bundle.SkillKeys, expected) {
+			t.Fatalf("expected Mira skill %q in bundle: %v", expected, bundle.SkillKeys)
+		}
+	}
+	prompt := BuiltInPresetPrompt(model.AgentPresetMarketer)
+	if prompt == nil {
+		t.Fatal("expected Mira marketer prompt")
+	}
+	for _, snippet := range []string{
+		"You are Mira, the workspace marketer.",
+		"## Marketing Modes",
+		"## Skill Selection",
+		"Use marketing context skills for product, ICP, personas, positioning, proof points, customer language, and brand voice.",
+		"Use RevOps skills when marketing work touches CRM lifecycle",
+	} {
+		if !strings.Contains(*prompt, snippet) {
+			t.Fatalf("expected Mira prompt to contain %q\n%s", snippet, *prompt)
+		}
+	}
+	for _, fullSkillBodySnippet := range []string{
+		"Use this skill when Mira needs foundational marketing context",
+		"Capture these sections:",
+		"Use AARRR as the default structure:",
+		"For each sequence:",
+		"Do not send emails or claim an email-platform integration exists.",
+	} {
+		if strings.Contains(*prompt, fullSkillBodySnippet) {
+			t.Fatalf("expected Mira prompt to omit full skill body snippet %q\n%s", fullSkillBodySnippet, *prompt)
 		}
 	}
 }
@@ -151,7 +231,7 @@ func TestCompilePresetInstructionsIncludesPreambleAndSkills(t *testing.T) {
 	}
 	compiled := CompilePresetInstructions(bundle.Preamble, bundle.SkillKeys)
 	for _, snippet := range []string{
-		"You are Epic Planner.",
+		"You are Atlas, the workspace epic planner.",
 		"Approval requests happen inline in the same chat.",
 		"## PRD Work",
 		"## Current Facts And Next-Step Rules",
@@ -237,6 +317,59 @@ func TestDocumentationAgentBundleIncludesDocumentationSkills(t *testing.T) {
 	}
 	if strings.Contains(bundle.Preamble, "Helpin") || strings.Contains(bundle.Preamble, "helpin") {
 		t.Fatalf("documentation preamble must use workspace context, got %q", bundle.Preamble)
+	}
+}
+
+func TestDocumentationAgentPromptUsesCuratedSkillSelectionGuide(t *testing.T) {
+	prompt := BuiltInPresetPrompt(model.AgentPresetDocumentationAgent)
+	if prompt == nil {
+		t.Fatal("expected documentation agent prompt")
+	}
+	for _, snippet := range []string{
+		"You are Quill, the workspace documentation agent.",
+		"## Documentation Modes",
+		"## Skill Selection",
+		"Use information architecture skills when docs need structure",
+		"Use public help docs skills for customer-facing how-to",
+		"Use API docs skills for endpoints, schemas, authentication",
+		"Use support-gap skills when customer questions or support evidence reveal missing, stale, or weak documentation.",
+	} {
+		if !strings.Contains(*prompt, snippet) {
+			t.Fatalf("expected Quill prompt to contain %q\n%s", snippet, *prompt)
+		}
+	}
+	for _, fullSkillBodySnippet := range []string{
+		"Use this skill when organizing or reorganizing documentation.",
+		"Place the article in the most specific existing collection",
+		"Document authentication, permissions, request shape, response shape, errors, and examples",
+		"Do not close or mark a gap resolved until the doc work is actually created, updated, or explicitly handed off.",
+	} {
+		if strings.Contains(*prompt, fullSkillBodySnippet) {
+			t.Fatalf("expected Quill prompt to omit full skill body snippet %q\n%s", fullSkillBodySnippet, *prompt)
+		}
+	}
+}
+
+func TestSystemAgentPresetPreamblesUsePersonaIdentities(t *testing.T) {
+	expected := map[string]string{
+		model.AgentPresetEpicPlanner:        "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",
+		model.AgentPresetTaskPlanner:        "You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
+		model.AgentPresetCodeBuilder:        "You are Forge, the workspace code builder. You use the relevant engineering instructions and skills to make focused, reviewable progress in the repository.",
+		model.AgentPresetReviewAgent:        "You are Lens, the workspace reviewer. You use the relevant review instructions and skills to identify findings, risks, and verification gaps.",
+		model.AgentPresetCRMOperator:        "You are Beacon, the workspace CRM operator. You help manage customer records, deal workflows, and sales signals across the workspace.",
+		model.AgentPresetSupportAgent:       "You are Echo, the workspace support agent. You help triage support conversations, draft replies, and route customer issues.",
+		model.AgentPresetDocumentationAgent: "You are Quill, the workspace documentation agent. You help create, update, and organize internal docs, public help docs, and API docs.",
+		model.AgentPresetMarketer:           "You are Mira, the workspace marketer. You help with positioning, campaigns, copy, lifecycle messaging, launches, conversion ideas, and marketing research.",
+	}
+
+	for presetKey, want := range expected {
+		bundle, ok := BuiltInPresetSkillBundleForPreset(presetKey)
+		if !ok {
+			t.Fatalf("expected bundle for %s", presetKey)
+		}
+		if bundle.Preamble != want {
+			t.Fatalf("preamble for %s = %q, want %q", presetKey, bundle.Preamble, want)
+		}
 	}
 }
 

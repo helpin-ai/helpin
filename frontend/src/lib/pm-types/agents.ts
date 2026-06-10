@@ -11,6 +11,7 @@ export type AgentPresetKey =
   | 'crm_operator'
   | 'support_agent'
   | 'documentation_agent'
+  | 'marketer'
   | 'code_builder'
   | 'review_agent'
   | 'command_agent';

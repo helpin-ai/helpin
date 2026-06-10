@@ -308,7 +308,7 @@ func TestBuildRuntimeSystemPromptWithStagedForgeSkillsKeepsPresetPreamble(t *tes
 		false,
 	)
 
-	if !strings.Contains(prompt, "You are Code Builder.") {
+	if !strings.Contains(prompt, "You are Forge, the workspace code builder.") {
 		t.Fatalf("expected staged Forge prompt to keep preset preamble\n%s", prompt)
 	}
 	if strings.Contains(prompt, "Implement the requested story directly in the repository.") {
@@ -359,7 +359,7 @@ func TestBuildRuntimeSystemPromptWithStagedLensSkillsKeepsPresetPreamble(t *test
 		false,
 	)
 
-	if !strings.Contains(prompt, "You are Review Agent.") {
+	if !strings.Contains(prompt, "You are Lens, the workspace reviewer.") {
 		t.Fatalf("expected staged Lens prompt to keep preset preamble\n%s", prompt)
 	}
 	if strings.Contains(prompt, "Review the implementation and identify risks first.") {
@@ -414,7 +414,7 @@ func TestBuildRuntimeSystemPromptWithoutStagedSkillsStillInlinesResolvedSkillTex
 		true,
 	)
 
-	if !strings.Contains(prompt, "You are Code Builder.") {
+	if !strings.Contains(prompt, "You are Forge, the workspace code builder.") {
 		t.Fatalf("expected unstaged Forge prompt to keep preset prompt\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "Implement the requested story directly in the repository.") {

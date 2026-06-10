@@ -82,7 +82,7 @@ func normalizeRuntimeProfileName(name string) string {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "", "engineer", "coder", model.AgentPresetCodeBuilder:
 		return model.AgentPresetCodeBuilder
-	case "planner", "orchestrator", "product_planner", model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator:
+	case "planner", "orchestrator", "product_planner", model.AgentPresetEpicPlanner, model.AgentPresetTaskPlanner, model.AgentPresetCRMOperator, "marketing", "mira", model.AgentPresetMarketer:
 		return model.AgentPresetEpicPlanner
 	case "reviewer", "reviewer_tester", model.AgentPresetReviewAgent:
 		return model.AgentPresetReviewAgent

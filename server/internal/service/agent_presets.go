@@ -27,6 +27,7 @@ func builtInPresetKeys() []string {
 		model.AgentPresetCRMOperator,
 		model.AgentPresetSupportAgent,
 		model.AgentPresetDocumentationAgent,
+		model.AgentPresetMarketer,
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
 		model.AgentPresetCommandAgent,
@@ -68,6 +69,8 @@ func normalizePresetKey(key string) string {
 		return model.AgentPresetSupportAgent
 	case "docs", "documentation", model.AgentPresetDocumentationAgent:
 		return model.AgentPresetDocumentationAgent
+	case "marketing", "mira", model.AgentPresetMarketer:
+		return model.AgentPresetMarketer
 	case "engineer", "coder", model.AgentPresetCodeBuilder:
 		return model.AgentPresetCodeBuilder
 	case "reviewer", model.AgentPresetReviewAgent:
@@ -102,6 +105,8 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 		return "support_agent_default"
 	case model.AgentPresetDocumentationAgent:
 		return "documentation_agent_default"
+	case model.AgentPresetMarketer:
+		return "marketer_default"
 	case model.AgentPresetCodeBuilder:
 		return "code_builder_local_commit_delivery"
 	case model.AgentPresetReviewAgent:
@@ -412,6 +417,55 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			DefaultInvocationMode: model.InvocationModeInteractive,
 			SupportedModes:        supportedModesForRuntime(documentationProfile.RuntimeKind),
 			SystemPrompt:          documentationPrompt,
+		},
+		{
+			Key:                 model.AgentPresetMarketer,
+			FamilyKey:           model.AgentPresetMarketer,
+			VersionKey:          defaultPresetVersionKeyForPresetKey(model.AgentPresetMarketer),
+			VersionLabel:        "Default",
+			IsDefaultVersion:    true,
+			Label:               "Mira",
+			Description:         "Marketing agent for growth plans, campaigns, copy, lifecycle messaging, content strategy, launches, and customer-signal synthesis.",
+			DefaultRole:         "Marketer",
+			RuntimeKind:         productPlannerProfile.RuntimeKind,
+			DefaultTriggerMode:  "manual",
+			AllowedTriggerModes: []string{"manual"},
+			AllowedTools: []string{
+				"update_plan",
+				"request_user_input",
+				"request_approval",
+				"request_review_checkpoint",
+				"list_documents",
+				"list_collections",
+				"read_document",
+				"get_document_blocks",
+				"search_documents",
+				"create_document",
+				"write_document_content",
+				"publish_document_change_proposal",
+				"link_document_to_object",
+				"list_tasks",
+				"create_task",
+				"add_task_comment",
+				"get_task_context",
+				"list_workspace_teams",
+				"list_team_workflows_with_stages",
+				"list_deals",
+				"list_contacts",
+				"list_buyer_signals",
+				"add_deal_note",
+				"web_search_exa",
+				"fetch_url",
+				"crawl_url",
+				"get_release_context",
+				"find_tasks_for_git_changes",
+			},
+			AllowedCommands:       []string{},
+			AllowedTargetTypes:    []string{"workspace", "document", "task", "crm_deal", "crm_contact"},
+			ApprovalMode:          "always",
+			DefaultInvocationMode: model.InvocationModeInteractive,
+			SupportedModes:        supportedModesForRuntime(productPlannerProfile.RuntimeKind),
+			SystemPrompt:          worker.BuiltInPresetPrompt(model.AgentPresetMarketer),
 		},
 		{
 			Key:                   model.AgentPresetCodeBuilder,

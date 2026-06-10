@@ -141,6 +141,7 @@ const SERVICE_TIER_OPTIONS: AgentServiceTier[] = ['fast', 'flex'];
 const DEFAULT_SYSTEM_PRESET_KEY: AgentPresetKey = 'code_builder';
 const PRESET_FALLBACKS: Record<AgentPresetKey, {
   label: string;
+  default_role: string;
   description: string;
   runtime_kind: AgentRuntimeKind;
   default_invocation_mode: AgentInvocationMode;
@@ -150,6 +151,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
 }> = {
   epic_planner: {
     label: 'Epic Planner',
+    default_role: 'Epic Planner',
     description: 'Interactive product planning for epics, PRDs, docs, and tasks.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
@@ -157,6 +159,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   },
   task_planner: {
     label: 'Task Planner',
+    default_role: 'Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
@@ -164,6 +167,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   },
   story_planner: {
     label: 'Task Planner',
+    default_role: 'Task Planner',
     description: 'Interactive decomposition and refinement for tasks and execution plans.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
@@ -171,6 +175,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   },
   crm_operator: {
     label: 'Beacon',
+    default_role: 'CRM Operator',
     description: 'Cross-app CRM execution across deals, contacts, docs, and support context.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
@@ -178,6 +183,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   },
   support_agent: {
     label: 'Support Agent',
+    default_role: 'Support Agent',
     description: 'Handles support conversations and drafts replies with review controls.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
@@ -185,13 +191,23 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   },
   documentation_agent: {
     label: 'Quill',
+    default_role: 'Documentation Agent',
     description: 'Keeps internal docs, public help docs, and API docs accurate and organized.',
+    runtime_kind: 'native_sdk',
+    default_invocation_mode: 'interactive',
+    supported_modes: ['autonomous', 'interactive'],
+  },
+  marketer: {
+    label: 'Mira',
+    default_role: 'Marketer',
+    description: 'Plans growth work, writes marketing assets, audits funnels, and creates campaigns from workspace context.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'interactive',
     supported_modes: ['autonomous', 'interactive'],
   },
   code_builder: {
     label: 'Code Builder',
+    default_role: 'Code Builder',
     description: 'Writes code, implements features, and fixes bugs in the repo.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
@@ -201,6 +217,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   },
   review_agent: {
     label: 'Review Agent',
+    default_role: 'Review Agent',
     description: 'Reviews work, runs tests, and checks quality without repo mutation.',
     runtime_kind: 'codex',
     default_invocation_mode: 'autonomous',
@@ -210,6 +227,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
   },
   command_agent: {
     label: 'Command Agent',
+    default_role: 'Command Agent',
     description: 'One-shot command-bar agent: runs a single instruction with a narrowed tool set.',
     runtime_kind: 'native_sdk',
     default_invocation_mode: 'autonomous',
@@ -219,6 +237,7 @@ const PRESET_FALLBACKS: Record<AgentPresetKey, {
 
 const PRESET_FALLBACK_DEFAULT: (typeof PRESET_FALLBACKS)[AgentPresetKey] = {
   label: 'Agent',
+  default_role: 'Automation Agent',
   description: '',
   runtime_kind: 'native_sdk',
   default_invocation_mode: 'autonomous',
@@ -1371,7 +1390,9 @@ function trimSummaryText(value?: string, fallback = 'No description yet.') {
 
 function agentRoleLabel(agent: Agent, presets: AgentPresetDefinition[]) {
   if (agent.is_system) {
-    return presetLabel(fallbackPresetKey(agent), presets);
+    const presetKey = fallbackPresetKey(agent);
+    const preset = presetMetaForSelection(presetKey, agent.preset_version_key, presets);
+    return preset?.default_role ?? presetMetaForKey(presetKey, presets)?.default_role ?? presetFallback(presetKey).default_role;
   }
   return 'Custom agent';
 }

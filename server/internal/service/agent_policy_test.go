@@ -539,7 +539,7 @@ func TestNormalizeAgentRecordRefreshesLegacyCodeBuilderPrompt(t *testing.T) {
 	if agent.SystemPrompt == nil {
 		t.Fatal("expected normalized system prompt")
 	}
-	if !strings.Contains(*agent.SystemPrompt, "You are Code Builder.") {
+	if !strings.Contains(*agent.SystemPrompt, "You are Forge, the workspace code builder.") {
 		t.Fatalf("expected code builder prompt refresh, got:\n%s", *agent.SystemPrompt)
 	}
 }

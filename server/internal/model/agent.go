@@ -15,6 +15,7 @@ const (
 	AgentPresetCRMOperator        = "crm_operator"
 	AgentPresetSupportAgent       = "support_agent"
 	AgentPresetDocumentationAgent = "documentation_agent"
+	AgentPresetMarketer           = "marketer"
 	AgentPresetCodeBuilder        = "code_builder"
 	AgentPresetReviewAgent        = "review_agent"
 	// AgentPresetCommandAgent is stored under the legacy "researcher" key so

@@ -30,6 +30,10 @@ export const PRESET_STYLES: Record<AgentPresetKey, { label: string; className: s
     label: 'Quill',
     className: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/20',
   },
+  marketer: {
+    label: 'Mira',
+    className: 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/20',
+  },
   crm_operator: {
     label: 'Beacon',
     className: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
