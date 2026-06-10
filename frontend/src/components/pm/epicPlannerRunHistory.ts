@@ -3,6 +3,19 @@ import { formatDistance, parseISO } from 'date-fns';
 import { outputSummaryText } from '@/components/agents/dock/utils';
 import type { AgentRun } from '@/lib/pmTypes';
 
+/**
+ * Command-bar runs (the "Command Agent" / DAG orchestration shells dispatched
+ * from the Ask-agents dock) target the epic but are not planner runs — they
+ * carry no transcript of their own and are surfaced in the command-bar dock,
+ * not here. They're identified canonically by their trigger source, not by the
+ * agent name (a DAG can use any agent). See backend
+ * model.AgentRunTriggerSourceCommandBar.
+ */
+export function isCommandBarRun(run: Pick<AgentRun, 'input'>): boolean {
+  const trigger = (run.input as { trigger?: { source?: string } } | null | undefined)?.trigger;
+  return trigger?.source === 'command_bar';
+}
+
 export const TERMINAL_RUN_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 export const RUN_DECAY_AGE_MS = 48 * 60 * 60 * 1000;
 export const HISTORY_VISIBLE_ROW_LIMIT = 5;

@@ -4,6 +4,7 @@ import {
   compactRelativeAge,
   groupHistoryRuns,
   historyGroupTimeLabel,
+  isCommandBarRun,
   isDecayedRun,
   runResultSummary,
 } from '../epicPlannerRunHistory';
@@ -32,6 +33,18 @@ function run(overrides: Partial<AgentRun>): AgentRun {
     ...overrides,
   };
 }
+
+describe('isCommandBarRun', () => {
+  it('detects runs dispatched from the command bar', () => {
+    expect(isCommandBarRun(run({ input: { trigger: { source: 'command_bar' } } }))).toBe(true);
+  });
+
+  it('treats planner / manual runs as non-command-bar', () => {
+    expect(isCommandBarRun(run({ input: {} }))).toBe(false);
+    expect(isCommandBarRun(run({ input: { trigger: { source: 'manual' } } }))).toBe(false);
+    expect(isCommandBarRun(run({ input: { trigger: {} } }))).toBe(false);
+  });
+});
 
 describe('groupHistoryRuns', () => {
   it('returns no groups for an empty list', () => {

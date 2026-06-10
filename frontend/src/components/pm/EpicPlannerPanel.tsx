@@ -25,6 +25,7 @@ import {
   HISTORY_VISIBLE_ROW_LIMIT,
   groupHistoryRuns,
   historyGroupTimeLabel,
+  isCommandBarRun,
   isDecayedRun,
   compactRelativeAge,
   runResultSummary,
@@ -305,7 +306,10 @@ export function EpicPlannerPanel({
     }
     try {
       const res = await agentService.listTargetRuns(workspaceId, 'epic', epicId);
-      const nextRuns = res.data ?? [];
+      // Command-bar / DAG orchestration runs target this epic but are not
+      // planner runs (no transcript of their own); they live in the Ask-agents
+      // dock, so keep them out of the planner list entirely.
+      const nextRuns = (res.data ?? []).filter((run) => !isCommandBarRun(run));
       setRuns(nextRuns);
       setSelectedRunId((current) => {
         if (current && nextRuns.some((run) => run.id === current)) return current;
