@@ -9,7 +9,6 @@ import {
   Calendar03Icon,
   ArrowRight01Icon,
   AttachmentIcon,
-  BotIcon,
   ChartColumnIcon,
   CheckListIcon,
   FavouriteIcon,
@@ -1030,22 +1029,17 @@ export function EpicDetailPage() {
 
           <Separator className="my-6" />
 
-          {/* AI Planning */}
-          <div>
-            <TaskDetailSectionHeading title="AI Agents" icon={BotIcon} />
-            <div className="mt-3">
-              {workspaceId ? (
-                <EpicPlannerPanel
-                  workspaceId={workspaceId}
-                  epicId={epicId}
-                  epicTeamId={form.team_id || null}
-                  lastRunId={epic.epic.last_planning_run_id}
-                  canEdit={canEdit}
-                  onRunCompleted={handlePlannerRunCompleted}
-                />
-              ) : null}
-            </div>
-          </div>
+          {/* AI Agents */}
+          {workspaceId ? (
+            <EpicPlannerPanel
+              workspaceId={workspaceId}
+              epicId={epicId}
+              epicTeamId={form.team_id || null}
+              lastRunId={epic.epic.last_planning_run_id}
+              canEdit={canEdit}
+              onRunCompleted={handlePlannerRunCompleted}
+            />
+          ) : null}
 
           <div className={comments.length > 0 ? 'mt-10' : 'mt-8'}>
             {commentsLoading ? (
