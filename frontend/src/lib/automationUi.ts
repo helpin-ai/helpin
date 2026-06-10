@@ -57,7 +57,7 @@ export function buildAutomationActivityPath(slug: string | undefined, search?: A
 }
 
 export function buildAutomationLibraryPath(slug: string | undefined, hash?: string) {
-  const base = slug ? `/w/${slug}/automation/library` : '/automation/library';
+  const base = slug ? `/w/${slug}/automation/triggers` : '/automation/triggers';
   return buildPathWithSearch(base, undefined, hash);
 }
 

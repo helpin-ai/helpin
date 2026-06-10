@@ -247,7 +247,7 @@ export function ToolCatalogContent({
   }
 
   return (
-    <div className={cn('space-y-6', !embedded && 'mx-auto max-w-7xl')}>
+    <div className={cn('space-y-6', !embedded && 'mx-auto max-w-5xl')}>
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         {!embedded && (

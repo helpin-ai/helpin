@@ -109,6 +109,7 @@ export function Header() {
       flows: "Flows",
       activity: "Activity",
       agents: "Agents",
+      triggers: "Trigger Catalog",
       library: "Trigger Catalog",
       tools: "Tool Catalog",
       runs: "Runs",

@@ -35,7 +35,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAgents, useAutomationActivity, useAutomationOverview, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
+import { useAgents, useAutomationActivity, useAutomationOverview, useAutomationTriggerCatalog, useWorkspaceAccess, usePermissions } from '@/hooks/queries';
 import { useTitle } from '@/hooks/useTitle';
 import { buildAutomationFlowsPath } from '@/lib/automationUi';
 import { queryKeys } from '@/lib/queryKeys';
@@ -133,7 +133,7 @@ const DATE_FILTER_OPTIONS = [
   { value: '365d', label: 'Last 12 months' },
 ];
 
-type ActivityFilterKey = 'status' | 'reference_id' | 'agent_id' | 'source' | 'date';
+type ActivityFilterKey = 'status' | 'reference_id' | 'agent_id' | 'source' | 'trigger_type' | 'binding_id' | 'date';
 type ActivityFilterState = Partial<Record<ActivityFilterKey, string[]>>;
 
 interface ActivityFilterOption {
@@ -1024,6 +1024,7 @@ export function AutomationActivityPage({
 
   const { data: agents = [] } = useAgents(workspaceId);
   const overviewQuery = useAutomationOverview(workspaceId, true);
+  const triggerCatalogQuery = useAutomationTriggerCatalog(workspaceId, permissions.canManageSettings);
   const activityFilterSignature = useMemo(
     () => JSON.stringify({
       execution_id: trimFilterValue(search.execution_id),
@@ -1125,6 +1126,26 @@ export function AutomationActivityPage({
     })),
     [agentList],
   );
+  const triggerTypeFilterOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return (triggerCatalogQuery.data ?? [])
+      .filter((trigger) => {
+        if (!trigger.trigger_type || seen.has(trigger.trigger_type)) return false;
+        seen.add(trigger.trigger_type);
+        return true;
+      })
+      .map((trigger) => ({
+        value: trigger.trigger_type,
+        label: trigger.title || trigger.trigger_type,
+      }));
+  }, [triggerCatalogQuery.data]);
+  const triggerSurfaceFilterOptions = useMemo(
+    () => (triggerCatalogQuery.data ?? []).map((trigger) => ({
+      value: trigger.id,
+      label: trigger.title || trigger.id,
+    })),
+    [triggerCatalogQuery.data],
+  );
   const flowFilterOptions = useMemo(
     () => items
       .map((item) => {
@@ -1140,20 +1161,24 @@ export function AutomationActivityPage({
       { key: 'status', label: 'Status', options: STATUS_FILTER_OPTIONS },
       { key: 'reference_id', label: 'Flow', options: flowFilterOptions, searchableValues: true },
       { key: 'agent_id', label: 'Agent', options: agentFilterOptions, searchableValues: true },
+      { key: 'trigger_type', label: 'Trigger', options: triggerTypeFilterOptions, searchableValues: true },
+      { key: 'binding_id', label: 'Surface', options: triggerSurfaceFilterOptions, searchableValues: true },
       { key: 'source', label: 'Source', options: SOURCE_FILTER_OPTIONS },
       { key: 'date', label: 'Date', options: DATE_FILTER_OPTIONS, singleSelect: true },
     ],
-    [agentFilterOptions, flowFilterOptions],
+    [agentFilterOptions, flowFilterOptions, triggerSurfaceFilterOptions, triggerTypeFilterOptions],
   );
   const activityFilterState = useMemo<ActivityFilterState>(() => ({
     status: multiFilterValues(search.status),
     reference_id: multiFilterValues(search.reference_id),
     agent_id: multiFilterValues(search.agent_id),
+    trigger_type: multiFilterValues(search.trigger_type),
+    binding_id: multiFilterValues(search.binding_id),
     source: search.source && !(multiFilterValues(search.source).includes('automation_rule') && search.reference_id)
       ? multiFilterValues(search.source)
       : [],
     date: selectedDateFilter ? [selectedDateFilter] : [],
-  }), [search.agent_id, search.reference_id, search.source, search.status, selectedDateFilter]);
+  }), [search.agent_id, search.binding_id, search.reference_id, search.source, search.status, search.trigger_type, selectedDateFilter]);
   const activeActivityFilterKeys = useMemo<ActivityFilterKey[]>(
     () => activityFilterDefinitions
       .map((definition) => definition.key)
@@ -1172,7 +1197,7 @@ export function AutomationActivityPage({
     });
   }, [activeActivityFilterKeys]);
 
-  const setMultiFilter = useCallback((key: 'status' | 'agent_id' | 'source' | 'reference_id', values: string[]) => {
+  const setMultiFilter = useCallback((key: 'status' | 'agent_id' | 'source' | 'reference_id' | 'trigger_type' | 'binding_id', values: string[]) => {
     const value = multiFilterValue(values);
     if (key === 'reference_id') {
       onSearchChange({
