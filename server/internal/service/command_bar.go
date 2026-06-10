@@ -2994,6 +2994,29 @@ func (s *CommandBarService) ListPlans(ctx context.Context, workspaceID, actorID 
 	return &model.CommandBarPlanListResponse{Plans: summaries}, nil
 }
 
+// ListEntityPlans returns command-bar plans targeting the given entity (e.g. an
+// epic), hydrated with their agent runs, regardless of which actor triggered
+// them. Visibility is enforced at the route by entity-read permissions, so this
+// deliberately skips the actor filter and dismissal handling used by ListPlans.
+func (s *CommandBarService) ListEntityPlans(ctx context.Context, workspaceID, entityType, entityID string, limit int) (*model.CommandBarPlanListResponse, error) {
+	if s == nil || s.planRepo == nil {
+		return &model.CommandBarPlanListResponse{Plans: []model.CommandBarPlanSummary{}}, nil
+	}
+	records, err := s.planRepo.ListByEntity(ctx, workspaceID, entityType, entityID, limit)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]model.CommandBarPlanSummary, 0, len(records))
+	for _, record := range records {
+		summary, err := s.commandBarPlanSummaryForRecord(ctx, workspaceID, record)
+		if err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, summary)
+	}
+	return &model.CommandBarPlanListResponse{Plans: summaries}, nil
+}
+
 // DismissPlans hides the given plans from the actor's command runs rail. Only
 // plans owned by the actor can be dismissed; unknown or unauthorized plan IDs
 // are silently skipped so a stale client cannot enumerate other users' runs.

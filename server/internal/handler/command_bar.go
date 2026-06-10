@@ -73,6 +73,21 @@ func (h *CommandBarHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// ListEpicPlans returns command-bar deliveries targeting an epic, visible to
+// any caller with epic read access (gated at the route by PermPMRead) rather
+// than only to the actor who triggered them.
+func (h *CommandBarHandler) ListEpicPlans(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	epicID := chi.URLParam(r, "id")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	resp, err := h.commandBarService.ListEntityPlans(r.Context(), workspaceID, "epic", epicID, limit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *CommandBarHandler) GetPlan(w http.ResponseWriter, r *http.Request) {
 	workspaceID := getWorkspaceID(r)
 	actorID := middleware.GetUserID(r.Context())

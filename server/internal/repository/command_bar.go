@@ -61,6 +61,30 @@ func (r *CommandBarPlanRepository) ListRecent(ctx context.Context, workspaceID, 
 	return plans, nil
 }
 
+// ListByEntity returns plans whose page_context targets the given entity
+// (e.g. an epic), regardless of which actor triggered them. This powers the
+// epic-visible delivery view, where anyone who can read the epic should see
+// its command-bar deliveries — unlike ListRecent, which is actor-scoped.
+func (r *CommandBarPlanRepository) ListByEntity(ctx context.Context, workspaceID, entityType, entityID string, limit int) ([]model.CommandBarPlanRecord, error) {
+	if r == nil || r.db == nil {
+		return nil, fmt.Errorf("command bar plan repository is not configured")
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	var plans []model.CommandBarPlanRecord
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Where("page_context->>'entity_type' = ?", entityType).
+		Where("page_context->>'entity_id' = ?", entityID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&plans).Error; err != nil {
+		return nil, fmt.Errorf("list command bar plans by entity: %w", err)
+	}
+	return plans, nil
+}
+
 func (r *CommandBarPlanRepository) UpdateStepRun(ctx context.Context, workspaceID, id string, stepIndex int, runIDsByStep []byte) error {
 	if r == nil || r.db == nil {
 		return fmt.Errorf("command bar plan repository is not configured")

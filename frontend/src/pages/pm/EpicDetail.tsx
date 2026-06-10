@@ -72,6 +72,7 @@ import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
+import { EpicDeliveryRunsPanel } from '@/components/pm/EpicDeliveryRunsPanel';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
@@ -1031,14 +1032,17 @@ export function EpicDetailPage() {
 
           {/* AI Agents */}
           {workspaceId ? (
-            <EpicPlannerPanel
-              workspaceId={workspaceId}
-              epicId={epicId}
-              epicTeamId={form.team_id || null}
-              lastRunId={epic.epic.last_planning_run_id}
-              canEdit={canEdit}
-              onRunCompleted={handlePlannerRunCompleted}
-            />
+            <div className="space-y-4">
+              <EpicPlannerPanel
+                workspaceId={workspaceId}
+                epicId={epicId}
+                epicTeamId={form.team_id || null}
+                lastRunId={epic.epic.last_planning_run_id}
+                canEdit={canEdit}
+                onRunCompleted={handlePlannerRunCompleted}
+              />
+              <EpicDeliveryRunsPanel workspaceId={workspaceId} epicId={epicId} />
+            </div>
           ) : null}
 
           <div className={comments.length > 0 ? 'mt-10' : 'mt-8'}>
