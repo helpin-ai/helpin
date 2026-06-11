@@ -72,7 +72,8 @@ import { RichTextMentionContent } from '@/components/pm/RichTextMentionContent';
 import { MemberPickerPopover } from '@/components/pm/MemberPickerPopover';
 import { filterMentionTeams } from '@/components/pm/mentionSuggestions';
 import { EpicPlannerPanel } from '@/components/pm/EpicPlannerPanel';
-import { EpicDeliveryRunsPanel } from '@/components/pm/EpicDeliveryRunsPanel';
+import { EpicDeliveryRunsPanel, EpicDeliveryStatusChip } from '@/components/pm/EpicDeliveryRunsPanel';
+import { useEpicDeliveryPlan } from '@/components/pm/useEpicDeliveryPlan';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
 import { normalizeTeamType } from '@/lib/teamPresets';
 import { pmObjectiveService } from '@/lib/services/pmObjectiveService';
@@ -238,6 +239,8 @@ export function EpicDetailPage() {
 
   const { data: access } = useWorkspaceAccess(workspaceId ?? '');
   const { canEdit } = usePermissions(access);
+
+  const delivery = useEpicDeliveryPlan(workspaceId ?? '', epicId);
 
   const { teams, findTeamName } = useAccessibleTeams(workspaceId ?? '');
   const { members: assignableMembers } = useAssignableWorkspaceMembers(workspaceId);
@@ -1041,7 +1044,15 @@ export function EpicDetailPage() {
                 canEdit={canEdit}
                 onRunCompleted={handlePlannerRunCompleted}
               />
-              <EpicDeliveryRunsPanel workspaceId={workspaceId} epicId={epicId} />
+              {delivery.plan ? (
+                <EpicDeliveryRunsPanel
+                  workspaceId={workspaceId}
+                  plan={delivery.plan}
+                  runsById={delivery.runsById}
+                  onReload={delivery.reload}
+                  canEdit={canEdit}
+                />
+              ) : null}
             </div>
           ) : null}
 
@@ -1126,6 +1137,10 @@ export function EpicDetailPage() {
               <span className="tabular-nums">{remainingTasks} remaining</span>
             </div>
           </section>
+
+          {delivery.plan ? (
+            <EpicDeliveryStatusChip plan={delivery.plan} runsById={delivery.runsById} />
+          ) : null}
 
           <div className="mt-5 grid grid-cols-[16px_80px_1fr] items-center gap-x-2 gap-y-3">
             {/* State */}

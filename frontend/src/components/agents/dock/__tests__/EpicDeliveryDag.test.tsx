@@ -110,6 +110,45 @@ describe('EpicDeliveryDag', () => {
     expect(onOpenRun).toHaveBeenCalledWith('run-1');
   });
 
+  it('groups dag steps into stages and marks parallel and blocked steps', () => {
+    act(() => {
+      root.render(
+        <EpicDeliveryDag
+          plan={dagPlan({
+            steps: [
+              {
+                agent_id: 'agent-forge',
+                agent_name: 'Forge',
+                target: { entity_type: 'task', entity_id: 'task-1', display_title: 'USE-70' },
+                instructions: '',
+              },
+              {
+                agent_id: 'agent-forge',
+                agent_name: 'Forge',
+                target: { entity_type: 'task', entity_id: 'task-2', display_title: 'USE-71' },
+                instructions: '',
+              },
+              {
+                agent_id: 'agent-lens',
+                agent_name: 'Lens',
+                target: { entity_type: 'task', entity_id: 'task-1', display_title: 'USE-70' },
+                instructions: '',
+                depends_on_step_indexes: [0, 1],
+              },
+            ],
+            runIdsByStep: { 0: 'run-1' },
+          })}
+          runsById={{ 'run-1': agentRun({ id: 'run-1', status: 'running' }) }}
+          onOpenRun={vi.fn()}
+        />,
+      );
+    });
+    expect(container.textContent).toContain('Stage 1 · 2 in parallel');
+    expect(container.textContent).toContain('Stage 2');
+    expect(container.textContent).toContain('Running');
+    expect(container.textContent).toContain('waiting on 2');
+  });
+
   it('renders task-pipeline rows for a task_pipeline_fan_out plan', () => {
     act(() => {
       root.render(

@@ -3135,7 +3135,10 @@ func (s *CommandBarService) ResumePlan(ctx context.Context, workspaceID, actorID
 	if err != nil {
 		return nil, err
 	}
-	if plan == nil || !commandBarPlanOwnedByActor(plan, actorID) {
+	// Resume is intentionally NOT owner-gated: epic delivery plans surface to
+	// the whole team on the epic page, and any member with command-bar edit
+	// permission (enforced at the router) may revive a stalled delivery.
+	if plan == nil {
 		return nil, fmt.Errorf("command bar plan not found")
 	}
 	if plan.Status != model.CommandBarPlanStatusRunning {
@@ -3203,9 +3206,9 @@ func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, 
 	if plan == nil {
 		return nil, fmt.Errorf("command bar plan not found")
 	}
-	if !commandBarPlanOwnedByActor(plan, actorID) {
-		return nil, fmt.Errorf("command bar plan not found")
-	}
+	// Like ResumePlan, retry is team-actionable (not owner-gated): a failed
+	// epic delivery can be retried by any member with command-bar edit
+	// permission. Retried runs are attributed to the retrying actor.
 	if plan.Status == model.CommandBarPlanStatusRunning {
 		return nil, fmt.Errorf("running command bar plans cannot be retried")
 	}
