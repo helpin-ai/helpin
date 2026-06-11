@@ -165,6 +165,9 @@ func buildSystemPromptWithOptions(agent *model.Agent, story *model.PMTask, epic 
 			}
 			parts = append(parts, "- When available, keep a short working execution checklist with update_plan instead of repeating plan status in prose. Do not use update_plan as a substitute for publish_prd_draft, publish_task_plan, or publish_task_plan_doc.")
 		}
+		if toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"] {
+			parts = append(parts, "- Use list_available_skills or search_available_skills when specialized workflow guidance would materially improve the task, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default.")
+		}
 	}
 	if story != nil && strings.TrimSpace(planningStage) != model.PlanningStageTaskPlanDoc {
 		parts = append(parts, "- Run tests after making changes when possible.")

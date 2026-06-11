@@ -20,6 +20,11 @@ var toolCategory = map[string]string{
 	"grep":         "Code Analysis",
 	"list_symbols": "Code Analysis",
 
+	// Skills
+	ToolListAvailableSkills:   "Skills",
+	ToolSearchAvailableSkills: "Skills",
+	ToolReadSkill:             "Skills",
+
 	// Commands
 	"run_command": "Commands",
 
@@ -87,6 +92,7 @@ var toolCategory = map[string]string{
 var categoryOrder = []string{
 	"Filesystem",
 	"Code Analysis",
+	"Skills",
 	"Commands",
 	"Security",
 	"Web Search",

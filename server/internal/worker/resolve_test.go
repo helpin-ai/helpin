@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/helpin-ai/helpin/server/internal/model"
@@ -55,5 +56,36 @@ func TestResolveAgentProfileUsesInteractiveCodexQueue(t *testing.T) {
 
 	if resolved.Queue != "agent-codex-interactive" {
 		t.Fatalf("expected queue %q, got %q", "agent-codex-interactive", resolved.Queue)
+	}
+}
+
+func TestResolveAgentProfileAddsAvailableSkillToolsForNativeSkillAgent(t *testing.T) {
+	agent := &model.Agent{
+		PresetKey:    model.AgentPresetMarketer,
+		RuntimeKind:  "native_sdk",
+		AllowedTools: []byte(`["list_documents"]`),
+	}
+
+	resolved := ResolveAgentProfile(agent, model.InvocationModeInteractive)
+
+	for _, toolName := range []string{ToolListAvailableSkills, ToolSearchAvailableSkills, ToolReadSkill} {
+		if !slices.Contains(resolved.Tools, toolName) {
+			t.Fatalf("expected native skill agent tools to include %q, got %v", toolName, resolved.Tools)
+		}
+	}
+}
+
+func TestResolveAgentProfileDoesNotAddAvailableSkillToolsForCodexAgent(t *testing.T) {
+	agent := &model.Agent{
+		PresetKey:   model.AgentPresetCodeBuilder,
+		RuntimeKind: "codex",
+	}
+
+	resolved := ResolveAgentProfile(agent, model.InvocationModeAutonomous)
+
+	for _, toolName := range []string{ToolListAvailableSkills, ToolSearchAvailableSkills, ToolReadSkill} {
+		if slices.Contains(resolved.Tools, toolName) {
+			t.Fatalf("did not expect codex tools to include native skill tool %q, got %v", toolName, resolved.Tools)
+		}
 	}
 }
