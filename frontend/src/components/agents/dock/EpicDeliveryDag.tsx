@@ -240,7 +240,7 @@ function TaskPipelineLanes({
             )}
           >
             <span
-              className="w-36 shrink-0 truncate text-xs font-medium text-foreground/85"
+              className="w-36 shrink-0 truncate text-xs font-medium text-foreground/85 sm:w-56 lg:w-72"
               title={group.title}
             >
               {group.title}
