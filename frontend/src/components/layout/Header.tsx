@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { useGlobalCreateStore } from "@/stores/globalCreateStore";
-import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
+import { SearchCommandPalette } from "@/components/search/SearchCommandPalette.tsx";
 import { useSupportInboxStore } from "@/stores/supportInboxStore";
 import { usePageHeaderStore } from "@/stores/pageHeaderStore";
 import { buildSettingsRoutePath, SETTINGS_SECTION_LABELS } from "@/lib/settingsSections";

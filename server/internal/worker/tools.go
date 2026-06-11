@@ -285,6 +285,32 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 	})
 
 	// Git tools
+	r.register("list_commits", "Read commit history from the checked-out repository (read-only `git log`). Use for changelogs, release notes, or summarizing recent changes. Filter with branch, since/until dates (YYYY-MM-DD), path, and limit.", map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"branch": map[string]interface{}{
+				"type":        "string",
+				"description": "Branch to read (e.g. \"main\"). Defaults to the checked-out branch.",
+			},
+			"since": map[string]interface{}{
+				"type":        "string",
+				"description": "Only commits after this date, e.g. \"2026-05-05\" or \"1 month ago\".",
+			},
+			"until": map[string]interface{}{
+				"type":        "string",
+				"description": "Only commits before this date, e.g. \"2026-06-05\".",
+			},
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional path filter — only commits touching this file or directory.",
+			},
+			"limit": map[string]interface{}{
+				"type":        "integer",
+				"description": "Max commits to return (default 50, max 200).",
+			},
+		},
+	}, toolListCommits)
+
 	r.register("create_branch", "Create a new git branch and switch to it.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -754,6 +780,11 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		},
 	}, toolListDocuments)
 
+	r.register("list_spaces", "List the docs spaces in the workspace. Use this to discover a valid space_id before calling create_document. Returns space ID, name, slug, type, and owning team.", map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}, toolListSpaces)
+
 	r.register("list_collections", "List doc collections in the workspace, optionally filtered by space. Returns collection ID, name, slug, space ID, and parent collection ID.", map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -1061,6 +1092,7 @@ func NewToolRegistry(webSearch WebSearchClient, exaSearch ...*ExaSearchClient) *
 		"enrich_crm_contact":         toolEnrichCRMContact,
 		"enrich_crm_company":         toolEnrichCRMCompany,
 		"create_document":            toolCreateDocument,
+		"list_repositories":          toolListRepositories,
 		"create_task":                toolCreateTask,
 		"write_document_content":     toolWriteDocumentContent,
 		"update_document_block":      toolUpdateDocumentBlock,

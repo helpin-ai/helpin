@@ -133,6 +133,8 @@ func setupRuleEngineTestDB(t *testing.T) *gorm.DB {
 			base_branch TEXT,
 			working_branch TEXT,
 			delivery_state TEXT NOT NULL DEFAULT 'unconfigured',
+			target_source TEXT NOT NULL DEFAULT 'manual',
+			source_epic_id TEXT,
 			active_pr_number INTEGER,
 			active_pr_title TEXT,
 			active_pr_url TEXT,

@@ -225,6 +225,10 @@ The product surfaces are:
 
 Ask Agents is the orchestration chat layer over the agent system.
 
+Full runtime reference with mermaid diagrams (component map, intent routing, read-only
+vs mutation gating, plan-kind dispatch, Temporal DAG loop, persistence):
+[ASK_AGENTS_BAR.md](./ASK_AGENTS_BAR.md).
+
 It can:
 
 - answer simple read-only questions inline with non-mutating context/tool access

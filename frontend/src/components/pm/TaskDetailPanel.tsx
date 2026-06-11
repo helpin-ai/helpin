@@ -44,7 +44,7 @@ import {
   TaskTypeIcon,
 } from '@/lib/pmConstants';
 import { RepositoryBranchPicker } from '@/components/git/RepositoryBranchPicker';
-import { repositoryDefaultBranchLabel, taskBranchOptionLabel } from '@/lib/branchLabels';
+import { repositoryDefaultBranchLabel } from '@/lib/branchLabels';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -1824,9 +1824,7 @@ function TaskDetailPanelBody({
                 placeholder={delivery.selectedRepository?.default_branch || 'main'}
                 emptyLabel={repositoryDefaultBranchLabel(delivery.selectedRepository?.default_branch)}
                 extraOptions={
-                  delivery.branchPreview
-                    ? [{ value: delivery.branchPreview, label: taskBranchOptionLabel(delivery.branchPreview) }]
-                    : []
+                  delivery.branchOptions
                 }
                 disabled={delivery.savingTarget}
                 variant="sidebar"
@@ -1866,6 +1864,27 @@ function TaskDetailPanelBody({
                     <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${delivery.deliveryStateCfg.className}`}>
                       {delivery.deliveryStateCfg.label}
                     </span>
+                  </MetadataRow>
+                )}
+
+                <MetadataRow icon={GitBranchIcon} label="Source">
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium leading-none ${delivery.sourceClassName}`}>
+                    {delivery.sourceLabel}
+                  </span>
+                </MetadataRow>
+
+                {delivery.canUseEpicTarget && (
+                  <MetadataRow icon={GitBranchIcon} label="Epic branch">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      onClick={() => void delivery.handleUseEpicTarget()}
+                      disabled={delivery.savingTarget}
+                    >
+                      {delivery.savingTarget ? <Loading01Icon className="h-3 w-3 animate-spin" /> : <GitBranchIcon className="h-3 w-3" />}
+                      Use epic branch
+                    </Button>
                   </MetadataRow>
                 )}
               </>

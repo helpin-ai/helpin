@@ -2578,7 +2578,15 @@ func truncateRunContextText(value string, limit int) string {
 	return strings.TrimSpace(value[:limit]) + "..."
 }
 
+type startTargetRunOptions struct {
+	allowActiveParentRun bool
+}
+
 func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string) (*model.AgentRun, error) {
+	return s.startTargetRunWithOptions(ctx, workspaceID, targetType, targetID, req, actorID, trigger, event, parentRunID, startTargetRunOptions{})
+}
+
+func (s *AgentService) startTargetRunWithOptions(ctx context.Context, workspaceID, targetType, targetID string, req model.StartAgentRunRequest, actorID *string, trigger *model.AgentRunTriggerContext, event *model.AgentRunEventContext, parentRunID *string, opts startTargetRunOptions) (*model.AgentRun, error) {
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
@@ -2620,19 +2628,20 @@ func (s *AgentService) startTargetRun(ctx context.Context, workspaceID, targetTy
 		}
 
 		run, err := s.createRun(ctx, createRunParams{
-			workspaceID:    workspaceID,
-			agent:          agent,
-			targetType:     "task",
-			targetID:       task.ID,
-			parentRunID:    parentRunID,
-			taskID:         &task.ID,
-			actorID:        actorID,
-			input:          payload,
-			trigger:        trigger,
-			delivery:       delivery,
-			baseBranch:     req.BaseBranch,
-			workingBranch:  req.WorkingBranch,
-			invocationMode: resolveInvocationMode(agent),
+			workspaceID:          workspaceID,
+			agent:                agent,
+			targetType:           "task",
+			targetID:             task.ID,
+			parentRunID:          parentRunID,
+			taskID:               &task.ID,
+			actorID:              actorID,
+			input:                payload,
+			trigger:              trigger,
+			delivery:             delivery,
+			baseBranch:           req.BaseBranch,
+			workingBranch:        req.WorkingBranch,
+			invocationMode:       resolveInvocationMode(agent),
+			allowActiveParentRun: opts.allowActiveParentRun,
 		})
 		if err != nil {
 			return nil, err
@@ -4193,22 +4202,23 @@ func (s *AgentService) HandoffRun(ctx context.Context, workspaceID, runID, actor
 }
 
 type createRunParams struct {
-	workspaceID    string
-	agent          *model.Agent
-	targetType     string
-	targetID       string
-	parentRunID    *string
-	taskID         *string
-	conversationID *string
-	actorID        *string
-	input          []byte
-	trigger        *model.AgentRunTriggerContext
-	delivery       *model.TaskDeliveryTarget
-	repositoryID   *string
-	repoFullName   *string
-	baseBranch     *string
-	workingBranch  *string
-	invocationMode string
+	workspaceID          string
+	agent                *model.Agent
+	targetType           string
+	targetID             string
+	parentRunID          *string
+	allowActiveParentRun bool
+	taskID               *string
+	conversationID       *string
+	actorID              *string
+	input                []byte
+	trigger              *model.AgentRunTriggerContext
+	delivery             *model.TaskDeliveryTarget
+	repositoryID         *string
+	repoFullName         *string
+	baseBranch           *string
+	workingBranch        *string
+	invocationMode       string
 }
 
 func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*model.AgentRun, error) {
@@ -4219,6 +4229,11 @@ func (s *AgentService) createRun(ctx context.Context, params createRunParams) (*
 	if activeRun != nil {
 		if updated := s.reconcileStuckRun(ctx, activeRun); updated != nil {
 			activeRun = updated
+		}
+	}
+	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {
+		if params.allowActiveParentRun && params.parentRunID != nil && activeRun.ID == strings.TrimSpace(*params.parentRunID) {
+			activeRun = nil
 		}
 	}
 	if activeRun != nil && model.IsAgentRunActiveStatus(activeRun.Status) {

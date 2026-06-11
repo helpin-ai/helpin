@@ -14,6 +14,8 @@ import (
 	"github.com/helpin-ai/helpin/server/internal/llm"
 	"github.com/helpin-ai/helpin/server/internal/model"
 	"github.com/helpin-ai/helpin/server/internal/repository"
+	"github.com/helpin-ai/helpin/server/internal/temporalapp"
+	tclient "go.temporal.io/sdk/client"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -50,6 +52,25 @@ func (s *scriptedCommandBarLLM) ChatCompletion(ctx context.Context, req llm.Chat
 		return &llm.ChatResponse{Content: response}, nil
 	}
 	return &llm.ChatResponse{Content: s.response}, nil
+}
+
+type commandBarSignalTemporalClient struct {
+	tclient.Client
+	err           error
+	signalName    string
+	workflowID    string
+	signaledRunID string
+}
+
+func (c *commandBarSignalTemporalClient) SignalWorkflow(_ context.Context, workflowID, workflowRunID, signalName string, arg interface{}) error {
+	c.workflowID = workflowID
+	c.signalName = signalName
+	payload, ok := arg.(temporalapp.CommandBarRunCompletedSignal)
+	if !ok {
+		return fmt.Errorf("unexpected command bar signal payload type %T", arg)
+	}
+	c.signaledRunID = payload.RunID
+	return c.err
 }
 
 func TestParseExplicitNamedAgentsPreservesRequestOrder(t *testing.T) {
@@ -335,6 +356,225 @@ func TestChatTurnInfersPriorDocumentTargetForOneShot(t *testing.T) {
 	step := resp.Proposal.Plan.Steps[0]
 	if step.Target.EntityType != "document" || step.Target.EntityID != documentID {
 		t.Fatalf("expected prior document target, got %#v", step.Target)
+	}
+}
+
+func TestParseIntentResolvesRepositoryNameTargetForOneShot(t *testing.T) {
+	service, _, workspaceID, repoID := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target. usermaven",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot repository plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.PlanKind != model.CommandBarPlanKindOneShotCommand {
+		t.Fatalf("expected one-shot step, got %#v", step)
+	}
+	if step.Target.EntityType != "repository" || step.Target.EntityID != repoID {
+		t.Fatalf("expected resolved repository target, got %#v", step.Target)
+	}
+	if step.Target.DisplayTitle != "helpin/usermaven" {
+		t.Fatalf("expected repository display title, got %#v", step.Target)
+	}
+	for _, required := range []string{"list_commits", "list_directory", "create_document"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+}
+
+func TestParseIntentResolvesRepositoryNameBeforeRepositoryKeyword(t *testing.T) {
+	service, _, workspaceID, _ := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+	repoID := "55555555-5555-5555-5555-555555555555"
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check the latest commits in main branch in the last month and create a changelog doc in docs. target scope is usermaven/usermven repository, get the repo uuid first",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot repository plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.Target.EntityType != "repository" || step.Target.EntityID != repoID {
+		t.Fatalf("expected resolved repository target, got %#v", step.Target)
+	}
+}
+
+func TestParseIntentCompletesUnderspecifiedLLMRepositoryChangelogTools(t *testing.T) {
+	service, _, workspaceID, repoID := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+	service.llmProvider = &scriptedCommandBarLLM{response: `{
+		"status":"plan",
+		"route_kind":"one_shot_command",
+		"agent_id":"33333333-3333-3333-3333-333333333333",
+		"instructions":"Inspect the repository and create the changelog.",
+		"one_shot_tools":["list_directory"],
+		"tool_intent":"read_only",
+		"rationale":"The request needs repository context.",
+		"confidence":0.94
+	}`}
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target. usermaven",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusPlan || resp.Plan == nil || len(resp.Plan.Steps) != 1 {
+		t.Fatalf("expected one-shot repository plan, got %#v", resp)
+	}
+	step := resp.Plan.Steps[0]
+	if step.Target.EntityType != "repository" || step.Target.EntityID != repoID {
+		t.Fatalf("expected resolved repository target, got %#v", step.Target)
+	}
+	for _, required := range []string{"list_commits", "read_files", "list_directory", "list_spaces", "list_collections", "create_document"} {
+		if !slices.Contains(step.AllowedTools, required) {
+			t.Fatalf("expected completed repository changelog tool %q in %#v", required, step.AllowedTools)
+		}
+	}
+	if !commandBarToolsIncludeMutation(step.AllowedTools) {
+		t.Fatalf("expected document creation to make tool set mutating, got %#v", step.AllowedTools)
+	}
+	if !strings.Contains(step.Instructions, "Confirm the repository target") {
+		t.Fatalf("expected repository-specific one-shot instructions, got %q", step.Instructions)
+	}
+}
+
+func TestParseIntentRequiresRepositoryTargetForRepoTools(t *testing.T) {
+	service, _, workspaceID, _ := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+
+	resp, err := service.ParseIntent(ctx, workspaceID, "actor-1", model.CommandBarParseRequest{
+		Text:        "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("parse intent: %v", err)
+	}
+	if resp == nil || resp.Status != model.CommandBarParseStatusNoMatchingAgent {
+		t.Fatalf("expected repository target clarification, got %#v", resp)
+	}
+	if !strings.Contains(resp.Reason, "repository target") {
+		t.Fatalf("expected repository target reason, got %q", resp.Reason)
+	}
+}
+
+func TestChatTurnMergesTargetClarificationWithPendingRequest(t *testing.T) {
+	service, db, workspaceID, repoID := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+	chatRepo := repository.NewCommandBarChatRepository(db)
+	service.SetChatRepository(chatRepo)
+	actorID := "actor-1"
+	thread := &model.CommandBarThread{
+		ID:          uuid.NewString(),
+		WorkspaceID: workspaceID,
+		ActorID:     &actorID,
+		Title:       "Changelog request",
+		Status:      model.CommandBarThreadStatusOpen,
+		CreatedAt:   time.Now().Add(-3 * time.Minute),
+		UpdatedAt:   time.Now().Add(-3 * time.Minute),
+	}
+	if err := chatRepo.CreateThread(ctx, thread); err != nil {
+		t.Fatalf("create thread: %v", err)
+	}
+	original := "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target"
+	if err := chatRepo.CreateMessage(ctx, &model.CommandBarMessage{
+		ID:          uuid.NewString(),
+		ThreadID:    thread.ID,
+		WorkspaceID: workspaceID,
+		ActorID:     &actorID,
+		Role:        model.CommandBarMessageRoleUser,
+		Content:     original,
+		CreatedAt:   time.Now().Add(-2 * time.Minute),
+	}); err != nil {
+		t.Fatalf("create user message: %v", err)
+	}
+	if err := chatRepo.CreateMessage(ctx, &model.CommandBarMessage{
+		ID:           uuid.NewString(),
+		ThreadID:     thread.ID,
+		WorkspaceID:  workspaceID,
+		ActorID:      &actorID,
+		Role:         model.CommandBarMessageRoleAssistant,
+		Content:      "What should I use as the target or scope for this request?",
+		ProposalJSON: mustJSON(&model.CommandBarProposal{Type: model.CommandBarProposalClarification, Answer: "What should I use as the target or scope for this request?"}),
+		CreatedAt:    time.Now().Add(-1 * time.Minute),
+	}); err != nil {
+		t.Fatalf("create assistant message: %v", err)
+	}
+
+	resp, err := service.ChatTurn(ctx, workspaceID, actorID, model.CommandBarChatTurnRequest{
+		ThreadID:    &thread.ID,
+		Text:        "target scope is helpin/usermaven repository, get the repo uuid first",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("chat turn: %v", err)
+	}
+	if resp.Proposal == nil || resp.Proposal.Type != model.CommandBarProposalRunPlan || resp.Proposal.Plan == nil || len(resp.Proposal.Plan.Steps) != 1 {
+		t.Fatalf("expected run plan proposal, got %#v", resp.Proposal)
+	}
+	step := resp.Proposal.Plan.Steps[0]
+	if step.Target.EntityType != "repository" || step.Target.EntityID != repoID {
+		t.Fatalf("expected resolved repository target, got %#v", step.Target)
+	}
+	if !strings.Contains(step.Instructions, "latest commits in main branch") {
+		t.Fatalf("expected original request in one-shot instructions, got %q", step.Instructions)
+	}
+}
+
+func TestChatTurnAsksRepositoryChoiceThenRunsSelectedRepository(t *testing.T) {
+	service, db, workspaceID, _ := setupCommandBarRepositoryTargetResolutionTest(t)
+	ctx := context.Background()
+	chatRepo := repository.NewCommandBarChatRepository(db)
+	service.SetChatRepository(chatRepo)
+	actorID := "actor-1"
+	original := "check the latest commits in main branch in the last month and create a changelog doc in docs. create a one shot agent. use repository target"
+
+	first, err := service.ChatTurn(ctx, workspaceID, actorID, model.CommandBarChatTurnRequest{
+		Text:        original,
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("first chat turn: %v", err)
+	}
+	if first.Proposal == nil || first.Proposal.Type != model.CommandBarProposalClarification {
+		t.Fatalf("expected repository clarification, got %#v", first.Proposal)
+	}
+	if !strings.Contains(first.AssistantMessage.Content, "Choose a repository target") ||
+		!strings.Contains(first.AssistantMessage.Content, "helpin/usermaven") ||
+		!strings.Contains(first.AssistantMessage.Content, "usermaven/usermven") {
+		t.Fatalf("expected repository choices in assistant content, got %q", first.AssistantMessage.Content)
+	}
+
+	second, err := service.ChatTurn(ctx, workspaceID, actorID, model.CommandBarChatTurnRequest{
+		ThreadID:    &first.Thread.ID,
+		Text:        "2",
+		PageContext: model.CommandBarPageContext{EntityType: "workspace", EntityID: workspaceID, DisplayTitle: "Usermaven"},
+	})
+	if err != nil {
+		t.Fatalf("second chat turn: %v", err)
+	}
+	if second.Proposal == nil || second.Proposal.Type != model.CommandBarProposalRunPlan || second.Proposal.Plan == nil || len(second.Proposal.Plan.Steps) != 1 {
+		t.Fatalf("expected selected repository run plan, got %#v", second.Proposal)
+	}
+	step := second.Proposal.Plan.Steps[0]
+	if step.Target.EntityType != "repository" || step.Target.EntityID != "55555555-5555-5555-5555-555555555555" {
+		t.Fatalf("expected second repository target, got %#v", step.Target)
+	}
+	if !strings.Contains(step.Instructions, "latest commits in main branch") {
+		t.Fatalf("expected original request in one-shot instructions, got %q", step.Instructions)
 	}
 }
 
@@ -900,29 +1140,202 @@ func TestCommandBarSchedulerReadinessRequiresCompletedDependencies(t *testing.T)
 		runningRunID:   {ID: runningRunID, Status: model.AgentRunStatusRunning},
 	}
 
-	parentRunID, ready := commandBarStepDependenciesSatisfied(
-		model.CommandBarPlanStep{DependsOnStepIndexes: []int{0}},
-		map[int]string{0: completedRunID},
-		runsByID,
-	)
-	if !ready || parentRunID == nil || *parentRunID != completedRunID {
-		t.Fatalf("expected completed dependency to make step ready, parent=%v ready=%v", parentRunID, ready)
+	linearSteps := []model.CommandBarPlanStep{
+		{},
+		{DependsOnStepIndexes: []int{0}},
+	}
+	if !commandBarStepDependenciesSatisfied(linearSteps[1], map[int]string{0: completedRunID}, runsByID) {
+		t.Fatalf("expected completed dependency to make step ready")
+	}
+	parentRunID := commandBarParentRunIDForStep(linearSteps, 1, map[int]string{0: completedRunID}, runsByID)
+	if parentRunID == nil || *parentRunID != completedRunID {
+		t.Fatalf("expected one-to-one dependency to provide parent run %q, got %v", completedRunID, parentRunID)
 	}
 
-	if _, ready := commandBarStepDependenciesSatisfied(
+	if commandBarStepDependenciesSatisfied(
 		model.CommandBarPlanStep{DependsOnStepIndexes: []int{1}},
 		map[int]string{1: runningRunID},
 		runsByID,
-	); ready {
+	) {
 		t.Fatalf("expected running dependency to keep step blocked")
 	}
 
-	if _, ready := commandBarStepDependenciesSatisfied(
+	if commandBarStepDependenciesSatisfied(
 		model.CommandBarPlanStep{DependsOnStepIndexes: []int{2}},
 		map[int]string{},
 		runsByID,
-	); ready {
+	) {
 		t.Fatalf("expected missing dependency run to keep step blocked")
+	}
+
+	sharedDependencySteps := []model.CommandBarPlanStep{
+		{},
+		{DependsOnStepIndexes: []int{0}},
+		{DependsOnStepIndexes: []int{0}},
+	}
+	if parent := commandBarParentRunIDForStep(sharedDependencySteps, 1, map[int]string{0: completedRunID}, runsByID); parent != nil {
+		t.Fatalf("expected shared dependency fan-out to avoid parent_run_id, got %v", *parent)
+	}
+}
+
+func TestCommandBarExistingChildRunForParent(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	service := &AgentService{runRepo: runRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	parentRunID := "22222222-2222-2222-2222-222222222222"
+	childRunID := "33333333-3333-3333-3333-333333333333"
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             childRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        "44444444-4444-4444-4444-444444444444",
+		TargetType:     "task",
+		TargetID:       "55555555-5555-5555-5555-555555555555",
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ParentRunID:    &parentRunID,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusQueued,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create child run: %v", err)
+	}
+
+	existing := service.commandBarExistingChildRunForParent(ctx, workspaceID, &parentRunID)
+	if existing == nil || existing.ID != childRunID {
+		t.Fatalf("expected existing child run %q, got %#v", childRunID, existing)
+	}
+	if got := service.commandBarExistingChildRunForParent(ctx, workspaceID, nil); got != nil {
+		t.Fatalf("expected nil for nil parent run id, got %#v", got)
+	}
+}
+
+func TestCommandBarExistingRunForStepRequiresExactCommandBarStep(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	service := &AgentService{runRepo: runRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	parentRunID := "33333333-3333-3333-3333-333333333333"
+	childRunID := "44444444-4444-4444-4444-444444444444"
+	taskID := "55555555-5555-5555-5555-555555555555"
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:   "agent-forge",
+			AgentName: "Forge",
+			Target:    model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task"},
+		},
+		{
+			AgentID:              "agent-lens",
+			AgentName:            "Lens",
+			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task"},
+			DependsOnStepIndexes: []int{0},
+		},
+	}
+	trigger, err := buildCommandBarTriggerContext("run forge then lens", model.CommandBarPageContext{EntityType: "task", EntityID: taskID}, steps, 1, planID)
+	if err != nil {
+		t.Fatalf("build trigger: %v", err)
+	}
+	input, err := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             childRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        "agent-lens",
+		TargetType:     "task",
+		TargetID:       taskID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ParentRunID:    &parentRunID,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusQueued,
+		Input:          input,
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create child run: %v", err)
+	}
+
+	existing := service.commandBarExistingRunForStep(ctx, workspaceID, &parentRunID, planID, steps, 1)
+	if existing == nil || existing.ID != childRunID {
+		t.Fatalf("expected exact existing child run %q, got %#v", childRunID, existing)
+	}
+	if got := service.commandBarExistingRunForStep(ctx, workspaceID, &parentRunID, planID, steps, 0); got != nil {
+		t.Fatalf("expected mismatched step not to reuse child run, got %#v", got)
+	}
+}
+
+func TestCreateRunAllowsConflictChildWhenActiveRunIsParent(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	agentRepo := repository.NewAgentRepository(db)
+	service := &AgentService{runRepo: runRepo, agentRepo: agentRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	taskID := "22222222-2222-2222-2222-222222222222"
+	parentRunID := "33333333-3333-3333-3333-333333333333"
+	forgeAgent := &model.Agent{
+		ID:                    "44444444-4444-4444-4444-444444444444",
+		WorkspaceID:           workspaceID,
+		Name:                  "Forge",
+		RuntimeKind:           "native_sdk",
+		Status:                "idle",
+		ApprovalMode:          "never",
+		DefaultInvocationMode: model.InvocationModeAutonomous,
+	}
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             parentRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        "55555555-5555-5555-5555-555555555555",
+		TargetType:     "task",
+		TargetID:       taskID,
+		RuntimeKind:    "internal",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusRunning,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create parent run: %v", err)
+	}
+
+	_, err := service.createRun(ctx, createRunParams{
+		workspaceID:    workspaceID,
+		agent:          forgeAgent,
+		targetType:     "task",
+		targetID:       taskID,
+		parentRunID:    &parentRunID,
+		taskID:         &taskID,
+		input:          []byte("{}"),
+		invocationMode: model.InvocationModeAutonomous,
+	})
+	if err == nil || !strings.Contains(err.Error(), "already active") {
+		t.Fatalf("expected active parent to block normal child run, got %v", err)
+	}
+
+	_, err = service.createRun(ctx, createRunParams{
+		workspaceID:          workspaceID,
+		agent:                forgeAgent,
+		targetType:           "task",
+		targetID:             taskID,
+		parentRunID:          &parentRunID,
+		allowActiveParentRun: true,
+		taskID:               &taskID,
+		input:                []byte("{}"),
+		invocationMode:       model.InvocationModeAutonomous,
+	})
+	if err == nil || strings.Contains(err.Error(), "already active") {
+		t.Fatalf("expected active parent exception to bypass duplicate-run guard, got %v", err)
 	}
 }
 
@@ -2008,6 +2421,7 @@ func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
 		{ID: "agent-forge", Name: "Forge", PresetKey: model.AgentPresetCodeBuilder, AllowedTargets: json.RawMessage(`["task"]`)},
 		{ID: "agent-lens", Name: "Lens", PresetKey: model.AgentPresetReviewAgent, AllowedTargets: json.RawMessage(`["task"]`)},
 		{ID: "agent-atlas", Name: "Atlas", PresetKey: model.AgentPresetEpicPlanner, AllowedTargets: json.RawMessage(`["epic"]`)},
+		{ID: "agent-command", Name: "Command Agent", PresetKey: model.AgentPresetCommandAgent, AllowedTargets: json.RawMessage(`["epic","task"]`)},
 	}
 	resp := service.parseEpicTaskPipelineIntent(ctx, workspaceID, "We need to complete all tasks in these epics. do the ones that block the others first. fan out for tasks that can be run in parallel. for every task run forge and then lens.", model.CommandBarPageContext{
 		EntityType:   "epic",
@@ -2020,22 +2434,31 @@ func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
 	if resp.Plan.PlanKind != model.CommandBarPlanKindTaskPipeline {
 		t.Fatalf("expected task pipeline plan kind, got %q", resp.Plan.PlanKind)
 	}
-	if resp.Plan.RunCount != 6 {
-		t.Fatalf("expected 6 runs for 3 active tasks, got %d", resp.Plan.RunCount)
+	if resp.Plan.RunCount != 11 {
+		t.Fatalf("expected 11 runs for 3 active tasks, got %d", resp.Plan.RunCount)
 	}
 	steps := resp.Plan.Steps
-	for i := 0; i < len(steps); i += 2 {
-		if steps[i].AgentName != "Forge" || steps[i+1].AgentName != "Lens" {
-			t.Fatalf("expected Forge then Lens pair at steps %d/%d, got %s/%s", i, i+1, steps[i].AgentName, steps[i+1].AgentName)
+	if steps[0].StepType != model.CommandBarStepTypeEnsureEpicBranch {
+		t.Fatalf("expected first step to ensure epic branch, got %#v", steps[0])
+	}
+	for i := 1; i < 10; i += 3 {
+		if steps[i].AgentName != "Forge" || steps[i+1].AgentName != "Lens" || steps[i+2].StepType != model.CommandBarStepTypeMergeTaskToEpic {
+			t.Fatalf("expected Forge then Lens then merge at steps %d/%d/%d, got %s/%s/%s", i, i+1, i+2, steps[i].AgentName, steps[i+1].AgentName, steps[i+2].StepType)
 		}
 		if got := steps[i+1].DependsOnStepIndexes; len(got) != 1 || got[0] != i {
 			t.Fatalf("expected Lens step %d to depend on Forge step %d, got %#v", i+1, i, got)
 		}
+		if got := steps[i+2].DependsOnStepIndexes; len(got) != 1 || got[0] != i+1 {
+			t.Fatalf("expected merge step %d to depend on Lens step %d, got %#v", i+2, i+1, got)
+		}
 	}
-	if got := steps[4].DependsOnStepIndexes; !slices.Contains(got, 1) {
-		t.Fatalf("expected blocked task Forge step to depend on blocking task Lens step 1, got %#v", got)
+	if got := steps[7].DependsOnStepIndexes; !slices.Contains(got, 3) {
+		t.Fatalf("expected blocked task Forge step to depend on blocking task merge step 3, got %#v", got)
 	}
-	if strings.Contains(strings.Join([]string{steps[0].Target.EntityID, steps[2].Target.EntityID, steps[4].Target.EntityID}, ","), completedTask.ID) {
+	if steps[10].StepType != model.CommandBarStepTypeOpenEpicPullRequest {
+		t.Fatalf("expected final step to open epic pull request, got %#v", steps[10])
+	}
+	if strings.Contains(strings.Join([]string{steps[1].Target.EntityID, steps[4].Target.EntityID, steps[7].Target.EntityID}, ","), completedTask.ID) {
 		t.Fatalf("completed task should not be scheduled")
 	}
 
@@ -2050,10 +2473,10 @@ func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
 	if dependencyPromptResp.Plan.PlanKind != model.CommandBarPlanKindTaskPipeline {
 		t.Fatalf("expected dependency-aware prompt to avoid flat fan-out, got %q", dependencyPromptResp.Plan.PlanKind)
 	}
-	if dependencyPromptResp.Plan.RunCount != 6 {
-		t.Fatalf("expected dependency-aware prompt to schedule 6 runs, got %d", dependencyPromptResp.Plan.RunCount)
+	if dependencyPromptResp.Plan.RunCount != 11 {
+		t.Fatalf("expected dependency-aware prompt to schedule 11 runs, got %d", dependencyPromptResp.Plan.RunCount)
 	}
-	if got := dependencyPromptResp.Plan.Steps[4].DependsOnStepIndexes; !slices.Contains(got, 1) {
+	if got := dependencyPromptResp.Plan.Steps[7].DependsOnStepIndexes; !slices.Contains(got, 3) {
 		t.Fatalf("expected dependency-aware prompt to preserve blocks edge, got %#v", got)
 	}
 	if !slices.ContainsFunc(dependencyPromptResp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {
@@ -2078,6 +2501,93 @@ func TestParseEpicTaskPipelineIntentMissingAgentsDoesNotFallThrough(t *testing.T
 	}
 	if !strings.Contains(resp.Reason, "Forge") || !strings.Contains(resp.Reason, "Lens") {
 		t.Fatalf("expected missing agent reason, got %q", resp.Reason)
+	}
+}
+
+func TestParseEpicTaskPipelineIntentSkipsPreviouslyMergedTask(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	if err := db.Exec(`CREATE TABLE pm_tasks (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		display_id INTEGER NOT NULL,
+		name TEXT NOT NULL,
+		workflow_id TEXT NOT NULL,
+		workflow_state_id TEXT NOT NULL,
+		epic_id TEXT,
+		completed BOOLEAN NOT NULL DEFAULT 0,
+		archived BOOLEAN NOT NULL DEFAULT 0,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`).Error; err != nil {
+		t.Fatalf("create pm_tasks: %v", err)
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	epicID := "22222222-2222-2222-2222-222222222222"
+	activeTaskID := "33333333-3333-3333-3333-333333333333"
+	mergedTaskID := "44444444-4444-4444-4444-444444444444"
+	for _, task := range []model.PMTask{
+		{ID: activeTaskID, WorkspaceID: workspaceID, DisplayID: 1, Name: "Still pending", WorkflowID: "wf", WorkflowStateID: "state", EpicID: &epicID},
+		{ID: mergedTaskID, WorkspaceID: workspaceID, DisplayID: 2, Name: "Already merged", WorkflowID: "wf", WorkflowStateID: "state", EpicID: &epicID},
+	} {
+		if err := db.Exec(`INSERT INTO pm_tasks (
+			id, workspace_id, display_id, name, workflow_id, workflow_state_id,
+			epic_id, completed, archived, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			task.ID, task.WorkspaceID, task.DisplayID, task.Name, task.WorkflowID, task.WorkflowStateID, task.EpicID,
+		).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+	if err := repository.NewAgentRunRepository(db).Create(ctx, &model.AgentRun{
+		ID:             "55555555-5555-5555-5555-555555555555",
+		WorkspaceID:    workspaceID,
+		AgentID:        "agent-command",
+		TargetType:     "task",
+		TargetID:       mergedTaskID,
+		RuntimeKind:    "internal",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusCompleted,
+		Input:          json.RawMessage(`{}`),
+		OutputSummary:  json.RawMessage(`{"message":"Task branch merged into epic branch."}`),
+	}); err != nil {
+		t.Fatalf("create prior merge run: %v", err)
+	}
+
+	service := &CommandBarService{agentService: &AgentService{
+		taskRepo: repository.NewPMTaskRepository(db),
+		runRepo:  repository.NewAgentRunRepository(db),
+	}}
+	agents := []model.Agent{
+		{ID: "agent-forge", Name: "Forge", PresetKey: model.AgentPresetCodeBuilder, AllowedTargets: json.RawMessage(`["task"]`)},
+		{ID: "agent-lens", Name: "Lens", PresetKey: model.AgentPresetReviewAgent, AllowedTargets: json.RawMessage(`["task"]`)},
+		{ID: "agent-command", Name: "Command Agent", PresetKey: model.AgentPresetCommandAgent, AllowedTargets: json.RawMessage(`["epic","task"]`)},
+	}
+	resp := service.parseEpicTaskPipelineIntent(ctx, workspaceID, "run all tasks in this epic in parallel with forge then lens", model.CommandBarPageContext{
+		EntityType:   "epic",
+		EntityID:     epicID,
+		DisplayTitle: "Pipeline epic",
+	}, agents)
+	if resp == nil || resp.Plan == nil {
+		t.Fatalf("expected task pipeline plan, got %#v", resp)
+	}
+	if resp.Plan.RunCount != 5 {
+		t.Fatalf("expected only active task plus epic setup/final PR, got %d runs", resp.Plan.RunCount)
+	}
+	for _, step := range resp.Plan.Steps {
+		if step.Target.EntityID == mergedTaskID {
+			t.Fatalf("previously merged task should not be scheduled, got step %#v", step)
+		}
+	}
+	if !slices.ContainsFunc(resp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {
+		return g.Type == "task_pipeline_skipped_tasks" &&
+			strings.Contains(g.Message, "Already merged") &&
+			strings.Contains(g.Message, "merged into the epic branch")
+	}) {
+		t.Fatalf("expected skipped-task guardrail for prior merge, got %#v", resp.Plan.Guardrails)
 	}
 }
 
@@ -2308,6 +2818,261 @@ func TestAdvanceFanOutCommandBarPlanWaitsForAllRuns(t *testing.T) {
 	}
 	if updated.Status != model.CommandBarPlanStatusCompleted {
 		t.Fatalf("expected completed plan after all fan-out runs complete, got %q", updated.Status)
+	}
+}
+
+func TestAdvanceTaskPipelinePlanSchedulesFallbackWithoutRunEngine(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	service := &AgentService{runRepo: runRepo, commandBarPlanRepo: planRepo}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	agentID := "33333333-3333-3333-3333-333333333333"
+	runOneID := "44444444-4444-4444-4444-444444444444"
+	runTwoID := "55555555-5555-5555-5555-555555555555"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic 1"}
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:      agentID,
+			AgentName:    "Forge",
+			PlanKind:     model.CommandBarPlanKindTaskPipeline,
+			Target:       model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"},
+			Instructions: "Build task 1.",
+		},
+		{
+			AgentID:              agentID,
+			AgentName:            "Lens",
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"},
+			Instructions:         "Review task 1.",
+			DependsOnStepIndexes: []int{0},
+		},
+	}
+	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run forge then lens", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	runIDs, _ := json.Marshal(map[int]string{0: runOneID, 1: runTwoID})
+	plan.RunIDsByStep = runIDs
+	plan.RunCount = 2
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	for index, runID := range []string{runOneID, runTwoID} {
+		trigger, err := buildCommandBarTriggerContext("run forge then lens", pageContext, steps, index, planID)
+		if err != nil {
+			t.Fatalf("build trigger %d: %v", index, err)
+		}
+		input, _ := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+		if err := runRepo.Create(ctx, &model.AgentRun{
+			ID:             runID,
+			WorkspaceID:    workspaceID,
+			AgentID:        agentID,
+			TargetType:     "task",
+			TargetID:       "task-1",
+			RuntimeKind:    "native_sdk",
+			InvocationMode: model.InvocationModeAutonomous,
+			ApprovalState:  "not_required",
+			PauseReason:    model.AgentRunPauseReasonNone,
+			Status:         model.AgentRunStatusCompleted,
+			Input:          input,
+			OutputSummary:  json.RawMessage("{}"),
+		}); err != nil {
+			t.Fatalf("create run %d: %v", index, err)
+		}
+	}
+
+	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, runTwoID); err != nil {
+		t.Fatalf("advance task pipeline run: %v", err)
+	}
+	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	if updated.Status != model.CommandBarPlanStatusCompleted {
+		t.Fatalf("expected direct fallback to complete task pipeline plan, got %q", updated.Status)
+	}
+}
+
+func TestAdvanceTaskPipelinePlanSignalsOnlyWithRunEngine(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	temporalClient := &commandBarSignalTemporalClient{}
+	service := &AgentService{
+		runRepo:            runRepo,
+		commandBarPlanRepo: planRepo,
+		runEngine:          temporalapp.NewRunEngine(temporalClient, "test"),
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	forgeAgentID := "33333333-3333-3333-3333-333333333333"
+	lensAgentID := "44444444-4444-4444-4444-444444444444"
+	forgeRunID := "55555555-5555-5555-5555-555555555555"
+	taskID := "66666666-6666-6666-6666-666666666666"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic 1"}
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:      forgeAgentID,
+			AgentName:    "Forge",
+			PlanKind:     model.CommandBarPlanKindTaskPipeline,
+			Target:       model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task 1"},
+			Instructions: "Build task 1.",
+		},
+		{
+			AgentID:              lensAgentID,
+			AgentName:            "Lens",
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: taskID, DisplayTitle: "Task 1"},
+			Instructions:         "Review task 1.",
+			DependsOnStepIndexes: []int{0},
+		},
+	}
+	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run forge then lens", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	runIDs, _ := json.Marshal(map[int]string{0: forgeRunID})
+	plan.RunIDsByStep = runIDs
+	plan.RunCount = 2
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	trigger, err := buildCommandBarTriggerContext("run forge then lens", pageContext, steps, 0, planID)
+	if err != nil {
+		t.Fatalf("build trigger: %v", err)
+	}
+	input, _ := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             forgeRunID,
+		WorkspaceID:    workspaceID,
+		AgentID:        forgeAgentID,
+		TargetType:     "task",
+		TargetID:       taskID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusCompleted,
+		Input:          input,
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create forge run: %v", err)
+	}
+
+	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, forgeRunID); err != nil {
+		t.Fatalf("advance task pipeline run: %v", err)
+	}
+	if temporalClient.workflowID != temporalapp.WorkflowIDForCommandBarPlan(planID) {
+		t.Fatalf("expected signal to command bar workflow, got %q", temporalClient.workflowID)
+	}
+	if temporalClient.signalName != temporalapp.WorkflowSignalCommandBarRun {
+		t.Fatalf("expected command bar run signal, got %q", temporalClient.signalName)
+	}
+	if temporalClient.signaledRunID != forgeRunID {
+		t.Fatalf("expected signal run id %q, got %q", forgeRunID, temporalClient.signaledRunID)
+	}
+	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	if updated.Status != model.CommandBarPlanStatusRunning {
+		t.Fatalf("expected signal-only path to leave plan running, got %q", updated.Status)
+	}
+	if got := decodeCommandBarPlanRunIDs(updated.RunIDsByStep); strings.TrimSpace(got[1]) != "" {
+		t.Fatalf("expected signal-only path not to start Lens directly, got run ids %#v", got)
+	}
+}
+
+func TestAdvanceTaskPipelinePlanFallsBackWhenSignalFails(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	temporalClient := &commandBarSignalTemporalClient{err: fmt.Errorf("workflow not found")}
+	service := &AgentService{
+		runRepo:            runRepo,
+		commandBarPlanRepo: planRepo,
+		runEngine:          temporalapp.NewRunEngine(temporalClient, "test"),
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	agentID := "33333333-3333-3333-3333-333333333333"
+	runOneID := "44444444-4444-4444-4444-444444444444"
+	runTwoID := "55555555-5555-5555-5555-555555555555"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic 1"}
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:      agentID,
+			AgentName:    "Forge",
+			PlanKind:     model.CommandBarPlanKindTaskPipeline,
+			Target:       model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"},
+			Instructions: "Build task 1.",
+		},
+		{
+			AgentID:              agentID,
+			AgentName:            "Lens",
+			PlanKind:             model.CommandBarPlanKindTaskPipeline,
+			Target:               model.CommandBarPageContext{EntityType: "task", EntityID: "task-1", DisplayTitle: "Task 1"},
+			Instructions:         "Review task 1.",
+			DependsOnStepIndexes: []int{0},
+		},
+	}
+	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run forge then lens", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	runIDs, _ := json.Marshal(map[int]string{0: runOneID, 1: runTwoID})
+	plan.RunIDsByStep = runIDs
+	plan.RunCount = 2
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	for index, runID := range []string{runOneID, runTwoID} {
+		trigger, err := buildCommandBarTriggerContext("run forge then lens", pageContext, steps, index, planID)
+		if err != nil {
+			t.Fatalf("build trigger %d: %v", index, err)
+		}
+		input, _ := json.Marshal(model.AgentRunInputPayload{Trigger: trigger})
+		if err := runRepo.Create(ctx, &model.AgentRun{
+			ID:             runID,
+			WorkspaceID:    workspaceID,
+			AgentID:        agentID,
+			TargetType:     "task",
+			TargetID:       "task-1",
+			RuntimeKind:    "native_sdk",
+			InvocationMode: model.InvocationModeAutonomous,
+			ApprovalState:  "not_required",
+			PauseReason:    model.AgentRunPauseReasonNone,
+			Status:         model.AgentRunStatusCompleted,
+			Input:          input,
+			OutputSummary:  json.RawMessage("{}"),
+		}); err != nil {
+			t.Fatalf("create run %d: %v", index, err)
+		}
+	}
+
+	if _, err := service.AdvanceCommandBarPlanAfterRun(ctx, runTwoID); err != nil {
+		t.Fatalf("advance task pipeline run: %v", err)
+	}
+	if temporalClient.signaledRunID != runTwoID {
+		t.Fatalf("expected signal attempt for run %q, got %q", runTwoID, temporalClient.signaledRunID)
+	}
+	updated, err := planRepo.GetByID(ctx, workspaceID, planID)
+	if err != nil {
+		t.Fatalf("get plan: %v", err)
+	}
+	if updated.Status != model.CommandBarPlanStatusCompleted {
+		t.Fatalf("expected fallback to complete task pipeline plan, got %q", updated.Status)
 	}
 }
 
@@ -2611,6 +3376,60 @@ func setupCommandBarDocumentTargetResolutionTest(t *testing.T) (*CommandBarServi
 	service := NewCommandBarService(&AgentService{agentRepo: agentRepo, docsDocumentRepo: docRepo}, nil, nil, nil, nil).
 		SetReadOnlyDataServices(docsSvc, nil, nil, nil)
 	return service, db, workspaceID, documentID
+}
+
+func setupCommandBarRepositoryTargetResolutionTest(t *testing.T) (*CommandBarService, *gorm.DB, string, string) {
+	t.Helper()
+	db := setupCommandBarPlanTestDB(t)
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	repoID := "44444444-4444-4444-4444-444444444444"
+	now := time.Now()
+	mustExec(t, db, `CREATE TABLE git_repositories (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		integration_id TEXT NOT NULL,
+		provider TEXT NOT NULL DEFAULT 'github',
+		base_url TEXT,
+		external_id TEXT NOT NULL DEFAULT '',
+		full_name TEXT NOT NULL,
+		default_branch TEXT NOT NULL DEFAULT 'main',
+		permissions TEXT NOT NULL DEFAULT '{}',
+		private BOOLEAN NOT NULL DEFAULT 1,
+		archived BOOLEAN NOT NULL DEFAULT 0,
+		selected BOOLEAN NOT NULL DEFAULT 1,
+		active BOOLEAN NOT NULL DEFAULT 1,
+		deleted_at DATETIME,
+		created_at DATETIME,
+		updated_at DATETIME
+	)`)
+	mustExec(t, db, `CREATE TABLE agent_team_access (
+		agent_id TEXT NOT NULL,
+		team_id TEXT NOT NULL,
+		created_at DATETIME,
+		PRIMARY KEY (agent_id, team_id)
+	)`)
+	mustExec(t, db, `INSERT INTO git_repositories (id, workspace_id, integration_id, provider, external_id, full_name, default_branch, permissions, private, archived, selected, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		repoID, workspaceID, "integration-1", "github", "1001", "helpin/usermaven", "main", []byte(`{}`), true, false, true, true, now, now)
+	mustExec(t, db, `INSERT INTO git_repositories (id, workspace_id, integration_id, provider, external_id, full_name, default_branch, permissions, private, archived, selected, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"55555555-5555-5555-5555-555555555555", workspaceID, "integration-1", "github", "1002", "usermaven/usermven", "main", []byte(`{}`), true, false, true, true, now, now)
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, status, runtime_kind,
+		allowed_tools, allowed_commands, allowed_targets, approval_mode,
+		max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, 1, 'Command Agent', ?, 'idle', 'native_sdk', ?, ?, ?, 'never', 1, 'interactive', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		"33333333-3333-3333-3333-333333333333",
+		workspaceID,
+		model.AgentPresetCommandAgent,
+		[]byte(`["update_plan","request_user_input","list_repositories","list_commits","read_file","read_file_range","read_files","list_directory","search_files","ripgrep","grep","list_symbols","list_spaces","list_collections","create_document"]`),
+		[]byte(`[]`),
+		[]byte(`["workspace","repository"]`),
+	).Error; err != nil {
+		t.Fatalf("seed command agent: %v", err)
+	}
+	agentRepo := repository.NewAgentRepository(db)
+	gitSvc := NewGitService(nil, repository.NewGitRepositoryRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, "", "", "")
+	service := NewCommandBarService(&AgentService{agentRepo: agentRepo, gitService: gitSvc}, nil, nil, nil, nil)
+	return service, db, workspaceID, repoID
 }
 
 func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {

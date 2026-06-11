@@ -93,6 +93,8 @@ export interface GitBranch {
   is_default: boolean;
 }
 
+export type TaskDeliveryTargetSource = 'manual' | 'team_default' | 'epic';
+
 export interface TaskDeliveryTarget {
   id: string;
   workspace_id: string;
@@ -103,6 +105,8 @@ export interface TaskDeliveryTarget {
   base_branch?: string;
   working_branch?: string;
   delivery_state: string;
+  target_source?: TaskDeliveryTargetSource;
+  source_epic_id?: string | null;
   active_pr_number?: number;
   active_pr_title?: string;
   active_pr_url?: string;
@@ -116,6 +120,27 @@ export interface TaskDeliveryTarget {
 
 /** @deprecated Use TaskDeliveryTarget instead */
 export type StoryDeliveryTarget = TaskDeliveryTarget;
+
+export interface EpicDeliveryTarget {
+  id: string;
+  workspace_id: string;
+  epic_id: string;
+  repository_id?: string;
+  repo_full_name?: string;
+  integration_id?: string;
+  base_branch?: string;
+  epic_branch?: string;
+  delivery_state: string;
+  final_pr_number?: number;
+  final_pr_title?: string;
+  final_pr_url?: string;
+  final_pr_status?: string;
+  last_commit_sha?: string;
+  last_run_id?: string;
+  last_synced_at?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface TaskGitLink {
   id: string;
@@ -196,6 +221,12 @@ export interface UpdateTaskDeliveryTargetRequest {
   repository_id?: string;
   base_branch?: string;
   working_branch?: string;
+}
+
+export interface UpdateEpicDeliveryTargetRequest {
+  repository_id?: string;
+  base_branch?: string;
+  epic_branch?: string;
 }
 
 /** @deprecated Use UpdateTaskDeliveryTargetRequest instead */

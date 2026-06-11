@@ -1178,6 +1178,36 @@ func (s *InternalCommandService) registerDefaults() {
 		},
 	})
 	s.register(InternalCommandDefinition{
+		Name:                 "git.list_repositories",
+		Module:               "git",
+		Mutating:             false,
+		SupportedTargetTypes: []string{"workspace", "repository", "epic", "task", "document", "crm_deal", "crm_contact"},
+		Tool:                 mustCommandToolMetadata("git.list_repositories"),
+		Execute: func(ctx context.Context, meta model.InternalCommandContext, input json.RawMessage) (json.RawMessage, error) {
+			if s.gitService == nil {
+				return nil, fmt.Errorf("git service is not available")
+			}
+			repos, err := s.gitService.ListRepositories(ctx, meta.WorkspaceID)
+			if err != nil {
+				return nil, err
+			}
+			results := make([]map[string]any, 0, len(repos))
+			for _, repo := range repos {
+				results = append(results, map[string]any{
+					"id":             repo.ID,
+					"full_name":      repo.FullName,
+					"default_branch": repo.DefaultBranch,
+					"provider":       repo.Provider,
+					"private":        repo.Private,
+				})
+			}
+			return mustJSON(map[string]any{
+				"repositories": results,
+				"total":        len(results),
+			}), nil
+		},
+	})
+	s.register(InternalCommandDefinition{
 		Name:                 "docs.create_document",
 		Module:               "docs",
 		Mutating:             true,

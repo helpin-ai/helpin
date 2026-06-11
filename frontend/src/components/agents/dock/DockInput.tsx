@@ -30,6 +30,7 @@ const TYPE_LABEL: Record<CommandBarPageContext['entity_type'], string> = {
   crm_contact: 'Contact',
   crm_deal: 'Deal',
   workspace: 'Workspace',
+  repository: 'Repository',
 };
 
 function chipIcon(type: CommandBarPageContext['entity_type']) {

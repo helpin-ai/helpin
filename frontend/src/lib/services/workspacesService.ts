@@ -1,4 +1,4 @@
-import { api, API_BASE } from '../api';
+import { api, API_BASE, fetchWithSessionAuth } from '../api';
 import type {
   AssignableMember,
   MemberWithUser,
@@ -33,9 +33,8 @@ export const workspacesService = {
     const formData = new FormData();
     formData.append('logo', file);
     try {
-      const res = await fetch(`${API_BASE}/workspaces/${id}/logo`, {
+      const res = await fetchWithSessionAuth(API_BASE, `/workspaces/${id}/logo`, {
         method: 'POST',
-        credentials: 'include',
         body: formData,
       });
       if (!res.ok) {

@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PublicPageShell } from '@/components/layout/PublicPageShell';
 import { toast } from 'sonner';
+import { writeSession } from '@helpin-ai/support-core';
 
 export default function JoinWorkspace() {
   useTitle('Join Workspace');
@@ -155,6 +156,11 @@ export default function JoinWorkspace() {
         setSubmitting(false);
         return;
       }
+      await writeSession({
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        rememberMe: false,
+      });
       useAuthStore.setState({ user: data.user, serverUnreachable: false });
       toast.success(`Welcome to ${info?.workspace_name}!`);
       await queryClient.invalidateQueries({ queryKey: ['workspaces'] });

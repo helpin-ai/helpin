@@ -9,6 +9,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "@helpin-ai/shared": ["../packages/shared/src/index.ts"],
+      "@helpin-ai/support-core": ["../packages/support-core/src/index.ts"],
       "@helpin-ai/widget-core": ["../packages/widget-core/dist/index.d.ts"]
     }
   }

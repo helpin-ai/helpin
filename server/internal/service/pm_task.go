@@ -36,6 +36,7 @@ type PMTaskService struct {
 	followerService     *FollowerService
 	ruleEngine          *AutomationRuleEngine
 	agentService        *AgentService
+	gitService          *GitService
 	recurringService    *PMRecurringTemplateService
 	logger              *slog.Logger
 }
@@ -72,6 +73,11 @@ func (s *PMTaskService) SetAgentService(svc *AgentService) {
 	s.agentService = svc
 }
 
+// SetGitService sets the git service used for task delivery target inheritance.
+func (s *PMTaskService) SetGitService(svc *GitService) {
+	s.gitService = svc
+}
+
 // SetRecurringService sets the recurring template service (breaks circular dependency).
 func (s *PMTaskService) SetRecurringService(svc *PMRecurringTemplateService) {
 	s.recurringService = svc
@@ -80,6 +86,17 @@ func (s *PMTaskService) SetRecurringService(svc *PMRecurringTemplateService) {
 // SetTaskTemplateRepository sets the template repository used by task-to-template actions.
 func (s *PMTaskService) SetTaskTemplateRepository(repo *repository.PMTaskTemplateRepository) {
 	s.templateRepo = repo
+}
+
+func (s *PMTaskService) inheritEpicDeliveryTarget(ctx context.Context, workspaceID, taskID, epicID, actorID string) {
+	if s.gitService == nil || strings.TrimSpace(epicID) == "" {
+		return
+	}
+	if _, changed, err := s.gitService.SyncTaskDeliveryTargetToEpic(ctx, workspaceID, taskID, epicID, actorID, false); err != nil {
+		s.logger.WarnContext(ctx, "failed to inherit epic delivery target", "error", err, "workspace_id", workspaceID, "task_id", taskID, "epic_id", epicID)
+	} else if changed {
+		s.logger.InfoContext(ctx, "task delivery target inherited from epic", "workspace_id", workspaceID, "task_id", taskID, "epic_id", epicID)
+	}
 }
 
 func pmDnDWebsocketData(traceID string) json.RawMessage {
@@ -411,6 +428,9 @@ func (s *PMTaskService) Create(ctx context.Context, req model.CreateTaskRequest,
 
 	if err := s.taskRepo.Create(ctx, newTask); err != nil {
 		return nil, err
+	}
+	if newTask.EpicID != nil && strings.TrimSpace(*newTask.EpicID) != "" {
+		s.inheritEpicDeliveryTarget(ctx, newTask.WorkspaceID, newTask.ID, strings.TrimSpace(*newTask.EpicID), actorID)
 	}
 	if len(req.AttachmentIDs) > 0 && s.attachmentRepo != nil {
 		if err := s.attachmentRepo.ReassignToEntity(ctx, req.AttachmentIDs, "task", newTask.ID); err != nil {
@@ -1354,6 +1374,7 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 	oldEstimate := current.Estimate
 	oldDeadline := current.Deadline
 	oldBlocker := current.Blocker
+	oldEpicID := stringValue(current.EpicID)
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -1486,6 +1507,12 @@ func (s *PMTaskService) Update(ctx context.Context, id string, req model.UpdateT
 
 	if err := s.taskRepo.Update(ctx, current); err != nil {
 		return nil, err
+	}
+	if req.EpicID != nil {
+		nextEpicID := stringValue(current.EpicID)
+		if nextEpicID != "" && nextEpicID != oldEpicID {
+			s.inheritEpicDeliveryTarget(ctx, current.WorkspaceID, current.ID, nextEpicID, actorID)
+		}
 	}
 
 	if req.OwnerMemberIDs != nil || req.OwnerIDs != nil {

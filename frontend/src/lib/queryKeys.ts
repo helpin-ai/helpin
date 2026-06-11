@@ -1,3 +1,5 @@
+import { supportQueryKeys } from '@helpin-ai/support-core'
+
 export const queryKeys = {
   user: {
     me: ['user', 'me'] as const,
@@ -134,25 +136,20 @@ export const queryKeys = {
     repositories: (wsId: string) => ['git', wsId, 'repositories'] as const,
     taskLinks: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'links'] as const,
     taskDeliveryTarget: (wsId: string, taskId: string) => ['git', wsId, 'tasks', taskId, 'delivery-target'] as const,
+    epicDeliveryTarget: (wsId: string, epicId: string) => ['git', wsId, 'epics', epicId, 'delivery-target'] as const,
   },
 
   support: {
-    conversations: (wsId: string) => ['support', wsId, 'conversations'] as const,
-    conversation: (wsId: string, id: string) => ['support', wsId, 'conversations', id] as const,
+    ...supportQueryKeys,
     conversationAssignees: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'assignees'] as const,
     conversationAssociations: (wsId: string, id: string) => ['support', wsId, 'conversations', id, 'associations'] as const,
-    messages: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'messages'] as const,
     messageEmail: (wsId: string, messageId: string) => ['support', wsId, 'messages', messageId, 'email'] as const,
     messageInfo: (wsId: string, conversationId: string, messageId: string) => ['support', wsId, 'conversations', conversationId, 'messages', messageId, 'info'] as const,
     installation: (wsId: string) => ['support', wsId, 'installation'] as const,
-    unreadStats: (wsId: string) => ['support', wsId, 'unread-stats'] as const,
-    inboxScopes: (wsId: string) => ['support', wsId, 'inbox-scopes'] as const,
     inboxViews: (wsId: string) => ['support', wsId, 'inbox-views'] as const,
     inboxViewCounts: (wsId: string) => ['support', wsId, 'inbox-view-counts'] as const,
     builtinInboxViews: (wsId: string) => ['support', wsId, 'builtin-inbox-views'] as const,
     workspaceUnread: () => ['support', 'workspace-unread'] as const,
-    mailboxes: (wsId: string) => ['support', wsId, 'mailboxes'] as const,
-    mailboxMembers: (wsId: string, mailboxId: string) => ['support', wsId, 'mailboxes', mailboxId, 'members'] as const,
     emailRoutes: (wsId: string) => ['support', wsId, 'email-routes'] as const,
     emailSenders: (wsId: string) => ['support', wsId, 'email-senders'] as const,
     emailSenderDomains: (wsId: string) => ['support', wsId, 'email-sender-domains'] as const,
@@ -160,8 +157,6 @@ export const queryKeys = {
     cannedResponses: (wsId: string) => ['support', wsId, 'canned-responses'] as const,
     cannedResponseSearch: (wsId: string, query: string) => ['support', wsId, 'canned-responses', 'search', query] as const,
     tags: (wsId: string) => ['support', wsId, 'tags'] as const,
-    teammatePresence: (wsId: string) => ['support', wsId, 'teammates', 'presence'] as const,
-    visitorContext: (wsId: string, conversationId: string) => ['support', wsId, 'conversations', conversationId, 'visitor-context'] as const,
   },
 
   docs: {

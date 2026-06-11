@@ -201,7 +201,7 @@ export interface StartAgentRunRequest {
 }
 
 export interface CommandBarPageContext {
-  entity_type: 'task' | 'epic' | 'document' | 'crm_contact' | 'crm_deal' | 'workspace';
+  entity_type: 'task' | 'epic' | 'document' | 'crm_contact' | 'crm_deal' | 'workspace' | 'repository';
   entity_id: string;
   display_title: string;
   related_ids?: Record<string, string[]>;
@@ -213,6 +213,7 @@ export interface CommandBarPlanStep {
   agent_key?: string;
   agent_name: string;
   plan_kind?: 'known_agent' | 'one_shot_command' | 'fan_out' | 'task_pipeline_fan_out' | 'dag';
+  step_type?: 'ensure_epic_branch' | 'merge_task_to_epic' | 'resolve_merge_conflict' | 'open_epic_pr';
   target: CommandBarPageContext;
   instructions: string;
   allowed_tools?: string[];
@@ -396,6 +397,12 @@ export interface CommandBarToolCatalogResponse {
 
 export interface CommandBarCancelPlanResponse {
   plan: CommandBarPlanSummary;
+  runs?: AgentRun[];
+}
+
+export interface CommandBarResumePlanResponse {
+  plan: CommandBarPlanSummary;
+  run?: AgentRun;
   runs?: AgentRun[];
 }
 

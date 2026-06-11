@@ -8,12 +8,19 @@ import type {
   CodingSessionEvent,
   CodingSessionInteraction,
   CodingSessionStreamSnapshot,
+  CodingSessionStreamState,
   RunPlanArtifact,
 } from '@/lib/pmTypes';
 
 interface AgentRunStreamState {
   currentPlan: RunPlanArtifact | null;
   pendingInteraction: CodingSessionInteraction | null;
+  /**
+   * Full reconciled transcript + live-turn state, the same shape the coding
+   * session drawer renders from. Null until the first fetch resolves. Lets the
+   * Ask Agents dock render an agent's output inline instead of behind a sheet.
+   */
+  streamState: CodingSessionStreamState | null;
   /** True while at least one fetch is in flight. */
   loading: boolean;
   /** Force a snapshot/events reconciliation for this run. */
@@ -42,6 +49,7 @@ export function useAgentRunStream(
   pollMs = 5_000,
 ): AgentRunStreamState {
   const [currentPlan, setCurrentPlan] = useState<RunPlanArtifact | null>(null);
+  const [streamState, setStreamState] = useState<CodingSessionStreamState | null>(null);
   const [pendingInteraction, setPendingInteraction] =
     useState<CodingSessionInteraction | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,6 +90,7 @@ export function useAgentRunStream(
       // (codex/opencode) or from update_plan tool calls in events (native_sdk).
       const built = buildCodingSessionStreamState(eventsRef.current, snapshotRef.current);
       const latestPending = latestPendingCodingSessionInteraction(eventsRef.current);
+      setStreamState(built);
       setCurrentPlan(built.current_plan);
       setPendingInteraction(
         latestPending && clearedInteractionIdsRef.current.has(latestPending.interaction_id)
@@ -101,6 +110,7 @@ export function useAgentRunStream(
     snapshotRef.current = null;
     clearedInteractionIdsRef.current = new Set();
     setCurrentPlan(null);
+    setStreamState(null);
     setPendingInteraction(null);
     return () => {
       cancelledRef.current = true;
@@ -135,7 +145,7 @@ export function useAgentRunStream(
     return () => clearInterval(id);
   }, [active, pollMs, refetch, runId, workspaceId]);
 
-  return { currentPlan, pendingInteraction, loading, refetch, clearPendingInteraction };
+  return { currentPlan, streamState, pendingInteraction, loading, refetch, clearPendingInteraction };
 }
 
 function mergeEvents(

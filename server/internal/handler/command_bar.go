@@ -189,6 +189,8 @@ func commandBarDispatchPermissionForTarget(targetType string) (authorization.Per
 		return authorization.PermPMEdit, true
 	case "task", "epic", "workspace":
 		return authorization.PermPMEdit, true
+	case "repository", "repo", "git_repo", "git_repository":
+		return authorization.PermPMEdit, true
 	case "doc", "document":
 		return authorization.PermDocsEdit, true
 	case "contact", "crm_contact", "deal", "crm_deal":
@@ -203,6 +205,18 @@ func (h *CommandBarHandler) CancelPlan(w http.ResponseWriter, r *http.Request) {
 	actorID := middleware.GetUserID(r.Context())
 	planID := chi.URLParam(r, "planID")
 	resp, err := h.commandBarService.CancelPlan(r.Context(), workspaceID, actorID, planID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *CommandBarHandler) ResumePlan(w http.ResponseWriter, r *http.Request) {
+	workspaceID := getWorkspaceID(r)
+	actorID := middleware.GetUserID(r.Context())
+	planID := chi.URLParam(r, "planID")
+	resp, err := h.commandBarService.ResumePlan(r.Context(), workspaceID, actorID, planID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
