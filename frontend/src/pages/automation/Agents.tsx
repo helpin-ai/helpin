@@ -19,7 +19,6 @@ import {
   WorkflowSquare01Icon,
   Loading01Icon,
   BookOpen01Icon,
-  SourceCodeIcon,
   MoreHorizontalIcon,
   Key01Icon,
   MessagePreview01Icon,
@@ -654,6 +653,22 @@ function normalizeToolList(tools: string[]): string[] {
     result.push(normalized);
     return result;
   }, []);
+}
+
+function stableJSON(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
+function stableConfigJSON(value: unknown): string {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value as Record<string, unknown>).length === 0
+  ) {
+    return JSON.stringify(null);
+  }
+  return stableJSON(value);
 }
 
 function normalizeTeamIdList(teamIds: string[]): string[] {
@@ -2977,7 +2992,7 @@ export function AgentsPage() {
       setVersionLabelDraft('');
       setVersionDescriptionDraft('');
     } else if (res.error) {
-      toast.error('Failed to save workspace version', { description: res.error });
+      toast.error('Failed to save custom version', { description: res.error });
     }
     setCreatingVersion(false);
   };
@@ -3013,14 +3028,30 @@ export function AgentsPage() {
     return true;
   };
 
-  const handleSaveAndPin = async () => {
+  const handleSetActiveVersion = async (versionKey: string) => {
+    if (!workspaceId || !editingAgent?.is_system || !versionKey || versionKey === currentSystemVersionKey) return;
     setSaving(true);
-    const saved = await handleSaveWorkspaceVersion({ silent: true });
-    if (!saved) {
+    const res = await automationService.updateAgent(workspaceId, editingAgent.id, {
+      preset_key: form.preset_key,
+      preset_version_key: versionKey,
+    });
+    if (res.error) {
+      toast.error('Failed to set active version', { description: res.error });
       setSaving(false);
       return;
     }
-    await handleSave();
+    if (res.data) {
+      setEditingAgent(res.data);
+      setAgents((current) => current.map((agent) => (agent.id === res.data?.id ? res.data : agent)));
+      setForm(buildSystemAgentForm(res.data, presets));
+    }
+    await loadPresets();
+    await loadAgents();
+    setVersionDraftOpen(false);
+    setVersionLabelDraft('');
+    setVersionDescriptionDraft('');
+    setSaving(false);
+    toast.success('Active version updated');
   };
 
   const handleDeleteWorkspaceVersion = async () => {
@@ -3037,10 +3068,10 @@ export function AgentsPage() {
     setWorkspaceVersionPendingDelete(null);
     setDeletingVersion(false);
     if (form.preset_version_key === deletedKey && editingAgent) {
-      // Selected row was just deleted — fall back to the agent's currently-pinned version or the product default.
+      // Selected row was just deleted — fall back to the agent's currently active version or the product default.
       setForm(buildSystemAgentForm(editingAgent, presets));
     }
-    toast.success('Workspace version deleted');
+    toast.success('Custom version deleted');
   };
 
   const handleRenameWorkspaceVersion = async () => {
@@ -3142,6 +3173,18 @@ export function AgentsPage() {
     && selectedPreset?.scope === 'workspace'
     && Boolean(selectedPreset?.id);
   const systemVersionReadOnly = editingSystemAgent && !versionDraftOpen && !isEditingWorkspaceVersion;
+  const hasWorkspaceVersionChanges = Boolean(isEditingWorkspaceVersion && selectedPreset && (
+    form.runtime_kind !== selectedPreset.runtime_kind ||
+    form.provider !== (selectedPreset.provider ?? '') ||
+    form.model.trim() !== (selectedPreset.model ?? '') ||
+    stableConfigJSON(buildExecutionConfigPayload(form)) !== stableConfigJSON(selectedPreset.execution_config) ||
+    form.system_prompt.trim() !== (selectedPreset.system_prompt ?? '') ||
+    form.instruction_preamble !== (selectedPreset.instruction_preamble ?? '') ||
+    stableJSON(form.instruction_skills) !== stableJSON(selectedPreset.instruction_skills) ||
+    stableJSON(normalizeToolList(form.allowed_tools)) !== stableJSON(normalizeToolList(selectedPreset.allowed_tools ?? [])) ||
+    stableJSON(form.supported_modes) !== stableJSON(selectedPreset.supported_modes) ||
+    form.default_invocation_mode !== selectedPreset.default_invocation_mode
+  ));
   const effectiveTargets =
     editingSystemAgent
       ? (selectedPreset?.allowed_target_types ?? form.allowed_targets)
@@ -3164,7 +3207,7 @@ export function AgentsPage() {
       ? `Create ${templateDraft.template.name}`
       : 'Create Custom Agent';
   const createDrawerSubtitle = editingAgent
-    ? 'Tune this custom agent directly. It is not pinned to a product preset.'
+    ? 'Tune this custom agent directly. It is not tied to a product preset.'
     : templateDraft
       ? 'Start from a packaged template, review the defaults, and create the agent with an optional automation flow.'
       : 'Define a reusable agent with its own instructions, runtime, tools, targets, and limits.';
@@ -3606,7 +3649,7 @@ export function AgentsPage() {
                   Built-in {selectedPreset ? presetLabel(form.preset_key, presets) : 'agent'}
                   {currentSystemPreset && (
                     <>
-                      {' · pinned to '}
+                      {' · active version '}
                       <span className="font-medium text-foreground">{currentSystemPreset.version_label}</span>
                     </>
                   )}
@@ -3656,7 +3699,6 @@ export function AgentsPage() {
                   {selectedPresetVersions.map((presetVersion) => {
                     const isSelected = presetVersion.version_key === form.preset_version_key;
                     const isCurrent = presetVersion.version_key === currentSystemVersionKey;
-                    const isDraftSelection = isSelected && !isCurrent;
                     const isWorkspace = presetVersion.scope === 'workspace';
                     return (
                       <div
@@ -3683,32 +3725,26 @@ export function AgentsPage() {
                               {presetVersion.description || 'No description'}
                             </p>
                             <div className="flex flex-wrap gap-1 pt-1">
-                              <Badge variant={isWorkspace ? 'secondary' : 'outline'} className="text-[9px] px-1.5 py-0">
-                                {isWorkspace ? 'Workspace' : 'Product'}
-                              </Badge>
                               {isCurrent && (
-                                <Badge variant="outline" className="bg-emerald-500/10 text-[9px] px-1.5 py-0 text-emerald-700 dark:text-emerald-400">Pinned</Badge>
-                              )}
-                              {isDraftSelection && (
-                                <Badge variant="secondary" className="text-[9px] px-1.5 py-0">Preview</Badge>
+                                <Badge variant="outline" className="bg-emerald-500/10 text-[9px] px-1.5 py-0 text-emerald-700 dark:text-emerald-400">Active</Badge>
                               )}
                             </div>
                           </div>
                         </button>
-                        {isWorkspace && presetVersion.id && (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="absolute right-1.5 top-1.5 h-6 w-6 text-muted-foreground opacity-50 transition-opacity hover:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
-                                aria-label={`Actions for ${presetVersion.version_label}`}
-                              >
-                                <MoreHorizontalIcon className="h-3.5 w-3.5" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-1.5 top-1.5 h-6 w-6 text-muted-foreground opacity-50 transition-opacity hover:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+                              aria-label={`Actions for ${presetVersion.version_label}`}
+                            >
+                              <MoreHorizontalIcon className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            {isWorkspace && presetVersion.id && (
                               <DropdownMenuItem
                                 onSelect={() => {
                                   setWorkspaceVersionBeingRenamed(presetVersion);
@@ -3718,16 +3754,18 @@ export function AgentsPage() {
                               >
                                 Rename
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={() => {
-                                  selectSystemPresetVersion(presetVersion.version_key);
-                                  setVersionDraftOpen(true);
-                                  setVersionLabelDraft(`${presetVersion.version_label} Copy`);
-                                  setVersionDescriptionDraft(presetVersion.description ?? '');
-                                }}
-                              >
-                                Duplicate
-                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                selectSystemPresetVersion(presetVersion.version_key);
+                                setVersionDraftOpen(true);
+                                setVersionLabelDraft(`${presetVersion.version_label} Copy`);
+                                setVersionDescriptionDraft(presetVersion.description ?? '');
+                              }}
+                            >
+                              Duplicate
+                            </DropdownMenuItem>
+                            {isWorkspace && presetVersion.id && (
                               <DropdownMenuItem
                                 disabled={isCurrent}
                                 className="text-destructive focus:text-destructive"
@@ -3735,9 +3773,9 @@ export function AgentsPage() {
                               >
                                 Delete version
                               </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     );
                   })}
@@ -3754,34 +3792,38 @@ export function AgentsPage() {
                     <div className="min-w-0 flex-1 space-y-1.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-lg font-semibold leading-none">{selectedPreset?.version_label ?? 'Version'}</h2>
-                        {selectedPreset && (
-                          <Badge variant={selectedPreset.scope === 'workspace' ? 'secondary' : 'outline'} className="text-[10px]">
-                            {selectedPreset.scope === 'workspace' ? 'Workspace' : 'Product'}
-                          </Badge>
-                        )}
                         {selectedPreset?.version_key === currentSystemVersionKey ? (
-                          <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">Pinned</Badge>
-                        ) : hasPendingSystemVersionSelection ? (
-                          <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">Previewing — not pinned</Badge>
+                          <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">Active</Badge>
                         ) : null}
                       </div>
                       {selectedPreset?.description && (
                         <p className="text-sm text-muted-foreground">{selectedPreset.description}</p>
                       )}
                     </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0"
-                      onClick={() => {
-                        setVersionDraftOpen(true);
-                        setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
-                        setVersionDescriptionDraft(selectedPreset?.description ?? '');
-                      }}
-                    >
-                      Duplicate &amp; edit
-                    </Button>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!hasPendingSystemVersionSelection || saving || hasWorkspaceVersionChanges}
+                        onClick={() => {
+                          void handleSetActiveVersion(selectedSystemVersionKey);
+                        }}
+                      >
+                        Set as active
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setVersionDraftOpen(true);
+                          setVersionLabelDraft(`${selectedPreset?.version_label ?? 'Version'} Copy`);
+                          setVersionDescriptionDraft(selectedPreset?.description ?? '');
+                        }}
+                      >
+                        Duplicate
+                      </Button>
+                    </div>
                   </div>
                   <dl className="grid grid-cols-2 divide-x divide-y divide-border/40 border-t border-border/40 bg-muted/20 sm:grid-cols-3 lg:grid-cols-6">
                     <div className="space-y-1 p-3">
@@ -3823,7 +3865,7 @@ export function AgentsPage() {
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Version details</h3>
                     <Badge variant={systemVersionReadOnly ? 'outline' : 'secondary'} className="text-[10px]">
                       {versionDraftOpen
-                        ? 'New draft'
+                        ? 'New version'
                         : isEditingWorkspaceVersion
                           ? 'Editable'
                           : 'Read-only'}
@@ -3858,9 +3900,35 @@ export function AgentsPage() {
                   </Collapsible.Root>
                   )}
 
+                  {/* 01B — Compiled System Prompt (Preview) */}
+                  <Collapsible.Root open={compiledPromptOpen} onOpenChange={setCompiledPromptOpen} className="rounded-xl border border-border/60 bg-card">
+                    <Collapsible.Trigger asChild>
+                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
+                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+                        <span className="flex-1 text-sm font-medium">Compiled system prompt</span>
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0">Preview</Badge>
+                      </button>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div className="border-t border-border/60 p-4">
+                        <Textarea
+                          value={form.system_prompt}
+                          disabled
+                          rows={12}
+                          className="border-0 bg-transparent p-0 font-mono text-xs shadow-none focus-visible:ring-0"
+                        />
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          {systemVersionReadOnly
+                            ? 'This is the full prompt sent to the model, compiled from the preamble and skills above.'
+                            : 'This prompt will be recompiled from your preamble and skills when you save.'}
+                        </p>
+                      </div>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
+
                   {/* 01B — Instruction Skills */}
                   {(form.instruction_skills.length > 0 || !systemVersionReadOnly) && (
-                  <Collapsible.Root defaultOpen className="rounded-xl border border-border/60 bg-card">
+                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
                     <Collapsible.Trigger asChild>
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
@@ -3956,32 +4024,95 @@ export function AgentsPage() {
                   </Collapsible.Root>
                   )}
 
-                  {/* 01C — Compiled System Prompt (Preview) */}
-                  <Collapsible.Root open={compiledPromptOpen} onOpenChange={setCompiledPromptOpen} className="rounded-xl border border-border/60 bg-card">
+                  {/* 01D — Allowed Tools */}
+                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
                     <Collapsible.Trigger asChild>
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                        <SourceCodeIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="flex-1 text-sm font-medium">Compiled system prompt</span>
-                        <Badge variant="outline" className="text-[9px] px-1.5 py-0">Preview</Badge>
+                        <span className="flex-1 text-sm font-medium">Allowed tools</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.allowed_tools.length} enabled</span>
                       </button>
                     </Collapsible.Trigger>
-                        <Collapsible.Content>
-                          <div className="border-t border-border/60 p-4">
-                            <Textarea
-                              value={form.system_prompt}
-                              disabled
-                              rows={12}
-                              className="border-0 bg-transparent p-0 font-mono text-xs shadow-none focus-visible:ring-0"
-                            />
-                            <p className="mt-3 text-xs text-muted-foreground">
-                              {systemVersionReadOnly
-                                ? 'This is the full prompt sent to the model, compiled from the preamble and skills above.'
-                                : 'This prompt will be recompiled from your preamble and skills when you save.'}
-                            </p>
+                    <Collapsible.Content>
+                      <div className="space-y-3 border-t border-border/60 p-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <ToolMultiSelectPopover
+                            open={toolPickerOpen}
+                            onOpenChange={setToolPickerOpen}
+                            tools={toolCatalogEntries}
+                            selectedTools={form.allowed_tools}
+                            disabled={codexUsesPresetCapabilities || systemVersionReadOnly}
+                            onToggleTool={toggleTool}
+                          />
+                        </div>
+                        {form.allowed_tools.length > 0 ? (
+                          <div className="space-y-3">
+                            {(toolCatalog?.categories ?? []).map((category) => {
+                              const categoryTools = form.allowed_tools.filter((toolName) => {
+                                const entry = toolCatalogEntries.find((t) => t.name === toolName);
+                                return entry?.category === category;
+                              });
+                              if (categoryTools.length === 0) return null;
+                              return (
+                                <div key={category}>
+                                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">{category}</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {categoryTools.map((tool) => (
+                                      <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
+                                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                        <span>{tool}</span>
+                                        {versionDraftOpen && !codexUsesPresetCapabilities && (
+                                          <button
+                                            type="button"
+                                            className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                                            onClick={() => removeTool(tool)}
+                                            aria-label={`Remove ${tool}`}
+                                          >
+                                            <Cancel01Icon className="h-3 w-3" />
+                                          </button>
+                                        )}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {form.allowed_tools.filter((toolName) => {
+                              const entry = toolCatalogEntries.find((t) => t.name === toolName);
+                              return !entry || !(toolCatalog?.categories ?? []).includes(entry.category);
+                            }).length > 0 && (
+                              <div>
+                                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Other</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {form.allowed_tools.filter((toolName) => {
+                                    const entry = toolCatalogEntries.find((t) => t.name === toolName);
+                                    return !entry || !(toolCatalog?.categories ?? []).includes(entry.category);
+                                  }).map((tool) => (
+                                    <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
+                                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                      <span>{tool}</span>
+                                      {versionDraftOpen && !codexUsesPresetCapabilities && (
+                                        <button
+                                          type="button"
+                                          className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                                          onClick={() => removeTool(tool)}
+                                          aria-label={`Remove ${tool}`}
+                                        >
+                                          <Cancel01Icon className="h-3 w-3" />
+                                        </button>
+                                      )}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        </Collapsible.Content>
-                      </Collapsible.Root>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No tools configured</p>
+                        )}
+                      </div>
+                    </Collapsible.Content>
+                  </Collapsible.Root>
 
                   {/* 02 — Run Mode */}
                   <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
@@ -4186,96 +4317,6 @@ export function AgentsPage() {
                     </Collapsible.Content>
                   </Collapsible.Root>
 
-                  {/* 04 — Allowed Tools */}
-                  <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
-                    <Collapsible.Trigger asChild>
-                      <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
-                        <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                        <span className="flex-1 text-sm font-medium">Allowed tools</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.allowed_tools.length} enabled</span>
-                      </button>
-                    </Collapsible.Trigger>
-                    <Collapsible.Content>
-                      <div className="space-y-3 border-t border-border/60 p-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <ToolMultiSelectPopover
-                            open={toolPickerOpen}
-                            onOpenChange={setToolPickerOpen}
-                            tools={toolCatalogEntries}
-                            selectedTools={form.allowed_tools}
-                            disabled={codexUsesPresetCapabilities || systemVersionReadOnly}
-                            onToggleTool={toggleTool}
-                          />
-                      </div>
-                      {form.allowed_tools.length > 0 ? (
-                        <div className="space-y-3">
-                          {(toolCatalog?.categories ?? []).map((category) => {
-                            const categoryTools = form.allowed_tools.filter((toolName) => {
-                              const entry = toolCatalogEntries.find((t) => t.name === toolName);
-                              return entry?.category === category;
-                            });
-                            if (categoryTools.length === 0) return null;
-                            return (
-                              <div key={category}>
-                                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">{category}</p>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {categoryTools.map((tool) => (
-                                    <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
-                                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                      <span>{tool}</span>
-                                      {versionDraftOpen && !codexUsesPresetCapabilities && (
-                                        <button
-                                          type="button"
-                                          className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                                          onClick={() => removeTool(tool)}
-                                          aria-label={`Remove ${tool}`}
-                                        >
-                                          <Cancel01Icon className="h-3 w-3" />
-                                        </button>
-                                      )}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {/* Tools without a matching category */}
-                          {form.allowed_tools.filter((toolName) => {
-                            const entry = toolCatalogEntries.find((t) => t.name === toolName);
-                            return !entry || !(toolCatalog?.categories ?? []).includes(entry.category);
-                          }).length > 0 && (
-                            <div>
-                              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Other</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {form.allowed_tools.filter((toolName) => {
-                                  const entry = toolCatalogEntries.find((t) => t.name === toolName);
-                                  return !entry || !(toolCatalog?.categories ?? []).includes(entry.category);
-                                }).map((tool) => (
-                                  <Badge key={tool} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
-                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                    <span>{tool}</span>
-                                    {versionDraftOpen && !codexUsesPresetCapabilities && (
-                                      <button
-                                        type="button"
-                                        className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                                        onClick={() => removeTool(tool)}
-                                        aria-label={`Remove ${tool}`}
-                                      >
-                                        <Cancel01Icon className="h-3 w-3" />
-                                      </button>
-                                    )}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">No tools configured</p>
-                        )}
-                      </div>
-                    </Collapsible.Content>
-                  </Collapsible.Root>
                   </div>
                 </section>
 
@@ -4284,19 +4325,8 @@ export function AgentsPage() {
                   <div className="flex items-baseline justify-between gap-3">
                     <div>
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent settings</h3>
-                      <p className="text-[11px] text-muted-foreground">Applies to {editingAgent?.name ?? 'this agent'}, not the pinned version.</p>
+                      <p className="text-[11px] text-muted-foreground">Applies to {editingAgent?.name ?? 'this agent'}, not the active version.</p>
                     </div>
-                    {editingAgent && (
-                      <button
-                        type="button"
-                        className="text-[11px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                        onClick={() => {
-                          window.open(resolveTriggerHistoryPath(workspace?.slug, editingAgent.id), '_blank');
-                        }}
-                      >
-                        {agentUsage?.items?.length ?? 0} trigger{(agentUsage?.items?.length ?? 0) === 1 ? '' : 's'} · view runs →
-                      </button>
-                    )}
                   </div>
                   <div className="rounded-xl border border-border/60 bg-card p-4">
                     <div className="flex items-baseline justify-between gap-3">
@@ -4376,62 +4406,28 @@ export function AgentsPage() {
           <SheetFooter className="border-t border-border/60 bg-background py-4 pl-6 pr-20 sm:flex-row sm:justify-between">
             <div className="text-xs text-muted-foreground">
               {versionDraftOpen
-                ? 'Configure the new version, then create it.'
-                : isEditingWorkspaceVersion && hasPendingSystemVersionSelection
-                  ? `Save and pin ${selectedPreset?.version_label} to ${editingAgent?.name ?? 'this agent'}.`
-                  : isEditingWorkspaceVersion
-                    ? `Editing ${selectedPreset?.version_label}. Save changes to apply.`
-                    : hasPendingSystemVersionSelection
-                      ? `Pin ${selectedPreset?.version_label ?? 'this version'} to ${editingAgent?.name ?? 'this agent'}?`
-                      : 'No changes to save.'}
+                ? 'Create the new version in the dialog.'
+                : isEditingWorkspaceVersion
+                  ? (hasWorkspaceVersionChanges ? `Editing ${selectedPreset?.version_label}. Save changes to apply.` : 'No changes to save.')
+                  : 'No changes to save.'}
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setSystemDrawerOpen(false)}>
-                {hasPendingSystemVersionSelection || versionDraftOpen || isEditingWorkspaceVersion ? 'Cancel' : 'Close'}
+                {hasWorkspaceVersionChanges || versionDraftOpen ? 'Cancel' : 'Close'}
               </Button>
-              {versionDraftOpen ? (
-                <Button
-                  size="sm"
-                  disabled={creatingVersion || !versionLabelDraft.trim()}
-                  onClick={handleCreatePresetVersion}
-                >
-                  {creatingVersion ? 'Creating…' : 'Create version'}
-                </Button>
-              ) : isEditingWorkspaceVersion && hasPendingSystemVersionSelection ? (
-                <Button
-                  size="sm"
-                  disabled={saving}
-                  onClick={handleSaveAndPin}
-                >
-                  {saving ? 'Saving & pinning…' : 'Save & pin'}
-                </Button>
-              ) : isEditingWorkspaceVersion ? (
-                <Button
-                  size="sm"
-                  disabled={saving}
-                  onClick={() => handleSaveWorkspaceVersion()}
-                >
-                  {saving ? 'Saving…' : 'Save version'}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  disabled={saving || !hasPendingSystemVersionSelection}
-                  onClick={handleSave}
-                >
-                  {saving
-                    ? 'Pinning…'
-                    : hasPendingSystemVersionSelection
-                      ? `Pin ${selectedPreset?.version_label ?? 'version'}`
-                      : 'Pin to agent'}
-                </Button>
-              )}
+              <Button
+                size="sm"
+                disabled={saving || !isEditingWorkspaceVersion || !hasWorkspaceVersionChanges}
+                onClick={() => handleSaveWorkspaceVersion()}
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
             </div>
           </SheetFooter>
         </SheetContent>
       </Sheet>
 
-      {/* ---- New workspace version dialog ---- */}
+      {/* ---- New custom version dialog ---- */}
       <Dialog
         open={versionDraftOpen}
         onOpenChange={(open) => {
@@ -4447,9 +4443,9 @@ export function AgentsPage() {
       >
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>New workspace version</DialogTitle>
+            <DialogTitle>New custom version</DialogTitle>
             <DialogDescription>
-              Creates a new workspace version from the current configuration. The built-in agent will be pinned to the new version automatically.
+              Creates a custom version from the current configuration. Review it first, then set it as active when you are ready.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -4496,7 +4492,7 @@ export function AgentsPage() {
               disabled={creatingVersion || !versionLabelDraft.trim()}
               onClick={handleCreatePresetVersion}
             >
-              {creatingVersion ? 'Creating…' : 'Create version'}
+              {creatingVersion ? 'Creating…' : 'Create custom version'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -6306,13 +6302,13 @@ export function AgentsPage() {
       <ConfirmDialog
         open={workspaceVersionPendingDelete !== null}
         onOpenChange={(open) => !open && setWorkspaceVersionPendingDelete(null)}
-        title="Delete workspace version"
+        title="Delete custom version"
         description={
           workspaceVersionPendingDelete
-            ? `This will permanently delete "${workspaceVersionPendingDelete.version_label}". Agents pinned to this version will need to be re-pinned. This action cannot be undone.`
+            ? `This will permanently delete "${workspaceVersionPendingDelete.version_label}". Agents using this version will need a new active version. This action cannot be undone.`
             : ''
         }
-        confirmLabel={deletingVersion ? 'Deleting…' : 'Delete version'}
+        confirmLabel={deletingVersion ? 'Deleting…' : 'Delete custom version'}
         variant="destructive"
         onConfirm={handleDeleteWorkspaceVersion}
       />
@@ -6416,9 +6412,9 @@ export function AgentsPage() {
       >
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Rename workspace version</DialogTitle>
+            <DialogTitle>Rename custom version</DialogTitle>
             <DialogDescription>
-              Update the label or description for this workspace version. Changes apply immediately.
+              Update the label or description for this custom version. Changes apply immediately.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

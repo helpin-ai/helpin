@@ -654,7 +654,7 @@ func TestUpdateAgent_PreservesSelectedSystemPresetVersion(t *testing.T) {
 	if updated.ApprovalMode != "never" {
 		t.Fatalf("expected system agent approval mode never, got %q", updated.ApprovalMode)
 	}
-	// The workspace version's prompt must survive the update (not be replaced by the built-in family prompt).
+	// The custom version's prompt must survive the update (not be replaced by the built-in family prompt).
 	if updated.SystemPrompt == nil || !strings.Contains(*updated.SystemPrompt, "Workspace tuned code builder.") {
 		t.Fatalf("expected workspace preset prompt preserved after update, got %v", updated.SystemPrompt)
 	}
@@ -864,7 +864,7 @@ func TestCreateWorkspacePresetVersion(t *testing.T) {
 		t.Fatalf("expected family key %q, got %q", model.AgentPresetCodeBuilder, version.FamilyKey)
 	}
 	if version.VersionKey == "" || version.VersionKey == defaultPresetVersionKeyForPresetKey(model.AgentPresetCodeBuilder) {
-		t.Fatalf("expected a new workspace version key, got %q", version.VersionKey)
+		t.Fatalf("expected a new custom version key, got %q", version.VersionKey)
 	}
 	if version.Model == nil || *version.Model != "gpt-5-mini" {
 		t.Fatalf("expected persisted model override, got %+v", version.Model)
