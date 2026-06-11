@@ -201,13 +201,12 @@ describe('CustomAgentCreatePanel', () => {
     expect(container?.textContent).not.toContain('AI Provider');
   });
 
-  it('exposes approval preference when expanded', () => {
+  it('shows approval preference by default', () => {
     renderPanel({
       form: { ...createDefaultCustomAgentForm(), name: 'Planner' },
     });
 
     click('Start blank');
-    click('Run approval');
     expect(container?.textContent).toContain('Require approval before each run');
   });
 

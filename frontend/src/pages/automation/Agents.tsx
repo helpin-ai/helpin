@@ -3874,9 +3874,6 @@ export function AgentsPage() {
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
                         <span className="flex-1 text-sm font-medium">System prompt</span>
-                        <Badge variant={systemVersionReadOnly ? 'outline' : 'secondary'} className="text-[9px] px-1.5 py-0">
-                          {systemVersionReadOnly ? 'Managed' : 'Editable'}
-                        </Badge>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
@@ -3894,11 +3891,6 @@ export function AgentsPage() {
                               : 'resize-y border border-dashed border-border/60 bg-muted/30 px-3 py-2 focus-visible:border-primary focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-primary',
                           )}
                         />
-                        <p className="mt-3 text-xs text-muted-foreground">
-                          {systemVersionReadOnly
-                            ? 'This managed prompt is the primary behavior instruction for the selected default version.'
-                            : 'This prompt is saved directly and is the primary behavior instruction for this custom version.'}
-                        </p>
                       </div>
                     </Collapsible.Content>
                   </Collapsible.Root>
@@ -3916,7 +3908,7 @@ export function AgentsPage() {
                     <Collapsible.Content>
                       <div className="space-y-3 border-t border-border/60 p-4">
                         <p className="text-xs text-muted-foreground">
-                          Available skills are capability modules associated with this version. They do not rewrite the system prompt in this editor.
+                          Available skills are reusable behavior guides this version can discover and read during a run. They stay separate from the compiled system prompt.
                         </p>
                         <div className="space-y-2">
                           {form.instruction_skills.map((skillKey, idx) => {
@@ -3959,6 +3951,9 @@ export function AgentsPage() {
                     </Collapsible.Trigger>
                     <Collapsible.Content>
                       <div className="space-y-3 border-t border-border/60 p-4">
+                        <p className="text-xs text-muted-foreground">
+                          Allowed tools are the runtime actions and data sources this version may call. Skills can guide when to use tools, but tools control what the agent can actually do.
+                        </p>
                         <div className="flex items-center justify-end gap-2">
                           <ToolMultiSelectPopover
                             open={toolPickerOpen}
@@ -5370,7 +5365,7 @@ export function AgentsPage() {
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <p className="text-sm font-medium">Available skills</p>
-                      <p className="text-[11px] text-muted-foreground">Behavioral instruction modules attached at runtime.</p>
+                      <p className="text-[11px] text-muted-foreground">Reusable guides the agent can discover and read during a run.</p>
                     </div>
                     <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
                       <PopoverTrigger asChild>
@@ -5443,7 +5438,7 @@ export function AgentsPage() {
                       })}
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground">No available skills attached. Available skills provide behavioral instructions to the agent at runtime.</p>
+                    <p className="text-xs text-muted-foreground">No available skills attached. Skills provide reusable guidance without expanding the system prompt by default.</p>
                   )}
                 </div>
               </DrawerConfigSection>

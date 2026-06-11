@@ -101,6 +101,7 @@ func TestMiraBundleIncludesMarketingSkills(t *testing.T) {
 		"You are Mira, the workspace marketer.",
 		"## Marketing Modes",
 		"## Skill Selection",
+		"When available, use list_available_skills or search_available_skills to inspect relevant skill options, then use read_skill only for the specific skill guidance the task needs.",
 		"Use marketing context skills for product, ICP, personas, positioning, proof points, customer language, and brand voice.",
 		"Use RevOps skills when marketing work touches CRM lifecycle",
 	} {
@@ -329,6 +330,7 @@ func TestDocumentationAgentPromptUsesCuratedSkillSelectionGuide(t *testing.T) {
 		"You are Quill, the workspace documentation agent.",
 		"## Documentation Modes",
 		"## Skill Selection",
+		"When available, use list_available_skills or search_available_skills to inspect relevant skill options, then use read_skill only for the specific skill guidance the task needs.",
 		"Use information architecture skills when docs need structure",
 		"Use public help docs skills for customer-facing how-to",
 		"Use API docs skills for endpoints, schemas, authentication",

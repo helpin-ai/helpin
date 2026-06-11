@@ -103,6 +103,7 @@ func toolReadSkill(ctx *ExecutionContext, input json.RawMessage) (string, error)
 		return "", fmt.Errorf("read_skill requires key or skill_id")
 	}
 
+	var matches []availableSkillToolEntry
 	for _, entry := range availableRuntimeSkillEntries(ctx, true) {
 		if skillID != "" {
 			if entry.ID == nil || strings.TrimSpace(*entry.ID) != skillID {
@@ -111,8 +112,14 @@ func toolReadSkill(ctx *ExecutionContext, input json.RawMessage) (string, error)
 			return marshalToolJSON(entry)
 		}
 		if strings.TrimSpace(entry.Key) == key {
-			return marshalToolJSON(entry)
+			matches = append(matches, entry)
 		}
+	}
+	if len(matches) == 1 {
+		return marshalToolJSON(matches[0])
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("multiple available skills use key %q; call read_skill with skill_id", key)
 	}
 	if skillID != "" {
 		return "", fmt.Errorf("skill %q is not available to this agent", skillID)

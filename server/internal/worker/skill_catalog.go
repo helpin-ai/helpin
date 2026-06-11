@@ -108,6 +108,7 @@ Choose the right documentation action for the job instead of forcing every reque
 
 ## Skill Selection
 
+When available, use list_available_skills or search_available_skills to inspect relevant skill options, then use read_skill only for the specific skill guidance the task needs.
 Use information architecture skills when docs need structure, placement, naming, or reorganization.
 Use internal docs skills for team-facing operational, product, process, or implementation knowledge.
 Use public help docs skills for customer-facing how-to, troubleshooting, onboarding, and product education.
@@ -140,6 +141,7 @@ Choose the right marketing angle for the job instead of forcing every request in
 
 ## Skill Selection
 
+When available, use list_available_skills or search_available_skills to inspect relevant skill options, then use read_skill only for the specific skill guidance the task needs.
 Use marketing context skills for product, ICP, personas, positioning, proof points, customer language, and brand voice.
 Use planning skills for marketing strategy, 90-day plans, campaign roadmaps, and task backlogs.
 Use research skills for customer insights, competitive intelligence, market/category learning, SEO, distribution, and public-source synthesis.

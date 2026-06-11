@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -29,6 +30,36 @@ func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSelectivePath(t 
 	}
 	if !strings.Contains(systemPrompt, "## Current Epic") {
 		t.Fatalf("expected selective native system prompt to preserve target context\n%s", systemPrompt)
+	}
+}
+
+func TestResolveNativeSystemPromptGuidesSelectiveAvailableSkillTools(t *testing.T) {
+	systemPrompt, includesResolvedSkillText := resolveNativeSystemPrompt(&ExecutionContext{
+		Agent: &model.Agent{
+			Name:                      "Mira",
+			PresetKey:                 model.AgentPresetMarketer,
+			RuntimeKind:               "native_sdk",
+			Skills:                    model.AgentSkillRefs{{Key: "campaign_planning"}},
+			AllowedTools:              json.RawMessage(`["list_available_skills","search_available_skills","read_skill"]`),
+			ResolvedSkillInstructions: "Full campaign planning instructions.",
+		},
+		NativeSelectivePathEnabled: true,
+	}, nil)
+
+	if includesResolvedSkillText {
+		t.Fatal("did not expect selective native system prompt to include resolved skill text")
+	}
+	if strings.Contains(systemPrompt, "Full campaign planning instructions.") {
+		t.Fatalf("did not expect selective native system prompt to inline full skill instructions\n%s", systemPrompt)
+	}
+	for _, snippet := range []string{
+		"Use list_available_skills or search_available_skills",
+		"read only the specific skill instructions you need with read_skill",
+		"Do not load every available skill by default.",
+	} {
+		if !strings.Contains(systemPrompt, snippet) {
+			t.Fatalf("expected selective native prompt to include %q\n%s", snippet, systemPrompt)
+		}
 	}
 }
 

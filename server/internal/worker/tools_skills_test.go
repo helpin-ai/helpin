@@ -92,6 +92,45 @@ func TestToolReadSkillReturnsInstructionsOnlyForAvailableSkill(t *testing.T) {
 	}
 }
 
+func TestToolReadSkillRequiresSkillIDForAmbiguousKey(t *testing.T) {
+	workspaceSkillID := "workspace-skill-override"
+	ctx := &ExecutionContext{
+		Context: context.Background(),
+		RuntimeSkillRefs: model.AgentSkillRefs{
+			{Key: "campaign_planning"},
+			{Key: "campaign_planning", SkillID: &workspaceSkillID},
+		},
+		RuntimeSkillDefinitions: []SkillDefinition{
+			{
+				Key:          "campaign_planning",
+				Title:        "Campaign Planning",
+				Description:  "Built-in campaign planning.",
+				SourceKind:   "built_in",
+				Instructions: "Built-in campaign planning instructions.",
+			},
+			{
+				Key:          "campaign_planning",
+				Title:        "Workspace Campaign Planning",
+				Description:  "Workspace campaign planning.",
+				SourceKind:   "workspace",
+				Instructions: "Workspace campaign planning instructions.",
+			},
+		},
+	}
+
+	if _, err := toolReadSkill(ctx, json.RawMessage(`{"key":"campaign_planning"}`)); err == nil || !strings.Contains(err.Error(), "multiple available skills") {
+		t.Fatalf("expected ambiguous skill key error, got %v", err)
+	}
+
+	output, err := toolReadSkill(ctx, json.RawMessage(`{"skill_id":"workspace-skill-override"}`))
+	if err != nil {
+		t.Fatalf("toolReadSkill by skill_id returned error: %v", err)
+	}
+	if !strings.Contains(output, "Workspace campaign planning instructions.") {
+		t.Fatalf("expected workspace skill instructions by id, got %s", output)
+	}
+}
+
 func TestToolRegistryRegistersAvailableSkillTools(t *testing.T) {
 	registry := NewToolRegistry(nil)
 	definitions := make(map[string]struct{}, len(registry.Definitions()))
