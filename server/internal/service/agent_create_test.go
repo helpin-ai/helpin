@@ -1170,6 +1170,79 @@ func TestUpdateWorkspacePresetVersion_PersistsPromptOnlyEditAndExplicitEmptyList
 	}
 }
 
+func TestCreateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	rawPrompt := "Use this exact custom system prompt."
+	legacyPreamble := "This legacy preamble must not replace the raw prompt."
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:           "ws-test",
+		FamilyKey:             model.AgentPresetEpicPlanner,
+		Label:                 "Workspace Atlas Raw Prompt",
+		SourceVersionKey:      agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
+		SystemPrompt:          &rawPrompt,
+		InstructionPreamble:   &legacyPreamble,
+		InstructionSkills:     mustJSONStringSlice([]string{"general_agent_behavior"}),
+		AllowedTools:          mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		SupportedModes:        mustJSONStringSlice([]string{model.InvocationModeInteractive}),
+		DefaultInvocationMode: agentTestStringPtr(model.InvocationModeInteractive),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.SystemPrompt == nil || *created.SystemPrompt != rawPrompt {
+		t.Fatalf("expected raw system prompt %q, got %+v", rawPrompt, created.SystemPrompt)
+	}
+}
+
+func TestUpdateWorkspacePresetVersion_SystemPromptWinsOverInstructionMetadata(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	workspacePresetVersionRepo := repository.NewWorkspaceAgentPresetVersionRepository(db)
+	svc := &AgentService{
+		agentRepo:                  agentRepo,
+		workspacePresetVersionRepo: workspacePresetVersionRepo,
+	}
+	svc.SetModelProviderConfig("test-anthropic-key", "test-openai-key", "", "", false, "", "")
+
+	created, err := svc.CreateWorkspacePresetVersion(context.Background(), model.CreateWorkspaceAgentPresetVersionRequest{
+		WorkspaceID:      "ws-test",
+		FamilyKey:        model.AgentPresetEpicPlanner,
+		Label:            "Workspace Atlas",
+		SourceVersionKey: agentTestStringPtr(defaultPresetVersionKeyForPresetKey(model.AgentPresetEpicPlanner)),
+		SystemPrompt:     agentTestStringPtr("Workspace atlas v1"),
+		AllowedTools:     mustJSONStringSlice([]string{worker.ToolUpdatePlan}),
+		SupportedModes:   mustJSONStringSlice([]string{model.InvocationModeInteractive}),
+	}, "user-1")
+	if err != nil {
+		t.Fatalf("CreateWorkspacePresetVersion returned error: %v", err)
+	}
+	if created.ID == nil {
+		t.Fatal("expected workspace preset version id")
+	}
+
+	rawPrompt := "Use this exact updated system prompt."
+	legacyPreamble := "This update preamble must not replace the raw prompt."
+	updated, err := svc.UpdateWorkspacePresetVersion(context.Background(), "ws-test", *created.ID, model.UpdateWorkspaceAgentPresetVersionRequest{
+		SystemPrompt:        &rawPrompt,
+		InstructionPreamble: &legacyPreamble,
+		InstructionSkills:   mustJSONStringSlice([]string{"general_agent_behavior"}),
+	}, "user-2")
+	if err != nil {
+		t.Fatalf("UpdateWorkspacePresetVersion returned error: %v", err)
+	}
+	if updated.SystemPrompt == nil || *updated.SystemPrompt != rawPrompt {
+		t.Fatalf("expected raw system prompt %q, got %+v", rawPrompt, updated.SystemPrompt)
+	}
+}
+
 func TestUpdateWorkspacePresetVersion_PropagatesToPinnedSystemAgent(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
