@@ -28,12 +28,14 @@ import {
   type StepDotState,
 } from './utils';
 
-interface EpicDeliveryDagProps {
+interface DeliveryPlanViewProps {
   plan: CommandBarRunPlan;
   runsById: Record<string, AgentRun>;
   onOpenRun: (runId: string) => void;
   /** Rendered at the right edge of the header row (e.g. Resume / Retry buttons). */
   headerActions?: ReactNode;
+  /** Skip the status header row — for hosts that render their own (e.g. the dock strip). */
+  hideHeader?: boolean;
 }
 
 /** Pipeline scaffolding steps that bookend the task lanes rather than run alongside them. */
@@ -484,8 +486,12 @@ function TaskPipelineLanes({
   );
 }
 
-/** Slim segmented progress bar: done (green) → active (ember) → failed (red) → rest (muted). */
-function DeliveryProgressBar({
+/**
+ * Slim segmented progress bar: done (green) → active (ember) → failed (red) →
+ * rest (muted). Also used standalone as the compact glance for delivery plans
+ * in dock lists, where the full lane/stage view would be too tall.
+ */
+export function DeliveryProgressBar({
   plan,
   runsById,
 }: {
@@ -512,7 +518,13 @@ function DeliveryProgressBar({
  * one lane per task between Setup/Finalize bookends. Clicking a step opens
  * that step's run in the coding-session drawer.
  */
-export function EpicDeliveryDag({ plan, runsById, onOpenRun, headerActions }: EpicDeliveryDagProps) {
+export function DeliveryPlanView({
+  plan,
+  runsById,
+  onOpenRun,
+  headerActions,
+  hideHeader = false,
+}: DeliveryPlanViewProps) {
   if (plan.planKind !== 'dag' && plan.planKind !== 'task_pipeline_fan_out') return null;
 
   const dot = deliveryDotState(plan, runsById);
@@ -531,19 +543,21 @@ export function EpicDeliveryDag({ plan, runsById, onOpenRun, headerActions }: Ep
 
   return (
     <div>
-      <div className="flex items-center gap-2">
-        <StatusDot state={dot} />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
-        <span className="text-muted-foreground/60">·</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {totalMs !== null ? `ran ${formatDuration(totalMs)} · ` : ''}
-          {formatDistanceToNow(ts, { addSuffix: true })}
-        </span>
-        {headerActions}
-      </div>
+      {hideHeader ? null : (
+        <div className="flex items-center gap-2">
+          <StatusDot state={dot} />
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            {label}
+          </span>
+          <span className="text-muted-foreground/60">·</span>
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">{summary}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {totalMs !== null ? `ran ${formatDuration(totalMs)} · ` : ''}
+            {formatDistanceToNow(ts, { addSuffix: true })}
+          </span>
+          {headerActions}
+        </div>
+      )}
 
       {verdict ? (
         <p

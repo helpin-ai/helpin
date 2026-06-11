@@ -2,7 +2,7 @@ import type { CommandBarPlanStep, CommandBarPlanSummary } from '@/lib/pmTypes';
 
 /**
  * Live, dock-friendly shape of a command-bar plan. This is what the rail
- * visualizers (`DagRail`, `TaskPipelineRail`, etc.) consume — a camelCased
+ * visualizers (`DeliveryPlanView`, `FanOutRail`, etc.) consume — a camelCased
  * projection of the API's snake_cased `CommandBarPlanSummary`.
  */
 export interface CommandBarRunPlan {

@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
-import { EpicDeliveryDag } from '@/components/agents/dock/EpicDeliveryDag';
+import { DeliveryPlanView } from '@/components/agents/dock/DeliveryPlanView';
 import { StatusDot } from '@/components/agents/dock/StatusDot';
 import { classifyPlan, planSummaryText } from '@/components/agents/dock/utils';
 import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
@@ -115,7 +115,7 @@ export function EpicDeliveryRunsPanel({
       id={EPIC_DELIVERY_PANEL_ID}
       className="scroll-mt-4 overflow-hidden rounded-md border border-border/60 bg-card px-3 py-2.5"
     >
-      <EpicDeliveryDag
+      <DeliveryPlanView
         plan={plan}
         runsById={runsById}
         headerActions={headerActions}

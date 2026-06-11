@@ -11,6 +11,7 @@ import {
   Wrench01Icon,
 } from '@/lib/icons';
 import { cn } from '@/lib/utils';
+import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import type { CommandBarParseResponse, CommandBarPlan, CommandBarPlanStep } from '@/lib/pmTypes';
 import {
   buildTaskNodes,
@@ -327,15 +328,16 @@ function LayerHeading({
   taskCount: number;
   noun: { singular: string; plural: string };
 }) {
+  // Mirrors the run view's stage labels ("Stage 2 · 3 in parallel") so the
+  // approved plan reads as the same picture that later lights up with status.
   const text = (() => {
-    if (layerIndex === 0) {
-      if (totalLayers > 1) return 'blocker';
-      return 'starts now';
+    const base = `Stage ${layerIndex + 1}`;
+    if (taskCount > 1) {
+      const word = taskCount === 1 ? noun.singular : noun.plural;
+      return `${base} · ${taskCount} ${word} in parallel`;
     }
-    const word = taskCount === 1 ? noun.singular : noun.plural;
-    return taskCount > 1
-      ? `then ${taskCount} ${word} fan out in parallel`
-      : `then ${word} runs`;
+    if (layerIndex === 0 && totalLayers > 1) return `${base} · runs first`;
+    return base;
   })();
   return (
     <div className="flex items-center">
@@ -367,7 +369,7 @@ function FlatBody({ plan, nodes }: { plan: Plan; nodes: TaskNode[] }) {
   const noun = taskNounFor(nodes);
   const heading =
     nodes.length > 1
-      ? `${nodes.length} ${nodes.length === 1 ? noun.singular : noun.plural} fan out in parallel`
+      ? `${nodes.length} ${nodes.length === 1 ? noun.singular : noun.plural} in parallel`
       : null;
   return (
     <div className="relative">
@@ -450,15 +452,27 @@ function AgentChain({ plan, stepIndexes }: { plan: Plan; stepIndexes: number[] }
       {stepIndexes.map((i, idx) => {
         const step = plan.steps[i];
         const label = stepDisplayName(step);
-        const initial = label.trim().charAt(0).toUpperCase() || '·';
         return (
           <div key={i} className="flex items-center gap-1">
-            <span
-              title={label}
-              className="grid h-4 w-4 place-items-center rounded-full border border-border/70 bg-background text-[9px] font-semibold text-muted-foreground"
-            >
-              {initial}
-            </span>
+            {step.step_type ? (
+              // Scaffolding step (merge, final PR, …) — no agent persona.
+              <span
+                title={label}
+                className="grid h-4 place-items-center rounded-full border border-border/70 bg-background px-1.5 text-[9px] font-semibold text-muted-foreground"
+              >
+                {label}
+              </span>
+            ) : (
+              // Same persona avatar the run view shows for this agent, so the
+              // approved plan and the live delivery read as one picture.
+              <span title={label} className="inline-flex">
+                <AgentAvatar
+                  name={step.agent_name}
+                  className="h-4 w-4 shrink-0 rounded-none border-0 bg-transparent shadow-none"
+                  genericBare
+                />
+              </span>
+            )}
             {idx < stepIndexes.length - 1 ? (
               <span aria-hidden className="text-[10px] text-muted-foreground">
                 →

@@ -980,6 +980,7 @@ export function AskAgentsDock() {
                     // output renders inline in the bar instead of behind a sheet.
                     defaultOpen={item.plan.steps.length === 1}
                     onAction={(a) => handleStripAction(a, { kind: 'plan', plan: item.plan })}
+                    onOpenRun={openRunDrawer}
                     resultSlot={summary ? <InlineResultCard>{summary}</InlineResultCard> : null}
                   />
                 );

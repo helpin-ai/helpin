@@ -16,8 +16,7 @@ import { cn } from '@/lib/utils';
 import { StatusDot, type DotKind } from './StatusDot';
 import { PipelineRail } from './PipelineRail';
 import { FanOutRail } from './FanOutRail';
-import { TaskPipelineRail } from './TaskPipelineRail';
-import { DagRail } from './DagRail';
+import { DeliveryPlanView, DeliveryProgressBar } from './DeliveryPlanView';
 import { PendingInteractionCard } from './PendingInteractionCard';
 import { DockTranscript, dockTranscriptHasContent } from './DockTranscript';
 import { useAgentRunStream } from './useAgentRunStream';
@@ -47,6 +46,8 @@ interface PlanStripProps {
   runsById: Record<string, AgentRun>;
   busyPlanId?: string | null;
   onAction?: (action: StripAction) => void;
+  /** Open a specific step's run (delivery plans only — step click-through). */
+  onOpenRun?: (runId: string) => void;
   /** Render the result body inline as a soft card. Pass null to suppress. */
   resultSlot?: React.ReactNode;
   /** Start expanded — used for single-output (one-shot) plans. */
@@ -132,6 +133,7 @@ function PlanStrip({
   runsById,
   busyPlanId,
   onAction,
+  onOpenRun,
   resultSlot,
   open,
   setOpen,
@@ -186,9 +188,12 @@ function PlanStrip({
   // only offered when there's no inline output to read (e.g. coding runs).
   const showHeaderOpen = !!onAction && !!(activeRunId || firstRunId) && !hasTranscript;
 
+  const isDelivery = isDAG || isTaskPipeline;
   const renderRail = () => {
-    if (isTaskPipeline) return <TaskPipelineRail plan={plan} runsById={runsById} />;
-    if (isDAG) return <DagRail plan={plan} runsById={runsById} />;
+    // Delivery plans (dag / task pipeline) share the rich DeliveryPlanView when
+    // expanded; collapsed they show the slim segmented progress bar instead of
+    // a multi-row rail.
+    if (isDelivery) return <DeliveryProgressBar plan={plan} runsById={runsById} />;
     if (isFanOut) return <FanOutRail plan={plan} runsById={runsById} />;
     return <PipelineRail plan={plan} runsById={runsById} />;
   };
@@ -238,48 +243,53 @@ function PlanStrip({
           {plan.prompt ? (
             <p className="text-[11px] italic text-muted-foreground">"{plan.prompt}"</p>
           ) : null}
-          {showRail ? renderRail() : null}
-          {isSingleStep && hasTranscript ? (
-            <DockTranscript stream={transcriptState} active={singleActive} />
+          {isDelivery ? (
+            <DeliveryPlanView
+              plan={plan}
+              runsById={runsById}
+              hideHeader
+              onOpenRun={(runId) => onOpenRun?.(runId)}
+            />
           ) : (
-          <div className="space-y-1.5">
-            {plan.steps.map((step, i) => {
-              const runId = plan.runIdsByStep[i];
-              const run = runId ? runsById[runId] : null;
-              const dot: DotKind = stepDotState(plan, i, runsById);
-              const targetTitle = isTaskPipeline || isDAG ? step.target?.display_title : null;
-              return (
-                <div
-                  key={`${step.agent_id}-${i}`}
-                  className="flex items-start gap-2 text-xs leading-snug"
-                >
-                  <StatusDot state={dot} className="mt-1" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      {targetTitle ? (
-                        <span className="truncate text-[11px] text-muted-foreground">
-                          {targetTitle}:
-                        </span>
-                      ) : null}
-                      <span className="truncate font-medium text-foreground">{step.agent_name}</span>
-                      {run ? (
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
-                          {runStatusLabel(run)}
-                        </span>
-                      ) : dot === 'blocked' ? (
-                        <span className="shrink-0 text-[11px] text-muted-foreground">Waiting</span>
-                      ) : null}
-                    </div>
-                    {run && outputSummaryText(run) ? (
-                      <p className="line-clamp-2 text-[11px] text-muted-foreground">
-                        {outputSummaryText(run)}
-                      </p>
-                    ) : null}
-                  </div>
+            <>
+              {showRail ? renderRail() : null}
+              {isSingleStep && hasTranscript ? (
+                <DockTranscript stream={transcriptState} active={singleActive} />
+              ) : (
+                <div className="space-y-1.5">
+                  {plan.steps.map((step, i) => {
+                    const runId = plan.runIdsByStep[i];
+                    const run = runId ? runsById[runId] : null;
+                    const dot: DotKind = stepDotState(plan, i, runsById);
+                    return (
+                      <div
+                        key={`${step.agent_id}-${i}`}
+                        className="flex items-start gap-2 text-xs leading-snug"
+                      >
+                        <StatusDot state={dot} className="mt-1" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-2">
+                            <span className="truncate font-medium text-foreground">{step.agent_name}</span>
+                            {run ? (
+                              <span className="shrink-0 text-[11px] text-muted-foreground">
+                                {runStatusLabel(run)}
+                              </span>
+                            ) : dot === 'blocked' ? (
+                              <span className="shrink-0 text-[11px] text-muted-foreground">Waiting</span>
+                            ) : null}
+                          </div>
+                          {run && outputSummaryText(run) ? (
+                            <p className="line-clamp-2 text-[11px] text-muted-foreground">
+                              {outputSummaryText(run)}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </>
           )}
         </div>
       ) : null}

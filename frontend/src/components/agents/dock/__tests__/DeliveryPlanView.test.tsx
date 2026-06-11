@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EpicDeliveryDag } from '../EpicDeliveryDag';
+import { DeliveryPlanView } from '../DeliveryPlanView';
 import type { CommandBarRunPlan } from '../planSummary';
 import type { AgentRun } from '@/lib/pmTypes';
 
@@ -73,11 +73,11 @@ function dagPlan(overrides: Partial<CommandBarRunPlan> = {}): CommandBarRunPlan 
   };
 }
 
-describe('EpicDeliveryDag', () => {
+describe('DeliveryPlanView', () => {
   it('renders nothing for a non-delivery plan kind', () => {
     act(() => {
       root.render(
-        <EpicDeliveryDag plan={dagPlan({ planKind: 'one_shot_command' })} runsById={{}} onOpenRun={vi.fn()} />,
+        <DeliveryPlanView plan={dagPlan({ planKind: 'one_shot_command' })} runsById={{}} onOpenRun={vi.fn()} />,
       );
     });
     expect(container.textContent).toBe('');
@@ -86,7 +86,7 @@ describe('EpicDeliveryDag', () => {
   it('renders the DAG steps and header for a dag plan', () => {
     act(() => {
       root.render(
-        <EpicDeliveryDag plan={dagPlan()} runsById={{ 'run-1': agentRun({ id: 'run-1' }) }} onOpenRun={vi.fn()} />,
+        <DeliveryPlanView plan={dagPlan()} runsById={{ 'run-1': agentRun({ id: 'run-1' }) }} onOpenRun={vi.fn()} />,
       );
     });
     expect(container.textContent).toContain('Forge');
@@ -99,7 +99,7 @@ describe('EpicDeliveryDag', () => {
     const onOpenRun = vi.fn();
     act(() => {
       root.render(
-        <EpicDeliveryDag plan={dagPlan()} runsById={{ 'run-1': agentRun({ id: 'run-1' }) }} onOpenRun={onOpenRun} />,
+        <DeliveryPlanView plan={dagPlan()} runsById={{ 'run-1': agentRun({ id: 'run-1' }) }} onOpenRun={onOpenRun} />,
       );
     });
     const clickable = container.querySelector<HTMLElement>('[role="button"]');
@@ -113,7 +113,7 @@ describe('EpicDeliveryDag', () => {
   it('groups dag steps into stages and marks parallel and blocked steps', () => {
     act(() => {
       root.render(
-        <EpicDeliveryDag
+        <DeliveryPlanView
           plan={dagPlan({
             steps: [
               {
@@ -152,7 +152,7 @@ describe('EpicDeliveryDag', () => {
   it('renders epic scaffolding steps as Setup/Finalize bookends, not lanes', () => {
     act(() => {
       root.render(
-        <EpicDeliveryDag
+        <DeliveryPlanView
           plan={dagPlan({
             planKind: 'task_pipeline_fan_out',
             steps: [
@@ -197,7 +197,7 @@ describe('EpicDeliveryDag', () => {
   it('renders task-pipeline rows for a task_pipeline_fan_out plan', () => {
     act(() => {
       root.render(
-        <EpicDeliveryDag
+        <DeliveryPlanView
           plan={dagPlan({ planKind: 'task_pipeline_fan_out' })}
           runsById={{ 'run-1': agentRun({ id: 'run-1' }) }}
           onOpenRun={vi.fn()}
