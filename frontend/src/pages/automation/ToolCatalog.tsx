@@ -11,9 +11,12 @@ import {
   File01Icon,
   Tick01Icon,
   FileSearchIcon,
-  HeadphonesIcon,
+  Message01Icon,
+  MessagePreview01Icon,
+  Building03Icon,
   TerminalIcon,
   Wrench01Icon,
+  BookOpen01Icon,
 } from '@/lib/icons';
 
 import { Badge } from '@/components/ui/badge';
@@ -32,11 +35,15 @@ import { cn } from '@/lib/utils';
 const CATEGORY_ICONS: Record<string, typeof Wrench01Icon> = {
   Filesystem: FolderOpenIcon,
   'Code Analysis': SourceCodeIcon,
+  Skills: BookOpen01Icon,
   Commands: TerminalIcon,
+  Security: Wrench01Icon,
   'Web Search': GlobeIcon,
   Git: GitBranchIcon,
+  Interaction: MessagePreview01Icon,
   'PM / Tasks': FileSearchIcon,
-  Support: HeadphonesIcon,
+  Workspace: Building03Icon,
+  Support: Message01Icon,
   CRM: ChartIncreaseIcon,
   Docs: File01Icon,
 };

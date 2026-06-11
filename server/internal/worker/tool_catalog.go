@@ -90,19 +90,19 @@ var toolCategory = map[string]string{
 }
 
 var categoryOrder = []string{
-	"Filesystem",
-	"Code Analysis",
+	"Workspace",
+	"PM / Tasks",
+	"Docs",
+	"CRM",
+	"Support",
 	"Skills",
-	"Commands",
-	"Security",
+	"Interaction",
 	"Web Search",
 	"Git",
-	"Interaction",
-	"PM / Tasks",
-	"Workspace",
-	"Support",
-	"CRM",
-	"Docs",
+	"Filesystem",
+	"Code Analysis",
+	"Commands",
+	"Security",
 }
 
 var hiddenToolCatalogAliases = map[string]bool{
