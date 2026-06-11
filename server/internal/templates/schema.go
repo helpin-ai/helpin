@@ -244,6 +244,7 @@ func knownSystemPreset(preset string) bool {
 		model.AgentPresetMarketer,
 		model.AgentPresetCodeBuilder,
 		model.AgentPresetReviewAgent,
+		model.AgentPresetCommandAgent,
 		model.AgentPresetResearcher:
 		return true
 	default:

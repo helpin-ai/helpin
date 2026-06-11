@@ -46,6 +46,11 @@ const AGENT_ACCENTS: Record<string, { text: string; dot: string; pulse: string }
     dot: 'bg-violet-600',
     pulse: 'border-violet-500',
   },
+  command_agent: {
+    text: 'text-sky-800 dark:text-sky-300',
+    dot: 'bg-sky-600',
+    pulse: 'border-sky-500',
+  },
   researcher: {
     text: 'text-sky-800 dark:text-sky-300',
     dot: 'bg-sky-600',
@@ -430,7 +435,7 @@ function normalizeAgentName(name: string) {
   if (lower.includes('forge') || lower.includes('code')) return 'code_builder';
   if (lower.includes('lens') || lower.includes('review')) return 'review_agent';
   if (lower.includes('atlas') || lower.includes('planner') || lower.includes('task')) return 'task_planner';
-  if (lower.includes('command')) return 'researcher';
+  if (lower.includes('command')) return 'command_agent';
   if (lower.includes('crm')) return 'crm_operator';
   if (lower.includes('support')) return 'support_agent';
   return '';

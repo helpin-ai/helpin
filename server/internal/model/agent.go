@@ -18,11 +18,9 @@ const (
 	AgentPresetMarketer           = "marketer"
 	AgentPresetCodeBuilder        = "code_builder"
 	AgentPresetReviewAgent        = "review_agent"
-	// AgentPresetCommandAgent is stored under the legacy "researcher" key so
-	// existing seeded system-agent rows reconcile in place while the product
-	// surface moves to "Command Agent".
-	AgentPresetCommandAgent = "researcher"
-	AgentPresetResearcher   = AgentPresetCommandAgent
+	AgentPresetCommandAgent       = "command_agent"
+	// AgentPresetResearcher is a legacy alias accepted for old command-agent rows.
+	AgentPresetResearcher = "researcher"
 
 	AgentModelProviderAnthropic           = "anthropic"
 	AgentModelProviderOpenAI              = "openai"

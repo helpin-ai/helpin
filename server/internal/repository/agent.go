@@ -65,9 +65,13 @@ func (r *AgentRepository) GetByID(ctx context.Context, workspaceID, id string) (
 
 // GetSystemByPreset returns the first system agent for a preset within a workspace.
 func (r *AgentRepository) GetSystemByPreset(ctx context.Context, workspaceID, presetKey string) (*model.Agent, error) {
+	presetKeys := []string{presetKey}
+	if presetKey == model.AgentPresetCommandAgent {
+		presetKeys = append(presetKeys, model.AgentPresetResearcher)
+	}
 	var agent model.Agent
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND is_system = ? AND preset_key = ?", workspaceID, true, presetKey).
+		Where("workspace_id = ? AND is_system = ? AND preset_key IN ?", workspaceID, true, presetKeys).
 		Order("created_at ASC").
 		First(&agent).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {

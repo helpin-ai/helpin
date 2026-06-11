@@ -83,7 +83,11 @@ func normalizePresetKey(key string) string {
 }
 
 func normalizePresetVersionKey(versionKey string) string {
-	return strings.TrimSpace(versionKey)
+	versionKey = strings.TrimSpace(versionKey)
+	if versionKey == "researcher_default" {
+		return "command_agent_default"
+	}
+	return versionKey
 }
 
 func defaultPresetKeyForAgent(isSystem bool) string {
@@ -112,7 +116,7 @@ func defaultPresetVersionKeyForPresetKey(presetKey string) string {
 	case model.AgentPresetReviewAgent:
 		return "review_agent_interactive_loop"
 	case model.AgentPresetCommandAgent:
-		return "researcher_default"
+		return "command_agent_default"
 	default:
 		return ""
 	}

@@ -259,6 +259,52 @@ func TestEnsureBuiltInTaskPlannerRefreshesLegacyPrompt(t *testing.T) {
 	}
 }
 
+func TestEnsureBuiltInCommandAgentReconcilesLegacyResearcherPreset(t *testing.T) {
+	db := newAgentServiceTestDB(t)
+	agentRepo := repository.NewAgentRepository(db)
+	svc := &AgentService{agentRepo: agentRepo}
+
+	now := time.Now().UTC()
+	if err := db.Exec(`INSERT INTO agents (
+		id, workspace_id, is_system, name, preset_key, preset_version_key, role, status, runtime_kind,
+		skills, trigger_mode, allowed_tools, allowed_commands, allowed_targets,
+		approval_mode, max_concurrent_runs, default_invocation_mode, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"agent-command-legacy", "ws-test", true, "Command Agent", model.AgentPresetResearcher, "researcher_default", "Command Agent", "idle", "native_sdk",
+		[]byte("[]"), "manual", []byte("[]"), []byte("[]"), []byte("[]"), "never", 1, model.InvocationModeAutonomous, now, now,
+	).Error; err != nil {
+		t.Fatalf("insert legacy command agent: %v", err)
+	}
+
+	updated, err := svc.ensureBuiltInAgent(context.Background(), "ws-test", "user-1", model.AgentPresetCommandAgent)
+	if err != nil {
+		t.Fatalf("ensureBuiltInAgent returned error: %v", err)
+	}
+	if updated.ID != "agent-command-legacy" {
+		t.Fatalf("expected legacy command agent to be reused, got %q", updated.ID)
+	}
+	if updated.PresetKey != model.AgentPresetCommandAgent {
+		t.Fatalf("expected canonical command agent preset key %q, got %q", model.AgentPresetCommandAgent, updated.PresetKey)
+	}
+	if updated.PresetVersionKey != defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent) {
+		t.Fatalf("expected canonical command agent preset version %q, got %q", defaultPresetVersionKeyForPresetKey(model.AgentPresetCommandAgent), updated.PresetVersionKey)
+	}
+
+	agents, err := agentRepo.List(context.Background(), "ws-test")
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	var commandAgents []model.Agent
+	for _, agent := range agents {
+		if agent.IsSystem && normalizePresetKey(agent.PresetKey) == model.AgentPresetCommandAgent {
+			commandAgents = append(commandAgents, agent)
+		}
+	}
+	if len(commandAgents) != 1 {
+		t.Fatalf("expected exactly one command system agent after reconciliation, got %d", len(commandAgents))
+	}
+}
+
 func TestEnsureBuiltInReviewAgentRefreshesPromptVersionAndTools(t *testing.T) {
 	db := newAgentServiceTestDB(t)
 	agentRepo := repository.NewAgentRepository(db)
