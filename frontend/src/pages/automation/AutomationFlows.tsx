@@ -1108,6 +1108,15 @@ function FlowSummaryParagraph({ rows }: { rows: FlowLogicRow[] }) {
   );
 }
 
+function skillRefIdentity(skill: Pick<SkillCatalogEntry, 'id' | 'key'> | AgentSkillRef) {
+  if ('id' in skill && skill.id) return skill.id;
+  return skill.skill_id || skill.key;
+}
+
+function skillRefDisplayName(skill: Pick<SkillCatalogEntry, 'title' | 'key'> | undefined, fallbackKey: string) {
+  return skill?.title?.trim() || fallbackKey;
+}
+
 function TemplateSkillPicker({
   open,
   onOpenChange,
@@ -1121,8 +1130,8 @@ function TemplateSkillPicker({
   selectedSkills: AgentSkillRef[];
   onAddSkill: (skill: SkillCatalogEntry) => void;
 }) {
-  const selected = new Set(selectedSkills.map((skill) => skill.key));
-  const available = skills.filter((skill) => !selected.has(skill.key));
+  const selected = new Set(selectedSkills.map(skillRefIdentity));
+  const available = skills.filter((skill) => !selected.has(skillRefIdentity(skill)));
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
@@ -1139,14 +1148,15 @@ function TemplateSkillPicker({
             <CommandGroup heading={`${available.length} available`}>
               {available.map((skill) => (
                 <CommandItem
-                  key={skill.key}
+                  key={skillRefIdentity(skill)}
                   value={`${skill.key} ${skill.title} ${skill.description}`}
                   onSelect={() => onAddSkill(skill)}
                   className="cursor-pointer items-start py-2"
                 >
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-foreground">{skill.key}</span>
+                      <span className="text-xs font-medium text-foreground">{skillRefDisplayName(skill, skill.key)}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">{skill.key}</span>
                       <Badge variant="outline" className="text-[10px]">{skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}</Badge>
                     </div>
                     <p className="text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
@@ -3459,7 +3469,7 @@ function FlowTemplateInstallDialog({
 
   const addSkill = (entry: SkillCatalogEntry) => {
     if (!agentSetup) return;
-    if (agentSetup.skills.some((skill) => skill.key === entry.key)) return;
+    if (agentSetup.skills.some((skill) => skillRefIdentity(skill) === skillRefIdentity(entry))) return;
     const ref: AgentSkillRef = { key: entry.key };
     if (entry.id) ref.skill_id = entry.id;
     const missingTools = (entry.required_tools ?? []).filter((tool) => !agentSetup.allowed_tools.includes(tool));
@@ -3470,9 +3480,9 @@ function FlowTemplateInstallDialog({
     setSkillPickerOpen(false);
   };
 
-  const removeSkill = (key: string) => {
+  const removeSkill = (identity: string) => {
     if (!agentSetup) return;
-    setAgentSetup({ skills: agentSetup.skills.filter((skill) => skill.key !== key) });
+    setAgentSetup({ skills: agentSetup.skills.filter((skill) => skillRefIdentity(skill) !== identity) });
   };
 
   return (
@@ -3675,20 +3685,24 @@ function FlowTemplateInstallDialog({
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {agentSetup.skills.length > 0 ? (
-                        agentSetup.skills.map((ref) => (
-                          <Badge key={ref.key} variant="secondary" className="gap-1 pr-1 font-mono text-[11px]">
-                            <BookOpen01Icon className="h-3 w-3 text-muted-foreground" />
-                            {ref.key}
-                            <button
-                              type="button"
-                              className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                              onClick={() => removeSkill(ref.key)}
-                              aria-label={`Remove ${ref.key}`}
-                            >
-                              <Cancel01Icon className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))
+                        agentSetup.skills.map((ref) => {
+                          const entry = skillCatalog.find((skill) => skillRefIdentity(skill) === skillRefIdentity(ref));
+                          return (
+                            <Badge key={skillRefIdentity(ref)} variant="secondary" className="gap-1 pr-1 text-[11px]">
+                              <BookOpen01Icon className="h-3 w-3 text-muted-foreground" />
+                              <span>{skillRefDisplayName(entry, ref.key)}</span>
+                              <span className="font-mono text-[9px] text-muted-foreground/70">{ref.key}</span>
+                              <button
+                                type="button"
+                                className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                                onClick={() => removeSkill(skillRefIdentity(ref))}
+                                aria-label={`Remove ${skillRefDisplayName(entry, ref.key)}`}
+                              >
+                                <Cancel01Icon className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          );
+                        })
                       ) : (
                         <p className="text-xs text-muted-foreground">No skills selected.</p>
                       )}

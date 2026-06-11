@@ -71,6 +71,15 @@ const INVOCATION_MODE_LABELS: Record<AgentInvocationMode, string> = {
   interactive: 'Interactive',
 };
 
+function skillIdentity(skill: Pick<SkillCatalogEntry, 'id' | 'key'> | AgentSkillRef) {
+  if ('id' in skill && skill.id) return skill.id;
+  return skill.skill_id || skill.key;
+}
+
+function skillDisplayName(skill: Pick<SkillCatalogEntry, 'title' | 'key'> | undefined, fallbackKey: string) {
+  return skill?.title?.trim() || fallbackKey;
+}
+
 function supportedModesForRuntime(runtimeKind: AgentRuntimeKind): AgentInvocationMode[] {
   if (runtimeKind === 'native_sdk' || runtimeKind === 'codex') {
     return ['autonomous', 'interactive'];
@@ -249,9 +258,10 @@ export function CustomAgentCreatePanel({
   };
 
   const toggleSkill = (skill: SkillCatalogEntry) => {
-    const active = form.skills.some((ref) => ref.key === skill.key);
+    const identity = skillIdentity(skill);
+    const active = form.skills.some((ref) => skillIdentity(ref) === identity);
     if (active) {
-      update({ skills: form.skills.filter((ref) => ref.key !== skill.key) });
+      update({ skills: form.skills.filter((ref) => skillIdentity(ref) !== identity) });
       return;
     }
     const ref: AgentSkillRef = { key: skill.key };
@@ -264,9 +274,9 @@ export function CustomAgentCreatePanel({
     });
   };
 
-  const addSkill = (skillKey: string) => {
-    const skill = skills.find((entry) => entry.key === skillKey);
-    if (!skill || form.skills.some((ref) => ref.key === skill.key)) return;
+  const addSkill = (identity: string) => {
+    const skill = skills.find((entry) => skillIdentity(entry) === identity);
+    if (!skill || form.skills.some((ref) => skillIdentity(ref) === skillIdentity(skill))) return;
     toggleSkill(skill);
     setSkillPickerOpen(false);
   };
@@ -281,10 +291,11 @@ export function CustomAgentCreatePanel({
   };
 
   const availableTools = tools.filter((tool) => !form.allowed_tools.includes(tool.name));
-  const availableSkills = skills.filter((skill) => !form.skills.some((ref) => ref.key === skill.key));
+  const selectedSkillIdentities = new Set(form.skills.map(skillIdentity));
+  const availableSkills = skills.filter((skill) => !selectedSkillIdentities.has(skillIdentity(skill)));
   const supportedModes = supportedModesForRuntime(form.runtime_kind);
   const selectedSkills = form.skills
-    .map((ref) => skills.find((skill) => skill.key === ref.key))
+    .map((ref) => skills.find((skill) => skillIdentity(skill) === skillIdentity(ref)))
     .filter((skill): skill is SkillCatalogEntry => Boolean(skill));
   const skillRequiredTools = new Map<string, SkillCatalogEntry[]>();
   selectedSkills.forEach((skill) => {
@@ -590,9 +601,9 @@ export function CustomAgentCreatePanel({
                             <CommandGroup heading={`${availableSkills.length} available skills`}>
                               {availableSkills.map((skill) => (
                                 <CommandItem
-                                  key={skill.key}
+                                  key={skillIdentity(skill)}
                                   value={`${skill.key} ${skill.title} ${skill.description}`}
-                                  onSelect={() => addSkill(skill.key)}
+                                  onSelect={() => addSkill(skillIdentity(skill))}
                                   className="cursor-pointer items-start py-2"
                                 >
                                   <div className="min-w-0 flex-1">
@@ -615,15 +626,15 @@ export function CustomAgentCreatePanel({
                     {form.skills.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5">
                         {form.skills.map((ref) => {
-                          const skill = skills.find((entry) => entry.key === ref.key);
+                          const skill = skills.find((entry) => skillIdentity(entry) === skillIdentity(ref));
                           return (
                             <button
-                              key={ref.key}
+                              key={skillIdentity(ref)}
                               type="button"
                               className="group rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-muted/40"
-                              onClick={() => skill ? toggleSkill(skill) : update({ skills: form.skills.filter((item) => item.key !== ref.key) })}
+                              onClick={() => skill ? toggleSkill(skill) : update({ skills: form.skills.filter((item) => skillIdentity(item) !== skillIdentity(ref)) })}
                             >
-                              <span>{skill?.title || ref.key}</span>
+                              <span>{skillDisplayName(skill, ref.key)}</span>
                               <span className="ml-2 text-muted-foreground group-hover:text-destructive">x</span>
                             </button>
                           );

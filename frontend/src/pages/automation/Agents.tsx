@@ -1004,6 +1004,15 @@ function comparableCustomAgentForm(form: AgentFormData) {
   };
 }
 
+function agentSkillIdentity(skill: Pick<SkillCatalogEntry, 'id' | 'key'> | AgentSkillRef) {
+  if ('id' in skill && skill.id) return skill.id;
+  return skill.skill_id || skill.key;
+}
+
+function agentSkillDisplayName(skill: Pick<SkillCatalogEntry, 'title' | 'key'> | undefined, fallbackKey: string) {
+  return skill?.title?.trim() || fallbackKey;
+}
+
 function customAgentFormDirtyKey(form: AgentFormData) {
   return JSON.stringify(comparableCustomAgentForm(form));
 }
@@ -3305,8 +3314,8 @@ export function AgentsPage() {
     }));
   };
   const skillCatalogEntries = skillCatalog?.skills ?? [];
-  const attachedSkillKeys = new Set(form.skills.map((s) => s.key));
-  const availableSkillEntries = skillCatalogEntries.filter((s) => !attachedSkillKeys.has(s.key));
+  const attachedSkillIdentities = new Set(form.skills.map(agentSkillIdentity));
+  const availableSkillEntries = skillCatalogEntries.filter((s) => !attachedSkillIdentities.has(agentSkillIdentity(s)));
   const addSkill = (entry: { id?: string; key: string; source_kind: string; required_tools?: string[] }) => {
     const ref: AgentSkillRef = { key: entry.key };
     if (entry.id) ref.skill_id = entry.id;
@@ -3317,8 +3326,8 @@ export function AgentsPage() {
     setForm((current) => ({ ...current, skills: [...current.skills, ref] }));
     setSkillPickerOpen(false);
   };
-  const removeSkill = (key: string) => {
-    setForm((current) => ({ ...current, skills: current.skills.filter((s) => s.key !== key) }));
+  const removeSkill = (identity: string) => {
+    setForm((current) => ({ ...current, skills: current.skills.filter((s) => agentSkillIdentity(s) !== identity) }));
   };
   const toggleTarget =(target: AgentTargetType) => {
     setForm((current) => {
@@ -3919,13 +3928,14 @@ export function AgentsPage() {
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-2">
                                     <BookOpen01Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                    <span className="font-mono text-xs font-medium">{skillKey}</span>
+                                    <span className="text-xs font-medium">{agentSkillDisplayName(entry, skillKey)}</span>
+                                    <span className="font-mono text-[10px] text-muted-foreground">{skillKey}</span>
                                     {entry && (
                                       <Badge variant="outline" className="text-[9px] px-1.5 py-0">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</Badge>
                                     )}
                                   </div>
                                   {entry && (
-                                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{entry.title !== skillKey ? `${entry.title} — ` : ''}{entry.description}</p>
+                                    <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{entry.description}</p>
                                   )}
                                 </div>
                               </div>
@@ -5392,14 +5402,15 @@ export function AgentsPage() {
                             <CommandGroup heading={`${availableSkillEntries.length} available`}>
                               {availableSkillEntries.map((skill) => (
                                 <CommandItem
-                                  key={skill.key}
+                                  key={agentSkillIdentity(skill)}
                                   value={`${skill.key} ${skill.title} ${skill.description}`}
                                   onSelect={() => addSkill(skill)}
                                   className="cursor-pointer items-start py-2"
                                 >
                                   <div className="min-w-0 flex-1 space-y-0.5">
                                     <div className="flex items-center gap-2">
-                                      <span className="font-mono text-xs text-foreground">{skill.key}</span>
+                                      <span className="text-xs font-medium text-foreground">{agentSkillDisplayName(skill, skill.key)}</span>
+                                      <span className="font-mono text-[10px] text-muted-foreground">{skill.key}</span>
                                       <Badge variant="outline" className="text-[10px]">
                                         {skill.source_kind === 'built_in' ? 'built-in' : skill.source_kind}
                                       </Badge>
@@ -5417,19 +5428,20 @@ export function AgentsPage() {
                   {form.skills.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {form.skills.map((ref) => {
-                        const entry = skillCatalogEntries.find((s) => s.key === ref.key);
+                        const entry = skillCatalogEntries.find((s) => agentSkillIdentity(s) === agentSkillIdentity(ref));
                         return (
-                          <Badge key={ref.key} variant="secondary" className="gap-1.5 pr-1 font-mono text-[11px]">
+                          <Badge key={agentSkillIdentity(ref)} variant="secondary" className="gap-1.5 pr-1 text-[11px]">
                             <BookOpen01Icon className="h-3 w-3 text-muted-foreground" />
-                            <span>{ref.key}</span>
+                            <span>{agentSkillDisplayName(entry, ref.key)}</span>
+                            <span className="font-mono text-[9px] text-muted-foreground/70">{ref.key}</span>
                             {entry?.source_kind && (
                               <span className="text-[9px] text-muted-foreground/70">{entry.source_kind === 'built_in' ? 'built-in' : entry.source_kind}</span>
                             )}
                             <button
                               type="button"
                               className="rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                              onClick={() => removeSkill(ref.key)}
-                              aria-label={`Remove ${ref.key}`}
+                              onClick={() => removeSkill(agentSkillIdentity(ref))}
+                              aria-label={`Remove ${agentSkillDisplayName(entry, ref.key)}`}
                             >
                               <Cancel01Icon className="h-3 w-3" />
                             </button>
