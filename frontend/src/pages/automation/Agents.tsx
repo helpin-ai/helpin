@@ -3835,7 +3835,7 @@ export function AgentsPage() {
                       <dd className="truncate text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</dd>
                     </div>
                     <div className="space-y-1 p-3">
-                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Skills</dt>
+                      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Available skills</dt>
                       <dd className="truncate text-sm font-medium">{form.allowed_tools.length} · {form.instruction_skills.length}</dd>
                     </div>
                     <div className="space-y-1 p-3">
@@ -3903,20 +3903,20 @@ export function AgentsPage() {
                     </Collapsible.Content>
                   </Collapsible.Root>
 
-                  {/* 01B — Skills */}
+                  {/* 01B — Available Skills */}
                   {(form.instruction_skills.length > 0 || !systemVersionReadOnly) && (
                   <Collapsible.Root defaultOpen={false} className="rounded-xl border border-border/60 bg-card">
                     <Collapsible.Trigger asChild>
                       <button type="button" className="group flex w-full items-center gap-3 px-4 py-3 text-left">
                         <ArrowRight01Icon className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-                        <span className="flex-1 text-sm font-medium">Skills</span>
-                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.instruction_skills.length} module{form.instruction_skills.length === 1 ? '' : 's'}</span>
+                        <span className="flex-1 text-sm font-medium">Available skills</span>
+                        <span className="text-xs text-muted-foreground group-data-[state=open]:hidden">{form.instruction_skills.length} available</span>
                       </button>
                     </Collapsible.Trigger>
                     <Collapsible.Content>
                       <div className="space-y-3 border-t border-border/60 p-4">
                         <p className="text-xs text-muted-foreground">
-                          Skills are capability modules associated with this version. They do not rewrite the system prompt in this editor.
+                          Available skills are capability modules associated with this version. They do not rewrite the system prompt in this editor.
                         </p>
                         <div className="space-y-2">
                           {form.instruction_skills.map((skillKey, idx) => {
@@ -3941,7 +3941,7 @@ export function AgentsPage() {
                           })}
                         </div>
                         {form.instruction_skills.length === 0 && (
-                          <p className="rounded-md border border-dashed border-border/60 px-3 py-2 text-sm text-muted-foreground">No skills configured.</p>
+                          <p className="rounded-md border border-dashed border-border/60 px-3 py-2 text-sm text-muted-foreground">No available skills configured.</p>
                         )}
                       </div>
                     </Collapsible.Content>
@@ -5262,7 +5262,7 @@ export function AgentsPage() {
                     <dd className="truncate text-sm font-medium">{INVOCATION_MODE_LABELS[form.default_invocation_mode]}</dd>
                   </div>
                   <div className="space-y-1 p-3">
-                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Skills</dt>
+                    <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">Tools · Available skills</dt>
                     <dd className="truncate text-sm font-medium">{form.allowed_tools.length} · {form.skills.length}</dd>
                   </div>
                   <div className="space-y-1 p-3">
@@ -5369,7 +5369,7 @@ export function AgentsPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <p className="text-sm font-medium">Skills</p>
+                      <p className="text-sm font-medium">Available skills</p>
                       <p className="text-[11px] text-muted-foreground">Behavioral instruction modules attached at runtime.</p>
                     </div>
                     <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
@@ -5443,7 +5443,7 @@ export function AgentsPage() {
                       })}
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground">No skills attached. Skills provide behavioral instructions to the agent at runtime.</p>
+                    <p className="text-xs text-muted-foreground">No available skills attached. Available skills provide behavioral instructions to the agent at runtime.</p>
                   )}
                 </div>
               </DrawerConfigSection>
