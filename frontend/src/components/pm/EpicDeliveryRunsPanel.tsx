@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { BotIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { EpicDeliveryDag } from '@/components/agents/dock/EpicDeliveryDag';
@@ -43,9 +42,6 @@ export function EpicDeliveryRunsPanel({
   const canRetry =
     canEdit && (state === 'attention' || state === 'cancelled') && plan.status !== 'running';
   const canResume = canEdit && !canRetry && isPlanStalled(plan, runsById);
-  const failedRun = Object.values(plan.runIdsByStep)
-    .map((id) => runsById[id])
-    .find((run) => run && (run.status === 'failed' || run.status === 'cancelled'));
 
   const resume = async () => {
     setBusy(true);
@@ -86,17 +82,9 @@ export function EpicDeliveryRunsPanel({
     }
   };
 
-  return (
-    <div
-      id={EPIC_DELIVERY_PANEL_ID}
-      className="scroll-mt-4 overflow-hidden rounded-md border border-border/60 bg-card"
-    >
-      <div className="flex items-center gap-2 px-3 py-2">
-        <BotIcon className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
-          Delivery
-        </span>
-        <span className="min-w-0 flex-1" />
+  const headerActions =
+    canResume || canRetry ? (
+      <span className="flex shrink-0 items-center gap-1.5">
         {canResume ? (
           <Button
             variant="outline"
@@ -119,22 +107,23 @@ export function EpicDeliveryRunsPanel({
             Retry failed steps
           </Button>
         ) : null}
-      </div>
-      {canRetry && failedRun?.error_message ? (
-        <div className="border-t border-border/60 px-3 py-1.5 text-[11px] text-destructive">
-          {failedRun.error_message}
-        </div>
-      ) : null}
-      <div className="border-t border-border/60 px-3 py-2.5">
-        <EpicDeliveryDag
-          plan={plan}
-          runsById={runsById}
-          onOpenRun={(runId) => {
-            setSelectedRunId(runId);
-            setDrawerOpen(true);
-          }}
-        />
-      </div>
+      </span>
+    ) : undefined;
+
+  return (
+    <div
+      id={EPIC_DELIVERY_PANEL_ID}
+      className="scroll-mt-4 overflow-hidden rounded-md border border-border/60 bg-card px-3 py-2.5"
+    >
+      <EpicDeliveryDag
+        plan={plan}
+        runsById={runsById}
+        headerActions={headerActions}
+        onOpenRun={(runId) => {
+          setSelectedRunId(runId);
+          setDrawerOpen(true);
+        }}
+      />
 
       <CodingSessionDrawer
         sessionId={selectedRunId}

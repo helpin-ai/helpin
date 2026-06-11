@@ -4,10 +4,13 @@ import {
   buildRunsById,
   computeStepWaves,
   deliveryDotState,
+  deliveryProgress,
+  deliveryVerdict,
   groupStepsByWave,
   isDeliveryPlanKind,
   isPlanStalled,
   pickLatestDeliveryPlan,
+  planHasFailedSteps,
   planRunIdSet,
   runDurationMs,
 } from '../epicDeliveryDag';
@@ -284,6 +287,110 @@ describe('deliveryDotState', () => {
     expect(deliveryDotState(plan, { r1: agentRun({ id: 'r1', status: 'cancelled' }) })).toBe(
       'attention',
     );
+  });
+});
+
+describe('deliveryVerdict', () => {
+  // branch (done) → build (cancelled) → merge (blocked) → PR (blocked)
+  const failedChain = () =>
+    planSummaryToRunPlan(
+      summary({
+        status: 'cancelled',
+        steps: [
+          step({ agent_name: 'Forge', target: { entity_type: 'task', entity_id: 't1', display_title: 'USE-74' } }),
+          step({
+            agent_name: 'Lens',
+            target: { entity_type: 'task', entity_id: 't1', display_title: 'USE-74' },
+            depends_on_step_indexes: [0],
+          }),
+          step({
+            agent_name: 'Command Agent',
+            step_type: 'merge_task_to_epic',
+            target: { entity_type: 'task', entity_id: 't1', display_title: 'USE-74' },
+            depends_on_step_indexes: [1],
+          }),
+          step({
+            agent_name: 'Command Agent',
+            step_type: 'open_epic_pr',
+            target: { entity_type: 'epic', entity_id: 'e1', display_title: 'My epic' },
+            depends_on_step_indexes: [2],
+          }),
+        ],
+        run_ids_by_step: { 0: 'r0', 1: 'r1' },
+      }),
+    );
+  const failedChainRuns = {
+    r0: agentRun({ id: 'r0', status: 'completed' }),
+    r1: agentRun({ id: 'r1', status: 'cancelled' }),
+  };
+
+  it('names the failed step, the blocked downstream steps, and the retry action', () => {
+    const verdict = deliveryVerdict(failedChain(), failedChainRuns);
+    expect(verdict?.tone).toBe('attention');
+    expect(verdict?.text).toContain('Lens on USE-74 was cancelled');
+    expect(verdict?.text).toContain('Merge, Final PR');
+    expect(verdict?.text).toContain('blocked downstream');
+    expect(verdict?.text).toContain('Retry to continue.');
+  });
+
+  it('reports awaiting steps as waiting on the user', () => {
+    const plan = planSummaryToRunPlan(
+      summary({ status: 'running', steps: [step()], run_ids_by_step: { 0: 'r1' } }),
+    );
+    const verdict = deliveryVerdict(plan, {
+      r1: agentRun({ id: 'r1', status: 'paused', approval_state: 'pending' }),
+    });
+    expect(verdict?.tone).toBe('awaiting');
+    expect(verdict?.text).toContain('Waiting on you');
+  });
+
+  it('reports a stalled running plan with the resume action', () => {
+    const plan = planSummaryToRunPlan(
+      summary({ status: 'running', steps: [step(), step()], run_ids_by_step: { 0: 'r1' } }),
+    );
+    const verdict = deliveryVerdict(plan, { r1: agentRun({ id: 'r1', status: 'completed' }) });
+    expect(verdict?.text).toContain('Stalled');
+    expect(verdict?.text).toContain('Resume to continue.');
+  });
+
+  it('is null for a healthy running plan', () => {
+    const plan = planSummaryToRunPlan(
+      summary({ status: 'running', steps: [step()], run_ids_by_step: { 0: 'r1' } }),
+    );
+    expect(deliveryVerdict(plan, { r1: agentRun({ id: 'r1', status: 'running' }) })).toBeNull();
+  });
+
+  it('is null for a cleanly completed plan', () => {
+    const plan = planSummaryToRunPlan(
+      summary({ status: 'completed', steps: [step()], run_ids_by_step: { 0: 'r1' } }),
+    );
+    expect(deliveryVerdict(plan, { r1: agentRun({ id: 'r1', status: 'completed' }) })).toBeNull();
+  });
+});
+
+describe('planHasFailedSteps / deliveryProgress', () => {
+  it('detects failed steps and tallies progress segments', () => {
+    const plan = planSummaryToRunPlan(
+      summary({
+        status: 'running',
+        steps: [step(), step(), step(), step()],
+        run_ids_by_step: { 0: 'r0', 1: 'r1', 2: 'r2' },
+      }),
+    );
+    const runs = {
+      r0: agentRun({ id: 'r0', status: 'completed' }),
+      r1: agentRun({ id: 'r1', status: 'failed' }),
+      r2: agentRun({ id: 'r2', status: 'running' }),
+    };
+    expect(planHasFailedSteps(plan, runs)).toBe(true);
+    expect(deliveryProgress(plan, runs)).toEqual({ done: 1, failed: 1, active: 1, rest: 1, total: 4 });
+  });
+
+  it('reports no failures for a clean plan', () => {
+    const plan = planSummaryToRunPlan(
+      summary({ status: 'running', steps: [step()], run_ids_by_step: { 0: 'r0' } }),
+    );
+    expect(planHasFailedSteps(plan, { r0: agentRun({ id: 'r0', status: 'completed' }) })).toBe(false);
   });
 });
 

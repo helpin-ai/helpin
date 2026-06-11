@@ -1,7 +1,12 @@
 import type { AgentRun, CommandBarPlanStep, CommandBarPlanSummary } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
 import type { DotKind } from '@/components/agents/dock/StatusDot';
-import { classifyPlan } from '@/components/agents/dock/utils';
+import {
+  classifyPlan,
+  describeStepTarget,
+  stepDisplayName,
+  stepDotState,
+} from '@/components/agents/dock/utils';
 import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 
 /**
@@ -121,6 +126,91 @@ export function isPlanStalled(plan: CommandBarRunPlan, runsById: Record<string, 
   if (runs.some((run) => ACTIVE_RUN_STATUSES.has(run.status))) return false;
   if (runs.some((run) => run.status === 'failed')) return false;
   return true;
+}
+
+/** True when any step run failed or was cancelled — the delivery cannot finish on its own. */
+export function planHasFailedSteps(
+  plan: CommandBarRunPlan,
+  runsById: Record<string, AgentRun>,
+): boolean {
+  return plan.steps.some((_, index) => {
+    const state = stepDotState(plan, index, runsById);
+    return state === 'attention' || state === 'cancelled';
+  });
+}
+
+export interface DeliveryVerdict {
+  tone: 'attention' | 'awaiting';
+  text: string;
+}
+
+/**
+ * One-line story of what the delivery needs, derived from step states. Null
+ * when the delivery is healthy (running or finished clean) — the summary
+ * counts cover that. Rendered under the panel header so a stalled or failed
+ * delivery says what happened and what unblocks it, instead of making the
+ * reader execute the dependency graph in their head.
+ */
+export function deliveryVerdict(
+  plan: CommandBarRunPlan,
+  runsById: Record<string, AgentRun>,
+): DeliveryVerdict | null {
+  const states = plan.steps.map((_, index) => stepDotState(plan, index, runsById));
+  const failed = states.flatMap((state, i) => (state === 'attention' || state === 'cancelled' ? [i] : []));
+  const blocked = states.flatMap((state, i) => (state === 'blocked' ? [i] : []));
+  const awaiting = states.flatMap((state, i) => (state === 'awaiting' ? [i] : []));
+
+  if (failed.length > 0) {
+    const step = plan.steps[failed[0]];
+    const verb = states[failed[0]] === 'cancelled' ? 'was cancelled' : 'failed';
+    const target = describeStepTarget(step);
+    const subject = target ? `${stepDisplayName(step)} on ${target}` : stepDisplayName(step);
+    let text =
+      failed.length === 1 ? `${subject} ${verb}` : `${subject} ${verb} (+${failed.length - 1} more)`;
+    if (blocked.length > 0) {
+      const names = blocked.slice(0, 2).map((i) => stepDisplayName(plan.steps[i]));
+      const extra = blocked.length - names.length;
+      text += ` — ${names.join(', ')}${extra > 0 ? ` +${extra} more` : ''} blocked downstream`;
+    }
+    if (plan.status !== 'running') text += '. Retry to continue.';
+    return { tone: 'attention', text };
+  }
+  if (awaiting.length > 0) {
+    const n = awaiting.length;
+    return {
+      tone: 'awaiting',
+      text: `Waiting on you — ${n} step${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} approval or input.`,
+    };
+  }
+  if (isPlanStalled(plan, runsById)) {
+    return {
+      tone: 'awaiting',
+      text: 'Stalled — nothing is currently running. Resume to continue.',
+    };
+  }
+  return null;
+}
+
+/**
+ * Step-state counts for the delivery progress bar: done (green), failed
+ * (red, includes cancelled), active (ember), rest (muted: queued, blocked,
+ * awaiting).
+ */
+export function deliveryProgress(
+  plan: CommandBarRunPlan,
+  runsById: Record<string, AgentRun>,
+): { done: number; failed: number; active: number; rest: number; total: number } {
+  let done = 0;
+  let failed = 0;
+  let active = 0;
+  for (let i = 0; i < plan.steps.length; i++) {
+    const state = stepDotState(plan, i, runsById);
+    if (state === 'completed') done++;
+    else if (state === 'attention' || state === 'cancelled') failed++;
+    else if (state === 'running' || state === 'active_step') active++;
+  }
+  const total = plan.steps.length;
+  return { done, failed, active, rest: total - done - failed - active, total };
 }
 
 /** Wall-clock duration of a single run, or null when it hasn't started. */

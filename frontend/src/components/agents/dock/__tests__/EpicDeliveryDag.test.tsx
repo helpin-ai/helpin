@@ -149,6 +149,51 @@ describe('EpicDeliveryDag', () => {
     expect(container.textContent).toContain('waiting on 2');
   });
 
+  it('renders epic scaffolding steps as Setup/Finalize bookends, not lanes', () => {
+    act(() => {
+      root.render(
+        <EpicDeliveryDag
+          plan={dagPlan({
+            planKind: 'task_pipeline_fan_out',
+            steps: [
+              {
+                agent_id: 'agent-cmd',
+                agent_name: 'Command Agent',
+                step_type: 'ensure_epic_branch',
+                target: { entity_type: 'epic', entity_id: 'epic-1', display_title: 'My long epic title' },
+                instructions: '',
+              },
+              {
+                agent_id: 'agent-forge',
+                agent_name: 'Forge',
+                target: { entity_type: 'task', entity_id: 'task-1', display_title: 'USE-70' },
+                instructions: '',
+                depends_on_step_indexes: [0],
+              },
+              {
+                agent_id: 'agent-cmd',
+                agent_name: 'Command Agent',
+                step_type: 'open_epic_pr',
+                target: { entity_type: 'epic', entity_id: 'epic-1', display_title: 'My long epic title' },
+                instructions: '',
+                depends_on_step_indexes: [1],
+              },
+            ],
+            runIdsByStep: { 0: 'run-1' },
+          })}
+          runsById={{ 'run-1': agentRun({ id: 'run-1' }) }}
+          onOpenRun={vi.fn()}
+        />,
+      );
+    });
+    expect(container.textContent).toContain('Setup');
+    expect(container.textContent).toContain('Finalize');
+    expect(container.textContent).toContain('Epic branch');
+    expect(container.textContent).toContain('Final PR');
+    // The epic title must not appear as a lane label anymore.
+    expect(container.textContent).not.toContain('My long epic title');
+  });
+
   it('renders task-pipeline rows for a task_pipeline_fan_out plan', () => {
     act(() => {
       root.render(
