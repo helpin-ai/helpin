@@ -13,6 +13,7 @@ import {
   runDurationMs,
 } from '@/components/pm/epicDeliveryDag';
 import { cn } from '@/lib/utils';
+import { FINALIZE_STEP_TYPE, SETUP_STEP_TYPE } from './planLayers';
 import { StatusDot } from './StatusDot';
 import {
   describeStepTarget,
@@ -37,10 +38,6 @@ interface DeliveryPlanViewProps {
   /** Skip the status header row — for hosts that render their own (e.g. the dock strip). */
   hideHeader?: boolean;
 }
-
-/** Pipeline scaffolding steps that bookend the task lanes rather than run alongside them. */
-const SETUP_STEP_TYPE = 'ensure_epic_branch';
-const FINALIZE_STEP_TYPE = 'open_epic_pr';
 
 function isAgentStep(plan: CommandBarRunPlan, stepIndex: number): boolean {
   return !plan.steps[stepIndex]?.step_type;

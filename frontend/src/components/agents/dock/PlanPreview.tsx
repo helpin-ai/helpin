@@ -17,6 +17,7 @@ import {
   buildTaskNodes,
   hasAnyDependencies,
   layerTasks,
+  scaffoldingStepIndexes,
   taskNounFor,
   type PlanLayer,
   type TaskNode,
@@ -44,6 +45,7 @@ export function PlanPreview({
 }: PlanPreviewProps) {
   const nodes = useMemo(() => buildTaskNodes(plan), [plan]);
   const layers = useMemo(() => layerTasks(nodes), [nodes]);
+  const scaffolding = useMemo(() => scaffoldingStepIndexes(plan), [plan]);
   const layered = layers.length > 1 || (layers.length === 1 && hasAnyDependencies(plan));
   const taskCount = nodes.length;
   const stepCount = plan.steps.length;
@@ -68,11 +70,17 @@ export function PlanPreview({
             <p className="mb-2 line-clamp-3 text-xs text-muted-foreground">{rationale}</p>
           ) : null}
           {plan.guardrails?.length ? <GuardrailList guardrails={plan.guardrails} /> : null}
+          {scaffolding.setup.length > 0 ? (
+            <ScaffoldRow label="Setup" plan={plan} stepIndexes={scaffolding.setup} />
+          ) : null}
           {layered ? (
             <LayeredBody plan={plan} layers={layers} noun={noun} />
           ) : (
             <FlatBody plan={plan} nodes={nodes} />
           )}
+          {scaffolding.finalize.length > 0 ? (
+            <ScaffoldRow label="Finalize" plan={plan} stepIndexes={scaffolding.finalize} />
+          ) : null}
         </>
       )}
       {plan.steps.length === 1 && plan.guardrails?.length ? (
@@ -444,6 +452,31 @@ function displayTitle(task: TaskNode): string {
 function shortTaskKey(taskKey: string): string {
   const m = /^[A-Z]+-(\d+)$/.exec(taskKey);
   return m ? m[1] : taskKey;
+}
+
+/**
+ * Slim bookend row for the pipeline's scaffolding steps (epic branch / final
+ * PR) — they run before and after the task work, not alongside it, mirroring
+ * the run view's Setup/Finalize rows.
+ */
+function ScaffoldRow({
+  label,
+  plan,
+  stepIndexes,
+}: {
+  label: string;
+  plan: Plan;
+  stepIndexes: number[];
+}) {
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <span aria-hidden className="block w-[14px] shrink-0" />
+      <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
+      <AgentChain plan={plan} stepIndexes={stepIndexes} />
+    </div>
+  );
 }
 
 function AgentChain({ plan, stepIndexes }: { plan: Plan; stepIndexes: number[] }) {

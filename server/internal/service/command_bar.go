@@ -5520,6 +5520,7 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 			DependsOnStepIndexes: []int{lensIndex},
 		})
 	}
+	crossTaskEdges := 0
 	for _, link := range links {
 		sourceMerge, okSource := mergeStepByTask[link.SourceTaskID]
 		targetForge, okTarget := forgeStepByTask[link.TargetTaskID]
@@ -5527,6 +5528,7 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 			continue
 		}
 		steps[targetForge].DependsOnStepIndexes = appendUniqueInt(steps[targetForge].DependsOnStepIndexes, sourceMerge)
+		crossTaskEdges++
 	}
 	if len(steps) == 0 {
 		return nil
@@ -5564,10 +5566,19 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 		})
 	}
 	if dependencyAware {
+		// Be honest about what the link graph actually contributed: claiming
+		// dependencies "were used" when zero blocking links matched reads as
+		// the planner ignoring the user's ordering constraints.
+		message := "No blocking links found between these tasks — all task pipelines run in parallel."
+		if crossTaskEdges == 1 {
+			message = "1 blocking link between tasks was used to order the DAG."
+		} else if crossTaskEdges > 1 {
+			message = fmt.Sprintf("%d blocking links between tasks were used to order the DAG.", crossTaskEdges)
+		}
 		resp.Plan.Guardrails = append(resp.Plan.Guardrails, model.CommandBarGuardrail{
 			Type:     "task_dependency_context",
 			Severity: "info",
-			Message:  "Task dependencies were loaded from this epic's task links and used to build the DAG.",
+			Message:  message,
 		})
 	}
 	if len(tasks)*2 > len(steps) {

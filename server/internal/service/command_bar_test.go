@@ -2480,9 +2480,31 @@ func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
 		t.Fatalf("expected dependency-aware prompt to preserve blocks edge, got %#v", got)
 	}
 	if !slices.ContainsFunc(dependencyPromptResp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {
-		return g.Type == "task_dependency_context"
+		return g.Type == "task_dependency_context" &&
+			g.Message == "1 blocking link between tasks was used to order the DAG."
 	}) {
-		t.Fatalf("expected task dependency context guardrail, got %#v", dependencyPromptResp.Plan.Guardrails)
+		t.Fatalf("expected guardrail naming the single blocking link, got %#v", dependencyPromptResp.Plan.Guardrails)
+	}
+
+	// Without any blocking links the guardrail must say so instead of claiming
+	// dependencies "were used" — that read as the planner ignoring the user's
+	// ordering constraints.
+	if err := db.Exec(`DELETE FROM pm_task_links`).Error; err != nil {
+		t.Fatalf("delete task links: %v", err)
+	}
+	noLinksResp := service.parseEpicTaskPipelineIntent(ctx, workspaceID, "run these tasks in this epic in parallel if they dont have any dependencies otherwise DAG. some are blocked by the others", model.CommandBarPageContext{
+		EntityType:   "epic",
+		EntityID:     epicID,
+		DisplayTitle: "Pipeline epic",
+	}, agents)
+	if noLinksResp == nil || noLinksResp.Plan == nil {
+		t.Fatalf("expected plan without links, got %#v", noLinksResp)
+	}
+	if !slices.ContainsFunc(noLinksResp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {
+		return g.Type == "task_dependency_context" &&
+			g.Message == "No blocking links found between these tasks — all task pipelines run in parallel."
+	}) {
+		t.Fatalf("expected no-links guardrail message, got %#v", noLinksResp.Plan.Guardrails)
 	}
 }
 
