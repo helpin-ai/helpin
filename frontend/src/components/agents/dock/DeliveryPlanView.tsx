@@ -13,7 +13,7 @@ import {
   runDurationMs,
 } from '@/components/pm/epicDeliveryDag';
 import { cn } from '@/lib/utils';
-import { FINALIZE_STEP_TYPE, SETUP_STEP_TYPE } from './planLayers';
+import { FINALIZE_STEP_TYPE, SETUP_STEP_TYPE, buildTaskNodes, layerTasks } from './planLayers';
 import { StatusDot } from './StatusDot';
 import {
   describeStepTarget,
@@ -421,6 +421,59 @@ function TaskPipelineLanes({
 
   if (laneGroups.length === 0 && setup.length === 0 && finalize.length === 0) return null;
 
+  // Same staging the plan preview shows: lanes whose tasks block each other
+  // land in successive stages instead of one flat "everything in parallel"
+  // list. buildTaskNodes ignores scaffolding, so no epic-node cycle here.
+  const lanesByKey = new Map(laneGroups.map((group) => [group.key, group]));
+  const layers = layerTasks(buildTaskNodes({ steps: plan.steps, run_count: plan.steps.length }));
+  const stagedLanes = layers
+    .map((layer) =>
+      layer.tasks
+        .map((task) => lanesByKey.get(task.key))
+        .filter((group): group is NonNullable<typeof group> => !!group),
+    )
+    .filter((lanes) => lanes.length > 0);
+  const placedKeys = new Set(stagedLanes.flat().map((group) => group.key));
+  const leftoverLanes = laneGroups.filter((group) => !placedKeys.has(group.key));
+  const showStages = stagedLanes.length > 1;
+
+  const renderLane = (group: (typeof laneGroups)[number]) => {
+    const status = laneStatusText(plan, group.stepIndexes, runsById, hasFailure);
+    const laneFailed = status.text === 'Failed' || status.text === 'Cancelled';
+    const laneActive = status.text.startsWith('Running');
+    const error = laneFailed ? laneErrorMessage(plan, group.stepIndexes, runsById) : null;
+    return (
+      <div
+        key={group.key}
+        className={cn(
+          'rounded-md border border-border/60 bg-card px-2.5 py-1.5',
+          laneActive && 'border-orange-500/40 bg-orange-500/[0.04]',
+          laneFailed && 'border-destructive/40',
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(LANE_TITLE_WIDTH, 'truncate text-sm font-medium text-foreground/85')}
+            title={group.title}
+          >
+            {group.title}
+          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {stepChain(plan, group.stepIndexes, runsById, onSelectStep)}
+          </div>
+          <span className={cn('shrink-0 text-xs tabular-nums', status.className)}>
+            {status.text}
+          </span>
+        </div>
+        {error ? (
+          <p className="mt-1 truncate text-xs text-destructive" title={error}>
+            {error}
+          </p>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-1">
       {setup.length > 0 ? (
@@ -433,42 +486,23 @@ function TaskPipelineLanes({
           onSelectStep={onSelectStep}
         />
       ) : null}
-      {laneGroups.map((group) => {
-        const status = laneStatusText(plan, group.stepIndexes, runsById, hasFailure);
-        const laneFailed = status.text === 'Failed' || status.text === 'Cancelled';
-        const laneActive = status.text.startsWith('Running');
-        const error = laneFailed ? laneErrorMessage(plan, group.stepIndexes, runsById) : null;
-        return (
-          <div
-            key={group.key}
-            className={cn(
-              'rounded-md border border-border/60 bg-card px-2.5 py-1.5',
-              laneActive && 'border-orange-500/40 bg-orange-500/[0.04]',
-              laneFailed && 'border-destructive/40',
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <span
-                className={cn(LANE_TITLE_WIDTH, 'truncate text-sm font-medium text-foreground/85')}
-                title={group.title}
-              >
-                {group.title}
-              </span>
-              <div className="flex min-w-0 flex-1 items-center gap-1">
-                {stepChain(plan, group.stepIndexes, runsById, onSelectStep)}
+      {showStages ? (
+        <>
+          {stagedLanes.map((lanes, stageIndex) => (
+            <div key={stageIndex}>
+              {stageIndex > 0 ? <div aria-hidden className="ml-3 h-3 w-px bg-border/70" /> : null}
+              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Stage {stageIndex + 1}
+                {lanes.length > 1 ? ` · ${lanes.length} in parallel` : ''}
               </div>
-              <span className={cn('shrink-0 text-xs tabular-nums', status.className)}>
-                {status.text}
-              </span>
+              <div className="mt-1 flex flex-col gap-1">{lanes.map(renderLane)}</div>
             </div>
-            {error ? (
-              <p className="mt-1 truncate text-xs text-destructive" title={error}>
-                {error}
-              </p>
-            ) : null}
-          </div>
-        );
-      })}
+          ))}
+          {leftoverLanes.map(renderLane)}
+        </>
+      ) : (
+        laneGroups.map(renderLane)
+      )}
       {finalize.length > 0 ? (
         <BookendRow
           label="Finalize"

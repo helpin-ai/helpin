@@ -194,6 +194,59 @@ describe('DeliveryPlanView', () => {
     expect(container.textContent).not.toContain('My long epic title');
   });
 
+  it('stages task-pipeline lanes by cross-task blocking edges', () => {
+    act(() => {
+      root.render(
+        <DeliveryPlanView
+          plan={dagPlan({
+            planKind: 'task_pipeline_fan_out',
+            steps: [
+              // task-1 chain (unblocked)
+              {
+                agent_id: 'agent-forge',
+                agent_name: 'Forge',
+                target: { entity_type: 'task', entity_id: 'task-1', display_title: 'USE-139' },
+                instructions: '',
+              },
+              {
+                agent_id: 'agent-cmd',
+                agent_name: 'Command Agent',
+                step_type: 'merge_task_to_epic',
+                target: { entity_type: 'task', entity_id: 'task-1', display_title: 'USE-139' },
+                instructions: '',
+                depends_on_step_indexes: [0],
+              },
+              // task-2 chain — blocked by task-1's merge
+              {
+                agent_id: 'agent-forge',
+                agent_name: 'Forge',
+                target: { entity_type: 'task', entity_id: 'task-2', display_title: 'USE-140' },
+                instructions: '',
+                depends_on_step_indexes: [1],
+              },
+              {
+                agent_id: 'agent-cmd',
+                agent_name: 'Command Agent',
+                step_type: 'merge_task_to_epic',
+                target: { entity_type: 'task', entity_id: 'task-2', display_title: 'USE-140' },
+                instructions: '',
+                depends_on_step_indexes: [2],
+              },
+            ],
+            runIdsByStep: { 0: 'run-1' },
+          })}
+          runsById={{ 'run-1': agentRun({ id: 'run-1', status: 'running' }) }}
+          onOpenRun={vi.fn()}
+        />,
+      );
+    });
+    const text = container.textContent ?? '';
+    expect(text).toContain('Stage 1');
+    expect(text).toContain('Stage 2');
+    // The blocked lane sits after the blocking one.
+    expect(text.indexOf('USE-139')).toBeLessThan(text.indexOf('USE-140'));
+  });
+
   it('renders task-pipeline rows for a task_pipeline_fan_out plan', () => {
     act(() => {
       root.render(
