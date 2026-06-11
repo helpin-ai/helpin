@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildRunsById,
   computeStepWaves,
+  deliveryDotState,
   groupStepsByWave,
   isDeliveryPlanKind,
   isPlanStalled,
@@ -11,7 +12,6 @@ import {
   runDurationMs,
 } from '../epicDeliveryDag';
 import { planSummaryToRunPlan } from '@/components/agents/dock/planSummary';
-import { deliveryDotState } from '../EpicDeliveryRunsPanel';
 import type { AgentRun, CommandBarPlanStep, CommandBarPlanSummary } from '@/lib/pmTypes';
 
 function summary(overrides: Partial<CommandBarPlanSummary>): CommandBarPlanSummary {
@@ -276,6 +276,13 @@ describe('deliveryDotState', () => {
     const plan = planSummaryToRunPlan(summary({ status: 'completed', run_ids_by_step: { 0: 'r1' } }));
     expect(deliveryDotState(plan, { r1: agentRun({ id: 'r1', status: 'completed' }) })).toBe(
       'completed',
+    );
+  });
+
+  it('treats a cancelled delivery as attention (stopped before finishing, retryable)', () => {
+    const plan = planSummaryToRunPlan(summary({ status: 'cancelled', run_ids_by_step: { 0: 'r1' } }));
+    expect(deliveryDotState(plan, { r1: agentRun({ id: 'r1', status: 'cancelled' }) })).toBe(
+      'attention',
     );
   });
 });

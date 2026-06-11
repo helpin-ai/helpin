@@ -78,8 +78,8 @@ import {
   EPIC_DELIVERY_PANEL_ID,
   EpicDeliveryRunsPanel,
   EpicDeliveryStatusChip,
-  deliveryDotState,
 } from '@/components/pm/EpicDeliveryRunsPanel';
+import { deliveryDotState } from '@/components/pm/epicDeliveryDag';
 import { useEpicDeliveryPlan } from '@/components/pm/useEpicDeliveryPlan';
 import { StatusDot } from '@/components/agents/dock/StatusDot';
 import { ObjectivePicker, type ObjectivePickerSelection } from '@/components/pm/ObjectivePicker';
@@ -757,7 +757,7 @@ export function EpicDetailPage() {
             <BotIcon className="h-3.5 w-3.5" />
             <StatusDot
               state={deliveryDotState(delivery.plan, delivery.runsById)}
-              className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5"
+              className="absolute -right-0.5 -top-0.5"
             />
           </Button>
         </QuickTooltip>

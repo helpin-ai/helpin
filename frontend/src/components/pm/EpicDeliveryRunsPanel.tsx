@@ -5,23 +5,14 @@ import { BotIcon } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
 import { CodingSessionDrawer } from '@/components/pm/CodingSession/CodingSessionDrawer';
 import { EpicDeliveryDag } from '@/components/agents/dock/EpicDeliveryDag';
-import { StatusDot, type DotKind } from '@/components/agents/dock/StatusDot';
+import { StatusDot } from '@/components/agents/dock/StatusDot';
 import { classifyPlan, planSummaryText } from '@/components/agents/dock/utils';
 import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
 import { commandBarService } from '@/lib/services/commandBarService';
 import type { AgentRun } from '@/lib/pmTypes';
-import { isPlanStalled } from './epicDeliveryDag';
+import { deliveryDotState, isPlanStalled } from './epicDeliveryDag';
 
 export const EPIC_DELIVERY_PANEL_ID = 'epic-delivery-panel';
-
-/** Status-dot state for a delivery plan: running plans pulse like an active step. */
-export function deliveryDotState(
-  plan: CommandBarRunPlan,
-  runsById: Record<string, AgentRun>,
-): DotKind {
-  const state = classifyPlan(plan, runsById);
-  return state === 'running' ? 'active_step' : state;
-}
 
 interface EpicDeliveryRunsPanelProps {
   workspaceId: string;

@@ -1,5 +1,7 @@
 import type { AgentRun, CommandBarPlanStep, CommandBarPlanSummary } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
+import type { DotKind } from '@/components/agents/dock/StatusDot';
+import { classifyPlan } from '@/components/agents/dock/utils';
 import { ACTIVE_RUN_STATUSES } from '@/components/pm/agentRunConstants';
 
 /**
@@ -44,6 +46,23 @@ export function buildRunsById(plan: CommandBarPlanSummary): Record<string, Agent
  */
 export function planRunIdSet(plan: CommandBarRunPlan): Set<string> {
   return new Set(Object.values(plan.runIdsByStep ?? {}));
+}
+
+/**
+ * Status-dot state for a delivery surface (panel header, tasks-view toggle,
+ * sidebar chip). Running plans pulse like an active step. Unlike the dock's
+ * neutral treatment of cancellation, a cancelled delivery reads as attention:
+ * the delivery stopped before finishing and is retryable, and the lane
+ * summaries already count cancelled lanes as failed.
+ */
+export function deliveryDotState(
+  plan: CommandBarRunPlan,
+  runsById: Record<string, AgentRun>,
+): DotKind {
+  const state = classifyPlan(plan, runsById);
+  if (state === 'running') return 'active_step';
+  if (state === 'cancelled') return 'attention';
+  return state;
 }
 
 /**

@@ -2,11 +2,10 @@ import { formatDistanceToNow } from 'date-fns';
 
 import type { AgentRun } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
-import { groupStepsByWave, runDurationMs } from '@/components/pm/epicDeliveryDag';
+import { deliveryDotState, groupStepsByWave, runDurationMs } from '@/components/pm/epicDeliveryDag';
 import { cn } from '@/lib/utils';
 import { StatusDot, type DotKind } from './StatusDot';
 import {
-  classifyPlan,
   describeStepTarget,
   formatDuration,
   groupStepsByTarget,
@@ -311,8 +310,7 @@ function TaskPipelineLanes({
 export function EpicDeliveryDag({ plan, runsById, onOpenRun }: EpicDeliveryDagProps) {
   if (plan.planKind !== 'dag' && plan.planKind !== 'task_pipeline_fan_out') return null;
 
-  const state = classifyPlan(plan, runsById);
-  const dot: DotKind = state === 'running' ? 'active_step' : state;
+  const dot: DotKind = deliveryDotState(plan, runsById);
   const label = planKindLabel(plan.planKind, plan.steps.length);
   const summary = planSummaryText(plan, runsById);
   const ts = planUpdatedAt(plan, runsById);
