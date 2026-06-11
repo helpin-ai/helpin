@@ -14,6 +14,15 @@ import { isPlanStalled } from './epicDeliveryDag';
 
 export const EPIC_DELIVERY_PANEL_ID = 'epic-delivery-panel';
 
+/** Status-dot state for a delivery plan: running plans pulse like an active step. */
+export function deliveryDotState(
+  plan: CommandBarRunPlan,
+  runsById: Record<string, AgentRun>,
+): DotKind {
+  const state = classifyPlan(plan, runsById);
+  return state === 'running' ? 'active_step' : state;
+}
+
 interface EpicDeliveryRunsPanelProps {
   workspaceId: string;
   plan: CommandBarRunPlan;
@@ -154,19 +163,22 @@ export function EpicDeliveryRunsPanel({
 export function EpicDeliveryStatusChip({
   plan,
   runsById,
+  onClick,
 }: {
   plan: CommandBarRunPlan;
   runsById: Record<string, AgentRun>;
+  onClick?: () => void;
 }) {
-  const state = classifyPlan(plan, runsById);
-  const dot: DotKind = state === 'running' ? 'active_step' : state;
+  const dot = deliveryDotState(plan, runsById);
   return (
     <button
       type="button"
-      onClick={() =>
-        document
-          .getElementById(EPIC_DELIVERY_PANEL_ID)
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      onClick={
+        onClick ??
+        (() =>
+          document
+            .getElementById(EPIC_DELIVERY_PANEL_ID)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
       }
       className="mt-2 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card px-2 py-1.5 text-left hover:bg-accent"
       title="Jump to delivery"

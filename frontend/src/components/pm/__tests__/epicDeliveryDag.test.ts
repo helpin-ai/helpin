@@ -11,6 +11,7 @@ import {
   runDurationMs,
 } from '../epicDeliveryDag';
 import { planSummaryToRunPlan } from '@/components/agents/dock/planSummary';
+import { deliveryDotState } from '../EpicDeliveryRunsPanel';
 import type { AgentRun, CommandBarPlanStep, CommandBarPlanSummary } from '@/lib/pmTypes';
 
 function summary(overrides: Partial<CommandBarPlanSummary>): CommandBarPlanSummary {
@@ -253,6 +254,29 @@ describe('isPlanStalled', () => {
 
   it('is not stalled when the plan is not running', () => {
     expect(isPlanStalled(stallablePlan({}, 'completed'), {})).toBe(false);
+  });
+});
+
+describe('deliveryDotState', () => {
+  it('pulses (active_step) while a run is executing', () => {
+    const plan = planSummaryToRunPlan(summary({ status: 'running', run_ids_by_step: { 0: 'r1' } }));
+    expect(deliveryDotState(plan, { r1: agentRun({ id: 'r1', status: 'running' }) })).toBe(
+      'active_step',
+    );
+  });
+
+  it('shows attention when a run failed', () => {
+    const plan = planSummaryToRunPlan(summary({ status: 'running', run_ids_by_step: { 0: 'r1' } }));
+    expect(deliveryDotState(plan, { r1: agentRun({ id: 'r1', status: 'failed' }) })).toBe(
+      'attention',
+    );
+  });
+
+  it('shows completed for a finished plan', () => {
+    const plan = planSummaryToRunPlan(summary({ status: 'completed', run_ids_by_step: { 0: 'r1' } }));
+    expect(deliveryDotState(plan, { r1: agentRun({ id: 'r1', status: 'completed' }) })).toBe(
+      'completed',
+    );
   });
 });
 
