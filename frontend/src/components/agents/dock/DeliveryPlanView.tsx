@@ -253,21 +253,6 @@ function laneStatusText(
   return { text: 'Queued', className: 'text-muted-foreground' };
 }
 
-/** First error message among a lane's failed/cancelled runs, if any. */
-function laneErrorMessage(
-  plan: CommandBarRunPlan,
-  stepIndexes: number[],
-  runsById: Record<string, AgentRun>,
-): string | null {
-  for (const i of stepIndexes) {
-    const run = runsById[plan.runIdsByStep[i] ?? ''];
-    if (run && (run.status === 'failed' || run.status === 'cancelled') && run.error_message) {
-      return run.error_message;
-    }
-  }
-  return null;
-}
-
 function StepChip({
   plan,
   stepIndex,
@@ -437,11 +422,13 @@ function TaskPipelineLanes({
   const leftoverLanes = laneGroups.filter((group) => !placedKeys.has(group.key));
   const showStages = stagedLanes.length > 1;
 
+  // Raw run error text stays out of the lane card — it's runtime jargon that
+  // duplicates the verdict line. Details live in the run drawer (step click)
+  // and on the step chip's hover tooltip.
   const renderLane = (group: (typeof laneGroups)[number]) => {
     const status = laneStatusText(plan, group.stepIndexes, runsById, hasFailure);
     const laneFailed = status.text === 'Failed' || status.text === 'Cancelled';
     const laneActive = status.text.startsWith('Running');
-    const error = laneFailed ? laneErrorMessage(plan, group.stepIndexes, runsById) : null;
     return (
       <div
         key={group.key}
@@ -465,11 +452,6 @@ function TaskPipelineLanes({
             {status.text}
           </span>
         </div>
-        {error ? (
-          <p className="mt-1 truncate text-xs text-destructive" title={error}>
-            {error}
-          </p>
-        ) : null}
       </div>
     );
   };
