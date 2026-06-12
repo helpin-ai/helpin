@@ -248,6 +248,7 @@ function PlanStrip({
               plan={plan}
               runsById={runsById}
               hideHeader
+              compact
               onOpenRun={(runId) => onOpenRun?.(runId)}
             />
           ) : (

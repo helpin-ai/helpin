@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from 'date-fns';
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 
 import type { AgentRun } from '@/lib/pmTypes';
 import type { CommandBarRunPlan } from '@/components/agents/dock/planSummary';
@@ -37,6 +37,40 @@ interface DeliveryPlanViewProps {
   headerActions?: ReactNode;
   /** Skip the status header row — for hosts that render their own (e.g. the dock strip). */
   hideHeader?: boolean;
+  /** One type-scale notch smaller — for the dock, whose chrome runs at 11-12px. */
+  compact?: boolean;
+}
+
+/**
+ * Density for the whole view tree. The epic page matches the task table's
+ * scale (names text-sm); the dock hosts the same component a notch smaller so
+ * it doesn't shout over the strip chrome around it.
+ */
+const CompactContext = createContext(false);
+
+function useSizes() {
+  const compact = useContext(CompactContext);
+  return compact
+    ? {
+        name: 'text-xs',
+        status: 'text-[11px]',
+        chip: 'text-[11px]',
+        microLabel: 'text-[10px]',
+        laneTitle: 'w-28 shrink-0 sm:w-44',
+        stepDot: 'sm' as const,
+        avatar: 'h-3.5 w-3.5',
+        chipAvatar: 'h-3 w-3',
+      }
+    : {
+        name: 'text-sm',
+        status: 'text-xs',
+        chip: 'text-xs',
+        microLabel: 'text-[11px]',
+        laneTitle: 'w-36 shrink-0 sm:w-56 lg:w-72',
+        stepDot: 'md' as const,
+        avatar: 'h-4 w-4',
+        chipAvatar: 'h-3.5 w-3.5',
+      };
 }
 
 function isAgentStep(plan: CommandBarRunPlan, stepIndex: number): boolean {
@@ -104,6 +138,7 @@ function StepRow({
   hasFailure: boolean;
   onSelectStep: (stepIndex: number) => void;
 }) {
+  const sizes = useSizes();
   const step = plan.steps[stepIndex];
   const state = stepDotState(plan, stepIndex, runsById);
   const runId = plan.runIdsByStep[stepIndex];
@@ -138,15 +173,15 @@ function StepRow({
       )}
       title={run?.error_message ?? (interactive ? 'View run' : undefined)}
     >
-      <StatusDot state={state} size="md" />
+      <StatusDot state={state} size={sizes.stepDot} />
       {isAgentStep(plan, stepIndex) ? (
         <AgentAvatar
           name={step.agent_name}
-          className="h-4 w-4 shrink-0 rounded-none border-0 bg-transparent shadow-none"
+          className={cn(sizes.avatar, 'shrink-0 rounded-none border-0 bg-transparent shadow-none')}
           genericBare
         />
       ) : null}
-      <span className="min-w-0 flex-1 truncate text-sm">
+      <span className={cn('min-w-0 flex-1 truncate', sizes.name)}>
         <span
           className={cn(
             'font-medium text-foreground/85',
@@ -157,7 +192,7 @@ function StepRow({
         </span>
         {target ? <span className="text-muted-foreground"> · {target}</span> : null}
       </span>
-      <span className={cn('shrink-0 text-xs tabular-nums', status.className)}>
+      <span className={cn('shrink-0 tabular-nums', sizes.status, status.className)}>
         {status.text}
       </span>
     </div>
@@ -178,6 +213,7 @@ function DagStageView({
   runsById: Record<string, AgentRun>;
   onSelectStep: (stepIndex: number) => void;
 }) {
+  const sizes = useSizes();
   const groups = groupStepsByWave(plan);
   const hasFailure = planHasFailedSteps(plan, runsById);
   return (
@@ -187,7 +223,7 @@ function DagStageView({
         return (
           <div key={group.wave}>
             {groupIndex > 0 ? <div aria-hidden className="ml-3 h-3 w-px bg-border/70" /> : null}
-            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <div className={cn(sizes.microLabel, 'font-medium uppercase tracking-wider text-muted-foreground')}>
               Stage {groupIndex + 1}
               {parallel > 1 ? ` · ${parallel} in parallel` : ''}
             </div>
@@ -264,6 +300,7 @@ function StepChip({
   runsById: Record<string, AgentRun>;
   onSelectStep: (stepIndex: number) => void;
 }) {
+  const sizes = useSizes();
   const step = plan.steps[stepIndex];
   const state = stepDotState(plan, stepIndex, runsById);
   const interactive = !!plan.runIdsByStep[stepIndex];
@@ -293,13 +330,14 @@ function StepChip({
       {isAgentStep(plan, stepIndex) ? (
         <AgentAvatar
           name={step.agent_name}
-          className="h-3.5 w-3.5 shrink-0 rounded-none border-0 bg-transparent shadow-none"
+          className={cn(sizes.chipAvatar, 'shrink-0 rounded-none border-0 bg-transparent shadow-none')}
           genericBare
         />
       ) : null}
       <span
         className={cn(
-          'truncate text-xs font-medium text-muted-foreground',
+          'truncate font-medium text-muted-foreground',
+          sizes.chip,
           interactive && 'group-hover/chip:text-foreground group-hover/chip:underline',
         )}
       >
@@ -331,8 +369,6 @@ function stepChain(
   });
 }
 
-const LANE_TITLE_WIDTH = 'w-36 shrink-0 sm:w-56 lg:w-72';
-
 /** Slim, chrome-less row for the pipeline's scaffolding steps (epic branch / final PR). */
 function BookendRow({
   label,
@@ -349,18 +385,19 @@ function BookendRow({
   hasFailure: boolean;
   onSelectStep: (stepIndex: number) => void;
 }) {
+  const sizes = useSizes();
   const status = laneStatusText(plan, stepIndexes, runsById, hasFailure);
   return (
     <div className="flex items-center gap-3 px-2.5 py-1">
       <span
-        className={cn(LANE_TITLE_WIDTH, 'text-[11px] font-medium uppercase tracking-wider text-muted-foreground')}
+        className={cn(sizes.laneTitle, sizes.microLabel, 'font-medium uppercase tracking-wider text-muted-foreground')}
       >
         {label}
       </span>
       <div className="flex min-w-0 flex-1 items-center gap-1">
         {stepChain(plan, stepIndexes, runsById, onSelectStep)}
       </div>
-      <span className={cn('shrink-0 text-xs tabular-nums', status.className)}>
+      <span className={cn('shrink-0 tabular-nums', sizes.status, status.className)}>
         {status.text}
       </span>
     </div>
@@ -383,6 +420,7 @@ function TaskPipelineLanes({
   runsById: Record<string, AgentRun>;
   onSelectStep: (stepIndex: number) => void;
 }) {
+  const sizes = useSizes();
   const hasFailure = planHasFailedSteps(plan, runsById);
   const setup: number[] = [];
   const finalize: number[] = [];
@@ -440,7 +478,7 @@ function TaskPipelineLanes({
       >
         <div className="flex items-center gap-3">
           <span
-            className={cn(LANE_TITLE_WIDTH, 'truncate text-sm font-medium text-foreground/85')}
+            className={cn(sizes.laneTitle, 'truncate font-medium text-foreground/85', sizes.name)}
             title={group.title}
           >
             {group.title}
@@ -448,7 +486,7 @@ function TaskPipelineLanes({
           <div className="flex min-w-0 flex-1 items-center gap-1">
             {stepChain(plan, group.stepIndexes, runsById, onSelectStep)}
           </div>
-          <span className={cn('shrink-0 text-xs tabular-nums', status.className)}>
+          <span className={cn('shrink-0 tabular-nums', sizes.status, status.className)}>
             {status.text}
           </span>
         </div>
@@ -473,7 +511,7 @@ function TaskPipelineLanes({
           {stagedLanes.map((lanes, stageIndex) => (
             <div key={stageIndex}>
               {stageIndex > 0 ? <div aria-hidden className="ml-3 h-3 w-px bg-border/70" /> : null}
-              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              <div className={cn(sizes.microLabel, 'font-medium uppercase tracking-wider text-muted-foreground')}>
                 Stage {stageIndex + 1}
                 {lanes.length > 1 ? ` · ${lanes.length} in parallel` : ''}
               </div>
@@ -537,6 +575,7 @@ export function DeliveryPlanView({
   onOpenRun,
   headerActions,
   hideHeader = false,
+  compact = false,
 }: DeliveryPlanViewProps) {
   if (plan.planKind !== 'dag' && plan.planKind !== 'task_pipeline_fan_out') return null;
 
@@ -555,6 +594,7 @@ export function DeliveryPlanView({
   };
 
   return (
+    <CompactContext.Provider value={compact}>
     <div>
       {hideHeader ? null : (
         <div className="flex items-center gap-2">
@@ -575,7 +615,8 @@ export function DeliveryPlanView({
       {verdict ? (
         <p
           className={cn(
-            'mt-1.5 truncate text-xs',
+            'mt-1.5 truncate',
+            compact ? 'text-[11px]' : 'text-xs',
             verdict.tone === 'attention' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400',
           )}
           title={verdict.text}
@@ -594,5 +635,6 @@ export function DeliveryPlanView({
         )}
       </div>
     </div>
+    </CompactContext.Provider>
   );
 }
