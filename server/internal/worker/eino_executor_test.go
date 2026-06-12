@@ -69,6 +69,7 @@ func TestResolveNativeSystemPromptSuppressesResolvedSkillTextForSkillAgentWithou
 			Name:                      "Mira",
 			PresetKey:                 model.AgentPresetMarketer,
 			RuntimeKind:               "native_sdk",
+			Skills:                    model.AgentSkillRefs{{Key: "marketing_plan"}},
 			ResolvedSkillInstructions: "Full aggregated skill blob.",
 		},
 	}, nil)

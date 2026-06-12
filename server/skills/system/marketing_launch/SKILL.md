@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira prepares a product launch, feature announcement, release campaign, early-access announcement, or launch checklist.
+Use this skill when the agent prepares a product launch, feature announcement, release campaign, early-access announcement, or launch checklist.
 
 Adapted from the MIT-licensed `launch`, `directory-submissions`, `social`, and `emails` skills in `coreyhaines31/marketingskills`.
 

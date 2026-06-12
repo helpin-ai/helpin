@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira needs to turn product context, customer signals, existing Docs, CRM context, and user goals into a marketing plan.
+Use this skill when the agent needs to turn product context, customer signals, existing Docs, CRM context, and user goals into a marketing plan.
 
 Adapted from the MIT-licensed `marketing-plan` and `marketing-ideas` skills in `coreyhaines31/marketingskills`.
 

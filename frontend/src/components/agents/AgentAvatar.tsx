@@ -34,10 +34,10 @@ const PRESET_PERSONA_MAP: Partial<Record<AgentPresetKey, AgentPersonaKey>> = {
 
 const PERSONA_META: Record<AgentPersonaKey, AgentPersonaMeta> = {
   atlas: { key: 'atlas', label: 'Atlas', role: 'Epic planner' },
-  scribe: { key: 'scribe', label: 'Scribe', role: 'Task planner' },
+  scribe: { key: 'scribe', label: 'Scribe', role: 'Coding task planner' },
   forge: { key: 'forge', label: 'Forge', role: 'Coding agent' },
   echo: { key: 'echo', label: 'Echo', role: 'Help chat agent' },
-  lens: { key: 'lens', label: 'Lens', role: 'QA reviewer' },
+  lens: { key: 'lens', label: 'Lens', role: 'QA & code reviewer' },
   beacon: { key: 'beacon', label: 'Beacon', role: 'CRM operator' },
   quill: { key: 'quill', label: 'Quill', role: 'Documentation Agent' },
   mira: { key: 'mira', label: 'Mira', role: 'Marketer' },

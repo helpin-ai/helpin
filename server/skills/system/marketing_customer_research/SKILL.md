@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira analyzes existing workspace material for customer language, ICP insight, objections, churn reasons, conversion blockers, or campaign inputs.
+Use this skill when the agent analyzes existing workspace material for customer language, ICP insight, objections, churn reasons, conversion blockers, or campaign inputs.
 
 Adapted from the MIT-licensed `customer-research` skill in `coreyhaines31/marketingskills`.
 
@@ -17,7 +17,7 @@ Use only sources available in the run:
 
 - Helpin Docs and linked documents.
 - CRM contacts, deals, buyer signals, and notes.
-- Support conversations or support-derived context when exposed to Mira.
+- Support conversations or support-derived context when exposed to the agent.
 - Task descriptions, task comments, launch notes, and explicit user input.
 
 ## Extraction Framework

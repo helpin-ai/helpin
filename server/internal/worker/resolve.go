@@ -159,8 +159,47 @@ func agentHasAvailableSkills(agent *model.Agent) bool {
 	if len(agent.Skills.Normalize()) > 0 {
 		return true
 	}
+	if !shouldUseBuiltInAvailableSkillFallback(agent) {
+		return false
+	}
 	bundle, ok := BuiltInPresetSkillBundleForPreset(strings.TrimSpace(agent.EffectivePresetKey()))
-	return ok && len(bundle.SkillKeys) > 0
+	return ok && len(bundle.AvailableSkillKeys) > 0
+}
+
+func shouldUseBuiltInAvailableSkillFallback(agent *model.Agent) bool {
+	if agent == nil || !agent.IsSystem {
+		return false
+	}
+	versionKey := strings.TrimSpace(agent.EffectivePresetVersionKey())
+	if versionKey == "" {
+		return true
+	}
+	return versionKey == defaultBuiltInPresetVersionKey(agent.EffectivePresetKey())
+}
+
+func defaultBuiltInPresetVersionKey(presetKey string) string {
+	switch strings.TrimSpace(presetKey) {
+	case model.AgentPresetEpicPlanner:
+		return "epic_planner_default"
+	case model.AgentPresetTaskPlanner:
+		return "task_planner_default"
+	case model.AgentPresetCRMOperator:
+		return "crm_operator_default"
+	case model.AgentPresetSupportAgent:
+		return "support_agent_default"
+	case model.AgentPresetDocumentationAgent:
+		return "documentation_agent_default"
+	case model.AgentPresetMarketer:
+		return "marketer_default"
+	case model.AgentPresetCodeBuilder:
+		return "code_builder_default"
+	case model.AgentPresetReviewAgent:
+		return "review_agent_default"
+	case model.AgentPresetCommandAgent:
+		return "command_agent_default"
+	default:
+		return ""
+	}
 }
 
 func appendMissingTools(tools []string, required ...string) []string {

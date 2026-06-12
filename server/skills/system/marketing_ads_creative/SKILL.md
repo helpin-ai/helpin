@@ -7,20 +7,20 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira works on paid ad messaging, campaign angles, creative concepts, ad copy variants, or creative testing plans.
+Use this skill when the agent works on paid ad messaging, campaign angles, creative concepts, ad copy variants, or creative testing plans.
 
 Adapted from the MIT-licensed `ads` and `ad-creative` skills in `coreyhaines31/marketingskills`.
 
 ## Scope
 
-Mira can draft:
+The agent can draft:
 
 - Campaign angles and audience-message fit.
 - Google search ad headlines/descriptions, social ad primary text, hooks, and CTAs.
 - Creative briefs for static, carousel, video, and landing-page variants.
 - Test matrices and post-click alignment recommendations.
 
-Mira cannot create campaigns, change budgets, upload assets, or inspect ad account performance unless ad platform tools are explicitly available.
+The agent cannot create campaigns, change budgets, upload assets, or inspect ad account performance unless ad platform tools are explicitly available.
 
 ## Creative Inputs
 

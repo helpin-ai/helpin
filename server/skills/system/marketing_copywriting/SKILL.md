@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira writes, rewrites, reviews, or sharpens customer-facing marketing copy.
+Use this skill when the agent writes, rewrites, reviews, or sharpens customer-facing marketing copy.
 
 Adapted from the MIT-licensed `copywriting`, `copy-editing`, `emails`, `social`, and `ad-creative` skills in `coreyhaines31/marketingskills`.
 

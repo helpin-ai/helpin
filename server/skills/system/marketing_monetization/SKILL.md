@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira works on pricing, packaging, upgrade paths, paywalls, trial-to-paid conversion, retention offers, or win-back strategy.
+Use this skill when the agent works on pricing, packaging, upgrade paths, paywalls, trial-to-paid conversion, retention offers, or win-back strategy.
 
 Adapted from the MIT-licensed `pricing`, `paywalls`, and `churn-prevention` skills in `coreyhaines31/marketingskills`.
 

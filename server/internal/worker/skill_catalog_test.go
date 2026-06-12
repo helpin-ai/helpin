@@ -358,6 +358,29 @@ func TestDocumentationAgentPromptUsesCuratedSkillSelectionGuide(t *testing.T) {
 	}
 }
 
+func TestCompilePresetInstructionsWithAvailableSkillsUsesRuntimeNeutralGuidance(t *testing.T) {
+	prompt := CompilePresetInstructionsWithAvailableSkills(
+		"You are a code agent.",
+		[]string{"code_implementation"},
+		[]string{"dependency_audit"},
+	)
+
+	for _, forbidden := range []string{"list_available_skills", "search_available_skills", "read_skill"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("compiled preset prompt should not mention native-only tool %q\n%s", forbidden, prompt)
+		}
+	}
+	for _, expected := range []string{
+		"## Available Skills",
+		"Use the runtime's skill access mechanism",
+		"Do not load every available skill by default.",
+	} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected compiled prompt to contain %q\n%s", expected, prompt)
+		}
+	}
+}
+
 func TestSystemAgentPresetPreamblesUsePersonaIdentities(t *testing.T) {
 	expected := map[string]string{
 		model.AgentPresetEpicPlanner:        "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",

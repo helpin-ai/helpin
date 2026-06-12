@@ -72,7 +72,8 @@ const INVOCATION_MODE_LABELS: Record<AgentInvocationMode, string> = {
 
 function skillIdentity(skill: Pick<SkillCatalogEntry, 'id' | 'key'> | AgentSkillRef) {
   if ('id' in skill && skill.id) return skill.id;
-  return skill.skill_id || skill.key;
+  if ('skill_id' in skill && skill.skill_id) return skill.skill_id;
+  return skill.key;
 }
 
 function skillDisplayName(skill: Pick<SkillCatalogEntry, 'title' | 'key'> | undefined, fallbackKey: string) {

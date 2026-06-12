@@ -7,13 +7,13 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira plans content, audits existing content, creates briefs, or recommends SEO and AI visibility work.
+Use this skill when the agent plans content, audits existing content, creates briefs, or recommends SEO and AI visibility work.
 
 Adapted from the MIT-licensed `seo-audit`, `content-strategy`, `ai-seo`, `schema`, and `programmatic-seo` skills in `coreyhaines31/marketingskills`.
 
 ## Native-Context Limitation
 
-In Mira v1, do not claim live keyword volume, rankings, backlink data, crawl data, GA4, Google Search Console, Ahrefs, Semrush, or DataForSEO access unless those tools are explicitly available.
+In this version, do not claim live keyword volume, rankings, backlink data, crawl data, GA4, Google Search Console, Ahrefs, Semrush, or DataForSEO access unless those tools are explicitly available.
 
 ## Content Strategy
 

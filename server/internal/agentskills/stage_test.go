@@ -55,6 +55,35 @@ func TestStageIntoStagesBuiltInSkillPackage(t *testing.T) {
 	}
 }
 
+func TestEffectiveRuntimeRefsFallsBackForBuiltInDefaultVersion(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetMarketer,
+		PresetVersionKey: "marketer_default",
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) == 0 {
+		t.Fatal("expected default system agent to fall back to built-in available skills")
+	}
+	if refs[0].Key != "marketing_context_setup" {
+		t.Fatalf("expected first fallback skill %q, got %q", "marketing_context_setup", refs[0].Key)
+	}
+}
+
+func TestEffectiveRuntimeRefsDoesNotFallbackForWorkspaceVersion(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetMarketer,
+		PresetVersionKey: "marketer_workspace_123",
+	}
+
+	refs := EffectiveRuntimeRefs(agent)
+	if len(refs) != 0 {
+		t.Fatalf("expected workspace version with explicit empty skills to stay empty, got %v", refs)
+	}
+}
+
 func TestStageIntoStagesBuiltInSkillPackageReferences(t *testing.T) {
 	agent := &model.Agent{
 		RuntimeKind: "native_sdk",

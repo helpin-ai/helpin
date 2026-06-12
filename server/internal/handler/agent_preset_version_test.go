@@ -294,6 +294,7 @@ func newAgentPresetVersionTestHandler(t *testing.T) (*AgentHandler, *gorm.DB) {
 			system_prompt TEXT,
 			instruction_preamble TEXT,
 			instruction_skills BLOB NOT NULL DEFAULT '[]',
+			available_skills BLOB NOT NULL DEFAULT '[]',
 			instruction_template_version TEXT NOT NULL DEFAULT '',
 			allowed_tools BLOB NOT NULL DEFAULT '[]',
 			allowed_targets BLOB NOT NULL DEFAULT '[]',

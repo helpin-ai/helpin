@@ -61,9 +61,11 @@ func TestResolveAgentProfileUsesInteractiveCodexQueue(t *testing.T) {
 
 func TestResolveAgentProfileAddsAvailableSkillToolsForNativeSkillAgent(t *testing.T) {
 	agent := &model.Agent{
-		PresetKey:    model.AgentPresetMarketer,
-		RuntimeKind:  "native_sdk",
-		AllowedTools: []byte(`["list_documents"]`),
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetMarketer,
+		PresetVersionKey: "marketer_default",
+		RuntimeKind:      "native_sdk",
+		AllowedTools:     []byte(`["list_documents"]`),
 	}
 
 	resolved := ResolveAgentProfile(agent, model.InvocationModeInteractive)
@@ -71,6 +73,24 @@ func TestResolveAgentProfileAddsAvailableSkillToolsForNativeSkillAgent(t *testin
 	for _, toolName := range []string{ToolListAvailableSkills, ToolSearchAvailableSkills, ToolReadSkill} {
 		if !slices.Contains(resolved.Tools, toolName) {
 			t.Fatalf("expected native skill agent tools to include %q, got %v", toolName, resolved.Tools)
+		}
+	}
+}
+
+func TestResolveAgentProfileDoesNotAddAvailableSkillToolsForWorkspaceVersionWithNoSkills(t *testing.T) {
+	agent := &model.Agent{
+		IsSystem:         true,
+		PresetKey:        model.AgentPresetMarketer,
+		PresetVersionKey: "marketer_workspace_123",
+		RuntimeKind:      "native_sdk",
+		AllowedTools:     []byte(`["list_documents"]`),
+	}
+
+	resolved := ResolveAgentProfile(agent, model.InvocationModeInteractive)
+
+	for _, toolName := range []string{ToolListAvailableSkills, ToolSearchAvailableSkills, ToolReadSkill} {
+		if slices.Contains(resolved.Tools, toolName) {
+			t.Fatalf("did not expect workspace version with empty skills to include %q, got %v", toolName, resolved.Tools)
 		}
 	}
 }

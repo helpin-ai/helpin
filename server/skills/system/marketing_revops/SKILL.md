@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira connects marketing work to CRM, sales, pipeline, lead lifecycle, routing, scoring, and handoff processes.
+Use this skill when the agent connects marketing work to CRM, sales, pipeline, lead lifecycle, routing, scoring, and handoff processes.
 
 Adapted from the MIT-licensed `revops` skill in `coreyhaines31/marketingskills`.
 

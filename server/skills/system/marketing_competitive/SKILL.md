@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira works on competitor profiles, alternative pages, comparison pages, battlecards, or competitive messaging.
+Use this skill when the agent works on competitor profiles, alternative pages, comparison pages, battlecards, or competitive messaging.
 
 Adapted from the MIT-licensed `competitor-profiling`, `competitors`, and `sales-enablement` skills in `coreyhaines31/marketingskills`.
 

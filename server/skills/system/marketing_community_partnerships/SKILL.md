@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira plans community programs, partner campaigns, co-marketing, ambassadors, referral partnerships, or distribution through trusted communities.
+Use this skill when the agent plans community programs, partner campaigns, co-marketing, ambassadors, referral partnerships, or distribution through trusted communities.
 
 Adapted from the MIT-licensed `community-marketing`, `co-marketing`, and `referrals` skills in `coreyhaines31/marketingskills`.
 

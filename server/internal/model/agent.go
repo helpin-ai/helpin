@@ -120,6 +120,7 @@ type WorkspaceAgentPresetVersion struct {
 	SystemPrompt               *string         `json:"system_prompt"`
 	InstructionPreamble        *string         `json:"instruction_preamble"`
 	InstructionSkills          json.RawMessage `json:"instruction_skills" gorm:"type:jsonb;not null;default:'[]'"`
+	AvailableSkills            JSONBlob        `json:"available_skills" gorm:"type:jsonb;not null;default:'[]'"`
 	InstructionTemplateVersion string          `json:"instruction_template_version" gorm:"not null;default:''"`
 	AllowedTools               json.RawMessage `json:"allowed_tools" gorm:"type:jsonb;not null;default:'[]'"`
 	AllowedTargets             json.RawMessage `json:"allowed_targets" gorm:"type:jsonb;not null;default:'[]'"`
@@ -362,6 +363,7 @@ type CreateWorkspaceAgentPresetVersionRequest struct {
 	SystemPrompt          *string         `json:"system_prompt"`
 	InstructionPreamble   *string         `json:"instruction_preamble"`
 	InstructionSkills     json.RawMessage `json:"instruction_skills"`
+	AvailableSkills       json.RawMessage `json:"available_skills"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
@@ -380,6 +382,7 @@ type UpdateWorkspaceAgentPresetVersionRequest struct {
 	SystemPrompt          *string         `json:"system_prompt"`
 	InstructionPreamble   *string         `json:"instruction_preamble"`
 	InstructionSkills     json.RawMessage `json:"instruction_skills"`
+	AvailableSkills       json.RawMessage `json:"available_skills"`
 	AllowedTools          json.RawMessage `json:"allowed_tools"`
 	AllowedTargets        json.RawMessage `json:"allowed_targets"`
 	SupportedModes        json.RawMessage `json:"supported_modes"`
@@ -761,6 +764,7 @@ type AgentPresetDefinition struct {
 	SupportedModes             []string   `json:"supported_modes"`
 	InstructionPreamble        string     `json:"instruction_preamble,omitempty"`
 	InstructionSkills          []string   `json:"instruction_skills,omitempty"`
+	AvailableSkills            []string   `json:"available_skills,omitempty"`
 	InstructionTemplateVersion string     `json:"instruction_template_version,omitempty"`
 	SystemPrompt               *string    `json:"system_prompt,omitempty"`
 	CreatedAt                  *time.Time `json:"created_at,omitempty"`

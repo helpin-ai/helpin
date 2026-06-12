@@ -7,11 +7,11 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira researches search demand patterns, content gaps, comparison pages, AI visibility opportunities, or SERP/source landscape with available web tools.
+Use this skill when the agent researches search demand patterns, content gaps, comparison pages, AI visibility opportunities, or SERP/source landscape with available web tools.
 
 Adapted from the MIT-licensed `seo-audit`, `content-strategy`, `ai-seo`, `schema`, and `programmatic-seo` skills in `coreyhaines31/marketingskills`.
 
-## What Mira Can Do
+## What This Skill Supports
 
 - Find visible pages and recurring content patterns.
 - Identify questions, comparison topics, alternatives, templates, and guides.
@@ -19,7 +19,7 @@ Adapted from the MIT-licensed `seo-audit`, `content-strategy`, `ai-seo`, `schema
 - Recommend schema and content structure.
 - Build briefs and roadmaps.
 
-## What Mira Cannot Claim
+## What This Skill Cannot Claim
 
 Do not claim keyword volume, ranking position, backlink count, traffic, Core Web Vitals, Google Search Console, GA4, Ahrefs, Semrush, or DataForSEO data unless those tools are explicitly available.
 

@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira researches competitors with public search/fetch tools and combines that research with internal CRM and Docs evidence.
+Use this skill when the agent researches competitors with public search/fetch tools and combines that research with internal CRM and Docs evidence.
 
 Adapted from the MIT-licensed `competitor-profiling`, `competitors`, and `sales-enablement` skills in `coreyhaines31/marketingskills`.
 
@@ -34,7 +34,7 @@ For each competitor, capture:
 
 ## Guardrails
 
-- Separate sourced facts from Mira's analysis.
+- Separate sourced facts from the agent's analysis.
 - Do not scrape private or gated material.
 - Do not invent market share, revenue, customer counts, SEO metrics, or pricing.
 - Keep tone factual and useful, not dismissive.

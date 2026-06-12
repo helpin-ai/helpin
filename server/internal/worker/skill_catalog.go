@@ -13,9 +13,11 @@ import (
 )
 
 type PresetSkillBundle struct {
-	Preamble     string
-	SystemPrompt string
-	SkillKeys    []string
+	Preamble           string
+	SystemPrompt       string
+	SkillKeys          []string
+	CoreSkillKeys      []string
+	AvailableSkillKeys []string
 }
 
 var builtInSkillDefinitions = mustLoadBuiltInSkillDefinitions()
@@ -76,25 +78,39 @@ var builtInSkillAliases = map[string]string{
 
 var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 	model.AgentPresetEpicPlanner: {
-		Preamble:  "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",
-		SkillKeys: []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		Preamble:      "You are Atlas, the workspace epic planner. You run the full PRD-to-tasks loop inside a single interactive agent run.",
+		SkillKeys:     []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
+		CoreSkillKeys: []string{"prd_task_plan_approval", "product_prd_authorship", "coding_task_decomposition", "epic_planning_state_routing", "engineering_planner_operating_rules"},
 	},
 	model.AgentPresetTaskPlanner: {
-		Preamble:  "You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
-		SkillKeys: []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
+		Preamble:      "You are Scribe, the workspace task planner. You run a focused planning conversation for one task or work item.",
+		SkillKeys:     []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
+		CoreSkillKeys: []string{"coding_task_planning", "prd_task_plan_approval", "engineering_planner_operating_rules"},
 	},
 	model.AgentPresetCRMOperator: {
-		Preamble:  "You are Beacon, the workspace CRM operator. You help manage customer records, deal workflows, and sales signals across the workspace.",
-		SkillKeys: []string{"crm_record_operations"},
+		Preamble:      "You are Beacon, the workspace CRM operator. You help manage customer records, deal workflows, and sales signals across the workspace.",
+		SkillKeys:     []string{"crm_record_operations"},
+		CoreSkillKeys: []string{"crm_record_operations"},
 	},
 	model.AgentPresetSupportAgent: {
-		Preamble:  "You are Echo, the workspace support agent. You help triage support conversations, draft replies, and route customer issues.",
-		SkillKeys: []string{"support_triage_response"},
+		Preamble:      "You are Echo, the workspace support agent. You help triage support conversations, draft replies, and route customer issues.",
+		SkillKeys:     []string{"support_triage_response"},
+		CoreSkillKeys: []string{"support_triage_response"},
 	},
 	model.AgentPresetDocumentationAgent: {
 		Preamble:     "You are Quill, the workspace documentation agent. You help create, update, and organize internal docs, public help docs, and API docs.",
 		SystemPrompt: quillSystemPrompt,
 		SkillKeys: []string{
+			"docs_architecture_review",
+			"public_help_doc_writing",
+			"api_reference_doc_writing",
+			"internal_docs_maintenance",
+			"public_help_docs_maintenance",
+			"api_docs_maintenance",
+			"post_release_docs_update",
+			"support_gap_docs_update",
+		},
+		AvailableSkillKeys: []string{
 			"docs_architecture_review",
 			"public_help_doc_writing",
 			"api_reference_doc_writing",
@@ -130,14 +146,38 @@ var builtInPresetSkillBundles = map[string]PresetSkillBundle{
 			"seo_research",
 			"release_marketing",
 		},
+		AvailableSkillKeys: []string{
+			"marketing_context_setup",
+			"marketing_plan",
+			"customer_research_synthesis",
+			"marketing_copywriting",
+			"conversion_optimization",
+			"lifecycle_messaging",
+			"launch_marketing",
+			"seo_content_strategy",
+			"competitive_positioning",
+			"lead_generation_strategy",
+			"outbound_campaign_planning",
+			"ads_creative_planning",
+			"community_partnerships_planning",
+			"marketing_revops_planning",
+			"monetization_strategy",
+			"market_research",
+			"competitor_research",
+			"distribution_research",
+			"seo_research",
+			"release_marketing",
+		},
 	},
 	model.AgentPresetCodeBuilder: {
-		Preamble:  "You are Forge, the workspace code builder. You use the relevant engineering instructions and skills to make focused, reviewable progress in the repository.",
-		SkillKeys: []string{"code_implementation"},
+		Preamble:      "You are Forge, the workspace code builder. You use the relevant engineering instructions and skills to make focused, reviewable progress in the repository.",
+		SkillKeys:     []string{"code_implementation"},
+		CoreSkillKeys: []string{"code_implementation"},
 	},
 	model.AgentPresetReviewAgent: {
-		Preamble:  "You are Lens, the workspace reviewer. You use the relevant review instructions and skills to identify findings, risks, and verification gaps.",
-		SkillKeys: []string{"code_review"},
+		Preamble:      "You are Lens, the workspace reviewer. You use the relevant review instructions and skills to identify findings, risks, and verification gaps.",
+		SkillKeys:     []string{"code_review"},
+		CoreSkillKeys: []string{"code_review"},
 	},
 }
 
@@ -247,7 +287,16 @@ func BuiltInPresetSkillBundleForPreset(presetKey string) (PresetSkillBundle, boo
 		return PresetSkillBundle{}, false
 	}
 	bundle.SkillKeys = append([]string(nil), bundle.SkillKeys...)
+	bundle.CoreSkillKeys = append([]string(nil), bundle.CoreSkillKeys...)
+	bundle.AvailableSkillKeys = append([]string(nil), bundle.AvailableSkillKeys...)
 	return bundle, true
+}
+
+func coreSkillKeysForPresetBundle(bundle PresetSkillBundle) []string {
+	if len(bundle.CoreSkillKeys) > 0 {
+		return bundle.CoreSkillKeys
+	}
+	return nil
 }
 
 func CompileInstructionModules(moduleKeys []string) string {
@@ -277,8 +326,31 @@ func CompilePresetInstructions(preamble string, moduleKeys []string) string {
 	return strings.TrimSpace(strings.Join(sections, "\n\n"))
 }
 
+func CompilePresetInstructionsWithAvailableSkills(preamble string, coreSkillKeys, availableSkillKeys []string) string {
+	sections := make([]string, 0, 3)
+	if compiled := CompilePresetInstructions(preamble, coreSkillKeys); compiled != "" {
+		sections = append(sections, compiled)
+	}
+	if len(SortedUniqueStrings(availableSkillKeys)) > 0 {
+		sections = append(sections, AvailableSkillPromptGuidance())
+	}
+	return strings.TrimSpace(strings.Join(sections, "\n\n"))
+}
+
+func AvailableSkillPromptGuidance() string {
+	return strings.TrimSpace(`## Available Skills
+
+This agent has available skills it can use when they would help or are required for the task. Use the runtime's skill access mechanism to inspect and apply only the specific skill instructions the task needs. Do not load every available skill by default.`)
+}
+
 func InstructionTemplateVersionForPreset(preamble string, moduleKeys []string) string {
 	compiled := CompilePresetInstructions(preamble, moduleKeys)
+	sum := sha256.Sum256([]byte(compiled))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+func InstructionTemplateVersionForPresetWithAvailableSkills(preamble string, coreSkillKeys, availableSkillKeys []string) string {
+	compiled := CompilePresetInstructionsWithAvailableSkills(preamble, coreSkillKeys, availableSkillKeys)
 	sum := sha256.Sum256([]byte(compiled))
 	return hex.EncodeToString(sum[:])[:12]
 }
@@ -287,7 +359,7 @@ func compiledPromptForPresetBundle(bundle PresetSkillBundle) string {
 	if strings.TrimSpace(bundle.SystemPrompt) != "" {
 		return strings.TrimSpace(bundle.SystemPrompt)
 	}
-	return CompilePresetInstructions(bundle.Preamble, bundle.SkillKeys)
+	return CompilePresetInstructionsWithAvailableSkills(bundle.Preamble, coreSkillKeysForPresetBundle(bundle), bundle.AvailableSkillKeys)
 }
 
 func BuiltInPresetPrompt(presetKey string) *string {

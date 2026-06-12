@@ -199,9 +199,9 @@ func availableSkillAccessGuidance(agent *model.Agent, toolSet map[string]bool) s
 		return ""
 	}
 	if toolSet["list_available_skills"] || toolSet["search_available_skills"] || toolSet["read_skill"] {
-		return "Use list_available_skills or search_available_skills when specialized workflow guidance would materially improve the task, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default."
+		return "This agent has available skills it can choose to use when they are relevant to the task. Use list_available_skills or search_available_skills to inspect options, then read only the specific skill instructions you need with read_skill. Do not load every available skill by default."
 	}
-	return "This agent has available skills for specialized workflow guidance. Use the runtime's available skill mechanism to inspect only the specific skill instructions the task needs. Do not load every available skill by default."
+	return "This agent has available skills it can use when they would help or are required for the task. Use the runtime's skill access mechanism to inspect and apply only the specific skill instructions the task needs. Do not load every available skill by default."
 }
 
 // BuildUserPrompt creates the initial user message for the run.

@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira plans lead magnets, free tools, referral loops, directory/listing submissions, or other ways to create qualified demand.
+Use this skill when the agent plans lead magnets, free tools, referral loops, directory/listing submissions, or other ways to create qualified demand.
 
 Adapted from the MIT-licensed `lead-magnets`, `free-tools`, `directory-submissions`, and `referrals` skills in `coreyhaines31/marketingskills`.
 

@@ -1,13 +1,13 @@
 ---
 name: marketing_context_setup
-description: "Creates and maintains the workspace marketing context for Mira: product overview, ICP, positioning, objections, voice, competitors, proof, and goals."
+description: "Creates and maintains the workspace marketing context for marketing work: product overview, ICP, positioning, objections, voice, competitors, proof, and goals."
 metadata:
   title: Marketing Context Setup
   supported_runtimes:
     - native_sdk
 ---
 
-Use this skill when Mira needs foundational marketing context before planning, writing, or reviewing growth work.
+Use this skill when the agent needs foundational marketing context before planning, writing, or reviewing growth work.
 
 Adapted from the MIT-licensed `product-marketing` skill in `coreyhaines31/marketingskills`.
 

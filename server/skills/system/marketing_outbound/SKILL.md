@@ -7,20 +7,20 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira drafts outbound campaigns, cold emails, prospecting criteria, account research briefs, or sales handoff materials.
+Use this skill when the agent drafts outbound campaigns, cold emails, prospecting criteria, account research briefs, or sales handoff materials.
 
 Adapted from the MIT-licensed `cold-email`, `prospecting`, and `sales-enablement` skills in `coreyhaines31/marketingskills`.
 
 ## Scope
 
-Mira can:
+The agent can:
 
 - Define ICP, target-account criteria, trigger signals, and disqualification rules.
 - Draft email, LinkedIn, call, and follow-up copy.
 - Create account research checklists and CRM task templates.
 - Use public search for company/category context when available.
 
-Mira cannot enrich contacts, scrape private databases, verify email addresses, or send outreach unless those tools are explicitly available.
+The agent cannot enrich contacts, scrape private databases, verify email addresses, or send outreach unless those tools are explicitly available.
 
 ## Campaign Frame
 

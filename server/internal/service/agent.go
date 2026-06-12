@@ -1517,6 +1517,7 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		ExecutionConfig:            normalizeExecutionConfigJSON(req.ExecutionConfig),
 		SystemPrompt:               trimPtr(req.SystemPrompt),
 		InstructionSkills:          mustJSONStringSlice(nil),
+		AvailableSkills:            model.JSONBlob(mustJSONStringSlice(basePreset.AvailableSkills)),
 		InstructionTemplateVersion: strings.TrimSpace(basePreset.InstructionTemplateVersion),
 		AllowedTools:               normalizeAllowedToolsJSON(mustJSONStringSlice(basePreset.AllowedTools)),
 		AllowedTargets:             mustJSONStringSlice(basePreset.AllowedTargetTypes),
@@ -1538,6 +1539,9 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 	}
 	hasPreamble := req.InstructionPreamble != nil
 	hasSkills := req.InstructionSkills != nil
+	if req.AvailableSkills != nil {
+		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(parseJSONStringSlice(req.AvailableSkills)))
+	}
 	if version.SystemPrompt != nil {
 		// Raw system_prompt is the custom-version source of truth. Legacy
 		// instruction decomposition must not overwrite it when both are sent.
@@ -1557,9 +1561,10 @@ func (s *AgentService) CreateWorkspacePresetVersion(ctx context.Context, req mod
 		}
 		version.InstructionPreamble = &preamble
 		version.InstructionSkills = mustJSONStringSlice(skills)
-		compiled := worker.CompilePresetInstructions(preamble, skills)
+		availableSkills := parseJSONStringSlice(json.RawMessage(version.AvailableSkills))
+		compiled := worker.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
 		version.SystemPrompt = &compiled
-		version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPreset(preamble, skills)
+		version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
 	} else {
 		version.SystemPrompt = trimPtr(basePreset.SystemPrompt)
 	}
@@ -1969,6 +1974,7 @@ func (s *AgentService) applyPresetToSystemAgent(agent *model.Agent, preset model
 	agent.AllowedTools = normalizeAllowedToolsJSON(mustJSONStringSlice(preset.AllowedTools))
 	agent.AllowedCommands = mustJSONStringSlice(preset.AllowedCommands)
 	agent.AllowedTargets = mustJSONStringSlice(preset.AllowedTargetTypes)
+	agent.Skills = skillRefsFromKeys(preset.AvailableSkills)
 	agent.TeamID = nil
 	agent.TeamIDs = nil
 	agent.ApprovalMode = "never"
@@ -2154,6 +2160,11 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 
 		hasPreamble := req.InstructionPreamble != nil
 		hasSkills := req.InstructionSkills != nil
+		availableSkills := slices.Clone(currentPreset.AvailableSkills)
+		if req.AvailableSkills != nil {
+			availableSkills = parseJSONStringSlice(req.AvailableSkills)
+		}
+		version.AvailableSkills = model.JSONBlob(mustJSONStringSlice(availableSkills))
 		if req.SystemPrompt != nil {
 			version.SystemPrompt = trimPtr(req.SystemPrompt)
 			version.InstructionTemplateVersion = ""
@@ -2175,9 +2186,9 @@ func (s *AgentService) UpdateWorkspacePresetVersion(ctx context.Context, workspa
 			}
 			version.InstructionPreamble = &preamble
 			version.InstructionSkills = mustJSONStringSlice(skills)
-			compiled := worker.CompilePresetInstructions(preamble, skills)
+			compiled := worker.CompilePresetInstructionsWithAvailableSkills(preamble, skills, availableSkills)
 			version.SystemPrompt = &compiled
-			version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPreset(preamble, skills)
+			version.InstructionTemplateVersion = worker.InstructionTemplateVersionForPresetWithAvailableSkills(preamble, skills, availableSkills)
 		} else {
 			version.SystemPrompt = trimPtr(currentPreset.SystemPrompt)
 			version.InstructionTemplateVersion = strings.TrimSpace(currentPreset.InstructionTemplateVersion)
@@ -3138,6 +3149,18 @@ func supportCoverageGapAgentAction(detail *model.SupportCoverageGapDetail) strin
 	default:
 		return "investigate_documentation_gap"
 	}
+}
+
+func skillRefsFromKeys(keys []string) model.AgentSkillRefs {
+	refs := make(model.AgentSkillRefs, 0, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		refs = append(refs, model.AgentSkillRef{Key: key})
+	}
+	return refs.Normalize()
 }
 
 func supportCoverageGapAgentInstructions(detail *model.SupportCoverageGapDetail) string {

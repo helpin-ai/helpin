@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira works on what happens after a lead, user, or customer enters the funnel.
+Use this skill when the agent works on what happens after a lead, user, or customer enters the funnel.
 
 Adapted from the MIT-licensed `emails`, `onboarding`, and `churn-prevention` skills in `coreyhaines31/marketingskills`.
 

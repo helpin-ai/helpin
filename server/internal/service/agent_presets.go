@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 
@@ -147,7 +148,8 @@ func applyBuiltInPresetInstructionMetadata(presets []model.AgentPresetDefinition
 			continue
 		}
 		presets[idx].InstructionPreamble = bundle.Preamble
-		presets[idx].InstructionSkills = append([]string(nil), bundle.SkillKeys...)
+		presets[idx].InstructionSkills = append([]string(nil), bundle.CoreSkillKeys...)
+		presets[idx].AvailableSkills = append([]string(nil), bundle.AvailableSkillKeys...)
 		presets[idx].InstructionTemplateVersion = worker.BuiltInPresetInstructionTemplateVersion(presets[idx].Key)
 		if presets[idx].SystemPrompt == nil {
 			presets[idx].SystemPrompt = worker.BuiltInPresetPrompt(presets[idx].Key)
@@ -193,6 +195,13 @@ func workspacePresetDefinition(base model.AgentPresetDefinition, version model.W
 			definition.InstructionSkills = skills
 		} else {
 			definition.InstructionSkills = []string{}
+		}
+	}
+	if len(version.AvailableSkills) > 0 && string(version.AvailableSkills) != "null" {
+		if skills := parseJSONStringSlice(json.RawMessage(version.AvailableSkills)); skills != nil {
+			definition.AvailableSkills = skills
+		} else {
+			definition.AvailableSkills = []string{}
 		}
 	}
 	if description := strings.TrimSpace(stringOrDefault(version.Description, "")); description != "" {
@@ -357,9 +366,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			VersionKey:            defaultPresetVersionKeyForPresetKey(model.AgentPresetTaskPlanner),
 			VersionLabel:          "Default",
 			IsDefaultVersion:      true,
-			Label:                 "Task Planner",
+			Label:                 "Coding Task Planner",
 			Description:           "Interactive decomposition and task refinement across existing specs and code context.",
-			DefaultRole:           "Task Planner",
+			DefaultRole:           "Coding Task Planner",
 			RuntimeKind:           productPlannerProfile.RuntimeKind,
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual"},
@@ -515,9 +524,9 @@ func agentPresetDefinitions() []model.AgentPresetDefinition {
 			Provider:              &reviewAgentProvider,
 			Model:                 &reviewAgentModel,
 			ExecutionConfig:       codexOpenAIDefaultExecutionConfig,
-			Label:                 "Review Agent",
+			Label:                 "QA & Code Reviewer",
 			Description:           "Review-first agent for validation, follow-up discussion, and agreed fixes in the same branch.",
-			DefaultRole:           "Review Agent",
+			DefaultRole:           "QA & Code Reviewer",
 			RuntimeKind:           "codex",
 			DefaultTriggerMode:    "manual",
 			AllowedTriggerModes:   []string{"manual", "auto_on_assignment", "auto_on_event"},

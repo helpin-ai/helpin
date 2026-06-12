@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira needs to find places to distribute a launch, asset, product, opinion, lead magnet, or campaign.
+Use this skill when the agent needs to find places to distribute a launch, asset, product, opinion, lead magnet, or campaign.
 
 Adapted from the MIT-licensed `directory-submissions`, `community-marketing`, `co-marketing`, `launch`, and `social` skills in `coreyhaines31/marketingskills`.
 

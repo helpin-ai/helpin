@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira creates marketing assets from shipped work, GitHub/release context, task history, or feature-release notes.
+Use this skill when the agent creates marketing assets from shipped work, GitHub/release context, task history, or feature-release notes.
 
 Adapted from the MIT-licensed `launch`, `copywriting`, `sales-enablement`, and `product-marketing` skills in `coreyhaines31/marketingskills`.
 

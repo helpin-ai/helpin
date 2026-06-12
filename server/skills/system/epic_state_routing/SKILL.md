@@ -1,6 +1,6 @@
 ---
 name: epic_planning_state_routing
-description: Planning loop and next-step routing rules for Epic Planner.
+description: Planning loop and next-step routing rules for PRD and task-plan workflows.
 metadata:
   title: Epic Planning State Routing
   required_tools:

@@ -868,6 +868,7 @@ export interface AgentPresetDefinition {
   system_prompt?: string;
   instruction_preamble?: string;
   instruction_skills?: string[];
+  available_skills?: string[];
   instruction_template_version?: string;
   created_at?: string;
   updated_at?: string;
@@ -886,6 +887,7 @@ export interface CreateWorkspaceAgentPresetVersionRequest {
   system_prompt?: string;
   instruction_preamble?: string;
   instruction_skills?: string[];
+  available_skills?: string[];
   allowed_tools?: string[];
   allowed_targets?: AgentTargetType[];
   supported_modes?: AgentInvocationMode[];
@@ -903,6 +905,7 @@ export interface UpdateWorkspaceAgentPresetVersionRequest {
   system_prompt?: string;
   instruction_preamble?: string;
   instruction_skills?: string[];
+  available_skills?: string[];
   allowed_tools?: string[];
   allowed_targets?: AgentTargetType[];
   supported_modes?: AgentInvocationMode[];

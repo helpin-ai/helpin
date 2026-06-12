@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira needs public research beyond Helpin workspace context.
+Use this skill when the agent needs public research beyond Helpin workspace context.
 
 Adapted from research-heavy workflows across the MIT-licensed `customer-research`, `marketing-plan`, `content-strategy`, and `competitor-profiling` skills in `coreyhaines31/marketingskills`.
 
@@ -21,7 +21,7 @@ Adapted from research-heavy workflows across the MIT-licensed `customer-research
 
 ## Research Types
 
-Mira can research:
+The agent can research:
 
 - Market/category landscape.
 - ICP language and pain signals.

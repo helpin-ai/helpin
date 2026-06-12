@@ -7,7 +7,7 @@ metadata:
     - native_sdk
 ---
 
-Use this skill when Mira evaluates landing pages, signup flows, pricing pages, onboarding starts, lead-capture paths, or experiment ideas.
+Use this skill when the agent evaluates landing pages, signup flows, pricing pages, onboarding starts, lead-capture paths, or experiment ideas.
 
 Adapted from the MIT-licensed `cro`, `ab-testing`, `signup`, `pricing`, `paywalls`, and `popups` skills in `coreyhaines31/marketingskills`.
 

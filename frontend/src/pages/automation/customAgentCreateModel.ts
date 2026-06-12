@@ -26,6 +26,7 @@ export interface CustomAgentFormData {
   system_prompt: string;
   instruction_preamble: string;
   instruction_skills: string[];
+  available_skill_keys: string[];
   monthly_token_budget: string;
   team_id: string;
   teamAccessMode: 'all_teams' | 'specific_teams';
@@ -52,6 +53,7 @@ export function createDefaultCustomAgentForm(): CustomAgentFormData {
     system_prompt: '',
     instruction_preamble: '',
     instruction_skills: [],
+    available_skill_keys: [],
     monthly_token_budget: '',
     team_id: '',
     teamAccessMode: 'all_teams',
