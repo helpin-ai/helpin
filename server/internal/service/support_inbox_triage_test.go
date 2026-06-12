@@ -346,6 +346,87 @@ func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceRule(t *testi
 	}
 }
 
+func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceSenderEmailContainsRule(t *testing.T) {
+	fixture := newSupportTriageTestFixture(t, nil, func(settings *model.SupportInboxSettings) {
+		settings.TriageAutoMoveEnabled = true
+		settings.TriageConfidenceThreshold = 0.9
+	})
+	billing := fixture.createMailbox(t, "Billing", "billing", true)
+
+	if _, err := fixture.triageSvc.CreateRule(fixture.ctx, fixture.workspaceID, fixture.actorID, model.CreateSupportTriageRuleRequest{
+		Name:            "VIP sender",
+		Priority:        1,
+		Channels:        []string{"widget"},
+		Conditions:      model.SupportTriageRuleConditions{SenderEmailContains: []string{"vip@"}},
+		TargetMailboxID: billing.ID,
+	}); err != nil {
+		t.Fatalf("create triage rule: %v", err)
+	}
+
+	conversation := fixture.createConversation(t, "Question", "vip@acme.com", nil)
+	message := fixture.createCustomerReply(t, conversation.ID, "Can you help me?")
+
+	triage, err := fixture.triageSvc.EvaluateAndRoute(fixture.ctx, fixture.workspaceID, conversation.ID, message.ID)
+	if err != nil {
+		t.Fatalf("EvaluateAndRoute: %v", err)
+	}
+	if triage == nil {
+		t.Fatal("expected triage result")
+	}
+	if triage.Status != model.SupportConversationTriageStatusAutoMoved {
+		t.Fatalf("status = %q, want %q", triage.Status, model.SupportConversationTriageStatusAutoMoved)
+	}
+
+	updatedConversation, err := fixture.conversationRepo.GetByID(fixture.ctx, fixture.workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("load conversation: %v", err)
+	}
+	if derefString(updatedConversation.MailboxID) != billing.ID {
+		t.Fatalf("mailbox_id = %q, want %q", derefString(updatedConversation.MailboxID), billing.ID)
+	}
+}
+
+func TestSupportInboxTriageEvaluateAndRoute_AutoMovesHighConfidenceAnyConditionRule(t *testing.T) {
+	fixture := newSupportTriageTestFixture(t, nil, func(settings *model.SupportInboxSettings) {
+		settings.TriageAutoMoveEnabled = true
+		settings.TriageConfidenceThreshold = 0.9
+	})
+	billing := fixture.createMailbox(t, "Billing", "billing", true)
+
+	if _, err := fixture.triageSvc.CreateRule(fixture.ctx, fixture.workspaceID, fixture.actorID, model.CreateSupportTriageRuleRequest{
+		Name:     "Billing text or sender",
+		Priority: 1,
+		Channels: []string{"widget"},
+		Conditions: model.SupportTriageRuleConditions{
+			ConditionLogic:      "any",
+			PhraseContains:      []string{"billing"},
+			SenderEmailContains: []string{"billing@"},
+		},
+		TargetMailboxID: billing.ID,
+	}); err != nil {
+		t.Fatalf("create triage rule: %v", err)
+	}
+
+	conversation := fixture.createConversation(t, "Question", "billing@acme.com", nil)
+	message := fixture.createCustomerReply(t, conversation.ID, "Can you help me?")
+
+	triage, err := fixture.triageSvc.EvaluateAndRoute(fixture.ctx, fixture.workspaceID, conversation.ID, message.ID)
+	if err != nil {
+		t.Fatalf("EvaluateAndRoute: %v", err)
+	}
+	if triage == nil {
+		t.Fatal("expected triage result")
+	}
+
+	updatedConversation, err := fixture.conversationRepo.GetByID(fixture.ctx, fixture.workspaceID, conversation.ID, "", model.RoleOwner)
+	if err != nil {
+		t.Fatalf("load conversation: %v", err)
+	}
+	if derefString(updatedConversation.MailboxID) != billing.ID {
+		t.Fatalf("mailbox_id = %q, want %q", derefString(updatedConversation.MailboxID), billing.ID)
+	}
+}
+
 func TestSupportInboxTriageEvaluateAndRoute_SkipsHumanOwnedConversation(t *testing.T) {
 	fixture := newSupportTriageTestFixture(t, nil, func(settings *model.SupportInboxSettings) {
 		settings.TriageAutoMoveEnabled = true

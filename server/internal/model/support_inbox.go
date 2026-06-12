@@ -400,12 +400,14 @@ type SupportConversationTriageEvent struct {
 func (SupportConversationTriageEvent) TableName() string { return "support_conversation_triage_events" }
 
 type SupportTriageRuleConditions struct {
-	PhraseContains    []string `json:"phrase_contains,omitempty"`
-	EmailDomainEquals []string `json:"email_domain_equals,omitempty"`
+	ConditionLogic      string   `json:"condition_logic,omitempty"`
+	PhraseContains      []string `json:"phrase_contains,omitempty"`
+	EmailDomainEquals   []string `json:"email_domain_equals,omitempty"`
+	SenderEmailContains []string `json:"sender_email_contains,omitempty"`
 }
 
 func (c SupportTriageRuleConditions) Value() (driver.Value, error) {
-	if len(c.PhraseContains) == 0 && len(c.EmailDomainEquals) == 0 {
+	if len(c.PhraseContains) == 0 && len(c.EmailDomainEquals) == 0 && len(c.SenderEmailContains) == 0 {
 		return "{}", nil
 	}
 	b, err := json.Marshal(c)

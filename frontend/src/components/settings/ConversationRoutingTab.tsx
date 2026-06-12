@@ -67,6 +67,7 @@ type RuleFormState = {
   priority: string;
   active: boolean;
   targetMailboxId: string;
+  conditionLogic: 'any' | 'all';
   phraseChips: string[];
   domainChips: string[];
   phraseInput: string;
@@ -100,8 +101,12 @@ function buildRuleFormState(rule: SupportTriageRule | null, mailboxes: SupportMa
     priority: String(rule?.priority ?? 0),
     active: rule?.active ?? true,
     targetMailboxId: rule?.target_mailbox_id ?? mailboxes[0]?.id ?? '',
+    conditionLogic: rule?.conditions?.condition_logic === 'any' ? 'any' : 'all',
     phraseChips: [...(rule?.conditions?.phrase_contains ?? [])],
-    domainChips: [...(rule?.conditions?.email_domain_equals ?? [])],
+    domainChips: [
+      ...(rule?.conditions?.sender_email_contains ?? []),
+      ...(rule?.conditions?.email_domain_equals ?? []),
+    ],
     phraseInput: '',
     domainInput: '',
   };
@@ -142,10 +147,16 @@ function RuleDialog({
     }
 
     const conditions: SupportTriageRuleConditions = {
+      condition_logic: form.conditionLogic,
       phrase_contains: form.phraseChips,
-      email_domain_equals: form.domainChips.map((v) => v.toLowerCase()),
+      email_domain_equals: [],
+      sender_email_contains: form.domainChips.map((v) => v.toLowerCase()),
     };
-    if (conditions.phrase_contains.length === 0 && conditions.email_domain_equals.length === 0) {
+    if (
+      conditions.phrase_contains.length === 0 &&
+      conditions.email_domain_equals.length === 0 &&
+      (conditions.sender_email_contains?.length ?? 0) === 0
+    ) {
       toast.error('Add at least one condition');
       return;
     }
@@ -229,6 +240,22 @@ function RuleDialog({
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Conditions</p>
 
             <div className="space-y-2">
+              <Label>Match Logic</Label>
+              <Select
+                value={form.conditionLogic}
+                onValueChange={(value) => setForm((c) => ({ ...c, conditionLogic: value as 'any' | 'all' }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any condition matches</SelectItem>
+                  <SelectItem value="all">All conditions match</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label>Text Contains</Label>
               <ChipInput
                 value={form.phraseChips}
@@ -241,16 +268,16 @@ function RuleDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Email Domain Equals</Label>
+              <Label>Email ID Contains</Label>
               <ChipInput
                 value={form.domainChips}
                 onValueChange={(v) => setForm((c) => ({ ...c, domainChips: v }))}
                 inputValue={form.domainInput}
                 onInputValueChange={(v) => setForm((c) => ({ ...c, domainInput: v }))}
-                placeholder="Type a domain and press Enter..."
+                placeholder="Type an email fragment and press Enter..."
                 normalize={(v) => v.toLowerCase()}
               />
-              <p className="text-xs text-muted-foreground">Match sender email domains exactly.</p>
+              <p className="text-xs text-muted-foreground">Case-insensitive matching against the full sender email address.</p>
             </div>
           </div>
 
@@ -637,6 +664,9 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
                     <Badge variant={rule.active ? 'secondary' : 'outline'} className="h-5 px-2 text-[11px]">
                       {rule.active ? 'Active' : 'Inactive'}
                     </Badge>
+                    <Badge variant="outline" className="h-5 px-2 text-[11px]">
+                      {rule.conditions.condition_logic === 'any' ? 'Any condition' : 'All conditions'}
+                    </Badge>
                     <span className="text-xs text-muted-foreground">
                       Routes to {rule.target_mailbox_name ?? 'Unknown inbox'}
                     </span>
@@ -650,6 +680,11 @@ export function ConversationRoutingTab({ workspaceId }: { workspaceId: string })
                     {(rule.conditions.email_domain_equals ?? []).map((domain) => (
                       <Badge key={domain} variant="outline" className="h-6 px-2 text-[11px] font-normal">
                         Domain: {domain}
+                      </Badge>
+                    ))}
+                    {(rule.conditions.sender_email_contains ?? []).map((email) => (
+                      <Badge key={email} variant="outline" className="h-6 px-2 text-[11px] font-normal">
+                        Email ID: {email}
                       </Badge>
                     ))}
                   </div>

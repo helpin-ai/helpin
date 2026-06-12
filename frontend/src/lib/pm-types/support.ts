@@ -330,8 +330,10 @@ export interface UpdateSupportMailboxRequest {
 }
 
 export interface SupportTriageRuleConditions {
+  condition_logic?: 'all' | 'any';
   phrase_contains: string[];
   email_domain_equals: string[];
+  sender_email_contains?: string[];
 }
 
 export interface SupportTriageRule {

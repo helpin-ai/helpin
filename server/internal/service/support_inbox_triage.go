@@ -522,7 +522,7 @@ func (s *SupportInboxTriageService) validateRuleModel(ctx context.Context, works
 	if strings.TrimSpace(rule.TargetMailboxID) == "" {
 		return fmt.Errorf("target_mailbox_id is required")
 	}
-	if len(rule.Conditions.PhraseContains) == 0 && len(rule.Conditions.EmailDomainEquals) == 0 {
+	if len(rule.Conditions.PhraseContains) == 0 && len(rule.Conditions.EmailDomainEquals) == 0 && len(rule.Conditions.SenderEmailContains) == 0 {
 		return fmt.Errorf("at least one triage rule condition is required")
 	}
 	if rule.Priority < 0 {
@@ -557,6 +557,7 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 
 	channel := supportConversationChannel(conversation)
 	combinedText := strings.ToLower(strings.TrimSpace(strings.Join([]string{conversation.Subject, inputContent}, "\n")))
+	senderEmail := strings.ToLower(strings.TrimSpace(derefString(conversation.CustomerEmail)))
 	emailDomain := supportEmailDomain(conversation.CustomerEmail)
 	slog.InfoContext(ctx, "support triage rules evaluating",
 		"workspace_id", workspaceID,
@@ -568,6 +569,7 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 		}()),
 		"channel", channel,
 		"active_rule_count", len(rules),
+		"sender_email", senderEmail,
 		"email_domain", emailDomain,
 		"combined_text_preview", safeLogPreview(combinedText, 160),
 	)
@@ -576,7 +578,7 @@ func (s *SupportInboxTriageService) evaluateRules(ctx context.Context, workspace
 		if len(rule.Channels) > 0 && !containsTriageChannel(rule.Channels, channel) {
 			continue
 		}
-		if !triageConditionsMatch(rule.Conditions, combinedText, emailDomain) {
+		if !triageConditionsMatch(rule.Conditions, combinedText, senderEmail, emailDomain) {
 			continue
 		}
 
@@ -1163,8 +1165,12 @@ func mailboxIsSharedOrDefault(currentMailboxID, defaultMailboxID *string) bool {
 	return strings.TrimSpace(*currentMailboxID) == strings.TrimSpace(*defaultMailboxID)
 }
 
-func triageConditionsMatch(conditions model.SupportTriageRuleConditions, combinedText, emailDomain string) bool {
+func triageConditionsMatch(conditions model.SupportTriageRuleConditions, combinedText, senderEmail, emailDomain string) bool {
+	groupCount := 0
+	matchedGroups := 0
+
 	if len(conditions.PhraseContains) > 0 {
+		groupCount++
 		phraseMatched := false
 		for _, phrase := range conditions.PhraseContains {
 			trimmed := strings.ToLower(strings.TrimSpace(phrase))
@@ -1173,12 +1179,15 @@ func triageConditionsMatch(conditions model.SupportTriageRuleConditions, combine
 				break
 			}
 		}
-		if !phraseMatched {
+		if phraseMatched {
+			matchedGroups++
+		} else if normalizeTriageConditionLogic(conditions.ConditionLogic) == "all" {
 			return false
 		}
 	}
 
 	if len(conditions.EmailDomainEquals) > 0 {
+		groupCount++
 		domainMatched := false
 		for _, domain := range conditions.EmailDomainEquals {
 			if strings.EqualFold(strings.TrimSpace(domain), emailDomain) {
@@ -1186,12 +1195,44 @@ func triageConditionsMatch(conditions model.SupportTriageRuleConditions, combine
 				break
 			}
 		}
-		if !domainMatched {
+		if domainMatched {
+			matchedGroups++
+		} else if normalizeTriageConditionLogic(conditions.ConditionLogic) == "all" {
 			return false
 		}
 	}
 
-	return true
+	if len(conditions.SenderEmailContains) > 0 {
+		groupCount++
+		emailMatched := false
+		for _, value := range conditions.SenderEmailContains {
+			trimmed := strings.ToLower(strings.TrimSpace(value))
+			if trimmed != "" && strings.Contains(senderEmail, trimmed) {
+				emailMatched = true
+				break
+			}
+		}
+		if emailMatched {
+			matchedGroups++
+		} else if normalizeTriageConditionLogic(conditions.ConditionLogic) == "all" {
+			return false
+		}
+	}
+
+	if groupCount == 0 {
+		return true
+	}
+	if normalizeTriageConditionLogic(conditions.ConditionLogic) == "any" {
+		return matchedGroups > 0
+	}
+	return matchedGroups == groupCount
+}
+
+func normalizeTriageConditionLogic(logic string) string {
+	if strings.EqualFold(strings.TrimSpace(logic), "any") {
+		return "any"
+	}
+	return "all"
 }
 
 func normalizeTriageChannels(channels []string) model.DocsStringArray {
@@ -1216,8 +1257,10 @@ func normalizeTriageChannels(channels []string) model.DocsStringArray {
 
 func normalizeTriageConditions(conditions model.SupportTriageRuleConditions) model.SupportTriageRuleConditions {
 	return model.SupportTriageRuleConditions{
-		PhraseContains:    normalizeTriageStringList(conditions.PhraseContains, false),
-		EmailDomainEquals: normalizeTriageStringList(conditions.EmailDomainEquals, true),
+		ConditionLogic:      normalizeTriageConditionLogic(conditions.ConditionLogic),
+		PhraseContains:      normalizeTriageStringList(conditions.PhraseContains, false),
+		EmailDomainEquals:   normalizeTriageStringList(conditions.EmailDomainEquals, true),
+		SenderEmailContains: normalizeTriageStringList(conditions.SenderEmailContains, true),
 	}
 }
 
