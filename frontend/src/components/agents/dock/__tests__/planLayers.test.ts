@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CommandBarPlan, CommandBarPlanStep } from '@/lib/pmTypes';
-import { buildTaskNodes, hasAnyDependencies, layerTasks } from '../planLayers';
+import {
+  buildTaskNodes,
+  hasAnyDependencies,
+  layerTasks,
+  scaffoldingStepIndexes,
+} from '../planLayers';
 
 function step(
   agent: string,
@@ -10,11 +15,13 @@ function step(
     taskKey?: string;
     deps?: number[];
     entityType?: CommandBarPlanStep['target']['entity_type'];
+    stepType?: CommandBarPlanStep['step_type'];
   } = {},
 ): CommandBarPlanStep {
   return {
     agent_id: agent,
     agent_name: agent,
+    step_type: options.stepType,
     target: {
       entity_type: options.entityType ?? 'task',
       entity_id: entity,
@@ -113,5 +120,61 @@ describe('planLayers', () => {
     expect(
       hasAnyDependencies(plan([step('A', 't1'), step('B', 't1', { deps: [0] })])),
     ).toBe(true);
+  });
+
+  // The real epic-pipeline shape: epic branch + final PR target the EPIC, so
+  // without scaffolding exclusion they merge into one node that everything
+  // depends on AND that depends on everything — a node cycle that used to
+  // collapse the layering to "Stage 1 · N in parallel" even when tasks had
+  // genuine blocking links.
+  it('layers an epic task pipeline by its blocking links, ignoring scaffolding', () => {
+    const epicPipeline = plan([
+      // 0: epic branch (scaffolding, targets the epic)
+      step('Command Agent', 'epic-1', { entityType: 'epic', stepType: 'ensure_epic_branch' }),
+      // t1: Forge → Lens → Merge
+      step('Forge', 't1', { deps: [0] }),
+      step('Lens', 't1', { deps: [1] }),
+      step('Command Agent', 't1', { deps: [2], stepType: 'merge_task_to_epic' }),
+      // t2: blocked by t1 (cross-task edge: Forge waits on t1's Merge)
+      step('Forge', 't2', { deps: [0, 3] }),
+      step('Lens', 't2', { deps: [4] }),
+      step('Command Agent', 't2', { deps: [5], stepType: 'merge_task_to_epic' }),
+      // t3: unblocked
+      step('Forge', 't3', { deps: [0] }),
+      step('Lens', 't3', { deps: [7] }),
+      step('Command Agent', 't3', { deps: [8], stepType: 'merge_task_to_epic' }),
+      // 10: final PR (scaffolding, targets the epic, depends on all merges)
+      step('Command Agent', 'epic-1', {
+        entityType: 'epic',
+        stepType: 'open_epic_pr',
+        deps: [3, 6, 9],
+      }),
+    ]);
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const nodes = buildTaskNodes(epicPipeline);
+    // The epic target must not appear as a node.
+    expect(nodes.map((n) => n.key)).toEqual(['t1', 't2', 't3']);
+    // Only the real cross-task edge survives; scaffolding deps are ignored.
+    expect(Array.from(nodes.find((n) => n.key === 't2')!.depTaskKeys)).toEqual(['t1']);
+    expect(nodes.find((n) => n.key === 't1')!.depTaskKeys.size).toBe(0);
+    expect(nodes.find((n) => n.key === 't3')!.depTaskKeys.size).toBe(0);
+
+    const layers = layerTasks(nodes);
+    expect(layers).toHaveLength(2);
+    expect(layers[0].tasks.map((t) => t.key).sort()).toEqual(['t1', 't3']);
+    expect(layers[1].tasks.map((t) => t.key)).toEqual(['t2']);
+    // No cycle fallback.
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+
+    expect(scaffoldingStepIndexes(epicPipeline)).toEqual({ setup: [0], finalize: [10] });
+  });
+
+  it('scaffoldingStepIndexes is empty for plans without scaffolding', () => {
+    expect(scaffoldingStepIndexes(plan([step('Forge', 't1')]))).toEqual({
+      setup: [],
+      finalize: [],
+    });
   });
 });

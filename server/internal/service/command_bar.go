@@ -2994,6 +2994,29 @@ func (s *CommandBarService) ListPlans(ctx context.Context, workspaceID, actorID 
 	return &model.CommandBarPlanListResponse{Plans: summaries}, nil
 }
 
+// ListEntityPlans returns command-bar plans targeting the given entity (e.g. an
+// epic), hydrated with their agent runs, regardless of which actor triggered
+// them. Visibility is enforced at the route by entity-read permissions, so this
+// deliberately skips the actor filter and dismissal handling used by ListPlans.
+func (s *CommandBarService) ListEntityPlans(ctx context.Context, workspaceID, entityType, entityID string, limit int) (*model.CommandBarPlanListResponse, error) {
+	if s == nil || s.planRepo == nil {
+		return &model.CommandBarPlanListResponse{Plans: []model.CommandBarPlanSummary{}}, nil
+	}
+	records, err := s.planRepo.ListByEntity(ctx, workspaceID, entityType, entityID, limit)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]model.CommandBarPlanSummary, 0, len(records))
+	for _, record := range records {
+		summary, err := s.commandBarPlanSummaryForRecord(ctx, workspaceID, record)
+		if err != nil {
+			return nil, err
+		}
+		summaries = append(summaries, summary)
+	}
+	return &model.CommandBarPlanListResponse{Plans: summaries}, nil
+}
+
 // DismissPlans hides the given plans from the actor's command runs rail. Only
 // plans owned by the actor can be dismissed; unknown or unauthorized plan IDs
 // are silently skipped so a stale client cannot enumerate other users' runs.
@@ -3035,6 +3058,28 @@ func (s *CommandBarService) GetPlan(ctx context.Context, workspaceID, actorID, p
 		return nil, err
 	}
 	if record == nil || !commandBarPlanOwnedByActor(record, actorID) {
+		return nil, fmt.Errorf("command bar plan not found")
+	}
+	summary, err := s.commandBarPlanSummaryForRecord(ctx, workspaceID, *record)
+	if err != nil {
+		return nil, err
+	}
+	return &model.CommandBarPlanDetailResponse{Plan: summary}, nil
+}
+
+// GetWorkspacePlan loads a plan without the dock's owner gate, for
+// team-actionable flows (epic-page resume/retry) where any member with
+// command-bar edit permission may act on another actor's delivery. Callers
+// remain responsible for per-step authorization.
+func (s *CommandBarService) GetWorkspacePlan(ctx context.Context, workspaceID, planID string) (*model.CommandBarPlanDetailResponse, error) {
+	if s == nil || s.planRepo == nil {
+		return nil, fmt.Errorf("command bar plan service is not configured")
+	}
+	record, err := s.planRepo.GetByID(ctx, workspaceID, strings.TrimSpace(planID))
+	if err != nil {
+		return nil, err
+	}
+	if record == nil {
 		return nil, fmt.Errorf("command bar plan not found")
 	}
 	summary, err := s.commandBarPlanSummaryForRecord(ctx, workspaceID, *record)
@@ -3112,7 +3157,10 @@ func (s *CommandBarService) ResumePlan(ctx context.Context, workspaceID, actorID
 	if err != nil {
 		return nil, err
 	}
-	if plan == nil || !commandBarPlanOwnedByActor(plan, actorID) {
+	// Resume is intentionally NOT owner-gated: epic delivery plans surface to
+	// the whole team on the epic page, and any member with command-bar edit
+	// permission (enforced at the router) may revive a stalled delivery.
+	if plan == nil {
 		return nil, fmt.Errorf("command bar plan not found")
 	}
 	if plan.Status != model.CommandBarPlanStatusRunning {
@@ -3170,7 +3218,7 @@ func (s *CommandBarService) ResumePlan(ctx context.Context, workspaceID, actorID
 }
 
 func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, actorID, planID string, req model.CommandBarRetryPlanRequest) (*model.CommandBarRetryPlanResponse, error) {
-	if s == nil || s.planRepo == nil || s.agentService == nil {
+	if s == nil || s.planRepo == nil || s.agentService == nil || s.agentService.runRepo == nil {
 		return nil, fmt.Errorf("command bar plan service is not configured")
 	}
 	plan, err := s.planRepo.GetByID(ctx, workspaceID, strings.TrimSpace(planID))
@@ -3180,11 +3228,28 @@ func (s *CommandBarService) RetryPlanFromStep(ctx context.Context, workspaceID, 
 	if plan == nil {
 		return nil, fmt.Errorf("command bar plan not found")
 	}
-	if !commandBarPlanOwnedByActor(plan, actorID) {
-		return nil, fmt.Errorf("command bar plan not found")
-	}
+	// Like ResumePlan, retry is team-actionable (not owner-gated): a failed
+	// epic delivery can be retried by any member with command-bar edit
+	// permission. Retried runs are attributed to the retrying actor.
+	//
+	// A plan can be left in status "running" with all of its child runs
+	// failed or cancelled (e.g. runs cancelled mid-delivery) — a zombie that
+	// resume cannot revive because there is nothing ready to start. Retry is
+	// the only way out, so only reject while work is genuinely in flight.
 	if plan.Status == model.CommandBarPlanStatusRunning {
-		return nil, fmt.Errorf("running command bar plans cannot be retried")
+		activeIDs := make([]string, 0)
+		for _, runID := range decodeCommandBarPlanRunIDs(plan.RunIDsByStep) {
+			activeIDs = append(activeIDs, runID)
+		}
+		runs, err := s.agentService.runRepo.ListByIDs(ctx, workspaceID, activeIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, run := range runs {
+			if model.IsAgentRunActiveStatus(run.Status) {
+				return nil, fmt.Errorf("command bar plan still has active runs; cancel them or wait before retrying")
+			}
+		}
 	}
 	var pageContext model.CommandBarPageContext
 	if err := json.Unmarshal(plan.PageContext, &pageContext); err != nil {
@@ -5494,6 +5559,7 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 			DependsOnStepIndexes: []int{lensIndex},
 		})
 	}
+	crossTaskEdges := 0
 	for _, link := range links {
 		sourceMerge, okSource := mergeStepByTask[link.SourceTaskID]
 		targetForge, okTarget := forgeStepByTask[link.TargetTaskID]
@@ -5501,6 +5567,7 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 			continue
 		}
 		steps[targetForge].DependsOnStepIndexes = appendUniqueInt(steps[targetForge].DependsOnStepIndexes, sourceMerge)
+		crossTaskEdges++
 	}
 	if len(steps) == 0 {
 		return nil
@@ -5538,10 +5605,19 @@ func (s *CommandBarService) parseEpicTaskPipelineIntent(ctx context.Context, wor
 		})
 	}
 	if dependencyAware {
+		// Be honest about what the link graph actually contributed: claiming
+		// dependencies "were used" when zero blocking links matched reads as
+		// the planner ignoring the user's ordering constraints.
+		message := "No blocking links found between these tasks — all task pipelines run in parallel."
+		if crossTaskEdges == 1 {
+			message = "1 blocking link between tasks was used to order the DAG."
+		} else if crossTaskEdges > 1 {
+			message = fmt.Sprintf("%d blocking links between tasks were used to order the DAG.", crossTaskEdges)
+		}
 		resp.Plan.Guardrails = append(resp.Plan.Guardrails, model.CommandBarGuardrail{
 			Type:     "task_dependency_context",
 			Severity: "info",
-			Message:  "Task dependencies were loaded from this epic's task links and used to build the DAG.",
+			Message:  message,
 		})
 	}
 	if len(tasks)*2 > len(steps) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  getEpicPlannerPrimaryAction,
+  getEpicPlannerFeaturedAction,
   nextCompletedRunNotificationId,
   shouldReloadEpicPlannerRuns,
   shouldShowRunsLoading,
@@ -92,81 +92,44 @@ describe('shouldShowRunsLoading', () => {
   });
 });
 
-describe('getEpicPlannerPrimaryAction', () => {
-  it('starts the selected agent when there are no runs', () => {
-    expect(
-      getEpicPlannerPrimaryAction({
-        selectedAgentName: 'Atlas',
-        activeRun: null,
-        latestRun: null,
-        latestRunAgentName: null,
-        starting: false,
-      }),
-    ).toMatchObject({
-      kind: 'start',
-      label: 'Run Atlas',
-      status: 'Choose an AI planning agent to plan this epic.',
-      secondaryActionLabel: null,
-    });
-  });
-
-  it('opens the active agent run instead of offering another start', () => {
-    expect(
-      getEpicPlannerPrimaryAction({
-        selectedAgentName: 'Scribe',
-        activeRun: run({ id: 'run-active', agent_id: 'agent-atlas', status: 'running' }),
-        activeRunAgentName: 'Atlas',
-        latestRun: null,
-        latestRunAgentName: null,
-        starting: false,
-      }),
-    ).toMatchObject({
-      kind: 'open',
-      runId: 'run-active',
-      label: 'Open Atlas run',
-      status: 'Atlas is running.',
-      secondaryActionLabel: null,
-    });
-  });
-
+describe('getEpicPlannerFeaturedAction', () => {
   it('uses pause-specific labels for interactive blockers', () => {
     expect(
-      getEpicPlannerPrimaryAction({
-        selectedAgentName: 'Atlas',
-        activeRun: run({ status: 'paused', pause_reason: 'human_input' }),
-        activeRunAgentName: 'Atlas',
-        latestRun: null,
-        latestRunAgentName: null,
-        starting: false,
-      }).label,
-    ).toBe('Reply to Atlas');
+      getEpicPlannerFeaturedAction(run({ status: 'paused', pause_reason: 'human_input' }), 'Atlas'),
+    ).toEqual({ label: 'Reply to Atlas', runId: 'run-1', emphasis: 'prominent' });
 
     expect(
-      getEpicPlannerPrimaryAction({
-        selectedAgentName: 'Atlas',
-        activeRun: run({ status: 'paused', pause_reason: 'human_approval' }),
-        activeRunAgentName: 'Atlas',
-        latestRun: null,
-        latestRunAgentName: null,
-        starting: false,
-      }).label,
-    ).toBe('Review Atlas request');
+      getEpicPlannerFeaturedAction(run({ status: 'paused', pause_reason: 'human_approval' }), 'Atlas'),
+    ).toEqual({ label: 'Review Atlas request', runId: 'run-1', emphasis: 'prominent' });
+
+    expect(
+      getEpicPlannerFeaturedAction(run({ status: 'paused', pause_reason: 'authentication' }), 'Atlas'),
+    ).toEqual({ label: 'Complete Atlas sign-in', runId: 'run-1', emphasis: 'prominent' });
   });
 
-  it('views completed runs and offers to run the selected agent again', () => {
+  it('opens queued and running runs prominently', () => {
     expect(
-      getEpicPlannerPrimaryAction({
-        selectedAgentName: 'Scribe',
-        activeRun: null,
-        latestRun: run({ status: 'completed', agent_id: 'agent-atlas' }),
-        latestRunAgentName: 'Atlas',
-        starting: false,
-      }),
-    ).toMatchObject({
-      kind: 'open',
-      label: 'View Atlas run',
-      secondaryActionLabel: 'Run Scribe',
-      status: 'Atlas completed a planning run.',
-    });
+      getEpicPlannerFeaturedAction(run({ id: 'run-active', status: 'running' }), 'Atlas'),
+    ).toEqual({ label: 'Open run', runId: 'run-active', emphasis: 'prominent' });
+
+    expect(
+      getEpicPlannerFeaturedAction(run({ status: 'queued' }), 'Atlas').label,
+    ).toBe('Open run');
+  });
+
+  it('views terminal runs quietly', () => {
+    for (const status of ['completed', 'failed', 'cancelled'] as const) {
+      expect(getEpicPlannerFeaturedAction(run({ status }), 'Atlas')).toEqual({
+        label: 'View run',
+        runId: 'run-1',
+        emphasis: 'quiet',
+      });
+    }
+  });
+
+  it('falls back to a generic agent name', () => {
+    expect(
+      getEpicPlannerFeaturedAction(run({ status: 'paused', pause_reason: 'human_input' }), null).label,
+    ).toBe('Reply to AI planner');
   });
 });

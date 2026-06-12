@@ -2480,9 +2480,31 @@ func TestParseEpicTaskPipelineIntentBuildsForgeLensDAG(t *testing.T) {
 		t.Fatalf("expected dependency-aware prompt to preserve blocks edge, got %#v", got)
 	}
 	if !slices.ContainsFunc(dependencyPromptResp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {
-		return g.Type == "task_dependency_context"
+		return g.Type == "task_dependency_context" &&
+			g.Message == "1 blocking link between tasks was used to order the DAG."
 	}) {
-		t.Fatalf("expected task dependency context guardrail, got %#v", dependencyPromptResp.Plan.Guardrails)
+		t.Fatalf("expected guardrail naming the single blocking link, got %#v", dependencyPromptResp.Plan.Guardrails)
+	}
+
+	// Without any blocking links the guardrail must say so instead of claiming
+	// dependencies "were used" — that read as the planner ignoring the user's
+	// ordering constraints.
+	if err := db.Exec(`DELETE FROM pm_task_links`).Error; err != nil {
+		t.Fatalf("delete task links: %v", err)
+	}
+	noLinksResp := service.parseEpicTaskPipelineIntent(ctx, workspaceID, "run these tasks in this epic in parallel if they dont have any dependencies otherwise DAG. some are blocked by the others", model.CommandBarPageContext{
+		EntityType:   "epic",
+		EntityID:     epicID,
+		DisplayTitle: "Pipeline epic",
+	}, agents)
+	if noLinksResp == nil || noLinksResp.Plan == nil {
+		t.Fatalf("expected plan without links, got %#v", noLinksResp)
+	}
+	if !slices.ContainsFunc(noLinksResp.Plan.Guardrails, func(g model.CommandBarGuardrail) bool {
+		return g.Type == "task_dependency_context" &&
+			g.Message == "No blocking links found between these tasks — all task pipelines run in parallel."
+	}) {
+		t.Fatalf("expected no-links guardrail message, got %#v", noLinksResp.Plan.Guardrails)
 	}
 }
 
@@ -3430,6 +3452,116 @@ func setupCommandBarRepositoryTargetResolutionTest(t *testing.T) (*CommandBarSer
 	gitSvc := NewGitService(nil, repository.NewGitRepositoryRepository(db), nil, nil, nil, nil, nil, nil, nil, nil, nil, "", "", "")
 	service := NewCommandBarService(&AgentService{agentRepo: agentRepo, gitService: gitSvc}, nil, nil, nil, nil)
 	return service, db, workspaceID, repoID
+}
+
+// The retry handler pre-fetches the plan for per-step authorization; that
+// lookup must not be owner-gated or cross-actor retries from the epic page
+// die with "not found" before the team-actionable service method runs.
+func TestGetWorkspacePlanBypassesOwnerGate(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	service := &CommandBarService{
+		planRepo:     planRepo,
+		agentService: &AgentService{runRepo: repository.NewAgentRunRepository(db)},
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "66666666-6666-6666-6666-666666666666"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: "epic-1", DisplayTitle: "Epic"}
+	steps := []model.CommandBarPlanStep{{AgentID: "agent-1", AgentName: "Forge", Target: pageContext, Instructions: "Build."}}
+	plan, err := newCommandBarPlanRecord(workspaceID, "actor-owner", planID, "run all tasks", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+
+	if _, err := service.GetPlan(ctx, workspaceID, "actor-other", planID); err == nil {
+		t.Fatalf("expected owner-gated GetPlan to hide another actor's plan")
+	}
+	detail, err := service.GetWorkspacePlan(ctx, workspaceID, planID)
+	if err != nil {
+		t.Fatalf("GetWorkspacePlan: %v", err)
+	}
+	if detail.Plan.ID != planID {
+		t.Fatalf("expected plan %q, got %q", planID, detail.Plan.ID)
+	}
+}
+
+// A plan can be left status "running" with all child runs failed/cancelled —
+// a zombie that resume cannot revive. Retry must accept it (rejecting only
+// while runs are genuinely active).
+func TestRetryPlanFromStepAcceptsRunningPlanWithNoActiveRuns(t *testing.T) {
+	db := setupCommandBarPlanTestDB(t)
+	runRepo := repository.NewAgentRunRepository(db)
+	planRepo := repository.NewCommandBarPlanRepository(db)
+	service := &CommandBarService{
+		planRepo:     planRepo,
+		agentService: &AgentService{runRepo: runRepo, commandBarPlanRepo: planRepo},
+	}
+
+	ctx := context.Background()
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	planID := "22222222-2222-2222-2222-222222222222"
+	runID := "33333333-3333-3333-3333-333333333333"
+	agentID := "44444444-4444-4444-4444-444444444444"
+	targetID := "55555555-5555-5555-5555-555555555555"
+	pageContext := model.CommandBarPageContext{EntityType: "epic", EntityID: targetID, DisplayTitle: "Epic"}
+	steps := []model.CommandBarPlanStep{
+		{
+			AgentID:      agentID,
+			AgentName:    "Forge",
+			PlanKind:     model.CommandBarPlanKindTaskPipeline,
+			Target:       pageContext,
+			Instructions: "Build it.",
+		},
+	}
+	plan, err := newCommandBarPlanRecord(workspaceID, "", planID, "run all tasks", pageContext, steps)
+	if err != nil {
+		t.Fatalf("build plan record: %v", err)
+	}
+	runIDs, _ := json.Marshal(map[int]string{0: runID})
+	plan.RunIDsByStep = runIDs
+	if err := planRepo.Create(ctx, plan); err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	if plan.Status != model.CommandBarPlanStatusRunning {
+		t.Fatalf("expected plan to start running, got %q", plan.Status)
+	}
+	if err := runRepo.Create(ctx, &model.AgentRun{
+		ID:             runID,
+		WorkspaceID:    workspaceID,
+		AgentID:        agentID,
+		TargetType:     "epic",
+		TargetID:       targetID,
+		RuntimeKind:    "native_sdk",
+		InvocationMode: model.InvocationModeAutonomous,
+		ApprovalState:  "not_required",
+		PauseReason:    model.AgentRunPauseReasonNone,
+		Status:         model.AgentRunStatusCancelled,
+		Input:          json.RawMessage("{}"),
+		OutputSummary:  json.RawMessage("{}"),
+	}); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	// Zombie (running plan, cancelled run): must pass the running gate and
+	// only fail later on the missing temporal engine in this test harness.
+	_, err = service.RetryPlanFromStep(ctx, workspaceID, "actor-2", planID, model.CommandBarRetryPlanRequest{StepIndex: 0})
+	if err == nil || !strings.Contains(err.Error(), "orchestration is not configured") {
+		t.Fatalf("expected zombie plan to pass the running gate, got %v", err)
+	}
+
+	// Genuinely active run: retry must be rejected.
+	if err := db.Exec(`UPDATE agent_runs SET status = 'running' WHERE id = ?`, runID).Error; err != nil {
+		t.Fatalf("activate run: %v", err)
+	}
+	_, err = service.RetryPlanFromStep(ctx, workspaceID, "actor-2", planID, model.CommandBarRetryPlanRequest{StepIndex: 0})
+	if err == nil || !strings.Contains(err.Error(), "active runs") {
+		t.Fatalf("expected active-run rejection, got %v", err)
+	}
 }
 
 func setupCommandBarPlanTestDB(t *testing.T) *gorm.DB {

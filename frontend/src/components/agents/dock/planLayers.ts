@@ -28,12 +28,46 @@ function stepKey(step: CommandBarPlanStep, index: number): string {
   return step.target?.entity_id ?? `step-${index}`;
 }
 
+/** Pipeline scaffolding steps that bookend the task work rather than run alongside it. */
+export const SETUP_STEP_TYPE = 'ensure_epic_branch';
+export const FINALIZE_STEP_TYPE = 'open_epic_pr';
+
+export function isScaffoldingStep(step: CommandBarPlanStep): boolean {
+  return step.step_type === SETUP_STEP_TYPE || step.step_type === FINALIZE_STEP_TYPE;
+}
+
+/** Indexes of the plan's scaffolding steps, for rendering as Setup/Finalize bookends. */
+export function scaffoldingStepIndexes(plan: CommandBarPlan): {
+  setup: number[];
+  finalize: number[];
+} {
+  const setup: number[] = [];
+  const finalize: number[] = [];
+  plan.steps.forEach((step, i) => {
+    if (step.step_type === SETUP_STEP_TYPE) setup.push(i);
+    else if (step.step_type === FINALIZE_STEP_TYPE) finalize.push(i);
+  });
+  return { setup, finalize };
+}
+
+/**
+ * Groups the plan's steps into per-task nodes with cross-task dependency
+ * edges. Scaffolding steps (epic branch / final PR) are EXCLUDED: grouping
+ * them by their epic target would create one node that everything depends on
+ * AND that depends on everything (final PR waits on all merges), a guaranteed
+ * node-level cycle that collapses `layerTasks` to a single layer and hides
+ * the real task ordering. Edges that point at scaffolding steps are ignored
+ * for the same reason.
+ */
 export function buildTaskNodes(plan: CommandBarPlan): TaskNode[] {
-  const indexToKey = plan.steps.map((s, i) => stepKey(s, i));
+  const indexToKey = plan.steps.map((s, i) =>
+    isScaffoldingStep(s) ? null : stepKey(s, i),
+  );
 
   const groups = new Map<string, TaskNode>();
   plan.steps.forEach((step, i) => {
     const key = indexToKey[i];
+    if (key == null) return;
     const existing = groups.get(key);
     if (existing) {
       existing.stepIndexes.push(i);

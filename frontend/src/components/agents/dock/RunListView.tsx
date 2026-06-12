@@ -7,8 +7,7 @@ import { cn } from '@/lib/utils';
 import { StatusDot, type DotKind } from './StatusDot';
 import { PipelineRail } from './PipelineRail';
 import { FanOutRail } from './FanOutRail';
-import { TaskPipelineRail } from './TaskPipelineRail';
-import { DagRail } from './DagRail';
+import { DeliveryProgressBar } from './DeliveryPlanView';
 import {
   classifyPlan,
   classifyRun,
@@ -214,10 +213,8 @@ function ListRow({
     metaLabel = planKindLabel(plan.planKind, plan.steps.length);
     subline = planSummaryText(plan, runsById);
     rail =
-      plan.planKind === 'task_pipeline_fan_out' ? (
-        <TaskPipelineRail plan={plan} runsById={runsById} maxRows={3} />
-      ) : plan.planKind === 'dag' ? (
-        <DagRail plan={plan} runsById={runsById} maxRows={4} />
+      plan.planKind === 'task_pipeline_fan_out' || plan.planKind === 'dag' ? (
+        <DeliveryProgressBar plan={plan} runsById={runsById} />
       ) : plan.planKind === 'fan_out' ? (
         <FanOutRail plan={plan} runsById={runsById} max={6} />
       ) : plan.steps.length > 1 ? (
